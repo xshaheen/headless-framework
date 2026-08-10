@@ -150,6 +150,18 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
             }
         }
 
+        // The group's watermarks were already advanced and committed inside _GetEarliestCronJobGroupAsync, so the
+        // arbitration above may only pick the wake instant — it must never drop an advanced group. A discarded
+        // group's occurrences are never materialized, and nothing re-derives an instant the watermark has passed.
+        // Time jobs carry no such commitment: excluding them merely defers them to the next wake's read.
+        if (minCronGroup is { Items.Length: > 0 })
+        {
+            includeCron = true;
+            // Materialization is the authoritative store-time due decision. A lagging node clock must not make the
+            // scheduler sleep after the store has committed and claimed a due occurrence; its lease is already live.
+            timeRemaining = TimeSpan.Zero;
+        }
+
         if (!includeCron && !includeTimeJobs)
         {
             return (Timeout.InfiniteTimeSpan, []);
@@ -158,7 +170,9 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         JobExecutionState[] cronFunctions = [];
         JobExecutionState[] timeFunctions = [];
 
-        if (includeCron && minCronGroup is not null)
+        // A group with no items means the earliest projection is not due yet (or this node lost every advance race):
+        // it still carries the wake instant, but there is nothing to claim, so skip the provider round trip.
+        if (includeCron && minCronGroup is { Items.Length: > 0 })
         {
             cronFunctions = await _QueueNextCronJobsAsync(minCronGroup.Value, cancellationToken).ConfigureAwait(false);
         }
@@ -245,94 +259,109 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         return childContext;
     }
 
+    // Bounds the projection read. The scheduler wants the earliest instant and whatever ties it, not a page of work;
+    // anything beyond this lands on the following wake. Sized well above any realistic same-instant tie count.
+    private const int _MaxCronDispatchCandidates = 64;
+
     private async Task<(DateTime Key, JobManagerDispatchContext[] Items)?> _GetEarliestCronJobGroupAsync(
         CancellationToken cancellationToken = default
     )
     {
-        var now = timeProvider.GetUtcNow().UtcDateTime;
+        // The occurrence read no longer derives its filter from the definition read (an empty id set searches every
+        // definition per the provider contract), so the two are independent and overlap instead of serializing —
+        // matching how GetNextJobs already overlaps its cron and time-job reads. Both are uncached by construction,
+        // so serializing them would cost a guaranteed extra round trip on every wake on every node.
+        var candidatesTask = persistenceProvider.GetEarliestCronDispatchCandidatesAsync(
+            _MaxCronDispatchCandidates,
+            cancellationToken
+        );
+        var earliestOccurrenceTask = persistenceProvider.GetEarliestAvailableCronOccurrenceAsync([], cancellationToken);
 
-        var cronJobs = await persistenceProvider.GetAllCronJobExpressionsAsync(cancellationToken).ConfigureAwait(false);
+        await Task.WhenAll(candidatesTask, earliestOccurrenceTask).ConfigureAwait(false);
 
-        var cronJobIds = cronJobs.Select(x => x.Id).ToArray();
+        var candidates = await candidatesTask.ConfigureAwait(false);
+        var earliestAvailableCronOccurrence = await earliestOccurrenceTask.ConfigureAwait(false);
 
-        var earliestAvailableCronOccurrence = await persistenceProvider
-            .GetEarliestAvailableCronOccurrenceAsync(cronJobIds, cancellationToken)
+        return await _EarliestCronJobGroupAsync(candidates, earliestAvailableCronOccurrence, cancellationToken)
             .ConfigureAwait(false);
-
-        return _EarliestCronJobGroup(cronJobs, now, earliestAvailableCronOccurrence);
     }
 
-    private (DateTime Next, JobManagerDispatchContext[] Items)? _EarliestCronJobGroup(
-        CronJobEntity[] cronJobs,
-        DateTime now,
-        CronJobOccurrenceEntity<TCronJob> earliestStored
+    /// <summary>
+    /// Turns the indexed projection read into the group to dispatch. Only definitions the STORE considers due are
+    /// advanced, and only an advanced definition has its expression evaluated — a definition that is not due costs an
+    /// index entry and nothing more.
+    /// </summary>
+    private async Task<(DateTime Next, JobManagerDispatchContext[] Items)?> _EarliestCronJobGroupAsync(
+        CronDispatchCandidates? candidates,
+        CronJobOccurrenceEntity<TCronJob> earliestStored,
+        CancellationToken cancellationToken
     )
     {
-        DateTime? min = null;
-        JobManagerDispatchContext? first = null;
-        List<JobManagerDispatchContext>? ties = null;
+        DateTime? wakeInstant = null;
+        DateTime? dispatchInstant = null;
+        List<JobManagerDispatchContext>? dispatched = null;
+        var storedConsumed = false;
 
-        foreach (var cronJob in cronJobs)
+        if (candidates is { Candidates.Count: > 0 })
         {
-            if (cronJob.IsPaused)
-            {
-                continue;
-            }
+            // The projection IS the wake instant. Nothing is recomputed here, which is the point: the store already
+            // decided when this definition next comes up.
+            var earliestProjection = candidates.Candidates[0].NextDueUtc;
+            wakeInstant = earliestProjection;
 
-            var next = cronScheduleCache.GetNextOccurrenceOrDefault(cronJob.Expression, now, cronJob.TimeZoneId);
-            if (next is null)
-            {
-                continue;
-            }
+            // Decide which group wins BEFORE advancing anything. The advance commits durable state: a watermark moved
+            // past an instant this method then declines to return is an occurrence nothing will ever materialize, and
+            // slice 1 has no recovery path to re-derive it. An already-materialized occurrence that sorts strictly
+            // earlier wins outright, so in that case nothing advances and the projection waits for the next wake.
+            var storedWinsOutright = earliestStored is not null && earliestStored.ExecutionTime < earliestProjection;
 
-            if (
-                earliestStored != null
-                && earliestStored.ExecutionTime == next
-                && cronJob.Id == earliestStored.CronJobId
-            )
+            // Due-ness compares two values from one server snapshot, so it is the store's decision, not this node's.
+            // The advance re-asserts it atomically, so this comparison selects work rather than authorizing it.
+            if (!storedWinsOutright && earliestProjection <= candidates.StoreUtcNow)
             {
-                continue;
-            }
-
-            var n = next.Value;
-            if (min is null || n < min)
-            {
-                min = n;
-                first = new JobManagerDispatchContext(cronJob.Id)
+                foreach (var candidate in candidates.Candidates)
                 {
-                    FunctionName = cronJob.Function,
-                    Expression = cronJob.Expression,
-                    TimeZoneId = cronJob.TimeZoneId,
-                    IsPaused = cronJob.IsPaused,
-                    ScheduleRevision = cronJob.ScheduleRevision,
-                    Retries = cronJob.Retries,
-                    RetryIntervals = cronJob.RetryIntervals,
-                    OnNodeDeath = cronJob.OnNodeDeath,
-                };
-
-                ties = null;
-            }
-            else if (n == min)
-            {
-                ties ??= new List<JobManagerDispatchContext>(2) { first! };
-                ties.Add(
-                    new JobManagerDispatchContext(cronJob.Id)
+                    if (candidate.NextDueUtc != earliestProjection)
                     {
-                        FunctionName = cronJob.Function,
-                        Expression = cronJob.Expression,
-                        TimeZoneId = cronJob.TimeZoneId,
-                        IsPaused = cronJob.IsPaused,
-                        ScheduleRevision = cronJob.ScheduleRevision,
-                        Retries = cronJob.Retries,
-                        RetryIntervals = cronJob.RetryIntervals,
-                        OnNodeDeath = cronJob.OnNodeDeath,
+                        break; // ordered by projection, so the tie group ends here
                     }
-                );
+
+                    // R9: a definition with no position yet — seeded before this field existed, or created by a path
+                    // that did not set it — is initialized from the CREATION rule (watermark at the store's instant)
+                    // and never from its occurrence history. That is what makes an upgrade unable to replay a
+                    // backlog: an unset watermark sorts first and would otherwise look infinitely behind.
+                    if (candidate.NextDueUtc == default)
+                    {
+                        await _InitializeSchedulePositionAsync(candidate, candidates.StoreUtcNow, cancellationToken)
+                            .ConfigureAwait(false);
+
+                        continue;
+                    }
+
+                    var context = await _TryAdvanceForDispatchAsync(candidate, cancellationToken).ConfigureAwait(false);
+
+                    if (context is not null)
+                    {
+                        (dispatched ??= []).Add(context);
+
+                        // The provider arbitrates the occurrence key inside the same transition as the position. If
+                        // that durable row is also the peeked occurrence, it is already represented by this context
+                        // and must not be appended a second time below.
+                        if (earliestStored is not null && context.NextCronOccurrence?.Id == earliestStored.Id)
+                        {
+                            storedConsumed = true;
+                        }
+                    }
+                }
+
+                if (dispatched is { Count: > 0 })
+                {
+                    dispatchInstant = earliestProjection;
+                }
             }
         }
 
-        // If we have a stored occurrence, compare/merge
-        if (earliestStored is not null)
+        if (earliestStored is not null && !storedConsumed)
         {
             var storedTime = earliestStored.ExecutionTime;
             var storedItem = new JobManagerDispatchContext(earliestStored.CronJobId)
@@ -348,37 +377,147 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
                 NextCronOccurrence = new NextCronOccurrence(earliestStored.Id, earliestStored.CreatedAt),
             };
 
-            // If no in-memory occurrences or stored is earlier, return stored only
-            if (min is null || storedTime < min.Value)
+            if (dispatchInstant is not null)
             {
-                return (storedTime, [storedItem]);
-            }
-
-            // If stored time equals the earliest in-memory time, aggregate them
-            if (storedTime == min.Value)
-            {
-                if (ties is null)
+                // storedTime < dispatchInstant is unreachable by construction: storedWinsOutright above suppresses the
+                // advance entirely in that case, so reaching here means the stored occurrence is at or after the
+                // dispatched instant. Same instant merges into the group; later waits for the next wake, keeping its
+                // durable row untouched.
+                if (storedTime == dispatchInstant.Value)
                 {
-                    return (min.Value, [first!, storedItem]);
+                    dispatched!.Add(storedItem);
                 }
 
-                ties.Add(storedItem);
-                return (min.Value, ties.ToArray());
+                return (dispatchInstant.Value, dispatched!.ToArray());
             }
 
-            // Stored is later than min, return in-memory winners only
-            var winners = ties is null ? [first!] : ties.ToArray();
-            return (min.Value, winners);
+            // Nothing advanced this wake, so the stored occurrence is the only thing to claim. The wake instant is
+            // still whichever comes first: sleeping all the way to a stored occurrence while a projection falls due
+            // sooner would dispatch that projection late by the difference.
+            if (wakeInstant is not null && wakeInstant.Value < storedTime)
+            {
+                return (wakeInstant.Value, []);
+            }
+
+            return (storedTime, [storedItem]);
         }
 
-        // No stored occurrence - return in-memory winners or null if none
-        if (min is null)
+        if (dispatchInstant is not null)
         {
+            return (dispatchInstant.Value, dispatched!.ToArray());
+        }
+
+        // Nothing to claim, but still report the earliest projection so the loop sleeps to it rather than to a
+        // recomputed instant. A lost advance race lands here too: the winner moved the projection, so the next wake
+        // reads the new one.
+        return wakeInstant is null ? null : (wakeInstant.Value, []);
+    }
+
+    /// <summary>
+    /// Gives a definition its first schedule position, anchored at the store's instant rather than at anything in its
+    /// history, so nothing before this moment is ever treated as missed.
+    /// </summary>
+    /// <remarks>
+    /// Uses the same compare-and-advance as ordinary dispatch — the unset watermark IS the observed value — so two
+    /// nodes initializing the same definition converge on one position instead of racing. Nothing is dispatched on
+    /// this wake; the definition becomes selectable at its real projection on the next one.
+    /// </remarks>
+    private async Task _InitializeSchedulePositionAsync(
+        CronDispatchCandidate candidate,
+        DateTime storeUtcNow,
+        CancellationToken cancellationToken
+    )
+    {
+        var firstOccurrence = cronScheduleCache.GetNextOccurrenceOrDefault(
+            candidate.Expression,
+            storeUtcNow,
+            candidate.TimeZoneId
+        );
+
+        await persistenceProvider
+            .AdvanceCronScheduleAsync(
+                new CronScheduleAdvance
+                {
+                    CronJobId = candidate.CronJobId,
+                    ObservedReconciledThroughUtc = candidate.ReconciledThroughUtc,
+                    ExpectedScheduleRevision = candidate.ScheduleRevision,
+                    ReconciledThroughUtc = storeUtcNow,
+                    NextDueUtc = firstOccurrence ?? DateTime.MaxValue,
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Atomically materializes one due definition's occurrence with its new schedule position and, when the result is
+    /// non-terminal, returns the context that a later provider operation may claim.
+    /// </summary>
+    private async Task<JobManagerDispatchContext?> _TryAdvanceForDispatchAsync(
+        CronDispatchCandidate candidate,
+        CancellationToken cancellationToken
+    )
+    {
+        // The only expression evaluation on this path, and only for a definition that is actually due. Deriving a fire
+        // time from an expression is tz-database authority and stays here (KTD2); the store owns due-ness and the
+        // fence, never the derivation.
+        var nextAfterDue = cronScheduleCache.GetNextOccurrenceOrDefault(
+            candidate.Expression,
+            candidate.NextDueUtc,
+            candidate.TimeZoneId
+        );
+
+        var materialized = await persistenceProvider
+            .MaterializeCronScheduleOccurrenceAsync(
+                new CronScheduleMaterialization
+                {
+                    Advance = new CronScheduleAdvance
+                    {
+                        CronJobId = candidate.CronJobId,
+                        ObservedReconciledThroughUtc = candidate.ReconciledThroughUtc,
+                        ExpectedScheduleRevision = candidate.ScheduleRevision,
+                        ReconciledThroughUtc = candidate.NextDueUtc,
+                        // A schedule with no further occurrence (an exhausted or unparseable expression) parks its
+                        // projection beyond any wake. Leaving the old projection in place would keep the definition
+                        // permanently due and spin the scheduler at its minimum sleep forever.
+                        NextDueUtc = nextAfterDue ?? DateTime.MaxValue,
+                        RequireProjectionDue = true,
+                    },
+                    ExecutionTimeUtc = candidate.NextDueUtc,
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (
+            materialized.Outcome
+            is CronScheduleMaterializationOutcome.LostFence
+                or CronScheduleMaterializationOutcome.NotDue
+                or CronScheduleMaterializationOutcome.OccurrenceAlreadyTerminal
+        )
+        {
+            // A losing/future definition changes nothing; a terminal occurrence already accounts for the instant.
+            // All are ordinary scheduler outcomes and none should reach the claim path.
             return null;
         }
 
-        var finalWinners = ties is null ? [first!] : ties.ToArray();
-        return (min.Value, finalWinners);
+        if (materialized.OccurrenceId is not { } occurrenceId || materialized.OccurrenceCreatedAt is not { } createdAt)
+        {
+            throw new InvalidOperationException("A committed cron materialization returned no occurrence identity.");
+        }
+
+        return new JobManagerDispatchContext(candidate.CronJobId)
+        {
+            FunctionName = candidate.FunctionName,
+            Expression = candidate.Expression,
+            TimeZoneId = candidate.TimeZoneId,
+            IsPaused = false,
+            ScheduleRevision = candidate.ScheduleRevision,
+            Retries = candidate.Retries,
+            RetryIntervals = candidate.RetryIntervals,
+            OnNodeDeath = materialized.OnNodeDeath ?? candidate.OnNodeDeath,
+            NextCronOccurrence = new NextCronOccurrence(occurrenceId, createdAt),
+        };
     }
 
     public async Task<JobExecutionState[]> SetTickersInProgress(

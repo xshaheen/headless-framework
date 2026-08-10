@@ -30,11 +30,12 @@ namespace Headless.Jobs.Console.Demo.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
                     b.Property<string>("Description")
                         .HasColumnType("text");
+
+                    b.Property<string>("EvaluationFingerprint")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
 
                     b.Property<string>("Expression")
                         .IsRequired()
@@ -52,10 +53,26 @@ namespace Headless.Jobs.Console.Demo.Migrations
                         .HasColumnType("boolean")
                         .HasDefaultValue(false);
 
+                    b.Property<int>("MissedRunGraceSeconds")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("NextDueUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("OnMissedRun")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasDefaultValue("Coalesce");
+
                     b.Property<string>("OnNodeDeath")
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
+
+                    b.Property<DateTime>("ReconciledThroughUtc")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<byte[]>("Request")
                         .HasColumnType("bytea");
@@ -79,13 +96,22 @@ namespace Headless.Jobs.Console.Demo.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)");
 
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("EvaluationFingerprint")
+                        .HasDatabaseName("IX_CronJobs_EvaluationFingerprint");
 
                     b.HasIndex("Expression")
                         .HasDatabaseName("IX_CronJobs_Expression");
 
                     b.HasIndex("Function", "Expression")
                         .HasDatabaseName("IX_Function_Expression");
+
+                    b.HasIndex("IsPaused", "NextDueUtc")
+                        .HasDatabaseName("IX_CronJobs_IsPaused_NextDueUtc");
 
                     b.ToTable("CronJobs", "jobs");
                 });
@@ -95,23 +121,20 @@ namespace Headless.Jobs.Console.Demo.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid");
 
-                    b.Property<Guid>("CronJobId")
-                        .HasColumnType("uuid");
-
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<DateTimeOffset?>("ExecutedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
+                    b.Property<Guid>("CronJobId")
+                        .HasColumnType("uuid");
 
                     b.Property<long>("ElapsedTime")
                         .HasColumnType("bigint");
 
                     b.Property<string>("ExceptionMessage")
                         .HasColumnType("text");
+
+                    b.Property<DateTimeOffset?>("ExecutedAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime>("ExecutionTime")
                         .HasColumnType("timestamp with time zone");
@@ -127,6 +150,9 @@ namespace Headless.Jobs.Console.Demo.Migrations
                     b.Property<string>("OwnerId")
                         .HasColumnType("text");
 
+                    b.Property<DateTime?>("RecoveredFromUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<int>("RetryCount")
                         .HasColumnType("integer");
 
@@ -137,6 +163,9 @@ namespace Headless.Jobs.Console.Demo.Migrations
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
 
@@ -177,12 +206,6 @@ namespace Headless.Jobs.Console.Demo.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<DateTimeOffset?>("ExecutedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
                     b.Property<string>("Description")
                         .HasColumnType("text");
 
@@ -191,6 +214,9 @@ namespace Headless.Jobs.Console.Demo.Migrations
 
                     b.Property<string>("ExceptionMessage")
                         .HasColumnType("text");
+
+                    b.Property<DateTimeOffset?>("ExecutedAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime?>("ExecutionTime")
                         .HasColumnType("timestamp with time zone");
@@ -243,6 +269,9 @@ namespace Headless.Jobs.Console.Demo.Migrations
                     b.Property<string>("TenantId")
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
 

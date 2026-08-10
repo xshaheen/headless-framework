@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.EntityFramework.Configurations;
 using Headless.Jobs.Entities;
+using Headless.Jobs.Enums;
 using Headless.Jobs.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -13,6 +15,11 @@ public class CronJobConfigurations<TCronJob>(string schema = JobDbConstants.Defa
 {
     public void Configure(EntityTypeBuilder<TCronJob> builder)
     {
+        // SQL Server materializes datetime2 with DateTimeKind.Unspecified, so the watermark and projection need the
+        // same normalization the occurrence timestamps use — their UTC contract must not depend on the host's Kind
+        // defaults (docs/solutions/design-patterns/temporal-authority-standard.md).
+        var utcDateTimeConverter = new NormalizeDateTimeValueConverter();
+
         builder.HasKey("Id");
 
         builder.Property(e => e.Id).ValueGeneratedNever();
@@ -24,6 +31,32 @@ public class CronJobConfigurations<TCronJob>(string schema = JobDbConstants.Defa
         builder.Property(e => e.TimeZoneId).HasMaxLength(128);
 
         builder.Property(e => e.OnNodeDeath).HasConversion<string>().HasMaxLength(32);
+
+        // The database default must be a valid enum name: migrated rows take the column default, and EF's
+        // string conversion has no valid mapping for '' — an upgraded database would either fail materialization
+        // on every cron read or leave '' rows that a SQL-side policy predicate can never match.
+        builder
+            .Property(e => e.OnMissedRun)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .HasDefaultValue(MissedRunPolicy.Coalesce);
+
+        builder.Property(e => e.EvaluationFingerprint).HasMaxLength(128);
+
+        builder.Property(e => e.ReconciledThroughUtc).HasConversion(utcDateTimeConverter);
+
+        builder.Property(e => e.NextDueUtc).HasConversion(utcDateTimeConverter);
+
+        // The scheduler selects due definitions by this column instead of evaluating every expression on every
+        // node, so it carries the dispatch hot path and is indexed alongside the pause flag it is always filtered
+        // with. The fingerprint sweep selects on staleness independently of due-ness, hence the second index.
+        builder
+            .HasIndex(nameof(CronJobEntity.IsPaused), nameof(CronJobEntity.NextDueUtc))
+            .HasDatabaseName("IX_CronJobs_IsPaused_NextDueUtc");
+
+        builder
+            .HasIndex(nameof(CronJobEntity.EvaluationFingerprint))
+            .HasDatabaseName("IX_CronJobs_EvaluationFingerprint");
 
         // Cron is system-scope by contract (a tenant-scoped cron definition is rejected at schedule time), so
         // TenantId always persists null. Bound the column length for parity with time jobs; no tenant index — cron
