@@ -501,6 +501,12 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
                             .SetProperty(x => x.Retries, update.Definition.Retries)
                             .SetProperty(x => x.RetryIntervals, update.Definition.RetryIntervals)
                             .SetProperty(x => x.OnNodeDeath, update.Definition.OnNodeDeath)
+                            // R17: the runtime API is the AUTHORITY for these two. The attribute only seeds them at
+                            // creation and is never reapplied, so persisting them here is what makes an operator
+                            // override survive restarts. Metadata-only, like Retries/RetryIntervals/OnNodeDeath: they
+                            // change how a backlog is recovered, not which instants materialize, so no revision bump.
+                            .SetProperty(x => x.OnMissedRun, update.Definition.OnMissedRun)
+                            .SetProperty(x => x.MissedRunGraceSeconds, update.Definition.MissedRunGraceSeconds)
                             .SetProperty(
                                 x => x.ScheduleRevision,
                                 scheduleChanged ? current.ScheduleRevision + 1 : current.ScheduleRevision

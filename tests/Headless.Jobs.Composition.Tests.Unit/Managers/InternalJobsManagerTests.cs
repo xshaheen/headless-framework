@@ -722,4 +722,44 @@ public sealed class InternalJobsManagerTests : TestBase
 
         throw new InvalidOperationException("claim batch failed");
     }
+
+    [Fact]
+    public async Task run_timed_out_tickers_preserves_the_cron_recovery_stamp()
+    {
+        var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();
+        var sender = Substitute.For<IJobsNotificationHubSender>();
+        var manager = new InternalJobsManager<FakeTimeJob, FakeCronJob>(
+            provider,
+            TimeProvider.System,
+            sender,
+            new CronScheduleCache(TimeZoneInfo.Utc),
+            NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance,
+            JobsRequestSerializationOptions.Default,
+            Substitute.For<IGuidGenerator>(),
+            Substitute.For<IServiceProvider>(),
+            new SchedulerOptionsBuilder()
+        );
+        var earliestMissed = new DateTime(2026, 7, 26, 15, 0, 0, DateTimeKind.Utc);
+        var occurrence = new CronJobOccurrenceEntity<FakeCronJob>
+        {
+            Id = Guid.NewGuid(),
+            CronJobId = Guid.NewGuid(),
+            ExecutionTime = earliestMissed,
+            RecoveredFromUtc = earliestMissed,
+            CronJob = new FakeCronJob { Function = "reclaimed-recovery" },
+        };
+        provider
+            .QueueTimedOutTimeJobsAsync(Arg.Any<CancellationToken>())
+            .Returns(AsyncEnumerable.Empty<TimeJobEntity>());
+        provider
+            .QueueTimedOutCronJobOccurrencesAsync(Arg.Any<CancellationToken>())
+            .Returns(new[] { occurrence }.ToAsyncEnumerable());
+
+        var contexts = await manager.RunTimedOutTickers(AbortToken);
+
+        var context = contexts.Should().ContainSingle().Which;
+        context.JobId.Should().Be(occurrence.Id);
+        context.ExecutionTime.Should().Be(earliestMissed);
+        context.RecoveredFromUtc.Should().Be(earliestMissed);
+    }
 }

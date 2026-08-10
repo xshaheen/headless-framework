@@ -295,6 +295,24 @@ public sealed class CronDispatchSelectionManagerTests : TestBase
         persisted.OwnerId.Should().BeNull();
     }
 
+    [Fact]
+    public async Task should_dispatch_a_coalesced_recovery_with_its_persisted_stamp()
+    {
+        var (manager, provider) = _Create();
+        var definition = _Definition(nextDue: _Now.AddHours(-3));
+        definition.Expression = "0 0 * * * *";
+        definition.ReconciledThroughUtc = _Now.AddHours(-4);
+        definition.OnMissedRun = MissedRunPolicy.Coalesce;
+        definition.MissedRunGraceSeconds = 60;
+        await provider.InsertCronJobsAsync([definition], AbortToken);
+
+        var (_, functions) = await manager.GetNextJobs(AbortToken);
+
+        var context = functions.Should().ContainSingle().Which;
+        context.ExecutionTime.Should().Be(_Now.AddHours(-3));
+        context.RecoveredFromUtc.Should().Be(_Now.AddHours(-3));
+    }
+
     private static (
         InternalJobsManager<FakeTimeJob, FakeCronJob> Manager,
         JobsInMemoryPersistenceProvider<FakeTimeJob, FakeCronJob> Provider
@@ -334,7 +352,8 @@ public sealed class CronDispatchSelectionManagerTests : TestBase
             Expression = "0 * * * * *",
             IsPaused = isPaused,
             ScheduleRevision = 0,
-            ReconciledThroughUtc = _Now.AddMinutes(-5),
+            // Exactly one pending instant, dispatched on time: these scenarios exercise NORMAL dispatch, not recovery.
+            ReconciledThroughUtc = _Now.AddSeconds(-30),
             NextDueUtc = nextDue,
             CreatedAt = new DateTimeOffset(_Now.AddHours(-1), TimeSpan.Zero),
             UpdatedAt = new DateTimeOffset(_Now.AddMinutes(-1), TimeSpan.Zero),

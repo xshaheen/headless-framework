@@ -2,6 +2,7 @@
 
 using System.Diagnostics;
 using Headless.Coordination;
+using Headless.Jobs;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
@@ -1800,12 +1801,32 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
         try
         {
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
-            await persistence.MigrateDefinedCronJobsAsync([("seeded", "0 */5 * * * *")], ct);
+            await persistence.MigrateDefinedCronJobsAsync(
+                [
+                    new CronSeedDefinition(
+                        "seeded",
+                        "0 */5 * * * *",
+                        MissedRunPolicy.Coalesce,
+                        JobsRecoveryDefaults.MissedRunGraceSeconds
+                    ),
+                ],
+                ct
+            );
             var definition = (await persistence.GetAllCronJobExpressionsAsync(ct)).Single();
             var pending = _CronOccurrence(definition.Id, JobStatus.Queued, DateTime.UtcNow.AddMinutes(5));
             (await persistence.InsertCronJobOccurrencesAsync([pending], ct)).Should().Be(1);
 
-            await persistence.MigrateDefinedCronJobsAsync([("seeded", "0 */10 * * * *")], ct);
+            await persistence.MigrateDefinedCronJobsAsync(
+                [
+                    new CronSeedDefinition(
+                        "seeded",
+                        "0 */10 * * * *",
+                        MissedRunPolicy.Coalesce,
+                        JobsRecoveryDefaults.MissedRunGraceSeconds
+                    ),
+                ],
+                ct
+            );
 
             var updated = (await persistence.GetAllCronJobExpressionsAsync(ct)).Single();
             updated.Expression.Should().Be("0 */10 * * * *");

@@ -90,4 +90,16 @@
   <data name="InvalidMaxConcurrencyMessage" xml:space="preserve">
     <value>The maximum concurrency value '{0}' cannot be negative</value>
   </data>
+  <data name="InvalidMissedRunPolicyTitle" xml:space="preserve">
+    <value>Invalid missed-run policy</value>
+  </data>
+  <data name="InvalidMissedRunPolicyMessage" xml:space="preserve">
+    <value>The missed-run policy value '{0}' is not defined</value>
+  </data>
+  <data name="InvalidMissedRunGraceTitle" xml:space="preserve">
+    <value>Invalid missed-run grace</value>
+  </data>
+  <data name="InvalidMissedRunGraceMessage" xml:space="preserve">
+    <value>The missed-run grace value '{0}' must be greater than zero seconds</value>
+  </data>
 </root>

@@ -64,7 +64,8 @@ internal sealed record CronOccurrenceRelationalMapping(
     string ElapsedTime,
     string RetryCount,
     string CreatedAt,
-    string UpdatedAt
+    string UpdatedAt,
+    string RecoveredFromUtc
 )
 {
     public static CronOccurrenceRelationalMapping Create<TDbContext, TCronJob>(TDbContext dbContext)
@@ -104,7 +105,10 @@ internal sealed record CronOccurrenceRelationalMapping(
             Column(nameof(CronJobOccurrenceEntity<>.ElapsedTime)),
             Column(nameof(CronJobOccurrenceEntity<>.RetryCount)),
             Column(nameof(CronJobOccurrenceEntity<>.CreatedAt)),
-            Column(nameof(CronJobOccurrenceEntity<>.UpdatedAt))
+            Column(nameof(CronJobOccurrenceEntity<>.UpdatedAt)),
+            // R23: the native claim RETURNs/OUTPUTs this so a claimed row carries its recovery stamp out of the store
+            // rather than trusting the caller to have supplied it.
+            Column(nameof(CronJobOccurrenceEntity<>.RecoveredFromUtc))
         );
     }
 }

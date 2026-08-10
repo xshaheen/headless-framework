@@ -1366,13 +1366,13 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
     #region Cron Job Methods
 
     public Task MigrateDefinedCronJobsAsync(
-        (string Function, string Expression)[] cronJobs,
+        CronSeedDefinition[] cronJobs,
         CancellationToken cancellationToken = default
     )
     {
         var now = _timeProvider.GetUtcNow();
 
-        foreach (var (function, expression) in cronJobs)
+        foreach (var (function, expression, onMissedRun, missedRunGraceSeconds) in cronJobs)
         {
             // Deterministic id keyed by function (matches the durable provider's seed identity): a re-seed — including
             // a changed expression — updates the same row in place rather than inserting a duplicate. Single-process
@@ -1434,6 +1434,11 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                 CreatedAt = now,
                 UpdatedAt = now,
                 Request = [],
+                // KTD6: seeded at CREATION only. The update branch above deliberately leaves these alone, so a value
+                // set later through ICronJobManager survives every redeploy and is an operator override by
+                // construction — which is why no provenance marker is persisted.
+                OnMissedRun = onMissedRun,
+                MissedRunGraceSeconds = missedRunGraceSeconds,
             };
 
             _cronJobs.TryAdd(id, cronJob);
@@ -1454,6 +1459,137 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         _cronJobs.TryGetValue(id, out var job);
 
         return Task.FromResult(job is null ? null : _CloneCronJob(job));
+    }
+
+    public Task<CronRecoveryResult<TCronJob>?> ApplyCronRecoveryAsync(
+        CronRecoveryRequest request,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // The per-definition lock is this provider's equivalent of the relational transaction: the fence check, the
+        // occurrence resolution, and the watermark move are one indivisible step, so no interleaving can leave the
+        // backlog partly resolved with the watermark already past it.
+        lock (_GetCronDefinitionLock(request.CronJobId))
+        {
+            if (
+                !_cronJobs.TryGetValue(request.CronJobId, out var current)
+                || current.IsPaused
+                || current.ScheduleRevision != request.ExpectedScheduleRevision
+                || current.ReconciledThroughUtc != request.ObservedReconciledThroughUtc
+            )
+            {
+                return Task.FromResult<CronRecoveryResult<TCronJob>?>(null);
+            }
+
+            var inWindow = _cronOccurrences
+                .Values.Where(x =>
+                    x.CronJobId == request.CronJobId
+                    && x.ExecutionTime > request.ObservedReconciledThroughUtc
+                    && x.ExecutionTime <= request.RecoveredThroughUtc
+                )
+                .ToArray();
+
+            CronJobOccurrenceEntity<TCronJob>? coalescedRun = null;
+            var repurposedId = Guid.Empty;
+
+            if (request.Policy is MissedRunPolicy.Coalesce)
+            {
+                // R18 owes the backlog exactly one run; R7 forbids duplicating an instant an executing or terminal
+                // row already accounts for. Walk the missed instants in schedule order and materialize at the FIRST
+                // unaccounted-for one — an occupied instant is stepped past (AE9, AE10), never duplicated, and only
+                // a fully-accounted-for backlog produces no run at all. Mirrors the relational provider.
+                foreach (var missedInstant in request.MissedInstantsUtc)
+                {
+                    // A live row takes precedence over a terminal one sharing the instant.
+                    var atInstant = inWindow
+                        .Where(x => x.ExecutionTime == missedInstant)
+                        .OrderBy(x => x.Status is JobStatus.Idle or JobStatus.Queued or JobStatus.InProgress ? 0 : 1)
+                        .FirstOrDefault();
+
+                    if (atInstant is null)
+                    {
+                        var created = new CronJobOccurrenceEntity<TCronJob>
+                        {
+                            Id = request.CoalescedOccurrenceId,
+                            CronJobId = request.CronJobId,
+                            Status = JobStatus.Idle,
+                            OwnerId = null,
+                            LockedUntil = null,
+                            ExecutionTime = missedInstant,
+                            RecoveredFromUtc = missedInstant,
+                            OnNodeDeath = request.OnNodeDeath,
+                            CreatedAt = request.OperationTimeUtc,
+                            UpdatedAt = request.OperationTimeUtc,
+                            // Execution reads Function off this navigation; the relational provider gets it from an
+                            // Include on the claim read, so attach it here to keep the two providers interchangeable.
+                            CronJob = current,
+                        };
+
+                        _cronOccurrences[created.Id] = created;
+                        coalescedRun = _CloneCronOccurrence(created);
+                        break;
+                    }
+
+                    if (atInstant.Status is JobStatus.Idle or JobStatus.Queued)
+                    {
+                        // KTD5: clearing the owner is the whole mechanism — the claim path's in-progress transition
+                        // requires OwnerId == owner, so the prior owner fails that predicate and drops the row.
+                        // Unlike the relational provider no re-check CAS is needed: the per-definition lock already
+                        // serializes this against every status transition.
+                        repurposedId = atInstant.Id;
+                        var repurposed = _CloneCronOccurrence(atInstant);
+                        repurposed.Status = JobStatus.Idle;
+                        repurposed.OwnerId = null;
+                        repurposed.LockedUntil = null;
+                        repurposed.RecoveredFromUtc = missedInstant;
+                        repurposed.UpdatedAt = request.OperationTimeUtc;
+                        repurposed.CronJob ??= current;
+                        _cronOccurrences[repurposed.Id] = repurposed;
+                        coalescedRun = _CloneCronOccurrence(repurposed);
+                        break;
+                    }
+
+                    // Executing or terminal: the instant is accounted for — step past it (AE9, AE10).
+                }
+            }
+
+            var skippedCount = 0;
+
+            foreach (var occurrence in inWindow)
+            {
+                if (occurrence.Id == repurposedId || occurrence.Status is not (JobStatus.Idle or JobStatus.Queued))
+                {
+                    continue;
+                }
+
+                var skipped = _CloneCronOccurrence(occurrence);
+                skipped.Status = JobStatus.Skipped;
+                skipped.OwnerId = null;
+                skipped.LockedUntil = null;
+                skipped.ExecutedAt = request.OperationTimeUtc;
+                skipped.UpdatedAt = request.OperationTimeUtc;
+                skipped.SkippedReason = "Cron occurrence missed and resolved by recovery";
+                _cronOccurrences[skipped.Id] = skipped;
+                skippedCount++;
+            }
+
+            var updated = _CloneCronJob(current);
+            updated.ReconciledThroughUtc = request.RecoveredThroughUtc;
+            updated.NextDueUtc = request.NextDueUtc;
+            _cronJobs[request.CronJobId] = updated;
+
+            return Task.FromResult<CronRecoveryResult<TCronJob>?>(
+                new CronRecoveryResult<TCronJob>
+                {
+                    CoalescedRun = coalescedRun,
+                    SkippedOccurrenceCount = skippedCount,
+                    ReconciledThroughUtc = updated.ReconciledThroughUtc,
+                    NextDueUtc = updated.NextDueUtc,
+                }
+            );
+        }
     }
 
     public Task<CronDispatchCandidates?> GetEarliestCronDispatchCandidatesAsync(
@@ -1480,6 +1616,8 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                 Retries = x.Retries,
                 RetryIntervals = x.RetryIntervals,
                 OnNodeDeath = x.OnNodeDeath,
+                MissedRunGraceSeconds = x.MissedRunGraceSeconds,
+                OnMissedRun = x.OnMissedRun,
             })
             .ToArray();
 
@@ -2051,6 +2189,10 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                     updatedOccurrence.Status = JobStatus.Queued;
                     // #464: re-stamp the policy from the cron def (context) so EF and in-memory agree on re-queue.
                     updatedOccurrence.OnNodeDeath = context.OnNodeDeath;
+                    // Execution reads Function off this navigation. A row created by a path that did not attach it
+                    // (recovery, or any future inserter) would otherwise null-ref at dispatch rather than here, so
+                    // re-attach on the way out instead of trusting every producer to have done it.
+                    updatedOccurrence.CronJob ??= currentDefinition;
 
                     if (_cronOccurrences.TryUpdate(occurrenceId, updatedOccurrence, existingOccurrence))
                     {
@@ -2843,6 +2985,10 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             CronJobId = occurrence.CronJobId,
             Status = occurrence.Status,
             RetryCount = occurrence.RetryCount,
+            // R23: the recovery stamp must survive every projection. Dropping it here would silently turn a coalesced
+            // run back into an ordinary one the moment it round-trips — the same defect shape that once reset
+            // RetryCount and handed a restarted job a fresh retry budget.
+            RecoveredFromUtc = occurrence.RecoveredFromUtc,
             ExecutionTime = occurrence.ExecutionTime,
             OwnerId = occurrence.OwnerId,
             LockedUntil = occurrence.LockedUntil,

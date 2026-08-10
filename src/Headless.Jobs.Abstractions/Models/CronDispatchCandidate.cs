@@ -43,6 +43,15 @@ public sealed record CronDispatchCandidate
 
     /// <summary>Node-death policy, carried onto materialized occurrences.</summary>
     public required NodeDeathPolicy OnNodeDeath { get; init; }
+
+    /// <summary>
+    /// The definition's own persisted misfire grace, so every node evaluates the same threshold for it rather than
+    /// each applying its local configuration.
+    /// </summary>
+    public required int MissedRunGraceSeconds { get; init; }
+
+    /// <summary>The definition's persisted recovery policy, applied when its watermark falls behind.</summary>
+    public required MissedRunPolicy OnMissedRun { get; init; }
 }
 
 /// <summary>

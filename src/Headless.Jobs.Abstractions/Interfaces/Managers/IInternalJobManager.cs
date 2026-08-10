@@ -46,7 +46,7 @@ internal interface IInternalJobManager
 
     Task<T?> GetRequestAsync<T>(Guid jobId, JobType type, CancellationToken cancellationToken = default);
     Task<JobExecutionState[]> RunTimedOutTickers(CancellationToken cancellationToken = default);
-    Task MigrateDefinedCronJobs((string, string)[] cronExpressions, CancellationToken cancellationToken = default);
+    Task MigrateDefinedCronJobs(CronSeedDefinition[] cronExpressions, CancellationToken cancellationToken = default);
     Task DeleteJob(Guid jobId, JobType type, CancellationToken cancellationToken = default);
     Task ReleaseDeadNodeResources(string instanceIdentifier, CancellationToken cancellationToken = default);
     Task ReleaseDeadNodeResources(

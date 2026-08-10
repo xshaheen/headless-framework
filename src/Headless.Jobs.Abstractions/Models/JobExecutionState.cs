@@ -94,6 +94,17 @@ public class JobExecutionState
     /// <summary>The time the job was scheduled to run (UTC).</summary>
     public DateTime ExecutionTime { get; set; }
 
+    /// <summary>
+    /// For a cron occurrence materialized by misfire recovery, the earliest missed instant it stands in for;
+    /// <see langword="null"/> otherwise. Carried from the occurrence row to <c>JobFunctionContext</c>.
+    /// </summary>
+    /// <remarks>
+    /// This is a pass-through of durable state, not something execution derives. Every path that carries an occurrence
+    /// to execution must populate it — a path that drops it silently demotes a recovery run to an ordinary one, the
+    /// same way a dropped <see cref="RetryCount"/> once restored a fresh retry budget after restart.
+    /// </remarks>
+    public DateTime? RecoveredFromUtc { get; set; }
+
     /// <summary>The run condition that governs whether a queued occurrence is eligible to execute.</summary>
     public RunCondition RunCondition { get; set; }
 

@@ -269,6 +269,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             throw new JobValidatorException($"Cannot find JobFunction with name {entity.Function}");
         }
 
+        _EnsureValidRecoverySettings(entity);
         _EnsureValidRetries(entity.Retries, entity.Function);
 
         DateTime? nextOccurrence;
@@ -389,6 +390,15 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         if (cronJob.TenantId is not null)
         {
             return new JobResult<TCronJob>(new JobValidatorException(JobTenantValidation.CronSystemScopeMessage));
+        }
+
+        try
+        {
+            _EnsureValidRecoverySettings(cronJob);
+        }
+        catch (JobValidatorException exception)
+        {
+            return new JobResult<TCronJob>(exception);
         }
 
         var now = timeProvider.GetUtcNow();
@@ -579,6 +589,39 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 )
             );
         }
+    }
+
+    private static void _EnsureValidRecoverySettings(CronJobEntity cronJob)
+    {
+        var errors = new List<string>();
+
+        if (cronJob.OnMissedRun is not MissedRunPolicy.Coalesce and not MissedRunPolicy.Skip)
+        {
+            errors.Add(
+                $"Missed-run policy value '{(int)cronJob.OnMissedRun}' is not defined for function '{cronJob.Function}'."
+            );
+        }
+
+        if (cronJob.MissedRunGraceSeconds <= 0)
+        {
+            errors.Add(
+                $"Missed-run grace must be greater than zero seconds for function '{cronJob.Function}' but was {cronJob.MissedRunGraceSeconds}."
+            );
+        }
+
+        if (errors.Count != 0)
+        {
+            throw new JobValidatorException(errors);
+        }
+    }
+
+    private static JobValidatorException _AggregateValidationErrors(IEnumerable<Exception> errors)
+    {
+        var messages = errors
+            .SelectMany(error => error is JobValidatorException validation ? validation.Errors : [error.Message])
+            .ToArray();
+
+        return new JobValidatorException(messages);
     }
 
     private static void _EnsureValidRetries(TTimeJob root)
@@ -860,6 +903,17 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             await _RunSchedulePipelineAsync(entity, cancellationToken).ConfigureAwait(false);
             _StampJob(entity, now, assignId: false);
 
+            var entityIsInvalid = false;
+            try
+            {
+                _EnsureValidRecoverySettings(entity);
+            }
+            catch (JobValidatorException ex)
+            {
+                (errors ??= []).AddRange(ex.Errors.Count > 0 ? ex.Errors : [ex.Message]);
+                entityIsInvalid = true;
+            }
+
             try
             {
                 _EnsureValidRetries(entity.Retries, entity.Function);
@@ -867,6 +921,11 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             catch (JobValidatorException ex)
             {
                 (errors ??= []).AddRange(ex.Errors.Count > 0 ? ex.Errors : [ex.Message]);
+                entityIsInvalid = true;
+            }
+
+            if (entityIsInvalid)
+            {
                 continue;
             }
 
@@ -1206,6 +1265,16 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 continue;
             }
 
+            try
+            {
+                _EnsureValidRecoverySettings(cronJob);
+            }
+            catch (JobValidatorException exception)
+            {
+                errors.Add(exception);
+                continue;
+            }
+
             DateTime? nextOccurrence;
             try
             {
@@ -1236,7 +1305,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
         if (errors.Count != 0)
         {
-            return new JobResult<List<TCronJob>>(errors[0]);
+            return new JobResult<List<TCronJob>>(_AggregateValidationErrors(errors));
         }
 
         var definitionIds = candidates.Select(x => x.Definition.Id).Distinct().ToArray();
@@ -1267,7 +1336,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
         if (errors.Count != 0)
         {
-            return new JobResult<List<TCronJob>>(errors[0]);
+            return new JobResult<List<TCronJob>>(_AggregateValidationErrors(errors));
         }
 
         try
