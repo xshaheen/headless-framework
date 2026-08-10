@@ -174,6 +174,7 @@ public sealed class TimeJobDeleteCascadeTests : TestBase
                 dbContextFactory,
                 _options,
                 TimeProvider.System,
+                new SequentialGuidGenerator(SequentialGuidType.Version7),
                 ownerIdentity,
                 schedulerOptions,
                 cache: null,

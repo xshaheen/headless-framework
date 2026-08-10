@@ -34,6 +34,9 @@ public sealed class SqlServerJobsCoordinationFixture
 
     public string UtcNowSqlExpression => "SYSUTCDATETIME()";
 
+    public string UtcNowOffsetSqlExpression(int seconds) =>
+        FormattableString.Invariant($"DATEADD(second, {seconds}, SYSUTCDATETIME())");
+
     // The SQL Server EF provider translates a bare DateTime.UtcNow inside an expression tree to GETUTCDATE(), not
     // SYSUTCDATETIME(). Its datetime precision (~3.33 ms) is immaterial against minute-scale leases, and unlike
     // PostgreSQL's now() it is evaluated per statement, so it carries no transaction-anchoring hazard.

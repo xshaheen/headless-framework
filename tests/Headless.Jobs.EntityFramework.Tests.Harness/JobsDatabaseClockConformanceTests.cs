@@ -205,6 +205,143 @@ public abstract class JobsDatabaseClockConformanceTests<TFixture>(TFixture fixtu
         }
     }
 
+    /// <summary>
+    /// The cron schedule advance is the scheduling counterpart of a lease stamp, and it fails the same way: if the
+    /// due-ness comparison is made by the advancing node instead of the store, a node whose clock runs ahead advances
+    /// a definition the store does not consider due, and one whose clock lags stalls a definition that is. This is the
+    /// decisive guard — a skewed <c>TimeProvider</c> cannot catch the regression, because a client-evaluated
+    /// <c>DateTime.UtcNow</c> ignores <c>TimeProvider</c> entirely and would sail past an injected skew.
+    /// </summary>
+    public virtual async Task schedule_advance_sql_is_owned_by_the_database_clock()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        var capture = new LeaseSqlCapture();
+        using var host = fixture.BuildInterceptedHost("clock-advance", capture, _LeaseDuration);
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+            // Seeded due five minutes ago per the STORE's clock, so the due-ness arm has to be satisfied by the
+            // database rather than by whatever this process believes the time is.
+            var cronId = Guid.NewGuid();
+            await fixture.SeedCronJobAsync(
+                cronId,
+                "clock-advance-cron",
+                "* * * * *",
+                NodeDeathPolicy.Retry,
+                ct,
+                reconciledThroughOffsetSeconds: -600,
+                nextDueOffsetSeconds: -300
+            );
+            var seeded = await fixture.ReadCronSchedulePositionAsync(cronId, ct);
+
+            capture.Clear();
+
+            var advanced = await persistence.AdvanceCronScheduleAsync(
+                new CronScheduleAdvance
+                {
+                    CronJobId = cronId,
+                    ObservedReconciledThroughUtc = seeded.ReconciledThroughUtc,
+                    ExpectedScheduleRevision = 0L,
+                    ReconciledThroughUtc = seeded.NextDueUtc,
+                    NextDueUtc = seeded.NextDueUtc.AddMinutes(1),
+                    RequireProjectionDue = false,
+                },
+                ct
+            );
+
+            // An affected count of 1 is what proves the captured SQL is the live advance path rather than a shape we
+            // merely rehearsed.
+            advanced.Should().NotBeNull();
+
+            // Scope to the schedule-position statements. Background sweeps on the TimeJobs lease run concurrently and
+            // legitimately inside explicit transactions (they release leases, never stamp deadlines), so asserting over
+            // every captured statement would indict unrelated work and flake on whichever sweep happened to land in
+            // the window.
+            var statements = capture
+                .Statements.Where(statement => LeaseSqlAnalysis.TouchesSchedulePositionColumn(statement.Sql))
+                .ToArray();
+            statements.Should().NotBeEmpty("the advance must have put at least one statement on the wire");
+
+            statements
+                .Should()
+                .AllSatisfy(statement =>
+                    statement
+                        .InExplicitTransaction.Should()
+                        .BeFalse(
+                            "the advance and its read-back must run in autocommit: PostgreSQL freezes now() at "
+                                + "transaction-open, so inside a transaction the store instant this returns would be "
+                                + "stale by the transaction's age. Statement: {0}",
+                            statement.Sql
+                        )
+                );
+
+            // The read-back is what carries the store's clock to the caller, so it must ask the server rather than
+            // bind an instant this node computed.
+            statements
+                .Should()
+                .Contain(
+                    statement => statement.Sql.Contains(fixture.EfTranslatedDatabaseClockSql, StringComparison.Ordinal),
+                    "the store instant returned to the caller must be read from the provider's server clock"
+                );
+
+            // Now drive the due-ness arm and assert the comparison itself belongs to the database.
+            capture.Clear();
+            var afterAdvance = await fixture.ReadCronSchedulePositionAsync(cronId, ct);
+
+            await persistence.AdvanceCronScheduleAsync(
+                new CronScheduleAdvance
+                {
+                    CronJobId = cronId,
+                    ObservedReconciledThroughUtc = afterAdvance.ReconciledThroughUtc,
+                    ExpectedScheduleRevision = 0L,
+                    ReconciledThroughUtc = afterAdvance.NextDueUtc,
+                    NextDueUtc = afterAdvance.NextDueUtc.AddMinutes(1),
+                    RequireProjectionDue = true,
+                },
+                ct
+            );
+
+            var duePredicates = capture
+                .Statements.SelectMany(statement =>
+                    LeaseSqlAnalysis.ProjectionDuePredicates(statement).Select(fragment => (statement, fragment))
+                )
+                .ToArray();
+
+            duePredicates
+                .Should()
+                .NotBeEmpty("the due-ness arm was requested, so a projection comparison must be on the wire");
+
+            foreach (var (statement, predicate) in duePredicates)
+            {
+                predicate
+                    .TemporalParameters.Should()
+                    .BeEmpty(
+                        "the due-ness comparison in '{0}' must be made by the database, but it binds the timestamp "
+                            + "parameter(s) {1} — the advancing node's clock cannot decide what is due. Statement: {2}",
+                        predicate.Fragment,
+                        string.Join(", ", predicate.TemporalParameters.Select(name => _Describe(statement, name))),
+                        statement.Sql
+                    );
+
+                predicate
+                    .Fragment.Should()
+                    .Contain(
+                        fixture.EfTranslatedDatabaseClockSql,
+                        "due-ness must be evaluated against the provider's server clock"
+                    );
+            }
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
     private void _AssertDatabaseOwnsTheLeaseClock(
         LeaseSqlCapture capture,
         bool expectDeadlineWrites,
@@ -274,11 +411,6 @@ public abstract class JobsDatabaseClockConformanceTests<TFixture>(TFixture fixtu
             }
         }
 
-        static string _Describe(CapturedSqlStatement statement, string name) =>
-            statement.Parameters.TryGetValue(name, out var parameter)
-                ? $"{name} ({parameter.DbType} = {parameter.Value})"
-                : $"{name} (not bound — capture and SQL disagree)";
-
         if (expectDeadlineWrites)
         {
             deadlineWrites.Should().BePositive("the driven path is supposed to stamp a lease deadline");
@@ -289,6 +421,11 @@ public abstract class JobsDatabaseClockConformanceTests<TFixture>(TFixture fixtu
             predicates.Should().BePositive("the driven path is supposed to compare a lease deadline");
         }
     }
+
+    private static string _Describe(CapturedSqlStatement statement, string name) =>
+        statement.Parameters.TryGetValue(name, out var parameter)
+            ? $"{name} ({parameter.DbType} = {parameter.Value})"
+            : $"{name} (not bound — capture and SQL disagree)";
 }
 
 /// <summary>
@@ -386,7 +523,10 @@ public sealed class LeaseSqlCapture : DbCommandInterceptor
 
     private void _Capture(DbCommand command)
     {
-        if (!LeaseSqlAnalysis.TouchesLeaseColumn(command.CommandText))
+        if (
+            !LeaseSqlAnalysis.TouchesLeaseColumn(command.CommandText)
+            && !LeaseSqlAnalysis.TouchesSchedulePositionColumn(command.CommandText)
+        )
         {
             return;
         }
@@ -464,10 +604,16 @@ public static partial class LeaseSqlAnalysis
         return LeaseColumn.IsMatch(sql);
     }
 
+    /// <summary>Whether the statement mentions the dispatch projection — the cron scheduling counterpart of the lease.</summary>
+    public static bool TouchesSchedulePositionColumn(string sql)
+    {
+        return ProjectionColumn.IsMatch(sql);
+    }
+
     /// <summary>Assignments of a lease deadline: <c>LockedUntil = &lt;expression&gt;</c>, excluding the release to NULL.</summary>
     public static IEnumerable<LeaseSqlFragment> LeaseDeadlineWrites(CapturedSqlStatement statement)
     {
-        return _Clauses(statement)
+        return _Clauses(statement, LeaseColumn)
             .Where(clause =>
                 string.Equals(clause.Operator, "=", StringComparison.Ordinal)
                 && !string.Equals(clause.Fragment.Trim(), "NULL", StringComparison.OrdinalIgnoreCase)
@@ -479,7 +625,21 @@ public static partial class LeaseSqlAnalysis
     /// <summary>Ownership comparisons: <c>LockedUntil &lt;= &lt;clock&gt;</c> and friends. <c>IS NULL</c> tests carry no clock and are skipped.</summary>
     public static IEnumerable<LeaseSqlFragment> LeasePredicates(CapturedSqlStatement statement)
     {
-        return _Clauses(statement)
+        return _Clauses(statement, LeaseColumn)
+            .Where(clause => !string.Equals(clause.Operator, "=", StringComparison.Ordinal))
+            .Select(clause => clause.Fragment)
+            .Select(fragment => _Describe(fragment, statement));
+    }
+
+    /// <summary>
+    /// Due-ness comparisons on the dispatch projection: <c>NextDueUtc &lt;= &lt;clock&gt;</c>. Deliberately excludes the
+    /// <c>=</c> arm, because the advance's SET of the projection legitimately binds an app-derived timestamp parameter
+    /// — deriving a fire time from a cron expression is tz-database authority, not store authority. It is the
+    /// COMPARISON that must belong to the store.
+    /// </summary>
+    public static IEnumerable<LeaseSqlFragment> ProjectionDuePredicates(CapturedSqlStatement statement)
+    {
+        return _Clauses(statement, ProjectionColumn)
             .Where(clause => !string.Equals(clause.Operator, "=", StringComparison.Ordinal))
             .Select(clause => clause.Fragment)
             .Select(fragment => _Describe(fragment, statement));
@@ -499,11 +659,14 @@ public static partial class LeaseSqlAnalysis
         return new LeaseSqlFragment(fragment, temporal);
     }
 
-    private static IEnumerable<(string Operator, string Fragment)> _Clauses(CapturedSqlStatement statement)
+    private static IEnumerable<(string Operator, string Fragment)> _Clauses(
+        CapturedSqlStatement statement,
+        Regex column
+    )
     {
         var sql = statement.Sql;
 
-        foreach (Match match in LeaseColumn.Matches(sql))
+        foreach (Match match in column.Matches(sql))
         {
             var index = _SkipWhitespace(sql, match.Index + match.Length);
             var @operator = _ReadOperator(sql, index);
@@ -650,4 +813,7 @@ public static partial class LeaseSqlAnalysis
     // matched too, but carries no operator, so it falls out below.
     [GeneratedRegex("""["\[]LockedUntil["\]]""", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 1000)]
     private static partial Regex LeaseColumn { get; }
+
+    [GeneratedRegex("""["\[]NextDueUtc["\]]""", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex ProjectionColumn { get; }
 }

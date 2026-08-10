@@ -37,6 +37,9 @@ public sealed class PostgreSqlJobsCoordinationFixture
 
     public string UtcNowSqlExpression => "now()";
 
+    public string UtcNowOffsetSqlExpression(int seconds) =>
+        FormattableString.Invariant($"(now() + interval '{seconds} seconds')");
+
     // Npgsql translates a bare DateTime.UtcNow inside an expression tree to the server's now().
     public string EfTranslatedDatabaseClockSql => "now()";
 

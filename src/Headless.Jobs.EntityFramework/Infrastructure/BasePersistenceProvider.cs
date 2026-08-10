@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Abstractions;
 using Headless.Caching;
+using Headless.Checks;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
@@ -15,6 +17,7 @@ namespace Headless.Jobs.Infrastructure;
 internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     IDbContextFactory<TDbContext> dbContextFactory,
     TimeProvider timeProvider,
+    IGuidGenerator guidGenerator,
     IJobsOwnerIdentity ownerIdentity,
     SchedulerOptionsBuilder optionsBuilder,
     ICache? cache,
@@ -41,6 +44,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     protected IJobsOwnerIdentity OwnerIdentity { get; } = ownerIdentity;
 
     protected TimeProvider TimeProvider { get; } = timeProvider;
+
+    protected IGuidGenerator GuidGenerator { get; } = guidGenerator;
 
     // Feature-namespaced (jobs:) so the cron entry never collides with another feature's key when the host shares
     // one default ICache across features — matches the permissions:/features:/settings: convention.
@@ -1193,6 +1198,15 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         cron.Expression = expression;
                         cron.ScheduleRevision++;
                         cron.UpdatedAt = now;
+
+                        // R10: the stored projection was derived under the OLD expression; left standing it keeps
+                        // selecting (or hiding) the definition by the stale schedule — a yearly→minutes edit would
+                        // not fire until next year. Reset the position to the uninitialized sentinel so the next
+                        // wake re-derives it by the R9 creation rule under the new expression: anchored at the
+                        // store instant, no interval replayed, the edit effective on the next wake — matching the
+                        // runtime edit path's observable contract.
+                        cron.ReconciledThroughUtc = default;
+                        cron.NextDueUtc = default;
                         changedDefinitionIds.Add(cron.Id);
                     }
                 }
@@ -1362,6 +1376,303 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .Select(MappingExtensions.ForCronJobExpressions<CronJobEntity>())
             .ToArrayAsync(cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    public async Task<CronDispatchCandidates?> GetEarliestCronDispatchCandidatesAsync(
+        int limit,
+        CancellationToken cancellationToken = default
+    )
+    {
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        // One indexed range scan over (IsPaused, NextDueUtc). The store instant rides along in the same statement, so
+        // the caller's due-ness comparison is made against the server's clock rather than this node's, with no extra
+        // round trip. Uncached by construction — the schedule position moves on every advance.
+        var rows = await dbContext
+            .Set<TCronJob>()
+            .AsNoTracking()
+            .Where(x => !x.IsPaused)
+            .OrderBy(x => x.NextDueUtc)
+            .ThenBy(x => x.Id)
+            .Take(limit)
+            .Select(x => new
+            {
+                x.Id,
+                x.Function,
+                x.Expression,
+                x.TimeZoneId,
+                x.ScheduleRevision,
+                x.ReconciledThroughUtc,
+                x.NextDueUtc,
+                x.Retries,
+                x.RetryIntervals,
+                x.OnNodeDeath,
+                StoreUtcNow = DateTime.UtcNow,
+            })
+            .ToArrayAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (rows.Length == 0)
+        {
+            return null;
+        }
+
+        return new CronDispatchCandidates
+        {
+            StoreUtcNow = rows[0].StoreUtcNow,
+            Candidates =
+            [
+                .. rows.Select(x => new CronDispatchCandidate
+                {
+                    CronJobId = x.Id,
+                    FunctionName = x.Function,
+                    Expression = x.Expression,
+                    TimeZoneId = x.TimeZoneId,
+                    ScheduleRevision = x.ScheduleRevision,
+                    ReconciledThroughUtc = x.ReconciledThroughUtc,
+                    NextDueUtc = x.NextDueUtc,
+                    Retries = x.Retries,
+                    RetryIntervals = x.RetryIntervals,
+                    OnNodeDeath = x.OnNodeDeath,
+                }),
+            ],
+        };
+    }
+
+    public async Task<CronScheduleAdvanceResult?> AdvanceCronScheduleAsync(
+        CronScheduleAdvance advance,
+        CancellationToken cancellationToken = default
+    )
+    {
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var definitions = dbContext.Set<TCronJob>();
+
+        var fenced = definitions.WhereScheduleAdvanceFenceHolds(
+            advance.CronJobId,
+            advance.ObservedReconciledThroughUtc,
+            advance.ExpectedScheduleRevision
+        );
+
+        if (advance.RequireProjectionDue)
+        {
+            fenced = fenced.WhereProjectionIsDueUsingDatabaseClock();
+        }
+
+        // AUTOCOMMIT BY CONSTRUCTION — do not wrap this in an explicit transaction. The due-ness arm of the fence and
+        // the store instant returned below are both server-clock reads, and PostgreSQL's now() is TRANSACTION-START
+        // time: inside a transaction the comparison and the returned instant would both be stale by the transaction's
+        // age, so a definition would look due (or not) as of when the transaction opened rather than now. See the
+        // class-level lease-clock note above and docs/solutions/design-patterns/temporal-authority-standard.md.
+        //
+        // A single UPDATE needs no transaction to be atomic, and the watermark equality in the fence is a value CAS —
+        // so a losing racer matches zero rows, returns null, and leaves nothing to roll back. Atomicity with the
+        // occurrence work that accompanies an advance is provided by self-healing rather than by this statement: a
+        // crash in between leaves a watermark with no occurrence, and the next wake re-derives the projection from the
+        // persisted watermark and materializes it, idempotently against the filtered uniqueness index.
+        //
+        // The local copies exist so the ExecuteUpdate expression trees capture plain DateTime values; capturing
+        // `advance` would put a property access on the record inside the tree for EF to translate.
+        var reconciledThroughUtc = advance.ReconciledThroughUtc;
+        var nextDueUtc = advance.NextDueUtc;
+
+        var affected = await fenced
+            .ExecuteUpdateAsync(
+                setter =>
+                    setter
+                        .SetProperty(x => x.ReconciledThroughUtc, reconciledThroughUtc)
+                        .SetProperty(x => x.NextDueUtc, nextDueUtc),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (affected == 0)
+        {
+            return null;
+        }
+
+        // Read the committed values back instead of echoing the request (KTD4), so the caller sees exactly what the
+        // store decided: both providers truncate to their column precision. DateTime.UtcNow in this projection is
+        // translated to server time, which is how the store's clock reaches the caller without a scalar clock query
+        // and without hijacking UpdatedAt — that column is observational time and stays on the injected TimeProvider.
+        var committed = await definitions
+            .AsNoTracking()
+            .Where(x => x.Id == advance.CronJobId)
+            .Select(x => new
+            {
+                x.ReconciledThroughUtc,
+                x.NextDueUtc,
+                StoreUtcNow = DateTime.UtcNow,
+            })
+            .SingleOrDefaultAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        // The definition can be deleted between the advance and this read-back. That is the same "this advance no
+        // longer applies" outcome a lost fence produces, so report it the same way rather than throwing out of the
+        // scheduler's poll.
+        if (committed is null)
+        {
+            return null;
+        }
+
+        // Deliberately NOT invalidating the cron-expressions cache: its projection
+        // (MappingExtensions.ForCronJobExpressions) carries no schedule-position field, so it cannot serve a stale
+        // watermark, and dropping the entry on every advance would evict it on every scheduler tick — the opposite of
+        // why it exists. Any future field added to that projection must revisit this.
+        return new CronScheduleAdvanceResult
+        {
+            ReconciledThroughUtc = committed.ReconciledThroughUtc,
+            NextDueUtc = committed.NextDueUtc,
+            StoreUtcNow = committed.StoreUtcNow,
+        };
+    }
+
+    public async Task<CronScheduleMaterializationResult> MaterializeCronScheduleOccurrenceAsync(
+        CronScheduleMaterialization materialization,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var advance = materialization.Advance;
+
+        Argument.IsTrue(
+            materialization.ExecutionTimeUtc == advance.ReconciledThroughUtc,
+            "The occurrence instant must equal the schedule position's reconciled-through instant.",
+            nameof(materialization)
+        );
+
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var definitions = dbContext.Set<TCronJob>();
+
+        var executionTimeUtc = materialization.ExecutionTimeUtc;
+        // Authorize due-ness in autocommit before opening the atomic write transaction. PostgreSQL translates
+        // DateTime.UtcNow to now(), whose value is frozen at transaction start; evaluating it here gives the current
+        // statement clock and avoids a row-lock wait making a newly due projection look future. Time is monotonic, and
+        // the transaction below repeats every position/revision/projection fence, so an authorized projection cannot
+        // become "not due" while a competitor can only turn the later write into LostFence.
+        var eligibility = await definitions
+            .AsNoTracking()
+            .WhereScheduleAdvanceFenceHolds(
+                advance.CronJobId,
+                advance.ObservedReconciledThroughUtc,
+                advance.ExpectedScheduleRevision
+            )
+            .Where(x => x.NextDueUtc == executionTimeUtc)
+            .Select(x => new { IsDue = x.NextDueUtc <= DateTime.UtcNow, StoreUtcNow = DateTime.UtcNow })
+            .SingleOrDefaultAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (eligibility is null)
+        {
+            return new CronScheduleMaterializationResult { Outcome = CronScheduleMaterializationOutcome.LostFence };
+        }
+
+        if (!eligibility.IsDue)
+        {
+            return new CronScheduleMaterializationResult { Outcome = CronScheduleMaterializationOutcome.NotDue };
+        }
+
+        await using var transaction = await dbContext
+            .Database.BeginTransactionAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        // The fenced UPDATE is deliberately first: its row lock is held through commit and is the per-definition
+        // mutex for every conforming materializer. Read committed therefore gives one winner without PostgreSQL's
+        // expected serialization aborts, while occurrence arbitration and the position remain one transaction. The
+        // due decision above is safe to omit here because it was already true and the repeated exact-position fence
+        // rejects every intervening definition transition.
+
+        var fenced = definitions.WhereScheduleAdvanceFenceHolds(
+            advance.CronJobId,
+            advance.ObservedReconciledThroughUtc,
+            advance.ExpectedScheduleRevision
+        );
+        fenced = fenced.Where(x => x.NextDueUtc == executionTimeUtc);
+
+        var reconciledThroughUtc = advance.ReconciledThroughUtc;
+        var nextDueUtc = advance.NextDueUtc;
+        var affected = await fenced
+            .ExecuteUpdateAsync(
+                setter =>
+                    setter
+                        .SetProperty(x => x.ReconciledThroughUtc, reconciledThroughUtc)
+                        .SetProperty(x => x.NextDueUtc, nextDueUtc),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (affected == 0)
+        {
+            return new CronScheduleMaterializationResult { Outcome = CronScheduleMaterializationOutcome.LostFence };
+        }
+
+        var committedDefinition = await definitions
+            .AsNoTracking()
+            .Where(x => x.Id == advance.CronJobId)
+            .Select(x => new
+            {
+                x.ReconciledThroughUtc,
+                x.NextDueUtc,
+                x.OnNodeDeath,
+            })
+            .SingleAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var occurrences = dbContext.Set<CronJobOccurrenceEntity<TCronJob>>();
+        var occurrence = await occurrences
+            .AsNoTracking()
+            .Where(x => x.CronJobId == advance.CronJobId && x.ExecutionTime == materialization.ExecutionTimeUtc)
+            .OrderBy(x => x.CreatedAt)
+            .ThenBy(x => x.Id)
+            .FirstOrDefaultAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var outcome = CronScheduleMaterializationOutcome.OccurrenceExists;
+
+        if (occurrence is null)
+        {
+            var now = TimeProvider.GetUtcNow();
+            occurrence = new CronJobOccurrenceEntity<TCronJob>
+            {
+                Id = GuidGenerator.Create(),
+                CronJobId = advance.CronJobId,
+                ExecutionTime = materialization.ExecutionTimeUtc,
+                Status = JobStatus.Idle,
+                OwnerId = null,
+                LockedUntil = null,
+                OnNodeDeath = committedDefinition.OnNodeDeath,
+                CreatedAt = now,
+                UpdatedAt = now,
+            };
+
+            await occurrences.AddAsync(occurrence, cancellationToken).ConfigureAwait(false);
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            outcome = CronScheduleMaterializationOutcome.OccurrenceCreated;
+        }
+        else if (occurrence.Status is not (JobStatus.Idle or JobStatus.Queued or JobStatus.InProgress))
+        {
+            outcome = CronScheduleMaterializationOutcome.OccurrenceAlreadyTerminal;
+        }
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+        return new CronScheduleMaterializationResult
+        {
+            Outcome = outcome,
+            SchedulePosition = new CronScheduleAdvanceResult
+            {
+                ReconciledThroughUtc = committedDefinition.ReconciledThroughUtc,
+                NextDueUtc = committedDefinition.NextDueUtc,
+                StoreUtcNow = eligibility.StoreUtcNow,
+            },
+            OccurrenceId = occurrence.Id,
+            OccurrenceCreatedAt = occurrence.CreatedAt,
+            OnNodeDeath = committedDefinition.OnNodeDeath,
+        };
     }
     #endregion
 
@@ -1682,7 +1993,11 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .Set<CronJobOccurrenceEntity<TCronJob>>()
             .AsNoTracking()
             .Include(x => x.CronJob)
-            .Where(x => ((IEnumerable<Guid>)ids).Contains(x.CronJobId))
+            // An empty id set searches every definition, per the interface contract and the in-memory provider. The
+            // scheduler relies on that: it no longer enumerates all definitions to build this filter, so passing the
+            // full id set would reintroduce exactly the load-everything read the projection path removed. The
+            // remaining predicates (window, pause, acquirability) plus OrderBy/FirstOrDefault already bound the scan.
+            .Where(x => ids.Length == 0 || ((IEnumerable<Guid>)ids).Contains(x.CronJobId))
             .Where(x => !x.CronJob.IsPaused)
             .Where(x => x.ExecutionTime >= mainSchedulerThreshold) // Only items within the 1-second main scheduler window
             .WhereCanAcquireUsingDatabaseClock(owner)
