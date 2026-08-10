@@ -73,7 +73,11 @@ public class CronJobEntity : BaseJobEntity
     /// creation from the scheduler-wide setting and persisted here, so every node evaluates the same threshold and
     /// no node's local configuration can decide whether an instant misfired.
     /// </summary>
-    public virtual int MissedRunGraceSeconds { get; set; }
+    /// <remarks>
+    /// New values must be greater than zero. A persisted zero is the migration sentinel and resolves to the framework
+    /// default; negative durable values are invalid and fail evaluation instead of being silently normalized.
+    /// </remarks>
+    public virtual int MissedRunGraceSeconds { get; set; } = JobsRecoveryDefaults.MissedRunGraceSeconds;
 
     /// <summary>
     /// Policy applied when this definition enters recovery. Seeded from the job function attribute at creation and

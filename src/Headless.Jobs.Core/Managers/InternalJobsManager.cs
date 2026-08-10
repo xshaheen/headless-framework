@@ -263,6 +263,10 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
     // anything beyond this lands on the following wake. Sized well above any realistic same-instant tie count.
     private const int _MaxCronDispatchCandidates = 64;
 
+    // Concurrent advances per wave. Sized so one wave covers a single advance's round-trip latency without letting a
+    // cluster open (nodes x tie-group) connections at once; the pool, not the CPU, is the scarce resource here.
+    private const int _MaxAdvanceConcurrency = 8;
+
     private async Task<(DateTime Key, JobManagerDispatchContext[] Items)?> _GetEarliestCronJobGroupAsync(
         CancellationToken cancellationToken = default
     )
@@ -319,37 +323,70 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
             // The advance re-asserts it atomically, so this comparison selects work rather than authorizing it.
             if (!storedWinsOutright && earliestProjection <= candidates.StoreUtcNow)
             {
-                foreach (var candidate in candidates.Candidates)
+                // Ordered by projection, so the tie group is a prefix.
+                var tieGroup = candidates.Candidates.TakeWhile(x => x.NextDueUtc == earliestProjection).ToArray();
+
+                // Pair each candidate with the already-materialized occurrence it reuses BEFORE any I/O starts. This
+                // is a pure comparison, and resolving it up front is what lets the advances run concurrently without
+                // racing on `storedConsumed`.
+                //
+                // R6: a row already sitting at this instant is REUSED, not duplicated. Carrying it as
+                // NextCronOccurrence makes the claim path take the existing row while the watermark still advances
+                // past the instant — skipping the advance instead would leave the definition due forever.
+                var reuse = new NextCronOccurrence?[tieGroup.Length];
+                for (var index = 0; index < tieGroup.Length; index++)
                 {
-                    if (candidate.NextDueUtc != earliestProjection)
+                    if (
+                        earliestStored is not null
+                        && earliestStored.CronJobId == tieGroup[index].CronJobId
+                        && earliestStored.ExecutionTime == tieGroup[index].NextDueUtc
+                    )
                     {
-                        break; // ordered by projection, so the tie group ends here
-                    }
-
-                    // R9: a definition with no position yet — seeded before this field existed, or created by a path
-                    // that did not set it — is initialized from the CREATION rule (watermark at the store's instant)
-                    // and never from its occurrence history. That is what makes an upgrade unable to replay a
-                    // backlog: an unset watermark sorts first and would otherwise look infinitely behind.
-                    if (candidate.NextDueUtc == default)
-                    {
-                        await _InitializeSchedulePositionAsync(candidate, candidates.StoreUtcNow, cancellationToken)
-                            .ConfigureAwait(false);
-
-                        continue;
-                    }
-
-                    var context = await _TryAdvanceForDispatchAsync(candidate, cancellationToken).ConfigureAwait(false);
-
-                    if (context is not null)
-                    {
-                        (dispatched ??= []).Add(context);
-
-                        // The provider arbitrates the occurrence key inside the same transition as the position. If
-                        // that durable row is also the peeked occurrence, it is already represented by this context
-                        // and must not be appended a second time below.
-                        if (earliestStored is not null && context.NextCronOccurrence?.Id == earliestStored.Id)
+                        reuse[index] = new NextCronOccurrence(earliestStored.Id, earliestStored.CreatedAt)
                         {
-                            storedConsumed = true;
+                            RecoveredFromUtc = earliestStored.RecoveredFromUtc,
+                        };
+                        storedConsumed = true;
+                    }
+                }
+                // Each candidate targets a disjoint row fenced by its own watermark/revision CAS, so concurrent
+                // materializations across definitions never contend and the exactly-one-winner guarantee is
+                // unchanged. The bound keeps an N-node cluster from opening N x group-size connections at once.
+                for (var offset = 0; offset < tieGroup.Length; offset += _MaxAdvanceConcurrency)
+                {
+                    var waveLength = Math.Min(_MaxAdvanceConcurrency, tieGroup.Length - offset);
+                    var wave = new Task<JobManagerDispatchContext?>[waveLength];
+
+                    for (var index = 0; index < waveLength; index++)
+                    {
+                        var candidate = tieGroup[offset + index];
+
+                        // R9: a definition with no position yet — seeded before this field existed, or created by a
+                        // path that did not set it — is initialized from the CREATION rule (watermark at the store's
+                        // instant) and never from its occurrence history. That is what makes an upgrade unable to
+                        // replay a backlog: an unset watermark sorts first and would otherwise look infinitely behind.
+                        wave[index] =
+                            candidate.NextDueUtc == default
+                                ? _InitializeAndSkipDispatchAsync(candidate, candidates.StoreUtcNow, cancellationToken)
+                                : _TryAdvanceForDispatchAsync(candidate, candidates.StoreUtcNow, cancellationToken);
+                    }
+
+                    var waveResults = await Task.WhenAll(wave).ConfigureAwait(false);
+
+                    // Appended in candidate order: the claim path preserves the order it is given, and a wave-ordered
+                    // result set would make dispatch order depend on completion timing.
+                    foreach (var context in waveResults)
+                    {
+                        if (context is not null)
+                        {
+                            (dispatched ??= []).Add(context);
+
+                            // Atomic materialization recognizes an existing occurrence inside the same transition as
+                            // the schedule position. If it returned the peeked row, do not append that row again below.
+                            if (earliestStored is not null && context.NextCronOccurrence?.Id == earliestStored.Id)
+                            {
+                                storedConsumed = true;
+                            }
                         }
                     }
                 }
@@ -374,7 +411,10 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
                 Retries = earliestStored.CronJob.Retries,
                 RetryIntervals = earliestStored.CronJob.RetryIntervals,
                 OnNodeDeath = earliestStored.CronJob.OnNodeDeath,
-                NextCronOccurrence = new NextCronOccurrence(earliestStored.Id, earliestStored.CreatedAt),
+                NextCronOccurrence = new NextCronOccurrence(earliestStored.Id, earliestStored.CreatedAt)
+                {
+                    RecoveredFromUtc = earliestStored.RecoveredFromUtc,
+                },
             };
 
             if (dispatchInstant is not null)
@@ -414,14 +454,25 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
     }
 
     /// <summary>
-    /// Gives a definition its first schedule position, anchored at the store's instant rather than at anything in its
-    /// history, so nothing before this moment is ever treated as missed.
+    /// Initializes a positionless definition from the store's instant and dispatches nothing this wake, so it can
+    /// share the advance wave's result shape. The definition becomes selectable at its real projection on the next
+    /// wake without treating history as missed work.
     /// </summary>
     /// <remarks>
-    /// Uses the same compare-and-advance as ordinary dispatch — the unset watermark IS the observed value — so two
-    /// nodes initializing the same definition converge on one position instead of racing. Nothing is dispatched on
-    /// this wake; the definition becomes selectable at its real projection on the next one.
+    /// Uses the same compare-and-advance as ordinary dispatch — the unset watermark is the observed value — so two
+    /// nodes initializing the same definition converge on one position instead of racing.
     /// </remarks>
+    private async Task<JobManagerDispatchContext?> _InitializeAndSkipDispatchAsync(
+        CronDispatchCandidate candidate,
+        DateTime storeUtcNow,
+        CancellationToken cancellationToken
+    )
+    {
+        await _InitializeSchedulePositionAsync(candidate, storeUtcNow, cancellationToken).ConfigureAwait(false);
+
+        return null;
+    }
+
     private async Task _InitializeSchedulePositionAsync(
         CronDispatchCandidate candidate,
         DateTime storeUtcNow,
@@ -450,14 +501,134 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
     }
 
     /// <summary>
+    /// Resolves a backlog under the definition's recovery policy and, when a run was produced, returns the dispatch
+    /// context that will claim it.
+    /// </summary>
+    /// <remarks>
+    /// The watermark lands on the recovery instant under both policies (R20), so the backlog they resolved is never
+    /// reconsidered. A schedule whose interval is shorter than the wake latency will legitimately re-enter recovery on
+    /// the following wake — that is the correct outcome, not a fault.
+    /// </remarks>
+    private async Task<JobManagerDispatchContext?> _ApplyRecoveryForDispatchAsync(
+        CronDispatchCandidate candidate,
+        CronPendingEvaluation pending,
+        DateTime earliestMissedUtc,
+        DateTime storeUtcNow,
+        CancellationToken cancellationToken
+    )
+    {
+        // The projection restarts from the recovery instant, not from the backlog, so nothing already resolved can be
+        // selected again.
+        var nextAfterRecovery = cronScheduleCache.GetNextOccurrenceOrDefault(
+            candidate.Expression,
+            storeUtcNow,
+            candidate.TimeZoneId
+        );
+
+        var recovery = await persistenceProvider
+            .ApplyCronRecoveryAsync(
+                new CronRecoveryRequest
+                {
+                    CronJobId = candidate.CronJobId,
+                    ObservedReconciledThroughUtc = candidate.ReconciledThroughUtc,
+                    ExpectedScheduleRevision = candidate.ScheduleRevision,
+                    RecoveredThroughUtc = storeUtcNow,
+                    NextDueUtc = nextAfterRecovery ?? DateTime.MaxValue,
+                    Policy = candidate.OnMissedRun,
+                    EarliestMissedUtc = earliestMissedUtc,
+                    MissedInstantsUtc = pending.PendingInstantsUtc,
+                    CoalescedOccurrenceId = guidGenerator.Create(),
+                    OnNodeDeath = candidate.OnNodeDeath,
+                    OperationTimeUtc = new DateTimeOffset(storeUtcNow, TimeSpan.Zero),
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (recovery is null)
+        {
+            // Another node recovered this backlog first. Ordinary on a cluster; nothing was written by this node.
+            return null;
+        }
+
+        logger.LogCronRecoveryApplied(
+            candidate.CronJobId,
+            candidate.FunctionName,
+            candidate.OnMissedRun.ToString(),
+            pending.PendingCount,
+            pending.CountSaturated,
+            earliestMissedUtc,
+            pending.LatestPendingUtc ?? earliestMissedUtc,
+            storeUtcNow,
+            recovery.SkippedOccurrenceCount
+        );
+
+        if (recovery.CoalescedRun is null)
+        {
+            // Skip materialized nothing, or coalesce found every missed instant already accounted for by executing or
+            // terminal rows. Either way there is nothing for this wake to claim.
+            return null;
+        }
+
+        if (recovery.CoalescedRun.ExecutionTime != earliestMissedUtc)
+        {
+            // Coalesce stepped past the occupied earliest instant, so the run's instant no longer matches this
+            // wake's dispatch key and the keyed claim would find zero rows. The run is durably Idle at a past
+            // instant — exactly the shape the timed-out sweep claims (~1s), the same path that already recovers a
+            // coalesced run whose caller crashed after commit. Deliberately deferred rather than re-keyed.
+            return null;
+        }
+
+        return new JobManagerDispatchContext(candidate.CronJobId)
+        {
+            FunctionName = candidate.FunctionName,
+            Expression = candidate.Expression,
+            TimeZoneId = candidate.TimeZoneId,
+            IsPaused = false,
+            ScheduleRevision = candidate.ScheduleRevision,
+            Retries = candidate.Retries,
+            RetryIntervals = candidate.RetryIntervals,
+            OnNodeDeath = candidate.OnNodeDeath,
+            NextCronOccurrence = new NextCronOccurrence(recovery.CoalescedRun.Id, recovery.CoalescedRun.CreatedAt)
+            {
+                RecoveredFromUtc = recovery.CoalescedRun.RecoveredFromUtc,
+            },
+        };
+    }
+
+    /// <summary>
     /// Atomically materializes one due definition's occurrence with its new schedule position and, when the result is
     /// non-terminal, returns the context that a later provider operation may claim.
     /// </summary>
     private async Task<JobManagerDispatchContext?> _TryAdvanceForDispatchAsync(
         CronDispatchCandidate candidate,
+        DateTime storeUtcNow,
         CancellationToken cancellationToken
     )
     {
+        // Misfire check before ordinary dispatch. A definition whose watermark fell behind must not be dispatched one
+        // tick at a time — that would replay the whole backlog occurrence by occurrence, which is the behavior the
+        // recovery policies exist to replace.
+        var pending = cronScheduleCache.EvaluatePending(
+            candidate.Expression,
+            candidate.TimeZoneId,
+            candidate.ReconciledThroughUtc,
+            storeUtcNow,
+            candidate.MissedRunGraceSeconds
+        );
+
+        if (pending.IsRecovery && pending.EarliestPendingUtc is { } earliestMissed)
+        {
+            return await _ApplyRecoveryForDispatchAsync(
+                    candidate,
+                    pending,
+                    earliestMissed,
+                    storeUtcNow,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+
         // The only expression evaluation on this path, and only for a definition that is actually due. Deriving a fire
         // time from an expression is tz-database authority and stays here (KTD2); the store owns due-ness and the
         // fence, never the derivation.
@@ -923,7 +1094,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
     }
 
     public async Task MigrateDefinedCronJobs(
-        (string, string)[] cronExpressions,
+        CronSeedDefinition[] cronExpressions,
         CancellationToken cancellationToken = default
     )
     {
@@ -1092,6 +1263,30 @@ internal static partial class InternalJobsManagerLog
             + "fallback sweep's set-based reconcile instead. Scheduling continues."
     )]
     public static partial void LogTimedChildSafetyNetFailed(this ILogger logger, Exception exception);
+
+    // MissedCount is a lower bound whenever CountSaturated is true — the walk stops at the evaluation ceiling rather
+    // than enumerating an unbounded backlog. The two are logged together so an operator can tell "exactly 3 missed"
+    // from "at least 1000 missed"; reporting a saturated count as exact is the misreading this pairing prevents.
+    [LoggerMessage(
+        EventId = 3220,
+        Level = LogLevel.Warning,
+        Message = "Cron definition {CronJobId} ({Function}) fell behind and was recovered with policy {Policy}: "
+            + "{MissedCount} missed occurrence(s) (lower bound: {CountSaturated}) spanning {EarliestMissedUtc:O} to "
+            + "{LatestMissedUtc:O}; watermark advanced to {RecoveredThroughUtc:O} and {SkippedCount} pending "
+            + "occurrence(s) were skipped."
+    )]
+    public static partial void LogCronRecoveryApplied(
+        this ILogger logger,
+        Guid cronJobId,
+        string function,
+        string policy,
+        int missedCount,
+        bool countSaturated,
+        DateTime earliestMissedUtc,
+        DateTime latestMissedUtc,
+        DateTime recoveredThroughUtc,
+        int skippedCount
+    );
 
     [LoggerMessage(
         EventId = 3215,

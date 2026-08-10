@@ -2,9 +2,11 @@
 
 using Headless.DistributedLocks;
 using Headless.Jobs.Enums;
+using Headless.Jobs.Exceptions;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Internal;
+using Headless.Jobs.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -132,9 +134,21 @@ internal sealed class JobsInitializationHostedService(
     {
         var internalJobsManager = serviceProvider.GetRequiredService<IInternalJobManager>();
 
+        // Resolve the recovery knobs HERE rather than in the provider: attribute value, else the scheduler-wide
+        // setting, else the framework default. The threshold has to be identical on every node — if each provider
+        // resolved it from local configuration, two nodes could disagree about whether the same instant misfired.
         var functionsToSeed = functionRegistry
             .Functions.Where(x => !string.IsNullOrEmpty(x.Value.CronExpression))
-            .Select(x => (x.Key, x.Value.CronExpression))
+            .Select(x => new CronSeedDefinition(
+                x.Key,
+                x.Value.CronExpression,
+                _ResolveMissedRunPolicy(x.Key, x.Value.OnMissedRun, schedulerOptions.DefaultMissedRunPolicy),
+                _ResolveGraceSeconds(
+                    x.Key,
+                    x.Value.MissedRunGraceSeconds,
+                    schedulerOptions.DefaultMissedRunGraceSeconds
+                )
+            ))
             .ToArray();
 
         // No lock configured (default): run the seed directly. Seeded rows carry a DETERMINISTIC primary key derived
@@ -184,6 +198,36 @@ internal sealed class JobsInitializationHostedService(
         {
             await internalJobsManager.MigrateDefinedCronJobs(functionsToSeed, cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    private static MissedRunPolicy _ResolveMissedRunPolicy(
+        string function,
+        MissedRunPolicy? fromAttribute,
+        MissedRunPolicy schedulerWide
+    )
+    {
+        var resolved = fromAttribute ?? schedulerWide;
+        if (resolved is MissedRunPolicy.Coalesce or MissedRunPolicy.Skip)
+        {
+            return resolved;
+        }
+
+        throw new JobValidatorException(
+            $"Missed-run policy value '{(int)resolved}' is not defined for function '{function}'."
+        );
+    }
+
+    private static int _ResolveGraceSeconds(string function, int? fromAttribute, int schedulerWide)
+    {
+        var resolved = fromAttribute ?? schedulerWide;
+        if (resolved > 0)
+        {
+            return resolved;
+        }
+
+        throw new JobValidatorException(
+            $"Missed-run grace must be greater than zero seconds for function '{function}' but was {resolved}."
+        );
     }
 }
 

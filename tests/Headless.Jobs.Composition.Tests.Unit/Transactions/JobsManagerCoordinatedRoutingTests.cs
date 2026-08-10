@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
+using System.Linq.Expressions;
 using Headless.Abstractions;
 using Headless.CommitCoordination;
 using Headless.Jobs;
@@ -780,6 +781,65 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
 
         (await act.Should().ThrowAsync<JobValidatorException>()).WithMessage("*Retries must be >= 0*");
         await sut.Persistence.DidNotReceive().InsertCronJobsAsync(Arg.Any<CronJobEntity[]>(), AbortToken);
+    }
+
+    [Fact]
+    public async Task cron_add_rejects_an_undefined_missed_run_policy_before_persistence()
+    {
+        var sut = _CreateSut(CoordinatorMode.None, withWriter: false);
+        var cron = _CronJob();
+        cron.OnMissedRun = (MissedRunPolicy)999;
+
+        var act = () => sut.Cron.AddAsync(cron, AbortToken);
+
+        (await act.Should().ThrowAsync<JobValidatorException>()).WithMessage("*not defined*");
+        await sut.Persistence.DidNotReceive().InsertCronJobsAsync(Arg.Any<CronJobEntity[]>(), AbortToken);
+    }
+
+    [Fact]
+    public async Task cron_update_rejects_non_positive_missed_run_grace_before_reading_storage()
+    {
+        var sut = _CreateSut(CoordinatorMode.None, withWriter: false);
+        var cron = _CronJob();
+        cron.MissedRunGraceSeconds = 0;
+
+        var result = await sut.Cron.UpdateAsync(cron, AbortToken);
+
+        result.IsSucceeded.Should().BeFalse();
+        result.Exception.Should().BeOfType<JobValidatorException>().Which.Message.Should().Contain("greater than zero");
+        await sut.Persistence.DidNotReceive().GetCronJobByIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task cron_add_batch_aggregates_invalid_recovery_settings_and_writes_nothing()
+    {
+        var sut = _CreateSut(CoordinatorMode.None, withWriter: false);
+        var invalidPolicy = _CronJob();
+        invalidPolicy.OnMissedRun = (MissedRunPolicy)999;
+        var invalidGrace = _CronJob();
+        invalidGrace.MissedRunGraceSeconds = -1;
+
+        var act = () => sut.Cron.AddBatchAsync([invalidPolicy, invalidGrace], AbortToken);
+
+        var exception = (await act.Should().ThrowAsync<JobValidatorException>()).Which;
+        exception.Message.Should().Contain("not defined").And.Contain("greater than zero");
+        await sut.Persistence.DidNotReceive().InsertCronJobsAsync(Arg.Any<CronJobEntity[]>(), AbortToken);
+    }
+
+    [Fact]
+    public async Task cron_update_batch_rejects_invalid_recovery_settings_before_reading_storage()
+    {
+        var sut = _CreateSut(CoordinatorMode.None, withWriter: false);
+        var cron = _CronJob();
+        cron.OnMissedRun = (MissedRunPolicy)999;
+
+        var result = await sut.Cron.UpdateBatchAsync([cron], AbortToken);
+
+        result.IsSucceeded.Should().BeFalse();
+        result.Exception.Should().BeOfType<JobValidatorException>().Which.Message.Should().Contain("not defined");
+        await sut
+            .Persistence.DidNotReceive()
+            .GetCronJobsAsync(Arg.Any<Expression<Func<CronJobEntity, bool>>>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]

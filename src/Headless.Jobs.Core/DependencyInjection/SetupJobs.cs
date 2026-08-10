@@ -9,6 +9,7 @@ using Headless.Jobs.BackgroundServices;
 using Headless.Jobs.Coordination;
 using Headless.Jobs.Dispatcher;
 using Headless.Jobs.Entities;
+using Headless.Jobs.Enums;
 using Headless.Jobs.Instrumentation;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
@@ -120,6 +121,14 @@ public static class SetupJobs
         Ensure.True(
             schedulerOptionsBuilder.MaxLongRunningConcurrency > 0,
             "SchedulerOptionsBuilder.MaxLongRunningConcurrency must be greater than zero."
+        );
+        Ensure.True(
+            schedulerOptionsBuilder.DefaultMissedRunPolicy is MissedRunPolicy.Coalesce or MissedRunPolicy.Skip,
+            "SchedulerOptionsBuilder.DefaultMissedRunPolicy must be a defined MissedRunPolicy value."
+        );
+        Ensure.True(
+            schedulerOptionsBuilder.DefaultMissedRunGraceSeconds > 0,
+            "SchedulerOptionsBuilder.DefaultMissedRunGraceSeconds must be greater than zero."
         );
         // The structural bound JobChainBuilder.Build() enforces doubles as the configuration ceiling, so the enqueue
         // guard and the structural guard can never contradict (and SqlServer's recursive-CTE MAXRECURSION stays reachable).

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
+using Headless.Jobs;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
@@ -717,7 +718,17 @@ public abstract class JobsSchedulePositionConformanceTests<TFixture>(TFixture fi
         var before = await fixture.ReadCronSchedulePositionAsync(cronId, ct);
         before.NextDueUtc.Should().NotBe(default, "the seeded definition carries an initialized position");
 
-        await persistence.MigrateDefinedCronJobsAsync([("migrate-reset", "0 */5 * * * *")], ct);
+        await persistence.MigrateDefinedCronJobsAsync(
+            [
+                new CronSeedDefinition(
+                    "migrate-reset",
+                    "0 */5 * * * *",
+                    MissedRunPolicy.Coalesce,
+                    JobsRecoveryDefaults.MissedRunGraceSeconds
+                ),
+            ],
+            ct
+        );
 
         var after = await fixture.ReadCronSchedulePositionAsync(cronId, ct);
         after

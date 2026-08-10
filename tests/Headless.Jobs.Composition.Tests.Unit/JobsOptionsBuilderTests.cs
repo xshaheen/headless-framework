@@ -346,6 +346,34 @@ public sealed class JobsOptionsBuilderTests
     }
 
     [Fact]
+    public void add_headless_jobs_rejects_an_undefined_default_missed_run_policy()
+    {
+        var services = new ServiceCollection();
+
+        var act = () =>
+            services.AddHeadlessJobs(options =>
+                options.ConfigureScheduler(scheduler => scheduler.DefaultMissedRunPolicy = (MissedRunPolicy)999)
+            );
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*DefaultMissedRunPolicy*");
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void add_headless_jobs_rejects_non_positive_default_missed_run_grace(int graceSeconds)
+    {
+        var services = new ServiceCollection();
+
+        var act = () =>
+            services.AddHeadlessJobs(options =>
+                options.ConfigureScheduler(scheduler => scheduler.DefaultMissedRunGraceSeconds = graceSeconds)
+            );
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*DefaultMissedRunGraceSeconds*");
+    }
+
+    [Fact]
     public void explicit_node_id_is_preserved_verbatim()
     {
         var schedulerOptions = new SchedulerOptionsBuilder { NodeId = "explicit-node" };

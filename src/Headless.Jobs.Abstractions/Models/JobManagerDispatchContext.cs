@@ -54,4 +54,15 @@ public class NextCronOccurrence(Guid id, DateTimeOffset createdAt)
 
     /// <summary>UTC timestamp when the occurrence row was created.</summary>
     public DateTimeOffset CreatedAt { get; set; } = createdAt;
+
+    /// <summary>
+    /// The earliest missed instant this row stands in for when it was materialized or repurposed by misfire recovery;
+    /// <see langword="null"/> for an ordinary occurrence.
+    /// </summary>
+    /// <remarks>
+    /// Carried here because every claim strategy reconstructs the claimed entity by hand rather than re-reading the
+    /// row. Without it the stamp survives the store but is dropped on the way to execution, which silently demotes a
+    /// coalesced run to an ordinary one — the same shape as a dropped retry counter.
+    /// </remarks>
+    public DateTime? RecoveredFromUtc { get; set; }
 }

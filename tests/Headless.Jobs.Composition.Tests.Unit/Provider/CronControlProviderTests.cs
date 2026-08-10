@@ -164,7 +164,17 @@ public sealed class CronControlProviderTests : TestBase
         seeded.NextDueUtc = new DateTime(_Now.Year + 1, 1, 1, 3, 0, 0, DateTimeKind.Utc);
         await provider.InsertCronJobsAsync([seeded], AbortToken);
 
-        await provider.MigrateDefinedCronJobsAsync([("seeded", "0 */5 * * * *")], AbortToken);
+        await provider.MigrateDefinedCronJobsAsync(
+            [
+                new CronSeedDefinition(
+                    "seeded",
+                    "0 */5 * * * *",
+                    MissedRunPolicy.Coalesce,
+                    JobsRecoveryDefaults.MissedRunGraceSeconds
+                ),
+            ],
+            AbortToken
+        );
 
         var updated = (await provider.GetCronJobByIdAsync(seeded.Id, AbortToken))!;
         updated.Expression.Should().Be("0 */5 * * * *");
@@ -179,12 +189,32 @@ public sealed class CronControlProviderTests : TestBase
     public async Task should_retire_pending_seed_work_when_code_defined_expression_changes()
     {
         var provider = _Create();
-        await provider.MigrateDefinedCronJobsAsync([("seeded", "0 */5 * * * *")], AbortToken);
+        await provider.MigrateDefinedCronJobsAsync(
+            [
+                new CronSeedDefinition(
+                    "seeded",
+                    "0 */5 * * * *",
+                    MissedRunPolicy.Coalesce,
+                    JobsRecoveryDefaults.MissedRunGraceSeconds
+                ),
+            ],
+            AbortToken
+        );
         var definition = (await provider.GetAllCronJobExpressionsAsync(AbortToken)).Single();
         var pending = _Occurrence(definition.Id, JobStatus.Queued, _Owner, _Now.UtcDateTime.AddMinutes(5));
         await provider.InsertCronJobOccurrencesAsync([pending], AbortToken);
 
-        await provider.MigrateDefinedCronJobsAsync([("seeded", "0 */10 * * * *")], AbortToken);
+        await provider.MigrateDefinedCronJobsAsync(
+            [
+                new CronSeedDefinition(
+                    "seeded",
+                    "0 */10 * * * *",
+                    MissedRunPolicy.Coalesce,
+                    JobsRecoveryDefaults.MissedRunGraceSeconds
+                ),
+            ],
+            AbortToken
+        );
 
         var updated = (await provider.GetAllCronJobExpressionsAsync(AbortToken)).Single();
         updated.Expression.Should().Be("0 */10 * * * *");
