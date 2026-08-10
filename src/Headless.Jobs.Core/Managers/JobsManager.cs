@@ -293,6 +293,10 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             );
         }
 
+        entity.EvaluationFingerprint = _cronScheduleCache.ComputeEvaluationFingerprint(entity.TimeZoneId);
+        entity.FingerprintFailureCount = 0;
+        entity.FingerprintRetryAfterUtc = null;
+
         // Synchronous capture before the first await; dead-transaction / mis-wire / write faults propagate (KTD-2).
         var coordinated = _TryCaptureCoordinatedContext();
 
@@ -426,6 +430,10 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             );
         }
 
+        cronJob.EvaluationFingerprint = _cronScheduleCache.ComputeEvaluationFingerprint(cronJob.TimeZoneId);
+        cronJob.FingerprintFailureCount = 0;
+        cronJob.FingerprintRetryAfterUtc = null;
+
         try
         {
             var current = await persistenceProvider
@@ -439,13 +447,26 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             var scheduleChanged =
                 !string.Equals(current.Expression, cronJob.Expression, StringComparison.Ordinal)
                 || !string.Equals(current.TimeZoneId, cronJob.TimeZoneId, StringComparison.Ordinal);
-            var replacement =
-                scheduleChanged && !current.IsPaused
-                    ? CronJobOccurrenceFactory.Create(cronJob, nextOccurrence.Value, now, guidGenerator)
-                    : null;
+            Func<DateTime, CronJobOccurrenceEntity<TCronJob>?>? nextOccurrenceFactory = null;
+
+            if (scheduleChanged && !current.IsPaused)
+            {
+                nextOccurrenceFactory = scheduleAnchorUtc =>
+                {
+                    var storeAnchoredNext = _cronScheduleCache.GetNextOccurrenceOrDefault(
+                        cronJob.Expression,
+                        scheduleAnchorUtc,
+                        cronJob.TimeZoneId
+                    );
+                    return storeAnchoredNext is null
+                        ? null
+                        : CronJobOccurrenceFactory.Create(cronJob, storeAnchoredNext.Value, now, guidGenerator);
+                };
+            }
+
             var updated = await persistenceProvider
                 .UpdateCronJobsAtomicallyAsync(
-                    [new CronJobAtomicUpdate<TCronJob>(cronJob, current.ScheduleRevision, replacement)],
+                    [new CronJobAtomicUpdate<TCronJob>(cronJob, current.ScheduleRevision, nextOccurrenceFactory)],
                     now,
                     cancellationToken
                 )
@@ -598,14 +619,20 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         if (cronJob.OnMissedRun is not MissedRunPolicy.Coalesce and not MissedRunPolicy.Skip)
         {
             errors.Add(
-                $"Missed-run policy value '{(int)cronJob.OnMissedRun}' is not defined for function '{cronJob.Function}'."
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Missed-run policy value '{(int)cronJob.OnMissedRun}' is not defined for function '{cronJob.Function}'."
+                )
             );
         }
 
         if (cronJob.MissedRunGraceSeconds <= 0)
         {
             errors.Add(
-                $"Missed-run grace must be greater than zero seconds for function '{cronJob.Function}' but was {cronJob.MissedRunGraceSeconds}."
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Missed-run grace must be greater than zero seconds for function '{cronJob.Function}' but was {cronJob.MissedRunGraceSeconds}."
+                )
             );
         }
 
@@ -950,6 +977,9 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 continue;
             }
 
+            entity.EvaluationFingerprint = _cronScheduleCache.ComputeEvaluationFingerprint(entity.TimeZoneId);
+            entity.FingerprintFailureCount = 0;
+            entity.FingerprintRetryAfterUtc = null;
             validEntities.Add(entity);
             nextOccurrences.Add(nextOccurrence.Value);
         }
@@ -1300,6 +1330,10 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 continue;
             }
 
+            cronJob.EvaluationFingerprint = _cronScheduleCache.ComputeEvaluationFingerprint(cronJob.TimeZoneId);
+            cronJob.FingerprintFailureCount = 0;
+            cronJob.FingerprintRetryAfterUtc = null;
+
             candidates.Add((cronJob, nextOccurrence.Value));
         }
 
@@ -1314,8 +1348,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 .GetCronJobsAsync(x => definitionIds.Contains(x.Id), cancellationToken)
                 .ConfigureAwait(false)
         ).ToDictionary(x => x.Id);
-
-        foreach (var (cronJob, nextOccurrence) in candidates)
+        foreach (var (cronJob, _) in candidates)
         {
             if (!currentById.TryGetValue(cronJob.Id, out var current))
             {
@@ -1326,11 +1359,24 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             var scheduleChanged =
                 !string.Equals(current.Expression, cronJob.Expression, StringComparison.Ordinal)
                 || !string.Equals(current.TimeZoneId, cronJob.TimeZoneId, StringComparison.Ordinal);
-            var replacement =
-                scheduleChanged && !current.IsPaused
-                    ? CronJobOccurrenceFactory.Create(cronJob, nextOccurrence, now, guidGenerator)
-                    : null;
-            updates.Add(new CronJobAtomicUpdate<TCronJob>(cronJob, current.ScheduleRevision, replacement));
+            Func<DateTime, CronJobOccurrenceEntity<TCronJob>?>? nextOccurrenceFactory = null;
+
+            if (scheduleChanged && !current.IsPaused)
+            {
+                nextOccurrenceFactory = scheduleAnchorUtc =>
+                {
+                    var storeAnchoredNext = _cronScheduleCache.GetNextOccurrenceOrDefault(
+                        cronJob.Expression,
+                        scheduleAnchorUtc,
+                        cronJob.TimeZoneId
+                    );
+                    return storeAnchoredNext is null
+                        ? null
+                        : CronJobOccurrenceFactory.Create(cronJob, storeAnchoredNext.Value, now, guidGenerator);
+                };
+            }
+
+            updates.Add(new CronJobAtomicUpdate<TCronJob>(cronJob, current.ScheduleRevision, nextOccurrenceFactory));
             needsRestart |= scheduleChanged;
         }
 

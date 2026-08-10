@@ -170,6 +170,12 @@ public sealed class SqlServerConformanceTests(SqlServerJobsCoordinationFixture f
     }
 
     [Fact]
+    public override Task should_persist_the_store_anchor_used_for_resume_and_schedule_edit_under_node_skew()
+    {
+        return base.should_persist_the_store_anchor_used_for_resume_and_schedule_edit_under_node_skew();
+    }
+
+    [Fact]
     public override Task should_preserve_metadata_work_and_replace_pending_work_when_cron_schedule_changes()
     {
         return base.should_preserve_metadata_work_and_replace_pending_work_when_cron_schedule_changes();

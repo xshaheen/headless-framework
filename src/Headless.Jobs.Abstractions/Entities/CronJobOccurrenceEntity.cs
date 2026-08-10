@@ -66,10 +66,10 @@ public class CronJobOccurrenceEntity<TCronJob>
     public virtual int RetryCount { get; internal set; }
 
     /// <summary>
-    /// Earliest missed instant this run stands in for, or <see langword="null"/> when the occurrence was dispatched
-    /// normally. The earliest instant is the first occurrence after the definition's watermark, so it is exact
-    /// however large the backlog was — and a job using it as an incremental-processing watermark reprocesses
-    /// redundantly rather than silently skipping the outage window.
+    /// First unaccounted-for missed instant this run stands in for, or <see langword="null"/> when the occurrence was
+    /// dispatched normally. The instant is the first unresolved occurrence after the definition's watermark, so it
+    /// is exact however large the backlog was. Earlier missed instants already represented by terminal or occupied
+    /// rows are not reported again.
     /// </summary>
     /// <remarks>
     /// Persisted on the occurrence rather than derived at execution time: the definition's watermark has already

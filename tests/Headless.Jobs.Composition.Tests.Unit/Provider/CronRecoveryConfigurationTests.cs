@@ -66,7 +66,7 @@ public sealed class CronRecoveryConfigurationTests : TestBase
         overridden.OnMissedRun = MissedRunPolicy.Skip;
         overridden.MissedRunGraceSeconds = 900;
         var updated = await provider.UpdateCronJobsAtomicallyAsync(
-            [new CronJobAtomicUpdate<FakeCronJob>(overridden, created.ScheduleRevision, NextOccurrence: null)],
+            [new CronJobAtomicUpdate<FakeCronJob>(overridden, created.ScheduleRevision, NextOccurrenceFactory: null)],
             _Now,
             AbortToken
         );
@@ -98,7 +98,7 @@ public sealed class CronRecoveryConfigurationTests : TestBase
         var overridden = _Clone(created);
         overridden.OnMissedRun = MissedRunPolicy.Skip;
         await provider.UpdateCronJobsAtomicallyAsync(
-            [new CronJobAtomicUpdate<FakeCronJob>(overridden, created.ScheduleRevision, NextOccurrence: null)],
+            [new CronJobAtomicUpdate<FakeCronJob>(overridden, created.ScheduleRevision, NextOccurrenceFactory: null)],
             _Now,
             AbortToken
         );

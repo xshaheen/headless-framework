@@ -69,6 +69,8 @@ public sealed class CronControlProviderTests : TestBase
     {
         var provider = _Create();
         var definition = _Definition(isPaused: true, revision: 7);
+        definition.FingerprintFailureCount = 3;
+        definition.FingerprintRetryAfterUtc = _Now.UtcDateTime.AddHours(1);
         await provider.InsertCronJobsAsync([definition], AbortToken);
         var executionTime = _Now.UtcDateTime.AddMinutes(15);
 
@@ -79,7 +81,7 @@ public sealed class CronControlProviderTests : TestBase
                     provider.ResumeCronJobAsync(
                         definition.Id,
                         expectedScheduleRevision: 7,
-                        _Occurrence(definition.Id, JobStatus.Idle, owner: null, lockedUntil: null, executionTime),
+                        _ => _Occurrence(definition.Id, JobStatus.Idle, owner: null, lockedUntil: null, executionTime),
                         _Now,
                         AbortToken
                     )
@@ -89,6 +91,8 @@ public sealed class CronControlProviderTests : TestBase
         attempts.Count(x => x is not null).Should().Be(1);
         attempts.Single(x => x is not null)!.ScheduleRevision.Should().Be(8);
         attempts.Single(x => x is not null)!.IsPaused.Should().BeFalse();
+        attempts.Single(x => x is not null)!.FingerprintFailureCount.Should().Be(0);
+        attempts.Single(x => x is not null)!.FingerprintRetryAfterUtc.Should().BeNull();
         var occurrences = await provider.GetAllCronJobOccurrencesAsync(x => x.CronJobId == definition.Id, AbortToken);
         occurrences.Should().ContainSingle(x => x.ExecutionTime == executionTime && x.Status == JobStatus.Idle);
     }
@@ -162,6 +166,8 @@ public sealed class CronControlProviderTests : TestBase
         seeded.InitIdentifier = "MemoryTicker_Seeded_seeded";
         seeded.ReconciledThroughUtc = _Now.UtcDateTime.AddMinutes(-5);
         seeded.NextDueUtc = new DateTime(_Now.Year + 1, 1, 1, 3, 0, 0, DateTimeKind.Utc);
+        seeded.FingerprintFailureCount = 2;
+        seeded.FingerprintRetryAfterUtc = _Now.UtcDateTime.AddHours(1);
         await provider.InsertCronJobsAsync([seeded], AbortToken);
 
         await provider.MigrateDefinedCronJobsAsync(
@@ -183,6 +189,8 @@ public sealed class CronControlProviderTests : TestBase
             .ReconciledThroughUtc.Should()
             .Be(default, "the stale position must be re-derived under the new expression, not kept");
         updated.NextDueUtc.Should().Be(default, "the projection was derived under the old expression");
+        updated.FingerprintFailureCount.Should().Be(0);
+        updated.FingerprintRetryAfterUtc.Should().BeNull();
     }
 
     [Fact]
@@ -239,7 +247,13 @@ public sealed class CronControlProviderTests : TestBase
         metadataEdit.Id = definition.Id;
         metadataEdit.Description = "renamed";
         var metadataResult = await provider.UpdateCronJobsAtomicallyAsync(
-            [new CronJobAtomicUpdate<FakeCronJob>(metadataEdit, ExpectedScheduleRevision: 2, NextOccurrence: null)],
+            [
+                new CronJobAtomicUpdate<FakeCronJob>(
+                    metadataEdit,
+                    ExpectedScheduleRevision: 2,
+                    NextOccurrenceFactory: null
+                ),
+            ],
             _Now,
             AbortToken
         );
@@ -260,7 +274,7 @@ public sealed class CronControlProviderTests : TestBase
             _Now.UtcDateTime.AddMinutes(10)
         );
         var scheduleResult = await provider.UpdateCronJobsAtomicallyAsync(
-            [new CronJobAtomicUpdate<FakeCronJob>(scheduleEdit, ExpectedScheduleRevision: 2, replacement)],
+            [new CronJobAtomicUpdate<FakeCronJob>(scheduleEdit, ExpectedScheduleRevision: 2, _ => replacement)],
             _Now,
             AbortToken
         );

@@ -56,8 +56,8 @@ public class NextCronOccurrence(Guid id, DateTimeOffset createdAt)
     public DateTimeOffset CreatedAt { get; set; } = createdAt;
 
     /// <summary>
-    /// The earliest missed instant this row stands in for when it was materialized or repurposed by misfire recovery;
-    /// <see langword="null"/> for an ordinary occurrence.
+    /// The first unaccounted-for missed instant this row stands in for when it was materialized or repurposed by
+    /// misfire recovery; <see langword="null"/> for an ordinary occurrence.
     /// </summary>
     /// <remarks>
     /// Carried here because every claim strategy reconstructs the claimed entity by hand rather than re-reading the

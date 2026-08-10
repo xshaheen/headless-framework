@@ -95,6 +95,24 @@ public sealed class JobsSchedulerShutdownDrainTests : TestBase
         manager
             .IsTimeJobCancellationRequestedAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<bool?>(false));
+        manager
+            .RebaseStaleFingerprintsAsync(
+                Arg.Any<int>(),
+                Arg.Any<Guid?>(),
+                Arg.Any<Guid?>(),
+                Arg.Any<bool>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(
+                new CronFingerprintSweepResult
+                {
+                    Scanned = 0,
+                    Rebased = 0,
+                    Deferred = 0,
+                    LostFence = 0,
+                    HasMore = false,
+                }
+            );
 
         JobStatus? persistedStatus = null;
         manager

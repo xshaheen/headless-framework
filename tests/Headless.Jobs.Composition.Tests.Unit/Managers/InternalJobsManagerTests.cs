@@ -24,6 +24,7 @@ public sealed class InternalJobsManagerTests : TestBase
         var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();
         var sender = Substitute.For<IJobsNotificationHubSender>();
         var now = new DateTimeOffset(2026, 7, 17, 10, 30, 0, TimeSpan.Zero);
+        var scheduleAnchorUtc = now.UtcDateTime.AddHours(2);
         var timeProvider = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(now);
         var occurrenceId = Guid.Parse("01981a13-d9c0-7000-8000-000000000001");
         var guidGenerator = Substitute.For<IGuidGenerator>();
@@ -43,7 +44,7 @@ public sealed class InternalJobsManagerTests : TestBase
         {
             Id = Guid.NewGuid(),
             Function = "fn",
-            Expression = "0 31 10 * * *",
+            Expression = "0 * * * * *",
             IsPaused = true,
             ScheduleRevision = 4,
         };
@@ -53,15 +54,15 @@ public sealed class InternalJobsManagerTests : TestBase
             .ResumeCronJobAsync(
                 definition.Id,
                 definition.ScheduleRevision,
-                Arg.Any<CronJobOccurrenceEntity<FakeCronJob>>(),
+                Arg.Any<Func<DateTime, CronJobOccurrenceEntity<FakeCronJob>?>>(),
                 now,
                 AbortToken
             )
             .Returns(call =>
             {
-                var occurrence = call.Arg<CronJobOccurrenceEntity<FakeCronJob>>();
+                var occurrence = call.Arg<Func<DateTime, CronJobOccurrenceEntity<FakeCronJob>?>>()(scheduleAnchorUtc)!;
                 occurrence.Id.Should().Be(occurrenceId);
-                occurrence.ExecutionTime.Should().Be(now.UtcDateTime.AddMinutes(1));
+                occurrence.ExecutionTime.Should().Be(scheduleAnchorUtc.AddMinutes(1));
                 occurrence.Status.Should().Be(JobStatus.Idle);
                 definition.IsPaused = false;
                 return definition;
@@ -110,13 +111,15 @@ public sealed class InternalJobsManagerTests : TestBase
             .ResumeCronJobAsync(
                 definition.Id,
                 definition.ScheduleRevision,
-                Arg.Any<CronJobOccurrenceEntity<FakeCronJob>>(),
+                Arg.Any<Func<DateTime, CronJobOccurrenceEntity<FakeCronJob>?>>(),
                 resumeTime,
                 AbortToken
             )
             .Returns(call =>
             {
-                var occurrence = call.Arg<CronJobOccurrenceEntity<FakeCronJob>>();
+                var occurrence = call.Arg<Func<DateTime, CronJobOccurrenceEntity<FakeCronJob>?>>()(
+                    resumeTime.UtcDateTime
+                )!;
                 occurrence.ExecutionTime.Should().Be(expectedOccurrence);
                 occurrence.ExecutionTime.Kind.Should().Be(DateTimeKind.Utc);
                 return definition;

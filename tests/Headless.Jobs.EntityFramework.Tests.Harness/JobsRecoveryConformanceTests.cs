@@ -60,6 +60,9 @@ public abstract class JobsRecoveryConformanceTests<TFixture>(TFixture fixture) :
 
         var occurrences = await persistence.GetAllCronJobOccurrencesAsync(x => x.CronJobId == cronId, ct);
         occurrences.Should().ContainSingle("coalesce materializes one run however many were missed");
+        occurrences[0].Id.Should().Be(result.CoalescedRun.Id);
+        occurrences[0].Status.Should().Be(JobStatus.Idle, "the one preserved recovery run remains claimable");
+        result.SkippedOccurrenceCount.Should().Be(0, "the preserved recovery run is not part of residual cleanup");
 
         var position = await fixture.ReadCronSchedulePositionAsync(cronId, ct);
         position
@@ -204,6 +207,228 @@ public abstract class JobsRecoveryConformanceTests<TFixture>(TFixture fixture) :
         rows.Should().HaveCount(2);
         rows.Single(x => x.Id == finishedId).Status.Should().Be(JobStatus.Succeeded, "left undisturbed");
     }
+
+    public virtual async Task saturated_coalesce_preserves_an_unexamined_idle_n_plus_one_for_the_next_pass()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("recovery-saturated-prefix");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        var persistence = _Persistence(host);
+        var cronId = Guid.NewGuid();
+        await fixture.SeedCronJobAsync(
+            cronId,
+            "recovery-saturated-prefix",
+            "0 0 * * * *",
+            NodeDeathPolicy.Retry,
+            ct,
+            reconciledThroughOffsetSeconds: -14400,
+            nextDueOffsetSeconds: -10800
+        );
+        var seeded = await fixture.ReadCronSchedulePositionAsync(cronId, ct);
+        var second = seeded.NextDueUtc.AddHours(1);
+        var nPlusOne = seeded.NextDueUtc.AddHours(2);
+        var terminalIds = new[] { Guid.NewGuid(), Guid.NewGuid() };
+        await fixture.SeedCronOccurrenceAsync(
+            terminalIds[0],
+            cronId,
+            (int)JobStatus.Succeeded,
+            null,
+            NodeDeathPolicy.Retry,
+            null,
+            seeded.NextDueUtc,
+            ct
+        );
+        await fixture.SeedCronOccurrenceAsync(
+            terminalIds[1],
+            cronId,
+            (int)JobStatus.Succeeded,
+            null,
+            NodeDeathPolicy.Retry,
+            null,
+            second,
+            ct
+        );
+        var nPlusOneId = Guid.NewGuid();
+        await fixture.SeedCronOccurrenceAsync(
+            nPlusOneId,
+            cronId,
+            (int)JobStatus.Idle,
+            null,
+            NodeDeathPolicy.Retry,
+            null,
+            nPlusOne,
+            ct
+        );
+
+        var first = await persistence.ApplyCronRecoveryAsync(
+            _Request(cronId, seeded, MissedRunPolicy.Coalesce, [seeded.NextDueUtc, second]) with
+            {
+                EvaluationSaturated = true,
+                BoundedProgressThroughUtc = second,
+                NextDueAfterBoundedProgressUtc = nPlusOne,
+            },
+            ct
+        );
+
+        first!.CoalescedRun.Should().BeNull();
+        first.ReconciledThroughUtc.Should().BeCloseTo(second, TimeSpan.FromMicroseconds(1));
+        (await persistence.GetAllCronJobOccurrencesAsync(x => x.CronJobId == cronId, ct))
+            .Single(x => x.Id == nPlusOneId)
+            .Status.Should()
+            .Be(JobStatus.Idle);
+
+        var secondPass = await persistence.ApplyCronRecoveryAsync(
+            _Request(cronId, seeded, MissedRunPolicy.Coalesce, [nPlusOne]) with
+            {
+                ObservedReconciledThroughUtc = second,
+                EarliestMissedUtc = nPlusOne,
+            },
+            ct
+        );
+
+        secondPass!.CoalescedRun.Should().NotBeNull();
+        secondPass.CoalescedRun!.Id.Should().Be(nPlusOneId);
+    }
+
+    public virtual async Task fingerprint_keyset_progress_survives_provider_recreation()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        Guid? cursor;
+        Guid? highWatermark;
+        var ids = new[]
+        {
+            new Guid("00000001-0000-0000-0000-000000000000"),
+            new Guid("00000002-0000-0000-0000-000000000000"),
+            new Guid("00000003-0000-0000-0000-000000000000"),
+        };
+
+        using (var firstHost = fixture.BuildHost("fingerprint-restart-a"))
+        {
+            await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(firstHost, ct);
+            var firstProvider = _Persistence(firstHost);
+            await firstProvider.InsertCronJobsAsync(ids.Select(_StaleDefinition).ToArray(), ct);
+            var first = await firstProvider.GetStaleFingerprintDefinitionsAsync(
+                new CronFingerprintSweepRequest { CurrentFingerprints = ["current"], Limit = 1 },
+                ct
+            );
+            first.Candidates.Should().ContainSingle().Which.CronJobId.Should().Be(ids[0]);
+            cursor = first.Candidates[0].CronJobId;
+            highWatermark = first.SnapshotHighWatermarkId;
+            (
+                await firstProvider.DeferStaleFingerprintDefinitionAsync(
+                    new CronFingerprintDeferRequest
+                    {
+                        CronJobId = ids[0],
+                        ExpectedScheduleRevision = 0,
+                        ObservedReconciledThroughUtc = DateTime.UnixEpoch,
+                        ObservedEvaluationFingerprint = "stale",
+                        InitialDelay = TimeSpan.FromHours(1),
+                        MaximumDelay = TimeSpan.FromHours(24),
+                    },
+                    ct
+                )
+            ).Should().BeTrue();
+        }
+
+        using var secondHost = fixture.BuildHost("fingerprint-restart-b");
+        var secondProvider = _Persistence(secondHost);
+        var second = await secondProvider.GetStaleFingerprintDefinitionsAsync(
+            new CronFingerprintSweepRequest
+            {
+                CurrentFingerprints = ["current"],
+                Limit = 2,
+                AfterId = cursor,
+                ThroughId = highWatermark,
+                AllowWrap = true,
+            },
+            ct
+        );
+        second.Candidates.Select(x => x.CronJobId).Should().Equal(ids[1], ids[2]);
+    }
+
+    public virtual async Task fingerprint_wrap_returns_low_id_after_exactly_full_forward_page()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("fingerprint-full-forward-wrap");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        var persistence = _Persistence(host);
+        var ids = new[]
+        {
+            new Guid("00000001-0000-0000-0000-000000000000"),
+            new Guid("00000003-0000-0000-0000-000000000000"),
+            new Guid("00000004-0000-0000-0000-000000000000"),
+        };
+        await persistence.InsertCronJobsAsync(ids.Select(_StaleDefinition).ToArray(), ct);
+
+        var first = await persistence.GetStaleFingerprintDefinitionsAsync(
+            new CronFingerprintSweepRequest
+            {
+                CurrentFingerprints = ["current"],
+                Limit = 2,
+                AfterId = new Guid("00000002-0000-0000-0000-000000000000"),
+                ThroughId = ids[2],
+                AllowWrap = true,
+            },
+            ct
+        );
+
+        first.Candidates.Select(x => x.CronJobId).Should().Equal(ids[1], ids[2]);
+        first.HasMore.Should().BeTrue();
+        first.Wrapped.Should().BeFalse("the page had capacity only to probe the wrapped range");
+
+        foreach (var candidate in first.Candidates)
+        {
+            (
+                await persistence.DeferStaleFingerprintDefinitionAsync(
+                    new CronFingerprintDeferRequest
+                    {
+                        CronJobId = candidate.CronJobId,
+                        ExpectedScheduleRevision = candidate.ScheduleRevision,
+                        ObservedReconciledThroughUtc = candidate.ReconciledThroughUtc,
+                        ObservedEvaluationFingerprint = candidate.EvaluationFingerprint,
+                        InitialDelay = TimeSpan.FromHours(1),
+                        MaximumDelay = TimeSpan.FromHours(24),
+                    },
+                    ct
+                )
+            ).Should().BeTrue();
+        }
+
+        var second = await persistence.GetStaleFingerprintDefinitionsAsync(
+            new CronFingerprintSweepRequest
+            {
+                CurrentFingerprints = ["current"],
+                Limit = 2,
+                AfterId = first.Candidates[^1].CronJobId,
+                ThroughId = first.SnapshotHighWatermarkId,
+                AllowWrap = true,
+            },
+            ct
+        );
+
+        second.Candidates.Should().ContainSingle().Which.CronJobId.Should().Be(ids[0]);
+        second.Wrapped.Should().BeTrue();
+        second.HasMore.Should().BeFalse();
+    }
+
+    private static CronJobEntity _StaleDefinition(Guid id) =>
+        new()
+        {
+            Id = id,
+            Function = $"fingerprint-{id:N}",
+            Expression = "0 * * * * *",
+            ReconciledThroughUtc = DateTime.UnixEpoch,
+            NextDueUtc = DateTime.UnixEpoch.AddMinutes(1),
+            EvaluationFingerprint = "stale",
+            OnMissedRun = MissedRunPolicy.Coalesce,
+            MissedRunGraceSeconds = 60,
+            Request = [],
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        };
 
     /// <summary>AE9: an occurrence another node is executing is left alone and its instant is not duplicated.</summary>
     public virtual async Task recovery_leaves_an_executing_occurrence_untouched()
@@ -432,6 +657,9 @@ public abstract class JobsRecoveryConformanceTests<TFixture>(TFixture fixture) :
             ExpectedScheduleRevision = 0L,
             RecoveredThroughUtc = _RecoveryInstant(seeded),
             NextDueUtc = _RecoveryInstant(seeded).AddHours(1),
+            BoundedProgressThroughUtc = _RecoveryInstant(seeded),
+            NextDueAfterBoundedProgressUtc = _RecoveryInstant(seeded).AddHours(1),
+            EvaluationSaturated = false,
             Policy = policy,
             EarliestMissedUtc = seeded.NextDueUtc,
             MissedInstantsUtc = missedInstants ?? [seeded.NextDueUtc],

@@ -37,6 +37,14 @@ namespace Headless.Jobs.Console.Demo.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)");
 
+                    b.Property<int>("FingerprintFailureCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
+                    b.Property<DateTime?>("FingerprintRetryAfterUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("Expression")
                         .IsRequired()
                         .HasColumnType("text");
@@ -106,6 +114,9 @@ namespace Headless.Jobs.Console.Demo.Migrations
 
                     b.HasIndex("Expression")
                         .HasDatabaseName("IX_CronJobs_Expression");
+
+                    b.HasIndex("FingerprintRetryAfterUtc", "Id")
+                        .HasDatabaseName("IX_CronJobs_FingerprintRetryAfterUtc_Id");
 
                     b.HasIndex("Function", "Expression")
                         .HasDatabaseName("IX_Function_Expression");

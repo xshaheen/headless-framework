@@ -914,6 +914,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
                 ICoordinatedJobWriter<TimeJobEntity, CronJobEntity>
             >()
             : Substitute.For<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+        var effectiveTimeProvider = timeProvider ?? TimeProvider.System;
 
         var scheduler = Substitute.For<IJobsHostScheduler>();
         var notification = Substitute.For<IJobsNotificationHubSender>();
@@ -938,7 +939,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
         var manager = new JobsManager<TimeJobEntity, CronJobEntity>(
             persistence,
             scheduler,
-            timeProvider ?? TimeProvider.System,
+            effectiveTimeProvider,
             guidGenerator ?? new SequentialGuidGenerator(SequentialGuidType.Version7),
             notification,
             new JobsExecutionContext(),

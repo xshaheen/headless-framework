@@ -1171,6 +1171,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                     x.Expression,
                     x.OnMissedRun,
                     x.MissedRunGraceSeconds,
+                    x.EvaluationFingerprint,
                     Id: existingByFunction.TryGetValue(x.Function, out var existingDefinition)
                         ? existingDefinition.Id
                         : JobsSeedId.ForCronSeed(x.Function)
@@ -1179,7 +1180,9 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .OrderBy(x => x.Id)
             .ToArray();
 
-        foreach (var (function, expression, onMissedRun, missedRunGraceSeconds, _) in orderedCronJobs)
+        foreach (
+            var (function, expression, onMissedRun, missedRunGraceSeconds, evaluationFingerprint, _) in orderedCronJobs
+        )
         {
             if (existingByFunction.TryGetValue(function, out var cron))
             {
@@ -1209,6 +1212,9 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         // runtime edit path's observable contract.
                         cron.ReconciledThroughUtc = default;
                         cron.NextDueUtc = default;
+                        cron.EvaluationFingerprint = evaluationFingerprint;
+                        cron.FingerprintFailureCount = 0;
+                        cron.FingerprintRetryAfterUtc = null;
                         changedDefinitionIds.Add(cron.Id);
                     }
                 }
@@ -1232,6 +1238,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                     // override by construction — which is why no provenance marker is persisted.
                     OnMissedRun = onMissedRun,
                     MissedRunGraceSeconds = missedRunGraceSeconds,
+                    EvaluationFingerprint = evaluationFingerprint,
                 };
                 await cronSet.AddAsync(entity, cancellationToken).ConfigureAwait(false);
             }
@@ -1385,6 +1392,193 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ConfigureAwait(false);
     }
 
+    public async Task<CronFingerprintSweepPage> GetStaleFingerprintDefinitionsAsync(
+        CronFingerprintSweepRequest request,
+        CancellationToken cancellationToken = default
+    )
+    {
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var known = request.CurrentFingerprints.ToArray();
+
+        // Selects on STALENESS, never on due-ness — a rule change that moves an occurrence earlier hides behind the
+        // stale later projection, so the definitions that most need rebasing are exactly the ones a due-ness query
+        // would skip. Backed by IX_CronJobs_EvaluationFingerprint. A null fingerprint is a definition positioned
+        // before fingerprinting existed and is swept in for the same treatment.
+        var stale = dbContext
+            .Set<TCronJob>()
+            .AsNoTracking()
+            .Where(x => !x.IsPaused)
+            .Where(x => x.EvaluationFingerprint == null || !known.Contains(x.EvaluationFingerprint));
+        var highWatermark =
+            request.ThroughId
+            ?? await stale
+                .OrderByDescending(x => x.Id)
+                .Select(x => (Guid?)x.Id)
+                .FirstOrDefaultAsync(cancellationToken)
+                .ConfigureAwait(false);
+        var eligible = stale
+            .Where(x => highWatermark == null || x.Id.CompareTo(highWatermark.Value) <= 0)
+            .Where(x => x.FingerprintRetryAfterUtc == null || x.FingerprintRetryAfterUtc <= DateTime.UtcNow);
+        var projected = eligible.Select(x => new
+        {
+            x.Id,
+            x.Function,
+            x.Expression,
+            x.TimeZoneId,
+            x.ScheduleRevision,
+            x.ReconciledThroughUtc,
+            x.NextDueUtc,
+            x.Retries,
+            x.RetryIntervals,
+            x.OnNodeDeath,
+            x.MissedRunGraceSeconds,
+            x.OnMissedRun,
+            x.EvaluationFingerprint,
+            x.FingerprintFailureCount,
+            x.FingerprintRetryAfterUtc,
+            StoreUtcNow = DateTime.UtcNow,
+        });
+        var forward = request.AfterId is null
+            ? projected
+            : projected.Where(x => x.Id.CompareTo(request.AfterId.Value) > 0);
+        var rows = await forward
+            .OrderBy(x => x.Id)
+            .Take(request.Limit + 1)
+            .ToArrayAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var hasMore = rows.Length > request.Limit;
+        var wrappedPage = false;
+        if (hasMore)
+        {
+            rows = rows[..request.Limit];
+        }
+        else if (request.AllowWrap && request.AfterId is not null)
+        {
+            // One bounded wrap prevents a newly-stale low id from waiting behind a long-lived cursor. The fill remains
+            // within the caller's page limit and the +1 lookahead preserves an exact continuation signal.
+            var remaining = request.Limit - rows.Length;
+            var wrapped = await projected
+                .Where(x => x.Id.CompareTo(request.AfterId.Value) <= 0)
+                .OrderBy(x => x.Id)
+                .Take(remaining + 1)
+                .ToArrayAsync(cancellationToken)
+                .ConfigureAwait(false);
+            hasMore = wrapped.Length > remaining;
+            rows = [.. rows, .. wrapped.Take(remaining)];
+            // With no remaining capacity this query is only a wrapped lookahead. The next page retains permission to
+            // perform the one bounded wrap and return the candidate instead of losing it behind the high-water mark.
+            wrappedPage = remaining > 0;
+        }
+
+        var storeUtcNow =
+            rows.Length > 0
+                ? rows[0].StoreUtcNow
+                : await stale.Select(_ => DateTime.UtcNow).FirstOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+
+        return new CronFingerprintSweepPage
+        {
+            StoreUtcNow = storeUtcNow,
+            SnapshotHighWatermarkId = highWatermark,
+            HasMore = hasMore,
+            Wrapped = wrappedPage,
+            Candidates =
+            [
+                .. rows.Select(x => new CronDispatchCandidate
+                {
+                    CronJobId = x.Id,
+                    FunctionName = x.Function,
+                    Expression = x.Expression,
+                    TimeZoneId = x.TimeZoneId,
+                    ScheduleRevision = x.ScheduleRevision,
+                    ReconciledThroughUtc = x.ReconciledThroughUtc,
+                    NextDueUtc = x.NextDueUtc,
+                    Retries = x.Retries,
+                    RetryIntervals = x.RetryIntervals,
+                    OnNodeDeath = x.OnNodeDeath,
+                    MissedRunGraceSeconds = x.MissedRunGraceSeconds,
+                    OnMissedRun = x.OnMissedRun,
+                    EvaluationFingerprint = x.EvaluationFingerprint,
+                    FingerprintFailureCount = x.FingerprintFailureCount,
+                    FingerprintRetryAfterUtc = x.FingerprintRetryAfterUtc,
+                }),
+            ],
+        };
+    }
+
+    public async Task<bool> DeferStaleFingerprintDefinitionAsync(
+        CronFingerprintDeferRequest request,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (request.InitialDelay <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(request),
+                request.InitialDelay,
+                "InitialDelay must be positive."
+            );
+        }
+
+        if (request.MaximumDelay < request.InitialDelay)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(request),
+                request.MaximumDelay,
+                "MaximumDelay must be at least InitialDelay."
+            );
+        }
+
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var definitions = dbContext.Set<TCronJob>();
+        var current = await definitions
+            .AsNoTracking()
+            .Where(x =>
+                x.Id == request.CronJobId
+                && !x.IsPaused
+                && x.ScheduleRevision == request.ExpectedScheduleRevision
+                && x.ReconciledThroughUtc == request.ObservedReconciledThroughUtc
+                && x.EvaluationFingerprint == request.ObservedEvaluationFingerprint
+            )
+            .Select(x => new { x.FingerprintFailureCount, StoreUtcNow = DateTime.UtcNow })
+            .SingleOrDefaultAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (current is null)
+        {
+            return false;
+        }
+
+        var nextFailureCount = checked(current.FingerprintFailureCount + 1);
+        var multiplier = Math.Pow(2, Math.Min(nextFailureCount - 1, 30));
+        var delayTicks = (long)Math.Min(request.MaximumDelay.Ticks, request.InitialDelay.Ticks * multiplier);
+        var retryAfterUtc = current.StoreUtcNow.AddTicks(delayTicks);
+        var affected = await definitions
+            .Where(x =>
+                x.Id == request.CronJobId
+                && !x.IsPaused
+                && x.ScheduleRevision == request.ExpectedScheduleRevision
+                && x.ReconciledThroughUtc == request.ObservedReconciledThroughUtc
+                && x.EvaluationFingerprint == request.ObservedEvaluationFingerprint
+                && x.FingerprintFailureCount == current.FingerprintFailureCount
+            )
+            .ExecuteUpdateAsync(
+                setter =>
+                    setter
+                        .SetProperty(x => x.FingerprintFailureCount, nextFailureCount)
+                        .SetProperty(x => x.FingerprintRetryAfterUtc, retryAfterUtc),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return affected == 1;
+    }
+
     public async Task<CronRecoveryResult<TCronJob>?> ApplyCronRecoveryAsync(
         CronRecoveryRequest request,
         CancellationToken cancellationToken = default
@@ -1431,7 +1625,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         var occurrences = dbContext.Set<CronJobOccurrenceEntity<TCronJob>>();
         var cronJobId = request.CronJobId;
         var windowStart = request.ObservedReconciledThroughUtc;
-        var windowEnd = request.RecoveredThroughUtc;
+        var boundedInspection = request.Policy is MissedRunPolicy.Coalesce && request.EvaluationSaturated;
+        var windowEnd = boundedInspection ? request.BoundedProgressThroughUtc : request.RecoveredThroughUtc;
 
         // Every row in the missed window, whatever its state: the non-terminal ones are the policy's to resolve, and
         // the terminal ones still matter because a terminal row occupying the earliest missed instant means that
@@ -1449,13 +1644,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ToArrayAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        var resolvable = inWindow
-            .Where(x => x.Status is JobStatus.Idle or JobStatus.Queued)
-            .Select(x => x.Id)
-            .ToArray();
-
         CronJobOccurrenceEntity<TCronJob>? coalescedRun = null;
-        var repurposedId = Guid.Empty;
+        var preservedOccurrenceId = Guid.Empty;
 
         if (request.Policy is MissedRunPolicy.Coalesce)
         {
@@ -1490,6 +1680,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                     await occurrences.AddAsync(coalescedRun, cancellationToken).ConfigureAwait(false);
                     await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
                     dbContext.Entry(coalescedRun).State = EntityState.Detached;
+                    preservedOccurrenceId = coalescedRun.Id;
                     break;
                 }
 
@@ -1522,7 +1713,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         continue;
                     }
 
-                    repurposedId = atInstant.Id;
+                    preservedOccurrenceId = atInstant.Id;
                     coalescedRun = new CronJobOccurrenceEntity<TCronJob>
                     {
                         Id = atInstant.Id,
@@ -1545,7 +1736,24 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
         // Everything else not yet executing in the window is retired: under skip because nothing may run, under
         // coalesce because the single coalesced run already stands in for the whole backlog.
-        var toSkip = resolvable.Where(id => id != repurposedId).ToArray();
+        // Do not resolve outside a saturated coalesce page until that page has found the one run owed by the backlog.
+        // An unexamined N+1 Idle row is the next pass's coalesce candidate, not part of the exhausted prefix.
+        var resolutionEnd =
+            request.Policy is MissedRunPolicy.Coalesce && request.EvaluationSaturated && coalescedRun is null
+                ? request.BoundedProgressThroughUtc
+                : request.RecoveredThroughUtc;
+        var toSkip = await occurrences
+            .AsNoTracking()
+            .Where(x =>
+                x.CronJobId == cronJobId
+                && x.ExecutionTime > windowStart
+                && x.ExecutionTime <= resolutionEnd
+                && x.Id != preservedOccurrenceId
+                && (x.Status == JobStatus.Idle || x.Status == JobStatus.Queued)
+            )
+            .Select(x => x.Id)
+            .ToArrayAsync(cancellationToken)
+            .ConfigureAwait(false);
         var skippedCount = 0;
 
         if (toSkip.Length > 0)
@@ -1563,6 +1771,26 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                             .SetProperty(x => x.ExecutedAt, request.OperationTimeUtc)
                             .SetProperty(x => x.UpdatedAt, request.OperationTimeUtc)
                             .SetProperty(x => x.SkippedReason, "Cron occurrence missed and resolved by recovery"),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+
+        var boundedPrefixOnly =
+            request.Policy is MissedRunPolicy.Coalesce && request.EvaluationSaturated && coalescedRun is null;
+
+        if (boundedPrefixOnly)
+        {
+            recoveredThroughUtc = request.BoundedProgressThroughUtc;
+            nextDueUtc = request.NextDueAfterBoundedProgressUtc;
+
+            await definitions
+                .Where(x => x.Id == cronJobId)
+                .ExecuteUpdateAsync(
+                    setter =>
+                        setter
+                            .SetProperty(x => x.ReconciledThroughUtc, recoveredThroughUtc)
+                            .SetProperty(x => x.NextDueUtc, nextDueUtc),
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -1594,7 +1822,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         var rows = await dbContext
             .Set<TCronJob>()
             .AsNoTracking()
-            .Where(x => !x.IsPaused)
+            .Where(x => !x.IsPaused && x.FingerprintRetryAfterUtc == null)
             .OrderBy(x => x.NextDueUtc)
             .ThenBy(x => x.Id)
             .Take(limit)
@@ -1612,6 +1840,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 x.OnNodeDeath,
                 x.MissedRunGraceSeconds,
                 x.OnMissedRun,
+                x.EvaluationFingerprint,
                 StoreUtcNow = DateTime.UtcNow,
             })
             .ToArrayAsync(cancellationToken)
@@ -1641,6 +1870,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                     OnNodeDeath = x.OnNodeDeath,
                     MissedRunGraceSeconds = x.MissedRunGraceSeconds,
                     OnMissedRun = x.OnMissedRun,
+                    EvaluationFingerprint = x.EvaluationFingerprint,
                 }),
             ],
         };
@@ -1683,13 +1913,25 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         // `advance` would put a property access on the record inside the tree for EF to translate.
         var reconciledThroughUtc = advance.ReconciledThroughUtc;
         var nextDueUtc = advance.NextDueUtc;
+        var fingerprint = advance.EvaluationFingerprint;
 
         var affected = await fenced
             .ExecuteUpdateAsync(
                 setter =>
                     setter
                         .SetProperty(x => x.ReconciledThroughUtc, reconciledThroughUtc)
-                        .SetProperty(x => x.NextDueUtc, nextDueUtc),
+                        .SetProperty(x => x.NextDueUtc, nextDueUtc)
+                        // Null leaves the persisted value alone, so an ordinary dispatch advance does not have to know
+                        // or restate the fingerprint just to move the watermark.
+                        .SetProperty(x => x.EvaluationFingerprint, x => fingerprint ?? x.EvaluationFingerprint)
+                        .SetProperty(
+                            x => x.FingerprintFailureCount,
+                            x => fingerprint == null ? x.FingerprintFailureCount : 0
+                        )
+                        .SetProperty(
+                            x => x.FingerprintRetryAfterUtc,
+                            x => fingerprint == null ? x.FingerprintRetryAfterUtc : null
+                        ),
                 cancellationToken
             )
             .ConfigureAwait(false);

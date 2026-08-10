@@ -16,7 +16,7 @@ public enum MissedRunPolicy
 {
     /// <summary>
     /// Default. Materializes exactly one run for a recovery regardless of how many occurrences were missed. The
-    /// run reports the earliest missed instant as its scheduled instant.
+    /// run reports the first unaccounted-for missed instant as its scheduled instant.
     /// </summary>
     Coalesce = 0,
 

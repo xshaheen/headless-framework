@@ -1,8 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
+using System.Globalization;
 using Headless.Abstractions;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
+using Headless.Jobs.Instrumentation;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Internal;
@@ -29,6 +32,21 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
     // R1/KTD1: start-tick of the last stranded-child sweep. long.MinValue means "never run", so the first poll after
     // startup always sweeps and a host that starts with an already-stranded child does not wait out an interval.
     private long _lastStrandedSweepTicks = long.MinValue;
+
+    // Resolved from the container rather than taken as a constructor parameter: the recovery and rebase paths are the
+    // only consumers, and threading a new required dependency through every construction site (including tests that
+    // legitimately do not care about telemetry) would be churn for one optional signal. Null in hosts that register no
+    // instrumentation, which is a supported configuration.
+    private IJobsInstrumentation? _instrumentation;
+
+    // A multi-page activation or periodic pass evaluates one fixed high-water snapshot. Cache the complete set of
+    // fingerprints for that snapshot so bounded paging does not reload every cron definition once per page.
+    private readonly ConcurrentDictionary<Guid, HashSet<string>> _fingerprintsBySnapshot = new();
+
+    private IJobsInstrumentation? _ResolveInstrumentation()
+    {
+        return _instrumentation ??= serviceProvider.GetService<IJobsInstrumentation>();
+    }
 
     private readonly TimeSpan _strandedSweepInterval = schedulerOptions.FallbackIntervalChecker;
 
@@ -91,6 +109,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         var minTimeJobs = await minTimeJobsTask.ConfigureAwait(false);
 
         var cronTime = minCronGroup?.Key;
+        var cronNow = minCronGroup?.StoreUtcNow ?? now;
         var timeJobTime = minTimeJobs.Length > 0 ? minTimeJobs[0].ExecutionTime : null;
 
         if (cronTime is null && timeJobTime is null)
@@ -110,10 +129,12 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         else if (timeJobTime is null)
         {
             includeCron = true;
-            timeRemaining = _SafeRemaining(cronTime.Value, now);
+            timeRemaining = _SafeRemaining(cronTime.Value, cronNow);
         }
         else
         {
+            var cronRemaining = _SafeRemaining(cronTime.Value, cronNow);
+            var timeJobRemaining = _SafeRemaining(timeJobTime.Value, now);
             var cronSecond = new DateTime(
                 cronTime.Value.Year,
                 cronTime.Value.Month,
@@ -135,18 +156,17 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
             {
                 includeCron = true;
                 includeTimeJobs = true;
-                var earliest = cronTime < timeJobTime ? cronTime.Value : timeJobTime.Value;
-                timeRemaining = _SafeRemaining(earliest, now);
+                timeRemaining = cronRemaining < timeJobRemaining ? cronRemaining : timeJobRemaining;
             }
-            else if (cronTime < timeJobTime)
+            else if (cronRemaining < timeJobRemaining)
             {
                 includeCron = true;
-                timeRemaining = _SafeRemaining(cronTime.Value, now);
+                timeRemaining = cronRemaining;
             }
             else
             {
                 includeTimeJobs = true;
-                timeRemaining = _SafeRemaining(timeJobTime.Value, now);
+                timeRemaining = timeJobRemaining;
             }
         }
 
@@ -174,7 +194,11 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         // it still carries the wake instant, but there is nothing to claim, so skip the provider round trip.
         if (includeCron && minCronGroup is { Items.Length: > 0 })
         {
-            cronFunctions = await _QueueNextCronJobsAsync(minCronGroup.Value, cancellationToken).ConfigureAwait(false);
+            cronFunctions = await _QueueNextCronJobsAsync(
+                    (minCronGroup.Value.Key, minCronGroup.Value.Items),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
         }
 
         if (includeTimeJobs && minTimeJobs.Length > 0)
@@ -267,9 +291,11 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
     // cluster open (nodes x tie-group) connections at once; the pool, not the CPU, is the scarce resource here.
     private const int _MaxAdvanceConcurrency = 8;
 
-    private async Task<(DateTime Key, JobManagerDispatchContext[] Items)?> _GetEarliestCronJobGroupAsync(
-        CancellationToken cancellationToken = default
-    )
+    private async Task<(
+        DateTime Key,
+        DateTime? StoreUtcNow,
+        JobManagerDispatchContext[] Items
+    )?> _GetEarliestCronJobGroupAsync(CancellationToken cancellationToken = default)
     {
         // The occurrence read no longer derives its filter from the definition read (an empty id set searches every
         // definition per the provider contract), so the two are independent and overlap instead of serializing —
@@ -295,7 +321,11 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
     /// advanced, and only an advanced definition has its expression evaluated — a definition that is not due costs an
     /// index entry and nothing more.
     /// </summary>
-    private async Task<(DateTime Next, JobManagerDispatchContext[] Items)?> _EarliestCronJobGroupAsync(
+    private async Task<(
+        DateTime Next,
+        DateTime? StoreUtcNow,
+        JobManagerDispatchContext[] Items
+    )?> _EarliestCronJobGroupAsync(
         CronDispatchCandidates? candidates,
         CronJobOccurrenceEntity<TCronJob> earliestStored,
         CancellationToken cancellationToken
@@ -428,7 +458,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
                     dispatched!.Add(storedItem);
                 }
 
-                return (dispatchInstant.Value, dispatched!.ToArray());
+                return (dispatchInstant.Value, candidates?.StoreUtcNow, dispatched!.ToArray());
             }
 
             // Nothing advanced this wake, so the stored occurrence is the only thing to claim. The wake instant is
@@ -436,21 +466,21 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
             // sooner would dispatch that projection late by the difference.
             if (wakeInstant is not null && wakeInstant.Value < storedTime)
             {
-                return (wakeInstant.Value, []);
+                return (wakeInstant.Value, candidates?.StoreUtcNow, []);
             }
 
-            return (storedTime, [storedItem]);
+            return (storedTime, candidates?.StoreUtcNow, [storedItem]);
         }
 
         if (dispatchInstant is not null)
         {
-            return (dispatchInstant.Value, dispatched!.ToArray());
+            return (dispatchInstant.Value, candidates?.StoreUtcNow, dispatched!.ToArray());
         }
 
         // Nothing to claim, but still report the earliest projection so the loop sleeps to it rather than to a
         // recomputed instant. A lost advance race lands here too: the winner moved the projection, so the next wake
         // reads the new one.
-        return wakeInstant is null ? null : (wakeInstant.Value, []);
+        return wakeInstant is null ? null : (wakeInstant.Value, candidates?.StoreUtcNow, []);
     }
 
     /// <summary>
@@ -473,6 +503,14 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         return null;
     }
 
+    /// <summary>
+    /// Gives a definition its first schedule position, anchored at the store's instant rather than at anything in its
+    /// history, so nothing before this moment is ever treated as missed.
+    /// </summary>
+    /// <remarks>
+    /// Uses the same compare-and-advance as ordinary dispatch — the unset watermark IS the observed value — so two
+    /// nodes initializing the same definition converge on one position instead of racing.
+    /// </remarks>
     private async Task _InitializeSchedulePositionAsync(
         CronDispatchCandidate candidate,
         DateTime storeUtcNow,
@@ -494,6 +532,9 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
                     ExpectedScheduleRevision = candidate.ScheduleRevision,
                     ReconciledThroughUtc = storeUtcNow,
                     NextDueUtc = firstOccurrence ?? DateTime.MaxValue,
+                    // Stamped with the position it describes, so the sweep can tell a definition positioned under
+                    // current rules from one carrying no record of how it was positioned at all.
+                    EvaluationFingerprint = cronScheduleCache.ComputeEvaluationFingerprint(candidate.TimeZoneId),
                 },
                 cancellationToken
             )
@@ -524,6 +565,12 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
             storeUtcNow,
             candidate.TimeZoneId
         );
+        var boundedProgressThroughUtc = pending.LatestPendingUtc ?? storeUtcNow;
+        var nextAfterBoundedProgress = cronScheduleCache.GetNextOccurrenceOrDefault(
+            candidate.Expression,
+            boundedProgressThroughUtc,
+            candidate.TimeZoneId
+        );
 
         var recovery = await persistenceProvider
             .ApplyCronRecoveryAsync(
@@ -534,6 +581,9 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
                     ExpectedScheduleRevision = candidate.ScheduleRevision,
                     RecoveredThroughUtc = storeUtcNow,
                     NextDueUtc = nextAfterRecovery ?? DateTime.MaxValue,
+                    BoundedProgressThroughUtc = boundedProgressThroughUtc,
+                    NextDueAfterBoundedProgressUtc = nextAfterBoundedProgress ?? DateTime.MaxValue,
+                    EvaluationSaturated = pending.CountSaturated,
                     Policy = candidate.OnMissedRun,
                     EarliestMissedUtc = earliestMissedUtc,
                     MissedInstantsUtc = pending.PendingInstantsUtc,
@@ -551,17 +601,17 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
             return null;
         }
 
-        logger.LogCronRecoveryApplied(
-            candidate.CronJobId,
-            candidate.FunctionName,
-            candidate.OnMissedRun.ToString(),
-            pending.PendingCount,
-            pending.CountSaturated,
-            earliestMissedUtc,
-            pending.LatestPendingUtc ?? earliestMissedUtc,
-            storeUtcNow,
-            recovery.SkippedOccurrenceCount
-        );
+        _ResolveInstrumentation()
+            ?.LogCronRecoveryApplied(
+                candidate.CronJobId,
+                candidate.FunctionName,
+                candidate.OnMissedRun,
+                pending.PendingCount,
+                pending.CountSaturated,
+                earliestMissedUtc,
+                pending.LatestPendingUtc ?? earliestMissedUtc,
+                recovery.SkippedOccurrenceCount
+            );
 
         if (recovery.CoalescedRun is null)
         {
@@ -970,9 +1020,27 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
             return false;
         }
 
-        var occurrence = CronJobOccurrenceFactory.Create(definition, next.Value, now, guidGenerator);
+        definition.EvaluationFingerprint = cronScheduleCache.ComputeEvaluationFingerprint(definition.TimeZoneId);
+        definition.FingerprintFailureCount = 0;
+        definition.FingerprintRetryAfterUtc = null;
         var updated = await persistenceProvider
-            .ResumeCronJobAsync(definition.Id, definition.ScheduleRevision, occurrence, now, cancellationToken)
+            .ResumeCronJobAsync(
+                definition.Id,
+                definition.ScheduleRevision,
+                scheduleAnchorUtc =>
+                {
+                    var storeAnchoredNext = cronScheduleCache.GetNextOccurrenceOrDefault(
+                        definition.Expression,
+                        scheduleAnchorUtc,
+                        definition.TimeZoneId
+                    );
+                    return storeAnchoredNext is null
+                        ? null
+                        : CronJobOccurrenceFactory.Create(definition, storeAnchoredNext.Value, now, guidGenerator);
+                },
+                now,
+                cancellationToken
+            )
             .ConfigureAwait(false);
 
         return await _PublishAcceptedCronControlAsync(updated, "resume").ConfigureAwait(false);
@@ -1091,6 +1159,268 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
                     .ConfigureAwait(false);
 
         return request == null ? default : JobsHelper.ReadJobRequest<T>(request, serializationOptions);
+    }
+
+    public async Task<CronFingerprintSweepResult> RebaseStaleFingerprintsAsync(
+        int limit,
+        Guid? afterId = null,
+        Guid? throughId = null,
+        bool allowWrap = false,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
+        var knownFingerprints =
+            throughId is { } requestedSnapshot
+            && _fingerprintsBySnapshot.TryGetValue(requestedSnapshot, out var cachedFingerprints)
+                ? cachedFingerprints
+                : await _CurrentFingerprintsAsync(cancellationToken).ConfigureAwait(false);
+
+        var page = await persistenceProvider
+            .GetStaleFingerprintDefinitionsAsync(
+                new CronFingerprintSweepRequest
+                {
+                    CurrentFingerprints = knownFingerprints,
+                    Limit = limit,
+                    AfterId = afterId,
+                    ThroughId = throughId,
+                    AllowWrap = allowWrap,
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (page.SnapshotHighWatermarkId is { } snapshot && (page.HasMore || throughId is not null))
+        {
+            _fingerprintsBySnapshot.TryAdd(snapshot, knownFingerprints);
+        }
+
+        var rebased = 0;
+        var deferred = 0;
+        var lostFence = 0;
+
+        foreach (var candidate in page.Candidates)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            Exception? deterministicFailure = null;
+            string? current = null;
+            DateTime? rebasedNext = null;
+            var anchor =
+                candidate.ReconciledThroughUtc > page.StoreUtcNow ? candidate.ReconciledThroughUtc : page.StoreUtcNow;
+
+            if (candidate.OnMissedRun is not MissedRunPolicy.Coalesce and not MissedRunPolicy.Skip)
+            {
+                deterministicFailure = new InvalidOperationException(
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"Missed-run policy value '{(int)candidate.OnMissedRun}' is not defined."
+                    )
+                );
+            }
+            else if (candidate.MissedRunGraceSeconds < 0)
+            {
+                deterministicFailure = new InvalidOperationException("Missed-run grace cannot be negative.");
+            }
+            else if (cronScheduleCache.Get(candidate.Expression) is null)
+            {
+                deterministicFailure = new InvalidOperationException(
+                    $"Cron expression '{candidate.Expression}' is invalid."
+                );
+            }
+            else
+            {
+                try
+                {
+                    current = cronScheduleCache.ComputeEvaluationFingerprint(candidate.TimeZoneId);
+                    rebasedNext = cronScheduleCache.GetNextOccurrenceOrDefault(
+                        candidate.Expression,
+                        anchor,
+                        candidate.TimeZoneId
+                    );
+                }
+                catch (ArgumentException exception)
+                {
+                    deterministicFailure = exception;
+                }
+            }
+
+            if (deterministicFailure is not null)
+            {
+                logger.LogUnresolvableCronTimeZone(
+                    deterministicFailure,
+                    candidate.CronJobId,
+                    candidate.FunctionName,
+                    candidate.TimeZoneId ?? "<default>"
+                );
+
+                var accepted = await persistenceProvider
+                    .DeferStaleFingerprintDefinitionAsync(
+                        new CronFingerprintDeferRequest
+                        {
+                            CronJobId = candidate.CronJobId,
+                            ExpectedScheduleRevision = candidate.ScheduleRevision,
+                            ObservedReconciledThroughUtc = candidate.ReconciledThroughUtc,
+                            ObservedEvaluationFingerprint = candidate.EvaluationFingerprint,
+                            InitialDelay = schedulerOptions.FingerprintSweepInterval,
+                            MaximumDelay = TimeSpan.FromHours(24),
+                        },
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                if (accepted)
+                {
+                    deferred++;
+                }
+                else
+                {
+                    lostFence++;
+                }
+
+                continue;
+            }
+
+            if (string.Equals(candidate.EvaluationFingerprint, current, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            // Provider/database failures are deliberately outside the deterministic-definition catch above. They are
+            // infrastructure failures, not evidence that this row is malformed, so activation must fail closed rather
+            // than durably deferring the row and allowing the scheduler to start.
+            if (await _RebaseAsync(candidate, current!, anchor, rebasedNext, cancellationToken).ConfigureAwait(false))
+            {
+                rebased++;
+            }
+            else
+            {
+                lostFence++;
+            }
+        }
+
+        if ((!page.HasMore || page.Wrapped) && page.SnapshotHighWatermarkId is { } completedSnapshot)
+        {
+            _fingerprintsBySnapshot.TryRemove(completedSnapshot, out _);
+        }
+
+        return new CronFingerprintSweepResult
+        {
+            Scanned = page.Candidates.Count,
+            Rebased = rebased,
+            Deferred = deferred,
+            LostFence = lostFence,
+            HasMore = page.HasMore,
+            Wrapped = page.Wrapped,
+            NextCursorId = page.Candidates.Count == 0 ? afterId : page.Candidates[^1].CronJobId,
+            SnapshotHighWatermarkId = page.SnapshotHighWatermarkId,
+        };
+    }
+
+    /// <summary>
+    /// Every fingerprint this evaluator currently produces: one per timezone actually in use, plus the scheduler-wide
+    /// fallback.
+    /// </summary>
+    /// <remarks>
+    /// Completeness is what makes the store-side predicate precise, and it is load-bearing rather than an
+    /// optimization. A zone missing from this set makes every definition using it match "fingerprint not known" on
+    /// every sweep, forever — and because the store applies the batch limit BEFORE the per-candidate confirmation
+    /// above, those permanent false positives crowd genuinely stale definitions out of the batch and starve them
+    /// indefinitely. The zones in use come from the store rather than from the declared functions because a runtime
+    /// definition may name a zone no <c>[JobFunction]</c> mentions.
+    /// </remarks>
+    private async Task<HashSet<string>> _CurrentFingerprintsAsync(CancellationToken cancellationToken)
+    {
+        var fingerprints = new HashSet<string>(StringComparer.Ordinal)
+        {
+            cronScheduleCache.ComputeEvaluationFingerprint(timeZoneId: null),
+        };
+
+        // The one read whose result may legitimately be served from a cache (see IJobPersistenceProvider): a zone that
+        // entered use since it was cached only costs one wasted candidate, which the confirmation above absorbs.
+        var definitions = await persistenceProvider
+            .GetAllCronJobExpressionsAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var seenZones = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var definition in definitions)
+        {
+            if (definition.TimeZoneId is not { } zone || !seenZones.Add(zone))
+            {
+                continue;
+            }
+
+            try
+            {
+                fingerprints.Add(cronScheduleCache.ComputeEvaluationFingerprint(zone));
+            }
+            catch (ArgumentException)
+            {
+                // Unresolvable on this host. Contributing nothing is correct — there is no fingerprint that would make
+                // definitions in this zone look current — and the per-candidate guard reports it once per sweep with
+                // the definition it belongs to, rather than once per zone with no owner.
+            }
+        }
+
+        return fingerprints;
+    }
+
+    /// <summary>
+    /// Re-derives one definition's projection under current rules and refreshes its fingerprint, in a single
+    /// compare-and-advance so a pause, resume, or edit racing the sweep wins instead of being clobbered.
+    /// </summary>
+    private async Task<bool> _RebaseAsync(
+        CronDispatchCandidate candidate,
+        string currentFingerprint,
+        DateTime anchor,
+        DateTime? rebasedNext,
+        CancellationToken cancellationToken
+    )
+    {
+        // Derived from the watermark so no interval is skipped, then anchored at or after the store instant so a tick
+        // the changed rules moved into the past is NOT replayed as a misfire. That anchoring is the difference between
+        // surfacing a rule change and manufacturing a backlog out of one.
+        var advanced = await persistenceProvider
+            .AdvanceCronScheduleAsync(
+                new CronScheduleAdvance
+                {
+                    CronJobId = candidate.CronJobId,
+                    ObservedReconciledThroughUtc = candidate.ReconciledThroughUtc,
+                    ExpectedScheduleRevision = candidate.ScheduleRevision,
+                    // Environmental rule drift is a non-replay boundary: the prior interpretation's backlog is
+                    // deliberately discarded and both cursor and projection move to the provider-time anchor.
+                    ReconciledThroughUtc = anchor,
+                    NextDueUtc = rebasedNext ?? DateTime.MaxValue,
+                    EvaluationFingerprint = currentFingerprint,
+                    // Never gated on due-ness: a rule change that moves an occurrence earlier is invisible behind the
+                    // stale later projection, which is exactly the case this sweep exists for.
+                    RequireProjectionDue = false,
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (advanced is null)
+        {
+            // A pause, resume, or edit committed first. Its transition is newer and already carries a correct
+            // position, so losing here is the right outcome — the next sweep re-reads whatever it left.
+            return false;
+        }
+
+        _ResolveInstrumentation()
+            ?.LogCronFingerprintRebased(
+                candidate.CronJobId,
+                candidate.FunctionName,
+                candidate.EvaluationFingerprint,
+                currentFingerprint,
+                candidate.ReconciledThroughUtc,
+                anchor,
+                candidate.NextDueUtc,
+                advanced.NextDueUtc
+            );
+
+        return true;
     }
 
     public async Task MigrateDefinedCronJobs(
@@ -1264,30 +1594,6 @@ internal static partial class InternalJobsManagerLog
     )]
     public static partial void LogTimedChildSafetyNetFailed(this ILogger logger, Exception exception);
 
-    // MissedCount is a lower bound whenever CountSaturated is true — the walk stops at the evaluation ceiling rather
-    // than enumerating an unbounded backlog. The two are logged together so an operator can tell "exactly 3 missed"
-    // from "at least 1000 missed"; reporting a saturated count as exact is the misreading this pairing prevents.
-    [LoggerMessage(
-        EventId = 3220,
-        Level = LogLevel.Warning,
-        Message = "Cron definition {CronJobId} ({Function}) fell behind and was recovered with policy {Policy}: "
-            + "{MissedCount} missed occurrence(s) (lower bound: {CountSaturated}) spanning {EarliestMissedUtc:O} to "
-            + "{LatestMissedUtc:O}; watermark advanced to {RecoveredThroughUtc:O} and {SkippedCount} pending "
-            + "occurrence(s) were skipped."
-    )]
-    public static partial void LogCronRecoveryApplied(
-        this ILogger logger,
-        Guid cronJobId,
-        string function,
-        string policy,
-        int missedCount,
-        bool countSaturated,
-        DateTime earliestMissedUtc,
-        DateTime latestMissedUtc,
-        DateTime recoveredThroughUtc,
-        int skippedCount
-    );
-
     [LoggerMessage(
         EventId = 3215,
         Level = LogLevel.Warning,
@@ -1319,5 +1625,20 @@ internal static partial class InternalJobsManagerLog
         this ILogger logger,
         Exception exception,
         int claimedCount
+    );
+
+    [LoggerMessage(
+        EventId = 3218,
+        Level = LogLevel.Warning,
+        Message = "Cron definition {CronJobId} ({FunctionName}) names time zone '{TimeZoneId}', which this host "
+            + "cannot resolve. Its schedule interpretation cannot be re-derived here and it is skipped by the "
+            + "fingerprint sweep; the rest of the sweep continues."
+    )]
+    public static partial void LogUnresolvableCronTimeZone(
+        this ILogger logger,
+        Exception exception,
+        Guid cronJobId,
+        string functionName,
+        string timeZoneId
     );
 }

@@ -367,16 +367,11 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
     public async Task<TCronJob?> ResumeCronJobAsync(
         Guid cronJobId,
         long expectedScheduleRevision,
-        CronJobOccurrenceEntity<TCronJob> nextOccurrence,
+        Func<DateTime, CronJobOccurrenceEntity<TCronJob>?> nextOccurrenceFactory,
         DateTimeOffset operationTimeUtc,
         CancellationToken cancellationToken = default
     )
     {
-        if (nextOccurrence.CronJobId != cronJobId)
-        {
-            return null;
-        }
-
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -388,14 +383,6 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
         // no window exposes a resumed definition still carrying its pre-pause position — which would read as a backlog
         // spanning the entire pause and hand recovery an interval that was deliberately not running.
         //
-        // The watermark is stamped from the DB clock rather than the caller's, so no node's skew decides where a
-        // resumed schedule restarts. This statement runs inside an explicit transaction (the replacement occurrence
-        // must land atomically with it), so on PostgreSQL the clock is transaction-start time — the watermark is
-        // therefore earlier than true by the transaction's own age, single-digit milliseconds. That direction is
-        // benign: at worst one boundary occurrence is considered pending. A lease DEADLINE could not tolerate this and
-        // is why the advance primitive stays in autocommit; a resume watermark can.
-        var resumeProjection = nextOccurrence.ExecutionTime;
-
         var accepted = await dbContext
             .Set<TCronJob>()
             .Where(x => x.Id == cronJobId && x.IsPaused && x.ScheduleRevision == expectedScheduleRevision)
@@ -405,7 +392,6 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
                         .SetProperty(x => x.IsPaused, valueExpression: false)
                         .SetProperty(x => x.ScheduleRevision, x => x.ScheduleRevision + 1)
                         .SetProperty(x => x.ReconciledThroughUtc, _ => DateTime.UtcNow)
-                        .SetProperty(x => x.NextDueUtc, resumeProjection)
                         .SetProperty(x => x.UpdatedAt, operationTimeUtc),
                 cancellationToken
             )
@@ -415,6 +401,36 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
         {
             return null;
         }
+
+        var scheduleAnchorUtc = await dbContext
+            .Set<TCronJob>()
+            .AsNoTracking()
+            .Where(x => x.Id == cronJobId)
+            .Select(x => x.ReconciledThroughUtc)
+            .SingleAsync(cancellationToken)
+            .ConfigureAwait(false);
+        scheduleAnchorUtc = DateTime.SpecifyKind(scheduleAnchorUtc, DateTimeKind.Utc);
+        var nextOccurrence = nextOccurrenceFactory(scheduleAnchorUtc);
+        if (nextOccurrence is null || nextOccurrence.CronJobId != cronJobId)
+        {
+            return null;
+        }
+
+        var resumeProjection = nextOccurrence.ExecutionTime;
+        var evaluationFingerprint = nextOccurrence.CronJob?.EvaluationFingerprint;
+        await dbContext
+            .Set<TCronJob>()
+            .Where(x => x.Id == cronJobId)
+            .ExecuteUpdateAsync(
+                setter =>
+                    setter
+                        .SetProperty(x => x.NextDueUtc, resumeProjection)
+                        .SetProperty(x => x.EvaluationFingerprint, evaluationFingerprint)
+                        .SetProperty(x => x.FingerprintFailureCount, 0)
+                        .SetProperty(x => x.FingerprintRetryAfterUtc, _ => null),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
 
         nextOccurrence.CronJob = null!;
         await dbContext.Set<CronJobOccurrenceEntity<TCronJob>>().AddAsync(nextOccurrence, cancellationToken);
@@ -474,18 +490,21 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
             var scheduleChanged =
                 !string.Equals(current.Expression, update.Definition.Expression, StringComparison.Ordinal)
                 || !string.Equals(current.TimeZoneId, update.Definition.TimeZoneId, StringComparison.Ordinal);
+            var recoveryChanged =
+                current.OnMissedRun != update.Definition.OnMissedRun
+                || current.MissedRunGraceSeconds != update.Definition.MissedRunGraceSeconds;
+            var revisionChanged = scheduleChanged || recoveryChanged;
 
-            if (scheduleChanged && !current.IsPaused && update.NextOccurrence is null)
+            if (scheduleChanged && !current.IsPaused && update.NextOccurrenceFactory is null)
             {
                 return null;
             }
 
             // R10: a schedule-changing edit rebases the position in the same transition that bumps the revision, so the
             // old expression's projection never survives the edit. A metadata-only edit leaves both untouched — the
-            // schedule did not move, so neither should the position. Same DB-clock-inside-a-transaction trade-off as
-            // the resume path above.
-            var editProjection = update.NextOccurrence?.ExecutionTime;
-            var rebasePosition = scheduleChanged && editProjection is not null;
+            // schedule did not move, so neither should the position. The provider stamps its own clock first, then
+            // supplies that exact persisted anchor to the occurrence factory before this transaction commits.
+            var rebasePosition = scheduleChanged && !current.IsPaused;
 
             var affected = await dbContext
                 .Set<TCronJob>()
@@ -503,19 +522,33 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
                             .SetProperty(x => x.OnNodeDeath, update.Definition.OnNodeDeath)
                             // R17: the runtime API is the AUTHORITY for these two. The attribute only seeds them at
                             // creation and is never reapplied, so persisting them here is what makes an operator
-                            // override survive restarts. Metadata-only, like Retries/RetryIntervals/OnNodeDeath: they
-                            // change how a backlog is recovered, not which instants materialize, so no revision bump.
+                            // override survive restarts. They change recovery semantics and therefore bump the same
+                            // revision fence used by recovery, without replacing the schedule occurrence.
                             .SetProperty(x => x.OnMissedRun, update.Definition.OnMissedRun)
                             .SetProperty(x => x.MissedRunGraceSeconds, update.Definition.MissedRunGraceSeconds)
                             .SetProperty(
                                 x => x.ScheduleRevision,
-                                scheduleChanged ? current.ScheduleRevision + 1 : current.ScheduleRevision
+                                revisionChanged ? current.ScheduleRevision + 1 : current.ScheduleRevision
+                            )
+                            .SetProperty(
+                                x => x.EvaluationFingerprint,
+                                x =>
+                                    revisionChanged
+                                        ? update.Definition.EvaluationFingerprint ?? x.EvaluationFingerprint
+                                        : x.EvaluationFingerprint
+                            )
+                            .SetProperty(
+                                x => x.FingerprintFailureCount,
+                                x => revisionChanged ? 0 : x.FingerprintFailureCount
+                            )
+                            .SetProperty(
+                                x => x.FingerprintRetryAfterUtc,
+                                x => revisionChanged ? null : x.FingerprintRetryAfterUtc
                             )
                             .SetProperty(
                                 x => x.ReconciledThroughUtc,
                                 x => rebasePosition ? DateTime.UtcNow : x.ReconciledThroughUtc
                             )
-                            .SetProperty(x => x.NextDueUtc, x => rebasePosition ? editProjection!.Value : x.NextDueUtc)
                             .SetProperty(x => x.UpdatedAt, operationTimeUtc),
                     cancellationToken
                 )
@@ -524,6 +557,33 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
             if (affected == 0)
             {
                 return null;
+            }
+
+            CronJobOccurrenceEntity<TCronJob>? replacement = null;
+            if (rebasePosition)
+            {
+                var scheduleAnchorUtc = await dbContext
+                    .Set<TCronJob>()
+                    .AsNoTracking()
+                    .Where(x => x.Id == current.Id)
+                    .Select(x => x.ReconciledThroughUtc)
+                    .SingleAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                scheduleAnchorUtc = DateTime.SpecifyKind(scheduleAnchorUtc, DateTimeKind.Utc);
+                replacement = update.NextOccurrenceFactory!(scheduleAnchorUtc);
+                if (replacement is null || replacement.CronJobId != current.Id)
+                {
+                    return null;
+                }
+
+                await dbContext
+                    .Set<TCronJob>()
+                    .Where(x => x.Id == current.Id)
+                    .ExecuteUpdateAsync(
+                        setter => setter.SetProperty(x => x.NextDueUtc, replacement.ExecutionTime),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
             }
 
             if (scheduleChanged)
@@ -548,18 +608,23 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
 
                 if (!current.IsPaused)
                 {
-                    update.NextOccurrence!.CronJobId = current.Id;
-                    update.NextOccurrence.CronJob = null!;
+                    replacement!.CronJobId = current.Id;
+                    replacement.CronJob = null!;
                     await dbContext
                         .Set<CronJobOccurrenceEntity<TCronJob>>()
-                        .AddAsync(update.NextOccurrence, cancellationToken)
+                        .AddAsync(replacement, cancellationToken)
                         .ConfigureAwait(false);
                 }
             }
 
             var result = update.Definition;
             result.IsPaused = current.IsPaused;
-            result.ScheduleRevision = scheduleChanged ? current.ScheduleRevision + 1 : current.ScheduleRevision;
+            result.ScheduleRevision = revisionChanged ? current.ScheduleRevision + 1 : current.ScheduleRevision;
+            result.EvaluationFingerprint = revisionChanged
+                ? update.Definition.EvaluationFingerprint ?? current.EvaluationFingerprint
+                : current.EvaluationFingerprint;
+            result.FingerprintFailureCount = revisionChanged ? 0 : current.FingerprintFailureCount;
+            result.FingerprintRetryAfterUtc = revisionChanged ? null : current.FingerprintRetryAfterUtc;
             result.CreatedAt = current.CreatedAt;
             result.UpdatedAt = operationTimeUtc;
             results[inputIndex] = result;

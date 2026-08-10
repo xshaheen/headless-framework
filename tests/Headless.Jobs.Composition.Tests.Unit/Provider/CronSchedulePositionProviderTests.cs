@@ -354,7 +354,13 @@ public sealed class CronSchedulePositionProviderTests : TestBase
         using var workerStarted = new ManualResetEventSlim();
         Exception? failure = null;
         var definitionLock = typeof(JobsInMemoryPersistenceProvider<FakeTimeJob, FakeCronJob>)
-            .GetMethod("_GetCronDefinitionLock", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetMethod(
+                "_GetCronDefinitionLock",
+                BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly,
+                binder: null,
+                types: [typeof(Guid)],
+                modifiers: null
+            )!
             .Invoke(provider, [definition.Id])!;
         var worker = new Thread(() =>
         {

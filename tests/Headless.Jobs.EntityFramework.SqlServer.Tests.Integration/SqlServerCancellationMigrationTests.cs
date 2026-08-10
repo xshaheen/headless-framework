@@ -50,10 +50,12 @@ public sealed class SqlServerCancellationMigrationTests(SqlServerJobsCoordinatio
         await using var dbContext = new SqlServerCancellationMigrationDbContext(options);
         var migrator = dbContext.GetService<IMigrator>();
         await migrator.MigrateAsync(AddCronScheduleWatermark.Id, cancellationToken);
+        await migrator.MigrateAsync(AddCronScheduleWatermark.Id, cancellationToken);
 
         (await _ReadWatermarkDefaultsAsync(cronJobId, cancellationToken))
             .Should()
-            .Be((default, default, 0, "Coalesce", null));
+            .Be((default, default, 0, "Coalesce", null, 0, null));
+        (await _IndexExistsAsync("IX_CronJobs_FingerprintRetryAfterUtc_Id", cancellationToken)).Should().BeTrue();
 
         await using (var connection = fixture.CreateConnection())
         {
@@ -75,6 +77,26 @@ public sealed class SqlServerCancellationMigrationTests(SqlServerJobsCoordinatio
             .ThrowAsync<Exception>()
             .WithMessage("*Cannot downgrade cron schedule watermark migration*");
         (await _ReadWatermarkDefaultsAsync(cronJobId, cancellationToken)).ReconciledThroughUtc.Should().NotBe(default);
+
+        await using (var connection = fixture.CreateConnection())
+        {
+            await connection.OpenAsync(cancellationToken);
+            await using var command = connection.CreateCommand();
+            command.CommandText =
+                "UPDATE [jobs].[CronJobs] SET [ReconciledThroughUtc] = CONVERT(datetime2, '0001-01-01T00:00:00.0000000'), "
+                + "[NextDueUtc] = CONVERT(datetime2, '0001-01-01T00:00:00.0000000'), [FingerprintFailureCount] = 1, "
+                + "[FingerprintRetryAfterUtc] = DATEADD(hour, 1, SYSUTCDATETIME()) WHERE [Id] = @id";
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = "@id";
+            parameter.Value = cronJobId;
+            command.Parameters.Add(parameter);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+        await downgrade
+            .Should()
+            .ThrowAsync<Exception>()
+            .WithMessage("*Cannot downgrade cron schedule watermark migration*");
+        (await _ReadWatermarkDefaultsAsync(cronJobId, cancellationToken)).FingerprintFailureCount.Should().Be(1);
     }
 
     [Fact]
@@ -179,6 +201,23 @@ public sealed class SqlServerCancellationMigrationTests(SqlServerJobsCoordinatio
         return (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? true);
     }
 
+    private async Task<bool> _IndexExistsAsync(string indexName, CancellationToken cancellationToken)
+    {
+        await using var connection = fixture.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT CASE WHEN EXISTS (SELECT 1 FROM sys.indexes i "
+            + "JOIN sys.tables t ON t.object_id = i.object_id "
+            + "JOIN sys.schemas s ON s.schema_id = t.schema_id "
+            + "WHERE s.name = N'jobs' AND t.name = N'CronJobs' AND i.name = @name) THEN 1 ELSE 0 END";
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = "@name";
+        parameter.Value = indexName;
+        command.Parameters.Add(parameter);
+        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture) == 1;
+    }
+
     private async Task _DropMigrationHistoryAsync(string tableName, CancellationToken cancellationToken)
     {
         await using var connection = fixture.CreateConnection();
@@ -216,7 +255,9 @@ public sealed class SqlServerCancellationMigrationTests(SqlServerJobsCoordinatio
         DateTime NextDueUtc,
         int MissedRunGraceSeconds,
         string OnMissedRun,
-        string? EvaluationFingerprint
+        string? EvaluationFingerprint,
+        int FingerprintFailureCount,
+        DateTime? FingerprintRetryAfterUtc
     )> _ReadWatermarkDefaultsAsync(Guid cronJobId, CancellationToken cancellationToken)
     {
         await using var connection = fixture.CreateConnection();
@@ -224,7 +265,8 @@ public sealed class SqlServerCancellationMigrationTests(SqlServerJobsCoordinatio
         await using var command = connection.CreateCommand();
         command.CommandText =
             "SELECT [ReconciledThroughUtc], [NextDueUtc], [MissedRunGraceSeconds], [OnMissedRun], "
-            + "[EvaluationFingerprint] FROM [jobs].[CronJobs] WHERE [Id] = @id";
+            + "[EvaluationFingerprint], [FingerprintFailureCount], [FingerprintRetryAfterUtc] "
+            + "FROM [jobs].[CronJobs] WHERE [Id] = @id";
         var parameter = command.CreateParameter();
         parameter.ParameterName = "@id";
         parameter.Value = cronJobId;
@@ -236,7 +278,9 @@ public sealed class SqlServerCancellationMigrationTests(SqlServerJobsCoordinatio
             reader.GetDateTime(1),
             reader.GetInt32(2),
             reader.GetString(3),
-            await reader.IsDBNullAsync(4, cancellationToken) ? null : reader.GetString(4)
+            await reader.IsDBNullAsync(4, cancellationToken) ? null : reader.GetString(4),
+            reader.GetInt32(5),
+            await reader.IsDBNullAsync(6, cancellationToken) ? null : reader.GetDateTime(6)
         );
     }
 

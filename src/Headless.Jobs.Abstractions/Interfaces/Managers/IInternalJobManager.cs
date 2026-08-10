@@ -47,6 +47,26 @@ internal interface IInternalJobManager
     Task<T?> GetRequestAsync<T>(Guid jobId, JobType type, CancellationToken cancellationToken = default);
     Task<JobExecutionState[]> RunTimedOutTickers(CancellationToken cancellationToken = default);
     Task MigrateDefinedCronJobs(CronSeedDefinition[] cronExpressions, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Processes one bounded keyset page of cron definitions whose persisted evaluation fingerprint no longer matches
+    /// the running evaluator, returning outcome counters and stable-snapshot continuation state.
+    /// </summary>
+    /// <param name="limit">Maximum definitions to evaluate in this page.</param>
+    /// <param name="afterId">Exclusive keyset cursor, or <see langword="null"/> to start at the beginning.</param>
+    /// <param name="throughId">Inclusive snapshot high-water mark, or <see langword="null"/> to capture one.</param>
+    /// <param name="allowWrap">Whether this page may fill once from the beginning after exhausting the forward range.</param>
+    /// <param name="cancellationToken">Token that aborts the sweep.</param>
+    /// <returns>Outcome counters and the continuation state for the bounded snapshot.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="limit"/> is not positive.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<CronFingerprintSweepResult> RebaseStaleFingerprintsAsync(
+        int limit,
+        Guid? afterId = null,
+        Guid? throughId = null,
+        bool allowWrap = false,
+        CancellationToken cancellationToken = default
+    );
     Task DeleteJob(Guid jobId, JobType type, CancellationToken cancellationToken = default);
     Task ReleaseDeadNodeResources(string instanceIdentifier, CancellationToken cancellationToken = default);
     Task ReleaseDeadNodeResources(

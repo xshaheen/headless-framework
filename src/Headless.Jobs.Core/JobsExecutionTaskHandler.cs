@@ -270,7 +270,7 @@ internal sealed class JobsExecutionTaskHandler
             // Observational: how late this run actually started. Clamped at zero because a run can be observed to
             // start fractionally BEFORE its scheduled instant when the store's clock and this node's differ by a few
             // milliseconds, and no consumer expects negative lateness. For a recovery run this measures from the
-            // earliest missed instant, so it spans the outage rather than the dispatch delay.
+            // first unaccounted-for missed instant, so it spans the unresolved outage rather than the dispatch delay.
             Lateness = _Lateness(context.ExecutionTime, _timeProvider.GetUtcNow().UtcDateTime),
             CronOccurrenceOperations = new CronOccurrenceOperations(() =>
             {

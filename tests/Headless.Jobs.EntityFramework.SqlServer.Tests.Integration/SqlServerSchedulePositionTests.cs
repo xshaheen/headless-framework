@@ -64,6 +64,12 @@ public sealed class SqlServerSchedulePositionTests(SqlServerJobsCoordinationFixt
     }
 
     [Fact]
+    public override Task dispatch_selection_excludes_definitions_with_durable_fingerprint_defer_state()
+    {
+        return base.dispatch_selection_excludes_definitions_with_durable_fingerprint_defer_state();
+    }
+
+    [Fact]
     public override Task materialization_survives_restart_and_the_idle_occurrence_is_claimed_later() =>
         base.materialization_survives_restart_and_the_idle_occurrence_is_claimed_later();
 
