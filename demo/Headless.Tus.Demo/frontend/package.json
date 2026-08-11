@@ -17,16 +17,16 @@
     "pretty-bytes": "^7.1.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "react-dropzone": "^19.1.1",
+    "react-dropzone": "^19.3.0",
     "tus-js-client": "^4.3.1",
     "use-tus": "^0.9.0"
   },
   "devDependencies": {
-    "@types/react": "^19.1.0",
-    "@types/react-dom": "^19.1.0",
-    "@vitejs/plugin-react": "^6.0.4",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^6.0.5",
     "typescript": "~7.0.2",
-    "vite": "^8.1.5"
+    "vite": "^8.2.0"
   },
   "overrides": {
     "postcss": {
