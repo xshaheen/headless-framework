@@ -16,7 +16,7 @@
     "format": "prettier --write src/"
   },
   "dependencies": {
-    "axios": "^1.18.1",
+    "axios": "^1.19.0",
     "echarts": "^6.1.0",
     "json-bigint": "^1.0.0",
     "pinia": "^4.0.2",
@@ -25,7 +25,7 @@
     "vue": "^3.5.40",
     "vue-echarts": "^8.0.1",
     "vue-router": "^5.2.0",
-    "vuetify": "^4.1.6"
+    "vuetify": "^4.1.7"
   },
   "devDependencies": {
     "@mdi/font": "^7.4.47",
@@ -40,14 +40,14 @@
     "eslint": "^10.8.0",
     "eslint-plugin-vue": "^10.10.0",
     "happy-dom": "^20.11.1",
-    "npm-run-all2": "^9.0.2",
+    "npm-run-all2": "^9.0.3",
     "prettier": "^3.9.6",
     "typescript": "npm:@typescript/typescript6@6.0.2",
-    "vite": "^8.1.5",
+    "vite": "^8.2.0",
     "vite-plugin-dts": "^5.0.3",
     "vite-plugin-vue-devtools": "^8.2.1",
     "vitest": "^4.1.10",
-    "vue-tsc": "^3.3.8"
+    "vue-tsc": "^3.3.9"
   },
   "overrides": {
     "brace-expansion": "5.0.9",
