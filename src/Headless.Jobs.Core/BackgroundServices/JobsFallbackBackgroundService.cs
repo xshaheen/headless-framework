@@ -3,6 +3,7 @@
 using Headless.Coordination;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
+using Headless.Jobs.Internal;
 using Headless.Jobs.JobsThreadPool;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -19,6 +20,7 @@ internal sealed class JobsFallbackBackgroundService(
     JobFunctionRegistry functionRegistry,
     TimeProvider timeProvider,
     IJobsOwnerIdentity ownerIdentity,
+    JobsActivationBarrier activationBarrier,
     ILogger<JobsFallbackBackgroundService> logger,
     INodeMembership? membership = null
 ) : BackgroundService
@@ -43,6 +45,30 @@ internal sealed class JobsFallbackBackgroundService(
             ownerIdentity.MembershipLostToken
         );
         var loopToken = membershipLinkedCts.Token;
+
+        // Same activation gate as the main scheduler loop: RunTimedOutTickers re-queues and dispatches cron
+        // occurrences, so it must not select before the fingerprint drain has published one stable snapshot. The
+        // barrier — not hosted-service registration order — is what holds under HostOptions.ServicesStartConcurrently.
+        Exception? activationFailure;
+        try
+        {
+            activationFailure = await activationBarrier.WaitAsync(loopToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Same diagnostic the tail below emits: under StopMembershipOnly the process keeps running with no
+            // reclaim sweeps, and losing membership while still parked here must not be the one silent path.
+            _LogMembershipLossIfLost(stoppingToken);
+
+            return;
+        }
+
+        if (activationFailure is not null)
+        {
+            logger.LogJobsFallbackStoppedOnActivationFailure(activationFailure);
+
+            return;
+        }
 
         while (!loopToken.IsCancellationRequested)
         {
@@ -129,6 +155,13 @@ internal sealed class JobsFallbackBackgroundService(
 #pragma warning restore ERP022
         }
 
+        _LogMembershipLossIfLost(stoppingToken);
+    }
+
+    // Shared by the loop tail and the activation wait so neither path can exit membership-lost without a diagnostic.
+    // Host shutdown stays quiet here; only the membership-loss exit is permanent while the process keeps running.
+    private void _LogMembershipLossIfLost(CancellationToken stoppingToken)
+    {
         if (ownerIdentity.MembershipLostToken.IsCancellationRequested && !stoppingToken.IsCancellationRequested)
         {
             logger.LogJobsFallbackStoppedOnMembershipLoss();
@@ -240,4 +273,12 @@ internal static partial class JobsFallbackBackgroundServiceLog
             + "liveness snapshot (superseded incarnation or pruned dead identity)."
     )]
     public static partial void LogJobsOrphanedOwnerReclaimed(this ILogger logger, string owner);
+
+    [LoggerMessage(
+        EventId = 3203,
+        Level = LogLevel.Warning,
+        Message = "Jobs fallback service stopped because startup activation failed; reclaim sweeps and timed-out "
+            + "re-dispatch will not run on this node. Host startup fails with the underlying error."
+    )]
+    public static partial void LogJobsFallbackStoppedOnActivationFailure(this ILogger logger, Exception exception);
 }

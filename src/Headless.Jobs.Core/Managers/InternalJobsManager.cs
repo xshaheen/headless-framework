@@ -1260,8 +1260,11 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
                             ExpectedScheduleRevision = candidate.ScheduleRevision,
                             ObservedReconciledThroughUtc = candidate.ReconciledThroughUtc,
                             ObservedEvaluationFingerprint = candidate.EvaluationFingerprint,
+                            // Setup validation guarantees FingerprintSweepInterval <= the ceiling, so the provider's
+                            // MaximumDelay >= InitialDelay precondition holds and this defer can never throw the
+                            // quarantine path open.
                             InitialDelay = schedulerOptions.FingerprintSweepInterval,
-                            MaximumDelay = TimeSpan.FromHours(24),
+                            MaximumDelay = JobsRecoveryDefaults.MaximumStaleFingerprintDeferDelay,
                         },
                         cancellationToken
                     )

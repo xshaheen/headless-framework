@@ -27,4 +27,16 @@ public static class JobsRecoveryDefaults
     /// millions of instants to produce a number nothing acts on.
     /// </remarks>
     public const int EvaluationCeiling = 1000;
+
+    /// <summary>
+    /// Ceiling for the exponential backoff applied when a deterministically invalid cron definition is durably
+    /// deferred (quarantined) by the fingerprint sweep.
+    /// </summary>
+    /// <remarks>
+    /// A deferred definition is retried on a widening backoff whose FIRST delay is the configured
+    /// <c>FingerprintSweepInterval</c>. The persistence providers reject a defer request whose initial delay exceeds
+    /// this ceiling, so setup validation rejects such an interval up front — otherwise the quarantine path would throw
+    /// and, because startup activation is fail-closed, a single invalid definition would abort host startup.
+    /// </remarks>
+    public static readonly TimeSpan MaximumStaleFingerprintDeferDelay = TimeSpan.FromHours(24);
 }

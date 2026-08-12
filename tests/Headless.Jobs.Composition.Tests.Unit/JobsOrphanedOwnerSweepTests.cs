@@ -366,6 +366,7 @@ public sealed class JobsOrphanedOwnerSweepTests : TestBase
                 JobFunctionRegistryBuilder.Build([], [], []),
                 TimeProvider.System,
                 ownerIdentity,
+                TestActivationBarrier.Opened(),
                 NullLogger<JobsFallbackBackgroundService>.Instance,
                 membership
             ),
