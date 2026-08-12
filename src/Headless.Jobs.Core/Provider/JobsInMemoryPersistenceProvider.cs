@@ -1615,23 +1615,8 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (request.InitialDelay <= TimeSpan.Zero)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(request),
-                request.InitialDelay,
-                "InitialDelay must be positive."
-            );
-        }
-
-        if (request.MaximumDelay < request.InitialDelay)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(request),
-                request.MaximumDelay,
-                "MaximumDelay must be at least InitialDelay."
-            );
-        }
+        Argument.IsPositive(request.InitialDelay);
+        Argument.IsGreaterThanOrEqualTo(request.MaximumDelay, request.InitialDelay);
 
         lock (_GetCronDefinitionLock(request.CronJobId))
         {

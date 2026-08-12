@@ -136,7 +136,7 @@ internal sealed partial class CronScheduleCache(TimeZoneInfo timeZoneInfo)
     {
         var ceiling = evaluationCeiling > 0 ? evaluationCeiling : JobsRecoveryDefaults.EvaluationCeiling;
 
-        ArgumentOutOfRangeException.ThrowIfNegative(graceSeconds);
+        Argument.IsPositiveOrZero(graceSeconds);
         var grace = graceSeconds == 0 ? JobsRecoveryDefaults.MissedRunGraceSeconds : graceSeconds;
 
         DateTime? earliest = null;

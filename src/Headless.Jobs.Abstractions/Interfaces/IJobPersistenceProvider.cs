@@ -487,6 +487,19 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// <c>InProgress</c> or terminal row is stepped past untouched, and its instant is never duplicated: an occurrence
     /// already running or already finished has accounted for that instant.
     /// </para>
+    /// <para>
+    /// Bounded-prefix selection is part of the contract, not a provider detail. When
+    /// <see cref="CronRecoveryRequest.Policy"/> is <see cref="Enums.MissedRunPolicy.Coalesce"/>,
+    /// <see cref="CronRecoveryRequest.EvaluationSaturated"/> is <see langword="true"/>, and the coalesce walk over
+    /// <see cref="CronRecoveryRequest.MissedInstantsUtc"/> produces no run because every examined instant is already
+    /// accounted for, the provider MUST persist <see cref="CronRecoveryRequest.BoundedProgressThroughUtc"/> and
+    /// <see cref="CronRecoveryRequest.NextDueAfterBoundedProgressUtc"/> as the new watermark and projection, NOT
+    /// <see cref="CronRecoveryRequest.RecoveredThroughUtc"/> and <see cref="CronRecoveryRequest.NextDueUtc"/>. The
+    /// evaluation ceiling truncated the walk, so carrying the watermark to the full recovery instant would step past
+    /// a tail this pass never examined and nothing would revisit it; stopping at the examined prefix leaves that tail
+    /// for a later recovery pass. The <c>boundedPrefixOnly</c> branch of
+    /// <c>BasePersistenceProvider.ApplyCronRecoveryAsync</c> is the reference implementation.
+    /// </para>
     /// </remarks>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task<CronRecoveryResult<TCronJob>?> ApplyCronRecoveryAsync(

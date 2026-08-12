@@ -1514,23 +1514,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
-        if (request.InitialDelay <= TimeSpan.Zero)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(request),
-                request.InitialDelay,
-                "InitialDelay must be positive."
-            );
-        }
-
-        if (request.MaximumDelay < request.InitialDelay)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(request),
-                request.MaximumDelay,
-                "MaximumDelay must be at least InitialDelay."
-            );
-        }
+        Argument.IsPositive(request.InitialDelay);
+        Argument.IsGreaterThanOrEqualTo(request.MaximumDelay, request.InitialDelay);
 
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
