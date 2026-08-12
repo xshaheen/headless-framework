@@ -55,6 +55,7 @@ public sealed class JobsFallbackMembershipFencingTests : TestBase
             JobFunctionRegistryBuilder.Build([], [], []),
             TimeProvider.System,
             ownerIdentity,
+            TestActivationBarrier.Opened(),
             NullLogger<JobsFallbackBackgroundService>.Instance
         );
 

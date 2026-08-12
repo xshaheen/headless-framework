@@ -4,6 +4,7 @@ using Headless.Checks;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
+using Headless.Jobs.Internal;
 using Headless.Jobs.JobsThreadPool;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -26,9 +27,11 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
     private readonly IJobFunctionConcurrencyGate _concurrencyGate;
     private readonly TimeProvider _timeProvider;
     private readonly IJobsOwnerIdentity _ownerIdentity;
+    private readonly SchedulerOptionsBuilder _schedulerOptions;
+    private readonly JobsActivationBarrier _activationBarrier;
     private readonly ILogger<JobsSchedulerBackgroundService> _logger;
     private int _started;
-    public bool SkipFirstRun { get; set; }
+    private int _manualStartConsumed;
     public bool IsRunning => _started == 1;
 
     public JobsSchedulerBackgroundService(
@@ -40,6 +43,8 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
         IJobFunctionConcurrencyGate concurrencyGate,
         TimeProvider timeProvider,
         IJobsOwnerIdentity ownerIdentity,
+        SchedulerOptionsBuilder schedulerOptions,
+        JobsActivationBarrier activationBarrier,
         ILogger<JobsSchedulerBackgroundService> logger
     )
     {
@@ -51,6 +56,8 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
         _concurrencyGate = Argument.IsNotNull(concurrencyGate);
         _timeProvider = Argument.IsNotNull(timeProvider);
         _ownerIdentity = Argument.IsNotNull(ownerIdentity);
+        _schedulerOptions = Argument.IsNotNull(schedulerOptions);
+        _activationBarrier = Argument.IsNotNull(activationBarrier);
         _logger = Argument.IsNotNull(logger);
         _restartThrottle = new RestartThrottleManager(
             () => _schedulerLoopCancellationTokenSource?.Cancel(),
@@ -60,10 +67,19 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
 
     public override Task StartAsync(CancellationToken ct)
     {
-        if (SkipFirstRun)
+        // JobsStartMode.Manual is consumed exactly once, on the host's first start of this service: freeze the pool
+        // and return without running the loop, so nothing dispatches until an explicit IJobsHostScheduler.StartAsync.
+        // The mode is read from THIS service's own configuration rather than pushed in beforehand by
+        // JobsInitializationHostedService — a pushed flag only works when the initializer starts first, which
+        // HostOptions.ServicesStartConcurrently does not guarantee. Leaving the pool frozen also idles the fallback
+        // loop, which gates on pool state, so manual mode suppresses re-dispatch in every startup order.
+        if (
+            _schedulerOptions.StartMode == JobsStartMode.Manual
+            && Interlocked.CompareExchange(ref _manualStartConsumed, 1, 0) == 0
+        )
         {
             _taskScheduler.Freeze();
-            SkipFirstRun = false;
+
             return Task.CompletedTask;
         }
 
@@ -80,6 +96,32 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
             _ownerIdentity.MembershipLostToken
         );
         var loopToken = membershipLinkedCts.Token;
+
+        // Activation gate: no dispatch selection before JobsInitializationHostedService has drained one stable
+        // fingerprint snapshot. Awaiting the barrier — rather than assuming hosted services start sequentially in
+        // registration order — is what keeps the gate intact under HostOptions.ServicesStartConcurrently.
+        Exception? activationFailure;
+        try
+        {
+            activationFailure = await _activationBarrier.WaitAsync(loopToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Same permanent-exit diagnostic the loop below emits: under StopMembershipOnly the process keeps running
+            // with no scheduler, and losing membership while still parked here must not be the one silent path.
+            _LogLoopStopReason(stoppingToken);
+
+            return;
+        }
+
+        if (activationFailure is not null)
+        {
+            // The failure already propagated out of the initializer's StartAsync and aborts host startup; this loop
+            // stays closed rather than selecting under an unverified schedule interpretation.
+            _logger.LogJobsSchedulerStoppedOnActivationFailure(activationFailure);
+
+            return;
+        }
 
         while (!loopToken.IsCancellationRequested)
         {
@@ -120,18 +162,7 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
                         .ConfigureAwait(false);
                 }
 
-                // This exit is permanent for the host's lifetime — under StopMembershipOnly the process keeps
-                // running without a scheduler, so the cause must be visible in logs.
-                if (
-                    _ownerIdentity.MembershipLostToken.IsCancellationRequested && !stoppingToken.IsCancellationRequested
-                )
-                {
-                    _logger.LogJobsSchedulerStoppedOnMembershipLoss();
-                }
-                else
-                {
-                    _logger.LogJobsSchedulerStoppedOnShutdown();
-                }
+                _LogLoopStopReason(stoppingToken);
 
                 break;
             }
@@ -148,6 +179,21 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
                 _schedulerLoopCancellationTokenSource?.Dispose();
                 _schedulerLoopCancellationTokenSource = null;
             }
+        }
+    }
+
+    // Either exit is permanent for the host's lifetime — under StopMembershipOnly the process keeps running without a
+    // scheduler — so the cause must be visible in logs. Shared by the loop's cancellation arm and the activation wait
+    // so the two can never drift into one of them exiting silently.
+    private void _LogLoopStopReason(CancellationToken stoppingToken)
+    {
+        if (_ownerIdentity.MembershipLostToken.IsCancellationRequested && !stoppingToken.IsCancellationRequested)
+        {
+            _logger.LogJobsSchedulerStoppedOnMembershipLoss();
+        }
+        else
+        {
+            _logger.LogJobsSchedulerStoppedOnShutdown();
         }
     }
 
@@ -367,4 +413,12 @@ internal static partial class JobsSchedulerBackgroundServiceLog
         Message = "Jobs scheduler loop stopped for host shutdown."
     )]
     public static partial void LogJobsSchedulerStoppedOnShutdown(this ILogger logger);
+
+    [LoggerMessage(
+        EventId = 3222,
+        Level = LogLevel.Warning,
+        Message = "Jobs scheduler loop stopped because startup activation failed; no jobs will be claimed or "
+            + "dispatched by this node. Host startup fails with the underlying error."
+    )]
+    public static partial void LogJobsSchedulerStoppedOnActivationFailure(this ILogger logger, Exception exception);
 }

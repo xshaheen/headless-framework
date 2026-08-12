@@ -76,6 +76,7 @@ public sealed class JobsDistributedLockGuardTests : TestBase
         var hostedService = new JobsInitializationHostedService(
             sp,
             functionRegistry ?? _EmptyRegistry,
+            new JobsActivationBarrier(),
             NullLogger<JobsInitializationHostedService>.Instance
         );
 
@@ -361,6 +362,7 @@ public sealed class JobsDistributedLockGuardTests : TestBase
         var hostedService = new JobsInitializationHostedService(
             sp,
             _EmptyRegistry,
+            new JobsActivationBarrier(),
             NullLogger<JobsInitializationHostedService>.Instance
         );
 

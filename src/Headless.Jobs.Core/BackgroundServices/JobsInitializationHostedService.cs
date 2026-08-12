@@ -16,11 +16,13 @@ namespace Headless.Jobs.BackgroundServices;
 
 /// <summary>
 /// Handles Jobs core initialization (function building, seeding, notification wiring, external provider init).
-/// Registered before the scheduler to guarantee correct startup order.
+/// Signals <see cref="JobsActivationBarrier"/> when it finishes, which is what actually orders the scheduler behind
+/// it — registration order alone does not survive <c>HostOptions.ServicesStartConcurrently</c>.
 /// </summary>
 internal sealed class JobsInitializationHostedService(
     IServiceProvider serviceProvider,
     JobFunctionRegistry functionRegistry,
+    JobsActivationBarrier activationBarrier,
     ILogger<JobsInitializationHostedService> logger
 ) : IHostedService
 {
@@ -28,6 +30,25 @@ internal sealed class JobsInitializationHostedService(
     private JobsExecutionContext? _executionContext;
 
     public async Task StartAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _StartCoreAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            // Fail closed. Publish the failure to every loop parked on the barrier — including loops already running
+            // under a concurrent start — so none of them proceeds to select work under an unverified schedule
+            // interpretation, then let the original exception abort host startup as before.
+            activationBarrier.MarkFailed(exception);
+
+            throw;
+        }
+
+        activationBarrier.MarkCompleted();
+    }
+
+    private async Task _StartCoreAsync(CancellationToken cancellationToken)
     {
         var executionContext = serviceProvider.GetRequiredService<JobsExecutionContext>();
         var notificationHubSender = serviceProvider.GetRequiredService<IJobsNotificationHubSender>();
@@ -50,12 +71,14 @@ internal sealed class JobsInitializationHostedService(
         // letting a running job's lease lapse. Throws InvalidOperationException; no-op for the derived default.
         schedulerOptions.ResolveLeaseRenewalInterval();
 
-        // Configure scheduler start mode
+        // Probe for the background scheduler: its presence is what tells this initializer whether background services
+        // were registered at all, gating both the notification wiring below and the fingerprint drain further down.
+        // JobsStartMode.Manual is deliberately NOT pushed onto it from here — the scheduler consumes its own configured
+        // start mode, because a push only lands in time when this initializer starts first, which
+        // HostOptions.ServicesStartConcurrently does not guarantee.
         var backgroundScheduler = serviceProvider.GetService<JobsSchedulerBackgroundService>();
         if (backgroundScheduler is not null)
         {
-            backgroundScheduler.SkipFirstRun = schedulerOptions.StartMode == JobsStartMode.Manual;
-
             _executionContext = executionContext;
             _notifyCoreHandler = (value, type) =>
             {
@@ -113,10 +136,12 @@ internal sealed class JobsInitializationHostedService(
             executionContext.ExternalProviderApplicationAction = null;
         }
 
-        // Hosted services start sequentially in registration order. Drain one stable store snapshot here, before this
-        // initializer returns and therefore before the scheduler can pick up a legacy/null or stale-fingerprint row.
-        // Deterministically invalid definitions are durably deferred by the manager; storage/infrastructure failures
-        // propagate and fail closed instead of allowing dispatch under an unverified interpretation.
+        // Drain one stable store snapshot here, before the caller opens the activation barrier and therefore before any
+        // loop can pick up a legacy/null or stale-fingerprint row. The BARRIER is the ordering guarantee, not hosted-
+        // service registration order: a host that sets HostOptions.ServicesStartConcurrently starts the scheduler at
+        // the same time as this initializer. Deterministically invalid definitions are durably deferred by the manager;
+        // storage/infrastructure failures propagate, leave the barrier closed-with-failure, and fail closed instead of
+        // allowing dispatch under an unverified interpretation.
         if (backgroundScheduler is not null)
         {
             await DrainFingerprintSnapshotAsync(schedulerOptions, cancellationToken).ConfigureAwait(false);

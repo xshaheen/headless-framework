@@ -160,12 +160,15 @@ projection, so a sweep keyed on due-ness would skip exactly the definitions that
 projection at or after the current instant, so a tick the changed rules moved into the past is surfaced rather than
 replayed as a misfire.
 
-Startup drains one fixed high-water snapshot before scheduler pickup is enabled. Deterministically invalid definitions
-are durably deferred with a provider-time exponential retry (`FingerprintFailureCount` / `FingerprintRetryAfterUtc`,
-capped at 24h); storage, provider, and unknown failures fail startup closed. The periodic sweep runs every
-`FingerprintSweepInterval` (default 1h) in `FingerprintSweepBatchSize` pages (default 100), drains up to 100 consecutive
-full pages, performs one bounded keyset wrap, and retains its cursor when that pass bound is reached. Custom providers
-must implement the stale-page, fenced-defer, and compare-and-advance SPI with the same store-time and lost-fence rules.
+Startup drains one fixed high-water snapshot before scheduler pickup is enabled. That ordering is enforced by an
+explicit activation barrier rather than by hosted-service registration order, so it also holds when the application
+sets `HostOptions.ServicesStartConcurrently`. Deterministically invalid definitions are durably deferred with a
+provider-time exponential retry (`FingerprintFailureCount` / `FingerprintRetryAfterUtc`, capped at 24h); storage,
+provider, and unknown failures fail startup closed. The periodic sweep runs every `FingerprintSweepInterval`
+(default 1h; rejected at setup above 24h, because it is also the *initial* delay of that capped defer backoff) in
+`FingerprintSweepBatchSize` pages (default 100), drains up to 100 consecutive full pages, performs one bounded keyset
+wrap, and retains its cursor when that pass bound is reached. Custom providers must implement the stale-page,
+fenced-defer, and compare-and-advance SPI with the same store-time and lost-fence rules.
 
 Recovery and rebase outcomes are reported through the framework's existing logging instrumentation. A missed count is
 always accompanied by whether it is exact or a lower bound — a long outage on a seconds-resolution schedule stops

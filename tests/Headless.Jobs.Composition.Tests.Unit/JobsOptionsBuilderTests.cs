@@ -390,6 +390,40 @@ public sealed class JobsOptionsBuilderTests
         act.Should().Throw<InvalidOperationException>().WithMessage("*FingerprintSweepInterval*");
     }
 
+    [Fact]
+    public void add_headless_jobs_rejects_fingerprint_sweep_interval_above_the_defer_backoff_cap()
+    {
+        // The interval doubles as the INITIAL delay of the durable defer backoff, whose ceiling is 24h. Accepting a
+        // longer interval makes the defer request itself invalid, so a deterministic definition error would throw out
+        // of the quarantine path and — because startup activation is fail-closed — abort host startup.
+        var services = new ServiceCollection();
+
+        var act = () =>
+            services.AddHeadlessJobs(options =>
+                options.ConfigureScheduler(scheduler =>
+                    scheduler.FingerprintSweepInterval =
+                        JobsRecoveryDefaults.MaximumStaleFingerprintDeferDelay + TimeSpan.FromSeconds(1)
+                )
+            );
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*FingerprintSweepInterval*");
+    }
+
+    [Fact]
+    public void add_headless_jobs_accepts_a_fingerprint_sweep_interval_exactly_at_the_defer_backoff_cap()
+    {
+        var services = new ServiceCollection();
+
+        var act = () =>
+            services.AddHeadlessJobs(options =>
+                options.ConfigureScheduler(scheduler =>
+                    scheduler.FingerprintSweepInterval = JobsRecoveryDefaults.MaximumStaleFingerprintDeferDelay
+                )
+            );
+
+        act.Should().NotThrow();
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]

@@ -264,6 +264,8 @@ public sealed class JobsSchedulerShutdownDrainTests : TestBase
             new JobFunctionConcurrencyGate(),
             TimeProvider.System,
             ownerIdentity,
+            new SchedulerOptionsBuilder(),
+            TestActivationBarrier.Opened(),
             NullLogger<JobsSchedulerBackgroundService>.Instance
         );
     }

@@ -134,6 +134,16 @@ public static class SetupJobs
             schedulerOptionsBuilder.FingerprintSweepInterval > TimeSpan.Zero,
             "SchedulerOptionsBuilder.FingerprintSweepInterval must be greater than zero."
         );
+        // The interval doubles as the INITIAL delay of the durable defer backoff, whose ceiling is
+        // MaximumStaleFingerprintDeferDelay. An initial delay above that ceiling makes the defer request itself
+        // invalid, so a deterministic definition error (unresolvable timezone, undefined missed-run policy) would
+        // throw out of the quarantine path instead of being deferred — and because startup activation is fail-closed,
+        // one invalid definition would then abort host startup. Reject the configuration here instead.
+        Ensure.True(
+            schedulerOptionsBuilder.FingerprintSweepInterval <= JobsRecoveryDefaults.MaximumStaleFingerprintDeferDelay,
+            $"SchedulerOptionsBuilder.FingerprintSweepInterval must not exceed {JobsRecoveryDefaults.MaximumStaleFingerprintDeferDelay}, "
+                + "the maximum backoff applied when a deterministically invalid cron definition is durably deferred."
+        );
         Ensure.True(
             schedulerOptionsBuilder.FingerprintSweepBatchSize > 0,
             "SchedulerOptionsBuilder.FingerprintSweepBatchSize must be greater than zero."
@@ -201,7 +211,12 @@ public static class SetupJobs
         optionInstance.LockRegistrationAction?.Invoke(services);
         services.TryAddKeyedSingleton<IDistributedLock, NullDistributedLock>(JobsKeys.LockProvider);
 
-        // Core initialization — registered before background services to guarantee startup order
+        // The activation gate itself — registered before every service that signals or waits on it. Registration order
+        // of the hosted services below is a readability convention only; the barrier is the actual ordering guarantee,
+        // because HostOptions.ServicesStartConcurrently lets a consuming host start all of them at once.
+        services.AddSingleton<JobsActivationBarrier>();
+
+        // Core initialization — opens the activation barrier when its drain completes.
         services.AddHostedService<JobsInitializationHostedService>();
 
         // Only register background services if enabled (default is true)
