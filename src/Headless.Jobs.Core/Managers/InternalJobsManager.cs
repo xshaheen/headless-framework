@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using System.Globalization;
 using Headless.Abstractions;
+using Headless.Checks;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Instrumentation;
@@ -356,14 +357,15 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
                 // Ordered by projection, so the tie group is a prefix.
                 var tieGroup = candidates.Candidates.TakeWhile(x => x.NextDueUtc == earliestProjection).ToArray();
 
-                // Pair each candidate with the already-materialized occurrence it reuses BEFORE any I/O starts. This
-                // is a pure comparison, and resolving it up front is what lets the advances run concurrently without
-                // racing on `storedConsumed`.
+                // Decide whether the peeked row sits at this tie group's instant BEFORE any I/O starts. This is a pure
+                // comparison, and resolving it up front is what lets the advances run concurrently without racing on
+                // `storedConsumed`.
                 //
-                // R6: a row already sitting at this instant is REUSED, not duplicated. Carrying it as
-                // NextCronOccurrence makes the claim path take the existing row while the watermark still advances
-                // past the instant — skipping the advance instead would leave the definition due forever.
-                var reuse = new NextCronOccurrence?[tieGroup.Length];
+                // R6: a row already sitting at this instant is REUSED, not duplicated — the atomic advance recognizes
+                // it and hands it back on the dispatch context, while the watermark still moves past the instant
+                // (skipping the advance instead would leave the definition due forever). Marking it consumed here
+                // rather than only after a successful advance is what keeps the fallback append below from emitting
+                // the same row a second time.
                 for (var index = 0; index < tieGroup.Length; index++)
                 {
                     if (
@@ -372,10 +374,6 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
                         && earliestStored.ExecutionTime == tieGroup[index].NextDueUtc
                     )
                     {
-                        reuse[index] = new NextCronOccurrence(earliestStored.Id, earliestStored.CreatedAt)
-                        {
-                            RecoveredFromUtc = earliestStored.RecoveredFromUtc,
-                        };
                         storedConsumed = true;
                     }
                 }
@@ -1169,7 +1167,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
+        Argument.IsPositive(limit);
         var knownFingerprints =
             throughId is { } requestedSnapshot
             && _fingerprintsBySnapshot.TryGetValue(requestedSnapshot, out var cachedFingerprints)
