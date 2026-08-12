@@ -57,6 +57,20 @@ public sealed class SqlServerCancellationMigrationTests(SqlServerJobsCoordinatio
             .Be((default, default, 0, "Coalesce", null, 0, null));
         (await _IndexExistsAsync("IX_CronJobs_FingerprintRetryAfterUtc_Id", cancellationToken)).Should().BeTrue();
 
+        // The guard blocks state LOSS, not the downgrade itself: from the clean backfilled state the reverse
+        // migration must run to completion and take its columns and indexes with it (PostgreSQL sibling parity).
+        (await _ColumnExistsAsync("jobs.CronJobs", "ReconciledThroughUtc", cancellationToken))
+            .Should()
+            .BeTrue();
+        var cleanDowngrade = () => migrator.MigrateAsync(AddCronPauseAndTimeZone.Id, cancellationToken);
+        await cleanDowngrade.Should().NotThrowAsync();
+        (await _ColumnExistsAsync("jobs.CronJobs", "ReconciledThroughUtc", cancellationToken)).Should().BeFalse();
+        (await _ColumnExistsAsync("jobs.CronJobs", "NextDueUtc", cancellationToken)).Should().BeFalse();
+        (await _ColumnExistsAsync("jobs.CronJobs", "FingerprintRetryAfterUtc", cancellationToken)).Should().BeFalse();
+        (await _ColumnExistsAsync("jobs.CronJobOccurrences", "RecoveredFromUtc", cancellationToken)).Should().BeFalse();
+        (await _IndexExistsAsync("IX_CronJobs_FingerprintRetryAfterUtc_Id", cancellationToken)).Should().BeFalse();
+        await migrator.MigrateAsync(AddCronScheduleWatermark.Id, cancellationToken);
+
         await using (var connection = fixture.CreateConnection())
         {
             await connection.OpenAsync(cancellationToken);
@@ -316,13 +330,29 @@ public sealed class SqlServerCancellationMigrationTests(SqlServerJobsCoordinatio
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private async Task<bool> _ColumnExistsAsync(CancellationToken cancellationToken)
+    private Task<bool> _ColumnExistsAsync(CancellationToken cancellationToken)
+    {
+        return _ColumnExistsAsync("jobs.TimeJobs", "CancelRequested", cancellationToken);
+    }
+
+    private async Task<bool> _ColumnExistsAsync(
+        string qualifiedTable,
+        string columnName,
+        CancellationToken cancellationToken
+    )
     {
         await using var connection = fixture.CreateConnection();
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText =
-            "SELECT CASE WHEN COL_LENGTH('jobs.TimeJobs', 'CancelRequested') IS NULL THEN 0 ELSE 1 END";
+        command.CommandText = "SELECT CASE WHEN COL_LENGTH(@table, @column) IS NULL THEN 0 ELSE 1 END";
+        foreach (var (name, value) in new (string, object)[] { ("@table", qualifiedTable), ("@column", columnName) })
+        {
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = name;
+            parameter.Value = value;
+            command.Parameters.Add(parameter);
+        }
+
         return Convert.ToBoolean(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
     }
 

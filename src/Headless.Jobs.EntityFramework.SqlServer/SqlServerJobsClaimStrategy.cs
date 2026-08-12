@@ -14,6 +14,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Polly;
+using Polly.Retry;
 
 #pragma warning disable IDE0130 // Provider implementation intentionally lives in the shared Jobs infrastructure namespace.
 #pragma warning disable RCS1015 // SQL parameter names intentionally match lowercase placeholders in the command text.
@@ -32,6 +34,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
     where TCronJob : CronJobEntity, new()
 {
     private const int _MaxDeadlockRetryAttempts = 2;
+    private readonly ResiliencePipeline _deadlockRetryPipeline = _BuildDeadlockRetryPipeline(timeProvider, logger);
     private readonly TimeSpan _leaseDuration = optionsBuilder.LeaseDuration;
 
     // R12/KTD2: the maximum number of nodes on a root-to-leaf path the tree claim leases (root = depth 1). A timed
@@ -835,19 +838,43 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         CancellationToken cancellationToken
     )
     {
-        for (var attempt = 0; ; attempt++)
-        {
-            try
-            {
-                return await action(cancellationToken).ConfigureAwait(false);
-            }
-            catch (SqlException ex) when (ex.Number == 1205 && attempt < _MaxDeadlockRetryAttempts)
-            {
-                // SQL Server has rolled the victim transaction back before surfacing 1205. Retrying the whole scope
-                // preserves the root/descendant and definition/occurrence atomicity boundaries.
-                logger.LogJobsClaimDeadlockRetry(attempt + 2, _MaxDeadlockRetryAttempts + 1, ex);
-            }
-        }
+        // SQL Server has rolled the victim transaction back before surfacing 1205. Retrying the whole scope
+        // preserves the root/descendant and definition/occurrence atomicity boundaries.
+        return await _deadlockRetryPipeline
+            .ExecuteAsync(static async (state, ct) => await state(ct).ConfigureAwait(false), action, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static ResiliencePipeline _BuildDeadlockRetryPipeline(TimeProvider timeProvider, ILogger logger)
+    {
+        // Jittered exponential backoff (mirroring the Coordination SQL Server membership store): retrying the losing
+        // scope immediately lets two nodes deadlocking on the same rows livelock into repeated mutual victimization.
+        return new ResiliencePipelineBuilder { TimeProvider = timeProvider }
+            .AddRetry(
+                new RetryStrategyOptions
+                {
+                    ShouldHandle = static args => new ValueTask<bool>(
+                        args.Outcome.Exception is SqlException { Number: 1205 }
+                    ),
+                    MaxRetryAttempts = _MaxDeadlockRetryAttempts,
+                    BackoffType = DelayBackoffType.Exponential,
+                    Delay = TimeSpan.FromMilliseconds(50),
+                    MaxDelay = TimeSpan.FromMilliseconds(500),
+                    UseJitter = true,
+                    OnRetry = args =>
+                    {
+                        logger.LogJobsClaimDeadlockRetry(
+                            args.AttemptNumber + 2,
+                            _MaxDeadlockRetryAttempts + 1,
+                            args.RetryDelay,
+                            args.Outcome.Exception
+                        );
+
+                        return default;
+                    },
+                }
+            )
+            .Build();
     }
 
     private readonly record struct ClaimResult(Guid[] Ids, DateTimeOffset ClaimedAt);
@@ -978,12 +1005,13 @@ internal static partial class SqlServerJobsClaimStrategyLoggerExtensions
         EventId = 1,
         EventName = "JobsClaimDeadlockRetry",
         Level = LogLevel.Warning,
-        Message = "SQL Server Jobs claim hit deadlock victim error 1205; retrying attempt {AttemptNumber}/{MaxAttempts}."
+        Message = "SQL Server Jobs claim hit deadlock victim error 1205; retrying attempt {AttemptNumber}/{MaxAttempts} after {Delay}."
     )]
     public static partial void LogJobsClaimDeadlockRetry(
         this ILogger logger,
         int attemptNumber,
         int maxAttempts,
-        Exception exception
+        TimeSpan delay,
+        Exception? exception
     );
 }
