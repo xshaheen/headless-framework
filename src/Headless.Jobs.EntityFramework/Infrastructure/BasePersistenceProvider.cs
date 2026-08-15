@@ -237,10 +237,20 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         // trip, matching GetEarliestCronDispatchCandidatesAsync — because the caller derives its sleep from the
         // difference between the two: measuring an execution time the STORE will arbitrate against THIS node's clock
         // makes a lagging node oversleep by exactly its skew (#818).
-        var earliest = await baseQuery
+        var candidateQuery = baseQuery
             .OrderBy(x => x.ExecutionTime)
-            .Select(x => new { x.ExecutionTime, StoreUtcNow = DateTime.UtcNow })
-            .FirstOrDefaultAsync(cancellationToken)
+            .Select(x => new { x.ExecutionTime, StoreUtcNow = DateTime.UtcNow });
+
+        // Through the context's execution strategy, matching HeadlessSaveChangesPipeline and
+        // HeadlessDbContextTransactionExtensions: a SQL Server deadlock victim (1205) on this read is transient, and
+        // without a strategy it propagates straight into the scheduler loop. This deliberately honours whatever the
+        // consumer configured (EnableRetryOnFailure and friends) rather than inventing an always-on retry here — under
+        // the default non-retrying strategy it is a pass-through, which is the right trade for a read whose failure
+        // costs one delayed poll. The claim path keeps its own deadlock pipeline because a deadlock there is
+        // correctness-relevant, not just a missed poll.
+        var earliest = await dbContext
+            .Database.CreateExecutionStrategy()
+            .ExecuteAsync(candidateQuery, static (query, ct) => query.FirstOrDefaultAsync(ct), cancellationToken)
             .ConfigureAwait(false);
 
         var minExecutionTime = earliest?.ExecutionTime;
@@ -266,11 +276,19 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
         // R12/KTD2: load the flat roots, then rebuild the non-timed in-tree subtree to MaxChainDepth in memory (a
         // recursive .Select projection is not EF-translatable) instead of a fixed-depth nested projection.
-        var jobs = await _LoadWithDescendantsAsync(
-                baseQuery
-                    .Where(x => x.ExecutionTime >= minSecond && x.ExecutionTime < maxExecutionTime)
-                    .OrderBy(x => x.ExecutionTime),
-                dbContext,
+        // Same execution strategy as the minimum-instant read above: this is the second of the two frames a SQL Server
+        // deadlock victim was observed on, so wrapping only the first would close the symptom rather than the gap.
+        // Safe to retry because it is a pure read - a projection load plus an AsNoTracking descendant attach, with no
+        // SaveChanges, no ExecuteUpdate/Delete, and no transaction of its own.
+        var windowedQuery = baseQuery
+            .Where(x => x.ExecutionTime >= minSecond && x.ExecutionTime < maxExecutionTime)
+            .OrderBy(x => x.ExecutionTime);
+
+        var jobs = await dbContext
+            .Database.CreateExecutionStrategy()
+            .ExecuteAsync(
+                windowedQuery,
+                (query, ct) => _LoadWithDescendantsAsync(query, dbContext, ct),
                 cancellationToken
             )
             .ConfigureAwait(false);

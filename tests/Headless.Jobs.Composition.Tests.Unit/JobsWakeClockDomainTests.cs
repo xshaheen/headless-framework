@@ -190,7 +190,18 @@ public sealed class JobsWakeClockDomainTests : TestBase
     /// </summary>
     private sealed class SchedulerRig : IAsyncDisposable
     {
+        // Real-time ceilings only. Nothing is sequenced on them; they exist so a loop that stops making progress fails
+        // the test instead of hanging the suite.
+        private static readonly TimeSpan _SignalBound = TimeSpan.FromSeconds(10);
+        private static readonly TimeSpan _ArmBound = TimeSpan.FromSeconds(2);
+
+        // Virtual window the re-poll pump may cross: wide enough for the restart debounce and the post-restart settle
+        // delay, far short of the half-hour sleep the loop is parked on, so a re-poll inside it can only have been
+        // caused by the restart.
+        private static readonly TimeSpan _RepollVirtualBudget = TimeSpan.FromSeconds(1);
+
         private readonly FakeTimeProvider _nodeClock;
+        private readonly ObservedNodeClock _serviceClock;
         private readonly JobsTaskScheduler _taskScheduler;
         private readonly CancellationTokenSource _stop = new();
         private readonly TaskCompletionSource<DateTime?> _firstPlannedWake = new(
@@ -205,13 +216,14 @@ public sealed class JobsWakeClockDomainTests : TestBase
         public static SchedulerRig Sleeping(DateTime storeNow, DateTime wakeAtStoreUtc)
         {
             var nodeClock = new FakeTimeProvider(new DateTimeOffset(_NodeNow, TimeSpan.Zero));
+            var serviceClock = new ObservedNodeClock(nodeClock);
             var taskScheduler = new JobsTaskScheduler(maxConcurrency: 1, timeProvider: nodeClock);
             var manager = Substitute.For<IInternalJobManager>();
             var executionContext = new JobsExecutionContext();
 
-            var rig = new SchedulerRig(nodeClock, taskScheduler)
+            var rig = new SchedulerRig(nodeClock, serviceClock, taskScheduler)
             {
-                Service = _BuildService(nodeClock, taskScheduler, manager, executionContext),
+                Service = _BuildService(nodeClock, serviceClock, taskScheduler, manager, executionContext),
             };
 
             executionContext.NotifyCoreAction = (value, type) =>
@@ -244,46 +256,69 @@ public sealed class JobsWakeClockDomainTests : TestBase
             return rig;
         }
 
-        private SchedulerRig(FakeTimeProvider nodeClock, JobsTaskScheduler taskScheduler)
+        private SchedulerRig(
+            FakeTimeProvider nodeClock,
+            ObservedNodeClock serviceClock,
+            JobsTaskScheduler taskScheduler
+        )
         {
             _nodeClock = nodeClock;
+            _serviceClock = serviceClock;
             _taskScheduler = taskScheduler;
         }
 
         public async Task<DateTime?> WaitForPlannedWakeAsync()
         {
-            return await _firstPlannedWake.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+            var planned = await _firstPlannedWake.Task.WaitAsync(_SignalBound, AbortToken);
+
+            // The loop records the planned wake and only THEN parks on it. Returning on the notification alone hands
+            // the caller a loop that may not have armed anything yet, and a restart delivered into that gap would
+            // interrupt no sleep at all — the assertions would still pass while proving nothing.
+            await _serviceClock.WaitForAnyArmAsync(_ArmBound, AbortToken);
+
+            return planned;
         }
 
         /// <summary>
-        /// Advances the node clock past the restart debounce and the post-restart settle delay, then reports whether
-        /// the loop actually re-polled. Advancing in small steps rather than one jump keeps every timer the loop owns
-        /// firing in order.
+        /// Reports whether the loop actually re-polled, driving virtual time only to timers the scheduler has already
+        /// armed.
         /// </summary>
+        /// <remarks>
+        /// This used to advance the node clock a fixed number of fixed-size steps and then stop. Virtual time moves
+        /// only when this rig moves it, and the loop arms its post-restart settle delay on a continuation, so the burst
+        /// regularly finished BEFORE that timer existed — leaving the loop parked on a clock that never ticked again.
+        /// The test therefore failed when run alone and only "passed" when unrelated suite load slowed the burst enough
+        /// for the continuation to land inside it. Waiting for each arm before advancing past it removes the race.
+        /// </remarks>
         public async Task<bool> WaitForRepollAsync()
         {
-            for (var step = 0; step < 40; step++)
+            var budgetEnd = _serviceClock.GetUtcNow() + _RepollVirtualBudget;
+
+            while (!_secondPoll.Task.IsCompleted)
             {
-                if (_secondPoll.Task.IsCompleted)
+                // Captured before the inspection below, so an arm that lands between the two is never missed.
+                var armed = _serviceClock.NextArmAsync();
+                var dueAt = _serviceClock.NextDueAt(budgetEnd);
+
+                if (dueAt is not null)
                 {
-                    return true;
+                    _nodeClock.SetUtcNow(dueAt.Value);
+                    continue;
                 }
 
-                _nodeClock.Advance(TimeSpan.FromMilliseconds(25));
-                await Task.Yield();
+                // Nothing left to fire inside the budget: the loop is either between two awaits and about to arm its
+                // next timer, or it declined the restart and is still parked on its half-hour sleep.
+                try
+                {
+                    await armed.WaitAsync(_ArmBound, AbortToken);
+                }
+                catch (TimeoutException)
+                {
+                    break;
+                }
             }
 
-            // One bounded settle: the loop's own continuations may still be scheduling when the last advance lands.
-            try
-            {
-                await _secondPoll.Task.WaitAsync(TimeSpan.FromMilliseconds(250), AbortToken);
-
-                return true;
-            }
-            catch (TimeoutException)
-            {
-                return false;
-            }
+            return _secondPoll.Task.IsCompleted;
         }
 
         public async ValueTask DisposeAsync()
@@ -324,6 +359,7 @@ public sealed class JobsWakeClockDomainTests : TestBase
 
         private static JobsSchedulerBackgroundService _BuildService(
             TimeProvider nodeClock,
+            TimeProvider serviceClock,
             JobsTaskScheduler taskScheduler,
             IInternalJobManager manager,
             JobsExecutionContext executionContext
@@ -348,6 +384,9 @@ public sealed class JobsWakeClockDomainTests : TestBase
             var ownerIdentity = Substitute.For<IJobsOwnerIdentity>();
             ownerIdentity.MembershipLostToken.Returns(CancellationToken.None);
 
+            // Only the service sees the observed view of the node clock: the task scheduler's idle backoff arms timers
+            // of its own, and mixing those into the observation would let the pump below advance on a timer the
+            // scheduler loop never armed.
             return new JobsSchedulerBackgroundService(
                 executionContext,
                 registry,
@@ -355,12 +394,156 @@ public sealed class JobsWakeClockDomainTests : TestBase
                 taskScheduler,
                 manager,
                 new JobFunctionConcurrencyGate(),
-                nodeClock,
+                serviceClock,
                 ownerIdentity,
                 new SchedulerOptionsBuilder(),
                 TestActivationBarrier.Opened(),
                 NullLogger<JobsSchedulerBackgroundService>.Instance
             );
+        }
+
+        /// <summary>
+        /// The node clock as the scheduler service sees it: a pass-through over the rig's <see cref="FakeTimeProvider"/>
+        /// that records which timers the loop has armed. Virtual time moves only when the rig moves it, so the rig has
+        /// to know what the loop is actually waiting on before it can move it soundly.
+        /// </summary>
+        private sealed class ObservedNodeClock(FakeTimeProvider inner) : TimeProvider
+        {
+            private readonly Lock _gate = new();
+            private readonly List<ObservedTimer> _live = [];
+            private TaskCompletionSource _armed = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            private int _armCount;
+
+            public override DateTimeOffset GetUtcNow() => inner.GetUtcNow();
+
+            public override long GetTimestamp() => inner.GetTimestamp();
+
+            public override long TimestampFrequency => inner.TimestampFrequency;
+
+            public override TimeZoneInfo LocalTimeZone => inner.LocalTimeZone;
+
+            public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+            {
+                var timer = new ObservedTimer(this, inner.CreateTimer(callback, state, dueTime, period));
+
+                lock (_gate)
+                {
+                    _live.Add(timer);
+                }
+
+                Arm(timer, dueTime);
+
+                return timer;
+            }
+
+            /// <summary>
+            /// The earliest instant a live timer is due at, ignoring one already fired and one due past
+            /// <paramref name="notAfter"/>. Null means there is nothing inside the window left to fire.
+            /// </summary>
+            public DateTimeOffset? NextDueAt(DateTimeOffset notAfter)
+            {
+                var now = inner.GetUtcNow();
+                DateTimeOffset? earliest = null;
+
+                lock (_gate)
+                {
+                    foreach (var timer in _live)
+                    {
+                        var dueAt = timer.DueAt;
+
+                        if (dueAt is null || dueAt <= now || dueAt > notAfter)
+                        {
+                            continue;
+                        }
+
+                        if (earliest is null || dueAt < earliest)
+                        {
+                            earliest = dueAt;
+                        }
+                    }
+                }
+
+                return earliest;
+            }
+
+            /// <summary>Completes on the next arm after this call.</summary>
+            public Task NextArmAsync()
+            {
+                lock (_gate)
+                {
+                    return _armed.Task;
+                }
+            }
+
+            /// <summary>Waits until the service has armed at least one timer, returning immediately if it already has.</summary>
+            /// <exception cref="TimeoutException">The service armed nothing within <paramref name="timeout"/>.</exception>
+            public async Task WaitForAnyArmAsync(TimeSpan timeout, CancellationToken cancellationToken)
+            {
+                while (true)
+                {
+                    var armed = NextArmAsync();
+
+                    lock (_gate)
+                    {
+                        if (_armCount != 0)
+                        {
+                            return;
+                        }
+                    }
+
+                    await armed.WaitAsync(timeout, cancellationToken);
+                }
+            }
+
+            internal void Arm(ObservedTimer timer, TimeSpan dueTime)
+            {
+                TaskCompletionSource previous;
+
+                lock (_gate)
+                {
+                    timer.DueAt = dueTime == Timeout.InfiniteTimeSpan ? null : inner.GetUtcNow() + dueTime;
+                    _armCount++;
+                    previous = _armed;
+                    _armed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                }
+
+                previous.TrySetResult();
+            }
+
+            internal void Forget(ObservedTimer timer)
+            {
+                lock (_gate)
+                {
+                    _live.Remove(timer);
+                }
+            }
+        }
+
+        private sealed class ObservedTimer(ObservedNodeClock owner, ITimer inner) : ITimer
+        {
+            /// <summary>When this timer next fires, or null when it is not scheduled. Guarded by the owner's lock.</summary>
+            public DateTimeOffset? DueAt { get; set; }
+
+            public bool Change(TimeSpan dueTime, TimeSpan period)
+            {
+                var changed = inner.Change(dueTime, period);
+                owner.Arm(this, dueTime);
+
+                return changed;
+            }
+
+            public void Dispose()
+            {
+                owner.Forget(this);
+                inner.Dispose();
+            }
+
+            public ValueTask DisposeAsync()
+            {
+                owner.Forget(this);
+
+                return inner.DisposeAsync();
+            }
         }
     }
 }
