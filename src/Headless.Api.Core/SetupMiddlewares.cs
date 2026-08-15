@@ -134,4 +134,41 @@ public static class SetupMiddlewares
     {
         return application.UseMiddleware<TenantResolutionMiddleware>();
     }
+
+    /// <summary>
+    /// Registers <c>TenantCatalogResolutionMiddleware</c> as a singleton in the DI container.
+    /// Call <see cref="UseTenantCatalogResolution"/> (or
+    /// <see cref="SetupApiTenancy.UseHeadlessTenantCatalogResolution"/>) after this to add it to the
+    /// pipeline.
+    /// </summary>
+    /// <param name="services">The service collection to register into.</param>
+    /// <returns>The same service collection.</returns>
+    public static IServiceCollection AddTenantCatalogResolution(this IServiceCollection services)
+    {
+        services.TryAddSingleton<TenantCatalogResolutionMiddleware>();
+        return services;
+    }
+
+    /// <summary>
+    /// Adds <c>TenantCatalogResolutionMiddleware</c> to the pipeline. It consults registered
+    /// <c>ITenantIdentifierSource</c>s in registration order and resolves the first non-null
+    /// identifier through the tenant catalog, setting <see cref="Headless.MultiTenancy.ICurrentTenant"/>
+    /// on a match or short-circuiting with a fail-closed ProblemDetails response. Endpoints decorated
+    /// with <see cref="MultiTenancy.SkipTenantResolutionAttribute"/> are bypassed entirely.
+    /// </summary>
+    /// <param name="application">The application builder.</param>
+    /// <returns>The same application builder.</returns>
+    /// <remarks>
+    /// Place this after <c>UseRouting()</c> and before <c>UseAuthentication()</c> — separate from
+    /// <see cref="UseTenantResolution"/>'s post-authentication claim placement (KTD2). A one-time
+    /// process-level warning is emitted when the middleware observes a request with no resolved
+    /// endpoint (likely ordering misconfiguration). Prefer
+    /// <see cref="SetupApiTenancy.UseHeadlessTenantCatalogResolution"/> when catalog resolution was
+    /// configured through the tenancy builder — it guards against double-registration, no-ops for
+    /// accessor-only hosts, and records the posture runtime marker validated at startup.
+    /// </remarks>
+    public static IApplicationBuilder UseTenantCatalogResolution(this IApplicationBuilder application)
+    {
+        return application.UseMiddleware<TenantCatalogResolutionMiddleware>();
+    }
 }

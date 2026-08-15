@@ -142,6 +142,78 @@ public static class SetupApiTenancy
 
         return application.UseTenantResolution();
     }
+
+    /// <summary>
+    /// Applies Headless pre-auth tenant catalog identifier resolution when
+    /// <c>HeadlessHttpTenancyBuilder.ResolveFromCatalog</c> was configured.
+    /// </summary>
+    /// <param name="application">The application builder.</param>
+    /// <returns>The same application builder.</returns>
+    /// <remarks>
+    /// Register this after <c>UseRouting()</c> and before <c>UseAuthentication()</c> — separate from
+    /// <see cref="UseHeadlessTenancy"/>'s post-authentication claim placement (KTD2). This method does
+    /// not call <c>UseRouting()</c>, <c>UseAuthentication()</c>, or <c>UseAuthorization()</c>.
+    /// Repeated invocations are idempotent. Accessor-only hosts (a catalog store configured via
+    /// <c>HeadlessTenancyBuilder.Catalog(...)</c> with no <c>ResolveFromCatalog(...)</c> call) are a
+    /// no-op — resolution middleware never runs for them (R18). Marks the tenant posture runtime marker
+    /// the startup validator checks (<c>TenantCatalogPosture.ResolutionPipelineRuntimeMarker</c>) only
+    /// when at least one <see cref="ITenantIdentifierSource"/> was registered — a resolution-capable
+    /// seam with this hook wired but zero sources would otherwise never actually resolve anything.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="application"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// <c>AddHeadlessTenancy()</c> was not called before <c>UseHeadlessTenantCatalogResolution()</c>. The
+    /// <c>TenantPostureManifest</c> service is not registered.
+    /// </exception>
+    public static IApplicationBuilder UseHeadlessTenantCatalogResolution(this IApplicationBuilder application)
+    {
+        Argument.IsNotNull(application);
+
+        var manifest =
+            application.ApplicationServices.GetService<TenantPostureManifest>()
+            ?? throw new InvalidOperationException(
+                "UseHeadlessTenantCatalogResolution() requires AddHeadlessTenancy(...). Configure catalog "
+                    + "resolution with builder.AddHeadlessTenancy(tenancy => tenancy"
+                    + ".Catalog(catalog => catalog.UseInMemory(...)).Http(http => http.ResolveFromCatalog(...)))."
+            );
+
+        var seam = manifest.GetSeam(TenantCatalogPosture.Seam);
+
+        if (
+            seam is null
+            || !seam.Capabilities.Contains(TenantCatalogPosture.ResolutionCapability, StringComparer.Ordinal)
+        )
+        {
+            // Not configured, or accessor-only (store configured, resolution never requested) — R18's
+            // explicit accessor-only carve-out. The resolution middleware must never run for these hosts.
+            return application;
+        }
+
+        // Short-circuit on repeat invocations so consumer mistakes (double-registering the middleware)
+        // do not stack TenantCatalogResolutionMiddleware in the pipeline.
+        if (manifest.HasRuntimeMarker(TenantCatalogPosture.Seam, _UseTenantCatalogResolutionMarker))
+        {
+            return application;
+        }
+
+        manifest.MarkRuntimeApplied(TenantCatalogPosture.Seam, _UseTenantCatalogResolutionMarker);
+
+        if (application.ApplicationServices.GetServices<ITenantIdentifierSource>().Any())
+        {
+            manifest.MarkRuntimeApplied(
+                TenantCatalogPosture.Seam,
+                TenantCatalogPosture.ResolutionPipelineRuntimeMarker
+            );
+        }
+
+        return application.UseTenantCatalogResolution();
+    }
+
+    // Idempotency marker for UseHeadlessTenantCatalogResolution(), distinct from
+    // TenantCatalogPosture.ResolutionPipelineRuntimeMarker: the latter is conditional on at least one
+    // identifier source being registered, while double-registration must be guarded regardless of
+    // source count.
+    private const string _UseTenantCatalogResolutionMarker = "UseTenantCatalogResolution";
 }
 
 /// <summary>Records that Headless HTTP tenancy should resolve tenants from authenticated user claims.</summary>
@@ -186,6 +258,88 @@ public sealed class HeadlessHttpTenancyBuilder
 
         _builder.RecordSeam(Seam, TenantPostureStatus.Configured, ResolveFromClaimsCapability);
 
+        return this;
+    }
+
+    /// <summary>Configures pre-auth tenant catalog identifier resolution.</summary>
+    /// <param name="configure">Optional callback to register <see cref="ITenantIdentifierSource"/>s.</param>
+    /// <returns>The same HTTP tenancy builder.</returns>
+    /// <remarks>
+    /// Registers <c>TenantCatalogResolutionMiddleware</c> and the R19 post-authorization mapping
+    /// integrity handler (<c>TenantIdentifierIntegrityHandler</c>), and records the
+    /// <see cref="TenantCatalogPosture.ResolutionCapability"/> capability on the
+    /// <see cref="TenantCatalogPosture.Seam"/> posture seam — independent of and installed regardless
+    /// of whether <see cref="ResolveFromClaims"/> is also configured (KTD2). A tenant store must be
+    /// configured separately via <c>HeadlessTenancyBuilder.Catalog(...)</c>; otherwise startup
+    /// validation fails (R18). Call <see cref="SetupApiTenancy.UseHeadlessTenantCatalogResolution"/>
+    /// after <c>UseRouting()</c> and before <c>UseAuthentication()</c> to wire the middleware into the
+    /// pipeline. v1 ships no built-in <see cref="ITenantIdentifierSource"/> — register one through
+    /// <paramref name="configure"/>, or resolution silently never activates for any request (R5).
+    /// </remarks>
+    public HeadlessHttpTenancyBuilder ResolveFromCatalog(
+        Action<HeadlessTenantCatalogResolutionBuilder>? configure = null
+    )
+    {
+        // Catalog-only hosts (no ResolveFromClaims()) still need ICurrentTenant/ICurrentTenantAccessor
+        // for the middleware's ambient Change(), and IOptions<MultiTenancyOptions> for
+        // TenantIdentifierIntegrityHandler's R19 claim-type read. Idempotent — a host that also calls
+        // ResolveFromClaims(...) merely repeats the same TryAdd/AddOptions registrations.
+        _builder.ApplicationBuilder.AddHeadlessMultiTenancy();
+
+        _builder.Services.AddTenantCatalogResolution();
+
+        var sourcesBuilder = new HeadlessTenantCatalogResolutionBuilder(_builder.Services);
+        configure?.Invoke(sourcesBuilder);
+
+        _builder.Services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IAuthorizationHandler, TenantIdentifierIntegrityHandler>()
+        );
+
+        _builder.RecordSeam(
+            TenantCatalogPosture.Seam,
+            TenantPostureStatus.Enforcing,
+            TenantCatalogPosture.ResolutionCapability
+        );
+
+        return this;
+    }
+}
+
+/// <summary>Registers <see cref="ITenantIdentifierSource"/>s consulted by pre-auth tenant catalog resolution.</summary>
+/// <remarks>
+/// Sources are resolved in registration order; <c>TenantCatalogResolutionMiddleware</c> uses the first
+/// non-<see langword="null"/> identifier returned. v1 ships no built-in source — the deferred
+/// host/route/header identifier strategies (a separate unit of work) implement this interface and call
+/// <see cref="AddSource{TSource}"/> from their own setup extensions.
+/// </remarks>
+[PublicAPI]
+public sealed class HeadlessTenantCatalogResolutionBuilder
+{
+    private readonly IServiceCollection _services;
+
+    internal HeadlessTenantCatalogResolutionBuilder(IServiceCollection services)
+    {
+        _services = Argument.IsNotNull(services);
+    }
+
+    /// <summary>Registers an <see cref="ITenantIdentifierSource"/> implementation resolved from DI.</summary>
+    /// <typeparam name="TSource">The identifier source implementation type.</typeparam>
+    /// <returns>The same builder, to allow chaining.</returns>
+    public HeadlessTenantCatalogResolutionBuilder AddSource<TSource>()
+        where TSource : class, ITenantIdentifierSource
+    {
+        _services.AddSingleton<ITenantIdentifierSource, TSource>();
+        return this;
+    }
+
+    /// <summary>Registers an already-constructed <see cref="ITenantIdentifierSource"/> instance.</summary>
+    /// <param name="source">The identifier source instance.</param>
+    /// <returns>The same builder, to allow chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="source"/> is <see langword="null"/>.</exception>
+    public HeadlessTenantCatalogResolutionBuilder AddSource(ITenantIdentifierSource source)
+    {
+        Argument.IsNotNull(source);
+        _services.AddSingleton(source);
         return this;
     }
 }

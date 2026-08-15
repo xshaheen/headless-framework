@@ -8,12 +8,21 @@ using Headless.Constants;
 using Headless.MultiTenancy;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Api.Middlewares;
 
 /// <summary>Resolves the current tenant from the authenticated principal for the lifetime of the HTTP request.</summary>
+/// <remarks>
+/// The R19 mismatch dependencies (<see cref="IProblemDetailsCreator"/>, <see cref="TenantCatalogOptions"/>)
+/// are deliberately resolved from <see cref="HttpContext.RequestServices"/> inside the mismatch branch
+/// rather than taken as constructor parameters — this middleware is usable standalone (claim resolution
+/// with no catalog and no <c>Headless.Api.Core</c> base infrastructure registered), and a hard
+/// constructor dependency on services that only the catalog integration needs would break that minimal
+/// host for every request, not just the rare mismatch path.
+/// </remarks>
 internal sealed partial class TenantResolutionMiddleware(
     RequestDelegate next,
     IOptions<MultiTenancyOptions> options,
@@ -53,6 +62,24 @@ internal sealed partial class TenantResolutionMiddleware(
         if (string.IsNullOrWhiteSpace(tenantId))
         {
             await next(context).ConfigureAwait(false);
+            return;
+        }
+
+        // R19 fast path: when catalog identifier resolution already ran for this request, the claim
+        // must canonicalize to the same tenant. Compared against the preserved request feature — never
+        // against ambient ICurrentTenant.Id, which this middleware's own Change() below would otherwise
+        // have overwritten by the time a later check ran. The authoritative check is the post-authorization
+        // TenantIdentifierIntegrityHandler (KTD2); this is a fast-path short-circuit only.
+        var resolvedFeature = context.Features.Get<TenantIdentifierResolvedFeature>();
+
+        if (resolvedFeature is not null && !string.Equals(resolvedFeature.TenantId, tenantId, StringComparison.Ordinal))
+        {
+            var problemDetailsCreator = context.RequestServices.GetRequiredService<IProblemDetailsCreator>();
+            var catalogOptions = context.RequestServices.GetRequiredService<IOptions<TenantCatalogOptions>>();
+
+            await TenantCatalogRejectionWriter
+                .RejectMismatchAsync(context, problemDetailsCreator, catalogOptions.Value.DetailedResolutionErrors)
+                .ConfigureAwait(false);
             return;
         }
 
