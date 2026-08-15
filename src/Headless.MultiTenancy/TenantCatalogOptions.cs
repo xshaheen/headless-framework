@@ -45,10 +45,17 @@ public sealed class TenantCatalogOptions
     /// When <see langword="true"/>, resolution failures surface granular <c>g:</c> error codes and
     /// HTTP statuses (unknown 404, disabled 403, mismatch 403) instead of the secure-by-default
     /// generic rejection (<c>g:tenant_resolution_failed</c>, 404) shared by unknown, disabled, and
-    /// claim-mismatch outcomes. Intended for development and trusted environments only — enabling it
-    /// in production lets callers enumerate tenants or their status from response differences.
+    /// claim-mismatch outcomes. Intended for development and trusted environments only.
     /// Default: <see langword="false"/>.
     /// </summary>
+    /// <remarks>
+    /// The default collapse buys exactly one guarantee: the three rejection outcomes are mutually
+    /// indistinguishable, so a caller that is refused cannot tell whether the identifier is unknown,
+    /// belongs to a disabled tenant, or conflicts with its own tenant claim. It does not hide the
+    /// existence of an <em>enabled</em> tenant — that request proceeds to the endpoint and returns the
+    /// application's own status, which already differs from the 404 an unknown identifier receives.
+    /// Enabling this option gives up the rejection-indistinguishability guarantee only.
+    /// </remarks>
     public bool DetailedResolutionErrors { get; set; }
 }
 

@@ -111,17 +111,14 @@ internal sealed class ConfigurationTenantStoreOptionsValidator : AbstractValidat
 
     private static bool _HaveUniqueNormalizedIdentifiers(IList<ConfigurationTenantSeed> tenants)
     {
-        var normalized = tenants.Select(static tenant => tenant.Identifier.Trim().ToLowerInvariant());
-
-        return normalized.Distinct(StringComparer.Ordinal).Take(tenants.Count + 1).Count() == tenants.Count;
+        return TenantSeedUniquenessValidator.HaveUniqueValues(
+            tenants,
+            static tenant => tenant.Identifier.Trim().ToLowerInvariant()
+        );
     }
 
     private static bool _HaveUniqueIds(IList<ConfigurationTenantSeed> tenants)
     {
-        return tenants
-                .Select(static tenant => tenant.Id)
-                .Distinct(StringComparer.Ordinal)
-                .Take(tenants.Count + 1)
-                .Count() == tenants.Count;
+        return TenantSeedUniquenessValidator.HaveUniqueValues(tenants, static tenant => tenant.Id);
     }
 }

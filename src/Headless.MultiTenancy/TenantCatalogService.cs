@@ -44,6 +44,7 @@ internal sealed class TenantCatalogService(
     ICache<TenantIdentifierCacheItem> identifierCache,
     ICache<TenantInfoCacheItem> infoCache,
     IOptions<TenantCatalogOptions> options,
+    TenantCatalogIgnoredIdentifierSet ignoredIdentifiers,
     ILogger<TenantCatalogService> logger
 ) : ITenantCatalogService
 {
@@ -68,7 +69,7 @@ internal sealed class TenantCatalogService(
             return TenantResolutionOutcome.Invalid;
         }
 
-        if (_options.IgnoredIdentifiers.Contains(normalized, StringComparer.OrdinalIgnoreCase))
+        if (ignoredIdentifiers.Contains(normalized))
         {
             return TenantResolutionOutcome.Ignored;
         }

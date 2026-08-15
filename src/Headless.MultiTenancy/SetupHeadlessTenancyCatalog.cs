@@ -56,6 +56,10 @@ public static class SetupHeadlessTenancyCatalog
         // even when the app never calls HeadlessTenancyCatalogSetupBuilder.Configure(...).
         services.AddOptions<TenantCatalogOptions, TenantCatalogOptionsValidator>();
 
+        // Singleton: the ignored-identifiers FrozenSet is derived once from options and reused across
+        // every scoped TenantCatalogService instance, avoiding a per-request list scan.
+        services.AddSingleton<TenantCatalogIgnoredIdentifierSet>();
+
         foreach (var extension in setup.Extensions)
         {
             extension.AddServices(services);

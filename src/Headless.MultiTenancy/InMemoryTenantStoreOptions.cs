@@ -35,17 +35,14 @@ internal sealed class InMemoryTenantStoreOptionsValidator : AbstractValidator<In
 
     private static bool _HaveUniqueNormalizedIdentifiers(IList<TenantInfo> tenants)
     {
-        var normalized = tenants.Select(static tenant => tenant.Identifier.Trim().ToLowerInvariant());
-
-        return normalized.Distinct(StringComparer.Ordinal).Take(tenants.Count + 1).Count() == tenants.Count;
+        return TenantSeedUniquenessValidator.HaveUniqueValues(
+            tenants,
+            static tenant => tenant.Identifier.Trim().ToLowerInvariant()
+        );
     }
 
     private static bool _HaveUniqueIds(IList<TenantInfo> tenants)
     {
-        return tenants
-                .Select(static tenant => tenant.Id)
-                .Distinct(StringComparer.Ordinal)
-                .Take(tenants.Count + 1)
-                .Count() == tenants.Count;
+        return TenantSeedUniquenessValidator.HaveUniqueValues(tenants, static tenant => tenant.Id);
     }
 }

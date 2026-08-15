@@ -265,8 +265,11 @@ public sealed class HeadlessHttpTenancyBuilder
     /// <param name="configure">Optional callback to register <see cref="ITenantIdentifierSource"/>s.</param>
     /// <returns>The same HTTP tenancy builder.</returns>
     /// <remarks>
-    /// Registers <c>TenantCatalogResolutionMiddleware</c> and the R19 post-authorization mapping
-    /// integrity handler (<c>TenantIdentifierIntegrityHandler</c>), and records the
+    /// Registers <c>TenantCatalogResolutionMiddleware</c> — which enforces R19 mapping integrity for
+    /// every identifier-resolved request against the default authentication scheme, independent of
+    /// endpoint metadata or authorization policy — and the R19 post-authorization mapping integrity
+    /// handler (<c>TenantIdentifierIntegrityHandler</c>) that covers endpoint-scoped
+    /// (non-default) authentication schemes, and records the
     /// <see cref="TenantCatalogPosture.ResolutionCapability"/> capability on the
     /// <see cref="TenantCatalogPosture.Seam"/> posture seam — independent of and installed regardless
     /// of whether <see cref="ResolveFromClaims"/> is also configured (KTD2). A tenant store must be
@@ -290,6 +293,12 @@ public sealed class HeadlessHttpTenancyBuilder
 
         var sourcesBuilder = new HeadlessTenantCatalogResolutionBuilder(_builder.Services);
         configure?.Invoke(sourcesBuilder);
+
+        // TenantIdentifierIntegrityHandler needs a fallback route to the request when authorization does
+        // not pass the HttpContext as the resource (the AppContext switch
+        // Microsoft.AspNetCore.Authorization.SuppressUseHttpContextAsAuthorizationResource passes the
+        // Endpoint instead).
+        _builder.Services.AddHttpContextAccessor();
 
         _builder.Services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IAuthorizationHandler, TenantIdentifierIntegrityHandler>()

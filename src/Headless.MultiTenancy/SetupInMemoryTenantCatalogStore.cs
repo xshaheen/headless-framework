@@ -6,54 +6,89 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Headless.MultiTenancy;
 
-/// <summary>Provides the <c>UseInMemory</c> extension member on <see cref="HeadlessTenancyCatalogSetupBuilder"/>.</summary>
+/// <summary>Provides the <c>UseInMemory</c> extension members on <see cref="HeadlessTenancyCatalogSetupBuilder"/>.</summary>
 [PublicAPI]
 public static class SetupInMemoryTenantCatalogStore
 {
-    /// <summary>Configures the in-memory tenant store, seeded from <paramref name="configure"/>.</summary>
-    /// <param name="setup">The catalog setup builder.</param>
-    /// <param name="configure">Delegate that adds seed <see cref="TenantInfo"/> entries.</param>
-    /// <returns>The same <see cref="HeadlessTenancyCatalogSetupBuilder"/> to allow chaining.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="setup"/> or <paramref name="configure"/> is <see langword="null"/>.</exception>
-    public static HeadlessTenancyCatalogSetupBuilder UseInMemory(
-        this HeadlessTenancyCatalogSetupBuilder setup,
-        Action<InMemoryTenantStoreOptions> configure
-    )
+    extension(HeadlessTenancyCatalogSetupBuilder setup)
     {
-        Argument.IsNotNull(setup);
-        Argument.IsNotNull(configure);
+        /// <summary>Configures the in-memory tenant store, seeded from <paramref name="configure"/>.</summary>
+        /// <param name="configure">Delegate that adds seed <see cref="TenantInfo"/> entries.</param>
+        /// <returns>The same <see cref="HeadlessTenancyCatalogSetupBuilder"/> to allow chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
+        public HeadlessTenancyCatalogSetupBuilder UseInMemory(Action<InMemoryTenantStoreOptions> configure)
+        {
+            Argument.IsNotNull(setup);
+            Argument.IsNotNull(configure);
 
-        setup.RegisterExtension(new InMemoryTenantStoreOptionsExtension(configure));
+            setup.RegisterExtension(new InMemoryTenantStoreOptionsExtension(configure));
 
-        return setup;
-    }
+            return setup;
+        }
 
-    /// <summary>Configures the in-memory tenant store from a pre-built options instance.</summary>
-    /// <param name="setup">The catalog setup builder.</param>
-    /// <param name="options">The seed data.</param>
-    /// <returns>The same <see cref="HeadlessTenancyCatalogSetupBuilder"/> to allow chaining.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="setup"/> or <paramref name="options"/> is <see langword="null"/>.</exception>
-    public static HeadlessTenancyCatalogSetupBuilder UseInMemory(
-        this HeadlessTenancyCatalogSetupBuilder setup,
-        InMemoryTenantStoreOptions options
-    )
-    {
-        Argument.IsNotNull(setup);
-        Argument.IsNotNull(options);
+        /// <summary>
+        /// Configures the in-memory tenant store, applying <paramref name="configure"/> to the seed options
+        /// with access to the <see cref="IServiceProvider"/>.
+        /// </summary>
+        /// <param name="configure">Delegate that configures <see cref="InMemoryTenantStoreOptions"/> with service resolution.</param>
+        /// <returns>The same <see cref="HeadlessTenancyCatalogSetupBuilder"/> to allow chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
+        public HeadlessTenancyCatalogSetupBuilder UseInMemory(
+            Action<InMemoryTenantStoreOptions, IServiceProvider> configure
+        )
+        {
+            Argument.IsNotNull(setup);
+            Argument.IsNotNull(configure);
 
-        return setup.UseInMemory(target => target.Tenants = options.Tenants);
+            setup.RegisterExtension(new InMemoryTenantStoreOptionsExtension(configure));
+
+            return setup;
+        }
+
+        /// <summary>Configures the in-memory tenant store from a pre-built options instance.</summary>
+        /// <param name="options">The seed data.</param>
+        /// <returns>The same <see cref="HeadlessTenancyCatalogSetupBuilder"/> to allow chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="options"/> is <see langword="null"/>.</exception>
+        public HeadlessTenancyCatalogSetupBuilder UseInMemory(InMemoryTenantStoreOptions options)
+        {
+            Argument.IsNotNull(setup);
+            Argument.IsNotNull(options);
+
+            return setup.UseInMemory(target => target.Tenants = options.Tenants);
+        }
     }
 
     /// <summary>
     /// <see cref="ITenantCatalogStorageOptionsExtension"/> that registers the in-memory store and its
     /// eagerly validated (<c>ValidateOnStart</c>) seed options.
     /// </summary>
-    private sealed class InMemoryTenantStoreOptionsExtension(Action<InMemoryTenantStoreOptions> configure)
-        : ITenantCatalogStorageOptionsExtension
+    private sealed class InMemoryTenantStoreOptionsExtension : ITenantCatalogStorageOptionsExtension
     {
+        private readonly Action<InMemoryTenantStoreOptions>? _configure;
+        private readonly Action<InMemoryTenantStoreOptions, IServiceProvider>? _configureWithServices;
+
+        public InMemoryTenantStoreOptionsExtension(Action<InMemoryTenantStoreOptions> configure)
+        {
+            _configure = configure;
+        }
+
+        public InMemoryTenantStoreOptionsExtension(Action<InMemoryTenantStoreOptions, IServiceProvider> configure)
+        {
+            _configureWithServices = configure;
+        }
+
         public void AddServices(IServiceCollection services)
         {
-            services.Configure<InMemoryTenantStoreOptions, InMemoryTenantStoreOptionsValidator>(configure);
+            if (_configure is not null)
+            {
+                services.Configure<InMemoryTenantStoreOptions, InMemoryTenantStoreOptionsValidator>(_configure);
+            }
+            else
+            {
+                services.Configure<InMemoryTenantStoreOptions, InMemoryTenantStoreOptionsValidator>(
+                    _configureWithServices
+                );
+            }
 
             // Singleton: the store is an immutable snapshot built once from seed options at construction
             // (unlike a future EF-backed store, which would need Scoped to match its DbContext).

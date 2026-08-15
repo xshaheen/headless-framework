@@ -26,6 +26,7 @@ public sealed class TenantCatalogServiceTests : TestBase
             _identifierCache,
             _infoCache,
             Options.Create(_options),
+            new TenantCatalogIgnoredIdentifierSet(Options.Create(_options)),
             NullLogger<TenantCatalogService>.Instance
         );
     }
@@ -103,6 +104,40 @@ public sealed class TenantCatalogServiceTests : TestBase
 
         // when
         var outcome = await _sut.ResolveAsync("www", AbortToken);
+
+        // then
+        outcome.Kind.Should().Be(TenantResolutionKind.Ignored);
+    }
+
+    [Fact]
+    public async Task should_match_ignored_identifiers_that_are_configured_with_surrounding_whitespace()
+    {
+        // given — the configured entry is normalized (trimmed) the same way the incoming identifier is,
+        // so an accidentally padded appsettings value still takes effect rather than silently never
+        // matching. Pins TenantCatalogIgnoredIdentifierSet's trim of the CONFIGURED side.
+        _options.IgnoredIdentifiers.Add(" www ");
+        _store
+            .FindByIdentifierAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("store must not be called for an ignored identifier"));
+
+        // when
+        var outcome = await _sut.ResolveAsync("www", AbortToken);
+
+        // then
+        outcome.Kind.Should().Be(TenantResolutionKind.Ignored);
+    }
+
+    [Fact]
+    public async Task should_match_ignored_identifiers_configured_with_both_whitespace_and_mixed_case()
+    {
+        // given — trimming and case-folding of the configured entry compose.
+        _options.IgnoredIdentifiers.Add("\t WWW \t");
+        _store
+            .FindByIdentifierAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("store must not be called for an ignored identifier"));
+
+        // when
+        var outcome = await _sut.ResolveAsync(" WwW ", AbortToken);
 
         // then
         outcome.Kind.Should().Be(TenantResolutionKind.Ignored);

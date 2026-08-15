@@ -11,66 +11,59 @@ namespace Headless.MultiTenancy;
 [PublicAPI]
 public static class SetupConfigurationTenantCatalogStore
 {
-    /// <summary>
-    /// Configures the configuration-backed tenant store, binding <see cref="ConfigurationTenantStoreOptions"/>
-    /// from <paramref name="configuration"/> once at startup (for example a scoped
-    /// <c>Headless:MultiTenancy:Tenants</c> section obtained via <c>IConfiguration.GetSection(...)</c>).
-    /// Reload requires a process restart (KTD7) — there is no change-token re-binding.
-    /// </summary>
-    /// <param name="setup">The catalog setup builder.</param>
-    /// <param name="configuration">The configuration to bind.</param>
-    /// <returns>The same <see cref="HeadlessTenancyCatalogSetupBuilder"/> to allow chaining.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="setup"/> or <paramref name="configuration"/> is <see langword="null"/>.</exception>
-    public static HeadlessTenancyCatalogSetupBuilder UseConfiguration(
-        this HeadlessTenancyCatalogSetupBuilder setup,
-        IConfiguration configuration
-    )
+    extension(HeadlessTenancyCatalogSetupBuilder setup)
     {
-        Argument.IsNotNull(setup);
-        Argument.IsNotNull(configuration);
+        /// <summary>
+        /// Configures the configuration-backed tenant store, binding <see cref="ConfigurationTenantStoreOptions"/>
+        /// from <paramref name="configuration"/> once at startup (for example a scoped
+        /// <c>Headless:MultiTenancy:Tenants</c> section obtained via <c>IConfiguration.GetSection(...)</c>).
+        /// Reload requires a process restart (KTD7) — there is no change-token re-binding.
+        /// </summary>
+        /// <param name="configuration">The configuration to bind.</param>
+        /// <returns>The same <see cref="HeadlessTenancyCatalogSetupBuilder"/> to allow chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="configuration"/> is <see langword="null"/>.</exception>
+        public HeadlessTenancyCatalogSetupBuilder UseConfiguration(IConfiguration configuration)
+        {
+            Argument.IsNotNull(setup);
+            Argument.IsNotNull(configuration);
 
-        setup.RegisterExtension(new ConfigurationTenantStoreOptionsExtension(configuration));
+            setup.RegisterExtension(new ConfigurationTenantStoreOptionsExtension(configuration));
 
-        return setup;
-    }
+            return setup;
+        }
 
-    /// <summary>Configures the configuration-backed tenant store, applying <paramref name="configure"/> to the seed options.</summary>
-    /// <param name="setup">The catalog setup builder.</param>
-    /// <param name="configure">Delegate that adds seed <see cref="ConfigurationTenantSeed"/> entries.</param>
-    /// <returns>The same <see cref="HeadlessTenancyCatalogSetupBuilder"/> to allow chaining.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="setup"/> or <paramref name="configure"/> is <see langword="null"/>.</exception>
-    public static HeadlessTenancyCatalogSetupBuilder UseConfiguration(
-        this HeadlessTenancyCatalogSetupBuilder setup,
-        Action<ConfigurationTenantStoreOptions> configure
-    )
-    {
-        Argument.IsNotNull(setup);
-        Argument.IsNotNull(configure);
+        /// <summary>Configures the configuration-backed tenant store, applying <paramref name="configure"/> to the seed options.</summary>
+        /// <param name="configure">Delegate that adds seed <see cref="ConfigurationTenantSeed"/> entries.</param>
+        /// <returns>The same <see cref="HeadlessTenancyCatalogSetupBuilder"/> to allow chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
+        public HeadlessTenancyCatalogSetupBuilder UseConfiguration(Action<ConfigurationTenantStoreOptions> configure)
+        {
+            Argument.IsNotNull(setup);
+            Argument.IsNotNull(configure);
 
-        setup.RegisterExtension(new ConfigurationTenantStoreOptionsExtension(configure));
+            setup.RegisterExtension(new ConfigurationTenantStoreOptionsExtension(configure));
 
-        return setup;
-    }
+            return setup;
+        }
 
-    /// <summary>
-    /// Configures the configuration-backed tenant store, applying <paramref name="configure"/> to the seed
-    /// options with access to the <see cref="IServiceProvider"/>.
-    /// </summary>
-    /// <param name="setup">The catalog setup builder.</param>
-    /// <param name="configure">Delegate that configures <see cref="ConfigurationTenantStoreOptions"/> with service resolution.</param>
-    /// <returns>The same <see cref="HeadlessTenancyCatalogSetupBuilder"/> to allow chaining.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="setup"/> or <paramref name="configure"/> is <see langword="null"/>.</exception>
-    public static HeadlessTenancyCatalogSetupBuilder UseConfiguration(
-        this HeadlessTenancyCatalogSetupBuilder setup,
-        Action<ConfigurationTenantStoreOptions, IServiceProvider> configure
-    )
-    {
-        Argument.IsNotNull(setup);
-        Argument.IsNotNull(configure);
+        /// <summary>
+        /// Configures the configuration-backed tenant store, applying <paramref name="configure"/> to the seed
+        /// options with access to the <see cref="IServiceProvider"/>.
+        /// </summary>
+        /// <param name="configure">Delegate that configures <see cref="ConfigurationTenantStoreOptions"/> with service resolution.</param>
+        /// <returns>The same <see cref="HeadlessTenancyCatalogSetupBuilder"/> to allow chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
+        public HeadlessTenancyCatalogSetupBuilder UseConfiguration(
+            Action<ConfigurationTenantStoreOptions, IServiceProvider> configure
+        )
+        {
+            Argument.IsNotNull(setup);
+            Argument.IsNotNull(configure);
 
-        setup.RegisterExtension(new ConfigurationTenantStoreOptionsExtension(configure));
+            setup.RegisterExtension(new ConfigurationTenantStoreOptionsExtension(configure));
 
-        return setup;
+            return setup;
+        }
     }
 
     /// <summary>

@@ -1,10 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Security.Claims;
 using Headless.Abstractions;
 using Headless.Api.MultiTenancy;
 using Headless.Checks;
-using Headless.Constants;
 using Headless.MultiTenancy;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
@@ -57,7 +55,7 @@ internal sealed partial class TenantResolutionMiddleware(
             return;
         }
 
-        var tenantId = _GetTenantId(context.User);
+        var tenantId = TenantClaimReader.GetTenantId(context.User, options.Value);
 
         if (string.IsNullOrWhiteSpace(tenantId))
         {
@@ -85,19 +83,6 @@ internal sealed partial class TenantResolutionMiddleware(
 
         using var _ = currentTenant.Change(tenantId);
         await next(context).ConfigureAwait(false);
-    }
-
-    private string? _GetTenantId(ClaimsPrincipal principal)
-    {
-        Argument.IsNotNull(principal);
-
-        var claimType = string.IsNullOrWhiteSpace(options.Value.ClaimType)
-            ? UserClaimTypes.TenantId
-            : options.Value.ClaimType;
-
-        return string.Equals(claimType, UserClaimTypes.TenantId, StringComparison.Ordinal)
-            ? principal.GetTenantId()
-            : principal.FindFirst(claimType)?.Value;
     }
 
     /// <summary>

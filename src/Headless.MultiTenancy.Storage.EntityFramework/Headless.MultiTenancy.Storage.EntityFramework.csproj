@@ -9,4 +9,9 @@
     <ProjectReference Include="..\Headless.EntityFramework\Headless.EntityFramework.csproj" />
     <ProjectReference Include="..\Headless.MultiTenancy\Headless.MultiTenancy.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Headless.MultiTenancy.Storage.EntityFramework.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.MultiTenancy.Storage.EntityFramework.Tests.Integration" />
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
+  </ItemGroup>
 </Project>

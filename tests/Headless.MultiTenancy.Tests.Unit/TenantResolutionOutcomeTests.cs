@@ -66,8 +66,18 @@ public sealed class TenantResolutionOutcomeTests
         foreach (var kind in Enum.GetValues<TenantResolutionKind>())
         {
             // when
-            var label = kind switch
+            var label = toLabel(kind);
+
+            // then
+            label.Should().NotBeNullOrEmpty();
+        }
+
+        // MA0015 requires the paramName argument to match an actual parameter — kind is a local
+        // function parameter here, not the [Fact] method's, so nameof(kind) resolves validly.
+        static string toLabel(TenantResolutionKind kind) =>
+            kind switch
             {
+                TenantResolutionKind.None => "none",
                 TenantResolutionKind.Resolved => "resolved",
                 TenantResolutionKind.Unknown => "unknown",
                 TenantResolutionKind.Disabled => "disabled",
@@ -75,10 +85,29 @@ public sealed class TenantResolutionOutcomeTests
                 TenantResolutionKind.Invalid => "invalid",
                 _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, message: null),
             };
+    }
 
-            // then
-            label.Should().NotBeNullOrEmpty();
-        }
+    [Fact]
+    public void should_not_report_a_default_outcome_as_resolved()
+    {
+        // given — an uninitialized struct: default(T), an auto-valued mock return, or a consumer
+        // catalog implementation that forgot to build an outcome. Resolved must not be the zero value,
+        // or such a value would claim a tenant it does not carry and NRE the consuming middleware.
+        var outcome = default(TenantResolutionOutcome);
+
+        // then
+        outcome.Kind.Should().Be(TenantResolutionKind.None);
+        outcome.Kind.Should().NotBe(TenantResolutionKind.Resolved);
+        outcome.Tenant.Should().BeNull();
+    }
+
+    [Fact]
+    public void should_keep_none_as_the_zero_value_of_the_kind_enum()
+    {
+        ((int)TenantResolutionKind.None).Should().Be(0);
+        Enum.GetValues<TenantResolutionKind>()
+            .Should()
+            .NotContain(kind => kind != TenantResolutionKind.None && (int)kind == 0);
     }
 
     [Fact]

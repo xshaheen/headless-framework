@@ -25,13 +25,23 @@ public static class HeadlessMultiTenancyModelBuilderExtensions
         /// on the options builder) by the time <c>OnModelCreating</c> runs, which is always the case.
         /// </param>
         /// <returns>The same <see cref="ModelBuilder"/> instance to allow chaining.</returns>
+        /// <remarks>
+        /// This method is idempotent. If the tenant catalog entity is already configured, subsequent
+        /// calls are no-ops.
+        /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="context"/> is <see langword="null"/>.</exception>
         public ModelBuilder AddHeadlessTenancyCatalog(DbContext context)
         {
             Argument.IsNotNull(modelBuilder);
             Argument.IsNotNull(context);
 
+            if (modelBuilder.Model.FindAnnotation(TenantCatalogStorageModelAnnotations.IsConfigured)?.Value is true)
+            {
+                return modelBuilder;
+            }
+
             modelBuilder.ApplyConfiguration(new TenantRecordConfiguration(context.Database.ProviderName));
+            modelBuilder.Model.SetAnnotation(TenantCatalogStorageModelAnnotations.IsConfigured, value: true);
 
             return modelBuilder;
         }

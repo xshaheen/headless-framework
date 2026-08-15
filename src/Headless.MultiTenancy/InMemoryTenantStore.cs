@@ -29,8 +29,7 @@ internal sealed class InMemoryTenantStore : ITenantStore, ITenantDirectory
 
         var seeds = Argument.IsNotNull(options.Value).Tenants;
 
-        var byId = new Dictionary<string, TenantInfo>(seeds.Count, StringComparer.Ordinal);
-        var byIdentifier = new Dictionary<string, TenantInfo>(seeds.Count, StringComparer.Ordinal);
+        var entries = new List<(string RawIdentifier, TenantInfo Tenant)>(seeds.Count);
 
         foreach (var seed in seeds)
         {
@@ -44,26 +43,10 @@ internal sealed class InMemoryTenantStore : ITenantStore, ITenantDirectory
                 ExtraProperties = new ExtraProperties(seed.ExtraProperties),
             };
 
-            if (!byIdentifier.TryAdd(normalizedIdentifier, normalized))
-            {
-                throw new InvalidOperationException(
-                    "Headless.MultiTenancy in-memory store: duplicate tenant identifier "
-                        + $"'{normalizedIdentifier}' (from seed identifier '{seed.Identifier}'). "
-                        + "Seeded identifiers must be unique after normalization (R20)."
-                );
-            }
-
-            if (!byId.TryAdd(normalized.Id, normalized))
-            {
-                throw new InvalidOperationException(
-                    $"Headless.MultiTenancy in-memory store: duplicate tenant id '{normalized.Id}'. "
-                        + "Seeded tenant ids must be unique."
-                );
-            }
+            entries.Add((seed.Identifier, normalized));
         }
 
-        _byId = byId;
-        _byNormalizedIdentifier = byIdentifier;
+        (_byId, _byNormalizedIdentifier) = TenantSeedIndexBuilder.Build(entries, "in-memory");
     }
 
     /// <inheritdoc/>

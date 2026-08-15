@@ -32,6 +32,8 @@ namespace Tests;
 public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
 {
     private const string IdentifierHeader = "X-Test-Catalog-Identifier";
+    private const string SecondaryIdentifierHeader = "X-Test-Catalog-Identifier-2";
+    private const string SecondarySchemeTenantHeader = "X-Test-Secondary-Tenant";
 
     [Fact]
     public async Task should_resolve_ambient_tenant_and_expose_feature_when_identifier_maps_to_enabled_tenant()
@@ -329,6 +331,211 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
+    [Fact]
+    public async Task should_not_emit_ordering_warning_for_an_unmatched_route_on_a_correctly_ordered_pipeline()
+    {
+        // An ordinary 404 probe also reaches this middleware with a null endpoint. That must not be
+        // mistaken for a misordered pipeline, nor consume the one-shot warning slot a genuinely
+        // misordered host depends on.
+        TenantCatalogResolutionMiddleware.ResetOrderingWarningForTesting();
+        using var loggerProvider = new CapturingLoggerProvider();
+        await using var app = await _CreateAppAsync(loggerProvider: loggerProvider);
+        using var client = HttpTenancyTestHarness.CreateClient(app);
+
+        using var response = await _SendAsync(client, identifier: "acme", path: "/no-such-route");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        loggerProvider
+            .Entries.Should()
+            .NotContain(entry => entry.EventId.Name == "HEADLESS_TENANT_CATALOG_MIDDLEWARE_ORDERING");
+    }
+
+    [Fact]
+    public async Task should_use_the_first_registered_source_when_several_sources_produce_an_identifier()
+    {
+        await using var app = await _CreateAppAsync(registerSecondIdentifierSource: true);
+        using var client = HttpTenancyTestHarness.CreateClient(app);
+
+        // Both sources yield an identifier, and they disagree: the first registration must win.
+        var tenant = await _GetTenantAsync(client, identifier: "acme", secondaryIdentifier: "disabled-co");
+
+        tenant.Id.Should().Be("ten_123");
+        tenant.IsAvailable.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_fall_through_to_the_next_source_when_the_first_returns_null()
+    {
+        await using var app = await _CreateAppAsync(registerSecondIdentifierSource: true);
+        using var client = HttpTenancyTestHarness.CreateClient(app);
+
+        var tenant = await _GetTenantAsync(client, identifier: null, secondaryIdentifier: "acme");
+
+        tenant.Id.Should().Be("ten_123");
+        tenant.IsAvailable.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_reject_mismatching_claim_on_an_allow_anonymous_endpoint()
+    {
+        // AuthorizationMiddleware never evaluates handlers for [AllowAnonymous] endpoints, so this only
+        // holds because R19 is enforced independently of authorization evaluation.
+        await using var app = await _CreateAppAsync(requireAuthenticatedUser: true);
+        using var client = HttpTenancyTestHarness.CreateClient(app);
+
+        using var response = await _SendAsync(
+            client,
+            identifier: "acme",
+            user: "alice",
+            tenantId: "ten_999",
+            path: "/anonymous-tenant"
+        );
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var body = await response.Content.ReadAsStringAsync(AbortToken);
+        using var doc = JsonDocument.Parse(body);
+        doc.RootElement.GetProperty("error")
+            .GetProperty("code")
+            .GetString()
+            .Should()
+            .Be(TenancyErrorCodes.ResolutionFailed);
+    }
+
+    [Fact]
+    public async Task should_reject_mismatching_claim_when_endpoint_has_no_authorize_metadata_and_no_fallback_policy()
+    {
+        // No authorize metadata and no FallbackPolicy means AuthorizationMiddleware combines a null
+        // policy and calls next() without evaluating a single handler.
+        await using var app = await _CreateAppAsync(requireAuthenticatedUser: false);
+        using var client = HttpTenancyTestHarness.CreateClient(app);
+
+        using var response = await _SendAsync(client, identifier: "acme", user: "alice", tenantId: "ten_999");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var body = await response.Content.ReadAsStringAsync(AbortToken);
+        using var doc = JsonDocument.Parse(body);
+        doc.RootElement.GetProperty("error")
+            .GetProperty("code")
+            .GetString()
+            .Should()
+            .Be(TenancyErrorCodes.ResolutionFailed);
+    }
+
+    [Fact]
+    public async Task should_reject_mismatch_visible_only_to_an_endpoint_scoped_scheme()
+    {
+        // The default scheme authenticates alice without a tenant claim, so the mismatch surfaces only
+        // when PolicyEvaluator authenticates "secondary" — the authorization-handler path.
+        await using var app = await _CreateAppAsync(requireAuthenticatedUser: true, useIsolatedSecondaryScheme: true);
+        using var client = HttpTenancyTestHarness.CreateClient(app);
+
+        using var response = await _SendAsync(
+            client,
+            identifier: "acme",
+            user: "alice",
+            secondarySchemeTenantId: "ten_999"
+        );
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var body = await response.Content.ReadAsStringAsync(AbortToken);
+        using var doc = JsonDocument.Parse(body);
+        doc.RootElement.GetProperty("error")
+            .GetProperty("code")
+            .GetString()
+            .Should()
+            .Be(TenancyErrorCodes.ResolutionFailed);
+    }
+
+    [Fact]
+    public async Task should_keep_mismatch_rejection_byte_identical_to_unknown_when_forbid_is_not_a_bare_403()
+    {
+        // A cookie-style scheme forbids with a 302, not a 403. If the rewrite were gated on a bare 403,
+        // the mismatch would stay distinguishable from the unknown/disabled rejection — exactly the
+        // enumeration signal the secure-by-default collapse exists to remove.
+        await using var app = await _CreateAppAsync(
+            requireAuthenticatedUser: true,
+            useIsolatedSecondaryScheme: true,
+            redirectOnForbid: true
+        );
+        using var client = HttpTenancyTestHarness.CreateClient(app, allowAutoRedirect: false);
+
+        using var mismatchResponse = await _SendAsync(
+            client,
+            identifier: "acme",
+            user: "alice",
+            secondarySchemeTenantId: "ten_999"
+        );
+        using var unknownResponse = await _SendAsync(client, identifier: "ghost", user: "alice");
+
+        mismatchResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        unknownResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        mismatchResponse.Headers.Location.Should().BeNull();
+
+        var mismatchBody = _StripVolatile(await mismatchResponse.Content.ReadAsStringAsync(AbortToken));
+        var unknownBody = _StripVolatile(await unknownResponse.Content.ReadAsStringAsync(AbortToken));
+
+        mismatchBody.Should().Be(unknownBody);
+    }
+
+    [Fact]
+    public async Task should_reject_mismatch_when_authorization_resource_is_not_the_http_context()
+    {
+        // The SuppressUseHttpContextAsAuthorizationResource AppContext switch makes AuthorizationMiddleware
+        // pass the Endpoint as the resource. Exercised directly rather than through the process-global
+        // switch, which would leak into every other test running in parallel.
+        var httpContext = new DefaultHttpContext();
+        httpContext.Features.Set(new TenantIdentifierResolvedFeature("ten_123"));
+
+        var handler = new TenantIdentifierIntegrityHandler(
+            Options.Create(new MultiTenancyOptions()),
+            new HttpContextAccessor { HttpContext = httpContext }
+        );
+
+        var authorizationContext = new AuthorizationHandlerContext(
+            [new TenantRequirement()],
+            _CreatePrincipal(tenantId: "ten_999"),
+            resource: new Endpoint(_ => Task.CompletedTask, new EndpointMetadataCollection(), "test")
+        );
+
+        await handler.HandleAsync(authorizationContext);
+
+        authorizationContext.HasFailed.Should().BeTrue();
+        httpContext.Features.Get<TenantIdentifierMismatchFeature>().Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task should_not_fail_authorization_when_the_claim_matches_and_the_resource_is_not_the_http_context()
+    {
+        var httpContext = new DefaultHttpContext();
+        httpContext.Features.Set(new TenantIdentifierResolvedFeature("ten_123"));
+
+        var handler = new TenantIdentifierIntegrityHandler(
+            Options.Create(new MultiTenancyOptions()),
+            new HttpContextAccessor { HttpContext = httpContext }
+        );
+
+        var authorizationContext = new AuthorizationHandlerContext(
+            [new TenantRequirement()],
+            _CreatePrincipal(tenantId: "ten_123"),
+            resource: new Endpoint(_ => Task.CompletedTask, new EndpointMetadataCollection(), "test")
+        );
+
+        await handler.HandleAsync(authorizationContext);
+
+        authorizationContext.HasFailed.Should().BeFalse();
+        httpContext.Features.Get<TenantIdentifierMismatchFeature>().Should().BeNull();
+    }
+
+    private static ClaimsPrincipal _CreatePrincipal(string tenantId)
+    {
+        var identity = new ClaimsIdentity(
+            [new Claim(UserClaimTypes.Name, "alice"), new Claim(UserClaimTypes.TenantId, tenantId)],
+            authenticationType: HttpTenancyTestHarness.Scheme
+        );
+
+        return new ClaimsPrincipal(identity);
+    }
+
     // --- app factory ---
 
     private async Task<WebApplication> _CreateAppAsync(
@@ -338,7 +545,10 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
         bool applyBeforeUseRouting = false,
         bool requireAuthenticatedUser = false,
         bool alsoResolveFromClaims = false,
-        bool useSecondaryScheme = false
+        bool useSecondaryScheme = false,
+        bool useIsolatedSecondaryScheme = false,
+        bool redirectOnForbid = false,
+        bool registerSecondIdentifierSource = false
     )
     {
         var builder = WebApplication.CreateBuilder(
@@ -383,8 +593,14 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
                 }
 
                 http.ResolveFromCatalog(catalogHttp =>
-                    catalogHttp.AddSource(new HeaderTenantIdentifierSource(IdentifierHeader))
-                );
+                {
+                    catalogHttp.AddSource(new HeaderTenantIdentifierSource(IdentifierHeader));
+
+                    if (registerSecondIdentifierSource)
+                    {
+                        catalogHttp.AddSource(new HeaderTenantIdentifierSource(SecondaryIdentifierHeader));
+                    }
+                });
             });
         });
 
@@ -408,12 +624,22 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
                 .AddScheme<AuthenticationSchemeOptions, SecondarySchemeHandler>("secondary", _ => { });
         }
 
+        if (useIsolatedSecondaryScheme)
+        {
+            builder
+                .Services.AddAuthentication()
+                .AddScheme<IsolatedSchemeOptions, IsolatedSecondarySchemeHandler>(
+                    "secondary",
+                    o => o.RedirectOnForbid = redirectOnForbid
+                );
+        }
+
         if (requireAuthenticatedUser)
         {
             builder
                 .Services.AddAuthorizationBuilder()
                 .SetFallbackPolicy(
-                    useSecondaryScheme
+                    useSecondaryScheme || useIsolatedSecondaryScheme
                         ? new AuthorizationPolicyBuilder("secondary").RequireAuthenticatedUser().Build()
                         : new AuthorizationPolicyBuilder(HttpTenancyTestHarness.Scheme)
                             .RequireAuthenticatedUser()
@@ -466,6 +692,16 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
             )
             .SkipTenantResolution();
 
+        // AuthorizationMiddleware short-circuits before evaluating any handler for [AllowAnonymous]
+        // endpoints, so R19 on this route can only hold if enforcement does not depend on authorization
+        // running at all.
+        app.MapGet(
+                "/anonymous-tenant",
+                (ICurrentTenant currentTenant) =>
+                    Results.Json(new TenantCatalogResponse(currentTenant.Id, currentTenant.IsAvailable))
+            )
+            .AllowAnonymous();
+
         await app.StartAsync(AbortToken);
         return app;
     }
@@ -475,10 +711,11 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
         string? identifier,
         string? user = "alice",
         string? tenantId = null,
-        string path = "/tenant"
+        string path = "/tenant",
+        string? secondaryIdentifier = null
     )
     {
-        using var response = await _SendAsync(client, identifier, user, tenantId, path);
+        using var response = await _SendAsync(client, identifier, user, tenantId, path, secondaryIdentifier);
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<TenantCatalogResponse>(cancellationToken: AbortToken))!;
     }
@@ -488,7 +725,9 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
         string? identifier,
         string? user = "alice",
         string? tenantId = null,
-        string path = "/tenant"
+        string path = "/tenant",
+        string? secondaryIdentifier = null,
+        string? secondarySchemeTenantId = null
     )
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, path);
@@ -496,6 +735,11 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
         if (identifier is not null)
         {
             request.Headers.Add(IdentifierHeader, identifier);
+        }
+
+        if (secondaryIdentifier is not null)
+        {
+            request.Headers.Add(SecondaryIdentifierHeader, secondaryIdentifier);
         }
 
         if (user is not null)
@@ -506,6 +750,11 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
         if (tenantId is not null)
         {
             request.Headers.Add(HttpTenancyTestHarness.TenantHeader, tenantId);
+        }
+
+        if (secondarySchemeTenantId is not null)
+        {
+            request.Headers.Add(SecondarySchemeTenantHeader, secondarySchemeTenantId);
         }
 
         return await client.SendAsync(request, AbortToken);
@@ -567,6 +816,58 @@ internal sealed class ThrowingTenantStore : ITenantStore
     public Task<TenantInfo?> FindByIdAsync(string id, CancellationToken cancellationToken = default)
     {
         throw new InvalidOperationException("Simulated store fault.");
+    }
+}
+
+internal sealed class IsolatedSchemeOptions : AuthenticationSchemeOptions
+{
+    /// <summary>Forbids with a 302 redirect rather than a bare 403, the way a cookie scheme does.</summary>
+    public bool RedirectOnForbid { get; set; }
+}
+
+/// <summary>
+/// An endpoint-scoped scheme that reads its tenant claim from a header the default scheme ignores, so
+/// the mismatching claim only becomes visible once <c>PolicyEvaluator</c> authenticates it inside
+/// authorization — the one path where <c>TenantIdentifierIntegrityHandler</c> is the sole R19 enforcement.
+/// </summary>
+internal sealed class IsolatedSecondarySchemeHandler(
+    IOptionsMonitor<IsolatedSchemeOptions> options,
+    ILoggerFactory logger,
+    UrlEncoder encoder
+) : AuthenticationHandler<IsolatedSchemeOptions>(options, logger, encoder)
+{
+    public const string TenantHeader = "X-Test-Secondary-Tenant";
+
+    protected override Task<AuthenticateResult> HandleAuthenticateAsync()
+    {
+        if (!Request.Headers.TryGetValue(HttpTenancyTestHarness.UserHeader, out var userValues))
+        {
+            return Task.FromResult(AuthenticateResult.NoResult());
+        }
+
+        var claims = new List<Claim> { new(UserClaimTypes.Name, userValues.ToString()) };
+
+        if (Request.Headers.TryGetValue(TenantHeader, out var tenantValues))
+        {
+            claims.Add(new Claim(UserClaimTypes.TenantId, tenantValues.ToString()));
+        }
+
+        var identity = new ClaimsIdentity(claims, authenticationType: Scheme.Name);
+        var ticket = new AuthenticationTicket(new ClaimsPrincipal(identity), Scheme.Name);
+
+        return Task.FromResult(AuthenticateResult.Success(ticket));
+    }
+
+    protected override Task HandleForbiddenAsync(AuthenticationProperties properties)
+    {
+        if (!Options.RedirectOnForbid)
+        {
+            return base.HandleForbiddenAsync(properties);
+        }
+
+        Response.Redirect("/forbidden");
+
+        return Task.CompletedTask;
     }
 }
 

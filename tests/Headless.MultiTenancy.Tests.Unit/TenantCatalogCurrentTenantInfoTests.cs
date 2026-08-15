@@ -6,7 +6,7 @@ using Headless.Testing.Tests;
 
 namespace Tests;
 
-public sealed class NullCurrentTenantInfoTests
+public sealed class NullCurrentTenantInfoTests : TestBase
 {
     [Fact]
     public async Task should_always_return_null()
@@ -15,7 +15,7 @@ public sealed class NullCurrentTenantInfoTests
         var sut = new NullCurrentTenantInfo();
 
         // when
-        var result = await sut.GetAsync();
+        var result = await sut.GetAsync(AbortToken);
 
         // then
         result.Should().BeNull();

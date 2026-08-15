@@ -18,11 +18,12 @@ namespace Headless.Api.Middlewares;
 /// <remarks>
 /// For 403 responses that carry a <c>TenantContextRequiredFeature</c> on the request, the middleware
 /// clears any partial response and writes a <c>g:tenant_required</c> discriminator body, overriding
-/// any <c>Content-Type</c> or <c>Content-Length</c> set by upstream authorization middleware. For 403
-/// responses that carry a <c>TenantIdentifierMismatchFeature</c> (R19), the middleware clears the
-/// response and writes the R11 mismatch ProblemDetails — the status itself may be overridden from 403
-/// to 404, since the secure-by-default mismatch rejection is byte-identical to the generic
-/// unknown/disabled rejection (<see cref="TenantCatalogRejectionWriter.BuildMismatch"/>).
+/// any <c>Content-Type</c> or <c>Content-Length</c> set by upstream authorization middleware.
+/// A request carrying a <c>TenantIdentifierMismatchFeature</c> (R19) is rewritten whatever status the
+/// authorization pipeline produced — not only a bare 403, since a cookie-style scheme forbids with a
+/// 302 — because the secure-by-default mismatch rejection must stay byte-identical to the generic
+/// unknown/disabled rejection (<see cref="TenantCatalogRejectionWriter.BuildMismatch"/>). Both the
+/// status and the body are overridden.
 /// All writes are routed through <see cref="Microsoft.AspNetCore.Http.IProblemDetailsService"/> when
 /// registered, falling back to <c>Results.Problem</c> for minimal-host scenarios.
 /// </remarks>
@@ -38,9 +39,36 @@ internal sealed class StatusCodesRewriterMiddleware(
     {
         await next(context).ConfigureAwait(false);
 
+        if (context.Response.HasStarted)
+        {
+            return;
+        }
+
+        // TenantIdentifierIntegrityHandler stashes this marker on an R19 mismatch. The secure-by-default
+        // rejection must be byte-identical to the generic unknown/disabled rejection, so it is evaluated
+        // before — and independently of — the status-code switch below: the status the authorization
+        // pipeline produced is not necessarily a bare 403 (a cookie-style scheme forbids with a 302), and
+        // any surviving difference is exactly the enumeration signal R11/KTD9 exists to remove. Both the
+        // status and the body are overridden here, not just the body.
+        if (context.Features.Get<TenantIdentifierMismatchFeature>() is not null)
+        {
+            context.Response.Clear();
+
+            var (mismatchStatusCode, mismatchProblemDetails) = TenantCatalogRejectionWriter.BuildMismatch(
+                problemDetailsCreator,
+                catalogOptions.Value.DetailedResolutionErrors
+            );
+
+            await TenantCatalogRejectionWriter
+                .WriteAsync(context, mismatchStatusCode, mismatchProblemDetails)
+                .ConfigureAwait(false);
+
+            return;
+        }
+
         var isNonError = context.Response.StatusCode is < 400 or >= 600;
 
-        if (isNonError || context.Response.HasStarted)
+        if (isNonError)
         {
             return;
         }
@@ -54,13 +82,8 @@ internal sealed class StatusCodesRewriterMiddleware(
             context.Response.StatusCode == StatusCodes.Status403Forbidden
             && context.Features.Get<TenantContextRequiredFeature>() is not null;
 
-        var hasMismatchFeature =
-            context.Response.StatusCode == StatusCodes.Status403Forbidden
-            && context.Features.Get<TenantIdentifierMismatchFeature>() is not null;
-
         if (
             !hasTenantFeature
-            && !hasMismatchFeature
             && (context.Response.ContentLength.HasValue || !string.IsNullOrEmpty(context.Response.ContentType))
         )
         {
@@ -78,23 +101,6 @@ internal sealed class StatusCodesRewriterMiddleware(
             }
             case StatusCodes.Status403Forbidden:
             {
-                // TenantIdentifierIntegrityHandler stashes this marker on an R19 mismatch. The
-                // secure-by-default rejection is byte-identical to the generic unknown/disabled
-                // rejection, which is a 404 — so the response status itself is overridden here, not
-                // just the body.
-                if (hasMismatchFeature)
-                {
-                    context.Response.Clear();
-                    var (statusCode, mismatchProblemDetails) = TenantCatalogRejectionWriter.BuildMismatch(
-                        problemDetailsCreator,
-                        catalogOptions.Value.DetailedResolutionErrors
-                    );
-                    context.Response.StatusCode = statusCode;
-                    await _WriteAsync(context, mismatchProblemDetails).ConfigureAwait(false);
-
-                    break;
-                }
-
                 // TenantRequirementHandler stashes this marker when it fails the request, so the
                 // bare 403 produced by ASP.NET Core's default IAuthorizationMiddlewareResultHandler
                 // can be enriched with the structured g:tenant_required discriminator here — no

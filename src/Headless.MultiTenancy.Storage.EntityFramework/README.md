@@ -4,7 +4,7 @@ Entity Framework Core storage implementation for the Headless tenant catalog (`I
 
 ## Problem Solved
 
-Provides an EF Core-backed `ITenantStore` using the consumer's own `DbContext`, with schema managed through EF migrations — R17's shipped, convenience-default schema. Apps with richer requirements can implement `ITenantStore` directly over their own aggregate instead.
+Provides an EF Core-backed `ITenantStore` using the consumer's own `DbContext`, with schema managed through EF migrations — a shipped, convenience-default schema. Apps with richer requirements can implement `ITenantStore` directly over their own aggregate instead.
 
 ## Key Features
 
@@ -12,6 +12,7 @@ Provides an EF Core-backed `ITenantStore` using the consumer's own `DbContext`, 
 - `modelBuilder.AddHeadlessTenancyCatalog(DbContext context)` — applies the `TenantRecord` entity configuration, reading the active EF Core provider so the unique identifier index can be pinned to a deterministic collation
 - `TenantRecord` — the single-table entity: `Id`, `Identifier`, `NormalizedIdentifier`, `Name`, `IsEnabled`, `ExtraProperties`
 - Unique index on `NormalizedIdentifier`, pinned to a case- and accent-sensitive collation (`Latin1_General_100_BIN2` on SQL Server, `C` on PostgreSQL) so a lookup never matches a row differing only by case — SQL Server's default collation is case-insensitive and would otherwise break the catalog service's ordinal lookup contract
+- A startup gate fails host startup with an actionable message when `modelBuilder.AddHeadlessTenancyCatalog(this)` was never called, instead of failing lazily at the first tenant resolution
 
 ## Design Notes
 
@@ -62,3 +63,4 @@ None. This package binds no options of its own — `UseEntityFramework<TContext>
 ## Side Effects
 
 - Registers `EfTenantStore<TContext>` as a singleton, exposed as both `ITenantStore` and `ITenantDirectory`
+- Registers an `IHostedLifecycleService` startup gate that verifies the `TenantRecord` model configuration was applied to `TContext`

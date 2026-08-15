@@ -1,8 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.MultiTenancy.Internal;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 
 namespace Headless.MultiTenancy;
 
@@ -21,9 +23,15 @@ public static class SetupTenantCatalogEntityFramework
         /// </summary>
         /// <typeparam name="TContext">
         /// The <see cref="DbContext"/> type that has been configured with
-        /// <c>modelBuilder.AddHeadlessTenancyCatalog(this)</c> in its <c>OnModelCreating</c> override.
+        /// <c>modelBuilder.AddHeadlessTenancyCatalog(this)</c> in its <c>OnModelCreating</c> override,
+        /// which is validated at application startup.
         /// </typeparam>
         /// <returns>The same <see cref="HeadlessTenancyCatalogSetupBuilder"/> to allow chaining.</returns>
+        /// <remarks>
+        /// A startup gate validates that the registered <typeparamref name="TContext"/> fully configured
+        /// <see cref="TenantRecord"/> through <c>modelBuilder.AddHeadlessTenancyCatalog(this)</c> and throws
+        /// <see cref="InvalidOperationException"/> when the model did not run that configuration.
+        /// </remarks>
         public HeadlessTenancyCatalogSetupBuilder UseEntityFramework<TContext>()
             where TContext : DbContext
         {
@@ -55,6 +63,12 @@ public static class SetupTenantCatalogEntityFramework
             services.TryAddSingleton(storeType);
             services.TryAddSingleton(typeof(ITenantStore), sp => sp.GetRequiredService(storeType));
             services.TryAddSingleton(typeof(ITenantDirectory), sp => sp.GetRequiredService(storeType));
+            services.TryAddEnumerable(
+                ServiceDescriptor.Singleton(
+                    typeof(IHostedService),
+                    typeof(TenantCatalogEntityValidationStartupGate<>).MakeGenericType(dbContextType)
+                )
+            );
         }
     }
 }

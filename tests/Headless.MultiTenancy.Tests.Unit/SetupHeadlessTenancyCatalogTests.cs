@@ -119,6 +119,41 @@ public sealed class SetupHeadlessTenancyCatalogTests : TestBase
     }
 
     [Fact]
+    public async Task should_seed_the_in_memory_store_from_the_service_provider_aware_overload()
+    {
+        // given — the Action<TOptions, IServiceProvider> arm of the provider overload trio: seed data
+        // that is only available from a registered service.
+        var builder = Host.CreateApplicationBuilder();
+        builder.Services.AddSingleton(new TenantSeedSource("ten_1", "acme", "Acme"));
+        builder.AddHeadlessTenancy(tenancy =>
+            tenancy.Catalog(catalog =>
+                catalog.UseInMemory(
+                    (options, serviceProvider) =>
+                    {
+                        var source = serviceProvider.GetRequiredService<TenantSeedSource>();
+                        options.Tenants.Add(new TenantInfo(source.Id, source.Identifier, source.Name, isEnabled: true));
+                    }
+                )
+            )
+        );
+        builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
+
+        await using var provider = builder.Services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var service = scope.ServiceProvider.GetRequiredService<ITenantCatalogService>();
+
+        // when
+        var outcome = await service.ResolveAsync("acme", AbortToken);
+
+        // then
+        outcome.Kind.Should().Be(TenantResolutionKind.Resolved);
+        outcome.Tenant!.Id.Should().Be("ten_1");
+        outcome.Tenant.Name.Should().Be("Acme");
+    }
+
+    private sealed record TenantSeedSource(string Id, string Identifier, string Name);
+
+    [Fact]
     public void should_throw_at_store_resolution_when_in_memory_seeds_have_duplicate_normalized_identifiers()
     {
         // given — AE10 in-memory arm, exercised through the full DI wiring. The registered

@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Security.Claims;
 using Headless.Checks;
-using Headless.Constants;
 using Headless.MultiTenancy;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
@@ -36,7 +34,10 @@ namespace Headless.Api.MultiTenancy;
 /// overwritten by the time this handler runs.
 /// </para>
 /// </remarks>
-internal sealed class TenantIdentifierIntegrityHandler(IOptions<MultiTenancyOptions> options) : IAuthorizationHandler
+internal sealed class TenantIdentifierIntegrityHandler(
+    IOptions<MultiTenancyOptions> options,
+    IHttpContextAccessor httpContextAccessor
+) : IAuthorizationHandler
 {
     private const string _MismatchFailureReason =
         "Headless tenant identifier does not match the authenticated tenant claim.";
@@ -45,7 +46,13 @@ internal sealed class TenantIdentifierIntegrityHandler(IOptions<MultiTenancyOpti
     {
         Argument.IsNotNull(context);
 
-        if (context.Resource is not HttpContext httpContext)
+        // AuthorizationMiddleware passes the HttpContext as the authorization resource by default, but
+        // the Microsoft.AspNetCore.Authorization.SuppressUseHttpContextAsAuthorizationResource AppContext
+        // switch makes it pass the Endpoint instead. Falling back to the accessor keeps R19 enforced
+        // under either resource shape; only a genuinely context-free evaluation falls through.
+        var httpContext = context.Resource as HttpContext ?? httpContextAccessor.HttpContext;
+
+        if (httpContext is null)
         {
             return Task.CompletedTask;
         }
@@ -59,9 +66,10 @@ internal sealed class TenantIdentifierIntegrityHandler(IOptions<MultiTenancyOpti
             return Task.CompletedTask;
         }
 
-        var claimTenantId = _GetClaimTenantId(httpContext.User, options.Value);
-
-        if (claimTenantId is null || string.Equals(claimTenantId, resolvedFeature.TenantId, StringComparison.Ordinal))
+        // The authorization context's principal, not HttpContext.User: for endpoint-scoped schemes
+        // PolicyEvaluator authenticates into this principal, and it stays correct when the resource is
+        // an Endpoint rather than the HttpContext.
+        if (!TenantIdentifierIntegrityChecker.IsMismatch(context.User, resolvedFeature.TenantId, options.Value))
         {
             return Task.CompletedTask;
         }
@@ -70,16 +78,5 @@ internal sealed class TenantIdentifierIntegrityHandler(IOptions<MultiTenancyOpti
         context.Fail(new AuthorizationFailureReason(this, _MismatchFailureReason));
 
         return Task.CompletedTask;
-    }
-
-    private static string? _GetClaimTenantId(ClaimsPrincipal principal, MultiTenancyOptions options)
-    {
-        var claimType = string.IsNullOrWhiteSpace(options.ClaimType) ? UserClaimTypes.TenantId : options.ClaimType;
-
-        var value = string.Equals(claimType, UserClaimTypes.TenantId, StringComparison.Ordinal)
-            ? principal.GetTenantId()
-            : principal.FindFirst(claimType)?.Value;
-
-        return string.IsNullOrWhiteSpace(value) ? null : value;
     }
 }

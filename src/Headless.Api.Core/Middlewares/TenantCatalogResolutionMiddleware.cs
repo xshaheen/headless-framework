@@ -4,6 +4,7 @@ using Headless.Abstractions;
 using Headless.Api.MultiTenancy;
 using Headless.Checks;
 using Headless.MultiTenancy;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -29,11 +30,15 @@ namespace Headless.Api.Middlewares;
 /// inside the rejection branch only, rather than as a constructor dependency — a host that never rejects
 /// (only ever resolves or no-ops) does not need <c>Headless.Api.Core</c>'s base ProblemDetails
 /// infrastructure registered.
+/// Once an identifier resolves, this middleware also enforces R19 mapping integrity against the default
+/// authentication scheme for every such request — see <c>_RejectOnClaimMismatchAsync</c> for why that
+/// cannot be left to <c>TenantIdentifierIntegrityHandler</c> alone.
 /// </remarks>
 internal sealed partial class TenantCatalogResolutionMiddleware(
     RequestDelegate next,
     IEnumerable<ITenantIdentifierSource> sources,
     IOptions<TenantCatalogOptions> options,
+    IOptions<MultiTenancyOptions> tenancyOptions,
     ILogger<TenantCatalogResolutionMiddleware> logger
 )
 {
@@ -64,11 +69,19 @@ internal sealed partial class TenantCatalogResolutionMiddleware(
 
         if (endpoint is null)
         {
-            // Endpoint metadata (SkipTenantResolution) is not resolvable before UseRouting() has run —
-            // the consumer almost certainly placed this middleware ahead of UseRouting(). Warn once per
-            // process and continue without resolution rather than guessing.
-            _WarnIfMiddlewareLikelyMisordered();
+            // Endpoint metadata (SkipTenantResolution) is not resolvable before UseRouting() has run, so
+            // resolution is skipped either way. But a null endpoint here is ambiguous: the consumer may
+            // have placed this middleware ahead of UseRouting(), or routing may already have run and
+            // simply not matched a route (an ordinary 404 probe). Only the former is a misconfiguration,
+            // and the two are distinguishable after the fact — routing running downstream assigns an
+            // endpoint. Deciding after next() keeps unmatched routes from consuming the one-shot warning.
             await next(context).ConfigureAwait(false);
+
+            if (context.GetEndpoint() is not null)
+            {
+                _WarnIfMiddlewareLikelyMisordered();
+            }
+
             return;
         }
 
@@ -109,6 +122,19 @@ internal sealed partial class TenantCatalogResolutionMiddleware(
                 var tenant = outcome.Tenant!;
                 context.Features.Set(new TenantIdentifierResolvedFeature(tenant.Id));
 
+                var rejected = await _RejectOnClaimMismatchAsync(
+                        context,
+                        tenant.Id,
+                        tenancyOptions.Value,
+                        options.Value.DetailedResolutionErrors
+                    )
+                    .ConfigureAwait(false);
+
+                if (rejected)
+                {
+                    return;
+                }
+
                 using (currentTenant.Change(tenant.Id, tenant.Name))
                 {
                     await next(context).ConfigureAwait(false);
@@ -133,6 +159,81 @@ internal sealed partial class TenantCatalogResolutionMiddleware(
     internal static void ResetOrderingWarningForTesting()
     {
         Volatile.Write(ref _orderingWarningEmitted, 0);
+    }
+
+    /// <summary>
+    /// Unconditional R19 enforcement (KTD2): rejects the request when the default-scheme principal
+    /// carries a tenant claim that disagrees with the identifier-resolved tenant. Returns
+    /// <see langword="true"/> when the response was written and the pipeline must short-circuit.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>TenantIdentifierIntegrityHandler</c> cannot be the only enforcement point:
+    /// <c>AuthorizationMiddleware</c> skips authorization entirely for <c>[AllowAnonymous]</c> endpoints
+    /// and for endpoints with no authorize metadata when no <c>FallbackPolicy</c> is configured, so its
+    /// handlers never run for those requests. This check runs for every identifier-resolved request
+    /// regardless of endpoint metadata or policy configuration.
+    /// </para>
+    /// <para>
+    /// The principal is materialized here rather than read from <see cref="HttpContext.User"/> because
+    /// this middleware is documented to run before <c>UseAuthentication()</c> (KTD2). Authenticating the
+    /// default scheme costs nothing extra for hosts that call <c>UseAuthentication()</c>: that middleware
+    /// authenticates the same scheme for every request regardless of endpoint metadata, and
+    /// <c>AuthenticationHandler&lt;TOptions&gt;</c> caches its result for the lifetime of the request —
+    /// so this is the same authentication call, made earlier. Hosts with no default authenticate scheme
+    /// are skipped rather than forced to configure one.
+    /// </para>
+    /// <para>
+    /// Endpoint-scoped (non-default) schemes are not materialized until <c>PolicyEvaluator</c> runs
+    /// inside authorization, so they remain <c>TenantIdentifierIntegrityHandler</c>'s responsibility.
+    /// This path writes the rejection directly and does not set
+    /// <c>TenantIdentifierMismatchFeature</c> — that feature is the authorization handler's channel to
+    /// <c>StatusCodesRewriterMiddleware</c>, and setting it here would invite a second write of an
+    /// already-written response.
+    /// </para>
+    /// </remarks>
+    private static async Task<bool> _RejectOnClaimMismatchAsync(
+        HttpContext context,
+        string resolvedTenantId,
+        MultiTenancyOptions tenancyOptions,
+        bool detailedResolutionErrors
+    )
+    {
+        var schemeProvider = context.RequestServices.GetService<IAuthenticationSchemeProvider>();
+
+        if (schemeProvider is null)
+        {
+            return false;
+        }
+
+        var defaultScheme = await schemeProvider.GetDefaultAuthenticateSchemeAsync().ConfigureAwait(false);
+
+        if (defaultScheme is null)
+        {
+            return false;
+        }
+
+        var authenticateResult = await context.AuthenticateAsync(defaultScheme.Name).ConfigureAwait(false);
+
+        if (
+            !authenticateResult.Succeeded
+            || !TenantIdentifierIntegrityChecker.IsMismatch(
+                authenticateResult.Principal,
+                resolvedTenantId,
+                tenancyOptions
+            )
+        )
+        {
+            return false;
+        }
+
+        var problemDetailsCreator = context.RequestServices.GetRequiredService<IProblemDetailsCreator>();
+
+        await TenantCatalogRejectionWriter
+            .RejectMismatchAsync(context, problemDetailsCreator, detailedResolutionErrors)
+            .ConfigureAwait(false);
+
+        return true;
     }
 
     private void _WarnIfMiddlewareLikelyMisordered()
