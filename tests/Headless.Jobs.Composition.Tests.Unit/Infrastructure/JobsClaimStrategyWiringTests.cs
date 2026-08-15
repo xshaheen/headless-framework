@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Abstractions;
 using Headless.Jobs;
 using Headless.Jobs.Customizer;
 using Headless.Jobs.DbContextFactory;
@@ -31,7 +32,8 @@ public sealed class JobsClaimStrategyWiringTests : TestBase
     public void configured_native_strategy_replaces_the_default()
     {
         var builder = new JobsEfCoreOptionBuilder<TimeJobEntity, CronJobEntity>();
-        builder.UseClaimStrategy(typeof(FakeJobsClaimStrategy<,,>));
+        // SqlServer: resolving the pair must also resolve the backend-keyed GUID generator the provider declared.
+        builder.UseClaimStrategy(typeof(FakeJobsClaimStrategy<,,>), SequentialGuidType.SqlServer);
 
         using var provider = _BuildProvider(builder);
 
@@ -45,9 +47,9 @@ public sealed class JobsClaimStrategyWiringTests : TestBase
     public void configuring_two_native_strategies_fails_deterministically()
     {
         var builder = new JobsEfCoreOptionBuilder<TimeJobEntity, CronJobEntity>();
-        builder.UseClaimStrategy(typeof(FakeJobsClaimStrategy<,,>));
+        builder.UseClaimStrategy(typeof(FakeJobsClaimStrategy<,,>), SequentialGuidType.SqlServer);
 
-        var act = () => builder.UseClaimStrategy(typeof(SecondFakeJobsClaimStrategy<,,>));
+        var act = () => builder.UseClaimStrategy(typeof(SecondFakeJobsClaimStrategy<,,>), SequentialGuidType.Version7);
 
         act.Should()
             .Throw<InvalidOperationException>()

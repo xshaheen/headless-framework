@@ -21,7 +21,7 @@ namespace Headless.Jobs;
 internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>(
     IDbContextFactory<TDbContext> dbContextFactory,
     TimeProvider timeProvider,
-    [FromKeyedServices(SequentialGuidType.Version7)] IGuidGenerator guidGenerator,
+    [FromKeyedServices(SetupPostgreSqlJobsEntityFramework.GuidGeneratorKey)] IGuidGenerator guidGenerator,
     IJobsOwnerIdentity ownerIdentity,
     SchedulerOptionsBuilder optionsBuilder
 ) : IJobsClaimStrategy<TTimeJob, TCronJob>
