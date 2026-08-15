@@ -1270,6 +1270,12 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                                 .SetProperty(x => x.ExecutedAt, now)
                                 .SetProperty(x => x.UpdatedAt, now)
                                 .SetProperty(x => x.SkippedReason, "Cron definition updated")
+                                // KTD1a: THE producer that owes a re-fire. Seeding retires the old-expression rows
+                                // without creating a replacement and resets the projection to be re-derived, so the
+                                // instant is unaccounted for and must be materializable again. The runtime edit path
+                                // writes the identical SkippedReason but stamps Superseded, which is exactly why the
+                                // accounting rule reads this column and never that string.
+                                .SetProperty(x => x.Disposition, CronOccurrenceDisposition.ReplacementOwed)
                                 .SetProperty(x => x.OwnerId, _ => null)
                                 .SetProperty(x => x.LockedUntil, _ => null),
                         cancellationToken
@@ -1623,16 +1629,15 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         // Every row in the missed window, whatever its state: the non-terminal ones are the policy's to resolve, and
         // the terminal ones still matter because a terminal row occupying the earliest missed instant means that
         // instant already ran and must not be materialized a second time (R7).
+        //
+        // KTD1c: projected through the SHARED accounting selector, the same one MaterializeCronScheduleOccurrenceAsync
+        // uses. Reading bare Status here is what let the two paths disagree — recovery treated every non-live row as
+        // occupying the instant while the native claim path re-materialized the identical row. It also keeps the raw
+        // status out of materialization, so a value written by a newer binary cannot throw here.
         var inWindow = await occurrences
             .AsNoTracking()
             .Where(x => x.CronJobId == cronJobId && x.ExecutionTime > windowStart && x.ExecutionTime <= windowEnd)
-            .Select(x => new
-            {
-                x.Id,
-                x.ExecutionTime,
-                x.Status,
-                x.CreatedAt,
-            })
+            .Select(CronOccurrenceAccounting.InstantViewSelector<TCronJob>())
             .ToArrayAsync(cancellationToken)
             .ConfigureAwait(false);
 
@@ -1647,13 +1652,21 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             // only a fully-accounted-for backlog produces no run at all.
             foreach (var missedInstant in request.MissedInstantsUtc)
             {
+                var rowsAtInstant = inWindow.Where(x => x.ExecutionTime == missedInstant).ToArray();
+
                 // A live row takes precedence over a terminal one sharing the instant.
-                var atInstant = inWindow
-                    .Where(x => x.ExecutionTime == missedInstant)
-                    .OrderBy(x => x.Status is JobStatus.Idle or JobStatus.Queued or JobStatus.InProgress ? 0 : 1)
+                var atInstant = rowsAtInstant
+                    .OrderBy(CronOccurrenceAccounting.LiveFirstRank)
+                    .ThenBy(x => x.CreatedAt)
+                    .ThenBy(x => x.Id)
                     .FirstOrDefault();
 
-                if (atInstant is null)
+                // KTD1: an instant whose rows NONE account for — a seeding migration retired the only one without a
+                // replacement — still owes its run, so it is materialized exactly as an empty instant is. Testing
+                // accounting rather than mere presence is what keeps recovery and the claim path from disagreeing
+                // about the same row. The null test is implied by the accounting one (an empty instant accounts for
+                // nothing) and is stated only so the repurpose branch below sees a non-null candidate.
+                if (atInstant is null || !CronOccurrenceAccounting.IsInstantAccountedFor(rowsAtInstant))
                 {
                     coalescedRun = new CronJobOccurrenceEntity<TCronJob>
                     {
@@ -1676,7 +1689,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                     break;
                 }
 
-                if (atInstant.Status is JobStatus.Idle or JobStatus.Queued)
+                if (atInstant.IsRepurposable)
                 {
                     // KTD5: revoking ownership is the whole mechanism. The claim path's in-progress transition
                     // already requires OwnerId == owner, so a prior owner that was holding this row simply fails
@@ -1762,7 +1775,10 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                             .SetProperty(x => x.LockedUntil, _ => null)
                             .SetProperty(x => x.ExecutedAt, request.OperationTimeUtc)
                             .SetProperty(x => x.UpdatedAt, request.OperationTimeUtc)
-                            .SetProperty(x => x.SkippedReason, "Cron occurrence missed and resolved by recovery"),
+                            .SetProperty(x => x.SkippedReason, "Cron occurrence missed and resolved by recovery")
+                            // Recovery resolves the backlog: the single coalesced run (or, under Skip, deliberate
+                            // nothing) stands in for these instants, so they are accounted for.
+                            .SetProperty(x => x.Disposition, CronOccurrenceDisposition.Accounted),
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -2081,19 +2097,37 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ConfigureAwait(false);
 
         var occurrences = dbContext.Set<CronJobOccurrenceEntity<TCronJob>>();
-        var occurrence = await occurrences
+
+        // KTD1c: every row at the instant, projected through the SHARED accounting selector that ApplyCronRecoveryAsync
+        // also uses, so the two paths cannot reach opposite verdicts about one row. All rows rather than the first,
+        // because accounting is an aggregate: several rows may share an instant (the filtered unique index constrains
+        // only the live ones), and any single accounting row takes it. The raw status is never materialized, so a
+        // value written by a newer binary fails closed instead of throwing.
+        var rowsAtInstant = await occurrences
             .AsNoTracking()
             .Where(x => x.CronJobId == advance.CronJobId && x.ExecutionTime == materialization.ExecutionTimeUtc)
-            .OrderBy(x => x.CreatedAt)
-            .ThenBy(x => x.Id)
-            .FirstOrDefaultAsync(cancellationToken)
+            .Select(CronOccurrenceAccounting.InstantViewSelector<TCronJob>())
+            .ToArrayAsync(cancellationToken)
             .ConfigureAwait(false);
-        var outcome = CronScheduleMaterializationOutcome.OccurrenceExists;
 
-        if (occurrence is null)
+        // R3a: live-first, THEN CreatedAt/Id. Ordering by CreatedAt alone lets an older terminal row mask a live one
+        // sharing the instant and report the wrong occurrence identity to the dispatcher.
+        var existing = rowsAtInstant
+            .OrderBy(CronOccurrenceAccounting.LiveFirstRank)
+            .ThenBy(x => x.CreatedAt)
+            .ThenBy(x => x.Id)
+            .FirstOrDefault();
+
+        Guid occurrenceId;
+        DateTimeOffset occurrenceCreatedAt;
+        CronScheduleMaterializationOutcome outcome;
+
+        if (!CronOccurrenceAccounting.IsInstantAccountedFor(rowsAtInstant))
         {
+            // Nothing here accounts for the instant — either no row at all, or only rows a seeding migration retired
+            // without a replacement. Both owe the fire, so both materialize.
             var now = TimeProvider.GetUtcNow();
-            occurrence = new CronJobOccurrenceEntity<TCronJob>
+            var created = new CronJobOccurrenceEntity<TCronJob>
             {
                 Id = GuidGenerator.Create(),
                 CronJobId = advance.CronJobId,
@@ -2106,13 +2140,19 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 UpdatedAt = now,
             };
 
-            await occurrences.AddAsync(occurrence, cancellationToken).ConfigureAwait(false);
+            await occurrences.AddAsync(created, cancellationToken).ConfigureAwait(false);
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            occurrenceId = created.Id;
+            occurrenceCreatedAt = created.CreatedAt;
             outcome = CronScheduleMaterializationOutcome.OccurrenceCreated;
         }
-        else if (occurrence.Status is not (JobStatus.Idle or JobStatus.Queued or JobStatus.InProgress))
+        else
         {
-            outcome = CronScheduleMaterializationOutcome.OccurrenceAlreadyTerminal;
+            occurrenceId = existing!.Id;
+            occurrenceCreatedAt = existing.CreatedAt;
+            outcome = existing.IsLive
+                ? CronScheduleMaterializationOutcome.OccurrenceExists
+                : CronScheduleMaterializationOutcome.OccurrenceAlreadyTerminal;
         }
 
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
@@ -2126,8 +2166,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 NextDueUtc = committedDefinition.NextDueUtc,
                 StoreUtcNow = eligibility.StoreUtcNow,
             },
-            OccurrenceId = occurrence.Id,
-            OccurrenceCreatedAt = occurrence.CreatedAt,
+            OccurrenceId = occurrenceId,
+            OccurrenceCreatedAt = occurrenceCreatedAt,
             OnNodeDeath = committedDefinition.OnNodeDeath,
         };
     }
@@ -2258,6 +2298,10 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.Status, JobStatus.Skipped)
                         .SetProperty(x => x.LockedUntil, _ => null)
                         .SetProperty(x => x.SkippedReason, "Node is not alive!")
+                        // KTD1b: the occurrence never executed, but re-running it is the reclaim/recovery path's
+                        // job. Materializing a fresh row at the same instant would race that path, so the dead
+                        // owner's row still accounts for its instant.
+                        .SetProperty(x => x.Disposition, CronOccurrenceDisposition.Accounted)
                         .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
                         .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
                 CancellationToken.None
@@ -2369,6 +2413,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.Status, JobStatus.Skipped)
                         .SetProperty(x => x.LockedUntil, _ => null)
                         .SetProperty(x => x.SkippedReason, "Lease lapsed while running!")
+                        // An ordinary retirement: the instant is spent and nothing owes it a replacement.
+                        .SetProperty(x => x.Disposition, CronOccurrenceDisposition.Accounted)
                         .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
                         .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
                 CancellationToken.None

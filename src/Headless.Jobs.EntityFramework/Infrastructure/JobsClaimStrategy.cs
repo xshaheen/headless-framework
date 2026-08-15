@@ -446,6 +446,31 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         var claimResults = new CronJobOccurrenceEntity<TCronJob>?[cronJobOccurrences.Items.Length];
         var claimableOccurrenceIds = new List<Guid>();
 
+        // R3b: ONE occupancy probe per claim wave instead of one round trip per candidate. Every item in the wave
+        // shares the same execution instant (it is the batch key), so the accounting question is a single indexed
+        // read over (ExecutionTime, CronJobId). Reading it before the loop widens the window between probe and
+        // insert, which is harmless: only live rows can appear in that window, and the filtered unique index rejects
+        // the insert that would collide with one.
+        var insertCandidateIds = cronJobOccurrences
+            .Items.Where(x => x.NextCronOccurrence is null)
+            .Select(x => x.Id)
+            .Distinct()
+            .ToArray();
+        var accountedDefinitionIds =
+            insertCandidateIds.Length == 0
+                ? []
+                : (
+                    await context
+                        .AsNoTracking()
+                        .Where(x => insertCandidateIds.Contains(x.CronJobId) && x.ExecutionTime == executionTime)
+                        .Select(CronOccurrenceAccounting.InstantViewSelector<TCronJob>())
+                        .ToArrayAsync(cancellationToken)
+                        .ConfigureAwait(false)
+                )
+                    .Where(x => x.AccountsForInstant)
+                    .Select(x => x.CronJobId)
+                    .ToHashSet();
+
         for (var index = 0; index < cronJobOccurrences.Items.Length; index++)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -466,19 +491,14 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
 
             if (item.NextCronOccurrence is null)
             {
-                // R7/AE10: any row already at this instant — including a terminal one the reuse pairing cannot
-                // see (its read is filtered to claimable rows) — means the instant is accounted for and the
-                // advance stands. The filtered unique index blocks duplicates only among live rows, so without
-                // this check a completed resume-created occurrence would be re-materialized and the tick would
-                // run twice. A live row left unclaimed here is picked up by the fallback sweep; nothing is
-                // disturbed either way.
-                var instantOccupied = await context
-                    .AsNoTracking()
-                    .Where(x => x.CronJobId == item.Id && x.ExecutionTime == executionTime)
-                    .AnyAsync(cancellationToken)
-                    .ConfigureAwait(false);
-
-                if (instantOccupied)
+                // R7/AE10 + KTD1: a row that ACCOUNTS for this instant — including a terminal one the reuse pairing
+                // cannot see (its read is filtered to claimable rows) — means the advance stands. The filtered
+                // unique index blocks duplicates only among live rows, so without this check a completed
+                // resume-created occurrence would be re-materialized and the tick would run twice. The one row that
+                // does NOT account is the seeding migration's ReplacementOwed retirement, whose fire is still owed;
+                // it must fall through and insert. A live row left unclaimed here is picked up by the fallback
+                // sweep; nothing is disturbed either way.
+                if (accountedDefinitionIds.Contains(item.Id))
                 {
                     continue;
                 }

@@ -770,75 +770,142 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
     }
 
     /// <summary>
-    /// The insert-path dedup must conflict with ACTIVE occurrences only, matching the filtered unique index. A
-    /// terminal row at the same execution time — the one a cron-expression migration marks <c>Skipped</c> without
-    /// creating a replacement — must not suppress the fire. PostgreSQL got this right through
-    /// <c>ON CONFLICT … WHERE Status IN (…)</c>; SQL Server's unfiltered <c>NOT EXISTS</c> silently dropped it.
+    /// The migration-replacement contract, and the pair of producers that makes it need a typed column. Both write
+    /// <c>Skipped</c> with the identical <c>SkippedReason</c> "Cron definition updated" and owe OPPOSITE answers: the
+    /// startup seeding migration retires the row without creating a replacement, so its fire is still owed, while a
+    /// runtime schedule edit creates its own replacement and would double-run if the old instant re-fired. Seeding a
+    /// bare <c>Skipped</c> row with a null reason — as this test once did — cannot tell them apart and so proved
+    /// neither.
     /// </summary>
-    public virtual async Task a_terminal_occurrence_does_not_block_a_new_occurrence_at_the_same_execution_time()
+    /// <remarks>
+    /// Runs on BOTH claim strategies. The guard lives in different code in each (raw <c>INSERT … WHERE NOT EXISTS</c>
+    /// in the natives, a batched projection probe in the portable CAS path), and only the natives used to override
+    /// this scenario — so the portable path violated the contract silently for as long as it has existed.
+    /// </remarks>
+    public virtual async Task a_migration_retired_occurrence_re_fires_while_an_edit_replaced_one_does_not()
     {
         var ct = AbortToken;
-        await fixture.ResetDatabaseAsync(ct);
-        using var host = fixture.BuildHost("terminal-dedup-a");
-        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
-        await host.StartAsync(ct);
 
-        try
+        foreach (var useNativeClaims in new[] { true, false })
         {
-            var cronId = Guid.NewGuid();
-            await fixture.SeedCronJobAsync(cronId, "terminal-dedup", "* * * * *", NodeDeathPolicy.Retry, ct);
-
-            // Whole seconds: PostgreSQL stores DateTime at microsecond granularity, so a tick-precision execution
-            // time would never match the dedup predicate and the test would pass for the wrong reason there.
-            var now = DateTime.UtcNow;
-            var executionTime = new DateTime(
-                now.Year,
-                now.Month,
-                now.Day,
-                now.Hour,
-                now.Minute,
-                now.Second,
-                DateTimeKind.Utc
-            ).AddMinutes(1);
-
-            var skippedId = Guid.NewGuid();
-            await fixture.SeedCronOccurrenceAsync(
-                skippedId,
-                cronId,
-                (int)JobStatus.Skipped,
-                null,
-                NodeDeathPolicy.Retry,
-                null,
-                executionTime,
-                ct
+            await fixture.ResetDatabaseAsync(ct);
+            using var host = fixture.BuildHost(
+                $"terminal-dedup-{(useNativeClaims ? "native" : "cas")}",
+                useNativeClaims: useNativeClaims
             );
+            await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+            await host.StartAsync(ct);
 
-            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
-            var context = new JobManagerDispatchContext(cronId)
+            try
             {
-                FunctionName = "terminal-dedup",
-                Expression = "* * * * *",
-                OnNodeDeath = NodeDeathPolicy.Retry,
-            };
+                var strategy = useNativeClaims ? "native" : "portable CAS";
+                var persistence = host.Services.GetRequiredService<
+                    IJobPersistenceProvider<TimeJobEntity, CronJobEntity>
+                >();
 
-            // NextCronOccurrence is null (the earliest-available read skips terminal rows), so dispatch takes the
-            // insert path — exactly the state the scheduler reaches after a cron-expression migration.
-            var claimed = await persistence
-                .QueueCronJobOccurrencesAsync((executionTime, [context]), ct)
-                .ToArrayAsync(ct);
+                // Whole seconds: PostgreSQL stores DateTime at microsecond granularity, so a tick-precision
+                // execution time would never match the dedup predicate and the test would pass for the wrong reason.
+                var now = DateTime.UtcNow;
+                var baseInstant = new DateTime(
+                    now.Year,
+                    now.Month,
+                    now.Day,
+                    now.Hour,
+                    now.Minute,
+                    now.Second,
+                    DateTimeKind.Utc
+                );
 
-            var occurrence = claimed.Should().ContainSingle().Subject;
-            occurrence.Id.Should().NotBe(skippedId);
-            occurrence.Status.Should().Be(JobStatus.Queued);
-            occurrence.ExecutionTime.Should().BeCloseTo(executionTime, TimeSpan.FromMicroseconds(1));
-            (await fixture.CountCronOccurrencesAsync(ct)).Should().Be(2);
-            (await fixture.ReadCronOccurrenceAsync(skippedId, ct)).Status.Should().Be((int)JobStatus.Skipped);
-        }
-        finally
-        {
-            await host.StopAsync(ct);
+                // Two definitions rather than two instants on one, so neither verdict can be an artefact of the
+                // other's row sitting in the same window.
+                var owedCronId = Guid.NewGuid();
+                var replacedCronId = Guid.NewGuid();
+                await fixture.SeedCronJobAsync(owedCronId, "terminal-dedup", "* * * * *", NodeDeathPolicy.Retry, ct);
+                await fixture.SeedCronJobAsync(
+                    replacedCronId,
+                    "terminal-dedup",
+                    "* * * * *",
+                    NodeDeathPolicy.Retry,
+                    ct
+                );
+
+                var owedSkippedId = Guid.NewGuid();
+                await fixture.SeedCronOccurrenceAsync(
+                    owedSkippedId,
+                    owedCronId,
+                    (int)JobStatus.Skipped,
+                    null,
+                    NodeDeathPolicy.Retry,
+                    null,
+                    baseInstant.AddMinutes(1),
+                    ct,
+                    "Cron definition updated",
+                    CronOccurrenceDisposition.ReplacementOwed
+                );
+                var replacedSkippedId = Guid.NewGuid();
+                await fixture.SeedCronOccurrenceAsync(
+                    replacedSkippedId,
+                    replacedCronId,
+                    (int)JobStatus.Skipped,
+                    null,
+                    NodeDeathPolicy.Retry,
+                    null,
+                    baseInstant.AddMinutes(1),
+                    ct,
+                    "Cron definition updated",
+                    CronOccurrenceDisposition.Superseded
+                );
+
+                // NextCronOccurrence is null (the earliest-available read skips terminal rows), so dispatch takes the
+                // insert path — exactly the state the scheduler reaches after a cron-expression change.
+                var owedClaim = await persistence
+                    .QueueCronJobOccurrencesAsync((baseInstant.AddMinutes(1), [_DedupContext(owedCronId)]), ct)
+                    .ToArrayAsync(ct);
+                var replacedClaim = await persistence
+                    .QueueCronJobOccurrencesAsync((baseInstant.AddMinutes(1), [_DedupContext(replacedCronId)]), ct)
+                    .ToArrayAsync(ct);
+
+                var occurrence = owedClaim
+                    .Should()
+                    .ContainSingle(
+                        "on the {0} strategy the seeding migration left this instant unaccounted for",
+                        strategy
+                    )
+                    .Subject;
+                occurrence.Id.Should().NotBe(owedSkippedId);
+                occurrence.Status.Should().Be(JobStatus.Queued);
+                occurrence.ExecutionTime.Should().BeCloseTo(baseInstant.AddMinutes(1), TimeSpan.FromMicroseconds(1));
+
+                replacedClaim
+                    .Should()
+                    .BeEmpty(
+                        "on the {0} strategy the runtime edit already issued this instant's replacement — re-firing "
+                            + "would double-run the edit",
+                        strategy
+                    );
+
+                (await fixture.CountCronOccurrencesAsync(ct))
+                    .Should()
+                    .Be(3, "on the {0} strategy exactly one of the two retired instants owed a fire", strategy);
+                (await fixture.ReadCronOccurrenceAsync(owedSkippedId, ct)).Status.Should().Be((int)JobStatus.Skipped);
+                (await fixture.ReadCronOccurrenceAsync(replacedSkippedId, ct))
+                    .Status.Should()
+                    .Be((int)JobStatus.Skipped);
+            }
+            finally
+            {
+                await host.StopAsync(ct);
+            }
         }
     }
+
+    private static JobManagerDispatchContext _DedupContext(Guid cronJobId) =>
+        new(cronJobId)
+        {
+            FunctionName = "terminal-dedup",
+            Expression = "* * * * *",
+            OnNodeDeath = NodeDeathPolicy.Retry,
+        };
 
     public virtual async Task long_cron_claim_transaction_publishes_a_fresh_lease()
     {

@@ -1420,6 +1420,12 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                             skipped.ExecutedAt = now;
                             skipped.UpdatedAt = now;
                             skipped.SkippedReason = "Cron definition updated";
+                            // KTD1a: THE producer that owes a re-fire. Seeding retires the old-expression rows
+                            // without creating a replacement and resets the projection to be re-derived, so the
+                            // instant is unaccounted for and must be materializable again. The runtime edit path
+                            // writes the identical SkippedReason but stamps Superseded, which is exactly why the
+                            // accounting rule reads this column and never that string.
+                            skipped.Disposition = CronOccurrenceDisposition.ReplacementOwed;
                             skipped.OwnerId = null;
                             skipped.LockedUntil = null;
                             _cronOccurrences[pair.Key] = skipped;
@@ -1698,13 +1704,25 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                 // a fully-accounted-for backlog produces no run at all. Mirrors the relational provider.
                 foreach (var missedInstant in request.MissedInstantsUtc)
                 {
-                    // A live row takes precedence over a terminal one sharing the instant.
-                    var atInstant = inWindow
+                    // KTD1c: the SAME accounting projection the relational providers and the materialization path
+                    // use, compiled rather than translated. Reading bare Status here is what let the paths disagree.
+                    var viewsAtInstant = inWindow
                         .Where(x => x.ExecutionTime == missedInstant)
-                        .OrderBy(x => x.Status is JobStatus.Idle or JobStatus.Queued or JobStatus.InProgress ? 0 : 1)
+                        .Select(CronOccurrenceAccounting.InstantViewProjector<TCronJob>())
+                        .ToArray();
+
+                    // A live row takes precedence over a terminal one sharing the instant.
+                    var atInstant = viewsAtInstant
+                        .OrderBy(CronOccurrenceAccounting.LiveFirstRank)
+                        .ThenBy(x => x.CreatedAt)
+                        .ThenBy(x => x.Id)
                         .FirstOrDefault();
 
-                    if (atInstant is null)
+                    // An instant whose rows NONE account for — a seeding migration retired the only one without a
+                    // replacement — still owes its run, so it materializes exactly as an empty instant does. The
+                    // null test is implied by the accounting one and is stated so the repurpose branch sees a
+                    // non-null candidate.
+                    if (atInstant is null || !CronOccurrenceAccounting.IsInstantAccountedFor(viewsAtInstant))
                     {
                         var created = new CronJobOccurrenceEntity<TCronJob>
                         {
@@ -1729,14 +1747,14 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                         break;
                     }
 
-                    if (atInstant.Status is JobStatus.Idle or JobStatus.Queued)
+                    if (atInstant.IsRepurposable)
                     {
                         // KTD5: clearing the owner is the whole mechanism — the claim path's in-progress transition
                         // requires OwnerId == owner, so the prior owner fails that predicate and drops the row.
                         // Unlike the relational provider no re-check CAS is needed: the per-definition lock already
                         // serializes this against every status transition.
                         preservedOccurrenceId = atInstant.Id;
-                        var repurposed = _CloneCronOccurrence(atInstant);
+                        var repurposed = _CloneCronOccurrence(_cronOccurrences[atInstant.Id]);
                         repurposed.Status = JobStatus.Idle;
                         repurposed.OwnerId = null;
                         repurposed.LockedUntil = null;
@@ -1786,6 +1804,9 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                 skipped.ExecutedAt = request.OperationTimeUtc;
                 skipped.UpdatedAt = request.OperationTimeUtc;
                 skipped.SkippedReason = "Cron occurrence missed and resolved by recovery";
+                // Recovery resolves the backlog: the single coalesced run (or, under Skip, deliberate nothing)
+                // stands in for these instants, so they are accounted for.
+                skipped.Disposition = CronOccurrenceDisposition.Accounted;
                 _cronOccurrences[skipped.Id] = skipped;
                 skippedCount++;
             }
@@ -1962,20 +1983,37 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                 );
             }
 
-            var occurrence = _cronOccurrences
+            // KTD1c: every row at the instant, through the SHARED accounting projection the relational providers and
+            // ApplyCronRecoveryAsync also use, so no two paths can reach opposite verdicts about one row. All rows
+            // rather than the first, because accounting is an aggregate: several rows may share an instant and any
+            // single accounting row takes it.
+            var rowsAtInstant = _cronOccurrences
                 .Values.Where(x =>
                     x.CronJobId == advance.CronJobId && x.ExecutionTime == materialization.ExecutionTimeUtc
                 )
-                .OrderBy(x => x.CreatedAt)
+                .Select(CronOccurrenceAccounting.InstantViewProjector<TCronJob>())
+                .ToArray();
+
+            // R3a: live-first, THEN CreatedAt/Id, so an older terminal row cannot mask a live one at the instant.
+            var existing = rowsAtInstant
+                .OrderBy(CronOccurrenceAccounting.LiveFirstRank)
+                .ThenBy(x => x.CreatedAt)
                 .ThenBy(x => x.Id)
                 .FirstOrDefault();
-            var outcome = CronScheduleMaterializationOutcome.OccurrenceExists;
 
-            if (occurrence is null)
+            Guid occurrenceId;
+            DateTimeOffset occurrenceCreatedAt;
+            CronScheduleMaterializationOutcome outcome;
+
+            if (!CronOccurrenceAccounting.IsInstantAccountedFor(rowsAtInstant))
             {
+                // Nothing here accounts for the instant — either no row at all, or only rows a seeding migration
+                // retired without a replacement. Both owe the fire, so both materialize.
+                CronJobOccurrenceEntity<TCronJob> created;
+
                 do
                 {
-                    occurrence = new CronJobOccurrenceEntity<TCronJob>
+                    created = new CronJobOccurrenceEntity<TCronJob>
                     {
                         Id = _guidGenerator.Create(),
                         CronJobId = current.Id,
@@ -1988,13 +2026,19 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                         CreatedAt = storeUtcNow,
                         UpdatedAt = storeUtcNow,
                     };
-                } while (!_cronOccurrences.TryAdd(occurrence.Id, occurrence));
+                } while (!_cronOccurrences.TryAdd(created.Id, created));
 
+                occurrenceId = created.Id;
+                occurrenceCreatedAt = created.CreatedAt;
                 outcome = CronScheduleMaterializationOutcome.OccurrenceCreated;
             }
-            else if (occurrence.Status is not (JobStatus.Idle or JobStatus.Queued or JobStatus.InProgress))
+            else
             {
-                outcome = CronScheduleMaterializationOutcome.OccurrenceAlreadyTerminal;
+                occurrenceId = existing!.Id;
+                occurrenceCreatedAt = existing.CreatedAt;
+                outcome = existing.IsLive
+                    ? CronScheduleMaterializationOutcome.OccurrenceExists
+                    : CronScheduleMaterializationOutcome.OccurrenceAlreadyTerminal;
             }
 
             // No cancellation or fallible work is allowed between publishing the durable outcome and advancing the
@@ -2014,8 +2058,8 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                         NextDueUtc = updated.NextDueUtc,
                         StoreUtcNow = storeUtcNow.UtcDateTime,
                     },
-                    OccurrenceId = occurrence.Id,
-                    OccurrenceCreatedAt = occurrence.CreatedAt,
+                    OccurrenceId = occurrenceId,
+                    OccurrenceCreatedAt = occurrenceCreatedAt,
                     OnNodeDeath = current.OnNodeDeath,
                 }
             );
@@ -2054,6 +2098,9 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                 skipped.ExecutedAt = operationTimeUtc;
                 skipped.UpdatedAt = operationTimeUtc;
                 skipped.SkippedReason = "Cron definition paused";
+                // A paused definition must not fire; resume creates its own occurrence. Nothing is owed at this
+                // instant, so the retired row accounts for it.
+                skipped.Disposition = CronOccurrenceDisposition.Accounted;
                 skipped.OwnerId = null;
                 skipped.LockedUntil = null;
                 _cronOccurrences[pair.Key] = skipped;
@@ -2244,6 +2291,11 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                         skipped.ExecutedAt = operationTimeUtc;
                         skipped.UpdatedAt = operationTimeUtc;
                         skipped.SkippedReason = "Cron definition updated";
+                        // KTD1a: the SAME SkippedReason the seeding migration writes, and the opposite accounting
+                        // answer. This path rebases the projection and installs the replacement occurrence itself
+                        // just below (or leaves a paused definition idle until resume), so stamping ReplacementOwed
+                        // would double-run every expression edit.
+                        skipped.Disposition = CronOccurrenceDisposition.Superseded;
                         skipped.OwnerId = null;
                         skipped.LockedUntil = null;
                         _cronOccurrences[pair.Key] = skipped;
@@ -2499,14 +2551,16 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                     continue;
                 }
 
-                // R7/AE10: with no reuse row carried, ANY row already at this instant — including a terminal one
-                // the live filter above ignores — means the instant is accounted for and the advance stands;
-                // materializing again would run the tick twice. Mirrors the relational claim path's
-                // occupied-instant guard.
+                // R7/AE10 + KTD1: with no reuse row carried, a row that ACCOUNTS for this instant — including a
+                // terminal one the live filter above ignores — means the advance stands; materializing again would
+                // run the tick twice. The one row that does NOT account is the seeding migration's ReplacementOwed
+                // retirement, whose fire is still owed. Mirrors the relational claim path's occupied-instant guard.
                 if (
                     context.NextCronOccurrence is null
-                    && _cronOccurrences.Values.Any(x =>
-                        x.CronJobId == context.Id && x.ExecutionTime == cronJobOccurrences.Key
+                    && CronOccurrenceAccounting.IsInstantAccountedFor(
+                        _cronOccurrences
+                            .Values.Where(x => x.CronJobId == context.Id && x.ExecutionTime == cronJobOccurrences.Key)
+                            .Select(CronOccurrenceAccounting.InstantViewProjector<TCronJob>())
                     )
                 )
                 {
@@ -2734,6 +2788,8 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                             t.Status = JobStatus.Skipped;
                             t.LockedUntil = null;
                             t.SkippedReason = "Lease lapsed while running!";
+                            // An ordinary retirement: the instant is spent and nothing owes it a replacement.
+                            t.Disposition = CronOccurrenceDisposition.Accounted;
                             t.ExecutedAt = now;
                         }
                     ):
@@ -2922,6 +2978,10 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                             o.Status = JobStatus.Skipped;
                             o.LockedUntil = null;
                             o.SkippedReason = "Node is not alive!";
+                            // KTD1b: the occurrence never executed, but re-running it is the reclaim/recovery path's
+                            // job. Materializing a fresh row at the same instant would race that path, so the dead
+                            // owner's row still accounts for its instant.
+                            o.Disposition = CronOccurrenceDisposition.Accounted;
                             o.ExecutedAt = now;
                         }
                     )
@@ -3342,6 +3402,9 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             OnNodeDeath = occurrence.OnNodeDeath,
             ExceptionMessage = occurrence.ExceptionMessage,
             SkippedReason = occurrence.SkippedReason,
+            // Same reasoning as RecoveredFromUtc above: the occupied-instant rule reads this and nothing else, so a
+            // clone that dropped it would silently turn a seeding-migration retirement into an ordinary one.
+            Disposition = occurrence.Disposition,
             ElapsedTime = occurrence.ElapsedTime,
             ExecutedAt = occurrence.ExecutedAt,
             CreatedAt = occurrence.CreatedAt,
@@ -3415,6 +3478,9 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         {
             occurrence.Status = context.Status;
             occurrence.SkippedReason = context.ExceptionDetails;
+            // A user-code skip is the occurrence's own verdict on its instant: it ran and chose not to act. Nothing
+            // is owed, so the row accounts for the instant.
+            occurrence.Disposition = CronOccurrenceDisposition.Accounted;
         }
 
         // EXECUTED_AT

@@ -206,6 +206,122 @@ public sealed class SqlServerCancellationMigrationTests(SqlServerJobsCoordinatio
         (await _TimeJobExistsAsync(jobId, cancellationToken)).Should().BeTrue();
     }
 
+    /// <summary>
+    /// The disposition column's Up backfill and its DISPOSITION-AWARE Down guard. Reusing the watermark guard's
+    /// predicate here would have been silent data loss: it inspects schedule and recovery fields, which say nothing
+    /// about this column, so the drop would collapse every value to the implicit <c>Accounted</c> and turn a
+    /// <c>ReplacementOwed</c> row — an occurrence whose fire is still owed — into a permanently suppressed one.
+    /// </summary>
+    [Fact]
+    public async Task disposition_migration_backfills_accounted_and_refuses_a_provenance_losing_downgrade()
+    {
+        var cancellationToken = AbortToken;
+        var cronJobId = Guid.NewGuid();
+        var occurrenceId = Guid.NewGuid();
+        var executionTime = new DateTime(2026, 8, 15, 9, 0, 0, DateTimeKind.Utc);
+        await _DropMigrationHistoryAsync("__DispositionMigrationsHistory", cancellationToken);
+        await fixture.ResetDatabaseAsync(cancellationToken);
+        await using (var connection = fixture.CreateConnection())
+        {
+            await connection.OpenAsync(cancellationToken);
+            await using var command = connection.CreateCommand();
+            command.CommandText =
+                "IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'jobs') EXEC('CREATE SCHEMA [jobs]');"
+                + "CREATE TABLE [jobs].[TimeJobs] ([Id] uniqueidentifier NOT NULL PRIMARY KEY);"
+                + "CREATE TABLE [jobs].[CronJobs] ([Id] uniqueidentifier NOT NULL PRIMARY KEY);"
+                + "CREATE TABLE [jobs].[CronJobOccurrences] ("
+                + "[Id] uniqueidentifier NOT NULL PRIMARY KEY, [CronJobId] uniqueidentifier NOT NULL, "
+                + "[ExecutionTime] datetime2 NOT NULL, [CreatedAt] datetime2 NOT NULL DEFAULT SYSUTCDATETIME(), "
+                + "[Status] nvarchar(32) NOT NULL);"
+                + "CREATE UNIQUE INDEX [UQ_CronJobId_ExecutionTime] ON [jobs].[CronJobOccurrences] ([CronJobId], [ExecutionTime]);"
+                + "INSERT INTO [jobs].[CronJobs] ([Id]) VALUES (@cronJobId);";
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = "@cronJobId";
+            parameter.Value = cronJobId;
+            command.Parameters.Add(parameter);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        // Seeded BEFORE the column exists: the backfill assertion below is about pre-existing rows, which are the
+        // only ones whose prior behaviour the default has to preserve.
+        await _InsertOccurrenceAsync(occurrenceId, cronJobId, executionTime, "Skipped", cancellationToken);
+
+        var options = new DbContextOptionsBuilder<SqlServerCancellationMigrationDbContext>()
+            .UseSqlServer(
+                fixture.ConnectionString,
+                sql =>
+                    sql.MigrationsAssembly(typeof(AddCronOccurrenceDisposition).Assembly.FullName)
+                        .MigrationsHistoryTable("__DispositionMigrationsHistory")
+            )
+            .Options;
+        await using var dbContext = new SqlServerCancellationMigrationDbContext(options);
+        var migrator = dbContext.GetService<IMigrator>();
+
+        await migrator.MigrateAsync(AddCronOccurrenceDisposition.Id, cancellationToken);
+        (await _ReadDispositionAsync(occurrenceId, cancellationToken))
+            .Should()
+            .Be("Accounted", "an existing row keeps the suppressing behaviour it had before the column existed");
+
+        // The guard blocks provenance LOSS, not the downgrade itself: from an all-ordinary state it runs through.
+        var downgrade = () => migrator.MigrateAsync(AddCronScheduleWatermark.Id, cancellationToken);
+        await downgrade.Should().NotThrowAsync();
+        (await _ColumnExistsAsync("jobs.CronJobOccurrences", "Disposition", cancellationToken)).Should().BeFalse();
+        await migrator.MigrateAsync(AddCronOccurrenceDisposition.Id, cancellationToken);
+
+        // ReplacementOwed is the value a downgrade must never silently erase — it is the only one that owes a fire.
+        await _SetDispositionAsync(occurrenceId, "ReplacementOwed", cancellationToken);
+        await downgrade
+            .Should()
+            .ThrowAsync<Exception>()
+            .WithMessage("*Cannot downgrade cron occurrence disposition migration*");
+        (await _ReadDispositionAsync(occurrenceId, cancellationToken)).Should().Be("ReplacementOwed");
+
+        // Superseded happens to suppress exactly as Accounted does, and is still refused: it is provenance the drop
+        // would destroy, and a destructive operation should be cleared deliberately rather than by a predicate that
+        // is only behaviour-equivalent today.
+        await _SetDispositionAsync(occurrenceId, "Superseded", cancellationToken);
+        await downgrade
+            .Should()
+            .ThrowAsync<Exception>()
+            .WithMessage("*Cannot downgrade cron occurrence disposition migration*");
+        (await _ReadDispositionAsync(occurrenceId, cancellationToken)).Should().Be("Superseded");
+
+        await _SetDispositionAsync(occurrenceId, "Accounted", cancellationToken);
+        await downgrade.Should().NotThrowAsync();
+        (await _ColumnExistsAsync("jobs.CronJobOccurrences", "Disposition", cancellationToken)).Should().BeFalse();
+    }
+
+    private async Task<string> _ReadDispositionAsync(Guid occurrenceId, CancellationToken cancellationToken)
+    {
+        await using var connection = fixture.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT [Disposition] FROM [jobs].[CronJobOccurrences] WHERE [Id] = @id";
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = "@id";
+        parameter.Value = occurrenceId;
+        command.Parameters.Add(parameter);
+
+        return (string)(await command.ExecuteScalarAsync(cancellationToken))!;
+    }
+
+    private async Task _SetDispositionAsync(Guid occurrenceId, string disposition, CancellationToken cancellationToken)
+    {
+        await using var connection = fixture.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE [jobs].[CronJobOccurrences] SET [Disposition] = @disposition WHERE [Id] = @id";
+        foreach (var (name, value) in new (string, object)[] { ("@id", occurrenceId), ("@disposition", disposition) })
+        {
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = name;
+            parameter.Value = value;
+            command.Parameters.Add(parameter);
+        }
+
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     private async Task<bool> _ReadColumnAsync(CancellationToken cancellationToken)
     {
         await using var connection = fixture.CreateConnection();
@@ -298,7 +414,18 @@ public sealed class SqlServerCancellationMigrationTests(SqlServerJobsCoordinatio
         );
     }
 
+    private Task _InsertOccurrenceAsync(
+        Guid cronJobId,
+        DateTime executionTime,
+        string status,
+        CancellationToken cancellationToken
+    )
+    {
+        return _InsertOccurrenceAsync(Guid.NewGuid(), cronJobId, executionTime, status, cancellationToken);
+    }
+
     private async Task _InsertOccurrenceAsync(
+        Guid id,
         Guid cronJobId,
         DateTime executionTime,
         string status,
@@ -314,7 +441,7 @@ public sealed class SqlServerCancellationMigrationTests(SqlServerJobsCoordinatio
         foreach (
             var (name, value) in new (string, object)[]
             {
-                ("@id", Guid.NewGuid()),
+                ("@id", id),
                 ("@cronJobId", cronJobId),
                 ("@executionTime", executionTime),
                 ("@status", status),
