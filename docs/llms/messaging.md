@@ -227,7 +227,7 @@ services.AddHeadlessMessaging(setup =>
 - **Mis-wire fails loud at startup**: if the outbox is enabled but the commit interceptor is not firing, `CommitInterceptorStartupGate<TContext>` logs a warning by default; set `CommitProbeMode.Strict` (via `services.Configure<CommitInterceptorProbeOptions>(o => o.Mode = CommitProbeMode.Strict)`) to fail startup instead of shipping a silently non-transactional outbox.
 - **Dashboard.K8s requires RBAC** permissions to read Services in the configured Kubernetes namespace.
 - **Callbacks enable async response routing**: Set `CallbackName` on `PublishOptions` (Bus) **or** `EnqueueOptions` (Queue). The response always publishes through the durable Bus path, including for a Queue-originated request; Queue remains origin metadata and exactly one Bus response is produced for a single Queue delivery. `SetResponse<TResponse>` preserves the declared response contract for typed middleware and the concrete payload value/type. This is not request/reply and remains at-least-once, so response consumers must be idempotent. A Bus request still fans out and each subscriber may emit its own response.
-- **Strict publish tenancy is opt-in**: Use `builder.AddHeadlessTenancy(tenancy => tenancy.Messaging(m => m.PropagateTenant().RequireTenantOnPublish()))`. The previous `MessagingBuilder.AddTenantPropagation()` extension has been removed; the root tenancy seam is the single composition point. When neither `PublishOptions.TenantId` nor ambient `ICurrentTenant` is set, the publish wrapper throws `Headless.Abstractions.MissingTenantContextException`. See [Strict Publish Tenancy](#strict-publish-tenancy) and the multi-tenancy doc's [Message Consumers](multi-tenancy.md#message-consumers) section.
+- **Strict publish tenancy is opt-in**: Use `builder.AddHeadlessTenancy(tenancy => tenancy.Messaging(m => m.PropagateTenant().RequireTenantOnPublish()))`. The previous `MessagingBuilder.AddTenantPropagation()` extension has been removed; the root tenancy seam is the single composition point. When neither `PublishOptions.TenantId` nor ambient `ICurrentTenant` is set, the publish wrapper throws `Headless.MultiTenancy.MissingTenantContextException`. See [Strict Publish Tenancy](#strict-publish-tenancy) and the multi-tenancy doc's [Message Consumers](multi-tenancy.md#message-consumers) section.
 - **Retry behavior is configured via `MessagingOptions.RetryPolicy`**. `RetryStrategy` is a public Polly `RetryStrategyOptions` contract; `MaxPersistedRetries`, durable scheduling, leases, and terminal callbacks remain Messaging-owned. Configure `ShouldHandle` explicitly. `OnExhausted` fires only after a matched failure consumes the complete budget and the owned terminal write succeeds.
 - **Retry pressure is quadrant-isolated**: Published-Bus, Published-Queue, Received-Bus, and Received-Queue own independent atomic claims, workers, lock resources, counters, failure state, cadence, and adaptive interval. `IRetryProcessorMonitor` remains an aggregate compatibility projection (maximum interval, backed off when any quadrant is backed off, reset all four); that aggregate never drives runtime scheduling or lock TTL.
 - **Distributed lock**: see [Distributed Lock Integration](#distributed-lock-integration) for when to enable, when to skip, and the two-layer model (per-row `LockedUntil` lease + coarse-grained distributed lock).
@@ -552,7 +552,7 @@ services.AddHeadlessMessaging(setup =>
 
 ### Dependencies
 
-`Headless.Messaging.Abstractions`, `Headless.Messaging.Bus.Abstractions`, `Headless.Messaging.Queue.Abstractions`, `Headless.Coordination.Abstractions`, `Headless.Coordination.Core`, `Headless.Hosting`, `Headless.Abstractions`, `Headless.Checks`, `Polly.Core`. (`Headless.Coordination.Core` hosts the shared `DeadOwnerRecoveryBridge`.)
+`Headless.Messaging.Abstractions`, `Headless.Messaging.Bus.Abstractions`, `Headless.Messaging.Queue.Abstractions`, `Headless.Coordination.Abstractions`, `Headless.Coordination.Core`, `Headless.Hosting`, `Headless.MultiTenancy`, `Headless.Checks`, `Polly.Core`. (`Headless.Coordination.Core` hosts the shared `DeadOwnerRecoveryBridge`; `Headless.MultiTenancy` — which itself references `Headless.MultiTenancy.Abstractions` — brings in `MissingTenantContextException` and the other tenant-propagation contract types.)
 
 ### Side Effects
 
@@ -762,7 +762,7 @@ The always-on `DeadOwnerRecoveryBridge` logs failures under its own category, `H
 
 1. `PublishOptions.TenantId` if set (the source of truth — see `Headers.TenantId` integrity rules in [Multi-Tenancy / Message Consumers](multi-tenancy.md#message-consumers)).
 2. Otherwise, the ambient `ICurrentTenant.Id`.
-3. If neither resolves, the publish wrapper throws `Headless.Abstractions.MissingTenantContextException`.
+3. If neither resolves, the publish wrapper throws `Headless.MultiTenancy.MissingTenantContextException`.
 
 The U2 raw-header checks (`ReservedTenantHeader`, `TenantIdMismatch`) still run first, so flipping `TenantContextRequired` cannot bypass them.
 

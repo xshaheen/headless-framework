@@ -49,6 +49,10 @@ builder.AddHeadlessTenancy(tenancy =>
 });
 ```
 
+## Configuration
+
+None. This package binds no options of its own — `UseEntityFramework<TContext>()` takes only the `DbContext` type argument. Cache and identifier-shape behavior is controlled by `TenantCatalogOptions` on `Headless.MultiTenancy`'s `Catalog(...)` builder, not by this package.
+
 ## Dependencies
 
 - `Headless.MultiTenancy`

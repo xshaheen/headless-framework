@@ -231,10 +231,14 @@ is set.
 
 ### Tenant catalog
 
-The opt-in read surface that maps tenant identifiers to canonical tenant ids and tenant metadata
-(`TenantInfo`), planned in issue #253 (see `docs/plans/2026-08-09-001-feat-tenant-catalog-plan.md`).
-Owns identity, routing, and lifecycle (`IsEnabled`) only — per-tenant configuration stays in
-Settings/Features/Permissions keyed by the canonical id.
+The opt-in read surface (`Headless.MultiTenancy.Abstractions`/`Headless.MultiTenancy`, issue #253)
+that maps tenant identifiers to canonical tenant ids and serves tenant metadata (`TenantInfo`)
+through a minimal, read-only `ITenantStore` — shipped with in-memory, configuration, and Entity
+Framework Core (`Headless.MultiTenancy.Storage.EntityFramework`) implementations. Owns identity,
+routing, and lifecycle (`IsEnabled`) only — per-tenant configuration stays in
+Settings/Features/Permissions keyed by the canonical id. See
+[docs/llms/multi-tenancy.md](docs/llms/multi-tenancy.md#tenant-catalog) for setup, the extension
+tiers, and staleness bounds.
 
 ## Jobs (tenancy)
 
@@ -248,4 +252,6 @@ tenant scope. It can only be created outside tenant context — an ambient tenan
 
 The pattern for tenant-scoped recurring work: cron definitions and occurrences stay system-scope,
 and the cron function enumerates tenants in application code, scheduling one tenant-scoped time job
-per tenant. The framework never enumerates tenants.
+per tenant. The framework ships an optional `ITenantDirectory` enumeration capability (implemented
+by all v1 tenant-catalog stores) that an app can call for this enumeration step, but builds no
+fan-out orchestration on top of it — the fan-out loop itself is still application code.
