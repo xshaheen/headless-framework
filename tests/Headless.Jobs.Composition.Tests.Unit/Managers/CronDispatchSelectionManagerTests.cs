@@ -264,7 +264,7 @@ public sealed class CronDispatchSelectionManagerTests : TestBase
     {
         var (manager, provider) = _Create();
         var invalid = _Definition(nextDue: _Now.AddHours(-1));
-        invalid.TimeZoneId = "Invalid/Recovery-Zone";
+        invalid.Expression = "not-a-cron-expression";
         invalid.EvaluationFingerprint = "legacy";
         var healthy = _Definition(nextDue: _Now);
         healthy.EvaluationFingerprint = new CronScheduleCache(TimeZoneInfo.Utc).ComputeEvaluationFingerprint(null);
@@ -277,6 +277,128 @@ public sealed class CronDispatchSelectionManagerTests : TestBase
         functions.Should().ContainSingle().Which.ParentId.Should().Be(healthy.Id);
         var deferred = (await provider.GetCronJobByIdAsync(invalid.Id, AbortToken))!;
         deferred.FingerprintRetryAfterUtc.Should().NotBeNull();
+    }
+
+    /// <summary>
+    /// #830, containment half. With the durable defer gone, the dispatch query keeps returning a definition whose zone
+    /// this host cannot resolve, and resolution fails again on every wake. Without a per-candidate guard that single
+    /// definition aborts the entire cycle — so this asserts the node keeps scheduling BOTH an unrelated cron job and
+    /// an unrelated time job, and that nothing durable was written about the definition it skipped.
+    /// </summary>
+    [Fact]
+    public async Task should_keep_scheduling_everything_else_when_one_definition_names_an_unresolvable_time_zone()
+    {
+        var (manager, provider) = _Create();
+        var unresolvable = _Definition(nextDue: _Now.AddHours(-1));
+        unresolvable.TimeZoneId = "Mars/Olympus";
+        var healthyCron = _Definition(nextDue: _Now);
+        await provider.InsertCronJobsAsync([unresolvable, healthyCron], AbortToken);
+        await provider.AddTimeJobsAsync([_TimeJob(_Now.AddMilliseconds(-600))], AbortToken);
+
+        // Twice: the first wake records the suppression, the second proves a suppressed definition stays skipped
+        // rather than re-failing the cycle once the durable defer is no longer there to hide it.
+        await manager.GetNextJobs(AbortToken);
+        var (_, functions) = await manager.GetNextJobs(AbortToken);
+
+        functions
+            .Should()
+            .Contain(x => x.Type == JobType.TimeJob, "an unrelated time job must not be blocked by a cron definition");
+        var stored = (await provider.GetCronJobByIdAsync(unresolvable.Id, AbortToken))!;
+        stored.FingerprintRetryAfterUtc.Should().BeNull("node-local evidence must never become fleet-visible state");
+        stored.FingerprintFailureCount.Should().Be(0);
+        stored
+            .ReconciledThroughUtc.Should()
+            .Be(
+                unresolvable.ReconciledThroughUtc,
+                "a definition this node cannot evaluate must not have its schedule position moved by this node"
+            );
+
+        var dispatched = await provider.GetAllCronJobOccurrencesAsync(x => x.CronJobId == healthyCron.Id, AbortToken);
+        dispatched.Should().ContainSingle("the healthy cron definition still dispatches on the unhealthy node");
+        (await provider.GetAllCronJobOccurrencesAsync(x => x.CronJobId == unresolvable.Id, AbortToken))
+            .Should()
+            .BeEmpty();
+    }
+
+    /// <summary>
+    /// AE5, the fleet half: the definition an unhealthy node excluded must still dispatch on a peer that resolves its
+    /// zone, at the SAME schedule revision and with no intervening correction.
+    /// </summary>
+    /// <remarks>
+    /// The per-host variable is the timezone database, which no test can vary per process — so it is modelled at the
+    /// seam that consumes it: the definition's identifier is swapped for one the running host resolves between the two
+    /// nodes' wakes, leaving the row, its revision, and its position untouched. What the test actually proves is the
+    /// property the fix turns on: the unhealthy node left nothing behind that stops a peer, and suppression lives in
+    /// the manager instance rather than in the store, so a second node's set is empty.
+    /// </remarks>
+    [Fact]
+    public async Task should_still_dispatch_on_a_peer_the_definition_an_unhealthy_node_excluded()
+    {
+        var (unhealthyNode, provider) = _Create();
+        var zoned = _Definition(nextDue: _Now);
+        zoned.TimeZoneId = "Mars/Olympus";
+
+        // The in-memory provider stores the instance, so the test holds the live row.
+        await provider.InsertCronJobsAsync([zoned], AbortToken);
+        var revisionBefore = zoned.ScheduleRevision;
+
+        await unhealthyNode.GetNextJobs(AbortToken);
+
+        (await provider.GetAllCronJobOccurrencesAsync(x => x.CronJobId == zoned.Id, AbortToken))
+            .Should()
+            .BeEmpty("the node that cannot resolve the zone dispatches nothing for it");
+        (await provider.GetCronJobByIdAsync(zoned.Id, AbortToken))!
+            .FingerprintRetryAfterUtc.Should()
+            .BeNull("nothing durable may stand between the definition and a healthy peer");
+
+        // The peer resolves the identifier; the row is otherwise exactly as the unhealthy node left it.
+        zoned.TimeZoneId = null;
+        var peerNode = _Node(provider);
+
+        var (_, functions) = await peerNode.GetNextJobs(AbortToken);
+
+        functions.Should().ContainSingle().Which.ParentId.Should().Be(zoned.Id);
+        var after = (await provider.GetCronJobByIdAsync(zoned.Id, AbortToken))!;
+        after
+            .ScheduleRevision.Should()
+            .Be(revisionBefore, "the peer dispatched the definition as the unhealthy node left it");
+        after.ReconciledThroughUtc.Should().Be(_Now);
+    }
+
+    /// <summary>
+    /// R6a. The candidate read is bounded, so filtering an already-read page would trade a stalled node for a starved
+    /// definition: a page whose entries are all suppressed empties on every poll and a healthy later definition never
+    /// enters the window. More suppressed definitions than one page holds are placed ahead of the healthy one.
+    /// </summary>
+    [Fact]
+    public async Task should_dispatch_a_healthy_definition_ordered_behind_more_suppressed_ones_than_one_page_holds()
+    {
+        var (manager, provider) = _Create();
+
+        // 150 > the 64-candidate read bound and > the 100-row claim bound, so no single page can contain both the
+        // suppressed block and the healthy definition.
+        var suppressed = Enumerable
+            .Range(1, 150)
+            .Select(index =>
+            {
+                var definition = _Definition(nextDue: _Now.AddSeconds(-index - 60));
+                definition.TimeZoneId = "Mars/Olympus";
+
+                return definition;
+            })
+            .ToArray();
+        var healthy = _Definition(nextDue: _Now);
+        await provider.InsertCronJobsAsync([.. suppressed, healthy], AbortToken);
+
+        var (_, functions) = await manager.GetNextJobs(AbortToken);
+
+        functions
+            .Should()
+            .ContainSingle("a page full of definitions this node cannot evaluate must not hide the healthy one")
+            .Which.ParentId.Should()
+            .Be(healthy.Id);
+        var after = (await provider.GetCronJobByIdAsync(healthy.Id, AbortToken))!;
+        after.ReconciledThroughUtc.Should().Be(_Now, "the healthy definition really advanced, not just appeared");
     }
 
     [Fact]
@@ -379,6 +501,47 @@ public sealed class CronDispatchSelectionManagerTests : TestBase
 
         return (manager, provider);
     }
+
+    /// <summary>
+    /// A second node over the SAME store. Its node-local suppression set is its own and starts empty, which is the
+    /// property the fleet half of #830 rests on.
+    /// </summary>
+    private static InternalJobsManager<FakeTimeJob, FakeCronJob> _Node(
+        JobsInMemoryPersistenceProvider<FakeTimeJob, FakeCronJob> provider
+    )
+    {
+        var time = new FakeTimeProvider(new DateTimeOffset(_Now, TimeSpan.Zero));
+        var services = new ServiceCollection();
+        services.AddSingleton<TimeProvider>(time);
+        services.AddHeadlessGuidGenerator();
+        services.AddSingleton(new SchedulerOptionsBuilder { NodeId = "node-b" });
+        services.AddSingleton(Substitute.For<IJobsHostScheduler>());
+        var sp = services.BuildServiceProvider();
+
+        return new InternalJobsManager<FakeTimeJob, FakeCronJob>(
+            provider,
+            time,
+            Substitute.For<IJobsNotificationHubSender>(),
+            new CronScheduleCache(TimeZoneInfo.Utc),
+            NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance,
+            JobsRequestSerializationOptions.Default,
+            sp.GetRequiredService<IGuidGenerator>(),
+            sp,
+            sp.GetRequiredService<SchedulerOptionsBuilder>()
+        );
+    }
+
+    private static FakeTimeJob _TimeJob(DateTime executionTime) =>
+        new()
+        {
+            Id = Guid.NewGuid(),
+            Function = "time-dispatch",
+            Status = JobStatus.Idle,
+            ExecutionTime = executionTime,
+            CreatedAt = new DateTimeOffset(_Now.AddMinutes(-5), TimeSpan.Zero),
+            UpdatedAt = new DateTimeOffset(_Now.AddMinutes(-5), TimeSpan.Zero),
+            Request = [],
+        };
 
     private static FakeCronJob _Definition(DateTime nextDue, bool isPaused = false) =>
         new()

@@ -767,10 +767,80 @@ public abstract class JobsSchedulePositionConformanceTests<TFixture>(TFixture fi
         };
         (await persistence.InsertCronJobsAsync([deferred, healthy], ct)).Should().Be(2);
 
-        var result = await persistence.GetEarliestCronDispatchCandidatesAsync(limit: 64, ct);
+        var result = await persistence.GetEarliestCronDispatchCandidatesAsync(limit: 64, after: null, ct);
 
         result.Should().NotBeNull();
         result!.Candidates.Should().ContainSingle().Which.CronJobId.Should().Be(healthy.Id);
+    }
+
+    /// <summary>
+    /// R6a: the candidate cursor must be applied INSIDE the query, before the limit truncates it. A provider that
+    /// truncates first and drops the resumed rows afterwards passes a single-page test and still starves the caller —
+    /// so this places more excluded definitions than one page holds ahead of the healthy one and asserts the healthy
+    /// one is reached.
+    /// </summary>
+    public virtual async Task dispatch_selection_resumes_past_a_full_page_of_excluded_definitions()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("dispatch-candidate-cursor");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        var persistence = _Persistence(host);
+        var now = DateTime.UtcNow;
+        const int pageSize = 8;
+
+        // Every excluded definition sorts strictly before the healthy one, so nothing but a resumed read reaches it.
+        var excluded = Enumerable
+            .Range(0, pageSize * 3)
+            .Select(index => new CronJobEntity
+            {
+                Id = Guid.NewGuid(),
+                Function = "excluded",
+                Expression = "0 * * * * *",
+                ReconciledThroughUtc = now,
+                NextDueUtc = now.AddMinutes(index + 1),
+                EvaluationFingerprint = "current",
+            })
+            .ToArray();
+        var healthy = new CronJobEntity
+        {
+            Id = Guid.NewGuid(),
+            Function = "healthy",
+            Expression = "0 * * * * *",
+            ReconciledThroughUtc = now,
+            NextDueUtc = now.AddDays(1),
+            EvaluationFingerprint = "current",
+        };
+        (await persistence.InsertCronJobsAsync([.. excluded, healthy], ct)).Should().Be(excluded.Length + 1);
+
+        CronDispatchCandidateCursor? after = null;
+        var pages = 0;
+        CronDispatchCandidates? page;
+
+        do
+        {
+            page = await persistence.GetEarliestCronDispatchCandidatesAsync(pageSize, after, ct);
+            pages++;
+
+            if (page is not { Candidates.Count: > 0 })
+            {
+                break;
+            }
+
+            // The ordering key of the page's last row, exactly as the scheduler's containment loop resumes.
+            var last = page.Candidates[^1];
+            after = new CronDispatchCandidateCursor(last.NextDueUtc, last.CronJobId);
+        } while (page.Candidates.All(x => x.CronJobId != healthy.Id) && pages <= excluded.Length);
+
+        page.Should().NotBeNull();
+        page!
+            .Candidates.Select(x => x.CronJobId)
+            .Should()
+            .Contain(
+                healthy.Id,
+                "a resumed read must move past the definitions already examined instead of re-reading the same page"
+            );
+        pages.Should().Be(4, "three full pages of excluded definitions precede the page carrying the healthy one");
     }
 
     private static IJobPersistenceProvider<TimeJobEntity, CronJobEntity> _Persistence(IHost host) =>

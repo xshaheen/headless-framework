@@ -136,7 +136,7 @@ public static class SetupJobs
         );
         // The interval doubles as the INITIAL delay of the durable defer backoff, whose ceiling is
         // MaximumStaleFingerprintDeferDelay. An initial delay above that ceiling makes the defer request itself
-        // invalid, so a deterministic definition error (unresolvable timezone, undefined missed-run policy) would
+        // invalid, so a deterministic definition error (undefined missed-run policy, unparseable expression) would
         // throw out of the quarantine path instead of being deferred — and because startup activation is fail-closed,
         // one invalid definition would then abort host startup. Reject the configuration here instead.
         Ensure.True(

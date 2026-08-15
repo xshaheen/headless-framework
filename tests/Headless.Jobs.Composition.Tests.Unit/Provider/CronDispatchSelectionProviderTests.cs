@@ -37,7 +37,7 @@ public sealed class CronDispatchSelectionProviderTests : TestBase
         var middle = _Definition(nextDue: _Now.UtcDateTime.AddMinutes(10));
         await provider.InsertCronJobsAsync([late, soon, middle], AbortToken);
 
-        var result = await provider.GetEarliestCronDispatchCandidatesAsync(limit: 64, AbortToken);
+        var result = await provider.GetEarliestCronDispatchCandidatesAsync(limit: 64, after: null, AbortToken);
 
         result.Should().NotBeNull();
         result!
@@ -56,7 +56,7 @@ public sealed class CronDispatchSelectionProviderTests : TestBase
         var active = _Definition(nextDue: _Now.UtcDateTime.AddMinutes(5));
         await provider.InsertCronJobsAsync([paused, active], AbortToken);
 
-        var result = await provider.GetEarliestCronDispatchCandidatesAsync(limit: 64, AbortToken);
+        var result = await provider.GetEarliestCronDispatchCandidatesAsync(limit: 64, after: null, AbortToken);
 
         result.Should().NotBeNull();
         result!.Candidates.Should().ContainSingle().Which.CronJobId.Should().Be(active.Id);
@@ -71,7 +71,7 @@ public sealed class CronDispatchSelectionProviderTests : TestBase
         var healthy = _Definition(nextDue: _Now.UtcDateTime.AddMinutes(5));
         await provider.InsertCronJobsAsync([deferred, healthy], AbortToken);
 
-        var result = await provider.GetEarliestCronDispatchCandidatesAsync(limit: 64, AbortToken);
+        var result = await provider.GetEarliestCronDispatchCandidatesAsync(limit: 64, after: null, AbortToken);
 
         result.Should().NotBeNull();
         result!.Candidates.Should().ContainSingle().Which.CronJobId.Should().Be(healthy.Id);
@@ -87,7 +87,7 @@ public sealed class CronDispatchSelectionProviderTests : TestBase
             .ToArray();
         await provider.InsertCronJobsAsync(definitions, AbortToken);
 
-        var result = await provider.GetEarliestCronDispatchCandidatesAsync(limit: 3, AbortToken);
+        var result = await provider.GetEarliestCronDispatchCandidatesAsync(limit: 3, after: null, AbortToken);
 
         result.Should().NotBeNull();
         result!.Candidates.Should().HaveCount(3);
@@ -103,7 +103,7 @@ public sealed class CronDispatchSelectionProviderTests : TestBase
         var provider = _Create();
         await provider.InsertCronJobsAsync([_Definition(_Now.UtcDateTime, isPaused: true)], AbortToken);
 
-        var result = await provider.GetEarliestCronDispatchCandidatesAsync(limit: 64, AbortToken);
+        var result = await provider.GetEarliestCronDispatchCandidatesAsync(limit: 64, after: null, AbortToken);
 
         result.Should().BeNull("with nothing selectable the scheduler has no cron work to wake for");
     }
@@ -213,7 +213,7 @@ public sealed class CronDispatchSelectionProviderTests : TestBase
         paused.NextDueUtc.Should().Be(definition.NextDueUtc);
 
         // Pause is enforced by exclusion from selection, not by moving the position.
-        (await provider.GetEarliestCronDispatchCandidatesAsync(limit: 64, AbortToken))
+        (await provider.GetEarliestCronDispatchCandidatesAsync(limit: 64, after: null, AbortToken))
             .Should()
             .BeNull();
     }

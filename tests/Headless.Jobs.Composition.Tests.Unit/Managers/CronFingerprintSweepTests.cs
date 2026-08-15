@@ -3,6 +3,7 @@
 using Headless.Abstractions;
 using Headless.Jobs;
 using Headless.Jobs.Entities;
+using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Managers;
 using Headless.Jobs.Models;
@@ -198,12 +199,79 @@ public sealed class CronFingerprintSweepTests : TestBase
             .Be("stale", "a definition whose zone cannot be resolved here cannot be repositioned here either");
     }
 
+    /// <summary>
+    /// #830: whether a zone resolves is a property of the RUNNING HOST's timezone database, not of the definition, so
+    /// one node with stale tzdata must not write the durable defer state that suppresses a definition fleet-wide.
+    /// Every peer that resolves the zone keeps scheduling it.
+    /// </summary>
+    [Fact]
+    public async Task should_not_durably_defer_a_definition_whose_time_zone_only_this_host_cannot_resolve()
+    {
+        var (manager, provider) = _Create();
+        var unresolvable = _Zoned(Guid.NewGuid(), "Mars/Olympus", "stale");
+        await provider.InsertCronJobsAsync([unresolvable], AbortToken);
+
+        var result = await manager.RebaseStaleFingerprintsAsync(limit: 50, cancellationToken: AbortToken);
+
+        result.Deferred.Should().Be(0, "a per-host condition must never be recorded as a definitional one");
+        result.SkippedNodeLocal.Should().Be(1, "the node reports what it could not evaluate without acting on it");
+        var stored = (await provider.GetCronJobByIdAsync(unresolvable.Id, AbortToken))!;
+        stored
+            .FingerprintRetryAfterUtc.Should()
+            .BeNull("a durable retry boundary quarantines the definition on every node, not just this one");
+        stored.FingerprintFailureCount.Should().Be(0);
+    }
+
+    /// <summary>
+    /// The other side of the reclassification: an error every host reads the same way — an undefined policy, a
+    /// negative grace, an unparseable expression, a blank zone identifier — still earns durable defer. Losing that
+    /// would let a genuinely broken definition burn every node's poll forever.
+    /// </summary>
+    [Theory]
+    [InlineData("blank-time-zone")]
+    [InlineData("invalid-expression")]
+    [InlineData("undefined-policy")]
+    [InlineData("negative-grace")]
+    public async Task should_still_durably_defer_a_definition_that_is_invalid_on_every_host(string defect)
+    {
+        var (manager, provider) = _Create();
+        var invalid = _Zoned(Guid.NewGuid(), timeZoneId: null, "stale");
+
+        switch (defect)
+        {
+            case "blank-time-zone":
+                invalid.TimeZoneId = "   ";
+                break;
+            case "invalid-expression":
+                invalid.Expression = "not-a-cron-expression";
+                break;
+            case "undefined-policy":
+                invalid.OnMissedRun = (MissedRunPolicy)97;
+                break;
+            default:
+                invalid.MissedRunGraceSeconds = -1;
+                break;
+        }
+
+        await provider.InsertCronJobsAsync([invalid], AbortToken);
+
+        var result = await manager.RebaseStaleFingerprintsAsync(limit: 50, cancellationToken: AbortToken);
+
+        result.Deferred.Should().Be(1);
+        result.SkippedNodeLocal.Should().Be(0, "the defect is in the definition, not in this host");
+        var stored = (await provider.GetCronJobByIdAsync(invalid.Id, AbortToken))!;
+        stored.FingerprintRetryAfterUtc.Should().NotBeNull();
+        stored.FingerprintFailureCount.Should().Be(1);
+    }
+
     [Fact]
     public async Task should_durably_defer_invalid_rows_without_starving_the_next_page()
     {
         var (manager, provider) = _Create();
-        var invalidA = _Zoned(new Guid("00000001-0000-0000-0000-000000000000"), "Mars/Olympus", "stale");
-        var invalidB = _Zoned(new Guid("00000002-0000-0000-0000-000000000000"), "Mars/Valles", "stale");
+        var invalidA = _Zoned(new Guid("00000001-0000-0000-0000-000000000000"), timeZoneId: null, "stale");
+        invalidA.Expression = "not-a-cron-expression";
+        var invalidB = _Zoned(new Guid("00000002-0000-0000-0000-000000000000"), timeZoneId: null, "stale");
+        invalidB.OnMissedRun = (MissedRunPolicy)97;
         var healthy = _Zoned(new Guid("00000003-0000-0000-0000-000000000000"), timeZoneId: null, "stale");
         await provider.InsertCronJobsAsync([invalidA, invalidB, healthy], AbortToken);
 
