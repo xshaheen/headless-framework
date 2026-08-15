@@ -75,7 +75,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         return Interlocked.CompareExchange(ref _lastStrandedSweepTicks, nowTicks, last) == last;
     }
 
-    public async Task<(TimeSpan TimeRemaining, JobExecutionState[] Functions)> GetNextJobs(
+    public async Task<(JobsWakeSchedule Wake, JobExecutionState[] Functions)> GetNextJobs(
         CancellationToken cancellationToken = default
     )
     {
@@ -103,8 +103,6 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         }
 #pragma warning restore ERP022
 
-        var now = timeProvider.GetUtcNow().UtcDateTime;
-
         var minCronGroupTask = _GetEarliestCronJobGroupAsync(cancellationToken);
         var minTimeJobsTask = persistenceProvider.GetEarliestTimeJobsAsync(cancellationToken);
 
@@ -113,33 +111,41 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         var minCronGroup = await minCronGroupTask.ConfigureAwait(false);
         var minTimeJobs = await minTimeJobsTask.ConfigureAwait(false);
 
+        // ONE CLOCK DOMAIN (JobsWakeSchedule). Both due instants below are the store's, so the instant they are
+        // measured against must be the store's too. Either read can supply it — they hit the same store on the same
+        // poll — and the remaining null case (no coordination membership, or a wake driven only by an already-stored
+        // occurrence, whose read reports no anchor) leaves the offset the scheduler last observed in place instead of
+        // asserting the clocks agree.
+        var storeUtcNow = minCronGroup?.StoreUtcNow ?? minTimeJobs.StoreUtcNow;
         var cronTime = minCronGroup?.Key;
-        var cronNow = minCronGroup?.StoreUtcNow ?? now;
-        var timeJobTime = minTimeJobs.Length > 0 ? minTimeJobs[0].ExecutionTime : null;
+        var timeJobTime = minTimeJobs.Jobs.Length > 0 ? minTimeJobs.Jobs[0].ExecutionTime : null;
 
         if (cronTime is null && timeJobTime is null)
         {
-            return (Timeout.InfiniteTimeSpan, []);
+            return (new JobsWakeSchedule(storeUtcNow, WakeAtStoreUtc: null), []);
         }
 
-        TimeSpan timeRemaining;
+        DateTime wakeAtStoreUtc;
         var includeCron = false;
         var includeTimeJobs = false;
 
         if (cronTime is null)
         {
             includeTimeJobs = true;
-            timeRemaining = _SafeRemaining(timeJobTime!.Value, now);
+            wakeAtStoreUtc = _NotBefore(timeJobTime!.Value, storeUtcNow);
         }
         else if (timeJobTime is null)
         {
             includeCron = true;
-            timeRemaining = _SafeRemaining(cronTime.Value, cronNow);
+            wakeAtStoreUtc = _NotBefore(cronTime.Value, storeUtcNow);
         }
         else
         {
-            var cronRemaining = _SafeRemaining(cronTime.Value, cronNow);
-            var timeJobRemaining = _SafeRemaining(timeJobTime.Value, now);
+            // Both are clamped to the anchor first, so two already-overdue instants tie instead of ordering by how
+            // far each fell behind — the same arbitration the previous clamped-duration comparison made, now with one
+            // anchor under both sides rather than the store's under cron and this node's under time jobs.
+            var cronWake = _NotBefore(cronTime.Value, storeUtcNow);
+            var timeJobWake = _NotBefore(timeJobTime.Value, storeUtcNow);
             var cronSecond = new DateTime(
                 cronTime.Value.Year,
                 cronTime.Value.Month,
@@ -161,17 +167,17 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
             {
                 includeCron = true;
                 includeTimeJobs = true;
-                timeRemaining = cronRemaining < timeJobRemaining ? cronRemaining : timeJobRemaining;
+                wakeAtStoreUtc = cronWake < timeJobWake ? cronWake : timeJobWake;
             }
-            else if (cronRemaining < timeJobRemaining)
+            else if (cronWake < timeJobWake)
             {
                 includeCron = true;
-                timeRemaining = cronRemaining;
+                wakeAtStoreUtc = cronWake;
             }
             else
             {
                 includeTimeJobs = true;
-                timeRemaining = timeJobRemaining;
+                wakeAtStoreUtc = timeJobWake;
             }
         }
 
@@ -184,13 +190,16 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
             includeCron = true;
             // Materialization is the authoritative store-time due decision. A lagging node clock must not make the
             // scheduler sleep after the store has committed and claimed a due occurrence; its lease is already live.
-            timeRemaining = TimeSpan.Zero;
+            // Waking at the anchor itself is a zero remaining; with no anchor the schedule reports zero anyway.
+            wakeAtStoreUtc = storeUtcNow ?? wakeAtStoreUtc;
         }
 
         if (!includeCron && !includeTimeJobs)
         {
-            return (Timeout.InfiniteTimeSpan, []);
+            return (new JobsWakeSchedule(storeUtcNow, WakeAtStoreUtc: null), []);
         }
+
+        var wake = new JobsWakeSchedule(storeUtcNow, wakeAtStoreUtc);
 
         JobExecutionState[] cronFunctions = [];
         JobExecutionState[] timeFunctions = [];
@@ -206,37 +215,38 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
                 .ConfigureAwait(false);
         }
 
-        if (includeTimeJobs && minTimeJobs.Length > 0)
+        if (includeTimeJobs && minTimeJobs.Jobs.Length > 0)
         {
-            timeFunctions = await _QueueNextTimeJobsAsync(minTimeJobs, cancellationToken).ConfigureAwait(false);
+            timeFunctions = await _QueueNextTimeJobsAsync(minTimeJobs.Jobs, cancellationToken).ConfigureAwait(false);
         }
 
         if (cronFunctions.Length == 0 && timeFunctions.Length == 0)
         {
-            return (timeRemaining, []);
+            return (wake, []);
         }
 
         if (cronFunctions.Length == 0)
         {
-            return (timeRemaining, timeFunctions);
+            return (wake, timeFunctions);
         }
 
         if (timeFunctions.Length == 0)
         {
-            return (timeRemaining, cronFunctions);
+            return (wake, cronFunctions);
         }
 
         var merged = new JobExecutionState[cronFunctions.Length + timeFunctions.Length];
         cronFunctions.AsSpan().CopyTo(merged.AsSpan(0, cronFunctions.Length));
         timeFunctions.AsSpan().CopyTo(merged.AsSpan(cronFunctions.Length, timeFunctions.Length));
 
-        return (timeRemaining, merged);
+        return (wake, merged);
     }
 
-    private static TimeSpan _SafeRemaining(DateTime target, DateTime now)
+    // Clamps a due instant forward to the store anchor, so an overdue instant becomes "wake now" rather than a
+    // negative remaining. With no anchor the instant stands as read.
+    private static DateTime _NotBefore(DateTime target, DateTime? storeUtcNow)
     {
-        var remaining = target - now;
-        return remaining < TimeSpan.Zero ? TimeSpan.Zero : remaining;
+        return storeUtcNow is { } anchor && target < anchor ? anchor : target;
     }
 
     private JobExecutionState _BuildQueuedTimeJobContext(TimeJobEntity timeJob)

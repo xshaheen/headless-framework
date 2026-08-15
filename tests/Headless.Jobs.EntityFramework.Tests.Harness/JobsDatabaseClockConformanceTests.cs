@@ -69,7 +69,7 @@ public abstract class JobsDatabaseClockConformanceTests<TFixture>(TFixture fixtu
                 ExecutionTime = DateTime.UtcNow,
             };
             await persistence.AddTimeJobsAsync([scheduled], ct);
-            var candidates = await persistence.GetEarliestTimeJobsAsync(ct);
+            var candidates = (await persistence.GetEarliestTimeJobsAsync(ct)).Jobs;
             var claimed = await persistence.QueueTimeJobsAsync(candidates, ct).ToArrayAsync(ct);
             claimed.Should().ContainSingle().Which.Id.Should().Be(scheduled.Id);
 

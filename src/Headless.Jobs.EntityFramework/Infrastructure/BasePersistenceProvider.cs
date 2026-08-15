@@ -208,11 +208,11 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         return await updated.Select(x => x.Id).ToArrayAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<TimeJobEntity[]> GetEarliestTimeJobsAsync(CancellationToken cancellationToken)
+    public async Task<EarliestTimeJobs> GetEarliestTimeJobsAsync(CancellationToken cancellationToken)
     {
         if (!OwnerIdentity.TryGetStampOwner(out var owner))
         {
-            return [];
+            return EarliestTimeJobs.None;
         }
 
         await using var dbContext = await DbContextFactory
@@ -233,16 +233,21 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             // parent gate keeps it out of the peek until its parent reached its matching terminal state.
             .WhereClaimableUnderParentTerminalGate(dbContext.Set<TTimeJob>());
 
-        // Find the earliest job within our window
-        var minExecutionTime = await baseQuery
+        // Find the earliest job within our window. The store instant rides along on the same statement — no extra round
+        // trip, matching GetEarliestCronDispatchCandidatesAsync — because the caller derives its sleep from the
+        // difference between the two: measuring an execution time the STORE will arbitrate against THIS node's clock
+        // makes a lagging node oversleep by exactly its skew (#818).
+        var earliest = await baseQuery
             .OrderBy(x => x.ExecutionTime)
-            .Select(x => x.ExecutionTime)
+            .Select(x => new { x.ExecutionTime, StoreUtcNow = DateTime.UtcNow })
             .FirstOrDefaultAsync(cancellationToken)
             .ConfigureAwait(false);
 
+        var minExecutionTime = earliest?.ExecutionTime;
+
         if (minExecutionTime == null)
         {
-            return [];
+            return EarliestTimeJobs.None;
         }
 
         // Round the minimum execution time down to its second
@@ -261,7 +266,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
         // R12/KTD2: load the flat roots, then rebuild the non-timed in-tree subtree to MaxChainDepth in memory (a
         // recursive .Select projection is not EF-translatable) instead of a fixed-depth nested projection.
-        return await _LoadWithDescendantsAsync(
+        var jobs = await _LoadWithDescendantsAsync(
                 baseQuery
                     .Where(x => x.ExecutionTime >= minSecond && x.ExecutionTime < maxExecutionTime)
                     .OrderBy(x => x.ExecutionTime),
@@ -269,6 +274,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 cancellationToken
             )
             .ConfigureAwait(false);
+
+        return new EarliestTimeJobs { StoreUtcNow = earliest!.StoreUtcNow, Jobs = jobs };
     }
 
     // R12/KTD2: projects a prepared time-job query to flat roots and rebuilds their non-timed in-tree subtree to

@@ -362,10 +362,12 @@ public sealed class InternalJobsManagerTests : TestBase
         );
 
         // Nothing due on either side, so each poll returns right after the safety net and the call count is the only
-        // thing under test. Without this stub the auto-substituted occurrence carries a null CronJob and NREs.
+        // thing under test. Without these stubs the auto-substituted occurrence carries a null CronJob and NREs, and
+        // the time-job peek hands back a null result instead of the empty one its contract requires.
         provider
             .GetEarliestAvailableCronOccurrenceAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())
             .Returns((CronJobOccurrenceEntity<FakeCronJob>)null!);
+        provider.GetEarliestTimeJobsAsync(Arg.Any<CancellationToken>()).Returns(EarliestTimeJobs.None);
 
         // First poll runs it: a host that starts with an already-stranded child must not wait out an interval.
         await manager.GetNextJobs(AbortToken);
@@ -479,7 +481,9 @@ public sealed class InternalJobsManagerTests : TestBase
         };
 
         // Route the cron side to empty so only the time-job pickup flows through GetNextJobs.
-        provider.GetEarliestTimeJobsAsync(Arg.Any<CancellationToken>()).Returns([root]);
+        provider
+            .GetEarliestTimeJobsAsync(Arg.Any<CancellationToken>())
+            .Returns(new EarliestTimeJobs { StoreUtcNow = DateTime.UtcNow, Jobs = [root] });
         provider.GetAllCronJobExpressionsAsync(Arg.Any<CancellationToken>()).Returns([]);
         provider
             .GetEarliestAvailableCronOccurrenceAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())
@@ -652,7 +656,9 @@ public sealed class InternalJobsManagerTests : TestBase
             ExecutionTime = DateTime.UtcNow.AddSeconds(30),
         };
 
-        provider.GetEarliestTimeJobsAsync(Arg.Any<CancellationToken>()).Returns([first, second]);
+        provider
+            .GetEarliestTimeJobsAsync(Arg.Any<CancellationToken>())
+            .Returns(new EarliestTimeJobs { StoreUtcNow = DateTime.UtcNow, Jobs = [first, second] });
         provider.GetAllCronJobExpressionsAsync(Arg.Any<CancellationToken>()).Returns([]);
         provider
             .GetEarliestAvailableCronOccurrenceAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())
@@ -698,7 +704,9 @@ public sealed class InternalJobsManagerTests : TestBase
             ExecutionTime = DateTime.UtcNow.AddSeconds(30),
         };
 
-        provider.GetEarliestTimeJobsAsync(Arg.Any<CancellationToken>()).Returns([claimed]);
+        provider
+            .GetEarliestTimeJobsAsync(Arg.Any<CancellationToken>())
+            .Returns(new EarliestTimeJobs { StoreUtcNow = DateTime.UtcNow, Jobs = [claimed] });
         provider.GetAllCronJobExpressionsAsync(Arg.Any<CancellationToken>()).Returns([]);
         provider
             .GetEarliestAvailableCronOccurrenceAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())

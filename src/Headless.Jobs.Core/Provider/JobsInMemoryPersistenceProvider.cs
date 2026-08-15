@@ -339,8 +339,10 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         return status == JobStatus.Queued && string.Equals(ownerId, _ownerId, StringComparison.Ordinal);
     }
 
-    public Task<TimeJobEntity[]> GetEarliestTimeJobsAsync(CancellationToken cancellationToken = default)
+    public Task<EarliestTimeJobs> GetEarliestTimeJobsAsync(CancellationToken cancellationToken = default)
     {
+        // This provider IS the store, so its own TimeProvider is the store clock — there is no node/store skew to
+        // reconcile here, and reporting the instant keeps the caller's wake arithmetic identical across providers.
         var now = _timeProvider.GetUtcNow();
         var oneSecondAgo = now.UtcDateTime.AddSeconds(-1);
 
@@ -360,7 +362,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
         if (minExecutionTime == null)
         {
-            return Task.FromResult(Array.Empty<TimeJobEntity>());
+            return Task.FromResult(new EarliestTimeJobs { StoreUtcNow = now.UtcDateTime });
         }
 
         // Round the minimum execution time down to its second
@@ -383,7 +385,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             .Select(_ForQueueTimeJobs)
             .ToArray();
 
-        return Task.FromResult(result);
+        return Task.FromResult(new EarliestTimeJobs { StoreUtcNow = now.UtcDateTime, Jobs = result });
     }
 
     public Task<int> UpdateTimeJobAsync(
@@ -2337,6 +2339,61 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         }
 
         return Task.FromResult(count);
+    }
+
+    public Task<CronSchedulePositionSeedResult> InsertCronJobsAsync(
+        TCronJob[] jobs,
+        CronSchedulePositionSeeder seeder,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(jobs);
+        Argument.IsNotNull(seeder);
+
+        if (jobs.Length == 0)
+        {
+            return Task.FromResult(CronSchedulePositionSeedResult.Empty);
+        }
+
+        // This provider IS the store, so its TimeProvider is the store's statement clock by construction — there is no
+        // transaction to be frozen at the start of, and no node/store divergence to escape.
+        var storeUtcNow = _timeProvider.GetUtcNow().UtcDateTime;
+        var count = 0;
+        DateTime? earliestNextDueUtc = null;
+
+        foreach (var job in jobs)
+        {
+            var seed = seeder(job, storeUtcNow);
+            job.ReconciledThroughUtc = seed.ReconciledThroughUtc;
+            job.NextDueUtc = seed.NextDueUtc;
+            job.EvaluationFingerprint = seed.EvaluationFingerprint;
+
+            lock (_cronJobIdIndexLock)
+            {
+                if (!_cronJobs.TryAdd(job.Id, job))
+                {
+                    continue;
+                }
+
+                _cronJobIds.Add(job.Id);
+            }
+
+            count++;
+
+            if (earliestNextDueUtc is null || seed.NextDueUtc < earliestNextDueUtc.Value)
+            {
+                earliestNextDueUtc = seed.NextDueUtc;
+            }
+        }
+
+        return Task.FromResult(
+            new CronSchedulePositionSeedResult
+            {
+                StoreUtcNow = storeUtcNow,
+                AffectedRows = count,
+                EarliestNextDueUtc = earliestNextDueUtc,
+            }
+        );
     }
 
     public Task<int> UpdateCronJobsAsync(TCronJob[] cronJob, CancellationToken cancellationToken = default)

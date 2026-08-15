@@ -286,11 +286,18 @@ public static class JobsCoordinationFixtureExtensions
         this IJobsCoordinationFixture fixture,
         string nodeId,
         Action<DbContextOptionsBuilder>? configureOptions = null,
-        bool includeMessaging = false
+        bool includeMessaging = false,
+        TimeProvider? timeProvider = null
     )
         where TDbContext : JobsDbContext<TimeJobEntity, CronJobEntity>
     {
-        return _BuildCoordinatedEnqueueHost<TDbContext>(fixture, nodeId, configureOptions, includeMessaging);
+        return _BuildCoordinatedEnqueueHost<TDbContext>(
+            fixture,
+            nodeId,
+            configureOptions,
+            includeMessaging,
+            timeProvider: timeProvider
+        );
     }
 
     /// <summary>
@@ -310,7 +317,8 @@ public static class JobsCoordinationFixtureExtensions
         Action<DbContextOptionsBuilder>? configureOptions = null,
         bool includeMessaging = false,
         JobsSideEffectsProbe? sideEffectsProbe = null,
-        bool enableTenantPropagation = false
+        bool enableTenantPropagation = false,
+        TimeProvider? timeProvider = null
     )
         where TDbContext : JobsDbContext<TimeJobEntity, CronJobEntity>
     {
@@ -364,6 +372,13 @@ public static class JobsCoordinationFixtureExtensions
         // AddCommitCoordination wins over the Jobs null-coordinator fallback (AddSingleton over TryAddSingleton),
         // so ICurrentCommitCoordinator resolves to the real scope stack that EnlistCommitCoordination pushes onto.
         fixture.ConfigureCommitCoordination(builder.Services);
+
+        // Same purpose as on BuildHost: a deliberately skewed node clock, so a write that is supposed to be anchored
+        // on the STORE's instant cannot pass by accidentally agreeing with this process's clock.
+        if (timeProvider is not null)
+        {
+            builder.Services.AddSingleton(timeProvider);
+        }
 
         if (enableTenantPropagation)
         {

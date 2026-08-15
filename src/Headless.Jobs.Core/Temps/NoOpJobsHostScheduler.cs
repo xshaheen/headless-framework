@@ -22,7 +22,7 @@ internal sealed class NoOpJobsHostScheduler : IJobsHostScheduler
         return Task.CompletedTask;
     }
 
-    public void RestartIfNeeded(DateTime? dateTime)
+    public void RestartIfNeeded(DateTime? dueAtStoreUtc)
     {
         // No-op: scheduler not running
     }

@@ -406,6 +406,24 @@ That record is what makes a missed occurrence detectable at all. Before it, reco
 in-memory sleep timer: a process that died mid-sleep left no trace, and on restart simply recomputed from the current
 time. The occurrence was gone with nothing to notice it had ever been due.
 
+### Where the watermark starts
+
+A definition created at runtime through `ICronJobManager` is **positioned by the insert itself**, anchored on the
+store's instant read inside the inserting transaction — single, batch, and coordinated (`AddAsync` inside an enlisted
+transaction) paths alike. Creation is therefore the anchor, and any tick between creation and the first scheduler poll
+belongs to that definition's missed-run policy.
+
+Without that seed a definition arrives unpositioned and is anchored by whichever node first sees it, at *that* moment:
+every tick in between disappears with no occurrence, no recovery record, and nothing to alert on. A crash before the
+first poll widens the window arbitrarily.
+
+The anchor is the store's **current statement** clock (`clock_timestamp()` on PostgreSQL, `SYSUTCDATETIME()` on SQL
+Server), never a transaction-start clock. The coordinated path joins a transaction the caller already opened, and
+PostgreSQL freezes `now()` at transaction start — seeding from that would position a definition before it existed and
+manufacture an immediate false backlog. Definitions written by any other path (a raw provider insert, a legacy row)
+still backfill to the uninitialized sentinel and are anchored at store time on first wake, which is what keeps an
+upgrade from replaying history.
+
 ### When a definition enters recovery
 
 An instant is **pending** when it falls at or before now and the watermark has not passed it — whether or not an
@@ -685,6 +703,8 @@ Provides reliable background job scheduling with cron expressions, delayed execu
 
 The in-memory pickup lease uses the injected `TimeProvider`. The EF operational store uses the **database clock** for acquisition, renewal, and reclaim. Claim predicates and stamps are translated into the existing SQL statement, avoiding both cross-node clock skew and a separate clock round trip.
 
+The scheduler's wake and restart path lives in that same store domain. Every due instant it arbitrates — a time job's execution time, a definition's persisted `NextDueUtc`, a released child's re-stamped time — is a **store** instant, because the store is what decides due-ness. Both the cron candidate read and the time-job peek report the store instant they observed (`StoreUtcNow`) on the same statement, at no extra round trip, and the scheduler derives its sleep and its planned wake from those. The node's clock enters at exactly one place: a node/store offset refreshed on every poll that reached the store, used to convert a restart request once. Mixing the two domains is a live defect, not a style point — a store-derived duration added to a node-domain deadline makes a lagging node record a 12:30 wake as 11:30, so a job enqueued for 12:05 looks *later* than the planned wake, fails to interrupt the sleep, and runs late or falls into misfire recovery.
+
 `AddHeadlessJobs` supplies `TimeProvider.System` and the Version 7 `IGuidGenerator` only as replaceable DI defaults. Runtime services never fall back to ambient static clocks or random GUID creation. A `JobChain` therefore carries no persisted identity or time: `IJobScheduler.EnqueueAsync(JobChain, …)` maps it to an unstamped `TimeJobEntity` tree, and the manager add path assigns missing IDs, parent IDs, and one injected-clock timestamp across the complete graph before persistence.
 
 `SchedulerOptionsBuilder.NodeId` is used as the row owner only on the in-memory single-process path (defaults to `Environment.MachineName`). On the durable path this value is overridden by `JobsOwnerIdentityAdapter` which reads the `node@incarnation` string from `Headless.Coordination`; `NodeId` becomes a pre-registration display fallback only.
@@ -709,7 +729,7 @@ Cron pause/resume is durable and definition-specific. Pause atomically marks the
 
 Ordinary cron dispatch first commits the expected schedule position and its occurrence outcome through one persistence operation. A newly materialized occurrence is `Idle`, unowned, and unleased; only the later claim stamps `Queued`, owner, and lease using the provider's time authority. A crash after materialization therefore leaves exactly one claimable occurrence rather than an advanced position with a missing tick.
 
-Relational consumers must apply the Jobs migrations before deploying the new binary, including cancellation; cron pause/time-zone fields; and `ReconciledThroughUtc`, `NextDueUtc`, `MissedRunGraceSeconds`, `OnMissedRun`, nullable `EvaluationFingerprint`, `FingerprintFailureCount` (default 0), nullable `FingerprintRetryAfterUtc`, the retry/keyset index, and nullable occurrence `RecoveredFromUtc`. Legacy positions backfill to the uninitialized sentinel, so the activation gate anchors them at store time instead of replaying history. Quiesce every scheduler node during migration and start only new binaries afterward; mixed versions do not share the atomic materialization contract. The PostgreSQL demos and SQL Server conformance project include reference migrations; custom schemas require equivalent DDL and indexes. Refuse rollback once watermark, recovery, or fingerprint-defer state exists unless operators intentionally export or discard that state. Custom persistence providers must implement atomic pause/resume/update plus candidate selection, atomic materialization/recovery, bounded stale-fingerprint paging, fenced defer, and compare-and-advance before upgrading. Candidate selection additionally takes a `CronDispatchCandidateCursor? after` between `limit` and the cancellation token, which must be applied inside the query — before the limit truncates — on the same `(NextDueUtc, CronJobId)` ordering the result is sorted by. Run the shared schedule-position and recovery conformance suites for every custom provider.
+Relational consumers must apply the Jobs migrations before deploying the new binary, including cancellation; cron pause/time-zone fields; and `ReconciledThroughUtc`, `NextDueUtc`, `MissedRunGraceSeconds`, `OnMissedRun`, nullable `EvaluationFingerprint`, `FingerprintFailureCount` (default 0), nullable `FingerprintRetryAfterUtc`, the retry/keyset index, and nullable occurrence `RecoveredFromUtc`. Legacy positions backfill to the uninitialized sentinel, so the activation gate anchors them at store time instead of replaying history. Quiesce every scheduler node during migration and start only new binaries afterward; mixed versions do not share the atomic materialization contract. The PostgreSQL demos and SQL Server conformance project include reference migrations; custom schemas require equivalent DDL and indexes. Refuse rollback once watermark, recovery, or fingerprint-defer state exists unless operators intentionally export or discard that state. Custom persistence providers must implement atomic pause/resume/update plus candidate selection, atomic materialization/recovery, bounded stale-fingerprint paging, fenced defer, and compare-and-advance before upgrading. Candidate selection additionally takes a `CronDispatchCandidateCursor? after` between `limit` and the cancellation token, which must be applied inside the query — before the limit truncates — on the same `(NextDueUtc, CronJobId)` ordering the result is sorted by. Two further SPI members are store-clock contracts, not conveniences: `InsertCronJobsAsync(jobs, CronSchedulePositionSeeder, ct)` must read the store's **current statement** clock inside the inserting transaction, hand it to the seeder, persist the result, and return it (the caller arms its scheduler wake from the returned value, never from a locally recomputed projection); and `GetEarliestTimeJobsAsync` now returns `EarliestTimeJobs`, whose `StoreUtcNow` must be read in the same statement as the peek, matching `CronDispatchCandidates.StoreUtcNow`. Run the shared schedule-position and recovery conformance suites for every custom provider.
 
 Cron expressions use `RecurringJobOptions.TimeZoneId` when present and otherwise fall back to `SchedulerTimeZone`. Only validated IANA identifiers are accepted. Occurrences remain UTC; a spring-forward occurrence inside an invalid local-time gap is shifted forward by the gap, and an ambiguous fall-back occurrence runs once at the later UTC instant (the standard-time offset).
 
@@ -1136,6 +1156,8 @@ Provides persistence of time jobs and cron occurrences across restarts and acros
 ### Design Notes
 
 Lease acquisition, renewal, and reclaim on the EF path anchor `LockedUntil` to the **database clock** (`now()` on PostgreSQL, `GETUTCDATE()` on SQL Server), not the node's injected `TimeProvider`. Claims translate the clock expression inside the existing update statement; they do not execute a separate scalar query. In-memory has no database server and uses `TimeProvider`, so EF tests must not assume fake application time controls lease deadlines.
+
+Seeding a definition's schedule position is the one EF write that cannot use that translated clock. It runs inside a transaction — the caller's own, on the coordinated path — and PostgreSQL resolves the translated `DateTime.UtcNow` to `now()`, which is frozen at transaction start. The seed therefore reads the **current statement** clock (`clock_timestamp()` / `SYSUTCDATETIME()`) on the inserting connection. A backend with no known statement-clock function fails loud on that path rather than seeding from a transaction-start clock; the unseeded `InsertCronJobsAsync(jobs, ct)` overload still works there for callers that position their own rows.
 
 Cron materialization uses a read-committed transaction whose first statement is the fenced definition update. That write lock is the per-definition mutex held through occurrence-key arbitration and commit, so concurrent nodes converge on one occurrence without serializable-transaction aborts. Quiesce old scheduler binaries before migration because only providers implementing the new SPI participate in this mutex.
 

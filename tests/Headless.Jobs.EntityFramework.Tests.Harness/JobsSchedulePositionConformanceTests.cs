@@ -2,9 +2,11 @@
 
 using System.Data.Common;
 using Headless.Jobs;
+using Headless.Jobs.DbContextFactory;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
+using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Models;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -841,6 +843,301 @@ public abstract class JobsSchedulePositionConformanceTests<TFixture>(TFixture fi
                 "a resumed read must move past the definitions already examined instead of re-reading the same page"
             );
         pages.Should().Be(4, "three full pages of excluded definitions precede the page carrying the healthy one");
+    }
+
+    // ---------------------------------------------------------------------------------------------------------
+    // #817 — the schedule position is seeded at CREATION, from the store's clock, inside the inserting transaction.
+    // ---------------------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// A definition created through <c>ICronJobManager</c> is positioned by the write itself, anchored on the store's
+    /// instant — not left unpositioned for whichever node sees it first to anchor at THAT moment.
+    /// </summary>
+    /// <remarks>
+    /// The node clock is skewed years away, so an anchor derived from <c>TimeProvider</c> is unmistakable. This is the
+    /// outcome half; <see cref="a_coordinated_creation_is_anchored_at_insertion_not_at_transaction_start"/> is the
+    /// mechanism half, and it is the decisive one — a transaction-start clock still lands near real time and would
+    /// slip past the assertions here.
+    /// </remarks>
+    public virtual async Task creating_a_definition_seeds_its_position_from_the_store_clock()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost(
+            "seed-single",
+            timeProvider: new SkewedTimeProvider(TimeSpan.FromDays(-4000))
+        );
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        var manager = host.Services.GetRequiredService<ICronJobManager<CronJobEntity>>();
+
+        var beforeInsert = await _StoreUtcNowAsync(ct);
+        var definition = _Definition("0 0 * * * *");
+        await manager.AddAsync(definition, ct);
+        var afterInsert = await _StoreUtcNowAsync(ct);
+
+        var position = await fixture.ReadCronSchedulePositionAsync(definition.Id, ct);
+        position
+            .ReconciledThroughUtc.Should()
+            .BeOnOrAfter(beforeInsert)
+            .And.BeOnOrBefore(afterInsert, "the watermark is the store's instant at insertion, not this node's");
+        position
+            .NextDueUtc.Should()
+            .BeAfter(position.ReconciledThroughUtc)
+            .And.BeOnOrBefore(position.ReconciledThroughUtc.AddHours(1), "the projection is the next hourly tick");
+    }
+
+    /// <summary>The bulk path seeds every definition it writes, from one anchor, exactly as the single path does.</summary>
+    public virtual async Task creating_a_batch_of_definitions_seeds_every_position_from_the_store_clock()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost(
+            "seed-batch",
+            timeProvider: new SkewedTimeProvider(TimeSpan.FromDays(-4000))
+        );
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        var manager = host.Services.GetRequiredService<ICronJobManager<CronJobEntity>>();
+
+        var beforeInsert = await _StoreUtcNowAsync(ct);
+        var hourly = _Definition("0 0 * * * *");
+        var everyMinute = _Definition("0 * * * * *");
+        await manager.AddBatchAsync([hourly, everyMinute], ct);
+        var afterInsert = await _StoreUtcNowAsync(ct);
+
+        foreach (var id in new[] { hourly.Id, everyMinute.Id })
+        {
+            var position = await fixture.ReadCronSchedulePositionAsync(id, ct);
+            position.ReconciledThroughUtc.Should().BeOnOrAfter(beforeInsert).And.BeOnOrBefore(afterInsert);
+            position.NextDueUtc.Should().BeAfter(position.ReconciledThroughUtc);
+        }
+
+        var minutePosition = await fixture.ReadCronSchedulePositionAsync(everyMinute.Id, ct);
+        minutePosition
+            .NextDueUtc.Should()
+            .BeOnOrBefore(
+                minutePosition.ReconciledThroughUtc.AddMinutes(1),
+                "each definition's projection is derived from its own expression, not copied from a sibling"
+            );
+    }
+
+    /// <summary>The coordinated write path seeds from the store too — it is the path with no node clock to fall back on.</summary>
+    public virtual async Task a_coordinated_creation_seeds_its_position_from_the_store_clock()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildCoordinatedEnqueueHost<JobsDbContext>(
+            "seed-coordinated",
+            timeProvider: new SkewedTimeProvider(TimeSpan.FromDays(-4000))
+        );
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var manager = host.Services.GetRequiredService<ICronJobManager<CronJobEntity>>();
+            var definition = _Definition("0 0 * * * *");
+
+            var beforeInsert = await _StoreUtcNowAsync(ct);
+            await fixture.RunCoordinatedTransactionAsync(
+                host.Services,
+                async (_, _, innerCt) => await manager.AddAsync(definition, innerCt),
+                ct
+            );
+            var afterInsert = await _StoreUtcNowAsync(ct);
+
+            var position = await fixture.ReadCronSchedulePositionAsync(definition.Id, ct);
+            position.ReconciledThroughUtc.Should().BeOnOrAfter(beforeInsert).And.BeOnOrBefore(afterInsert);
+            position.NextDueUtc.Should().BeAfter(position.ReconciledThroughUtc);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    /// <summary>
+    /// R4a, the decisive guard. The coordinated write joins a transaction the caller already opened, and PostgreSQL
+    /// freezes <c>now()</c> at transaction start — so an EF-translated clock would anchor the definition BEFORE it
+    /// existed and manufacture an immediate false backlog for its missed-run policy to resolve. The anchor must come
+    /// from the current-statement clock (<c>clock_timestamp()</c> / <c>SYSUTCDATETIME()</c>).
+    /// </summary>
+    /// <remarks>
+    /// The gap is real elapsed time on purpose: it is the quantity under test, not a sequencing device. Nothing here
+    /// waits for a signal — the transaction is deliberately made old, and the seed must reflect that.
+    /// </remarks>
+    public virtual async Task a_coordinated_creation_is_anchored_at_insertion_not_at_transaction_start()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildCoordinatedEnqueueHost<JobsDbContext>("seed-old-transaction");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        var transactionAge = TimeSpan.FromSeconds(2);
+
+        try
+        {
+            var manager = host.Services.GetRequiredService<ICronJobManager<CronJobEntity>>();
+            var definition = _Definition("0 0 * * * *");
+            DateTime transactionStartClock = default;
+
+            await fixture.RunCoordinatedTransactionAsync(
+                host.Services,
+                async (connection, transaction, innerCt) =>
+                {
+                    // The value an EF-translated DateTime.UtcNow resolves to inside this transaction. On PostgreSQL it
+                    // is pinned here for the transaction's whole life; reading it first is what makes the assertion
+                    // below a real measurement rather than a race.
+                    transactionStartClock = await _ReadEnlistedClockAsync(connection, transaction, innerCt);
+                    await Task.Delay(transactionAge, innerCt);
+                    await manager.AddAsync(definition, innerCt);
+                },
+                ct
+            );
+
+            var position = await fixture.ReadCronSchedulePositionAsync(definition.Id, ct);
+
+            // Tolerance, because the two sides of this comparison are measured by DIFFERENT clocks: the boundary is
+            // a database instant plus a delay the HOST timed, while the seed is a database instant. Timer granularity
+            // and host/DB skew make the pair land a few milliseconds apart in either direction, which an exact
+            // BeOnOrAfter reports as a failure (observed: 4.5ms short of a 2,000ms boundary).
+            //
+            // It does not blunt the guard. The defect this test exists to catch — seeding from the transaction-start
+            // clock instead of the statement clock — puts the seed at transactionStartClock itself, a full
+            // transactionAge early. That is 2,000ms of signal against 100ms of tolerance: still caught by 20x. Raising
+            // transactionAge widens that ratio further if this ever proves too tight; loosening the tolerance toward
+            // transactionAge is what would make the assertion meaningless.
+            var clockComparisonTolerance = TimeSpan.FromMilliseconds(100);
+            position
+                .ReconciledThroughUtc.Should()
+                .BeOnOrAfter(
+                    transactionStartClock.Add(transactionAge).Subtract(clockComparisonTolerance),
+                    "the seed reads the statement clock, so an ambient transaction's age cannot make a definition "
+                        + "look as though it existed before it was created"
+                );
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    /// <summary>
+    /// AE3. A definition whose next tick falls between its creation and the first scheduler poll — a window a process
+    /// crash can widen arbitrarily — has that tick RECOVERED under its missed-run policy, not silently dropped.
+    /// </summary>
+    /// <remarks>
+    /// The crash is modelled the way it is observable: the creating host goes away without ever polling, and a second
+    /// host does the first selection. Without the seed the definition reaches that second host unpositioned, gets
+    /// anchored at THAT moment, and the tick in between is gone with no trace — no occurrence, no recovery record,
+    /// nothing to alert on.
+    /// </remarks>
+    public virtual async Task a_tick_between_creation_and_the_first_poll_is_recovered_not_skipped()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+
+        Guid definitionId;
+        DateTime seededNextDueUtc;
+
+        // The creating process. It never polls; it writes the definition and disappears.
+        using (var creator = fixture.BuildHost("ae3-creator"))
+        {
+            await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(creator, ct);
+            var manager = creator.Services.GetRequiredService<ICronJobManager<CronJobEntity>>();
+            var definition = _Definition("* * * * * *");
+            await manager.AddAsync(definition, ct);
+
+            definitionId = definition.Id;
+            var seeded = await fixture.ReadCronSchedulePositionAsync(definitionId, ct);
+            seededNextDueUtc = seeded.NextDueUtc;
+        }
+
+        // Let the seeded tick fall due, then hand the definition to a process that never saw it created.
+        var untilTick = seededNextDueUtc - await _StoreUtcNowAsync(ct);
+        if (untilTick > TimeSpan.Zero)
+        {
+            await Task.Delay(untilTick + TimeSpan.FromMilliseconds(300), ct);
+        }
+
+        using var restarted = fixture.BuildHost("ae3-restarted");
+        await restarted.StartAsync(ct);
+
+        try
+        {
+            var internalManager = restarted.Services.GetRequiredService<IInternalJobManager>();
+            await internalManager.GetNextJobs(ct);
+
+            var occurrences = await _Persistence(restarted)
+                .GetAllCronJobOccurrencesAsync(x => x.CronJobId == definitionId, ct);
+            occurrences
+                .Should()
+                .ContainSingle(
+                    "the tick seeded at creation is the one this poll owes, so it fires exactly once and is not "
+                        + "anchored away by the first node to see the definition"
+                )
+                .Which.ExecutionTime.Should()
+                .BeCloseTo(
+                    seededNextDueUtc,
+                    TimeSpan.FromMicroseconds(1),
+                    "the occurrence is the seeded tick itself, not some instant after the restart"
+                );
+
+            // At or past, not exactly at: whether the poll lands inside one tick (ordinary dispatch, watermark = the
+            // tick) or after several (coalesce recovery, watermark = the recovery instant) is a latency detail. The
+            // contract AE3 asserts is that the tick was ACCOUNTED FOR — the occurrence above proves it fired, and this
+            // proves nothing will reconsider it.
+            var position = await fixture.ReadCronSchedulePositionAsync(definitionId, ct);
+            position
+                .ReconciledThroughUtc.Should()
+                .BeOnOrAfter(seededNextDueUtc, "the watermark moved through the tick it resolved");
+        }
+        finally
+        {
+            await restarted.StopAsync(ct);
+        }
+    }
+
+    private static CronJobEntity _Definition(string expression) =>
+        new()
+        {
+            Id = Guid.NewGuid(),
+            Function = JobsCoordinationFixtureExtensions.CoordinatedFunctionName,
+            Description = JobsCoordinationFixtureExtensions.CoordinatedFunctionName,
+            Expression = expression,
+            Request = [],
+        };
+
+    /// <summary>The store's own instant, read on an independent autocommit connection.</summary>
+    private async Task<DateTime> _StoreUtcNowAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = fixture.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT {fixture.UtcNowSqlExpression}";
+
+        return _AsUtc(await command.ExecuteScalarAsync(cancellationToken));
+    }
+
+    /// <summary>The clock an EF-translated <c>DateTime.UtcNow</c> resolves to inside the supplied transaction.</summary>
+    private async Task<DateTime> _ReadEnlistedClockAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = $"SELECT {fixture.EfTranslatedDatabaseClockSql}";
+
+        return _AsUtc(await command.ExecuteScalarAsync(cancellationToken));
+    }
+
+    private static DateTime _AsUtc(object? value)
+    {
+        var instant = (DateTime)value!;
+
+        return instant.Kind == DateTimeKind.Utc ? instant : DateTime.SpecifyKind(instant, DateTimeKind.Utc);
     }
 
     private static IJobPersistenceProvider<TimeJobEntity, CronJobEntity> _Persistence(IHost host) =>

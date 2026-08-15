@@ -50,7 +50,7 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
                 first.GetEarliestTimeJobsAsync(ct),
                 second.GetEarliestTimeJobsAsync(ct)
             );
-            var (firstCandidates, secondCandidates) = (candidateSnapshots[0], candidateSnapshots[1]);
+            var (firstCandidates, secondCandidates) = (candidateSnapshots[0].Jobs, candidateSnapshots[1].Jobs);
             firstCandidates.Should().HaveCount(101);
             // Both snapshots must cover the same rows, or the disjointness assertion below would be vacuous.
             secondCandidates.Select(x => x.Id).Should().BeEquivalentTo(firstCandidates.Select(x => x.Id));

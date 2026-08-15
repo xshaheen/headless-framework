@@ -151,16 +151,22 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// <param name="cancellationToken">Token that aborts the query.</param>
     /// <returns>
     /// Every acquirable job whose execution time falls inside the earliest pending second, ordered by execution
-    /// time, with the child hierarchy attached; empty when nothing is due. No ownership or status is mutated, so
+    /// time, with the child hierarchy attached, together with the store instant the read observed;
+    /// <see cref="EarliestTimeJobs.Jobs"/> is empty when nothing is due. No ownership or status is mutated, so
     /// two nodes can observe the same batch — the claim step arbitrates.
     /// </returns>
     /// <remarks>
     /// The returned entities are the caller's to own and are consumed destructively by
     /// <see cref="QueueTimeJobsAsync"/>, which mutates them in place. Peek once per claim attempt; do not share the
     /// batch with another claimant or feed it to a second claim.
+    /// <para>
+    /// <see cref="EarliestTimeJobs.StoreUtcNow"/> must be read in the same statement as the peek, matching
+    /// <see cref="CronDispatchCandidates.StoreUtcNow"/>: the caller derives its sleep from it, so a node-clock value
+    /// here makes a skewed node oversleep past a job the store already considers due.
+    /// </para>
     /// </remarks>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
-    Task<TimeJobEntity[]> GetEarliestTimeJobsAsync(CancellationToken cancellationToken = default);
+    Task<EarliestTimeJobs> GetEarliestTimeJobsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Writes a single time job's execution outcome — status, timings, retry count, exception or skip reason —
@@ -1026,6 +1032,35 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// </remarks>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task<int> InsertCronJobsAsync(TCronJob[] jobs, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Inserts cron definitions and gives each one its initial schedule position in the same write, anchored on the
+    /// store's instant read inside the inserting transaction.
+    /// </summary>
+    /// <param name="jobs">The cron definitions to insert. Their position fields are overwritten by the seed.</param>
+    /// <param name="seeder">Derives one definition's position from the store anchor the provider supplies.</param>
+    /// <param name="cancellationToken">Token that aborts the write.</param>
+    /// <returns>The store anchor used, the rows written, and the earliest position persisted.</returns>
+    /// <remarks>
+    /// This is the runtime creation path; <see cref="InsertCronJobsAsync(TCronJob[],CancellationToken)"/> remains the
+    /// raw insert for callers that have already positioned their rows.
+    /// <para>
+    /// <b>The anchor must be the store's CURRENT STATEMENT clock</b> — PostgreSQL <c>clock_timestamp()</c>, SQL Server
+    /// <c>SYSUTCDATETIME()</c> — never a transaction-start clock. EF translates <c>DateTime.UtcNow</c> to PostgreSQL's
+    /// <c>now()</c>, which is frozen at transaction start, and the coordinated write path attaches to a caller
+    /// transaction that may have opened long before: seeding from that anchor would position a definition before it
+    /// existed and manufacture an immediate false backlog for its missed-run policy to process.
+    /// </para>
+    /// <para>
+    /// Implementations that cache <see cref="GetAllCronJobExpressionsAsync"/> must invalidate that entry here.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<CronSchedulePositionSeedResult> InsertCronJobsAsync(
+        TCronJob[] jobs,
+        CronSchedulePositionSeeder seeder,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// Overwrites existing cron definitions wholesale — the management edit path for changing an expression,
