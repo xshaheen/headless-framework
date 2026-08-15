@@ -87,6 +87,22 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// The jobs this node actually won, streamed as each claim commits. Rows lost to a concurrent claimer or
     /// changed since they were read are silently omitted — the caller must execute only what is yielded.
     /// </returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The caller's entities are mutated in place.</b> The yielded items are the very instances passed in
+    /// <paramref name="timeJobs"/>, not copies: on a won row the provider stamps this node's owner id, the granted
+    /// lease, <c>Queued</c> status, and the post-claim concurrency token onto the caller's object, and prunes its
+    /// child collection to the descendants the claim actually leased. Lost rows are left untouched.
+    /// </para>
+    /// <para>
+    /// A candidate collection therefore belongs to exactly one claim: <b>never share one across concurrent claims
+    /// and never reuse one after a claim.</b> The optimistic gate matches on the token each candidate carried when
+    /// it was read, so a second claimant reading from a mutated collection would present the winner's refreshed
+    /// token and could re-acquire a row that node already owns. Each node peeks through its own
+    /// <see cref="GetEarliestTimeJobsAsync"/> call and holds its own instances, which is what makes the gate
+    /// arbitrate correctly; re-attempting a sweep requires a fresh peek, not the previous array.
+    /// </para>
+    /// </remarks>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     IAsyncEnumerable<TimeJobEntity> QueueTimeJobsAsync(
         TimeJobEntity[] timeJobs,
@@ -138,6 +154,11 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// time, with the child hierarchy attached; empty when nothing is due. No ownership or status is mutated, so
     /// two nodes can observe the same batch — the claim step arbitrates.
     /// </returns>
+    /// <remarks>
+    /// The returned entities are the caller's to own and are consumed destructively by
+    /// <see cref="QueueTimeJobsAsync"/>, which mutates them in place. Peek once per claim attempt; do not share the
+    /// batch with another claimant or feed it to a second claim.
+    /// </remarks>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task<TimeJobEntity[]> GetEarliestTimeJobsAsync(CancellationToken cancellationToken = default);
 

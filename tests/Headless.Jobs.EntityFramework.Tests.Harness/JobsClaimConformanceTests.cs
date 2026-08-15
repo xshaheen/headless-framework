@@ -39,18 +39,33 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
             var executionTime = DateTime.UtcNow;
             var roots = Enumerable.Range(0, 101).Select(_ => _CreateJobTree(executionTime)).ToArray();
             await first.AddTimeJobsAsync(roots, ct);
-            var candidates = await first.GetEarliestTimeJobsAsync(ct);
-            candidates.Should().HaveCount(101);
+
+            // Each node peeks through its OWN provider, exactly as two real nodes do. Handing both workers one
+            // array would not test contention at all: a won claim mutates the caller's entities in place — owner,
+            // lease, status, and UpdatedAt, which IS the optimistic-concurrency token — so the loser would rebuild
+            // its candidate predicate from the winner's already-advanced token and re-match the row just claimed.
+            // Peeked concurrently, not one after the other: the peek window only reaches back one second from the
+            // seeded execution time, so a second serial round trip would spend that budget instead of testing it.
+            var candidateSnapshots = await Task.WhenAll(
+                first.GetEarliestTimeJobsAsync(ct),
+                second.GetEarliestTimeJobsAsync(ct)
+            );
+            var (firstCandidates, secondCandidates) = (candidateSnapshots[0], candidateSnapshots[1]);
+            firstCandidates.Should().HaveCount(101);
+            // Both snapshots must cover the same rows, or the disjointness assertion below would be vacuous.
+            secondCandidates.Select(x => x.Id).Should().BeEquivalentTo(firstCandidates.Select(x => x.Id));
 
             var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            var firstClaim = _ClaimTimeJobsAsync(first, candidates, gate.Task, ct);
-            var secondClaim = _ClaimTimeJobsAsync(second, candidates, gate.Task, ct);
+            var firstClaim = _ClaimTimeJobsAsync(first, firstCandidates, gate.Task, ct);
+            var secondClaim = _ClaimTimeJobsAsync(second, secondCandidates, gate.Task, ct);
             gate.SetResult();
             var claims = await Task.WhenAll(firstClaim, secondClaim);
 
             claims.Should().Contain(x => x.Length > 0);
             var initiallyClaimedIds = claims.SelectMany(x => x).Select(x => x.Id).ToHashSet();
-            var remainingCandidates = candidates.Where(x => !initiallyClaimedIds.Contains(x.Id)).ToArray();
+            // Sweeps the tail neither worker attempted (the claim batch is capped below the candidate count) through
+            // this node's own snapshot; those rows were never claimed, so their peeked tokens are still current.
+            var remainingCandidates = firstCandidates.Where(x => !initiallyClaimedIds.Contains(x.Id)).ToArray();
             var followUp = await first.QueueTimeJobsAsync(remainingCandidates, ct).ToArrayAsync(ct);
             var claimedRoots = claims.SelectMany(x => x).Concat(followUp).ToArray();
             claimedRoots.Should().OnlyHaveUniqueItems(x => x.Id);
@@ -718,6 +733,10 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
                 };
                 await first.AddTimeJobsAsync([job], ct);
                 var stored = await first.GetTimeJobByIdAsync(job.Id, ct);
+                // Deliberately ONE shared instance here, unlike the disjoint-roots scenario above: the winner's
+                // in-place write pre-refreshes the loser's CAS token, so only the acquire predicate's foreign-live-
+                // lease arm can reject it. That is exactly the same-clock-tick token residue the strategy documents
+                // (JobsClaimStrategy.ClaimTimeJobsAsync), and sharing is how this test reaches it. Do not "fix".
                 var peeked = new TimeJobEntity { Id = job.Id, UpdatedAt = stored!.UpdatedAt };
 
                 var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
