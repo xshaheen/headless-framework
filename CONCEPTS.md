@@ -213,6 +213,29 @@ The strengthen-only status a seam records in the posture manifest — precedence
 Propagating < Guarded < Enforcing — describing how strongly that seam handles tenant context.
 A later registration can raise a seam's posture but never lower it.
 
+### Tenant identifier
+
+The public, resolution-facing name of a tenant — a host label (`acme` from `acme.example.com`), a
+route value, or a header value. It may change over a tenant's life (rebrands, custom domains) and is
+normalized (trim, lowercase invariant) before any lookup. Distinct from the canonical tenant id;
+never used to key persistence or authorization. *Avoid:* tenant name (`Name` is display metadata);
+also avoid "identifier" for the canonical id — legacy xmldoc uses it loosely for
+`ICurrentTenant.Id`, but new code and docs reserve "identifier" for this public name.
+
+### Canonical tenant id
+
+The stable id that keys everything tenant-owned: ambient `ICurrentTenant.Id`, EF filters and write
+guards, Jobs/Messaging propagation, and per-tenant Settings/Features/Permissions state. The JWT
+tenant claim carries it directly; identifier-based resolution must map to it before ambient context
+is set.
+
+### Tenant catalog
+
+The opt-in read surface that maps tenant identifiers to canonical tenant ids and tenant metadata
+(`TenantInfo`), planned in issue #253 (see `docs/plans/2026-08-09-001-feat-tenant-catalog-plan.md`).
+Owns identity, routing, and lifecycle (`IsEnabled`) only — per-tenant configuration stays in
+Settings/Features/Permissions keyed by the canonical id.
+
 ## Jobs (tenancy)
 
 ### System job
