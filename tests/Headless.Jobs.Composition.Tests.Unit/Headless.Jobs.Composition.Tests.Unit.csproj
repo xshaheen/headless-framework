@@ -17,6 +17,7 @@
     <ProjectReference Include="..\..\src\Headless.DistributedLocks.Core\Headless.DistributedLocks.Core.csproj" />
     <ProjectReference Include="..\..\src\Headless.DistributedLocks.InMemory\Headless.DistributedLocks.InMemory.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
+    <ProjectReference Include="..\Headless.Jobs.Tests.Harness\Headless.Jobs.Tests.Harness.csproj" />
     <ProjectReference
       Include="..\..\test-assets\Headless.Jobs.DiscoveryFixture\Headless.Jobs.DiscoveryFixture.csproj"
       ReferenceOutputAssembly="false"

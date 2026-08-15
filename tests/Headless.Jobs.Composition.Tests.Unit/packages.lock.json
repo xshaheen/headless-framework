@@ -814,6 +814,18 @@
           "Microsoft.EntityFrameworkCore.Relational": "[10.0.9, )"
         }
       },
+      "headless.jobs.tests.harness": {
+        "type": "Project",
+        "dependencies": {
+          "AwesomeAssertions": "[9.4.0, )",
+          "AwesomeAssertions.Json": "[9.0.0, )",
+          "Bogus": "[35.6.5, )",
+          "DeepCloner": "[0.10.4, )",
+          "Headless.Jobs.Core": "[1.0.0, )",
+          "Headless.Testing": "[1.0.0, )",
+          "NSubstitute": "[5.3.0, )"
+        }
+      },
       "headless.messaging.abstractions": {
         "type": "Project",
         "dependencies": {

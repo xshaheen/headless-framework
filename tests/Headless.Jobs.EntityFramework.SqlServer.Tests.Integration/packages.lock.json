@@ -972,6 +972,7 @@
           "Headless.Coordination.Core": "[1.0.0, )",
           "Headless.Jobs.Core": "[1.0.0, )",
           "Headless.Jobs.EntityFramework": "[1.0.0, )",
+          "Headless.Jobs.Tests.Harness": "[1.0.0, )",
           "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
           "Headless.Messaging.Core": "[1.0.0, )",
           "Headless.Messaging.InMemory": "[1.0.0, )",
@@ -979,6 +980,18 @@
           "Headless.Testing.Testcontainers": "[1.0.0, )",
           "Microsoft.EntityFrameworkCore.Relational": "[10.0.9, )",
           "Microsoft.Extensions.Hosting": "[10.0.9, )",
+          "NSubstitute": "[5.3.0, )"
+        }
+      },
+      "headless.jobs.tests.harness": {
+        "type": "Project",
+        "dependencies": {
+          "AwesomeAssertions": "[9.4.0, )",
+          "AwesomeAssertions.Json": "[9.0.0, )",
+          "Bogus": "[35.6.5, )",
+          "DeepCloner": "[0.10.4, )",
+          "Headless.Jobs.Core": "[1.0.0, )",
+          "Headless.Testing": "[1.0.0, )",
           "NSubstitute": "[5.3.0, )"
         }
       },

@@ -1622,9 +1622,9 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
         var occurrences = dbContext.Set<CronJobOccurrenceEntity<TCronJob>>();
         var cronJobId = request.CronJobId;
-        var windowStart = request.ObservedReconciledThroughUtc;
-        var boundedInspection = request.Policy is MissedRunPolicy.Coalesce && request.EvaluationSaturated;
-        var windowEnd = boundedInspection ? request.BoundedProgressThroughUtc : request.RecoveredThroughUtc;
+        var window = CronRecoveryPlanner.GetInspectionWindow(request);
+        var windowStart = window.StartExclusiveUtc;
+        var windowEnd = window.EndInclusiveUtc;
 
         // Every row in the missed window, whatever its state: the non-terminal ones are the policy's to resolve, and
         // the terminal ones still matter because a terminal row occupying the earliest missed instant means that
@@ -1641,117 +1641,95 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ToArrayAsync(cancellationToken)
             .ConfigureAwait(false);
 
+        // The decision itself is storage-agnostic and shared with every other provider (#834). What remains below is
+        // this backend's mechanics: fenced writes inside the transaction already open.
+        var plan = CronRecoveryPlanner.CreatePlan(request, inWindow);
         CronJobOccurrenceEntity<TCronJob>? coalescedRun = null;
         var preservedOccurrenceId = Guid.Empty;
 
-        if (request.Policy is MissedRunPolicy.Coalesce)
+        foreach (var step in plan.RunSteps)
         {
-            // R18 owes the backlog exactly one run; R7 forbids duplicating an instant an executing or terminal row
-            // already accounts for. Reconciled by walking the missed instants in schedule order and materializing at
-            // the FIRST unaccounted-for one — an occupied instant is stepped past (AE9, AE10), never duplicated, and
-            // only a fully-accounted-for backlog produces no run at all.
-            foreach (var missedInstant in request.MissedInstantsUtc)
+            var stepInstant = step.ExecutionTimeUtc;
+
+            if (step.Kind is CronRecoveryRunStepKind.Create)
             {
-                var rowsAtInstant = inWindow.Where(x => x.ExecutionTime == missedInstant).ToArray();
-
-                // A live row takes precedence over a terminal one sharing the instant.
-                var atInstant = rowsAtInstant
-                    .OrderBy(CronOccurrenceAccounting.LiveFirstRank)
-                    .ThenBy(x => x.CreatedAt)
-                    .ThenBy(x => x.Id)
-                    .FirstOrDefault();
-
-                // KTD1: an instant whose rows NONE account for — a seeding migration retired the only one without a
-                // replacement — still owes its run, so it is materialized exactly as an empty instant is. Testing
-                // accounting rather than mere presence is what keeps recovery and the claim path from disagreeing
-                // about the same row. The null test is implied by the accounting one (an empty instant accounts for
-                // nothing) and is stated only so the repurpose branch below sees a non-null candidate.
-                if (atInstant is null || !CronOccurrenceAccounting.IsInstantAccountedFor(rowsAtInstant))
+                coalescedRun = new CronJobOccurrenceEntity<TCronJob>
                 {
-                    coalescedRun = new CronJobOccurrenceEntity<TCronJob>
-                    {
-                        Id = request.CoalescedOccurrenceId,
-                        CronJobId = cronJobId,
-                        Status = JobStatus.Idle,
-                        OwnerId = null,
-                        LockedUntil = null,
-                        ExecutionTime = missedInstant,
-                        RecoveredFromUtc = missedInstant,
-                        OnNodeDeath = request.OnNodeDeath,
-                        CreatedAt = request.OperationTimeUtc,
-                        UpdatedAt = request.OperationTimeUtc,
-                    };
+                    Id = step.OccurrenceId,
+                    CronJobId = cronJobId,
+                    Status = JobStatus.Idle,
+                    OwnerId = null,
+                    LockedUntil = null,
+                    ExecutionTime = stepInstant,
+                    RecoveredFromUtc = stepInstant,
+                    OnNodeDeath = request.OnNodeDeath,
+                    CreatedAt = request.OperationTimeUtc,
+                    UpdatedAt = request.OperationTimeUtc,
+                };
 
-                    await occurrences.AddAsync(coalescedRun, cancellationToken).ConfigureAwait(false);
-                    await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-                    dbContext.Entry(coalescedRun).State = EntityState.Detached;
-                    preservedOccurrenceId = coalescedRun.Id;
-                    break;
-                }
-
-                if (atInstant.IsRepurposable)
-                {
-                    // KTD5: revoking ownership is the whole mechanism. The claim path's in-progress transition
-                    // already requires OwnerId == owner, so a prior owner that was holding this row simply fails
-                    // that predicate and drops it — no new machinery, and no cost on the normal execution path.
-                    //
-                    // The status predicate makes this a CAS rather than a blind write: the window read above takes
-                    // no lock, so the row can begin executing between the read and this statement. Zero rows
-                    // affected means exactly that — the instant is now accounted for, and the walk steps past it.
-                    var candidateId = atInstant.Id;
-                    var repurposed = await occurrences
-                        .Where(x => x.Id == candidateId && (x.Status == JobStatus.Idle || x.Status == JobStatus.Queued))
-                        .ExecuteUpdateAsync(
-                            setter =>
-                                setter
-                                    .SetProperty(x => x.Status, JobStatus.Idle)
-                                    .SetProperty(x => x.OwnerId, _ => null)
-                                    .SetProperty(x => x.LockedUntil, _ => null)
-                                    .SetProperty(x => x.RecoveredFromUtc, missedInstant)
-                                    .SetProperty(x => x.UpdatedAt, request.OperationTimeUtc),
-                            cancellationToken
-                        )
-                        .ConfigureAwait(false);
-
-                    if (repurposed == 0)
-                    {
-                        continue;
-                    }
-
-                    preservedOccurrenceId = atInstant.Id;
-                    coalescedRun = new CronJobOccurrenceEntity<TCronJob>
-                    {
-                        Id = atInstant.Id,
-                        CronJobId = cronJobId,
-                        Status = JobStatus.Idle,
-                        OwnerId = null,
-                        LockedUntil = null,
-                        ExecutionTime = missedInstant,
-                        RecoveredFromUtc = missedInstant,
-                        OnNodeDeath = request.OnNodeDeath,
-                        CreatedAt = atInstant.CreatedAt,
-                        UpdatedAt = request.OperationTimeUtc,
-                    };
-                    break;
-                }
-
-                // Executing or terminal: the instant is accounted for — step past it (AE9, AE10).
+                await occurrences.AddAsync(coalescedRun, cancellationToken).ConfigureAwait(false);
+                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                dbContext.Entry(coalescedRun).State = EntityState.Detached;
+                preservedOccurrenceId = coalescedRun.Id;
+                break;
             }
+
+            // KTD5: revoking ownership is the whole mechanism. The claim path's in-progress transition already
+            // requires OwnerId == owner, so a prior owner that was holding this row simply fails that predicate and
+            // drops it — no new machinery, and no cost on the normal execution path.
+            //
+            // The status predicate makes this a CAS rather than a blind write: the window read above takes no lock,
+            // so the row can begin executing between the read and this statement. Zero rows affected means exactly
+            // that — the instant is now accounted for, and the walk moves on to the planner's next step.
+            var candidateId = step.OccurrenceId;
+            var repurposed = await occurrences
+                .Where(x => x.Id == candidateId && (x.Status == JobStatus.Idle || x.Status == JobStatus.Queued))
+                .ExecuteUpdateAsync(
+                    setter =>
+                        setter
+                            .SetProperty(x => x.Status, JobStatus.Idle)
+                            .SetProperty(x => x.OwnerId, _ => null)
+                            .SetProperty(x => x.LockedUntil, _ => null)
+                            .SetProperty(x => x.RecoveredFromUtc, stepInstant)
+                            .SetProperty(x => x.UpdatedAt, request.OperationTimeUtc),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            if (repurposed == 0)
+            {
+                continue;
+            }
+
+            preservedOccurrenceId = candidateId;
+            coalescedRun = new CronJobOccurrenceEntity<TCronJob>
+            {
+                Id = candidateId,
+                CronJobId = cronJobId,
+                Status = JobStatus.Idle,
+                OwnerId = null,
+                LockedUntil = null,
+                ExecutionTime = stepInstant,
+                RecoveredFromUtc = stepInstant,
+                OnNodeDeath = request.OnNodeDeath,
+                CreatedAt = step.ExistingCreatedAt!.Value,
+                UpdatedAt = request.OperationTimeUtc,
+            };
+            break;
         }
 
         // Everything else not yet executing in the window is retired: under skip because nothing may run, under
-        // coalesce because the single coalesced run already stands in for the whole backlog.
-        // Do not resolve outside a saturated coalesce page until that page has found the one run owed by the backlog.
-        // An unexamined N+1 Idle row is the next pass's coalesce candidate, not part of the exhausted prefix.
-        var resolutionEnd =
-            request.Policy is MissedRunPolicy.Coalesce && request.EvaluationSaturated && coalescedRun is null
-                ? request.BoundedProgressThroughUtc
-                : request.RecoveredThroughUtc;
+        // coalesce because the single coalesced run already stands in for the whole backlog. Which window that is —
+        // the full recovery span, or only a saturated page's examined prefix — is the planner's call, not this
+        // provider's.
+        var resolution = coalescedRun is null ? plan.WhenNoRunEstablished : plan.WhenRunEstablished;
+        var resolutionStart = resolution.RetireFromExclusiveUtc;
+        var resolutionEnd = resolution.RetireThroughInclusiveUtc;
         var toSkip = await occurrences
             .AsNoTracking()
             .Where(x =>
                 x.CronJobId == cronJobId
-                && x.ExecutionTime > windowStart
+                && x.ExecutionTime > resolutionStart
                 && x.ExecutionTime <= resolutionEnd
                 && x.Id != preservedOccurrenceId
                 && (x.Status == JobStatus.Idle || x.Status == JobStatus.Queued)
@@ -1784,13 +1762,12 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 .ConfigureAwait(false);
         }
 
-        var boundedPrefixOnly =
-            request.Policy is MissedRunPolicy.Coalesce && request.EvaluationSaturated && coalescedRun is null;
-
-        if (boundedPrefixOnly)
+        // The fence above already wrote the full-recovery position, which is what WhenRunEstablished asks for. Only a
+        // resolution that differs from it — a saturated page confined to its examined prefix — needs a second write.
+        if (resolution.ReconciledThroughUtc != recoveredThroughUtc || resolution.NextDueUtc != nextDueUtc)
         {
-            recoveredThroughUtc = request.BoundedProgressThroughUtc;
-            nextDueUtc = request.NextDueAfterBoundedProgressUtc;
+            recoveredThroughUtc = resolution.ReconciledThroughUtc;
+            nextDueUtc = resolution.NextDueUtc;
 
             await definitions
                 .Where(x => x.Id == cronJobId)

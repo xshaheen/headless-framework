@@ -649,6 +649,12 @@ public static class JobsCoordinationFixtureExtensions
     /// only way to seed a value a newer binary could have written, which the rule must fail closed on rather than
     /// throw over — an enum parameter cannot express it.
     /// </param>
+    /// <param name="createdAtOffsetSeconds">
+    /// Stamps <c>CreatedAt</c>/<c>UpdatedAt</c> at the store clock shifted by this many seconds instead of at the
+    /// store clock itself. Required whenever a test depends on the RELATIVE creation order of rows sharing an
+    /// instant: <c>SYSUTCDATETIME()</c> can return the same value for two consecutive inserts, and the tie then falls
+    /// to a random <c>Id</c>, which makes the read a coin flip rather than an assertion.
+    /// </param>
     public static async Task SeedCronOccurrenceAsync(
         this IJobsCoordinationFixture fixture,
         Guid id,
@@ -661,19 +667,23 @@ public static class JobsCoordinationFixtureExtensions
         CancellationToken cancellationToken,
         string? skippedReason = null,
         CronOccurrenceDisposition disposition = CronOccurrenceDisposition.Accounted,
-        string? rawStatus = null
+        string? rawStatus = null,
+        int? createdAtOffsetSeconds = null
     )
     {
         await using var connection = fixture.CreateConnection();
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
+        var createdAtSql = createdAtOffsetSeconds is { } offset
+            ? fixture.UtcNowOffsetSqlExpression(offset)
+            : fixture.UtcNowSqlExpression;
         // ExecutionTime is an explicit parameter, not now(): the (CronJobId, ExecutionTime) unique index requires
         // distinct execution times when several occurrences of the same cron are seeded together.
         command.CommandText =
             $"INSERT INTO {fixture.QualifiedCronJobOccurrencesTable} ({_CronOccurrenceInsertColumns}, "
             + "\"SkippedReason\", \"Disposition\") "
             + "VALUES (@id, @cronJobId, @status, @ownerId, @executionTime, "
-            + $"{fixture.UtcNowSqlExpression}, {fixture.UtcNowSqlExpression}, 0, 0, @onNodeDeath, @lockedUntil, "
+            + $"{createdAtSql}, {createdAtSql}, 0, 0, @onNodeDeath, @lockedUntil, "
             + "@skippedReason, @disposition);";
 
         AddParameter(command, "@id", id);
