@@ -24,7 +24,7 @@ namespace Headless.Jobs;
 internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>(
     IDbContextFactory<TDbContext> dbContextFactory,
     TimeProvider timeProvider,
-    [FromKeyedServices(SequentialGuidType.SqlServer)] IGuidGenerator guidGenerator,
+    [FromKeyedServices(SetupSqlServerJobsEntityFramework.GuidGeneratorKey)] IGuidGenerator guidGenerator,
     IJobsOwnerIdentity ownerIdentity,
     SchedulerOptionsBuilder optionsBuilder,
     ILogger<SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>> logger

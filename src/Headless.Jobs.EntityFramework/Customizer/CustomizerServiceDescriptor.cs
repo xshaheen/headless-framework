@@ -131,6 +131,17 @@ internal static class ServiceBuilder
         // coordinated write where the provider's static factory would surface it as a TypeInitializationException.
         CoordinatedWriteContextFactory.RequireOptionsConstructor<TContext>();
 
+        // The provider package that installs a native claim strategy also declares that backend's GUID ordering, so
+        // every EF write path stamps ids with the generator the native strategy already resolves by key: SQL Server
+        // gets the comb its clustered `uniqueidentifier` key needs, PostgreSQL keeps UUIDv7. Generic EF registers no
+        // backend key and keeps the unkeyed default.
+        IGuidGenerator resolveGuidGenerator(IServiceProvider provider)
+        {
+            return builder.GuidGeneratorKey is { } guidGeneratorKey
+                ? provider.GetRequiredKeyedService<IGuidGenerator>(guidGeneratorKey)
+                : provider.GetRequiredService<IGuidGenerator>();
+        }
+
         var claimStrategyServiceType = typeof(IJobsClaimStrategy<TTimeJob, TCronJob>);
         var claimStrategyImplementationType =
             builder.ClaimStrategyTypeDefinition?.MakeGenericType(typeof(TContext), typeof(TTimeJob), typeof(TCronJob))
@@ -170,7 +181,13 @@ internal static class ServiceBuilder
                         typeof(TTimeJob),
                         typeof(TCronJob)
                     );
-                    var casStrategy = ActivatorUtilities.CreateInstance(provider, casStrategyType);
+                    // The CAS strategy is the fallback half of the compatible pair, so it writes into the same
+                    // backend as the native half and must key its rows the same way.
+                    var casStrategy = ActivatorUtilities.CreateInstance(
+                        provider,
+                        casStrategyType,
+                        resolveGuidGenerator(provider)
+                    );
                     var compatibleStrategyType = typeof(CompatibleJobsClaimStrategy<,,>).MakeGenericType(
                         typeof(TContext),
                         typeof(TTimeJob),
@@ -193,7 +210,7 @@ internal static class ServiceBuilder
                 provider.GetRequiredService<IDbContextFactory<TContext>>(),
                 coordinatedWriteOptionsFactory(provider),
                 provider.GetRequiredService<TimeProvider>(),
-                provider.GetRequiredService<IGuidGenerator>(),
+                resolveGuidGenerator(provider),
                 provider.GetRequiredService<IJobsOwnerIdentity>(),
                 provider.GetRequiredService<SchedulerOptionsBuilder>(),
                 provider.GetService<ICache>(),
