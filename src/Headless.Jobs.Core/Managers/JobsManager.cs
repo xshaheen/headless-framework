@@ -495,17 +495,12 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
             if (scheduleChanged && !current.IsPaused)
             {
-                nextOccurrenceFactory = scheduleAnchorUtc =>
-                {
-                    var storeAnchoredNext = _cronScheduleCache.GetNextOccurrenceOrDefault(
-                        cronJob.Expression,
-                        scheduleAnchorUtc,
-                        cronJob.TimeZoneId
-                    );
-                    return storeAnchoredNext is null
-                        ? null
-                        : CronJobOccurrenceFactory.Create(cronJob, storeAnchoredNext.Value, now, guidGenerator);
-                };
+                nextOccurrenceFactory = CronJobOccurrenceFactory.CreateStoreAnchored(
+                    cronJob,
+                    _cronScheduleCache,
+                    now,
+                    guidGenerator
+                );
             }
 
             var updated = await persistenceProvider
@@ -1405,17 +1400,12 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
             if (scheduleChanged && !current.IsPaused)
             {
-                nextOccurrenceFactory = scheduleAnchorUtc =>
-                {
-                    var storeAnchoredNext = _cronScheduleCache.GetNextOccurrenceOrDefault(
-                        cronJob.Expression,
-                        scheduleAnchorUtc,
-                        cronJob.TimeZoneId
-                    );
-                    return storeAnchoredNext is null
-                        ? null
-                        : CronJobOccurrenceFactory.Create(cronJob, storeAnchoredNext.Value, now, guidGenerator);
-                };
+                nextOccurrenceFactory = CronJobOccurrenceFactory.CreateStoreAnchored(
+                    cronJob,
+                    _cronScheduleCache,
+                    now,
+                    guidGenerator
+                );
             }
 
             updates.Add(new CronJobAtomicUpdate<TCronJob>(cronJob, current.ScheduleRevision, nextOccurrenceFactory));

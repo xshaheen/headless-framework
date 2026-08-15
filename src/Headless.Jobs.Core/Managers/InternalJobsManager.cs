@@ -1149,17 +1149,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
             .ResumeCronJobAsync(
                 definition.Id,
                 definition.ScheduleRevision,
-                scheduleAnchorUtc =>
-                {
-                    var storeAnchoredNext = cronScheduleCache.GetNextOccurrenceOrDefault(
-                        definition.Expression,
-                        scheduleAnchorUtc,
-                        definition.TimeZoneId
-                    );
-                    return storeAnchoredNext is null
-                        ? null
-                        : CronJobOccurrenceFactory.Create(definition, storeAnchoredNext.Value, now, guidGenerator);
-                },
+                CronJobOccurrenceFactory.CreateStoreAnchored(definition, cronScheduleCache, now, guidGenerator),
                 now,
                 cancellationToken
             )
