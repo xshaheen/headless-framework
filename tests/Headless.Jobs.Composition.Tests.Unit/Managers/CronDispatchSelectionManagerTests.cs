@@ -234,9 +234,9 @@ public sealed class CronDispatchSelectionManagerTests : TestBase
         var due = _Definition(nextDue: _Now);
         await provider.InsertCronJobsAsync([due], AbortToken);
 
-        var (timeRemaining, functions) = await manager.GetNextJobs(AbortToken);
+        var (wake, functions) = await manager.GetNextJobs(AbortToken);
 
-        timeRemaining.Should().Be(TimeSpan.Zero, "the store already authorized and claimed this occurrence as due");
+        wake.Remaining.Should().Be(TimeSpan.Zero, "the store already authorized and claimed this occurrence as due");
         functions.Should().ContainSingle();
         functions[0].JobId.Should().NotBeEmpty();
         functions[0].FunctionName.Should().Be(due.Function);
@@ -253,9 +253,9 @@ public sealed class CronDispatchSelectionManagerTests : TestBase
         var future = _Definition(nextDue: _Now.AddMinutes(10));
         await provider.InsertCronJobsAsync([future], AbortToken);
 
-        var (timeRemaining, functions) = await manager.GetNextJobs(AbortToken);
+        var (wake, functions) = await manager.GetNextJobs(AbortToken);
 
-        timeRemaining.Should().Be(TimeSpan.FromMinutes(10));
+        wake.Remaining.Should().Be(TimeSpan.FromMinutes(10));
         functions.Should().BeEmpty();
     }
 
@@ -411,9 +411,9 @@ public sealed class CronDispatchSelectionManagerTests : TestBase
         await provider.InsertCronJobsAsync([projection, storedDefinition], AbortToken);
         await provider.InsertCronJobOccurrencesAsync([storedOccurrence], AbortToken);
 
-        var (timeRemaining, functions) = await manager.GetNextJobs(AbortToken);
+        var (wake, functions) = await manager.GetNextJobs(AbortToken);
 
-        timeRemaining.Should().Be(TimeSpan.FromMinutes(10));
+        wake.Remaining.Should().Be(TimeSpan.FromMinutes(10));
         functions.Should().BeEmpty("the stored occurrence is later than the earlier projection wake");
         var persisted = (await provider.GetAllCronJobOccurrencesAsync(x => x.Id == storedOccurrence.Id, AbortToken))
             .Should()

@@ -305,11 +305,16 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
         await act.Should().ThrowAsync<InvalidOperationException>();
         await sut
             .Persistence.DidNotReceive()
-            .InsertCronJobsAsync(Arg.Any<CronJobEntity[]>(), Arg.Any<CancellationToken>());
+            .InsertCronJobsAsync(
+                Arg.Any<CronJobEntity[]>(),
+                Arg.Any<CronSchedulePositionSeeder>(),
+                Arg.Any<CancellationToken>()
+            );
         await sut
             .Writer.DidNotReceive()
             .WriteCronJobsAsync(
                 Arg.Any<CronJobEntity[]>(),
+                Arg.Any<CronSchedulePositionSeeder>(),
                 Arg.Any<IRelationalCommitContext>(),
                 Arg.Any<CancellationToken>()
             );
@@ -325,7 +330,11 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
         await act.Should().ThrowAsync<InvalidOperationException>();
         await sut
             .Persistence.DidNotReceive()
-            .InsertCronJobsAsync(Arg.Any<CronJobEntity[]>(), Arg.Any<CancellationToken>());
+            .InsertCronJobsAsync(
+                Arg.Any<CronJobEntity[]>(),
+                Arg.Any<CronSchedulePositionSeeder>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -401,11 +410,16 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
         await act.Should().ThrowAsync<InvalidOperationException>();
         await sut
             .Persistence.DidNotReceive()
-            .InsertCronJobsAsync(Arg.Any<CronJobEntity[]>(), Arg.Any<CancellationToken>());
+            .InsertCronJobsAsync(
+                Arg.Any<CronJobEntity[]>(),
+                Arg.Any<CronSchedulePositionSeeder>(),
+                Arg.Any<CancellationToken>()
+            );
         await sut
             .Writer.DidNotReceive()
             .WriteCronJobsAsync(
                 Arg.Any<CronJobEntity[]>(),
+                Arg.Any<CronSchedulePositionSeeder>(),
                 Arg.Any<IRelationalCommitContext>(),
                 Arg.Any<CancellationToken>()
             );
@@ -422,7 +436,11 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
         await act.Should().ThrowAsync<InvalidOperationException>();
         await sut
             .Persistence.DidNotReceive()
-            .InsertCronJobsAsync(Arg.Any<CronJobEntity[]>(), Arg.Any<CancellationToken>());
+            .InsertCronJobsAsync(
+                Arg.Any<CronJobEntity[]>(),
+                Arg.Any<CronSchedulePositionSeeder>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -696,7 +714,13 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
         var result = await sut.Cron.AddAsync(_CronJob(), AbortToken);
 
         result.Should().NotBeNull();
-        await sut.Persistence.Received(1).InsertCronJobsAsync(Arg.Any<CronJobEntity[]>(), Arg.Any<CancellationToken>());
+        await sut
+            .Persistence.Received(1)
+            .InsertCronJobsAsync(
+                Arg.Any<CronJobEntity[]>(),
+                Arg.Any<CronSchedulePositionSeeder>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -712,6 +736,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
             .Writer.Received(1)
             .WriteCronJobsAsync(
                 Arg.Is<CronJobEntity[]>(a => a.Length == 1 && a[0].Id == cron.Id),
+                Arg.Any<CronSchedulePositionSeeder>(),
                 Arg.Any<IRelationalCommitContext>(),
                 Arg.Any<CancellationToken>()
             );
@@ -721,7 +746,11 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
         await sut.Writer.DidNotReceive().InvalidateCronExpressionsCacheAsync();
         await sut
             .Persistence.DidNotReceive()
-            .InsertCronJobsAsync(Arg.Any<CronJobEntity[]>(), Arg.Any<CancellationToken>());
+            .InsertCronJobsAsync(
+                Arg.Any<CronJobEntity[]>(),
+                Arg.Any<CronSchedulePositionSeeder>(),
+                Arg.Any<CancellationToken>()
+            );
         sut.Scheduler.DidNotReceive().RestartIfNeeded(Arg.Any<DateTime>());
 
         await sut.Coordinator.DrainCommitAsync(AbortToken);
@@ -745,6 +774,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
             .Writer.Received(1)
             .WriteCronJobsAsync(
                 Arg.Is<CronJobEntity[]>(a => a.Length == 2 && a[0].Id == crons[0].Id && a[1].Id == crons[1].Id),
+                Arg.Any<CronSchedulePositionSeeder>(),
                 Arg.Any<IRelationalCommitContext>(),
                 Arg.Any<CancellationToken>()
             );
@@ -754,7 +784,11 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
         await sut.Writer.DidNotReceive().InvalidateCronExpressionsCacheAsync();
         await sut
             .Persistence.DidNotReceive()
-            .InsertCronJobsAsync(Arg.Any<CronJobEntity[]>(), Arg.Any<CancellationToken>());
+            .InsertCronJobsAsync(
+                Arg.Any<CronJobEntity[]>(),
+                Arg.Any<CronSchedulePositionSeeder>(),
+                Arg.Any<CancellationToken>()
+            );
         sut.Scheduler.DidNotReceive().RestartIfNeeded(Arg.Any<DateTime>());
         await sut.Notification.DidNotReceive().AddCronJobNotifyAsync(Arg.Any<CronJobEntity>());
 
@@ -878,6 +912,62 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
         };
     }
 
+    [Fact]
+    public async Task cron_direct_add_persists_the_store_anchored_position_and_arms_the_restart_from_it()
+    {
+        // #817 + R4b. The definition is positioned from the anchor the STORE reported inside the inserting
+        // transaction, and the scheduler wake is armed from what came back — not from a projection this node computed
+        // off its own clock before persisting. Under skew those two disagree, and the row is the one that matters.
+        var nodeClock = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var sut = _CreateSut(CoordinatorMode.None, withWriter: false, timeProvider: nodeClock);
+        var cron = _CronJob();
+
+        await sut.Cron.AddAsync(cron, AbortToken);
+
+        // Expression is "0 0 0 * * *" (midnight daily), so the first occurrence after the 2031-03-04T05:06:07 anchor
+        // is 2031-03-05T00:00:00 — a value unreachable from the node clock.
+        cron.ReconciledThroughUtc.Should().Be(_StoreAnchorUtc);
+        cron.NextDueUtc.Should().Be(new DateTime(2031, 3, 5, 0, 0, 0, DateTimeKind.Utc));
+        cron.EvaluationFingerprint.Should().NotBeNullOrEmpty();
+        sut.Scheduler.Received(1).RestartIfNeeded(new DateTime(2031, 3, 5, 0, 0, 0, DateTimeKind.Utc));
+    }
+
+    [Fact]
+    public async Task cron_batch_direct_add_arms_the_restart_from_the_earliest_persisted_position()
+    {
+        var nodeClock = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var sut = _CreateSut(CoordinatorMode.None, withWriter: false, timeProvider: nodeClock);
+        var hourly = _CronJob();
+        hourly.Expression = "0 0 * * * *";
+        var daily = _CronJob();
+        var crons = new List<CronJobEntity> { daily, hourly };
+
+        await sut.Cron.AddBatchAsync(crons, AbortToken);
+
+        hourly.ReconciledThroughUtc.Should().Be(_StoreAnchorUtc);
+        daily.ReconciledThroughUtc.Should().Be(_StoreAnchorUtc);
+        // The hourly definition fires first, so it — not the batch's first element — decides the wake.
+        sut.Scheduler.Received(1).RestartIfNeeded(new DateTime(2031, 3, 4, 6, 0, 0, DateTimeKind.Utc));
+    }
+
+    [Fact]
+    public async Task coordinated_cron_add_defers_a_restart_armed_from_the_persisted_position()
+    {
+        // The coordinated closure used to capture the pre-persistence projection. It must capture what the write
+        // returned, or the deferred wake and the committed row describe different schedules.
+        var nodeClock = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: true, timeProvider: nodeClock);
+        var cron = _CronJob();
+
+        await sut.Cron.AddAsync(cron, AbortToken);
+        sut.Scheduler.DidNotReceiveWithAnyArgs().RestartIfNeeded(default);
+
+        await sut.Coordinator!.DrainCommitAsync(AbortToken);
+
+        cron.ReconciledThroughUtc.Should().Be(_StoreAnchorUtc);
+        sut.Scheduler.Received(1).RestartIfNeeded(new DateTime(2031, 3, 5, 0, 0, 0, DateTimeKind.Utc));
+    }
+
     private static CronJobEntity _CronJob()
     {
         return new()
@@ -915,6 +1005,34 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
             >()
             : Substitute.For<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
         var effectiveTimeProvider = timeProvider ?? TimeProvider.System;
+
+        // Both cron creation paths are seeded writes: the provider supplies the STORE's anchor, the manager's seeder
+        // derives the position from it, and the manager arms its restart from what came back. The stubs therefore run
+        // the seeder for real against an anchor that is deliberately NOT this node's clock, so a manager that quietly
+        // went back to its own TimeProvider shows up as a wrong assertion rather than as a passing default.
+        persistence
+            .InsertCronJobsAsync(
+                Arg.Any<CronJobEntity[]>(),
+                Arg.Any<CronSchedulePositionSeeder>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(call =>
+                Task.FromResult(_ApplySeed(call.Arg<CronJobEntity[]>(), call.Arg<CronSchedulePositionSeeder>()))
+            );
+
+        if (withWriter)
+        {
+            ((ICoordinatedJobWriter<TimeJobEntity, CronJobEntity>)persistence)
+                .WriteCronJobsAsync(
+                    Arg.Any<CronJobEntity[]>(),
+                    Arg.Any<CronSchedulePositionSeeder>(),
+                    Arg.Any<IRelationalCommitContext>(),
+                    Arg.Any<CancellationToken>()
+                )
+                .Returns(call =>
+                    Task.FromResult(_ApplySeed(call.Arg<CronJobEntity[]>(), call.Arg<CronSchedulePositionSeeder>()))
+                );
+        }
 
         var scheduler = Substitute.For<IJobsHostScheduler>();
         var notification = Substitute.For<IJobsNotificationHubSender>();
@@ -1001,6 +1119,34 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
     private sealed class ResetFunctionProvider : IDisposable
     {
         public void Dispose() => JobFunctionProvider.ResetForTests();
+    }
+
+    // A store anchor far from any plausible node clock, so a store-anchored seed is unmistakable in an assertion.
+    private static readonly DateTime _StoreAnchorUtc = new(2031, 3, 4, 5, 6, 7, DateTimeKind.Utc);
+
+    private static CronSchedulePositionSeedResult _ApplySeed(CronJobEntity[] jobs, CronSchedulePositionSeeder seeder)
+    {
+        DateTime? earliest = null;
+
+        foreach (var job in jobs)
+        {
+            var seed = seeder(job, _StoreAnchorUtc);
+            job.ReconciledThroughUtc = seed.ReconciledThroughUtc;
+            job.NextDueUtc = seed.NextDueUtc;
+            job.EvaluationFingerprint = seed.EvaluationFingerprint;
+
+            if (earliest is null || seed.NextDueUtc < earliest.Value)
+            {
+                earliest = seed.NextDueUtc;
+            }
+        }
+
+        return new CronSchedulePositionSeedResult
+        {
+            StoreUtcNow = _StoreAnchorUtc,
+            AffectedRows = jobs.Length,
+            EarliestNextDueUtc = earliest,
+        };
     }
 
     private sealed class Sut

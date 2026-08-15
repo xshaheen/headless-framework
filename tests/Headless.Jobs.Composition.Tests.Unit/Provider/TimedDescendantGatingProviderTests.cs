@@ -85,7 +85,7 @@ public sealed class TimedDescendantGatingProviderTests : TestBase
         var child = _TimedChild(parent.Id, RunCondition.OnSuccess, _Now);
         await provider.AddTimeJobsAsync([parent, child], AbortToken);
 
-        var peeked = await provider.GetEarliestTimeJobsAsync(AbortToken);
+        var peeked = (await provider.GetEarliestTimeJobsAsync(AbortToken)).Jobs;
 
         peeked.Should().NotContain(x => x.Id == child.Id, "the parent has not reached its matching terminal state");
     }
@@ -98,7 +98,7 @@ public sealed class TimedDescendantGatingProviderTests : TestBase
         var child = _TimedChild(parent.Id, RunCondition.OnSuccess, _Now);
         await provider.AddTimeJobsAsync([parent, child], AbortToken);
 
-        var peeked = await provider.GetEarliestTimeJobsAsync(AbortToken);
+        var peeked = (await provider.GetEarliestTimeJobsAsync(AbortToken)).Jobs;
 
         peeked.Should().ContainSingle(x => x.Id == child.Id, "parent Succeeded matches the child's OnSuccess gate");
     }
@@ -142,7 +142,7 @@ public sealed class TimedDescendantGatingProviderTests : TestBase
         await provider.AddTimeJobsAsync([parent, child], AbortToken);
 
         (await provider.GetEarliestTimeJobsAsync(AbortToken))
-            .Should()
+            .Jobs.Should()
             .NotContain(x => x.Id == child.Id, "the past-due child is stale until it is re-stamped");
 
         var earliest = await provider.ApplyParentTerminalRunConditionsAsync(parent.Id, AbortToken);
@@ -151,7 +151,7 @@ public sealed class TimedDescendantGatingProviderTests : TestBase
         var stored = await provider.GetTimeJobByIdAsync(child.Id, AbortToken);
         stored!.ExecutionTime.Should().Be(_Now);
         (await provider.GetEarliestTimeJobsAsync(AbortToken))
-            .Should()
+            .Jobs.Should()
             .ContainSingle(x => x.Id == child.Id, "the re-stamped child is now within the main peek window");
     }
 

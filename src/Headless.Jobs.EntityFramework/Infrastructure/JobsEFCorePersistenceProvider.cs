@@ -3,6 +3,7 @@
 using System.Linq.Expressions;
 using Headless.Abstractions;
 using Headless.Caching;
+using Headless.Checks;
 using Headless.CommitCoordination;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
@@ -81,15 +82,61 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    async Task ICoordinatedJobWriter<TTimeJob, TCronJob>.WriteCronJobsAsync(
+    async Task<CronSchedulePositionSeedResult> ICoordinatedJobWriter<TTimeJob, TCronJob>.WriteCronJobsAsync(
         TCronJob[] jobs,
+        CronSchedulePositionSeeder seeder,
         IRelationalCommitContext relationalContext,
         CancellationToken cancellationToken
     )
     {
         await using var dbContext = _CreateCoordinatedContext(relationalContext);
+
+        // The caller's transaction may have opened long before this call, which is exactly why the anchor is the
+        // STATEMENT clock: PostgreSQL's now() would report that transaction's start and position the definition
+        // before it existed. The seed is still bounded by commit time — a caller that holds its transaction open for
+        // minutes after enqueuing seeds a slightly stale position — but that direction only produces a small backlog
+        // for the missed-run policy to resolve, never a silently skipped tick.
+        var storeUtcNow = await JobsStoreClock
+            .GetStatementUtcNowAsync(dbContext, cancellationToken)
+            .ConfigureAwait(false);
+
+        var earliestNextDueUtc = _ApplySchedulePositionSeed(jobs, seeder, storeUtcNow);
+
         await dbContext.Set<TCronJob>().AddRangeAsync(jobs, cancellationToken).ConfigureAwait(false);
-        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        var affected = await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+        return new CronSchedulePositionSeedResult
+        {
+            StoreUtcNow = storeUtcNow,
+            AffectedRows = affected,
+            EarliestNextDueUtc = earliestNextDueUtc,
+        };
+    }
+
+    // Stamps each definition with the position the seeder derives from the store's anchor and reports the earliest one
+    // written, so the caller arms its scheduler restart from persisted state instead of a node-clock projection.
+    private static DateTime? _ApplySchedulePositionSeed(
+        TCronJob[] jobs,
+        CronSchedulePositionSeeder seeder,
+        DateTime storeUtcNow
+    )
+    {
+        DateTime? earliestNextDueUtc = null;
+
+        foreach (var job in jobs)
+        {
+            var seed = seeder(job, storeUtcNow);
+            job.ReconciledThroughUtc = seed.ReconciledThroughUtc;
+            job.NextDueUtc = seed.NextDueUtc;
+            job.EvaluationFingerprint = seed.EvaluationFingerprint;
+
+            if (earliestNextDueUtc is null || seed.NextDueUtc < earliestNextDueUtc.Value)
+            {
+                earliestNextDueUtc = seed.NextDueUtc;
+            }
+        }
+
+        return earliestNextDueUtc;
     }
 
     // The cron-expressions cache is owned by the base provider (it holds the ICache + key); the manager registers
@@ -725,6 +772,53 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
         await InvalidateCronExpressionsCacheAsync().ConfigureAwait(false);
 
         return result;
+    }
+
+    public async Task<CronSchedulePositionSeedResult> InsertCronJobsAsync(
+        TCronJob[] jobs,
+        CronSchedulePositionSeeder seeder,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(jobs);
+        Argument.IsNotNull(seeder);
+
+        if (jobs.Length == 0)
+        {
+            return CronSchedulePositionSeedResult.Empty;
+        }
+
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        // One transaction so the anchor and the rows it positions commit together: a crash between them would leave a
+        // definition claiming to be reconciled through an instant no row records. The statement clock read inside it
+        // is what makes this safe on PostgreSQL, where an EF-translated DateTime.UtcNow would freeze at the
+        // transaction's start instead — the same rule the coordinated path is bound by, kept identical here so the two
+        // creation paths cannot drift.
+        await using var transaction = await dbContext
+            .Database.BeginTransactionAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var storeUtcNow = await JobsStoreClock
+            .GetStatementUtcNowAsync(dbContext, cancellationToken)
+            .ConfigureAwait(false);
+
+        var earliestNextDueUtc = _ApplySchedulePositionSeed(jobs, seeder, storeUtcNow);
+
+        await dbContext.Set<TCronJob>().AddRangeAsync(jobs, cancellationToken).ConfigureAwait(false);
+        var affected = await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+        await InvalidateCronExpressionsCacheAsync().ConfigureAwait(false);
+
+        return new CronSchedulePositionSeedResult
+        {
+            StoreUtcNow = storeUtcNow,
+            AffectedRows = affected,
+            EarliestNextDueUtc = earliestNextDueUtc,
+        };
     }
 
     public async Task<int> UpdateCronJobsAsync(TCronJob[] cronJobs, CancellationToken cancellationToken = default)

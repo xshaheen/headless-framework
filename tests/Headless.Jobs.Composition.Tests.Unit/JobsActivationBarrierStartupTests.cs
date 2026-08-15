@@ -351,8 +351,8 @@ public sealed class JobsActivationBarrierStartupTests : TestBase
                     _RecordSelection();
                     FirstSelection.TrySetResult(Volatile.Read(ref _drainCompleted) == 1);
 
-                    // Infinite time remaining parks the loop for a day instead of spinning through the stub.
-                    return (Timeout.InfiniteTimeSpan, Array.Empty<JobExecutionState>());
+                    // No wake instant parks the loop for a day instead of spinning through the stub.
+                    return (JobsWakeSchedule.Idle, Array.Empty<JobExecutionState>());
                 });
 
             manager

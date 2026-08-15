@@ -1365,7 +1365,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
                 Children = [child],
             };
             await persistence.AddTimeJobsAsync([root], ct);
-            var roots = await persistence.GetEarliestTimeJobsAsync(ct);
+            var roots = (await persistence.GetEarliestTimeJobsAsync(ct)).Jobs;
 
             var claimed = await persistence.QueueTimeJobsAsync(roots, ct).ToListAsync(ct);
 

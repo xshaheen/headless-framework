@@ -247,7 +247,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
             await _ClaimRootAsync(persistence, rootId, ct);
             (await _ReadNodeAsync(rootId, ct)).Status.Should().Be(JobStatus.Queued);
 
-            var earliest = await persistence.GetEarliestTimeJobsAsync(ct);
+            var earliest = (await persistence.GetEarliestTimeJobsAsync(ct)).Jobs;
             earliest
                 .Should()
                 .NotContain(x => x.Id == timedId, "the parent gate keeps a due timed child out of the peek");
@@ -306,7 +306,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
             successRow.ExecutionTime.Value.Should().BeCloseTo(beforeReconcile, TimeSpan.FromSeconds(30));
 
             (await persistence.GetEarliestTimeJobsAsync(ct))
-                .Should()
+                .Jobs.Should()
                 .Contain(x => x.Id == successId, "the released child is now claimable under the open parent gate");
 
             // Non-matching (OnFailure) child: skipped with the run-condition-mismatch reason.
@@ -424,7 +424,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
             failureRow.Status.Should().Be(JobStatus.Idle);
             failureRow.OwnerId.Should().BeNull();
             failureRow.ExecutionTime!.Value.Should().BeAfter(pastDue.AddMinutes(1));
-            (await persistence.GetEarliestTimeJobsAsync(ct)).Should().Contain(x => x.Id == failureId);
+            (await persistence.GetEarliestTimeJobsAsync(ct)).Jobs.Should().Contain(x => x.Id == failureId);
         }
         finally
         {
@@ -474,7 +474,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
             (await _ReadNodeAsync(grandchildId, ct)).Status.Should().Be(JobStatus.Idle);
 
             (await persistence.GetEarliestTimeJobsAsync(ct))
-                .Should()
+                .Jobs.Should()
                 .Contain(x => x.Id == rootId, "the reclaimed chain root is resumable");
         }
         finally
@@ -1313,7 +1313,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         var deadline = DateTime.UtcNow.AddSeconds(15);
         while (true)
         {
-            var candidates = await persistence.GetEarliestTimeJobsAsync(ct);
+            var candidates = (await persistence.GetEarliestTimeJobsAsync(ct)).Jobs;
             if (Array.Exists(candidates, x => x.Id == rootId))
             {
                 return candidates;

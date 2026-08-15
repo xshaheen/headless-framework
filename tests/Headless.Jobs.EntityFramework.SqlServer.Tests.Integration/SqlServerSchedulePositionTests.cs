@@ -102,4 +102,24 @@ public sealed class SqlServerSchedulePositionTests(SqlServerJobsCoordinationFixt
     [Fact]
     public override Task cancellation_before_materialization_changes_neither_position_nor_occurrences() =>
         base.cancellation_before_materialization_changes_neither_position_nor_occurrences();
+
+    [Fact]
+    public override Task creating_a_definition_seeds_its_position_from_the_store_clock() =>
+        base.creating_a_definition_seeds_its_position_from_the_store_clock();
+
+    [Fact]
+    public override Task creating_a_batch_of_definitions_seeds_every_position_from_the_store_clock() =>
+        base.creating_a_batch_of_definitions_seeds_every_position_from_the_store_clock();
+
+    [Fact]
+    public override Task a_coordinated_creation_seeds_its_position_from_the_store_clock() =>
+        base.a_coordinated_creation_seeds_its_position_from_the_store_clock();
+
+    [Fact]
+    public override Task a_coordinated_creation_is_anchored_at_insertion_not_at_transaction_start() =>
+        base.a_coordinated_creation_is_anchored_at_insertion_not_at_transaction_start();
+
+    [Fact]
+    public override Task a_tick_between_creation_and_the_first_poll_is_recovered_not_skipped() =>
+        base.a_tick_between_creation_and_the_first_poll_is_recovered_not_skipped();
 }

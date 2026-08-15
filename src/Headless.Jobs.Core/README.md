@@ -29,6 +29,10 @@ Stored requests may use GZip compression through `UseGZipCompression()`. Decompr
 
 The in-memory provider uses the injected `TimeProvider` for pickup leases. The EF operational store translates `DateTime.UtcNow` inside each claim statement, so both lease-expiry comparison and `LockedUntil` stamping use the **database clock** without a separate clock query. EF renewal and reclaim use the same authority, preventing application/database clock skew from shortening or extending the initial lease.
 
+The scheduler's wake and restart path shares that domain. Every due instant it arbitrates is a **store** instant, both reads report the store instant they observed at no extra round trip, and the node's clock enters at exactly one place: an offset refreshed on every poll that reached the store, used to convert a restart request once. A store-derived duration folded into a node-domain deadline is a live defect — a lagging node records a 12:30 wake as 11:30, so a job enqueued for 12:05 looks later than the planned wake and does not interrupt the sleep.
+
+A cron definition created through `ICronJobManager` is positioned by the insert itself, anchored on the store's instant read inside the inserting transaction (single, batch, and coordinated paths alike), so a tick between creation and the first scheduler poll is resolved by the definition's missed-run policy rather than silently dropped.
+
 `AddHeadlessJobs` supplies `TimeProvider.System` and the Version 7 `IGuidGenerator` only as replaceable DI defaults. Runtime services never fall back to ambient static clocks or random GUID creation. A `JobChain` therefore carries no persisted identity or time: `IJobScheduler.EnqueueAsync(JobChain, …)` maps it to an unstamped `TimeJobEntity` tree, and the manager add path assigns missing IDs, parent IDs, and one injected-clock timestamp across the complete graph before persistence.
 
 `SchedulerOptionsBuilder.NodeId` is used as the row owner only on the in-memory single-process path. On the durable path it is overridden by `JobsOwnerIdentityAdapter` (reads `node@incarnation` from `Headless.Coordination`); `NodeId` becomes a pre-registration display fallback only.

@@ -32,7 +32,22 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
     private readonly ILogger<JobsSchedulerBackgroundService> _logger;
     private int _started;
     private int _manualStartConsumed;
+
+    // Store clock minus node clock, as observed on the last poll that reached the store. Zero until the first such
+    // poll, which is exactly the assumption the loop made unconditionally before. Written by the loop, read by
+    // RestartIfNeeded on arbitrary caller threads, so it moves through Interlocked/Volatile rather than a plain field.
+    private long _storeClockOffsetTicks;
+
     public bool IsRunning => _started == 1;
+
+    /// <summary>
+    /// This node's best estimate of the store's clock: the node clock shifted by the offset observed on the last poll.
+    /// Both clocks advance at the same rate between polls, so the estimate stays as good as that observation.
+    /// </summary>
+    private DateTime _StoreUtcNow()
+    {
+        return _timeProvider.GetUtcNow().UtcDateTime.AddTicks(Interlocked.Read(ref _storeClockOffsetTicks));
+    }
 
     public JobsSchedulerBackgroundService(
         JobsExecutionContext executionContext,
@@ -269,11 +284,24 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
                 _executionContext.ClearFunctions();
             }
 
-            var (timeRemaining, functions) = await _internalJobsManager
-                .GetNextJobs(cancellationToken)
-                .ConfigureAwait(false);
+            var (wake, functions) = await _internalJobsManager.GetNextJobs(cancellationToken).ConfigureAwait(false);
 
             _executionContext.SetFunctions(functions, _functionRegistry);
+
+            // THE one place a node clock meets a store clock (see JobsWakeSchedule). Every due instant in this
+            // subsystem is a store instant; this offset is what lets a restart request expressed in that domain be
+            // compared against a wake this node is sleeping towards. It is refreshed on every poll that reached the
+            // store, and left alone otherwise so a read that observed nothing cannot silently reset a real skew to
+            // zero.
+            if (wake.StoreUtcNow is { } observedStoreUtcNow)
+            {
+                Interlocked.Exchange(
+                    ref _storeClockOffsetTicks,
+                    (observedStoreUtcNow - _timeProvider.GetUtcNow().UtcDateTime).Ticks
+                );
+            }
+
+            var timeRemaining = wake.Remaining;
 
             TimeSpan sleepDuration;
             if (timeRemaining == Timeout.InfiniteTimeSpan || timeRemaining > TimeSpan.FromDays(1))
@@ -298,7 +326,12 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
             else
             {
                 sleepDuration = timeRemaining <= TimeSpan.Zero ? TimeSpan.FromMilliseconds(1) : timeRemaining;
-                _executionContext.SetNextPlannedOccurrence(_timeProvider.GetUtcNow().UtcDateTime.Add(sleepDuration));
+
+                // Recorded in the STORE's domain, not this node's: RestartIfNeeded compares incoming due instants —
+                // which are store instants — against it. Adding a store-derived duration to this node's clock instead
+                // would shift the planned wake by the node's skew, and a job enqueued for a time before that wake
+                // would look later than it and fail to interrupt the sleep.
+                _executionContext.SetNextPlannedOccurrence(_StoreUtcNow().Add(sleepDuration));
             }
 
             _executionContext.NotifyCoreAction?.Invoke(
@@ -327,31 +360,35 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
             .ConfigureAwait(false);
     }
 
-    public void RestartIfNeeded(DateTime? dateTime)
+    public void RestartIfNeeded(DateTime? dueAtStoreUtc)
     {
-        if (!dateTime.HasValue)
+        if (!dueAtStoreUtc.HasValue)
         {
             return;
         }
 
-        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        // Every value in this comparison is a STORE instant: the incoming due time, the planned wake the loop
+        // recorded, and this node's estimate of store now. Comparing a store-domain due time against a node-domain
+        // wake is what let a skewed node sleep past work that was brought forward (#818) — the conversion happens
+        // here, once, and never at a call site.
+        var storeNow = _StoreUtcNow();
         var nextPlannedOccurrence = _executionContext.GetNextPlannedOccurrence();
 
         // Restart if:
         // 1. No tasks are currently planned, OR
         // 2. The new task should execute at least 500ms earlier than the currently planned task, OR
-        // 3. The new task is already due/overdue (ExecutionTime <= now)
+        // 3. The new task is already due/overdue (due time <= store now)
         if (nextPlannedOccurrence == null)
         {
             _restartThrottle.RequestRestart();
             return;
         }
 
-        var newTime = dateTime.Value;
+        var newTime = dueAtStoreUtc.Value;
         var threshold = TimeSpan.FromMilliseconds(500);
         var diff = nextPlannedOccurrence.Value - newTime;
 
-        if (newTime <= now || diff > threshold)
+        if (newTime <= storeNow || diff > threshold)
         {
             _restartThrottle.RequestRestart();
         }

@@ -7,7 +7,12 @@ namespace Headless.Jobs.Interfaces.Managers;
 
 internal interface IInternalJobManager
 {
-    Task<(TimeSpan TimeRemaining, JobExecutionState[] Functions)> GetNextJobs(
+    /// <summary>
+    /// Selects and claims whatever is due now and reports when the loop should wake next. The wake is a
+    /// <see cref="JobsWakeSchedule"/> — a store-domain decision — so the scheduler never folds a store-derived
+    /// duration into a node-domain deadline.
+    /// </summary>
+    Task<(JobsWakeSchedule Wake, JobExecutionState[] Functions)> GetNextJobs(
         CancellationToken cancellationToken = default
     );
     Task ReleaseAcquiredResources(JobExecutionState[] context, CancellationToken cancellationToken = default);
