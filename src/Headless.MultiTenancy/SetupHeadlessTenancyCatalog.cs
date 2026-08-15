@@ -13,8 +13,8 @@ public static class SetupHeadlessTenancyCatalog
 {
     /// <summary>
     /// Configures the tenant catalog: <see cref="TenantCatalogOptions"/>, exactly one storage provider
-    /// (<c>UseInMemory</c> / <c>UseConfiguration</c> today; <c>UseEntityFramework</c> lands in a later
-    /// unit), the catalog service, the <see cref="ICurrentTenantInfo"/> accessor, and posture recording.
+    /// (<c>UseInMemory</c> / <c>UseConfiguration</c> / <c>UseEntityFramework</c>), the catalog service,
+    /// the <see cref="ICurrentTenantInfo"/> accessor, and posture recording.
     /// </summary>
     /// <param name="builder">The root tenancy builder.</param>
     /// <param name="configure">The catalog configuration callback.</param>
@@ -48,7 +48,7 @@ public static class SetupHeadlessTenancyCatalog
             setup.Extensions.Count,
             setup.Extensions.Count == 1 ? setup.Extensions.Single().GetType().FullName ?? "unknown" : "unknown",
             "Headless.MultiTenancy.Catalog",
-            ["UseInMemory", "UseConfiguration"],
+            ["UseInMemory", "UseConfiguration", "UseEntityFramework"],
             static name => new TenantCatalogStorageProviderRegistration(name)
         );
 
