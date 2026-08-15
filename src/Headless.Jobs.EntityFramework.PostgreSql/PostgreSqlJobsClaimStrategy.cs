@@ -476,12 +476,18 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             INSERT INTO {mapping.Table}
                 ({mapping.Id}, {mapping.Status}, {mapping.OwnerId}, {mapping.ExecutionTime}, {mapping.CronJobId},
                  {mapping.LockedUntil}, {mapping.OnNodeDeath}, {mapping.ElapsedTime}, {mapping.RetryCount},
-                 {mapping.CreatedAt}, {mapping.UpdatedAt})
+                 {mapping.CreatedAt}, {mapping.UpdatedAt}, {mapping.Disposition})
             SELECT
                 @id, @status, @owner, @executionTime, @cronJobId,
                 claim_clock.now + (@leaseSeconds * INTERVAL '1 second'), @onNodeDeath,
-                @elapsedTime, @retryCount, claim_clock.now, claim_clock.now
+                @elapsedTime, @retryCount, claim_clock.now, claim_clock.now, @disposition
             FROM claim_clock
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM {mapping.Table}
+                WHERE {mapping.CronJobId} = @cronJobId AND {mapping.ExecutionTime} = @executionTime
+                  AND {mapping.AccountsForInstantPredicate("@unaccountedStatus", "@unaccountedDisposition")}
+            )
             ON CONFLICT ({mapping.ExecutionTime}, {mapping.CronJobId})
                 WHERE {mapping.Status} IN ('Idle', 'Queued', 'InProgress')
                 DO NOTHING
@@ -490,6 +496,20 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
 #pragma warning restore CA2100
         command.Parameters.Add(new NpgsqlParameter("id", id));
         command.Parameters.Add(new NpgsqlParameter("status", nameof(JobStatus.Queued)));
+        // KTD1: the occupied-instant ACCOUNTING matrix, not the live-only filter this statement used to carry. A
+        // terminal row at the instant means the instant ran (or was deliberately retired) and must not fire again;
+        // only the seeding migration's ReplacementOwed retirement still owes one, and only it falls through. The
+        // predicate and its two literals come from CronOccurrenceAccounting via the mapping, so this SQL cannot
+        // drift from the LINQ providers. ON CONFLICT stays: it arbitrates the concurrent-live race the NOT EXISTS
+        // read (unlocked under READ COMMITTED) cannot see, and every row starts live, so a row that turns terminal
+        // between the two was serialized by the filtered unique index first.
+        command.Parameters.Add(
+            new NpgsqlParameter("unaccountedStatus", CronOccurrenceRelationalMapping.UnaccountedStatusValue)
+        );
+        command.Parameters.Add(
+            new NpgsqlParameter("unaccountedDisposition", CronOccurrenceRelationalMapping.UnaccountedDispositionValue)
+        );
+        command.Parameters.Add(new NpgsqlParameter("disposition", nameof(CronOccurrenceDisposition.Accounted)));
         command.Parameters.Add(new NpgsqlParameter("owner", owner));
         command.Parameters.Add(new NpgsqlParameter("executionTime", executionTime));
         command.Parameters.Add(new NpgsqlParameter("cronJobId", item.Id));

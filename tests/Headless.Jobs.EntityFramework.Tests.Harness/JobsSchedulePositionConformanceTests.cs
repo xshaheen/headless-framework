@@ -30,8 +30,11 @@ namespace Tests;
 /// <c>TimeProvider</c> altogether and would slip past the injected skew exercised below. The skew test proves the
 /// observable outcome; the SQL capture proves the mechanism. Neither alone is sufficient.
 /// <para>
-/// No <c>StartAsync</c>: the advance is a direct persistence call that takes no ownership and stamps no lease, so it
-/// must not depend on membership or on a skewed clock driving it.
+/// No <c>StartAsync</c> for the advance and materialize scenarios: those are direct persistence calls that take no
+/// ownership and stamp no lease, so they must not depend on membership or on a skewed clock driving them. The
+/// rationale does NOT extend to the claim path — it does take ownership, and a claim scenario run against an
+/// unstarted host returns empty at its membership gate before reaching anything the test means to exercise. Claim
+/// scenarios here start the host.
 /// </para>
 /// </remarks>
 public abstract class JobsSchedulePositionConformanceTests<TFixture>(TFixture fixture) : TestBase
@@ -666,39 +669,69 @@ public abstract class JobsSchedulePositionConformanceTests<TFixture>(TFixture fi
         await fixture.ResetDatabaseAsync(ct);
         using var host = fixture.BuildHost("occupied-instant");
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
-        var persistence = _Persistence(host);
 
-        var cronId = Guid.NewGuid();
-        await fixture.SeedCronJobAsync(cronId, "occupied-instant", "* * * * *", NodeDeathPolicy.Retry, ct);
+        // StartAsync, unlike the advance and materialize scenarios above: the claim path stamps ownership, and
+        // ClaimCronJobOccurrencesAsync bails at its first statement when TryGetStampOwner finds no membership
+        // identity. Without a started host this returns empty before ever reading the occupied instant, and the
+        // assertion below passes for a reason unrelated to the guard it exists to hold.
+        await host.StartAsync(ct);
 
-        var executionTime = DateTime.UtcNow.AddMinutes(-1);
-        var occurrenceId = Guid.NewGuid();
-        await fixture.SeedCronOccurrenceAsync(
-            occurrenceId,
-            cronId,
-            (int)JobStatus.Succeeded,
-            ownerId: null,
-            NodeDeathPolicy.Retry,
-            lockedUntil: null,
-            executionTime,
-            ct
-        );
-
-        var context = new JobManagerDispatchContext(cronId)
+        try
         {
-            FunctionName = "occupied-instant",
-            Expression = "* * * * *",
-            OnNodeDeath = NodeDeathPolicy.Retry,
-            NextCronOccurrence = null,
-        };
+            var persistence = _Persistence(host);
 
-        (await persistence.QueueCronJobOccurrencesAsync((executionTime, [context]), ct).ToArrayAsync(ct))
-            .Should()
-            .BeEmpty("the succeeded occurrence already stands for this instant — re-running it would double-fire");
+            var cronId = Guid.NewGuid();
+            await fixture.SeedCronJobAsync(cronId, "occupied-instant", "* * * * *", NodeDeathPolicy.Retry, ct);
 
-        var (status, owner) = await fixture.ReadCronOccurrenceAsync(occurrenceId, ct);
-        status.Should().Be((int)JobStatus.Succeeded, "the existing terminal row is left undisturbed");
-        owner.Should().BeNull();
+            // Whole seconds: PostgreSQL materializes DateTime at microsecond granularity, so a tick-precision instant
+            // would miss the guard's equality predicate and the scenario would report "materialized" for a reason
+            // that has nothing to do with the terminal row.
+            var now = DateTime.UtcNow;
+            var executionTime = new DateTime(
+                now.Year,
+                now.Month,
+                now.Day,
+                now.Hour,
+                now.Minute,
+                now.Second,
+                DateTimeKind.Utc
+            ).AddMinutes(-1);
+            var occurrenceId = Guid.NewGuid();
+            await fixture.SeedCronOccurrenceAsync(
+                occurrenceId,
+                cronId,
+                (int)JobStatus.Succeeded,
+                ownerId: null,
+                NodeDeathPolicy.Retry,
+                lockedUntil: null,
+                executionTime,
+                ct
+            );
+
+            var context = new JobManagerDispatchContext(cronId)
+            {
+                FunctionName = "occupied-instant",
+                Expression = "* * * * *",
+                OnNodeDeath = NodeDeathPolicy.Retry,
+                NextCronOccurrence = null,
+            };
+
+            (await persistence.QueueCronJobOccurrencesAsync((executionTime, [context]), ct).ToArrayAsync(ct))
+                .Should()
+                .BeEmpty("the succeeded occurrence already stands for this instant — re-running it would double-fire");
+
+            (await fixture.CountCronOccurrencesAsync(ct))
+                .Should()
+                .Be(1, "suppressing the fire means no second row at the instant, not merely an empty claim result");
+
+            var (status, owner) = await fixture.ReadCronOccurrenceAsync(occurrenceId, ct);
+            status.Should().Be((int)JobStatus.Succeeded, "the existing terminal row is left undisturbed");
+            owner.Should().BeNull();
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
     }
 
     /// <summary>

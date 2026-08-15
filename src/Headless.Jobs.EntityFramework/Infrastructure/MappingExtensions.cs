@@ -237,7 +237,10 @@ internal static class MappingExtensions
             {
                 setters
                     .SetProperty(x => x.Status, functionContext.Status)
-                    .SetProperty(x => x.SkippedReason, functionContext.ExceptionDetails);
+                    .SetProperty(x => x.SkippedReason, functionContext.ExceptionDetails)
+                    // A user-code skip is the occurrence's own verdict on its instant: it ran and chose not to act.
+                    // Nothing is owed, so the row accounts for the instant.
+                    .SetProperty(x => x.Disposition, CronOccurrenceDisposition.Accounted);
             }
             else
             {

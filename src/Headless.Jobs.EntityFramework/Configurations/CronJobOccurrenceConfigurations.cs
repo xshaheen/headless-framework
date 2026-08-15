@@ -31,6 +31,10 @@ public class CronJobOccurrenceConfigurations<TCronJob>(string schema = JobDbCons
         builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(32);
         builder.Property(x => x.OnNodeDeath).HasConversion<string>().HasMaxLength(32);
 
+        // The occupied-instant rule's sole accounting input, compared as a string in every provider's SQL so an
+        // unrecognized value can never throw on the read path — see CronOccurrenceAccounting.
+        builder.Property(x => x.Disposition).HasConversion<string>().HasMaxLength(32);
+
         // Derived from RecoveredFromUtc so the two cannot disagree; never a column.
         builder.Ignore(x => x.IsRecoveryRun);
 

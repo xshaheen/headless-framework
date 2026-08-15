@@ -20,6 +20,7 @@ packages: Jobs.Abstractions, Jobs.Core, Jobs.Dashboard, Jobs.SourceGenerator, Jo
 - [Misfire recovery](#misfire-recovery)
     - [When a definition enters recovery](#when-a-definition-enters-recovery)
     - [Policies](#policies)
+    - [When a row already stands for the instant](#when-a-row-already-stands-for-the-instant)
     - [Configuring it](#configuring-it)
     - [What an executing job sees](#what-an-executing-job-sees)
     - [Schedule-interpretation drift](#schedule-interpretation-drift)
@@ -452,6 +453,36 @@ Recovery never runs an instant twice and never leaves two live occurrences for o
 executing or already finished is stepped past untouched; one that has not begun executing is either repurposed as the
 coalesced run or transitioned to `Skipped`.
 
+### When a row already stands for the instant
+
+Whether an occurrence may be created at a `(CronJobId, ExecutionTime)` pair is decided by **one** rule —
+`CronOccurrenceAccounting` — shared by the claim path, occurrence materialization, and recovery, on every provider.
+Two paths answering differently is exactly how a row could be stepped past by recovery and re-fired by a native claim
+in the same deployment.
+
+A row **accounts for** its instant unless it is `Skipped` carrying `CronOccurrenceDisposition.ReplacementOwed`. Stated
+as that single negation the rule is total over `JobStatus` and fails closed: live rows, every terminal status, and any
+status value a newer binary wrote all suppress, and no read materializes a raw status it might not recognize.
+
+`Disposition` is a persisted column on `CronJobOccurrences` and is the rule's **sole** input. `SkippedReason` is
+display text and is never matched — two producers write the identical string `"Cron definition updated"` and owe
+opposite answers.
+
+| Disposition | Written by | Effect at the instant |
+|---|---|---|
+| `Accounted` (default) | every newly created row, and every ordinary retirement — pause, recovery, dead-node sweep, lapsed lease, user-code skip | Suppresses. Rows predating the column backfill here, preserving their prior behaviour. |
+| `ReplacementOwed` | the startup seeding migration, which retires an old-expression row **without** creating a replacement | Allows re-materialization: the fire is still owed. |
+| `Superseded` | a runtime schedule edit through `ICronJobManager`, which creates its own replacement | Suppresses. Re-firing would double-run every expression edit. |
+
+A dead owner's `Skipped` row is `Accounted` deliberately. It never executed, but getting it re-run belongs to the
+reclaim and recovery path; re-materializing at claim time would race that path and risk a duplicate.
+
+Several rows may share an instant — legal, because the unique index is filtered to live rows. Any single accounting
+row takes the instant, and reads report the live row first so an older terminal one cannot mask it.
+
+Because dropping the column would collapse every value to the implicit `Accounted` and turn an owed fire into a
+permanently suppressed one, the migration's `Down` refuses while any non-ordinary disposition exists.
+
 ### Configuring it
 
 ```csharp
@@ -573,6 +604,7 @@ Provides the shared contracts — `IJobScheduler`, `ITimeJobManager<TTimeJob>`, 
 - **Typed job chains**: `JobChain` / `JobChainBuilder` / `JobChainNodeBuilder` author a conditional sequential tree of descriptor-backed steps — `Then` (on-success) and `Catch` (on-failure), one of each per node — frozen by `Build()` into an immutable `JobChain` and enqueued atomically through `IJobScheduler.EnqueueAsync(JobChain, …)`. See [Typed Job Chains](#typed-job-chains).
 - **Global exception handler**: `IJobExceptionHandler` with `HandleExceptionAsync` and `HandleCanceledExceptionAsync`.
 - **Job status**: `JobStatus` enum: `Idle`, `Queued`, `InProgress`, `Succeeded`, `DueDone`, `Failed`, `Cancelled`, `Skipped`.
+- **Occurrence disposition**: `CronOccurrenceDisposition` enum (`Accounted` / `ReplacementOwed` / `Superseded`) and the persisted `CronJobOccurrenceEntity.Disposition` property. This is the sole input to the occupied-instant rule that decides whether an occurrence may be created at a `(CronJobId, ExecutionTime)` pair; `SkippedReason` is display text and is never read for that decision. See "When a row already stands for the instant".
 
 ### Installation
 
@@ -1482,7 +1514,7 @@ This is an optimization extension for `Headless.Jobs.EntityFramework`, not an in
 
 - Claims existing time jobs and cron occurrences with `UPDATE ... RETURNING` over a `FOR UPDATE SKIP LOCKED` candidate query.
 - Bounds set-based root and fallback-occurrence selection to 100 winners per transaction; skipped or excess work remains eligible for the next scheduler pass.
-- Creates cron occurrences with `INSERT ... ON CONFLICT DO NOTHING ... RETURNING` to deduplicate each execution-time and cron-job pair.
+- Creates cron occurrences with `INSERT ... WHERE NOT EXISTS ... ON CONFLICT DO NOTHING ... RETURNING` to deduplicate each execution-time and cron-job pair. The `NOT EXISTS` guard is the shared occupied-instant rule: any row that **accounts for** the instant — live, terminal, or a status this binary does not recognize — suppresses the insert, and the only row that does not account is one a startup seeding migration retired without a replacement (`CronOccurrenceDisposition.ReplacementOwed`). `ON CONFLICT` remains, arbitrating the concurrent-live race the unlocked read cannot see. The predicate and its literals are derived from `CronOccurrenceAccounting`, so this SQL cannot drift from the SQL Server sibling or the portable EF path.
 - Derives and delimits schema, table, and column identifiers from the EF model while parameterizing runtime values.
 - Claims the root and two supported descendant levels in one transaction and returns work only after commit.
 
@@ -1542,7 +1574,7 @@ This is an optimization extension for `Headless.Jobs.EntityFramework`, not an in
 - Selects claim candidates with `UPDLOCK`, `READPAST`, and `ROWLOCK`, then returns winners from the same update through `OUTPUT inserted...`.
 - Bounds set-based root and fallback-occurrence selection to 100 winners per transaction to limit lock footprint and escalation risk; skipped or excess work remains eligible for the next scheduler pass.
 - Adds `READCOMMITTEDLOCK` when `READ_COMMITTED_SNAPSHOT` is enabled, as required for `READPAST` under read-committed snapshot isolation.
-- Creates cron occurrences atomically against the unique execution-time and cron-job key, deduplicating only against **active** (`Idle`, `Queued`, `InProgress`) occurrences so a terminal occurrence at the same execution time never suppresses a new fire — the same semantics the filtered unique index and the PostgreSQL claim strategy enforce.
+- Creates cron occurrences atomically against the unique execution-time and cron-job key, deduplicating against every occurrence that **accounts for** the instant under the shared occupied-instant rule — live, terminal, or a status this binary does not recognize. The only row that does not account is one a startup seeding migration retired without a replacement (`CronOccurrenceDisposition.ReplacementOwed`), whose fire is still owed. The predicate and its literals are derived from `CronOccurrenceAccounting`, so this SQL cannot drift from the PostgreSQL sibling or the portable EF path.
 - Derives and delimits schema, table, and column identifiers from the EF model while parameterizing runtime values.
 - Claims the root and two supported descendant levels in one transaction and returns work only after commit.
 

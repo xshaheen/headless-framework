@@ -1778,9 +1778,21 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
                 x => x.CronJobId == definition.Id,
                 ct
             );
-            afterActiveEdit.Single(x => x.Id == pending.Id).Status.Should().Be(JobStatus.Skipped);
+            var retiredByEdit = afterActiveEdit.Single(x => x.Id == pending.Id);
+            retiredByEdit.Status.Should().Be(JobStatus.Skipped);
             afterActiveEdit.Single(x => x.Id == running.Id).Status.Should().Be(JobStatus.InProgress);
             afterActiveEdit.Single(x => x.Id == replacement.Id).Status.Should().Be(JobStatus.Idle);
+
+            // KTD1a, writer side. This path writes the SAME SkippedReason the startup seeding migration does and owes
+            // the OPPOSITE accounting answer, because it installs the replacement occurrence itself just above.
+            // Stamping ReplacementOwed here would re-fire the retired instant and double-run every expression edit.
+            retiredByEdit.SkippedReason.Should().Be("Cron definition updated");
+            retiredByEdit
+                .Disposition.Should()
+                .Be(
+                    CronOccurrenceDisposition.Superseded,
+                    "the edit created its own replacement, so the retired instant owes nothing further"
+                );
 
             var paused = await persistence.PauseCronJobAsync(definition.Id, operationTime.AddSeconds(1), ct);
             paused.Should().NotBeNull();
@@ -1903,10 +1915,22 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
             var updated = (await persistence.GetAllCronJobExpressionsAsync(ct)).Single();
             updated.Expression.Should().Be("0 */10 * * * *");
             updated.ScheduleRevision.Should().Be(1);
-            (await persistence.GetAllCronJobOccurrencesAsync(x => x.CronJobId == definition.Id, ct))
+            var retired = (await persistence.GetAllCronJobOccurrencesAsync(x => x.CronJobId == definition.Id, ct))
                 .Should()
                 .ContainSingle(x =>
                     x.Id == pending.Id && x.Status == JobStatus.Skipped && x.SkippedReason == "Cron definition updated"
+                )
+                .Subject;
+
+            // KTD1a, writer side. Seeding retires the old-expression row and creates NOTHING to take its place, so
+            // the instant is still owed a fire. The runtime edit path writes the IDENTICAL SkippedReason and stamps
+            // Superseded (asserted in should_preserve_metadata_work_and_replace_pending_work_when_cron_schedule_changes);
+            // collapsing the two onto one value would silently break one of them, which no string assertion can see.
+            retired
+                .Disposition.Should()
+                .Be(
+                    CronOccurrenceDisposition.ReplacementOwed,
+                    "the seeding migration leaves no replacement behind, so the retired instant is unaccounted for"
                 );
         }
         finally

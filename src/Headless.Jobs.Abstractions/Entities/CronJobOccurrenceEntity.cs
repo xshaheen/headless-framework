@@ -56,8 +56,16 @@ public class CronJobOccurrenceEntity<TCronJob>
     /// <summary>Serialized exception message when the occurrence ended in <c>Failed</c> status.</summary>
     public virtual string? ExceptionMessage { get; internal set; }
 
-    /// <summary>Human-readable reason when the occurrence was skipped.</summary>
+    /// <summary>Human-readable reason when the occurrence was skipped. Display text only — never read to decide
+    /// whether the row accounts for its instant; that is <see cref="Disposition" />'s job.</summary>
     public virtual string? SkippedReason { get; internal set; }
+
+    /// <summary>
+    /// Typed record of why this row left the live lifecycle, and the sole input to the occupied-instant accounting
+    /// rule (see <c>CronOccurrenceAccounting</c>). Defaults to <see cref="CronOccurrenceDisposition.Accounted" />,
+    /// so a row created or retired by any producer that does not stamp it keeps today's suppressing behaviour.
+    /// </summary>
+    public virtual CronOccurrenceDisposition Disposition { get; internal set; } = CronOccurrenceDisposition.Accounted;
 
     /// <summary>Wall-clock execution duration in milliseconds, set after the function completes.</summary>
     public virtual long ElapsedTime { get; internal set; }

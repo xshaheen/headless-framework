@@ -110,6 +110,36 @@ Recovery never runs an instant twice and never leaves two live occurrences for o
 executing or already finished is stepped past untouched; one that has not begun executing is either repurposed as the
 coalesced run or transitioned to `Skipped`.
 
+### When a row already stands for the instant
+
+Whether an occurrence may be created at a `(CronJobId, ExecutionTime)` pair is decided by **one** rule —
+`CronOccurrenceAccounting` — shared by the claim path, occurrence materialization, and recovery, on every provider.
+Two paths answering differently is exactly how a row could be stepped past by recovery and re-fired by a native claim
+in the same deployment.
+
+A row **accounts for** its instant unless it is `Skipped` carrying `CronOccurrenceDisposition.ReplacementOwed`. Stated
+as that single negation the rule is total over `JobStatus` and fails closed: live rows, every terminal status, and any
+status value a newer binary wrote all suppress, and no read materializes a raw status it might not recognize.
+
+`Disposition` is a persisted column on `CronJobOccurrences` and is the rule's **sole** input. `SkippedReason` is
+display text and is never matched — two producers write the identical string `"Cron definition updated"` and owe
+opposite answers.
+
+| Disposition | Written by | Effect at the instant |
+|---|---|---|
+| `Accounted` (default) | every newly created row, and every ordinary retirement — pause, recovery, dead-node sweep, lapsed lease, user-code skip | Suppresses. Rows predating the column backfill here, preserving their prior behaviour. |
+| `ReplacementOwed` | the startup seeding migration, which retires an old-expression row **without** creating a replacement | Allows re-materialization: the fire is still owed. |
+| `Superseded` | a runtime schedule edit through `ICronJobManager`, which creates its own replacement | Suppresses. Re-firing would double-run every expression edit. |
+
+A dead owner's `Skipped` row is `Accounted` deliberately. It never executed, but getting it re-run belongs to the
+reclaim and recovery path; re-materializing at claim time would race that path and risk a duplicate.
+
+Several rows may share an instant — legal, because the unique index is filtered to live rows. Any single accounting
+row takes the instant, and reads report the live row first so an older terminal one cannot mask it.
+
+Because dropping the column would collapse every value to the implicit `Accounted` and turn an owed fire into a
+permanently suppressed one, the migration's `Down` refuses while any non-ordinary disposition exists.
+
 ### Configuring it
 
 ```csharp

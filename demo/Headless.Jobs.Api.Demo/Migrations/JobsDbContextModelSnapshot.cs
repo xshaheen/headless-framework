@@ -37,6 +37,10 @@ namespace Headless.Jobs.Api.Demo.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)");
 
+                    b.Property<string>("Expression")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.Property<int>("FingerprintFailureCount")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
@@ -44,10 +48,6 @@ namespace Headless.Jobs.Api.Demo.Migrations
 
                     b.Property<DateTime?>("FingerprintRetryAfterUtc")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Expression")
-                        .IsRequired()
-                        .HasColumnType("text");
 
                     b.Property<string>("Function")
                         .IsRequired()
@@ -137,6 +137,11 @@ namespace Headless.Jobs.Api.Demo.Migrations
 
                     b.Property<Guid>("CronJobId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("Disposition")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
 
                     b.Property<long>("ElapsedTime")
                         .HasColumnType("bigint");

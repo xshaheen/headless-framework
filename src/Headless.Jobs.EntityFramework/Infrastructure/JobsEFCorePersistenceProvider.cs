@@ -394,6 +394,9 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
                         .SetProperty(x => x.ExecutedAt, operationTimeUtc)
                         .SetProperty(x => x.UpdatedAt, operationTimeUtc)
                         .SetProperty(x => x.SkippedReason, "Cron definition paused")
+                        // A paused definition must not fire; resume creates its own occurrence. Nothing is owed at
+                        // this instant, so the retired row accounts for it.
+                        .SetProperty(x => x.Disposition, CronOccurrenceDisposition.Accounted)
                         .SetProperty(x => x.OwnerId, _ => null)
                         .SetProperty(x => x.LockedUntil, _ => null),
                 cancellationToken
@@ -647,6 +650,13 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
                                 .SetProperty(x => x.ExecutedAt, operationTimeUtc)
                                 .SetProperty(x => x.UpdatedAt, operationTimeUtc)
                                 .SetProperty(x => x.SkippedReason, "Cron definition updated")
+                                // KTD1a: the SAME SkippedReason the seeding migration writes, and the opposite
+                                // accounting answer. This path rebases the projection and creates the replacement
+                                // occurrence itself just below (or leaves a paused definition idle until resume), so
+                                // the new schedule already owns what comes next. Stamping ReplacementOwed here would
+                                // double-run every expression edit — which is exactly why the rule reads this column
+                                // and never the free-form string the two producers share.
+                                .SetProperty(x => x.Disposition, CronOccurrenceDisposition.Superseded)
                                 .SetProperty(x => x.OwnerId, _ => null)
                                 .SetProperty(x => x.LockedUntil, _ => null),
                         cancellationToken

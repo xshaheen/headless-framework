@@ -249,9 +249,34 @@ body and unchanged by this plan.
   This reconciles the two halves that currently disagree: the natives' live-only SQL satisfies the
   migration contract but wrongly allows a re-fire after a `Succeeded` row; the EF/in-memory
   unfiltered guard blocks the `Succeeded` re-fire but would wrongly block the migration replacement.
-  Neither existing rule is correct on its own. *(Not user-confirmed - U1 must first establish what
-  each provider actually does today, since the native suites currently pass the `Succeeded` scenario
-  that static reading says they should fail.)*
+  Neither existing rule is correct on its own.
+
+  **MEASURED 2026-08-15 (U7 phase 1) - description confirmed, mechanism corrected.** With the
+  vacuous test repaired (it now starts the host, so the call reaches the occupancy branch; proven by
+  mutation - the old test passes with the guard deleted, the repaired one fails), the observed grid
+  is: **no provider discriminates by terminal status at all.** Both natives MATERIALIZE on all six
+  statuses; EF and in-memory SUPPRESS on all six. The divergence is total, not partial.
+  `ApplyCronRecoveryAsync` sides with EF/in-memory on all six, so today one row is suppressed via
+  recovery and re-materialized via the native claim path. Three mechanism corrections follow, all
+  decided on the lead's judgment while the maintainer was unavailable and flagged for review:
+
+  - **KTD1a - the migration exception needs TWO disposition values, not one.**
+    `"Cron definition updated"` is written by two producers whose correct answers are opposite: the
+    startup seeding migration retires a row *without* a replacement (a re-fire is owed), while the
+    runtime edit path (`JobsEFCorePersistenceProvider.cs:649`, mirrored in-memory at
+    `JobsInMemoryPersistenceProvider.cs:2246`) writes the same string and then CREATES its own
+    replacement at `:656-664` (suppressing is correct; allowing a re-fire would double-run every
+    expression edit). One value mapped from that string encodes the wrong answer for one producer.
+  - **KTD1b - `"Node is not alive!"` suppresses.** It is one of six Skipped producers, not the two
+    KTD1 assumed, and it is the only ambiguous one: that occurrence never executed, its owner died.
+    It still suppresses at materialization, because getting it re-run is the dead-owner reclaim and
+    recovery path's job; re-materializing at claim time would race that path and risk a duplicate.
+    Called out explicitly rather than left to the catch-all, since it is the same class of judgment
+    as the migration case.
+  - **KTD1c - the rule binds recovery, not just materialization.** One shared accounting predicate is
+    called by both `MaterializeCronScheduleOccurrenceAsync` and `ApplyCronRecoveryAsync`, so the two
+    paths cannot disagree about the same row. This is what makes U8's extraction load-bearing rather
+    than cosmetic.
 - **KTD2 - Planner returns a plan, providers apply it.** The extraction produces a pure decision
   value (which occurrence id to create or repurpose, which to retire, resulting watermark and
   projection), not a callback into storage. Mirrors the split already used for cron-expression

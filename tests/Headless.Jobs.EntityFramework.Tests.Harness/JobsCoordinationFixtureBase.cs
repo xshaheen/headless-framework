@@ -635,6 +635,20 @@ public static class JobsCoordinationFixtureExtensions
     /// Inserts a CronJobOccurrence row with an exact status/owner/lease — bypasses the entity's internal setters.
     /// Requires a parent CronJob (FK <c>CronJobId</c>) to already exist (seed it via <see cref="SeedCronJobAsync" />).
     /// </summary>
+    /// <param name="skippedReason">
+    /// The retirement reason a <see cref="JobStatus.Skipped" /> row carries. Display text only: two producers write
+    /// the identical string "Cron definition updated" yet owe opposite accounting answers, which is why the rule
+    /// reads <paramref name="disposition" /> instead. Seeded so a row still LOOKS like the production one.
+    /// </param>
+    /// <param name="disposition">
+    /// The typed accounting disposition — the sole input to the occupied-instant rule. Defaults to
+    /// <see cref="CronOccurrenceDisposition.Accounted" />, matching every ordinary producer.
+    /// </param>
+    /// <param name="rawStatus">
+    /// Writes this string into the Status column verbatim instead of <paramref name="status" />'s enum name. The
+    /// only way to seed a value a newer binary could have written, which the rule must fail closed on rather than
+    /// throw over — an enum parameter cannot express it.
+    /// </param>
     public static async Task SeedCronOccurrenceAsync(
         this IJobsCoordinationFixture fixture,
         Guid id,
@@ -644,7 +658,10 @@ public static class JobsCoordinationFixtureExtensions
         NodeDeathPolicy onNodeDeath,
         DateTime? lockedUntil,
         DateTime executionTime,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        string? skippedReason = null,
+        CronOccurrenceDisposition disposition = CronOccurrenceDisposition.Accounted,
+        string? rawStatus = null
     )
     {
         await using var connection = fixture.CreateConnection();
@@ -653,19 +670,43 @@ public static class JobsCoordinationFixtureExtensions
         // ExecutionTime is an explicit parameter, not now(): the (CronJobId, ExecutionTime) unique index requires
         // distinct execution times when several occurrences of the same cron are seeded together.
         command.CommandText =
-            $"INSERT INTO {fixture.QualifiedCronJobOccurrencesTable} ({_CronOccurrenceInsertColumns}) "
+            $"INSERT INTO {fixture.QualifiedCronJobOccurrencesTable} ({_CronOccurrenceInsertColumns}, "
+            + "\"SkippedReason\", \"Disposition\") "
             + "VALUES (@id, @cronJobId, @status, @ownerId, @executionTime, "
-            + $"{fixture.UtcNowSqlExpression}, {fixture.UtcNowSqlExpression}, 0, 0, @onNodeDeath, @lockedUntil);";
+            + $"{fixture.UtcNowSqlExpression}, {fixture.UtcNowSqlExpression}, 0, 0, @onNodeDeath, @lockedUntil, "
+            + "@skippedReason, @disposition);";
 
         AddParameter(command, "@id", id);
         AddParameter(command, "@cronJobId", cronJobId);
-        AddParameter(command, "@status", ((JobStatus)status).ToString());
+        AddParameter(command, "@status", rawStatus ?? ((JobStatus)status).ToString());
         AddParameter(command, "@ownerId", (object?)ownerId ?? DBNull.Value);
         AddParameter(command, "@executionTime", executionTime);
         AddParameter(command, "@onNodeDeath", onNodeDeath.ToString());
         AddParameter(command, "@lockedUntil", (object?)lockedUntil ?? DBNull.Value);
+        AddParameter(command, "@skippedReason", (object?)skippedReason ?? DBNull.Value);
+        AddParameter(command, "@disposition", disposition.ToString());
 
         await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>Reads back a CronJobOccurrence's raw status string and typed disposition for assertions.</summary>
+    public static async Task<(string Status, string Disposition)> ReadCronOccurrenceDispositionAsync(
+        this IJobsCoordinationFixture fixture,
+        Guid id,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var connection = fixture.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            $"SELECT \"Status\", \"Disposition\" FROM {fixture.QualifiedCronJobOccurrencesTable} WHERE \"Id\" = @id;";
+        AddParameter(command, "@id", id);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        (await reader.ReadAsync(cancellationToken)).Should().BeTrue("the seeded cron occurrence must exist");
+
+        return (reader.GetString(0), reader.GetString(1));
     }
 
     /// <summary>Reads back a CronJobOccurrence's status + owner for assertions.</summary>

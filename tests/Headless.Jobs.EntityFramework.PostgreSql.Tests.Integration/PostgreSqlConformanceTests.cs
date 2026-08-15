@@ -260,9 +260,9 @@ public sealed class PostgreSqlClaimConformanceTests(PostgreSqlJobsCoordinationFi
     }
 
     [Fact]
-    public override Task a_terminal_occurrence_does_not_block_a_new_occurrence_at_the_same_execution_time()
+    public override Task a_migration_retired_occurrence_re_fires_while_an_edit_replaced_one_does_not()
     {
-        return base.a_terminal_occurrence_does_not_block_a_new_occurrence_at_the_same_execution_time();
+        return base.a_migration_retired_occurrence_re_fires_while_an_edit_replaced_one_does_not();
     }
 
     [Fact]

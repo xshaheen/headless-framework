@@ -507,28 +507,35 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             INSERT INTO {mapping.Table}
                 ({mapping.Id}, {mapping.Status}, {mapping.OwnerId}, {mapping.ExecutionTime}, {mapping.CronJobId},
                  {mapping.LockedUntil}, {mapping.OnNodeDeath}, {mapping.ElapsedTime}, {mapping.RetryCount},
-                 {mapping.CreatedAt}, {mapping.UpdatedAt})
+                 {mapping.CreatedAt}, {mapping.UpdatedAt}, {mapping.Disposition})
             OUTPUT inserted.{mapping.Id}
             SELECT
                 @id, @status, @owner, @executionTime, @cronJobId,
                 {_LeaseDeadlineSql("@claimNow")}, @onNodeDeath, @elapsedTime, @retryCount,
-                @claimNow, @claimNow
+                @claimNow, @claimNow, @disposition
             WHERE NOT EXISTS (
                 SELECT 1
                 FROM {mapping.Table} WITH (UPDLOCK, HOLDLOCK, ROWLOCK)
                 WHERE {mapping.ExecutionTime} = @executionTime AND {mapping.CronJobId} = @cronJobId
-                  AND {mapping.Status} IN (@idle, @queued, @inProgress)
+                  AND {mapping.AccountsForInstantPredicate("@unaccountedStatus", "@unaccountedDisposition")}
             );
             """;
 #pragma warning restore CA2100
         command.Parameters.Add(new SqlParameter("id", id));
         command.Parameters.Add(new SqlParameter("status", nameof(JobStatus.Queued)));
-        // Only an ACTIVE occurrence blocks the insert, matching the filtered unique index and the PostgreSQL
-        // ON CONFLICT ... WHERE Status IN (...) sibling. A terminal row (e.g. the occurrence a cron-expression
-        // migration marked Skipped) must not suppress a fresh fire at the same execution time.
-        command.Parameters.Add(new SqlParameter("idle", nameof(JobStatus.Idle)));
-        command.Parameters.Add(new SqlParameter("queued", nameof(JobStatus.Queued)));
-        command.Parameters.Add(new SqlParameter("inProgress", nameof(JobStatus.InProgress)));
+        // KTD1: a row that ACCOUNTS for the instant blocks the insert — every live status, every terminal status,
+        // and any status this binary does not recognize (the predicate is a negation, so unknown values fall on the
+        // suppressing side). The single exception is the seeding migration's ReplacementOwed retirement, which
+        // retired the row without creating a replacement and therefore still owes the fire. Predicate and literals
+        // come from CronOccurrenceAccounting via the mapping, so this SQL cannot drift from the LINQ providers or
+        // from the PostgreSQL sibling. The lock hints stay: they are what make the read-then-insert atomic here.
+        command.Parameters.Add(
+            new SqlParameter("unaccountedStatus", CronOccurrenceRelationalMapping.UnaccountedStatusValue)
+        );
+        command.Parameters.Add(
+            new SqlParameter("unaccountedDisposition", CronOccurrenceRelationalMapping.UnaccountedDispositionValue)
+        );
+        command.Parameters.Add(new SqlParameter("disposition", nameof(CronOccurrenceDisposition.Accounted)));
         command.Parameters.Add(new SqlParameter("owner", owner));
         command.Parameters.Add(_DateTimeParameter("executionTime", executionTime));
         command.Parameters.Add(new SqlParameter("cronJobId", item.Id));

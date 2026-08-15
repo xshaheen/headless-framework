@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data.Common;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -90,6 +91,71 @@ public sealed class PostgreSqlWatermarkMigrationTests(PostgreSqlJobsCoordination
         (await _IndexExistsAsync("IX_CronJobs_FingerprintRetryAfterUtc_Id", cancellationToken)).Should().BeTrue();
     }
 
+    /// <summary>
+    /// The disposition column's Up backfill and its DISPOSITION-AWARE Down guard. Reusing the watermark guard's
+    /// predicate here would have been silent data loss: it inspects schedule and recovery fields, which say nothing
+    /// about this column, so the drop would collapse every value to the implicit <c>Accounted</c> and turn a
+    /// <c>ReplacementOwed</c> row — an occurrence whose fire is still owed — into a permanently suppressed one.
+    /// </summary>
+    [Fact]
+    public async Task disposition_migration_backfills_accounted_and_refuses_a_provenance_losing_downgrade()
+    {
+        var cancellationToken = AbortToken;
+        var cronJobId = Guid.NewGuid();
+        var occurrenceId = Guid.NewGuid();
+        await fixture.ResetDatabaseAsync(cancellationToken);
+        await _ExecuteAsync("DROP TABLE IF EXISTS \"__DispositionMigrationsHistory\";", cancellationToken);
+        await _CreateLegacySchemaAsync(cronJobId, cancellationToken);
+
+        // Seeded BEFORE the column exists: the backfill assertion below is about pre-existing rows, which are the
+        // only ones whose prior behaviour the default has to preserve.
+        await _InsertLegacyOccurrenceAsync(occurrenceId, cronJobId, cancellationToken);
+
+        var options = new DbContextOptionsBuilder<PostgreSqlWatermarkMigrationDbContext>()
+            .UseNpgsql(
+                fixture.ConnectionString,
+                sql =>
+                    sql.MigrationsAssembly(typeof(PostgreSqlAddCronOccurrenceDisposition).Assembly.FullName)
+                        .MigrationsHistoryTable("__DispositionMigrationsHistory")
+            )
+            .Options;
+        await using var dbContext = new PostgreSqlWatermarkMigrationDbContext(options);
+        var migrator = dbContext.GetService<IMigrator>();
+
+        await migrator.MigrateAsync(PostgreSqlAddCronOccurrenceDisposition.Id, cancellationToken);
+        (await _ReadDispositionAsync(occurrenceId, cancellationToken))
+            .Should()
+            .Be("Accounted", "an existing row keeps the suppressing behaviour it had before the column existed");
+
+        // The guard blocks provenance LOSS, not the downgrade itself: from an all-ordinary state it runs through.
+        var downgrade = () => migrator.MigrateAsync(PostgreSqlAddCronScheduleWatermark.Id, cancellationToken);
+        await downgrade.Should().NotThrowAsync();
+        (await _ColumnExistsAsync("CronJobOccurrences", "Disposition", cancellationToken)).Should().BeFalse();
+        await migrator.MigrateAsync(PostgreSqlAddCronOccurrenceDisposition.Id, cancellationToken);
+
+        // ReplacementOwed is the value a downgrade must never silently erase — it is the only one that owes a fire.
+        await _SetDispositionAsync(occurrenceId, "ReplacementOwed", cancellationToken);
+        await downgrade
+            .Should()
+            .ThrowAsync<Exception>()
+            .WithMessage("*Cannot downgrade cron occurrence disposition migration*");
+        (await _ReadDispositionAsync(occurrenceId, cancellationToken)).Should().Be("ReplacementOwed");
+
+        // Superseded happens to suppress exactly as Accounted does, and is still refused: it is provenance the drop
+        // would destroy, and a destructive operation should be cleared deliberately rather than by a predicate that
+        // is only behaviour-equivalent today.
+        await _SetDispositionAsync(occurrenceId, "Superseded", cancellationToken);
+        await downgrade
+            .Should()
+            .ThrowAsync<Exception>()
+            .WithMessage("*Cannot downgrade cron occurrence disposition migration*");
+        (await _ReadDispositionAsync(occurrenceId, cancellationToken)).Should().Be("Superseded");
+
+        await _SetDispositionAsync(occurrenceId, "Accounted", cancellationToken);
+        await downgrade.Should().NotThrowAsync();
+        (await _ColumnExistsAsync("CronJobOccurrences", "Disposition", cancellationToken)).Should().BeFalse();
+    }
+
     private async Task<bool> _IndexExistsAsync(string indexName, CancellationToken cancellationToken)
     {
         await using var connection = fixture.CreateConnection();
@@ -125,6 +191,54 @@ public sealed class PostgreSqlWatermarkMigrationTests(PostgreSqlJobsCoordination
             cancellationToken,
             cronJobId
         );
+    }
+
+    private async Task _InsertLegacyOccurrenceAsync(
+        Guid occurrenceId,
+        Guid cronJobId,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var connection = fixture.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            "INSERT INTO jobs.\"CronJobOccurrences\" (\"Id\", \"CronJobId\", \"ExecutionTime\", \"Status\") "
+            + "VALUES (@id, @cronJobId, now(), 'Skipped');";
+        _AddParameter(command, "@id", occurrenceId);
+        _AddParameter(command, "@cronJobId", cronJobId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private async Task<string> _ReadDispositionAsync(Guid occurrenceId, CancellationToken cancellationToken)
+    {
+        await using var connection = fixture.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT \"Disposition\" FROM jobs.\"CronJobOccurrences\" WHERE \"Id\" = @id;";
+        _AddParameter(command, "@id", occurrenceId);
+
+        return (string)(await command.ExecuteScalarAsync(cancellationToken))!;
+    }
+
+    private async Task _SetDispositionAsync(Guid occurrenceId, string disposition, CancellationToken cancellationToken)
+    {
+        await using var connection = fixture.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            "UPDATE jobs.\"CronJobOccurrences\" SET \"Disposition\" = @disposition WHERE \"Id\" = @id;";
+        _AddParameter(command, "@id", occurrenceId);
+        _AddParameter(command, "@disposition", disposition);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static void _AddParameter(DbCommand command, string name, object value)
+    {
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = name;
+        parameter.Value = value;
+        command.Parameters.Add(parameter);
     }
 
     private async Task<(
