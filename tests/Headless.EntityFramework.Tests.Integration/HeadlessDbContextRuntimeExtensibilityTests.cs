@@ -5,6 +5,7 @@ using Headless.Domain;
 using Headless.EntityFramework;
 using Headless.EntityFramework.Contexts.Processors;
 using Headless.EntityFramework.Contexts.Runtime;
+using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;

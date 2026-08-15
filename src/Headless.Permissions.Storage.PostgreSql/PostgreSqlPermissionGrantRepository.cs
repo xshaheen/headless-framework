@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using Headless.Abstractions;
+using Headless.MultiTenancy;
 using Headless.Permissions.Entities;
 using Headless.Permissions.Repositories;
 using Microsoft.Extensions.DependencyInjection;

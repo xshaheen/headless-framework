@@ -2,6 +2,7 @@
 
 using Headless.Abstractions;
 using Headless.AuditLog;
+using Headless.MultiTenancy;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.Extensions.DependencyInjection;

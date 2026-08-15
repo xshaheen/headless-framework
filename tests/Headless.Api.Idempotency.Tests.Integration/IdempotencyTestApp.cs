@@ -7,6 +7,7 @@ using Headless.Api.Idempotency;
 using Headless.Caching;
 using Headless.Core;
 using Headless.DistributedLocks;
+using Headless.MultiTenancy;
 using Headless.Primitives;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;

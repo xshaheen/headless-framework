@@ -4,6 +4,7 @@ using FluentValidation;
 using Headless.Abstractions;
 using Headless.AuditLog.PostgreSql;
 using Headless.Checks;
+using Headless.MultiTenancy;
 using Headless.Serializer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;

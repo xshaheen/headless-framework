@@ -3,6 +3,7 @@ using Headless.Caching;
 using Headless.DistributedLocks;
 using Headless.Domain;
 using Headless.Messaging;
+using Headless.MultiTenancy;
 using Headless.Permissions;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;

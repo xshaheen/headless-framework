@@ -3,6 +3,7 @@
 using Headless.Abstractions;
 using Headless.CommitCoordination;
 using Headless.EntityFramework;
+using Headless.MultiTenancy;
 using Headless.Testing.Helpers;
 using Headless.Testing.Tests;
 using Microsoft.Data.Sqlite;

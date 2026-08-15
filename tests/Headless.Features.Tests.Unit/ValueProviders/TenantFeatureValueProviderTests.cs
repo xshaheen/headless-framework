@@ -4,6 +4,7 @@ using Headless.Abstractions;
 using Headless.Features.Models;
 using Headless.Features.ValueProviders;
 using Headless.Features.Values;
+using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 
 namespace Tests.ValueProviders;

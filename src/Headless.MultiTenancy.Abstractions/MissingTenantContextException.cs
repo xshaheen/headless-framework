@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Abstractions;
+namespace Headless.MultiTenancy;
 
 /// <summary>
 /// Thrown when an operation requires an ambient tenant context but none is available

@@ -466,6 +466,7 @@
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
+          "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
           "Headless.Serializer.Json": "[1.0.0, )",
           "Snappier": "[1.3.1, )"
         }
@@ -504,6 +505,12 @@
         "type": "Project",
         "dependencies": {
           "Headless.FluentValidation": "[1.0.0, )"
+        }
+      },
+      "headless.multitenancy.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Primitives": "[1.0.0, )"
         }
       },
       "headless.primitives": {

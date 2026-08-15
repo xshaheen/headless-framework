@@ -14,6 +14,7 @@
     <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
     <ProjectReference Include="..\Headless.Serializer.Json\Headless.Serializer.Json.csproj" />
     <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
+    <ProjectReference Include="..\Headless.MultiTenancy.Abstractions\Headless.MultiTenancy.Abstractions.csproj" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.EntityFramework" />

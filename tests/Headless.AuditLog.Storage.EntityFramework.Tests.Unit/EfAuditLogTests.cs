@@ -2,6 +2,7 @@
 
 using Headless.Abstractions;
 using Headless.AuditLog;
+using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;

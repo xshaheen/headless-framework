@@ -310,7 +310,8 @@
       "headless.api.abstractions": {
         "type": "Project",
         "dependencies": {
-          "Headless.Core": "[1.0.0, )"
+          "Headless.Core": "[1.0.0, )",
+          "Headless.MultiTenancy.Abstractions": "[1.0.0, )"
         }
       },
       "headless.api.core": {
@@ -372,6 +373,7 @@
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
+          "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
           "Headless.Serializer.Json": "[1.0.0, )",
           "Snappier": "[1.3.1, )"
         }
@@ -415,7 +417,14 @@
       "headless.multitenancy": {
         "type": "Project",
         "dependencies": {
-          "Headless.Checks": "[1.0.0, )"
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.MultiTenancy.Abstractions": "[1.0.0, )"
+        }
+      },
+      "headless.multitenancy.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Primitives": "[1.0.0, )"
         }
       },
       "headless.openapi.nswag": {

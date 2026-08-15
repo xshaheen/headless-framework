@@ -171,7 +171,7 @@ public sealed class HeadlessHttpTenancyBuilder
     /// <param name="configure">Optional callback to configure <see cref="MultiTenancyOptions"/>.</param>
     /// <returns>The same HTTP tenancy builder.</returns>
     /// <remarks>
-    /// Registers <see cref="Headless.Abstractions.ICurrentTenant"/>, <c>TenantResolutionMiddleware</c>,
+    /// Registers <see cref="Headless.MultiTenancy.ICurrentTenant"/>, <c>TenantResolutionMiddleware</c>,
     /// and <c>HeadlessHttpTenancyValidator</c>. Records the <c>Http</c> seam in the tenant posture
     /// manifest so startup validation can detect whether <see cref="SetupApiTenancy.UseHeadlessTenancy"/>
     /// was subsequently called.

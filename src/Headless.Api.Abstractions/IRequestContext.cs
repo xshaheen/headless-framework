@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.MultiTenancy;
+
 namespace Headless.Abstractions;
 
 /// <summary>Provides ambient context about the current request, including identity, tenant, locale, and client metadata.</summary>

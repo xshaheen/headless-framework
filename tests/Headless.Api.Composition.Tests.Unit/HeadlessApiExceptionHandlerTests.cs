@@ -6,6 +6,7 @@ using Headless.Abstractions;
 using Headless.Api.Abstractions;
 using Headless.Constants;
 using Headless.Exceptions;
+using Headless.MultiTenancy;
 using Headless.Primitives;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Http;

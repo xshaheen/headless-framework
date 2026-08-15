@@ -5,6 +5,7 @@ using Headless.Abstractions;
 using Headless.Api.MultiTenancy;
 using Headless.Checks;
 using Headless.Constants;
+using Headless.MultiTenancy;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;

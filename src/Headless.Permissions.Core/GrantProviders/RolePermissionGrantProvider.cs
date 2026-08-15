@@ -2,6 +2,7 @@
 
 using Headless.Abstractions;
 using Headless.Checks;
+using Headless.MultiTenancy;
 using Headless.Permissions.Grants;
 using Headless.Permissions.Models;
 

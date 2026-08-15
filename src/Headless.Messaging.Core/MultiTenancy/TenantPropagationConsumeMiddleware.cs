@@ -3,6 +3,7 @@
 using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Messaging.Internal;
+using Headless.MultiTenancy;
 using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.MultiTenancy;

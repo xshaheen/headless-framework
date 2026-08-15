@@ -3,6 +3,7 @@
 using System.ComponentModel;
 using Headless.Abstractions;
 using Headless.Api.Middlewares;
+using Headless.MultiTenancy;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -116,7 +117,7 @@ public static class SetupMiddlewares
 
     /// <summary>
     /// Adds <c>TenantResolutionMiddleware</c> to the pipeline. It reads the configured tenant claim
-    /// from the authenticated principal and sets <see cref="Headless.Abstractions.ICurrentTenant"/>
+    /// from the authenticated principal and sets <see cref="Headless.MultiTenancy.ICurrentTenant"/>
     /// for the duration of the request. Endpoints decorated with <see cref="MultiTenancy.SkipTenantResolutionAttribute"/>
     /// are bypassed entirely. Unauthenticated requests are passed through without setting a tenant.
     /// </summary>

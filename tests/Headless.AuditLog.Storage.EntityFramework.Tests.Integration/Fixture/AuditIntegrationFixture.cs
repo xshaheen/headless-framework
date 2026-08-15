@@ -1,6 +1,7 @@
 using Headless.Abstractions;
 using Headless.AuditLog;
 using Headless.EntityFramework;
+using Headless.MultiTenancy;
 using Headless.Testing.Helpers;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
