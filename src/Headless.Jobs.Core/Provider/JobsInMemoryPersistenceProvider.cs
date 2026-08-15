@@ -1811,13 +1811,26 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
     public Task<CronDispatchCandidates?> GetEarliestCronDispatchCandidatesAsync(
         int limit,
+        CronDispatchCandidateCursor? after = null,
         CancellationToken cancellationToken = default
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var candidates = _cronJobs
-            .Values.Where(x => !x.IsPaused && x.FingerprintRetryAfterUtc is null)
+        var selectable = _cronJobs.Values.Where(x => !x.IsPaused && x.FingerprintRetryAfterUtc is null);
+
+        if (after is { } cursor)
+        {
+            // Applied before Take, on the same (NextDueUtc, Id) ordering the result is sorted by, so a resumed read
+            // continues past what the caller already rejected instead of re-reading it (#830). Guid ordering is the
+            // CLR's here, matching this provider's own OrderBy.
+            selectable = selectable.Where(x =>
+                x.NextDueUtc > cursor.NextDueUtc
+                || (x.NextDueUtc == cursor.NextDueUtc && x.Id.CompareTo(cursor.CronJobId) > 0)
+            );
+        }
+
+        var candidates = selectable
             .OrderBy(x => x.NextDueUtc)
             .ThenBy(x => x.Id)
             .Take(limit)

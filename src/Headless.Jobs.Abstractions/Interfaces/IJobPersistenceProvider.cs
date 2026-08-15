@@ -396,6 +396,10 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// load-every-definition-and-evaluate-every-expression walk that previously ran on every node at every wake.
     /// </summary>
     /// <param name="limit">Maximum definitions to return. The caller needs the earliest instant and its ties, not a page.</param>
+    /// <param name="after">
+    /// Resume position from a previous read, or <see langword="null"/> to start at the earliest projection. Only
+    /// definitions ordering strictly after it are returned.
+    /// </param>
     /// <param name="cancellationToken">Token that aborts the query.</param>
     /// <returns>
     /// The earliest definitions ordered by projection with the store instant they were read against, or
@@ -410,6 +414,13 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// position, which every advance moves; a cached projection would hand the scheduler a watermark that has already
     /// been superseded and make every advance lose its fence.
     /// </para>
+    /// <para>
+    /// <paramref name="after"/> must be applied INSIDE the query, before the <paramref name="limit"/> truncation, and
+    /// against the same ordering the result is sorted by. A provider that instead truncates first and drops the
+    /// resumed rows afterwards satisfies the signature but not the contract: it returns a short page whose contents
+    /// never move past the definitions the caller already rejected, so a caller excluding more definitions than one
+    /// page holds would never reach a healthy later one (#830).
+    /// </para>
     /// A non-null fingerprint retry boundary is a durable activation quarantine, even after its timestamp expires.
     /// Only a successful sweep rebase or an explicit schedule correction clears it, so deferred invalid definitions
     /// must never reach dispatch directly.
@@ -417,6 +428,7 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task<CronDispatchCandidates?> GetEarliestCronDispatchCandidatesAsync(
         int limit,
+        CronDispatchCandidateCursor? after = null,
         CancellationToken cancellationToken = default
     );
 

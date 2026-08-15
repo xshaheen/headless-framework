@@ -10,29 +10,60 @@ internal static class CronTimeZoneResolver
 
     public static TimeZoneInfo Resolve(string? timeZoneId, TimeZoneInfo fallback)
     {
+        return TryResolve(timeZoneId, fallback, out var timeZone)
+            ? timeZone
+            : throw new ArgumentException(
+                $"Time zone '{timeZoneId}' must be a valid IANA identifier.",
+                nameof(timeZoneId)
+            );
+    }
+
+    /// <summary>
+    /// Resolves <paramref name="timeZoneId"/> without throwing, so a caller can classify the failure instead of
+    /// catching it.
+    /// </summary>
+    /// <remarks>
+    /// Whether a zone resolves is a property of THIS HOST's timezone database, not of the definition naming it (#830).
+    /// A caller that must decide between a node-local condition and a fleet-wide definitional error therefore probes
+    /// here rather than treating the <see cref="ArgumentException"/> from <see cref="Resolve"/> as evidence about the
+    /// definition — the same identifier resolves fine on a peer with current tzdata.
+    /// </remarks>
+    public static bool TryResolve(
+        string? timeZoneId,
+        TimeZoneInfo fallback,
+        [NotNullWhen(true)] out TimeZoneInfo? timeZone
+    )
+    {
         if (timeZoneId is null)
         {
-            return fallback;
+            timeZone = fallback;
+
+            return true;
         }
 
         if (string.IsNullOrWhiteSpace(timeZoneId))
         {
-            throw new ArgumentException(
-                $"Time zone '{timeZoneId}' must be a valid IANA identifier.",
-                nameof(timeZoneId)
-            );
+            timeZone = null;
+
+            return false;
         }
 
         if (_IanaTimeZones.TryGetValue(timeZoneId, out var cached))
         {
-            return cached;
+            timeZone = cached;
+
+            return true;
         }
 
-        if (TimeZoneInfo.TryFindSystemTimeZoneById(timeZoneId, out var timeZone) && timeZone.HasIanaId)
+        if (TimeZoneInfo.TryFindSystemTimeZoneById(timeZoneId, out var found) && found.HasIanaId)
         {
-            return _IanaTimeZones.GetOrAdd(timeZoneId, timeZone);
+            timeZone = _IanaTimeZones.GetOrAdd(timeZoneId, found);
+
+            return true;
         }
 
-        throw new ArgumentException($"Time zone '{timeZoneId}' must be a valid IANA identifier.", nameof(timeZoneId));
+        timeZone = null;
+
+        return false;
     }
 }

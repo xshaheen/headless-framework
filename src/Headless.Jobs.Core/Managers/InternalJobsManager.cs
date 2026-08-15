@@ -44,6 +44,10 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
     // fingerprints for that snapshot so bounded paging does not reload every cron definition once per page.
     private readonly ConcurrentDictionary<Guid, HashSet<string>> _fingerprintsBySnapshot = new();
 
+    // #830: definitions THIS host cannot evaluate. Owned by the manager, which is a singleton, so its lifetime is
+    // exactly one process — the property that keeps a node-local timezone failure from becoming fleet-wide state.
+    private readonly NodeLocalCronSuppressions _nodeLocalSuppressions = new();
+
     private IJobsInstrumentation? _ResolveInstrumentation()
     {
         return _instrumentation ??= serviceProvider.GetService<IJobsInstrumentation>();
@@ -302,10 +306,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         // definition per the provider contract), so the two are independent and overlap instead of serializing —
         // matching how GetNextJobs already overlaps its cron and time-job reads. Both are uncached by construction,
         // so serializing them would cost a guaranteed extra round trip on every wake on every node.
-        var candidatesTask = persistenceProvider.GetEarliestCronDispatchCandidatesAsync(
-            _MaxCronDispatchCandidates,
-            cancellationToken
-        );
+        var candidatesTask = _ReadSelectableCandidatesAsync(cancellationToken);
         var earliestOccurrenceTask = persistenceProvider.GetEarliestAvailableCronOccurrenceAsync([], cancellationToken);
 
         await Task.WhenAll(candidatesTask, earliestOccurrenceTask).ConfigureAwait(false);
@@ -315,6 +316,119 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
 
         return await _EarliestCronJobGroupAsync(candidates, earliestAvailableCronOccurrence, cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Reads the earliest candidates THIS NODE can actually evaluate, resuming past whole pages it cannot rather than
+    /// filtering an already-truncated one.
+    /// </summary>
+    /// <remarks>
+    /// The containment half of #830. Dropping the durable defer for a node-local timezone failure means the query
+    /// keeps returning that definition here, where resolution fails again on every wake — so without a per-candidate
+    /// guard one unresolvable definition would abort the whole cycle and stall this node's scheduling of every
+    /// unrelated cron and time job.
+    /// <para>
+    /// The guard cannot be a post-read filter. The read is bounded, so a page whose candidates are all suppressed
+    /// would empty on every poll and a healthy definition ordered behind it would never enter the window — trading a
+    /// stalled node for a starved definition. Resuming from the page's last ordering key pushes the exclusion into the
+    /// next query instead, and because the cursor strictly advances the loop terminates at the last definition.
+    /// </para>
+    /// </remarks>
+    private async Task<CronDispatchCandidates?> _ReadSelectableCandidatesAsync(CancellationToken cancellationToken)
+    {
+        CronDispatchCandidateCursor? after = null;
+
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var page = await persistenceProvider
+                .GetEarliestCronDispatchCandidatesAsync(_MaxCronDispatchCandidates, after, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (page is not { Candidates.Count: > 0 })
+            {
+                return null;
+            }
+
+            var selectable = _SelectableOnThisNode(page.Candidates);
+
+            if (selectable is null)
+            {
+                // Nothing was suppressed, which is the only outcome a healthy node ever takes. The page is returned
+                // exactly as read, so the common path costs no allocation and no extra round trip.
+                return page;
+            }
+
+            if (selectable.Count > 0)
+            {
+                return new CronDispatchCandidates { Candidates = selectable, StoreUtcNow = page.StoreUtcNow };
+            }
+
+            // A short page means the store had nothing beyond it, so there is no healthy definition hiding behind this
+            // one and this node genuinely has no cron work to wake for.
+            if (page.Candidates.Count < _MaxCronDispatchCandidates)
+            {
+                return null;
+            }
+
+            var last = page.Candidates[^1];
+            after = new CronDispatchCandidateCursor(last.NextDueUtc, last.CronJobId);
+        }
+    }
+
+    /// <summary>
+    /// Drops the candidates this host cannot evaluate, returning <see langword="null"/> when it dropped none so the
+    /// caller can keep the page it already has.
+    /// </summary>
+    private List<CronDispatchCandidate>? _SelectableOnThisNode(IReadOnlyList<CronDispatchCandidate> candidates)
+    {
+        List<CronDispatchCandidate>? retained = null;
+
+        for (var index = 0; index < candidates.Count; index++)
+        {
+            var candidate = candidates[index];
+
+            if (_IsSelectableHere(candidate))
+            {
+                retained?.Add(candidate);
+
+                continue;
+            }
+
+            // First suppressed candidate on this page: materialize whatever preceded it. Pages with nothing suppressed
+            // — every page on every healthy node — never reach this line and never allocate.
+            retained ??= [.. candidates.Take(index)];
+        }
+
+        return retained;
+    }
+
+    private bool _IsSelectableHere(CronDispatchCandidate candidate)
+    {
+        if (_nodeLocalSuppressions.IsSuppressed(candidate.CronJobId, candidate.ScheduleRevision))
+        {
+            return false;
+        }
+
+        if (cronScheduleCache.CanResolveTimeZone(candidate.TimeZoneId))
+        {
+            return true;
+        }
+
+        // Node-local, so nothing durable is written: a peer whose timezone database resolves this zone must keep
+        // dispatching the definition. Logged once per revision rather than once per poll — the scheduler wakes at up
+        // to ~1 kHz whenever work is due, and a per-poll warning would bury the signal it is meant to raise.
+        if (_nodeLocalSuppressions.Suppress(candidate.CronJobId, candidate.ScheduleRevision))
+        {
+            logger.LogUnresolvableCronTimeZone(
+                candidate.CronJobId,
+                candidate.FunctionName,
+                candidate.TimeZoneId ?? "<default>"
+            );
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -1196,6 +1310,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         var rebased = 0;
         var deferred = 0;
         var lostFence = 0;
+        var skippedNodeLocal = 0;
 
         foreach (var candidate in page.Candidates)
         {
@@ -1204,6 +1319,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
             Exception? deterministicFailure = null;
             string? current = null;
             DateTime? rebasedNext = null;
+            var nodeLocalFailure = false;
             var anchor =
                 candidate.ReconciledThroughUtc > page.StoreUtcNow ? candidate.ReconciledThroughUtc : page.StoreUtcNow;
 
@@ -1226,16 +1342,35 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
                     $"Cron expression '{candidate.Expression}' is invalid."
                 );
             }
+            else if (candidate.TimeZoneId is { } declared && string.IsNullOrWhiteSpace(declared))
+            {
+                // Blank is malformed data rather than a missing tzdata entry — every host in the fleet reads it the
+                // same way — so it stays in the durable bucket below, unlike an identifier this host merely lacks.
+                deterministicFailure = new InvalidOperationException(
+                    "Time zone identifier is blank. A definition either names an IANA zone or leaves it unset."
+                );
+            }
             else
             {
                 try
                 {
-                    current = cronScheduleCache.ComputeEvaluationFingerprint(candidate.TimeZoneId);
-                    rebasedNext = cronScheduleCache.GetNextOccurrenceOrDefault(
-                        candidate.Expression,
-                        anchor,
-                        candidate.TimeZoneId
+                    // Probed rather than caught (#830). Both branches previously surfaced as ArgumentException, which
+                    // made an unresolvable zone indistinguishable from a genuinely invalid definition and got it
+                    // written to durable, FLEET-VISIBLE defer state on the evidence of one host's timezone database.
+                    // Whether a zone resolves is a property of this node, so it is classified before it can throw.
+                    nodeLocalFailure = !cronScheduleCache.TryComputeEvaluationFingerprint(
+                        candidate.TimeZoneId,
+                        out current
                     );
+
+                    if (!nodeLocalFailure)
+                    {
+                        rebasedNext = cronScheduleCache.GetNextOccurrenceOrDefault(
+                            candidate.Expression,
+                            anchor,
+                            candidate.TimeZoneId
+                        );
+                    }
                 }
                 catch (ArgumentException exception)
                 {
@@ -1243,13 +1378,32 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
                 }
             }
 
+            if (nodeLocalFailure)
+            {
+                // Skipped, never deferred: _CurrentFingerprintsAsync already swallows this exact failure per zone
+                // without writing anything, and the two paths disagreeing is what let one node with stale tzdata
+                // quarantine a definition for every node. The suppression also keeps dispatch on THIS node from
+                // re-selecting it every wake, which is what makes dropping the defer safe.
+                if (_nodeLocalSuppressions.Suppress(candidate.CronJobId, candidate.ScheduleRevision))
+                {
+                    logger.LogUnresolvableCronTimeZone(
+                        candidate.CronJobId,
+                        candidate.FunctionName,
+                        candidate.TimeZoneId ?? "<default>"
+                    );
+                }
+
+                skippedNodeLocal++;
+
+                continue;
+            }
+
             if (deterministicFailure is not null)
             {
-                logger.LogUnresolvableCronTimeZone(
+                logger.LogDeferredInvalidCronDefinition(
                     deterministicFailure,
                     candidate.CronJobId,
-                    candidate.FunctionName,
-                    candidate.TimeZoneId ?? "<default>"
+                    candidate.FunctionName
                 );
 
                 var accepted = await persistenceProvider
@@ -1311,6 +1465,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
             Rebased = rebased,
             Deferred = deferred,
             LostFence = lostFence,
+            SkippedNodeLocal = skippedNodeLocal,
             HasMore = page.HasMore,
             Wrapped = page.Wrapped,
             NextCursorId = page.Candidates.Count == 0 ? afterId : page.Candidates[^1].CronJobId,
@@ -1631,15 +1786,28 @@ internal static partial class InternalJobsManagerLog
     [LoggerMessage(
         EventId = 3218,
         Level = LogLevel.Warning,
-        Message = "Cron definition {CronJobId} ({FunctionName}) names time zone '{TimeZoneId}', which this host "
-            + "cannot resolve. Its schedule interpretation cannot be re-derived here and it is skipped by the "
-            + "fingerprint sweep; the rest of the sweep continues."
+        Message = "Cron definition {CronJobId} ({FunctionName}) names time zone '{TimeZoneId}', which THIS HOST "
+            + "cannot resolve. It is skipped by this node's fingerprint sweep and excluded from this node's dispatch "
+            + "selection; nothing durable is written, so peers with a current timezone database keep scheduling it "
+            + "normally. Update this host's timezone data, or correct the definition if no host can resolve it."
     )]
     public static partial void LogUnresolvableCronTimeZone(
         this ILogger logger,
-        Exception exception,
         Guid cronJobId,
         string functionName,
         string timeZoneId
+    );
+
+    [LoggerMessage(
+        EventId = 3219,
+        Level = LogLevel.Warning,
+        Message = "Cron definition {CronJobId} ({FunctionName}) is invalid on every host, so it was durably deferred "
+            + "with exponential backoff and will not be dispatched by any node until it is corrected."
+    )]
+    public static partial void LogDeferredInvalidCronDefinition(
+        this ILogger logger,
+        Exception exception,
+        Guid cronJobId,
+        string functionName
     );
 }

@@ -68,6 +68,26 @@ public sealed record CronDispatchCandidate
 }
 
 /// <summary>
+/// The keyset position a bounded candidate read resumes from: the ordering key of the last candidate the caller has
+/// already examined and rejected.
+/// </summary>
+/// <remarks>
+/// Exists so a caller that must exclude definitions can push the exclusion into the query INSTEAD of filtering an
+/// already-truncated page. Filtering after the read starves: a page whose entries the caller all rejects empties on
+/// every poll, and a healthy later definition never enters the window (#830). Resuming past the rejected page keeps the
+/// bound on each read while still reaching every definition.
+/// <para>
+/// The cursor is the provider's own ordering key — <c>(NextDueUtc, CronJobId)</c> — and is opaque and provider-scoped:
+/// backends order identifiers differently, so a cursor is only meaningful to the provider that produced it. Because the
+/// pair is unique, a resumed read strictly advances and paging terminates at the last definition.
+/// </para>
+/// </remarks>
+/// <param name="NextDueUtc">Projection of the last examined candidate.</param>
+/// <param name="CronJobId">Identifier of the last examined candidate, breaking ties at the same projection.</param>
+[PublicAPI]
+public readonly record struct CronDispatchCandidateCursor(DateTime NextDueUtc, Guid CronJobId);
+
+/// <summary>
 /// The earliest cron definitions by projection, together with the instant the STORE evaluated them against.
 /// </summary>
 /// <remarks>

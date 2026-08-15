@@ -1794,6 +1794,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
     public async Task<CronDispatchCandidates?> GetEarliestCronDispatchCandidatesAsync(
         int limit,
+        CronDispatchCandidateCursor? after = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -1801,13 +1802,30 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
 
+        var selectable = dbContext
+            .Set<TCronJob>()
+            .AsNoTracking()
+            .Where(x => !x.IsPaused && x.FingerprintRetryAfterUtc == null);
+
+        if (after is { } cursor)
+        {
+            var cursorNextDueUtc = cursor.NextDueUtc;
+            var cursorId = cursor.CronJobId;
+
+            // Seeks on the SAME (NextDueUtc, Id) ordering the scan is sorted by, so a resumed read continues exactly
+            // where the previous one stopped and the range scan is still indexed. Applied here — BEFORE Take — is the
+            // whole point: filtering the truncated page instead would let a page of definitions the caller cannot use
+            // hide every healthy definition behind it, forever (#830). Guid ordering is the database's, matching the
+            // ORDER BY, so the two agree even where that ordering differs from the CLR's.
+            selectable = selectable.Where(x =>
+                x.NextDueUtc > cursorNextDueUtc || (x.NextDueUtc == cursorNextDueUtc && x.Id.CompareTo(cursorId) > 0)
+            );
+        }
+
         // One indexed range scan over (IsPaused, NextDueUtc). The store instant rides along in the same statement, so
         // the caller's due-ness comparison is made against the server's clock rather than this node's, with no extra
         // round trip. Uncached by construction — the schedule position moves on every advance.
-        var rows = await dbContext
-            .Set<TCronJob>()
-            .AsNoTracking()
-            .Where(x => !x.IsPaused && x.FingerprintRetryAfterUtc == null)
+        var rows = await selectable
             .OrderBy(x => x.NextDueUtc)
             .ThenBy(x => x.Id)
             .Take(limit)

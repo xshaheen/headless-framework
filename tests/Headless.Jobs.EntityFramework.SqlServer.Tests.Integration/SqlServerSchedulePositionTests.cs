@@ -70,6 +70,12 @@ public sealed class SqlServerSchedulePositionTests(SqlServerJobsCoordinationFixt
     }
 
     [Fact]
+    public override Task dispatch_selection_resumes_past_a_full_page_of_excluded_definitions()
+    {
+        return base.dispatch_selection_resumes_past_a_full_page_of_excluded_definitions();
+    }
+
+    [Fact]
     public override Task materialization_survives_restart_and_the_idle_occurrence_is_claimed_later() =>
         base.materialization_survives_restart_and_the_idle_occurrence_is_claimed_later();
 

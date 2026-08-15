@@ -170,6 +170,17 @@ provider, and unknown failures fail startup closed. The periodic sweep runs ever
 wrap, and retains its cursor when that pass bound is reached. Custom providers must implement the stale-page,
 fenced-defer, and compare-and-advance SPI with the same store-time and lost-fence rules.
 
+"Deterministically invalid" means invalid on *every* host: an undefined missed-run policy, a negative grace, an
+unparseable expression, a blank timezone identifier. A timezone identifier that only the **running host** cannot
+resolve is a different failure — that host's timezone database is behind, and its peers evaluate the definition fine.
+Deferring it would quarantine the definition fleet-wide on one node's evidence, so instead the affected node logs it,
+counts it in `CronFingerprintSweepResult.SkippedNodeLocal`, and suppresses it **in memory only**, keyed by definition
+id and schedule revision. Nothing durable is written, so peers keep dispatching it; the suppression lapses when the
+definition's revision moves, and disappears entirely when the process restarts with updated tzdata. Because the
+suppression removes the definition's durable quarantine, the scheduler's bounded candidate read takes a resume cursor
+(`CronDispatchCandidateCursor`) and pages past a page it cannot use — filtering an already-read page would let one page
+of unresolvable definitions starve every healthy definition ordered behind it.
+
 Recovery and rebase outcomes are reported through the framework's existing logging instrumentation. A missed count is
 always accompanied by whether it is exact or a lower bound — a long outage on a seconds-resolution schedule stops
 counting at a ceiling, and "at least 1000" calls for a different response than "exactly 1000".

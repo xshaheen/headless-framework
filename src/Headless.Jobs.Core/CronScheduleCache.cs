@@ -200,6 +200,40 @@ internal sealed partial class CronScheduleCache(TimeZoneInfo timeZoneInfo)
         return CronEvaluationFingerprint.Compute(CronTimeZoneResolver.Resolve(timeZoneId, TimeZoneInfo));
     }
 
+    /// <summary>
+    /// Whether THIS HOST can evaluate a definition in <paramref name="timeZoneId"/> at all. Every evaluation entry
+    /// point resolves the zone first, so a <see langword="false"/> here means the whole definition is inert on this
+    /// node — including <see cref="EvaluatePending"/> and every
+    /// <see cref="GetNextOccurrenceOrDefault(string, DateTime, string?)"/> overload.
+    /// </summary>
+    /// <remarks>
+    /// This is a NODE-LOCAL fact, not a verdict on the definition: it says the running host's timezone database has no
+    /// entry for the identifier, which a peer with current tzdata will disagree with. Callers use it to skip work they
+    /// cannot do here rather than to record anything durable about the definition (#830).
+    /// </remarks>
+    public bool CanResolveTimeZone(string? timeZoneId)
+    {
+        return CronTimeZoneResolver.TryResolve(timeZoneId, TimeZoneInfo, out _);
+    }
+
+    /// <summary>
+    /// <see cref="ComputeEvaluationFingerprint"/> for a zone this host may not have: returns <see langword="false"/>
+    /// instead of throwing when <paramref name="timeZoneId"/> does not resolve here.
+    /// </summary>
+    public bool TryComputeEvaluationFingerprint(string? timeZoneId, [NotNullWhen(true)] out string? fingerprint)
+    {
+        if (!CronTimeZoneResolver.TryResolve(timeZoneId, TimeZoneInfo, out var timeZone))
+        {
+            fingerprint = null;
+
+            return false;
+        }
+
+        fingerprint = CronEvaluationFingerprint.Compute(timeZone);
+
+        return true;
+    }
+
     public bool Invalidate(string expression)
     {
         return _cache.TryRemove(_Normalize(expression), out _);
