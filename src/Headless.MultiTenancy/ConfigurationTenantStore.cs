@@ -1,0 +1,106 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using Headless.Checks;
+using Headless.Primitives;
+using Microsoft.Extensions.Options;
+
+namespace Headless.MultiTenancy;
+
+/// <summary>
+/// Configuration-backed <see cref="ITenantStore"/>, bound once at startup from
+/// <see cref="ConfigurationTenantStoreOptions"/> via the options system (R16). The bound
+/// <see cref="IOptions{TOptions}"/> snapshot is captured once and never re-read: a configuration
+/// change after startup requires a process restart to take effect — there is no change-token refresh
+/// (KTD7). Normalizes and validates seed identifiers eagerly, mirroring <see cref="InMemoryTenantStore"/>:
+/// two seeds whose identifiers normalize to the same value throw immediately (R20).
+/// </summary>
+internal sealed class ConfigurationTenantStore : ITenantStore, ITenantDirectory
+{
+    private readonly IReadOnlyDictionary<string, TenantInfo> _byId;
+    private readonly IReadOnlyDictionary<string, TenantInfo> _byNormalizedIdentifier;
+
+    /// <summary>Builds the immutable id and normalized-identifier lookup tables from the bound seed options.</summary>
+    /// <param name="options">The bound seed data.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="options"/> or its value is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">A seed's <c>Id</c> or <c>Identifier</c> is empty or white space.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// Two or more seeds normalize to the same identifier, or two or more seeds share the same tenant id.
+    /// </exception>
+    public ConfigurationTenantStore(IOptions<ConfigurationTenantStoreOptions> options)
+    {
+        Argument.IsNotNull(options);
+
+        var seeds = Argument.IsNotNull(options.Value).Tenants;
+
+        var byId = new Dictionary<string, TenantInfo>(seeds.Count, StringComparer.Ordinal);
+        var byIdentifier = new Dictionary<string, TenantInfo>(seeds.Count, StringComparer.Ordinal);
+
+        foreach (var seed in seeds)
+        {
+            var normalizedIdentifier = seed.Identifier.Trim().ToLowerInvariant();
+            var extraProperties = new ExtraProperties();
+
+            foreach (var (key, value) in seed.ExtraProperties)
+            {
+                extraProperties[key] = value;
+            }
+
+            // Normal construction through TenantInfo's own validating constructor (R16) — the options
+            // binder only ever produces the plain ConfigurationTenantSeed shape; the domain type itself
+            // is never constructed through reflection over an uninitialized instance.
+            var tenant = new TenantInfo(seed.Id, normalizedIdentifier, seed.Name, seed.IsEnabled)
+            {
+                ExtraProperties = extraProperties,
+            };
+
+            if (!byIdentifier.TryAdd(normalizedIdentifier, tenant))
+            {
+                throw new InvalidOperationException(
+                    "Headless.MultiTenancy configuration store: duplicate tenant identifier "
+                        + $"'{normalizedIdentifier}' (from seed identifier '{seed.Identifier}'). "
+                        + "Seeded identifiers must be unique after normalization (R20)."
+                );
+            }
+
+            if (!byId.TryAdd(tenant.Id, tenant))
+            {
+                throw new InvalidOperationException(
+                    $"Headless.MultiTenancy configuration store: duplicate tenant id '{tenant.Id}'. "
+                        + "Seeded tenant ids must be unique."
+                );
+            }
+        }
+
+        _byId = byId;
+        _byNormalizedIdentifier = byIdentifier;
+    }
+
+    /// <inheritdoc/>
+    public Task<TenantInfo?> FindByIdentifierAsync(
+        string normalizedIdentifier,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(normalizedIdentifier);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        return Task.FromResult(_byNormalizedIdentifier.GetValueOrDefault(normalizedIdentifier));
+    }
+
+    /// <inheritdoc/>
+    public Task<TenantInfo?> FindByIdAsync(string id, CancellationToken cancellationToken = default)
+    {
+        Argument.IsNotNull(id);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        return Task.FromResult(_byId.GetValueOrDefault(id));
+    }
+
+    /// <inheritdoc/>
+    public Task<IReadOnlyList<TenantInfo>> GetAllAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        return Task.FromResult<IReadOnlyList<TenantInfo>>([.. _byId.Values]);
+    }
+}
