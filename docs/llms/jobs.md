@@ -18,9 +18,11 @@ packages: Jobs.Abstractions, Jobs.Core, Jobs.Dashboard, Jobs.SourceGenerator, Jo
     - [Commit-Coordinated Enqueue (Atomic Enqueue)](#commit-coordinated-enqueue-atomic-enqueue)
     - [Tenant Propagation](#tenant-propagation)
 - [Misfire recovery](#misfire-recovery)
+    - [Where the watermark starts](#where-the-watermark-starts)
     - [When a definition enters recovery](#when-a-definition-enters-recovery)
     - [Policies](#policies)
     - [When a row already stands for the instant](#when-a-row-already-stands-for-the-instant)
+    - [Applying a recovery pass](#applying-a-recovery-pass)
     - [Configuring it](#configuring-it)
     - [What an executing job sees](#what-an-executing-job-sees)
     - [Schedule-interpretation drift](#schedule-interpretation-drift)
@@ -62,39 +64,36 @@ packages: Jobs.Abstractions, Jobs.Core, Jobs.Dashboard, Jobs.SourceGenerator, Jo
     - [Side Effects](#side-effects-3)
 - [OpenTelemetry Instrumentation](#opentelemetry-instrumentation)
     - [Problem Solved](#problem-solved-4)
-    - [Key Features](#key-features-4)
-    - [Installation](#installation-4)
     - [Quick Start](#quick-start-4)
     - [Configuration](#configuration-4)
-    - [Dependencies](#dependencies-4)
     - [Side Effects](#side-effects-4)
 - [Headless.Jobs.EntityFramework](#headlessjobsentityframework)
     - [Problem Solved](#problem-solved-5)
-    - [Key Features](#key-features-5)
+    - [Key Features](#key-features-4)
     - [Design Notes](#design-notes-2)
-    - [Installation](#installation-5)
+    - [Installation](#installation-4)
     - [Quick Start](#quick-start-5)
     - [Configuration](#configuration-5)
-    - [Dependencies](#dependencies-5)
+    - [Dependencies](#dependencies-4)
     - [Side Effects](#side-effects-5)
     - [Error Handling and Retries](#error-handling-and-retries)
 - [Headless.Jobs.EntityFramework.PostgreSql](#headlessjobsentityframeworkpostgresql)
     - [Problem Solved](#problem-solved-6)
-    - [Key Features](#key-features-6)
+    - [Key Features](#key-features-5)
     - [Design Notes](#design-notes-3)
-    - [Installation](#installation-6)
+    - [Installation](#installation-5)
     - [Quick Start](#quick-start-6)
     - [Configuration](#configuration-6)
-    - [Dependencies](#dependencies-6)
+    - [Dependencies](#dependencies-5)
     - [Side Effects](#side-effects-6)
 - [Headless.Jobs.EntityFramework.SqlServer](#headlessjobsentityframeworksqlserver)
     - [Problem Solved](#problem-solved-7)
-    - [Key Features](#key-features-7)
+    - [Key Features](#key-features-6)
     - [Design Notes](#design-notes-4)
-    - [Installation](#installation-7)
+    - [Installation](#installation-6)
     - [Quick Start](#quick-start-7)
     - [Configuration](#configuration-7)
-    - [Dependencies](#dependencies-7)
+    - [Dependencies](#dependencies-6)
     - [Side Effects](#side-effects-7)
 
 > High-performance background job scheduler for .NET with cron expressions, time-based scheduling, compile-time source-generated registration, and distributed coordination.
@@ -143,7 +142,9 @@ Mark job methods with `[JobFunction("name")]` (or `[JobFunction("name", cronExpr
 - Call `AddHeadlessJobs()` on `IServiceCollection`. There is no `app.UseJobs()` call — the scheduler starts automatically through `IHostedService` registered by `AddHeadlessJobs`.
 - Configure every `AddJobsDiscovery(...)` assembly inside the `AddHeadlessJobs` callback. Jobs loads those assemblies before freezing the process-wide generated catalog; late generated registrations fail deterministically. Runtime services and Dashboard use an immutable configuration-resolved registry owned by each `IHost`.
 - Use `Jobs.EntityFramework` for durable persistence. Without it, jobs live in memory and are lost on restart.
-- Configure `UsePostgreSqlClaims()` or `UseSqlServerClaims()` inside the existing `UseEntityFramework` builder when the matching provider package is installed. Configure only one. Omitting both deliberately keeps the portable EF optimistic-CAS claim path.
+- Configure `UsePostgreSqlClaims()` or `UseSqlServerClaims()` inside the existing `UseEntityFramework` builder when the matching provider package is installed. Configure only one. Omitting both deliberately keeps the portable EF optimistic-CAS claim path. The selected package also fixes the GUID ordering every EF Jobs row is keyed with — SQL Server comb, PostgreSQL UUIDv7 — so occurrence ids stay index-friendly on the paths that do not run through the native claim strategy.
+- The EF store creates a cron definition at runtime by reading the backend's **current statement** clock, and only PostgreSQL and SQL Server have one. On any other EF backend `ICronJobManager.AddAsync` / `AddBatchAsync` (coordinated or not) throws `NotSupportedException`; time jobs and the unseeded `IJobPersistenceProvider.InsertCronJobsAsync(jobs, ct)` overload still work. Seed cron definitions from `[JobFunction]` attributes or position rows yourself on such a backend.
+- Custom `IJobPersistenceProvider` authors must not re-derive the coalesce-recovery decision. Snapshot `CronRecoveryPlanner.GetInspectionWindow(request)`, call `CronRecoveryPlanner.CreatePlan(...)`, and apply the returned `CronRecoveryPlan` with the store's own fenced writes. See [Applying a recovery pass](#applying-a-recovery-pass).
 - For the durable operational store, register `AddHeadlessCoordination(c => c.Use…(conn))` BEFORE `AddHeadlessJobs(o => o.UseEntityFramework(…))`. Without coordination, startup throws `InvalidOperationException` naming `AddHeadlessCoordination`.
 - On the durable path, node identity is `node@incarnation` (store-allocated by Coordination), not `Environment.MachineName`. `SchedulerOptionsBuilder.NodeId` is only a pre-registration display fallback — it is NOT the row owner on the durable path.
 - Running jobs slide their pickup lease forward on the `LeaseRenewalInterval` cadence (default ≈ `LeaseDuration / 3`), so `LeaseDuration` (default 5 min) no longer needs to exceed the longest job runtime. Keep `LeaseDuration` ≥ `FallbackIntervalChecker` to avoid spurious re-claims of rows that are claimed but not yet started.
@@ -483,6 +484,45 @@ row takes the instant, and reads report the live row first so an older terminal 
 Because dropping the column would collapse every value to the implicit `Accounted` and turn an owed fire into a
 permanently suppressed one, the migration's `Down` refuses while any non-ordinary disposition exists.
 
+### Applying a recovery pass
+
+The recovery *decision* — which instant to materialize at, which existing row to repurpose, which to step past, which
+to retire, and where the resolution window ends — is one storage-agnostic unit, `CronRecoveryPlanner` in
+`Headless.Jobs.Core`, and every provider consumes it. A provider snapshots the window the planner asks for
+(`GetInspectionWindow`), hands those rows back (`CreatePlan`), and applies the returned `CronRecoveryPlan` as fenced
+writes inside its own transaction or critical section. The planner itself reads nothing, writes nothing, and calls
+back into no storage.
+
+Splitting it that way is not tidiness. The decision used to be hand-mirrored in the relational and in-memory providers
+with matching rule-ID comments and no shared code, covered on one side only by the EF harness and on the other only by
+unit tests — and CI runs the unit suite alone, so a divergence would have surfaced as a comment mismatch rather than a
+failing test. The planner also *consumes* the occupied-instant rule above rather than restating it: it calls
+`CronOccurrenceAccounting` over rows the provider projects through the same selector materialization uses, which is
+exactly the property that was measured broken before it was single-sourced.
+
+A plan carries an ordered list of run steps plus two resolutions:
+
+- **Run steps** walk the missed instants in schedule order. An instant already accounted for is stepped past; the
+  first unaccounted-for one either repurposes a still-claimable row standing there or creates the run under the
+  request's reserved identity. The list is empty under `Skip`, and also under `Coalesce` when every missed instant is
+  already accounted for.
+- **Two resolutions** — one for "the walk established a run", one for "it did not" — are both planned up front,
+  because that answer is only known after the fenced writes have been attempted. Each names the watermark and
+  projection to persist and the span of rows to retire.
+
+A repurpose step may legitimately fail. The relational providers read the window without a lock, so the row can begin
+executing before the compare-and-set lands; zero rows affected means the instant became accounted for, and the
+provider continues to the next step exactly as the walk steps past an occupied instant. A create step cannot fail that
+way, so it is always the last step in the list.
+
+Each resolution names the rows to retire as a **bound**, never as identities. A saturated evaluation that *does*
+establish its run inside the examined prefix resolves the whole store-time window, so its retire bound extends past
+the inspected window and covers rows the snapshot never contained; the bound plus each provider's own
+still-claimable predicate is the only faithful expression of that set. The mirror case is why the inspection window
+is bounded at all: a saturated pass that established no run confines its resolution to the prefix it actually
+examined, because an unexamined row beyond it is the next pass's only coalesce candidate and retiring it would drop
+the run the backlog is still owed.
+
 ### Configuring it
 
 ```csharp
@@ -568,11 +608,13 @@ The base EF package is the compatibility layer. Native claim packages optimize p
 
 | Provider | Use when | Avoid when | Trade-off |
 |---|---|---|---|
-| EF optimistic CAS | The EF database is unsupported by a native package, or contention is low | Many workers regularly race for the same due rows | Zero extra provider package, but losing workers perform failed compare-and-swap work |
+| EF optimistic CAS | The EF database is PostgreSQL or SQL Server but contention is low, or claim SQL must stay portable | Many workers regularly race for the same due rows | Zero extra provider package, but losing workers perform failed compare-and-swap work |
 | PostgreSQL atomic claims | PostgreSQL 14+ hosts contend for due work | The operational store is not PostgreSQL | `FOR UPDATE SKIP LOCKED` lets claimers select disjoint unlocked candidates in one update-and-return transaction |
 | SQL Server atomic claims | SQL Server 2019+ or Azure SQL hosts contend for due work | Page-lock contention or escalation dominates and cannot be operationally addressed | `READPAST` skips row locks, but page locks can still block; `ROWLOCK` is not a guarantee |
 
-Native selection belongs inside `UseEntityFramework`; do not add a standalone service registration. Configure exactly one native claim provider. Selecting both is rejected during registration, while selecting neither retains the CAS fallback.
+Native selection belongs inside `UseEntityFramework`; do not add a standalone service registration. Configure exactly one native claim provider. Selecting both is rejected during registration, while selecting neither retains the CAS fallback. The selected package also declares that backend's GUID ordering once, so every EF Jobs write path — including the CAS half of the compatible pair and the shared occurrence-materialization path — keys row ids the way that backend's primary key wants.
+
+**Backend support is narrower than "any EF provider".** Creating a cron definition at runtime needs the store's current-statement clock, which is registered for PostgreSQL (`clock_timestamp()`) and SQL Server (`SYSUTCDATETIME()`) only; on any other EF backend that path throws `NotSupportedException` rather than seeding a definition from a transaction-start clock. Time jobs, attribute-seeded cron definitions, and the unseeded `IJobPersistenceProvider.InsertCronJobsAsync(jobs, ct)` overload are unaffected, so a third backend remains usable when the application positions its own cron rows.
 
 The PostgreSQL and SQL Server packages are EF optimization extensions, not independent persistence providers. `Jobs.EntityFramework` retains job storage, mapping definitions, recovery, the persistence contract, and provider-neutral claim transaction lifecycle primitives. Each extension owns provider-specific claim execution, including SQL, parameters, and locking behavior.
 
@@ -723,6 +765,8 @@ Provides reliable background job scheduling with cron expressions, delayed execu
 - **Scheduler background service**: polls for due time jobs and cron occurrences on `FallbackIntervalChecker` cadence (default 30s); also driven by soft-notification signals for near-zero latency.
 - **Bounded task scheduler** (`JobsTaskScheduler`): runs normal jobs as logical worker slots on the shared .NET thread pool, bounds active async executions by `MaxConcurrency` (default `Environment.ProcessorCount`), and honors `High` → `Normal` → `Low` dequeue order. `LongRunning` work receives a dedicated thread within the separate `MaxLongRunningConcurrency` budget (default: the smaller of `MaxConcurrency` and 4). Long-running admission is queued on a detached lane (capped at two parked admissions per slot), so a saturated budget never blocks the dispatch loop; an admission rejected at the cap or dropped by cancellation/shutdown is recovered by the fallback reclaim sweep when its pickup lease lapses.
 - **Sliding lease renewal** (#316): jobs verify ownership immediately before user code starts, then extend `LockedUntil` on `LeaseRenewalInterval` cadence; cancel-on-loss if renewal affects zero rows or errors.
+- **Shared occupied-instant rule**: `CronOccurrenceAccounting` owns the single predicate deciding whether a `(CronJobId, ExecutionTime)` pair is already taken, plus the `CronOccurrenceInstantView` projection every provider reads it through. The raw persisted status is deliberately never materialized, so a status written by a newer binary lands on the fail-closed side instead of throwing. See [When a row already stands for the instant](#when-a-row-already-stands-for-the-instant).
+- **Storage-agnostic recovery planner**: `CronRecoveryPlanner` resolves the whole coalesce decision as a pure value (`CronRecoveryPlan`, `CronRecoveryWindow`, `CronRecoveryRunStep`, `CronRecoveryRunStepKind`, `CronRecoveryResolution`) that every provider — relational, in-memory, or third-party — applies with its own fenced writes. See [Applying a recovery pass](#applying-a-recovery-pass).
 - **`DisableBackgroundServices()`**: suppresses background execution; only the managers are registered (useful for worker-side-only nodes and test projects).
 - **Seeder API**: `UseJobsSeeder(Func<ITimeJobManager<TTimeJob>, Task>)` and `UseJobsSeeder(Func<ICronJobManager<TCronJob>, Task>)` for startup data seeding; `IgnoreSeedDefinedCronJobs()` to skip auto-seeding of attribute-defined cron jobs.
 - **GZip request payloads**: `UseGZipCompression()` on `JobsOptionsBuilder` compresses serialized request bytes. Decompression is capped at 64 MiB by default; use `UseGZipCompression(maxDecompressedBytes)` only when the application deliberately supports a different bounded payload size.
@@ -737,7 +781,7 @@ The in-memory pickup lease uses the injected `TimeProvider`. The EF operational 
 
 The scheduler's wake and restart path lives in that same store domain. Every due instant it arbitrates — a time job's execution time, a definition's persisted `NextDueUtc`, a released child's re-stamped time — is a **store** instant, because the store is what decides due-ness. Both the cron candidate read and the time-job peek report the store instant they observed (`StoreUtcNow`) on the same statement, at no extra round trip, and the scheduler derives its sleep and its planned wake from those. The node's clock enters at exactly one place: a node/store offset refreshed on every poll that reached the store, used to convert a restart request once. Mixing the two domains is a live defect, not a style point — a store-derived duration added to a node-domain deadline makes a lagging node record a 12:30 wake as 11:30, so a job enqueued for 12:05 looks *later* than the planned wake, fails to interrupt the sleep, and runs late or falls into misfire recovery.
 
-`AddHeadlessJobs` supplies `TimeProvider.System` and the Version 7 `IGuidGenerator` only as replaceable DI defaults. Runtime services never fall back to ambient static clocks or random GUID creation. A `JobChain` therefore carries no persisted identity or time: `IJobScheduler.EnqueueAsync(JobChain, …)` maps it to an unstamped `TimeJobEntity` tree, and the manager add path assigns missing IDs, parent IDs, and one injected-clock timestamp across the complete graph before persistence.
+`AddHeadlessJobs` supplies `TimeProvider.System` and a Version 7 `IGuidGenerator` only as replaceable DI defaults. Runtime services never fall back to ambient static clocks or random GUID creation. A `JobChain` therefore carries no persisted identity or time: `IJobScheduler.EnqueueAsync(JobChain, …)` maps it to an unstamped `TimeJobEntity` tree, and the manager add path assigns missing IDs, parent IDs, and one injected-clock timestamp across the complete graph before persistence. Version 7 is the *unkeyed* default and governs the in-memory path; the EF durable store resolves the GUID ordering its backend package declared instead, so persisted row ids on SQL Server are combs rather than UUIDv7 (see [Headless.Jobs.EntityFramework](#headlessjobsentityframework)).
 
 `SchedulerOptionsBuilder.NodeId` is used as the row owner only on the in-memory single-process path (defaults to `Environment.MachineName`). On the durable path this value is overridden by `JobsOwnerIdentityAdapter` which reads the `node@incarnation` string from `Headless.Coordination`; `NodeId` becomes a pre-registration display fallback only.
 
@@ -761,7 +805,7 @@ Cron pause/resume is durable and definition-specific. Pause atomically marks the
 
 Ordinary cron dispatch first commits the expected schedule position and its occurrence outcome through one persistence operation. A newly materialized occurrence is `Idle`, unowned, and unleased; only the later claim stamps `Queued`, owner, and lease using the provider's time authority. A crash after materialization therefore leaves exactly one claimable occurrence rather than an advanced position with a missing tick.
 
-Relational consumers must apply the Jobs migrations before deploying the new binary, including cancellation; cron pause/time-zone fields; and `ReconciledThroughUtc`, `NextDueUtc`, `MissedRunGraceSeconds`, `OnMissedRun`, nullable `EvaluationFingerprint`, `FingerprintFailureCount` (default 0), nullable `FingerprintRetryAfterUtc`, the retry/keyset index, and nullable occurrence `RecoveredFromUtc`. Legacy positions backfill to the uninitialized sentinel, so the activation gate anchors them at store time instead of replaying history. Quiesce every scheduler node during migration and start only new binaries afterward; mixed versions do not share the atomic materialization contract. The PostgreSQL demos and SQL Server conformance project include reference migrations; custom schemas require equivalent DDL and indexes. Refuse rollback once watermark, recovery, or fingerprint-defer state exists unless operators intentionally export or discard that state. Custom persistence providers must implement atomic pause/resume/update plus candidate selection, atomic materialization/recovery, bounded stale-fingerprint paging, fenced defer, and compare-and-advance before upgrading. Candidate selection additionally takes a `CronDispatchCandidateCursor? after` between `limit` and the cancellation token, which must be applied inside the query — before the limit truncates — on the same `(NextDueUtc, CronJobId)` ordering the result is sorted by. Two further SPI members are store-clock contracts, not conveniences: `InsertCronJobsAsync(jobs, CronSchedulePositionSeeder, ct)` must read the store's **current statement** clock inside the inserting transaction, hand it to the seeder, persist the result, and return it (the caller arms its scheduler wake from the returned value, never from a locally recomputed projection); and `GetEarliestTimeJobsAsync` now returns `EarliestTimeJobs`, whose `StoreUtcNow` must be read in the same statement as the peek, matching `CronDispatchCandidates.StoreUtcNow`. Run the shared schedule-position and recovery conformance suites for every custom provider.
+Relational consumers must apply the Jobs migrations before deploying the new binary, including cancellation; cron pause/time-zone fields; `ReconciledThroughUtc`, `NextDueUtc`, `MissedRunGraceSeconds`, `OnMissedRun`, nullable `EvaluationFingerprint`, `FingerprintFailureCount` (default 0), nullable `FingerprintRetryAfterUtc`, the retry/keyset index, and nullable occurrence `RecoveredFromUtc`; and the occurrence `Disposition` column (string-backed, 32 chars, non-null, existing rows backfilling to `Accounted`). Legacy positions backfill to the uninitialized sentinel, so the activation gate anchors them at store time instead of replaying history. Quiesce every scheduler node during migration and start only new binaries afterward; mixed versions do not share the atomic materialization contract. The PostgreSQL demos and SQL Server conformance project include reference migrations; custom schemas require equivalent DDL and indexes. Refuse rollback once watermark, recovery, or fingerprint-defer state exists unless operators intentionally export or discard that state — and the disposition migration's `Down` enforces its own version of that rule, refusing while any non-`Accounted` value exists rather than silently collapsing an owed fire into a permanently suppressed one. Custom persistence providers must implement atomic pause/resume/update plus candidate selection, atomic materialization/recovery, bounded stale-fingerprint paging, fenced defer, and compare-and-advance before upgrading; plan the recovery half with `CronRecoveryPlanner` rather than re-deriving it. Candidate selection additionally takes a `CronDispatchCandidateCursor? after` between `limit` and the cancellation token, which must be applied inside the query — before the limit truncates — on the same `(NextDueUtc, CronJobId)` ordering the result is sorted by. Two further SPI members are store-clock contracts, not conveniences: `InsertCronJobsAsync(jobs, CronSchedulePositionSeeder, ct)` must read the store's **current statement** clock inside the inserting transaction, hand it to the seeder, persist the result, and return it (the caller arms its scheduler wake from the returned value, never from a locally recomputed projection); and `GetEarliestTimeJobsAsync` now returns `EarliestTimeJobs`, whose `StoreUtcNow` must be read in the same statement as the peek, matching `CronDispatchCandidates.StoreUtcNow`. Run the shared schedule-position and recovery conformance suites for every custom provider.
 
 Cron expressions use `RecurringJobOptions.TimeZoneId` when present and otherwise fall back to `SchedulerTimeZone`. Only validated IANA identifiers are accepted. Occurrences remain UTC; a spring-forward occurrence inside an invalid local-time gap is shifted forward by the gap, and an ambiguous fall-back occurrence runs once at the later UTC instant (the standard-time offset).
 
@@ -1178,6 +1222,8 @@ Provides persistence of time jobs and cron occurrences across restarts and acros
 - **Atomic chain claims**: a root time-job claim leases its non-timed descendants down to the configured chain depth (`SchedulerOptionsBuilder.MaxChainDepth`, default 10) to the same owner — atomically via a recursive CTE on the native PostgreSQL / SQL Server providers, and via a sequenced frontier walk on the EF CAS fallback where each descendant copies the root's exact lease deadline, a partial claim is pruned to the set actually claimed, and an unexecuted claimed root is recovered by the stalled-lease sweep. Fallback recovery uses the same tree claim and never steals a live queued lease.
 - **Bounded compatibility recovery**: EF CAS fallback orders overdue roots by execution time and ID and processes at
   most 100 candidates per sweep, matching the native provider claim ceiling while retaining each row's CAS fence.
+- **Backend-keyed row identity**: the installed native claim package declares its backend's GUID ordering once, and every EF write path resolves that keyed `IGuidGenerator` — the native strategy, the CAS half of the compatible pair, and the shared occurrence-materialization path alike. Generic EF (no backend package) registers no key and keeps the unkeyed Version 7 default.
+- **Store-clock schedule seeding**: creating a cron definition at runtime positions it in the same transaction, anchored on the store's current-statement clock. Registered for PostgreSQL and SQL Server; other EF backends throw `NotSupportedException` on that path.
 - **Durable retry state**: root jobs, descendants, and cron occurrences retain their persisted `RetryCount` when projected for execution.
 - **Node identity and recovery**: stamps `node@incarnation` as the row owner; dead-node reclaim driven by `NodeLeft` events plus periodic reconcile (`DeadNodeReconcileInterval`).
 - **Fail-fast coordination check**: startup throws `InvalidOperationException` when no coordination provider is registered.
@@ -1189,9 +1235,13 @@ Provides persistence of time jobs and cron occurrences across restarts and acros
 
 Lease acquisition, renewal, and reclaim on the EF path anchor `LockedUntil` to the **database clock** (`now()` on PostgreSQL, `GETUTCDATE()` on SQL Server), not the node's injected `TimeProvider`. Claims translate the clock expression inside the existing update statement; they do not execute a separate scalar query. In-memory has no database server and uses `TimeProvider`, so EF tests must not assume fake application time controls lease deadlines.
 
-Seeding a definition's schedule position is the one EF write that cannot use that translated clock. It runs inside a transaction — the caller's own, on the coordinated path — and PostgreSQL resolves the translated `DateTime.UtcNow` to `now()`, which is frozen at transaction start. The seed therefore reads the **current statement** clock (`clock_timestamp()` / `SYSUTCDATETIME()`) on the inserting connection. A backend with no known statement-clock function fails loud on that path rather than seeding from a transaction-start clock; the unseeded `InsertCronJobsAsync(jobs, ct)` overload still works there for callers that position their own rows.
+Seeding a definition's schedule position is the one EF write that cannot use that translated clock. It runs inside a transaction — the caller's own, on the coordinated path — and PostgreSQL resolves the translated `DateTime.UtcNow` to `now()`, which is frozen at transaction start. The seed therefore reads the **current statement** clock (`clock_timestamp()` / `SYSUTCDATETIME()`) on the inserting connection. Backend detection is by EF provider name rather than by which Headless backend package is installed, because generic EF (CAS claiming, no backend package) runs against those same two databases and needs the same anchor. A backend with no known statement-clock function throws `NotSupportedException` rather than seeding from a transaction-start clock — deliberately loud, because a false anchor manufactures an immediate backlog for that definition's missed-run policy to resolve, and there is no portable substitute. `ICronJobManager.AddAsync` / `AddBatchAsync` is the affected path; the unseeded `InsertCronJobsAsync(jobs, ct)` overload still works there for callers that position their own rows, and attribute-seeded definitions are anchored by the activation gate instead.
+
+The scheduler's due-work peek (`GetEarliestTimeJobsAsync`) runs both of its reads through the context's execution strategy, so a SQL Server deadlock victim (1205) on the candidate read is retried when the application configured `EnableRetryOnFailure`. This deliberately honors whatever strategy the consumer configured instead of adding an always-on retry: it is a pass-through under EF's default non-retrying strategy, which is the right trade for a pure read whose failure costs one delayed poll. The claim path keeps its own deadlock pipeline, because a deadlock there is correctness-relevant rather than a missed poll.
 
 Cron materialization uses a read-committed transaction whose first statement is the fenced definition update. That write lock is the per-definition mutex held through occurrence-key arbitration and commit, so concurrent nodes converge on one occurrence without serializable-transaction aborts. Quiesce old scheduler binaries before migration because only providers implementing the new SPI participate in this mutex.
+
+The occurrence table carries the persisted `Disposition` column that `CronOccurrenceAccounting` reads as the sole input to the occupied-instant rule (see [When a row already stands for the instant](#when-a-row-already-stands-for-the-instant)). Its migration backfills existing rows to `Accounted`, and its `Down` refuses while any non-`Accounted` value exists — dropping the column would collapse an owed replacement fire into a permanently suppressed one.
 
 The `JobsDbContext<TTimeJob, TCronJob>.DbContextOptions` constructor must be `public` for the EF pool to resolve it at startup. Validation fails fast at DI build time.
 
@@ -1517,10 +1567,13 @@ This is an optimization extension for `Headless.Jobs.EntityFramework`, not an in
 - Creates cron occurrences with `INSERT ... WHERE NOT EXISTS ... ON CONFLICT DO NOTHING ... RETURNING` to deduplicate each execution-time and cron-job pair. The `NOT EXISTS` guard is the shared occupied-instant rule: any row that **accounts for** the instant — live, terminal, or a status this binary does not recognize — suppresses the insert, and the only row that does not account is one a startup seeding migration retired without a replacement (`CronOccurrenceDisposition.ReplacementOwed`). `ON CONFLICT` remains, arbitrating the concurrent-live race the unlocked read cannot see. The predicate and its literals are derived from `CronOccurrenceAccounting`, so this SQL cannot drift from the SQL Server sibling or the portable EF path.
 - Derives and delimits schema, table, and column identifiers from the EF model while parameterizing runtime values.
 - Claims the root and two supported descendant levels in one transaction and returns work only after commit.
+- Declares UUIDv7 as the GUID ordering for every PostgreSQL-backed Jobs row, so `UsePostgreSqlClaims()` fixes row-id ordering for the whole EF store rather than for the claim strategy alone.
 
 ### Design Notes
 
 `SKIP LOCKED` lets concurrent workers move past candidates locked by another claim transaction. The update, descendant stamping, and returned winners share one explicit transaction, so a rolled-back claim exposes no executable work. PostgreSQL 14 or later is the supported baseline; the underlying primitive exists on older releases, but they are outside this package's tested support target.
+
+PostgreSQL compares `uuid` in plain byte order, so UUIDv7's leading timestamp keeps index inserts at the right edge — the same ordering as the framework-wide unkeyed default, which is why generic EF on PostgreSQL loses nothing by not installing this package. The value is declared once here and consumed both by the claim strategy (keyed injection) and by the shared occurrence-materialization path (through the option builder), so no EF write path can drift onto a different generator.
 
 ### Installation
 
@@ -1577,8 +1630,11 @@ This is an optimization extension for `Headless.Jobs.EntityFramework`, not an in
 - Creates cron occurrences atomically against the unique execution-time and cron-job key, deduplicating against every occurrence that **accounts for** the instant under the shared occupied-instant rule — live, terminal, or a status this binary does not recognize. The only row that does not account is one a startup seeding migration retired without a replacement (`CronOccurrenceDisposition.ReplacementOwed`), whose fire is still owed. The predicate and its literals are derived from `CronOccurrenceAccounting`, so this SQL cannot drift from the PostgreSQL sibling or the portable EF path.
 - Derives and delimits schema, table, and column identifiers from the EF model while parameterizing runtime values.
 - Claims the root and two supported descendant levels in one transaction and returns work only after commit.
+- Declares the SQL Server comb as the GUID ordering for every SQL Server-backed Jobs row, so `UseSqlServerClaims()` fixes row-id ordering for the whole EF store rather than for the claim strategy alone.
 
 ### Design Notes
+
+SQL Server compares `uniqueidentifier` from its **last** bytes first, while UUIDv7 puts its timestamp in the **first** bytes. The framework's unkeyed Version 7 default is therefore effectively random under this backend's ordering and fragments the clustered primary keys on insert; the comb generator puts its sequential component where SQL Server looks first. `UseSqlServerClaims()` declares that ordering once, and both the claim strategy (keyed injection) and the shared occurrence-materialization path (through the option builder) resolve it — materialization is where most occurrence rows are created, so leaving it on the unkeyed default silently defeats the clustering this package exists to protect.
 
 `READPAST` skips row locks, not page locks. Page locking or lock escalation can therefore block competing claimers even with `ROWLOCK`, which is a preference rather than a guarantee. The package does not change `LOCK_ESCALATION`; operators should measure contention, lock memory, and workload behavior before applying database-level changes. SQL Server 2019 or later and Azure SQL are the supported targets.
 
