@@ -122,21 +122,27 @@ internal sealed partial class TenantCatalogResolutionMiddleware(
                 var tenant = outcome.Tenant!;
                 context.Features.Set(new TenantIdentifierResolvedFeature(tenant.Id));
 
-                var rejected = await _RejectOnClaimMismatchAsync(
-                        context,
-                        tenant.Id,
-                        tenancyOptions.Value,
-                        options.Value.DetailedResolutionErrors
-                    )
-                    .ConfigureAwait(false);
-
-                if (rejected)
-                {
-                    return;
-                }
-
+                // The ambient scope opens BEFORE R19 enforcement: _RejectOnClaimMismatchAsync authenticates
+                // the default scheme, and AuthenticationHandler<TOptions> caches that result for the whole
+                // request — so a host deriving authentication configuration per tenant (signing keys,
+                // issuer, authority) must observe the resolved tenant on that first authenticate call or
+                // permanently observe host context, defeating the reason this middleware runs pre-auth.
+                // The rejection writer reads no ambient tenant state, so rejection semantics are unchanged.
                 using (currentTenant.Change(tenant.Id, tenant.Name))
                 {
+                    var rejected = await _RejectOnClaimMismatchAsync(
+                            context,
+                            tenant.Id,
+                            tenancyOptions.Value,
+                            options.Value.DetailedResolutionErrors
+                        )
+                        .ConfigureAwait(false);
+
+                    if (rejected)
+                    {
+                        return;
+                    }
+
                     await next(context).ConfigureAwait(false);
                 }
 
@@ -181,7 +187,10 @@ internal sealed partial class TenantCatalogResolutionMiddleware(
     /// authenticates the same scheme for every request regardless of endpoint metadata, and
     /// <c>AuthenticationHandler&lt;TOptions&gt;</c> caches its result for the lifetime of the request —
     /// so this is the same authentication call, made earlier. Hosts with no default authenticate scheme
-    /// are skipped rather than forced to configure one.
+    /// are skipped rather than forced to configure one. Because that cached result is what every later
+    /// stage observes, the caller invokes this method from inside the resolved tenant's ambient scope:
+    /// a host deriving authentication configuration per tenant would otherwise bind host context for the
+    /// whole request.
     /// </para>
     /// <para>
     /// Endpoint-scoped (non-default) schemes are not materialized until <c>PolicyEvaluator</c> runs

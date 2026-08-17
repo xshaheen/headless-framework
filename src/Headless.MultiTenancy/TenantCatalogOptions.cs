@@ -38,6 +38,8 @@ public sealed class TenantCatalogOptions
     /// The shape a normalized identifier must match before any cache or store lookup. Default:
     /// <see cref="RegexPatterns.Slug"/> — lowercase letters, digits, and single hyphens between
     /// segments (DNS-label form), which matches R21's default shape after normalization.
+    /// A custom pattern must carry a match timeout: this regex runs on unauthenticated pre-auth input,
+    /// so <see cref="Regex.InfiniteMatchTimeout"/> is rejected at startup (see the validator).
     /// </summary>
     public Regex IdentifierPattern { get; set; } = RegexPatterns.Slug;
 
@@ -68,6 +70,21 @@ internal sealed class TenantCatalogOptionsValidator : AbstractValidator<TenantCa
         RuleFor(x => x.UnknownIdentifierCacheExpiration).GreaterThanOrEqualTo(TimeSpan.Zero);
         RuleFor(x => x.MaxIdentifierLength).GreaterThan(0);
         RuleFor(x => x.IdentifierPattern).NotNull();
+        RuleFor(x => x.IdentifierPattern).Must(_HaveMatchTimeout).WithMessage(_InfiniteMatchTimeoutMessage);
         RuleForEach(x => x.IgnoredIdentifiers).NotEmpty();
+    }
+
+    private const string _InfiniteMatchTimeoutMessage =
+        "IdentifierPattern must specify a match timeout: it is evaluated on unauthenticated pre-auth input, "
+        + "so a backtracking pattern with Regex.InfiniteMatchTimeout is a denial-of-service surface. "
+        + "Use [GeneratedRegex] with matchTimeoutMilliseconds, or pass a matchTimeout to the Regex constructor.";
+
+    // The framework default (RegexPatterns.Slug) is a [GeneratedRegex] carrying matchTimeoutMilliseconds,
+    // but a consumer-supplied `new Regex(pattern)` defaults to Regex.InfiniteMatchTimeout — a catastrophic
+    // backtracking pattern would then pin a thread on caller input instead of throwing
+    // RegexMatchTimeoutException. Null is left to the NotNull rule so both failures report distinctly.
+    private static bool _HaveMatchTimeout(Regex? pattern)
+    {
+        return pattern is null || pattern.MatchTimeout != Regex.InfiniteMatchTimeout;
     }
 }

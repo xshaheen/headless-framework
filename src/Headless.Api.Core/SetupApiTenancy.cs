@@ -289,20 +289,14 @@ public sealed class HeadlessHttpTenancyBuilder
         // ResolveFromClaims(...) merely repeats the same TryAdd/AddOptions registrations.
         _builder.ApplicationBuilder.AddHeadlessMultiTenancy();
 
+        // Registers the middleware together with the services its rejection and R19 integrity paths need
+        // (IProblemDetailsCreator and its dependencies, IHttpContextAccessor, and
+        // TenantIdentifierIntegrityHandler) — they travel with the feature so the low-level
+        // AddTenantCatalogResolution()/UseTenantCatalogResolution() pair is equally protected.
         _builder.Services.AddTenantCatalogResolution();
 
         var sourcesBuilder = new HeadlessTenantCatalogResolutionBuilder(_builder.Services);
         configure?.Invoke(sourcesBuilder);
-
-        // TenantIdentifierIntegrityHandler needs a fallback route to the request when authorization does
-        // not pass the HttpContext as the resource (the AppContext switch
-        // Microsoft.AspNetCore.Authorization.SuppressUseHttpContextAsAuthorizationResource passes the
-        // Endpoint instead).
-        _builder.Services.AddHttpContextAccessor();
-
-        _builder.Services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IAuthorizationHandler, TenantIdentifierIntegrityHandler>()
-        );
 
         _builder.RecordSeam(
             TenantCatalogPosture.Seam,

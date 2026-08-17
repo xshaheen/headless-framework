@@ -5,8 +5,6 @@ using Headless.Api.MultiTenancy;
 using Headless.Constants;
 using Headless.MultiTenancy;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Api.Middlewares;
@@ -90,12 +88,18 @@ internal sealed class StatusCodesRewriterMiddleware(
             return;
         }
 
+        // Every branch below writes through TenantCatalogRejectionWriter.WriteAsync, which assigns the
+        // status code it is handed before writing. The status is already the one being rewritten here, so
+        // passing context.Response.StatusCode re-asserts it rather than changing it.
         switch (context.Response.StatusCode)
         {
             case StatusCodes.Status401Unauthorized:
             {
                 var problemDetails = problemDetailsCreator.Unauthorized();
-                await _WriteAsync(context, problemDetails).ConfigureAwait(false);
+
+                await TenantCatalogRejectionWriter
+                    .WriteAsync(context, context.Response.StatusCode, problemDetails)
+                    .ConfigureAwait(false);
 
                 break;
             }
@@ -119,39 +123,23 @@ internal sealed class StatusCodesRewriterMiddleware(
                         error: HeadlessProblemDetailsConstants.Errors.TenantContextRequired
                     )
                     : problemDetailsCreator.Forbidden();
-                await _WriteAsync(context, problemDetails).ConfigureAwait(false);
+
+                await TenantCatalogRejectionWriter
+                    .WriteAsync(context, context.Response.StatusCode, problemDetails)
+                    .ConfigureAwait(false);
 
                 break;
             }
             case StatusCodes.Status404NotFound:
             {
                 var problemDetails = problemDetailsCreator.EndpointNotFound();
-                await _WriteAsync(context, problemDetails).ConfigureAwait(false);
+
+                await TenantCatalogRejectionWriter
+                    .WriteAsync(context, context.Response.StatusCode, problemDetails)
+                    .ConfigureAwait(false);
 
                 break;
             }
         }
-    }
-
-    // Routes writes through IProblemDetailsService so consumer CustomizeProblemDetails hooks run.
-    // Falls back to Results.Problem when the service is not registered or declines to write
-    // (TryWriteAsync returns false), ensuring structured output even in minimal-host scenarios.
-    private static async Task _WriteAsync(HttpContext context, ProblemDetails problemDetails)
-    {
-        var service = context.RequestServices.GetService<IProblemDetailsService>();
-
-        if (service is not null)
-        {
-            var written = await service
-                .TryWriteAsync(new ProblemDetailsContext { HttpContext = context, ProblemDetails = problemDetails })
-                .ConfigureAwait(false);
-
-            if (written)
-            {
-                return;
-            }
-        }
-
-        await Results.Problem(problemDetails).ExecuteAsync(context).ConfigureAwait(false);
     }
 }

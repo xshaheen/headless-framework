@@ -11,6 +11,12 @@ namespace Headless.MultiTenancy;
 /// Implementing this interface over an app-owned tenant aggregate (rather than the shipped stores) is
 /// a documented first-class path — the in-memory, configuration, and Entity Framework Core stores this
 /// framework ships are convenience defaults, not a canonical schema apps must adopt.
+/// <para>
+/// Both lookups must return an instance the caller may mutate freely: the catalog service hands a
+/// store result straight to application code on a cache miss, and <see cref="TenantInfo.ExtraProperties"/>
+/// is a mutable bag. An implementation backed by an in-process cache or a seeded dictionary must
+/// therefore materialize a fresh <see cref="TenantInfo"/> per call rather than alias its own state.
+/// </para>
 /// </remarks>
 [PublicAPI]
 public interface ITenantStore

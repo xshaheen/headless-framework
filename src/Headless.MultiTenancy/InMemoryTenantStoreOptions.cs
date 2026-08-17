@@ -21,8 +21,13 @@ internal sealed class InMemoryTenantStoreOptionsValidator : AbstractValidator<In
     public InMemoryTenantStoreOptionsValidator()
     {
         RuleFor(x => x.Tenants).NotNull();
-        RuleFor(x => x.Tenants).Must(_HaveUniqueNormalizedIdentifiers).WithMessage(_DuplicateIdentifierMessage);
-        RuleFor(x => x.Tenants).Must(_HaveUniqueIds).WithMessage(_DuplicateIdMessage);
+
+        RuleFor(x => x.Tenants)
+            .Must(_HaveUniqueNormalizedIdentifiers)
+            .When(x => x.Tenants is not null)
+            .WithMessage(_DuplicateIdentifierMessage);
+
+        RuleFor(x => x.Tenants).Must(_HaveUniqueIds).When(x => x.Tenants is not null).WithMessage(_DuplicateIdMessage);
     }
 
     private const string _DuplicateIdentifierMessage =

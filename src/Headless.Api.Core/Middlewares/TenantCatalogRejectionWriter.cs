@@ -98,6 +98,14 @@ internal static class TenantCatalogRejectionWriter
     }
 
     /// <summary>Writes <paramref name="problemDetails"/> through <see cref="IProblemDetailsService"/>, falling back to <see cref="Results.Problem(ProblemDetails)"/>.</summary>
+    /// <remarks>
+    /// Routing writes through <see cref="IProblemDetailsService"/> keeps consumer
+    /// <c>CustomizeProblemDetails</c> hooks running; the <see cref="Results.Problem(ProblemDetails)"/>
+    /// fallback covers minimal hosts where the service is unregistered or declines to write
+    /// (<c>TryWriteAsync</c> returned <see langword="false"/>). Also used by
+    /// <c>StatusCodesRewriterMiddleware</c>'s bare 401/403/404 rewrites, which pass the status code the
+    /// response already carries.
+    /// </remarks>
     public static async Task WriteAsync(HttpContext context, int statusCode, ProblemDetails problemDetails)
     {
         context.Response.StatusCode = statusCode;

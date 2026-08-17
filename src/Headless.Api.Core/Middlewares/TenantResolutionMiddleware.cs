@@ -81,6 +81,17 @@ internal sealed partial class TenantResolutionMiddleware(
             return;
         }
 
+        if (resolvedFeature is not null)
+        {
+            // The claim agrees with the catalog-resolved identifier — the mismatch branch above returned
+            // otherwise — and TenantCatalogResolutionMiddleware already opened Change(tenant.Id, tenant.Name)
+            // for this request. Opening a nested Change(tenantId) here would replace the whole ambient slot
+            // with TenantInformation(tenantId, null) and drop the catalog-supplied display name (R6).
+            await next(context).ConfigureAwait(false);
+            return;
+        }
+
+        // Claim-only host: no catalog resolution ran for this request, so no display name is known.
         using var _ = currentTenant.Change(tenantId);
         await next(context).ConfigureAwait(false);
     }

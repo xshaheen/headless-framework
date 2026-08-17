@@ -58,7 +58,12 @@ internal sealed class InMemoryTenantStore : ITenantStore, ITenantDirectory
         Argument.IsNotNull(normalizedIdentifier);
         cancellationToken.ThrowIfCancellationRequested();
 
-        return Task.FromResult(_byNormalizedIdentifier.GetValueOrDefault(normalizedIdentifier));
+        // Copy out: the catalog service's cache-miss path hands this instance straight to app code, and
+        // ExtraProperties is a mutable bag — returning the seed instance would let one request's mutation
+        // corrupt the process-wide seed for every later request.
+        var tenant = _byNormalizedIdentifier.GetValueOrDefault(normalizedIdentifier);
+
+        return Task.FromResult(tenant is null ? null : _Copy(tenant));
     }
 
     /// <inheritdoc/>
@@ -67,7 +72,10 @@ internal sealed class InMemoryTenantStore : ITenantStore, ITenantDirectory
         Argument.IsNotNull(id);
         cancellationToken.ThrowIfCancellationRequested();
 
-        return Task.FromResult(_byId.GetValueOrDefault(id));
+        // Copy out for the same reason as FindByIdentifierAsync: never alias the seeded instance.
+        var tenant = _byId.GetValueOrDefault(id);
+
+        return Task.FromResult(tenant is null ? null : _Copy(tenant));
     }
 
     /// <inheritdoc/>
@@ -75,6 +83,19 @@ internal sealed class InMemoryTenantStore : ITenantStore, ITenantDirectory
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        return Task.FromResult<IReadOnlyList<TenantInfo>>([.. _byId.Values]);
+        return Task.FromResult<IReadOnlyList<TenantInfo>>([.. _byId.Values.Select(_Copy)]);
+    }
+
+    /// <summary>
+    /// Materializes a fresh <see cref="TenantInfo"/> per lookup, mirroring what the Entity Framework Core
+    /// store gets for free from its per-query materialization. The seeded instances live in singleton
+    /// dictionaries for the process lifetime, so handing one out would alias store state into app code.
+    /// </summary>
+    private static TenantInfo _Copy(TenantInfo tenant)
+    {
+        return new TenantInfo(tenant.Id, tenant.Identifier, tenant.Name, tenant.IsEnabled)
+        {
+            ExtraProperties = new ExtraProperties(tenant.ExtraProperties),
+        };
     }
 }

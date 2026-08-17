@@ -2,8 +2,11 @@
 
 using System.ComponentModel;
 using Headless.Abstractions;
+using Headless.Api.Abstractions;
 using Headless.Api.Middlewares;
+using Headless.Api.MultiTenancy;
 using Headless.MultiTenancy;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -136,16 +139,48 @@ public static class SetupMiddlewares
     }
 
     /// <summary>
-    /// Registers <c>TenantCatalogResolutionMiddleware</c> as a singleton in the DI container.
+    /// Registers <c>TenantCatalogResolutionMiddleware</c> as a singleton in the DI container, together
+    /// with the services its rejection and integrity paths depend on.
     /// Call <see cref="UseTenantCatalogResolution"/> (or
     /// <see cref="SetupApiTenancy.UseHeadlessTenantCatalogResolution"/>) after this to add it to the
     /// pipeline.
     /// </summary>
     /// <param name="services">The service collection to register into.</param>
     /// <returns>The same service collection.</returns>
+    /// <remarks>
+    /// Also registers the R19 post-authorization mapping-integrity handler
+    /// (<c>TenantIdentifierIntegrityHandler</c>) and
+    /// <see cref="Microsoft.AspNetCore.Http.IHttpContextAccessor"/>, so cross-tenant integrity
+    /// enforcement is inseparable from the middleware — a host wiring this low-level pair directly would
+    /// otherwise get identifier resolution and ambient tenant assignment with tier-2 R19 enforcement
+    /// silently absent. <see cref="IProblemDetailsCreator"/> and its dependencies are registered for the
+    /// same reason: every rejection path resolves it from request services.
+    /// </remarks>
     public static IServiceCollection AddTenantCatalogResolution(this IServiceCollection services)
     {
         services.TryAddSingleton<TenantCatalogResolutionMiddleware>();
+
+        // Every rejection path of this middleware (unknown/disabled/invalid outcomes, the R19 claim
+        // mismatch, and TenantResolutionMiddleware's claim-vs-feature fast path) resolves
+        // IProblemDetailsCreator from request services. That must not depend on the host also calling
+        // AddHeadlessProblemDetails(), or a catalog host turns every rejection into a runtime 500 while
+        // startup validation stays green. TryAdd keeps AddHeadlessProblemDetails() and consumer
+        // replacements authoritative; ProblemDetailsCreator's own dependencies are registered the same
+        // way so the write path is resolvable in a host that registers nothing else.
+        services.TryAddSingleton<IProblemDetailsCreator, ProblemDetailsCreator>();
+        services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<IBuildInformationAccessor, BuildInformationAccessor>();
+
+        // TenantIdentifierIntegrityHandler needs a fallback route to the request when authorization does
+        // not pass the HttpContext as the resource (the AppContext switch
+        // Microsoft.AspNetCore.Authorization.SuppressUseHttpContextAsAuthorizationResource passes the
+        // Endpoint instead).
+        services.AddHttpContextAccessor();
+
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IAuthorizationHandler, TenantIdentifierIntegrityHandler>()
+        );
+
         return services;
     }
 
