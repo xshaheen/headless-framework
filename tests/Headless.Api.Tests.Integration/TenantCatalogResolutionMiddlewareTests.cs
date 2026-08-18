@@ -318,6 +318,7 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await response.Content.ReadFromJsonAsync<TenantCatalogResponse>(cancellationToken: AbortToken);
         body!.Id.Should().Be("ten_123");
+        body!.Name.Should().Be("Acme Inc");
     }
 
     [Fact]
@@ -682,7 +683,7 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
         app.MapGet(
             "/tenant",
             (HttpContext ctx, ICurrentTenant currentTenant) =>
-                Results.Json(new TenantCatalogResponse(currentTenant.Id, currentTenant.IsAvailable))
+                Results.Json(new TenantCatalogResponse(currentTenant.Id, currentTenant.IsAvailable, currentTenant.Name))
         );
 
         app.MapGet(
@@ -793,7 +794,7 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
     }
 }
 
-internal sealed record TenantCatalogResponse(string? Id, bool IsAvailable);
+internal sealed record TenantCatalogResponse(string? Id, bool IsAvailable, string? Name = null);
 
 internal sealed class HeaderTenantIdentifierSource(string headerName) : ITenantIdentifierSource
 {
