@@ -17,7 +17,7 @@
     "pretty-bytes": "^7.1.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "react-dropzone": "^19.3.0",
+    "react-dropzone": "^20.0.0",
     "tus-js-client": "^4.3.1",
     "use-tus": "^0.9.0"
   },
@@ -26,12 +26,12 @@
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.0.5",
     "typescript": "~7.0.2",
-    "vite": "^8.2.0"
+    "vite": "^8.2.1"
   },
   "overrides": {
     "postcss": {
       ".": "8.5.23",
-      "nanoid": "3.3.17"
+      "nanoid": "3.3.18"
     }
   }
 }
