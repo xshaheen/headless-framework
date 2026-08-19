@@ -143,37 +143,60 @@ internal sealed partial class CronScheduleCache(TimeZoneInfo timeZoneInfo)
         DateTime? latest = null;
         var count = 0;
         var cursor = reconciledThroughUtc;
-        var instants = new List<DateTime>();
 
-        while (count < ceiling)
+        // Deferred to the SECOND pending instant. The ordinary tick — one due instant, no backlog — is by far the
+        // hottest caller and never reads PendingInstantsUtc: it is consumed only by the coalesce walk on the recovery
+        // path. Allocating a list per tick to hold a single element nobody looks at is pure waste, so the single-instant
+        // case materializes one array at return instead, and only when the result is actually a recovery.
+        List<DateTime>? instants = null;
+
+        // The instant that ended the walk, whether by falling past storeUtcNow or by exhausting the expression. Both
+        // the saturation probe and the caller's next projection want exactly this value, and all three used to compute
+        // it separately.
+        DateTime? nextAfterPending = null;
+
+        while (true)
         {
             var next = GetNextOccurrenceOrDefault(expression, cursor, timeZoneId);
 
             if (next is null || next.Value > storeUtcNow)
             {
+                nextAfterPending = next;
+
                 break;
+            }
+
+            if (count == 1)
+            {
+                instants = [earliest!.Value];
             }
 
             earliest ??= next.Value;
             latest = next.Value;
             cursor = next.Value;
-            instants.Add(next.Value);
+            instants?.Add(next.Value);
             count++;
+
+            if (count == ceiling)
+            {
+                // Ceiling reached rather than exhausted: probe once past the last pending instant so saturation and the
+                // caller's projection share the single evaluation.
+                nextAfterPending = GetNextOccurrenceOrDefault(expression, cursor, timeZoneId);
+
+                break;
+            }
         }
 
-        if (count == 0)
+        if (earliest is not { } earliestPending)
         {
             return CronPendingEvaluation.None;
         }
 
         // Saturated only when the walk stopped at the ceiling AND another pending instant exists past it, so a backlog
         // that lands exactly on the ceiling still reports an exact count.
-        var saturated =
-            count == ceiling
-            && GetNextOccurrenceOrDefault(expression, cursor, timeZoneId) is { } beyond
-            && beyond <= storeUtcNow;
+        var saturated = count == ceiling && nextAfterPending is { } beyond && beyond <= storeUtcNow;
 
-        var isRecovery = count > 1 || earliest!.Value < storeUtcNow.AddSeconds(-grace);
+        var isRecovery = count > 1 || earliestPending < storeUtcNow.AddSeconds(-grace);
 
         return new CronPendingEvaluation
         {
@@ -181,8 +204,11 @@ internal sealed partial class CronScheduleCache(TimeZoneInfo timeZoneInfo)
             LatestPendingUtc = latest,
             PendingCount = count,
             CountSaturated = saturated,
-            PendingInstantsUtc = instants,
+            // Only the recovery path reads this. A non-recovery single instant hands back the shared empty array rather
+            // than allocating for a caller that will not look.
+            PendingInstantsUtc = instants ?? (isRecovery ? [earliestPending] : []),
             IsRecovery = isRecovery,
+            NextAfterPendingUtc = nextAfterPending,
         };
     }
 

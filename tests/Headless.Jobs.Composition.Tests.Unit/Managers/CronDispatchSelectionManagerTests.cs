@@ -472,6 +472,43 @@ public sealed class CronDispatchSelectionManagerTests : TestBase
         context.RecoveredFromUtc.Should().Be(_Now.AddHours(-3));
     }
 
+    /// <summary>
+    /// The ordinary dispatch path reuses the pending walk's stopping instant as its new projection instead of
+    /// evaluating the expression a third time. That reuse is only sound while the walk stopped ON the instant being
+    /// dispatched; this pins the case where it did not.
+    /// </summary>
+    /// <remarks>
+    /// A persisted projection can disagree with the instant the expression yields from the watermark — a stale
+    /// projection left by a timezone-rule change or an edit. Here the watermark is 11:59:30 and the expression yields
+    /// 12:00:00, but the persisted projection says 11:59:45. Dispatch advances the watermark to the PERSISTED instant,
+    /// so the new projection must be derived from that instant (12:00:00) and not from where the walk happened to stop
+    /// (which would give 12:01:00 and silently strand the 12:00:00 tick with no occurrence and no way to re-derive it).
+    /// Without the equality guard this test fails; the whole suite passes with the guard removed otherwise, which is
+    /// why it exists.
+    /// </remarks>
+    [Fact]
+    public async Task should_derive_the_projection_from_the_dispatched_instant_when_it_differs_from_the_walk()
+    {
+        var (manager, provider) = _Create();
+
+        // Persisted projection deliberately BEHIND the instant the expression yields from the watermark.
+        var divergent = _Definition(nextDue: _Now.AddSeconds(-15));
+        await provider.InsertCronJobsAsync([divergent], AbortToken);
+
+        await manager.GetNextJobs(AbortToken);
+
+        var after = (await provider.GetCronJobByIdAsync(divergent.Id, AbortToken))!;
+
+        after.ReconciledThroughUtc.Should().Be(_Now.AddSeconds(-15), "dispatch advances to the instant it dispatched");
+        after
+            .NextDueUtc.Should()
+            .Be(
+                _Now,
+                "the projection is the next occurrence after the DISPATCHED instant. Reusing the pending walk's "
+                    + "stopping value here would project 12:01:00 and skip the 12:00:00 occurrence entirely"
+            );
+    }
+
     private static (
         InternalJobsManager<FakeTimeJob, FakeCronJob> Manager,
         JobsInMemoryPersistenceProvider<FakeTimeJob, FakeCronJob> Provider
