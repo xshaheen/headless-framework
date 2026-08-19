@@ -41,6 +41,19 @@ internal readonly record struct CronPendingEvaluation
     /// </summary>
     public bool IsRecovery { get; init; }
 
+    /// <summary>
+    /// The first instant AFTER the pending walk — the one that ended it by falling past the evaluated instant, or
+    /// <see langword="null"/> when the expression has no further occurrence.
+    /// </summary>
+    /// <remarks>
+    /// Surfaced so the ordinary dispatch path does not evaluate the expression a third time. The walk already computes
+    /// this value to decide where to stop and used to discard it, leaving the caller to recompute the identical
+    /// <c>GetNextOccurrenceOrDefault(expression, lastPending, timeZoneId)</c> for its new projection. It is only
+    /// interchangeable with that call when <see cref="LatestPendingUtc"/> is the instant the caller would have passed,
+    /// which the caller checks — same function, same input, same answer.
+    /// </remarks>
+    public DateTime? NextAfterPendingUtc { get; init; }
+
     /// <summary>Nothing pending — the schedule is fully reconciled as of the evaluated instant.</summary>
     public static CronPendingEvaluation None => new() { PendingInstantsUtc = [] };
 }

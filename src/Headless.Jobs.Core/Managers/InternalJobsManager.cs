@@ -801,14 +801,23 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
                 .ConfigureAwait(false);
         }
 
-        // The only expression evaluation on this path, and only for a definition that is actually due. Deriving a fire
-        // time from an expression is tz-database authority and stays here (KTD2); the store owns due-ness and the
-        // fence, never the derivation.
-        var nextAfterDue = cronScheduleCache.GetNextOccurrenceOrDefault(
-            candidate.Expression,
-            candidate.NextDueUtc,
-            candidate.TimeZoneId
-        );
+        // Deriving a fire time from an expression is tz-database authority and stays here (KTD2); the store owns
+        // due-ness and the fence, never the derivation.
+        //
+        // The pending walk above already evaluated this. It stops at the first instant past storeUtcNow, and when its
+        // last pending instant IS the due one, that stopping value is by definition
+        // GetNextOccurrenceOrDefault(expression, candidate.NextDueUtc, timeZoneId) — same function, same input. Reusing
+        // it removes the third evaluation from the ordinary tick, which is the hottest path in the scheduler. The
+        // equality check is what keeps that sound: if the walk ended somewhere else (a backlog, or a projection that
+        // disagrees with the watermark-derived instant), the value is not interchangeable and we derive it properly.
+        var nextAfterDue =
+            pending.LatestPendingUtc == candidate.NextDueUtc
+                ? pending.NextAfterPendingUtc
+                : cronScheduleCache.GetNextOccurrenceOrDefault(
+                    candidate.Expression,
+                    candidate.NextDueUtc,
+                    candidate.TimeZoneId
+                );
 
         var materialized = await persistenceProvider
             .MaterializeCronScheduleOccurrenceAsync(
