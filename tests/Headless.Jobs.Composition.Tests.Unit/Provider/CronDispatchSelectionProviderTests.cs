@@ -82,8 +82,9 @@ public sealed class CronDispatchSelectionProviderTests : TestBase
     {
         var provider = _Create();
         var definitions = Enumerable
-            .Range(1, 10)
-            .Select(minute => _Definition(nextDue: _Now.UtcDateTime.AddMinutes(minute)))
+            .Range(1, 10_000)
+            .Select(second => _Definition(nextDue: _Now.UtcDateTime.AddSeconds(second)))
+            .Reverse()
             .ToArray();
         await provider.InsertCronJobsAsync(definitions, AbortToken);
 
@@ -94,7 +95,7 @@ public sealed class CronDispatchSelectionProviderTests : TestBase
         result
             .Candidates.Select(x => x.CronJobId)
             .Should()
-            .Equal(definitions[0].Id, definitions[1].Id, definitions[2].Id);
+            .Equal(definitions[^1].Id, definitions[^2].Id, definitions[^3].Id);
     }
 
     [Fact]
