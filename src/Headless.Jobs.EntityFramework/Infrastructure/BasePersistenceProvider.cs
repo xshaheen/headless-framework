@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data.Common;
 using Headless.Abstractions;
 using Headless.Caching;
 using Headless.Checks;
@@ -1204,6 +1205,9 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             )
             .OrderBy(x => x.Id)
             .ToArray();
+        var insertedSeeds = orderedCronJobs
+            .Where(x => !existingByFunction.ContainsKey(x.Function))
+            .ToDictionary(x => x.Id, x => x.Function);
 
         foreach (
             var (function, expression, onMissedRun, missedRunGraceSeconds, evaluationFingerprint, _) in orderedCronJobs
@@ -1306,13 +1310,60 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         }
         catch (DbUpdateException ex)
         {
-            // Expected case: a concurrent first-boot lost the deterministic-id primary-key race — the winner's rows
-            // stand, so there is nothing to clean up; discard our now-redundant tracked inserts. Logged at Debug (the
-            // common trigger is the benign race) so a genuine, non-race failure that leaves this node's schedule
-            // unseeded until the next boot is still greppable rather than silently swallowed.
-            Logger.LogCronSeedConflictDiscarded(ex);
+            if (!_IsUniqueConstraintViolation(dbContext.Database.ProviderName, ex) || insertedSeeds.Count == 0)
+            {
+                throw;
+            }
+
+            await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
             dbContext.ChangeTracker.Clear();
+
+            await using var verificationContext = await DbContextFactory
+                .CreateDbContextAsync(CancellationToken.None)
+                .ConfigureAwait(false);
+            var winningSeeds = await verificationContext
+                .Set<TCronJob>()
+                .Where(x => ((IEnumerable<Guid>)insertedSeeds.Keys).Contains(x.Id))
+                .Select(x => new { x.Id, x.Function })
+                .ToDictionaryAsync(x => x.Id, x => x.Function, CancellationToken.None)
+                .ConfigureAwait(false);
+
+            if (
+                insertedSeeds.Any(expected =>
+                    !winningSeeds.TryGetValue(expected.Key, out var function)
+                    || !string.Equals(function, expected.Value, StringComparison.Ordinal)
+                )
+            )
+            {
+                throw;
+            }
+
+            // A concurrent first boot committed every deterministic seed we attempted. Only this verified race is
+            // benign; constraint, conversion, connectivity, and other update failures continue to fail startup.
+            Logger.LogCronSeedConflictDiscarded(ex);
+            await InvalidateCronExpressionsCacheAsync().ConfigureAwait(false);
         }
+    }
+
+    private static bool _IsUniqueConstraintViolation(string? providerName, DbUpdateException exception)
+    {
+        if (exception.GetBaseException() is not DbException databaseException)
+        {
+            return false;
+        }
+
+        if (string.Equals(providerName, "Npgsql.EntityFrameworkCore.PostgreSQL", StringComparison.Ordinal))
+        {
+            return string.Equals(databaseException.SqlState, "23505", StringComparison.Ordinal);
+        }
+
+        if (string.Equals(providerName, "Microsoft.EntityFrameworkCore.SqlServer", StringComparison.Ordinal))
+        {
+            var number = databaseException.GetType().GetProperty("Number")?.GetValue(databaseException);
+            return number is 2601 or 2627;
+        }
+
+        return false;
     }
 
     public async Task<CronJobEntity[]> GetAllCronJobExpressionsAsync(CancellationToken cancellationToken = default)
