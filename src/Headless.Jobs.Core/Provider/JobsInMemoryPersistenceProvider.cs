@@ -41,6 +41,9 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
     private readonly ConcurrentDictionary<Guid, TCronJob> _cronJobs = new();
     private readonly Lock _cronJobIdIndexLock = new();
     private readonly SortedSet<Guid> _cronJobIds = [];
+    private readonly Lock _cronJobDueIndexLock = new();
+    private readonly SortedSet<(DateTime NextDueUtc, Guid CronJobId)> _cronJobsByNextDue = [];
+    private readonly Dictionary<Guid, (DateTime NextDueUtc, Guid CronJobId)> _cronJobDueEntries = [];
 
     private readonly ConcurrentDictionary<Guid, CronJobOccurrenceEntity<TCronJob>> _cronOccurrences = new();
 
@@ -1431,7 +1434,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                             _cronOccurrences[pair.Key] = skipped;
                         }
 
-                        _cronJobs[id] = updated;
+                        _SetCronJob(updated);
                     }
                 }
 
@@ -1457,7 +1460,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
             lock (_cronJobIdIndexLock)
             {
-                if (_cronJobs.TryAdd(id, cronJob))
+                if (_TryAddCronJob(cronJob))
                 {
                     _cronJobIds.Add(id);
                 }
@@ -1648,7 +1651,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             var updated = _CloneCronJob(current);
             updated.FingerprintFailureCount = failureCount;
             updated.FingerprintRetryAfterUtc = _timeProvider.GetUtcNow().UtcDateTime.Add(delay);
-            _cronJobs[request.CronJobId] = updated;
+            _SetCronJob(updated);
 
             return Task.FromResult(true);
         }
@@ -1786,7 +1789,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             var updated = _CloneCronJob(current);
             updated.ReconciledThroughUtc = resolution.ReconciledThroughUtc;
             updated.NextDueUtc = resolution.NextDueUtc;
-            _cronJobs[request.CronJobId] = updated;
+            _SetCronJob(updated);
 
             return Task.FromResult<CronRecoveryResult<TCronJob>?>(
                 new CronRecoveryResult<TCronJob>
@@ -1808,40 +1811,60 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var selectable = _cronJobs.Values.Where(x => !x.IsPaused && x.FingerprintRetryAfterUtc is null);
-
-        if (after is { } cursor)
+        CronDispatchCandidate[] candidates;
+        lock (_cronJobDueIndexLock)
         {
-            // Applied before Take, on the same (NextDueUtc, Id) ordering the result is sorted by, so a resumed read
-            // continues past what the caller already rejected instead of re-reading it (#830). Guid ordering is the
-            // CLR's here, matching this provider's own OrderBy.
-            selectable = selectable.Where(x =>
-                x.NextDueUtc > cursor.NextDueUtc
-                || (x.NextDueUtc == cursor.NextDueUtc && x.Id.CompareTo(cursor.CronJobId) > 0)
-            );
-        }
-
-        var candidates = selectable
-            .OrderBy(x => x.NextDueUtc)
-            .ThenBy(x => x.Id)
-            .Take(limit)
-            .Select(x => new CronDispatchCandidate
+            // Every definition write updates this ordered projection while holding the same lock. Revalidate each
+            // entry against the live row anyway so selection remains correct if future maintenance ever leaves a
+            // stale entry behind; the scheduler only walks enough ordered entries to fill its bounded page.
+            IEnumerable<(DateTime NextDueUtc, Guid CronJobId)> selectable = _cronJobsByNextDue;
+            if (after is { } cursor)
             {
-                CronJobId = x.Id,
-                FunctionName = x.Function,
-                Expression = x.Expression,
-                TimeZoneId = x.TimeZoneId,
-                ScheduleRevision = x.ScheduleRevision,
-                ReconciledThroughUtc = x.ReconciledThroughUtc,
-                NextDueUtc = x.NextDueUtc,
-                Retries = x.Retries,
-                RetryIntervals = x.RetryIntervals,
-                OnNodeDeath = x.OnNodeDeath,
-                MissedRunGraceSeconds = x.MissedRunGraceSeconds,
-                OnMissedRun = x.OnMissedRun,
-                EvaluationFingerprint = x.EvaluationFingerprint,
-            })
-            .ToArray();
+                var cursorEntry = (cursor.NextDueUtc, cursor.CronJobId);
+                if (
+                    _cronJobsByNextDue.Count == 0
+                    || _cronJobsByNextDue.Comparer.Compare(cursorEntry, _cronJobsByNextDue.Max) > 0
+                )
+                {
+                    selectable = [];
+                }
+                else
+                {
+                    var remaining = _cronJobsByNextDue.GetViewBetween(cursorEntry, _cronJobsByNextDue.Max);
+                    selectable = _cronJobsByNextDue.Contains(cursorEntry) ? remaining.Skip(1) : remaining;
+                }
+            }
+
+            candidates =
+            [
+                .. selectable
+                    .Select(x =>
+                        _cronJobs.TryGetValue(x.CronJobId, out var definition)
+                        && _IsCronDispatchSelectable(definition)
+                        && definition.NextDueUtc == x.NextDueUtc
+                            ? definition
+                            : null
+                    )
+                    .Where(static x => x is not null)
+                    .Take(limit)
+                    .Select(x => new CronDispatchCandidate
+                    {
+                        CronJobId = x!.Id,
+                        FunctionName = x.Function,
+                        Expression = x.Expression,
+                        TimeZoneId = x.TimeZoneId,
+                        ScheduleRevision = x.ScheduleRevision,
+                        ReconciledThroughUtc = x.ReconciledThroughUtc,
+                        NextDueUtc = x.NextDueUtc,
+                        Retries = x.Retries,
+                        RetryIntervals = x.RetryIntervals,
+                        OnNodeDeath = x.OnNodeDeath,
+                        MissedRunGraceSeconds = x.MissedRunGraceSeconds,
+                        OnMissedRun = x.OnMissedRun,
+                        EvaluationFingerprint = x.EvaluationFingerprint,
+                    }),
+            ];
+        }
 
         if (candidates.Length == 0)
         {
@@ -1897,7 +1920,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                 updated.FingerprintFailureCount = 0;
                 updated.FingerprintRetryAfterUtc = null;
             }
-            _cronJobs[advance.CronJobId] = updated;
+            _SetCronJob(updated);
 
             // Read back off the stored instance rather than echoing the request, so this provider's result is
             // indistinguishable in shape and origin from the relational read-back.
@@ -2014,7 +2037,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             var updated = _CloneCronJob(current);
             updated.ReconciledThroughUtc = advance.ReconciledThroughUtc;
             updated.NextDueUtc = advance.NextDueUtc;
-            _cronJobs[advance.CronJobId] = updated;
+            _SetCronJob(updated);
 
             return Task.FromResult(
                 new CronScheduleMaterializationResult
@@ -2074,7 +2097,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                 _cronOccurrences[pair.Key] = skipped;
             }
 
-            _cronJobs[cronJobId] = updated;
+            _SetCronJob(updated);
             return Task.FromResult<TCronJob?>(_CloneCronJob(updated));
         }
     }
@@ -2126,7 +2149,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             var replacement = _CloneCronOccurrence(nextOccurrence);
             replacement.CronJob = updated;
             _cronOccurrences[nextOccurrence.Id] = replacement;
-            _cronJobs[cronJobId] = updated;
+            _SetCronJob(updated);
 
             return Task.FromResult<TCronJob?>(_CloneCronJob(updated));
         }
@@ -2275,7 +2298,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                     }
                 }
 
-                _cronJobs[definition.Id] = definition;
+                _SetCronJob(definition);
             }
 
             return Task.FromResult<TCronJob[]?>([.. prepared.Select(x => _CloneCronJob(x.Definition))]);
@@ -2350,7 +2373,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         {
             lock (_cronJobIdIndexLock)
             {
-                if (_cronJobs.TryAdd(job.Id, job))
+                if (_TryAddCronJob(job))
                 {
                     _cronJobIds.Add(job.Id);
                     count++;
@@ -2390,7 +2413,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
             lock (_cronJobIdIndexLock)
             {
-                if (!_cronJobs.TryAdd(job.Id, job))
+                if (!_TryAddCronJob(job))
                 {
                     continue;
                 }
@@ -2423,7 +2446,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         {
             if (_cronJobs.TryGetValue(job.Id, out var existing))
             {
-                if (_cronJobs.TryUpdate(job.Id, job, existing))
+                if (_TryUpdateCronJob(job, existing))
                 {
                     count++;
                 }
@@ -2440,7 +2463,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         {
             lock (_cronJobIdIndexLock)
             {
-                if (!_cronJobs.TryRemove(id, out _))
+                if (!_TryRemoveCronJob(id))
                 {
                     continue;
                 }
@@ -3311,6 +3334,86 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
     private int _GetCronDefinitionLockIndex(Guid cronJobId)
     {
         return (int)((uint)cronJobId.GetHashCode() % (uint)_cronDefinitionLocks.Length);
+    }
+
+    private static bool _IsCronDispatchSelectable(TCronJob definition)
+    {
+        return !definition.IsPaused && definition.FingerprintRetryAfterUtc is null;
+    }
+
+    private bool _TryAddCronJob(TCronJob definition)
+    {
+        lock (_cronJobDueIndexLock)
+        {
+            if (!_cronJobs.TryAdd(definition.Id, definition))
+            {
+                return false;
+            }
+
+            _AddCronJobDueIndexEntry(definition);
+            return true;
+        }
+    }
+
+    private bool _TryUpdateCronJob(TCronJob definition, TCronJob comparison)
+    {
+        lock (_cronJobDueIndexLock)
+        {
+            if (!_cronJobs.TryUpdate(definition.Id, definition, comparison))
+            {
+                return false;
+            }
+
+            _RemoveCronJobDueIndexEntry(comparison.Id);
+            _AddCronJobDueIndexEntry(definition);
+            return true;
+        }
+    }
+
+    private void _SetCronJob(TCronJob definition)
+    {
+        lock (_cronJobDueIndexLock)
+        {
+            if (_cronJobs.TryGetValue(definition.Id, out var current))
+            {
+                _RemoveCronJobDueIndexEntry(current.Id);
+            }
+
+            _cronJobs[definition.Id] = definition;
+            _AddCronJobDueIndexEntry(definition);
+        }
+    }
+
+    private bool _TryRemoveCronJob(Guid cronJobId)
+    {
+        lock (_cronJobDueIndexLock)
+        {
+            if (!_cronJobs.TryRemove(cronJobId, out var removed))
+            {
+                return false;
+            }
+
+            _RemoveCronJobDueIndexEntry(removed.Id);
+            return true;
+        }
+    }
+
+    private void _AddCronJobDueIndexEntry(TCronJob definition)
+    {
+        if (_IsCronDispatchSelectable(definition))
+        {
+            var entry = (definition.NextDueUtc, definition.Id);
+            _cronJobsByNextDue.Add(entry);
+            _cronJobDueEntries[definition.Id] = entry;
+        }
+    }
+
+    private void _RemoveCronJobDueIndexEntry(Guid cronJobId)
+    {
+        if (_cronJobDueEntries.Remove(cronJobId, out var entry))
+        {
+            _cronJobsByNextDue.Remove(entry);
+        }
     }
 
     private static TCronJob _CloneCronJob(TCronJob job)
