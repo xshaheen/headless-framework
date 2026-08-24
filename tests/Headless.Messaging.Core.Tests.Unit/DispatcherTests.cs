@@ -534,13 +534,19 @@ public sealed class DispatcherTests : TestBase
         var storage = Substitute.For<IDataStorage, IGracefulLeaseReleaseStorage>();
         var releaser = (IGracefulLeaseReleaseStorage)storage;
         _executor
-            .ExecuteAsync(
+            .ExecuteRetryAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<IServiceProvider>(),
+                Arg.Any<RetryExecutionState>(),
                 Arg.Any<ConsumerExecutorDescriptor?>(),
                 Arg.Any<CancellationToken>()
             )
-            .Returns(OperateResult.Success);
+            .Returns(call =>
+            {
+                var message = call.Arg<MediumMessage>();
+                call.Arg<RetryExecutionState>().RecordLeaseTransition(affected: true, message.LockedUntil);
+                return OperateResult.Success;
+            });
         var options = Options.Create(new MessagingOptions());
         await using var dispatcher = new Dispatcher(
             _logger,
@@ -560,9 +566,10 @@ public sealed class DispatcherTests : TestBase
 
         await _executor
             .Received(1)
-            .ExecuteAsync(
+            .ExecuteRetryAsync(
                 message,
                 Arg.Any<IServiceProvider>(),
+                Arg.Any<RetryExecutionState>(),
                 Arg.Any<ConsumerExecutorDescriptor?>(),
                 Arg.Any<CancellationToken>()
             );

@@ -172,7 +172,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             _EmptyScope,
             executionState,
             _CreateDescriptor(),
-            CancellationToken.None
+            AbortToken
         );
 
         // then
@@ -286,7 +286,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             _EmptyScope,
             executionState,
             _CreateDescriptor(),
-            CancellationToken.None
+            AbortToken
         );
 
         // then
