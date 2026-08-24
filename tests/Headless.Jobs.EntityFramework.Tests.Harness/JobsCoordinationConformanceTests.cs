@@ -1,13 +1,17 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data.Common;
 using System.Diagnostics;
 using Headless.Coordination;
 using Headless.Jobs;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
+using Headless.Jobs.Internal;
 using Headless.Jobs.Models;
 using Headless.Testing.Tests;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
@@ -1936,6 +1940,118 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
         finally
         {
             await host.StopAsync(ct);
+        }
+    }
+
+    public virtual async Task concurrent_seeders_accept_only_the_verified_deterministic_id_winner()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        var insertGate = new ConcurrentCronInsertGate();
+
+        using var firstHost = fixture.BuildInterceptedHost("cron-seed-race-a", insertGate);
+        using var secondHost = fixture.BuildInterceptedHost("cron-seed-race-b", insertGate);
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(firstHost, ct);
+        var first = firstHost.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+        var second = secondHost.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+        CronSeedDefinition[] definitions =
+        [
+            new(
+                "concurrent-seed",
+                "0 */5 * * * *",
+                MissedRunPolicy.Coalesce,
+                JobsRecoveryDefaults.MissedRunGraceSeconds
+            ),
+        ];
+
+        await Task.WhenAll(
+            first.MigrateDefinedCronJobsAsync(definitions, ct),
+            second.MigrateDefinedCronJobsAsync(definitions, ct)
+        );
+
+        insertGate.InterceptedCommands.Should().Be(2, "both transactions must reach INSERT before either can win");
+        var persisted = (await first.GetAllCronJobExpressionsAsync(ct)).Should().ContainSingle().Subject;
+        persisted.Id.Should().Be(JobsSeedId.ForCronSeed("concurrent-seed"));
+        persisted.Function.Should().Be("concurrent-seed");
+    }
+
+    public virtual async Task seed_primary_key_conflict_rethrows_when_the_winner_is_not_the_intended_function()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+
+        using var host = fixture.BuildHost("cron-seed-mismatch");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await fixture.SeedCronJobAsync(
+            JobsSeedId.ForCronSeed("intended-seed"),
+            "different-function",
+            "0 */5 * * * *",
+            NodeDeathPolicy.Retry,
+            ct
+        );
+        var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+        var act = () =>
+            persistence.MigrateDefinedCronJobsAsync(
+                [
+                    new CronSeedDefinition(
+                        "intended-seed",
+                        "0 */5 * * * *",
+                        MissedRunPolicy.Coalesce,
+                        JobsRecoveryDefaults.MissedRunGraceSeconds
+                    ),
+                ],
+                ct
+            );
+
+        await act.Should().ThrowAsync<DbUpdateException>();
+    }
+
+    private sealed class ConcurrentCronInsertGate : DbCommandInterceptor
+    {
+        private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _interceptedCommands;
+
+        public int InterceptedCommands => Volatile.Read(ref _interceptedCommands);
+
+        public override async ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default
+        )
+        {
+            await _WaitForBothInsertsAsync(command, cancellationToken).ConfigureAwait(false);
+            return result;
+        }
+
+        public override async ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<DbDataReader> result,
+            CancellationToken cancellationToken = default
+        )
+        {
+            await _WaitForBothInsertsAsync(command, cancellationToken).ConfigureAwait(false);
+            return result;
+        }
+
+        private async Task _WaitForBothInsertsAsync(DbCommand command, CancellationToken cancellationToken)
+        {
+            if (
+                !command.CommandText.Contains("INSERT", StringComparison.OrdinalIgnoreCase)
+                || !command.CommandText.Contains("CronJobs", StringComparison.OrdinalIgnoreCase)
+            )
+            {
+                return;
+            }
+
+            if (Interlocked.Increment(ref _interceptedCommands) == 2)
+            {
+                _release.TrySetResult();
+            }
+
+            await _release.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
     }
 
