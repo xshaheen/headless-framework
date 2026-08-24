@@ -192,6 +192,18 @@ public sealed class SqlServerConformanceTests(SqlServerJobsCoordinationFixture f
     {
         return base.should_retire_pending_seed_work_when_code_defined_expression_changes();
     }
+
+    [Fact]
+    public override Task concurrent_seeders_accept_only_the_verified_deterministic_id_winner()
+    {
+        return base.concurrent_seeders_accept_only_the_verified_deterministic_id_winner();
+    }
+
+    [Fact]
+    public override Task seed_primary_key_conflict_rethrows_when_the_winner_is_not_the_intended_function()
+    {
+        return base.seed_primary_key_conflict_rethrows_when_the_winner_is_not_the_intended_function();
+    }
 }
 
 /// <summary>Runs native Jobs claim conformance through SQL Server production registration.</summary>
