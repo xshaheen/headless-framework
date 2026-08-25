@@ -1394,6 +1394,30 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
     }
 
     [Fact]
+    public override Task should_atomically_defer_only_exact_live_received_retry_lease_generation()
+    {
+        return base.should_atomically_defer_only_exact_live_received_retry_lease_generation();
+    }
+
+    [Fact]
+    public override Task should_atomically_defer_received_retry_lease_with_null_owner()
+    {
+        return base.should_atomically_defer_received_retry_lease_with_null_owner();
+    }
+
+    [Fact]
+    public override Task should_not_defer_expired_received_retry_lease()
+    {
+        return base.should_not_defer_expired_received_retry_lease();
+    }
+
+    [Fact]
+    public override Task should_not_defer_terminal_received_retry_lease()
+    {
+        return base.should_not_defer_terminal_received_retry_lease();
+    }
+
+    [Fact]
     public override Task should_not_release_terminal_retry_lease_generation()
     {
         return base.should_not_release_terminal_retry_lease_generation();

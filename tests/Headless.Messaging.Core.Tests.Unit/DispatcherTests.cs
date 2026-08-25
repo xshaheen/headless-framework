@@ -1977,6 +1977,53 @@ public sealed class DispatcherTests : TestBase
         await dispose;
     }
 
+    [Fact]
+    public async Task concurrent_quiesce_cannot_be_undone_by_dispatcher_start_publication()
+    {
+        var storage = Substitute.For<IDataStorage, IGracefulLeaseReleaseStorage>();
+        await using var dispatcher = new Dispatcher(
+            _logger,
+            Substitute.For<IMessageSender>(),
+            Options.Create(new MessagingOptions { EnablePublishParallelSend = false }),
+            _executor,
+            storage,
+            TimeProvider.System,
+            _scopeFactory
+        );
+        using var releaseStart = new ManualResetEventSlim(initialState: false);
+        var startPublishing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        dispatcher.StartPublicationHookForTest = () =>
+        {
+            startPublishing.TrySetResult();
+            releaseStart.Wait();
+        };
+
+        var startTask = Task
+            .Factory.StartNew(
+                () => dispatcher.StartAsync(AbortToken).AsTask(),
+                CancellationToken.None,
+                TaskCreationOptions.DenyChildAttach | TaskCreationOptions.LongRunning,
+                TaskScheduler.Default
+            )
+            .Unwrap();
+        await startPublishing.Task.WaitAsync(AbortToken);
+        var quiesceTask = Task.Factory.StartNew(
+            () => ((IProcessingServerShutdown)dispatcher).Quiesce(),
+            CancellationToken.None,
+            TaskCreationOptions.DenyChildAttach | TaskCreationOptions.LongRunning,
+            TaskScheduler.Default
+        );
+
+        releaseStart.Set();
+        await Task.WhenAll(startTask, quiesceTask);
+        var message = _CreateRetryMessage(owner: "node-a", lockedUntil: DateTimeOffset.UtcNow.AddMinutes(5));
+
+        var transferred = await ((IRetryDispatcher)dispatcher).DispatchReceivedAsync(message, AbortToken);
+
+        transferred.Should().BeFalse("quiesce must remain authoritative after startup");
+        await ((IProcessingServerShutdown)dispatcher).StopAsync(TimeSpan.FromSeconds(2));
+    }
+
     private static MediumMessage _CreateTestMessage(int storageId)
     {
         return _CreateTestMessage(_StorageGuid(storageId));

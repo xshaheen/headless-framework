@@ -88,11 +88,30 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         return (sut, dispatcher, cb);
     }
 
-    private static ProcessingContext _CreateContext(IServiceProvider? provider = null)
+    private static ProcessingContext _CreateContext(
+        IServiceProvider? provider = null,
+        CancellationToken cancellationToken = default
+    )
     {
         provider ??= new ServiceCollection().AddSingleton(Substitute.For<IDataStorage>()).BuildServiceProvider();
 
-        return new ProcessingContext(provider, TimeProvider.System, CancellationToken.None);
+        return new ProcessingContext(provider, TimeProvider.System, cancellationToken);
+    }
+
+    private static MessageNeedToRetryProcessor _CreateCircuitAwareProcessor(
+        ICircuitBreakerStateManager stateManager,
+        IDispatcher? dispatcher = null
+    )
+    {
+        return new MessageNeedToRetryProcessor(
+            Options.Create(new MessagingOptions()),
+            Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.Zero, AdaptivePolling = false }),
+            NullLogger<MessageNeedToRetryProcessor>.Instance,
+            dispatcher ?? Substitute.For<IDispatcher>(),
+            Substitute.For<IDistributedLock>(),
+            stateManager,
+            stateManager
+        );
     }
 
     private static IDistributedLock _CreateContendedLockProvider()
@@ -220,7 +239,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             .Returns(ValueTask.FromException(new InvalidOperationException("handoff failed")));
         retryDispatcher
             .DispatchReceivedAsync(Arg.Any<MediumMessage>(), Arg.Any<CancellationToken>())
-            .Returns(ValueTask.FromException(new InvalidOperationException("handoff failed")));
+            .Returns(ValueTask.FromException<bool>(new InvalidOperationException("handoff failed")));
 
         var released = new TaskCompletionSource<IReadOnlyCollection<MessageLeaseIdentity>>(
             TaskCreationOptions.RunContinuationsAsynchronously
@@ -323,6 +342,359 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         await dispatcher.Received(1).EnqueueToExecute(msg2, null, Arg.Any<CancellationToken>());
         await dispatcher.DidNotReceive().EnqueueToExecute(msg1, null, Arg.Any<CancellationToken>());
         await dispatcher.DidNotReceive().EnqueueToExecute(msg3, null, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task open_circuit_atomically_defers_exact_claim_to_authoritative_boundary()
+    {
+        var now = new DateTimeOffset(2026, 8, 25, 9, 30, 0, TimeSpan.Zero);
+        var timeProvider = new FakeTimeProvider(now);
+        var remaining = TimeSpan.FromSeconds(37);
+        var nextProbeAt = now.Add(remaining);
+        var lockedUntil = now.AddMinutes(5);
+        var message = _CreateMessage("open-group");
+        message.Owner = "node-a";
+        message.LockedUntil = lockedUntil;
+        var healthy = _CreateMessage("healthy-group");
+
+        var storage = Substitute.For<IDataStorage, ICircuitRetryDeferralStorage>();
+        var deferralStorage = (ICircuitRetryDeferralStorage)storage;
+        _SetupReceivedMessages(storage, message, healthy);
+        deferralStorage
+            .DeferReceivedRetryAsync(Arg.Any<CircuitRetryDeferral>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(true));
+
+        var stateManager = Substitute.For<ICircuitBreakerStateManager>();
+        stateManager
+            .GetRetryDecision(MessageLane.Bus, "open-group")
+            .Returns(new CircuitRetryDecision(CircuitRetryDecisionKind.Defer, nextProbeAt, null));
+        stateManager.GetRetryDecision(MessageLane.Bus, "healthy-group").Returns(CircuitRetryDecision.Closed);
+        var dispatcher = Substitute.For<IDispatcher>();
+        dispatcher
+            .EnqueueToExecute(healthy, null, Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                timeProvider.Advance(TimeSpan.FromSeconds(10));
+                return ValueTask.CompletedTask;
+            });
+        var sut = new MessageNeedToRetryProcessor(
+            Options.Create(new MessagingOptions()),
+            Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.Zero, AdaptivePolling = false }),
+            NullLogger<MessageNeedToRetryProcessor>.Instance,
+            dispatcher,
+            Substitute.For<IDistributedLock>(),
+            stateManager,
+            stateManager
+        );
+        await using var context = new ProcessingContext(
+            new ServiceCollection().AddSingleton(storage).BuildServiceProvider(),
+            timeProvider,
+            CancellationToken.None
+        );
+
+        await _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus);
+
+        await deferralStorage
+            .Received(1)
+            .DeferReceivedRetryAsync(
+                Arg.Is<CircuitRetryDeferral>(request =>
+                    request.Identity
+                        == new MessageLeaseIdentity(message.StorageId, "node-a", lockedUntil, MessageLane.Bus)
+                    && request.NextRetryAt == nextProbeAt
+                ),
+                CancellationToken.None
+            );
+        await dispatcher.DidNotReceive().EnqueueToExecute(message, null, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task failed_circuit_deferral_retains_claim_and_does_not_delay_healthy_dispatch()
+    {
+        var lockedUntil = DateTimeOffset.UtcNow.AddMinutes(5);
+        var open = _CreateMessage("open-group");
+        open.Owner = "node-a";
+        open.LockedUntil = lockedUntil;
+        var healthy = _CreateMessage("healthy-group");
+
+        var storage = Substitute.For<IDataStorage, ICircuitRetryDeferralStorage, IGracefulLeaseReleaseStorage>();
+        var deferralStorage = (ICircuitRetryDeferralStorage)storage;
+        var releaseStorage = (IGracefulLeaseReleaseStorage)storage;
+        _SetupReceivedMessages(storage, open, healthy);
+        var transitionStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        deferralStorage
+            .DeferReceivedRetryAsync(Arg.Any<CircuitRetryDeferral>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                transitionStarted.TrySetResult();
+                return ValueTask.FromException<bool>(new InvalidOperationException("transition uncertain"));
+            });
+
+        var stateManager = Substitute.For<ICircuitBreakerStateManager>();
+        stateManager
+            .GetRetryDecision(MessageLane.Bus, "open-group")
+            .Returns(
+                new CircuitRetryDecision(CircuitRetryDecisionKind.Defer, DateTimeOffset.UtcNow.AddMinutes(1), null)
+            );
+        stateManager.GetRetryDecision(MessageLane.Bus, "healthy-group").Returns(CircuitRetryDecision.Closed);
+        var dispatcher = Substitute.For<IDispatcher>();
+        var sut = new MessageNeedToRetryProcessor(
+            Options.Create(new MessagingOptions()),
+            Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.Zero, AdaptivePolling = false }),
+            NullLogger<MessageNeedToRetryProcessor>.Instance,
+            dispatcher,
+            Substitute.For<IDistributedLock>(),
+            stateManager,
+            stateManager
+        );
+        await using var context = _CreateContext(new ServiceCollection().AddSingleton(storage).BuildServiceProvider());
+
+        await _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus);
+
+        transitionStarted.Task.IsCompleted.Should().BeTrue();
+        await dispatcher.Received(1).EnqueueToExecute(healthy, null, Arg.Any<CancellationToken>());
+        await releaseStorage
+            .DidNotReceive()
+            .ReleaseReceivedLeaseAsync(
+                Arg.Is<MessageLeaseIdentity>(identity => identity.StorageId == open.StorageId),
+                Arg.Any<CancellationToken>()
+            );
+        await releaseStorage
+            .DidNotReceive()
+            .ReleaseReceivedLeasesAsync(
+                Arg.Is<IReadOnlyCollection<MessageLeaseIdentity>>(identities =>
+                    identities.Any(identity => identity.StorageId == open.StorageId)
+                ),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task closed_probe_outcome_releases_exact_pending_claim()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var message = _CreateMessage("probe-group");
+        message.Owner = "node-a";
+        message.LockedUntil = now.AddMinutes(5);
+        var storage = Substitute.For<IDataStorage, IGracefulLeaseReleaseStorage>();
+        var releaseStorage = (IGracefulLeaseReleaseStorage)storage;
+        _SetupReceivedMessages(storage, message);
+        var stateManager = Substitute.For<ICircuitBreakerStateManager>();
+        stateManager
+            .GetRetryDecision(MessageLane.Bus, "probe-group")
+            .Returns(
+                new CircuitRetryDecision(
+                    CircuitRetryDecisionKind.ProbePending,
+                    null,
+                    Task.FromResult(new CircuitRetryProbeOutcome(CircuitRetryProbeOutcomeKind.Closed, null))
+                )
+            );
+        var sut = _CreateCircuitAwareProcessor(stateManager);
+        await using var context = _CreateContext(new ServiceCollection().AddSingleton(storage).BuildServiceProvider());
+
+        await _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus);
+
+        await releaseStorage
+            .Received(1)
+            .ReleaseReceivedLeaseAsync(
+                new MessageLeaseIdentity(message.StorageId, "node-a", message.LockedUntil.Value, MessageLane.Bus),
+                CancellationToken.None
+            );
+    }
+
+    [Fact]
+    public async Task reopened_probe_outcome_defers_pending_claim_to_captured_boundary()
+    {
+        var nextProbeAt = DateTimeOffset.UtcNow.AddMinutes(2);
+        var message = _CreateMessage("probe-group");
+        message.Owner = "node-a";
+        message.LockedUntil = nextProbeAt.AddMinutes(3);
+        var storage = Substitute.For<IDataStorage, ICircuitRetryDeferralStorage>();
+        var deferralStorage = (ICircuitRetryDeferralStorage)storage;
+        _SetupReceivedMessages(storage, message);
+        var stateManager = Substitute.For<ICircuitBreakerStateManager>();
+        stateManager
+            .GetRetryDecision(MessageLane.Bus, "probe-group")
+            .Returns(
+                new CircuitRetryDecision(
+                    CircuitRetryDecisionKind.ProbePending,
+                    null,
+                    Task.FromResult(new CircuitRetryProbeOutcome(CircuitRetryProbeOutcomeKind.Reopened, nextProbeAt))
+                )
+            );
+        var sut = _CreateCircuitAwareProcessor(stateManager);
+        await using var context = _CreateContext(new ServiceCollection().AddSingleton(storage).BuildServiceProvider());
+
+        await _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus);
+
+        await deferralStorage
+            .Received(1)
+            .DeferReceivedRetryAsync(
+                Arg.Is<CircuitRetryDeferral>(request => request.NextRetryAt == nextProbeAt),
+                CancellationToken.None
+            );
+    }
+
+    [Fact]
+    public async Task uncertain_probe_outcome_retains_pending_claim()
+    {
+        var message = _CreateMessage("probe-group");
+        message.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(5);
+        var storage = Substitute.For<IDataStorage, ICircuitRetryDeferralStorage, IGracefulLeaseReleaseStorage>();
+        _SetupReceivedMessages(storage, message);
+        var stateManager = Substitute.For<ICircuitBreakerStateManager>();
+        stateManager
+            .GetRetryDecision(MessageLane.Bus, "probe-group")
+            .Returns(
+                new CircuitRetryDecision(
+                    CircuitRetryDecisionKind.ProbePending,
+                    null,
+                    Task.FromResult(new CircuitRetryProbeOutcome(CircuitRetryProbeOutcomeKind.Uncertain, null))
+                )
+            );
+        var sut = _CreateCircuitAwareProcessor(stateManager);
+        await using var context = _CreateContext(new ServiceCollection().AddSingleton(storage).BuildServiceProvider());
+
+        await _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus);
+
+        await ((ICircuitRetryDeferralStorage)storage)
+            .DidNotReceive()
+            .DeferReceivedRetryAsync(Arg.Any<CircuitRetryDeferral>(), Arg.Any<CancellationToken>());
+        await ((IGracefulLeaseReleaseStorage)storage)
+            .DidNotReceive()
+            .ReleaseReceivedLeaseAsync(Arg.Any<MessageLeaseIdentity>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task cancellation_while_probe_is_pending_retains_claim()
+    {
+        var message = _CreateMessage("probe-group");
+        message.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(5);
+        var storage = Substitute.For<IDataStorage, ICircuitRetryDeferralStorage, IGracefulLeaseReleaseStorage>();
+        _SetupReceivedMessages(storage, message);
+        var outcome = new TaskCompletionSource<CircuitRetryProbeOutcome>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        var classified = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var stateManager = Substitute.For<ICircuitBreakerStateManager>();
+        stateManager
+            .GetRetryDecision(MessageLane.Bus, "probe-group")
+            .Returns(_ =>
+            {
+                classified.TrySetResult();
+                return new CircuitRetryDecision(CircuitRetryDecisionKind.ProbePending, null, outcome.Task);
+            });
+        var sut = _CreateCircuitAwareProcessor(stateManager);
+        using var cts = new CancellationTokenSource();
+        await using var context = _CreateContext(
+            new ServiceCollection().AddSingleton(storage).BuildServiceProvider(),
+            cts.Token
+        );
+
+        var run = _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus);
+        await classified.Task.WaitAsync(AbortToken);
+        await cts.CancelAsync();
+        await run;
+
+        await ((ICircuitRetryDeferralStorage)storage)
+            .DidNotReceive()
+            .DeferReceivedRetryAsync(Arg.Any<CircuitRetryDeferral>(), Arg.Any<CancellationToken>());
+        await ((IGracefulLeaseReleaseStorage)storage)
+            .DidNotReceive()
+            .ReleaseReceivedLeaseAsync(Arg.Any<MessageLeaseIdentity>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task abandoned_acquired_probe_releases_shared_probe_slot()
+    {
+        var message = _CreateMessage("probe-group");
+        message.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(5);
+        var storage = Substitute.For<IDataStorage, IGracefulLeaseReleaseStorage>();
+        _SetupReceivedMessages(storage, message);
+        var stateManager = Substitute.For<ICircuitBreakerStateManager>();
+        stateManager
+            .GetRetryDecision(MessageLane.Bus, "probe-group")
+            .Returns(new CircuitRetryDecision(CircuitRetryDecisionKind.ProbeAcquired, null, null));
+        var dispatcher = Substitute.For<IDispatcher, IRetryDispatcher>();
+        ((IRetryDispatcher)dispatcher)
+            .DispatchReceivedAsync(message, Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(false));
+        var sut = _CreateCircuitAwareProcessor(stateManager, dispatcher);
+        await using var context = _CreateContext(new ServiceCollection().AddSingleton(storage).BuildServiceProvider());
+
+        await _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus);
+
+        stateManager.Received(1).ReleaseHalfOpenProbe(CircuitBreakerGroupKeys.For(MessageLane.Bus, "probe-group"));
+    }
+
+    [Fact]
+    public async Task cancellation_during_healthy_dispatch_releases_preclassified_probe_slot()
+    {
+        var healthy = _CreateMessage("healthy-group");
+        var probe = _CreateMessage("probe-group");
+        var storage = Substitute.For<IDataStorage, IGracefulLeaseReleaseStorage>();
+        _SetupReceivedMessages(storage, healthy, probe);
+        using var cts = new CancellationTokenSource();
+        var stateManager = Substitute.For<ICircuitBreakerStateManager>();
+        stateManager.GetRetryDecision(MessageLane.Bus, "healthy-group").Returns(CircuitRetryDecision.Closed);
+        stateManager
+            .GetRetryDecision(MessageLane.Bus, "probe-group")
+            .Returns(_ =>
+            {
+                cts.Cancel();
+                return new CircuitRetryDecision(CircuitRetryDecisionKind.ProbeAcquired, null, null);
+            });
+        var dispatcher = Substitute.For<IDispatcher>();
+        var sut = _CreateCircuitAwareProcessor(stateManager, dispatcher);
+        await using var context = _CreateContext(
+            new ServiceCollection().AddSingleton(storage).BuildServiceProvider(),
+            cts.Token
+        );
+
+        Func<Task> act = () => _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        stateManager.Received(1).ReleaseHalfOpenProbe(CircuitBreakerGroupKeys.For(MessageLane.Bus, "probe-group"));
+        await dispatcher
+            .DidNotReceive()
+            .EnqueueToExecute(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<ConsumerExecutorDescriptor?>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task unsupported_deferral_provider_warns_once_and_retains_claim()
+    {
+        var message = _CreateMessage("open-group");
+        message.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(5);
+        var storage = Substitute.For<IDataStorage, IGracefulLeaseReleaseStorage>();
+        _SetupReceivedMessages(storage, message);
+        var stateManager = Substitute.For<ICircuitBreakerStateManager>();
+        stateManager
+            .GetRetryDecision(MessageLane.Bus, "open-group")
+            .Returns(
+                new CircuitRetryDecision(CircuitRetryDecisionKind.Defer, DateTimeOffset.UtcNow.AddMinutes(1), null)
+            );
+        var captured = new List<(LogLevel Level, int Id)>();
+        var sut = new MessageNeedToRetryProcessor(
+            Options.Create(new MessagingOptions()),
+            Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.Zero, AdaptivePolling = false }),
+            _CreateCapturingLogger(captured),
+            Substitute.For<IDispatcher>(),
+            Substitute.For<IDistributedLock>(),
+            stateManager,
+            stateManager
+        );
+        await using var context = _CreateContext(new ServiceCollection().AddSingleton(storage).BuildServiceProvider());
+
+        await _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus);
+        await _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus);
+
+        captured.Count(entry => entry.Level == LogLevel.Warning && entry.Id == 3120).Should().Be(1);
+        await ((IGracefulLeaseReleaseStorage)storage)
+            .DidNotReceive()
+            .ReleaseReceivedLeaseAsync(Arg.Any<MessageLeaseIdentity>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]

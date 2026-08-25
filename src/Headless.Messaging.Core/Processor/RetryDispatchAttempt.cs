@@ -9,7 +9,7 @@ internal interface IRetryDispatcher
 {
     ValueTask DispatchPublishedAsync(MediumMessage message, CancellationToken cancellationToken = default);
 
-    ValueTask DispatchReceivedAsync(MediumMessage message, CancellationToken cancellationToken = default);
+    ValueTask<bool> DispatchReceivedAsync(MediumMessage message, CancellationToken cancellationToken = default);
 }
 
 internal sealed class RetryDispatchAttempt
