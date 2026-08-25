@@ -7,6 +7,7 @@ using Headless.Messaging.Exceptions;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 
 #pragma warning disable MA0015 // Specify the parameter name in ArgumentException
 namespace Tests.CircuitBreaker;
@@ -25,7 +26,8 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         TimeSpan? openDuration = null,
         TimeSpan? maxOpenDuration = null,
         int successfulCyclesToResetEscalation = 3,
-        ConsumerCircuitBreakerRegistry? registry = null
+        ConsumerCircuitBreakerRegistry? registry = null,
+        TimeProvider? timeProvider = null
     )
     {
         var opts = new CircuitBreakerOptions
@@ -45,7 +47,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
             registry ?? new ConsumerCircuitBreakerRegistry(),
             new NullLogger<CircuitBreakerStateManager>(),
             new CircuitBreakerMetrics(meterFactory),
-            TimeProvider.System
+            timeProvider ?? TimeProvider.System
         );
     }
 
@@ -190,6 +192,88 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         // then
         firstProbe.Should().BeTrue();
         secondProbe.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task retry_decision_uses_authoritative_next_probe_boundary()
+    {
+        var beforeOpen = DateTimeOffset.UtcNow;
+        await using var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromMinutes(1));
+        sut.RegisterGroupCallbacks(_Group, () => ValueTask.CompletedTask, () => ValueTask.CompletedTask);
+        await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
+
+        var decision = sut.GetRetryDecision(MessageLane.Bus, _Group);
+
+        decision.Kind.Should().Be(CircuitRetryDecisionKind.Closed, "the lane-qualified group is independent");
+
+        var laneGroup = CircuitBreakerGroupKeys.For(MessageLane.Bus, _Group);
+        sut.RegisterGroupCallbacks(laneGroup, () => ValueTask.CompletedTask, () => ValueTask.CompletedTask);
+        await sut.ReportFailureAsync(laneGroup, new TimeoutException(), AbortToken);
+
+        decision = sut.GetRetryDecision(MessageLane.Bus, _Group);
+        decision.Kind.Should().Be(CircuitRetryDecisionKind.Defer);
+        decision.NextProbeAt.Should().BeAfter(beforeOpen);
+        decision.NextProbeAt.Should().BeOnOrBefore(DateTimeOffset.UtcNow.AddMinutes(1));
+    }
+
+    [Fact]
+    public async Task overdue_open_retry_claim_advances_generation_before_timer_callback()
+    {
+        var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 8, 25, 12, 0, 0, TimeSpan.Zero));
+        var resumed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var laneGroup = CircuitBreakerGroupKeys.For(MessageLane.Bus, _Group);
+        await using var sut = _Create(
+            failureThreshold: 1,
+            openDuration: TimeSpan.FromMinutes(1),
+            timeProvider: timeProvider
+        );
+        sut.RegisterGroupCallbacks(
+            laneGroup,
+            () => ValueTask.CompletedTask,
+            () =>
+            {
+                resumed.TrySetResult();
+                return ValueTask.CompletedTask;
+            }
+        );
+        await sut.ReportFailureAsync(laneGroup, new TimeoutException(), AbortToken);
+        timeProvider.Advance(TimeSpan.FromMinutes(1));
+
+        var decision = sut.GetRetryDecision(MessageLane.Bus, _Group);
+
+        decision.Kind.Should().Be(CircuitRetryDecisionKind.ProbeAcquired);
+        sut.GetState(laneGroup).Should().Be(CircuitBreakerState.HalfOpen);
+        await resumed.Task.WaitAsync(AbortToken);
+    }
+
+    [Fact]
+    public async Task retry_and_transport_share_one_halfopen_probe_generation_and_outcome()
+    {
+        var halfOpen = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var laneGroup = CircuitBreakerGroupKeys.For(MessageLane.Bus, _Group);
+        await using var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromMilliseconds(30));
+        sut.RegisterGroupCallbacks(
+            laneGroup,
+            () => ValueTask.CompletedTask,
+            () =>
+            {
+                halfOpen.TrySetResult();
+                return ValueTask.CompletedTask;
+            }
+        );
+        await sut.ReportFailureAsync(laneGroup, new TimeoutException(), AbortToken);
+        await halfOpen.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        var retryProbe = sut.GetRetryDecision(MessageLane.Bus, _Group);
+        var sibling = sut.GetRetryDecision(MessageLane.Bus, _Group);
+
+        retryProbe.Kind.Should().Be(CircuitRetryDecisionKind.ProbeAcquired);
+        sibling.Kind.Should().Be(CircuitRetryDecisionKind.ProbePending);
+        sut.TryAcquireHalfOpenProbe(laneGroup).Should().BeFalse("transport shares the same probe slot");
+
+        await sut.ReportSuccessAsync(laneGroup, AbortToken);
+        var outcome = await sibling.ProbeOutcome!.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+        outcome.Kind.Should().Be(CircuitRetryProbeOutcomeKind.Closed);
     }
 
     [Fact]

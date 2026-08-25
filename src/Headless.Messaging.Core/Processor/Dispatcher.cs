@@ -48,12 +48,15 @@ internal sealed class Dispatcher
     private Task[] _processingTasks = [];
     private Task? _schedulerTask;
     private Task? _eventualCleanupTask;
+    private Task? _quiesceTask;
 
     // Volatile because writers (DisposeAsync, _ResetStateIfNeeded) race readers on channel-writer
     // and processing-loop threads. Without the barrier, a stale `false` read can slip past the
     // post-dispose guard in _WriteToChannelAsync and only get caught by the ObjectDisposedException
     // → OCE fallback. Volatile makes the post-dispose visibility deterministic.
     private volatile bool _disposed;
+
+    internal Action? StartPublicationHookForTest { get; set; }
 
     // Pre-cancelled token used for OCEs surfaced when the dispatcher is pre-start or post-dispose.
     // Downstream code that pattern-matches on oce.CancellationToken (e.g., RetryHelper.IsCancellation)
@@ -103,33 +106,39 @@ internal sealed class Dispatcher
 
     #region Public Methods
 
-    public async ValueTask StartAsync(CancellationToken stoppingToken)
+    public ValueTask StartAsync(CancellationToken stoppingToken)
     {
-        _ResetStateIfNeeded();
-
-        stoppingToken.ThrowIfCancellationRequested();
-        _tasksCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken, CancellationToken.None);
-
-        _InitializePublishedChannel();
-        await _StartSendingTaskAsync().ConfigureAwait(false);
-
-        if (_enableParallelExecute)
+        lock (_shutdownGate)
         {
-            _InitializeReceivedChannel();
-            await _StartProcessingTasksAsync().ConfigureAwait(false);
+            _ResetStateIfNeeded();
+            StartPublicationHookForTest?.Invoke();
+
+            stoppingToken.ThrowIfCancellationRequested();
+            _tasksCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken, CancellationToken.None);
+
+            _InitializePublishedChannel();
+            _StartSendingTask();
+
+            if (_enableParallelExecute)
+            {
+                _InitializeReceivedChannel();
+                _StartProcessingTasks();
+            }
+
+            _schedulerTask = _StartSchedulerTaskAsync();
+            lock (_retryDispatchGate)
+            {
+                _acceptingRetryDispatch = true;
+            }
+            _ = _schedulerTask.ContinueWith(
+                _OnSchedulerLoopFaulted,
+                CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted,
+                TaskScheduler.Default
+            );
         }
 
-        _schedulerTask = _StartSchedulerTaskAsync();
-        lock (_retryDispatchGate)
-        {
-            _acceptingRetryDispatch = true;
-        }
-        _ = _schedulerTask.ContinueWith(
-            _OnSchedulerLoopFaulted,
-            CancellationToken.None,
-            TaskContinuationOptions.OnlyOnFaulted,
-            TaskScheduler.Default
-        );
+        return ValueTask.CompletedTask;
     }
 
     private void _OnSchedulerLoopFaulted(Task task)
@@ -360,13 +369,16 @@ internal sealed class Dispatcher
         }
     }
 
-    async ValueTask IRetryDispatcher.DispatchReceivedAsync(MediumMessage message, CancellationToken cancellationToken)
+    async ValueTask<bool> IRetryDispatcher.DispatchReceivedAsync(
+        MediumMessage message,
+        CancellationToken cancellationToken
+    )
     {
         var attempt = RetryDispatchAttempt.TryCreate(_storage, MessageType.Subscribe, message);
         if (attempt is null)
         {
             await EnqueueToExecute(message, descriptor: null, cancellationToken).ConfigureAwait(false);
-            return;
+            return true;
         }
 
         try
@@ -375,18 +387,17 @@ internal sealed class Dispatcher
             if (_IsCancellationRequested())
             {
                 await attempt.AbandonClaimedAsync().ConfigureAwait(false);
-                return;
+                return false;
             }
 
             if (_ShouldUseParallelExecute(message))
             {
-                await _WriteReceivedRetryAsync(message, attempt, cancellationToken).ConfigureAwait(false);
-                return;
+                return await _WriteReceivedRetryAsync(message, attempt, cancellationToken).ConfigureAwait(false);
             }
 
             if (!await _TryStartRetryAsync(attempt).ConfigureAwait(false))
             {
-                return;
+                return false;
             }
 
             var executionState = new RetryExecutionState();
@@ -407,20 +418,29 @@ internal sealed class Dispatcher
             {
                 await attempt.CompleteAsync(executionState.LeaseClearedByTransition).ConfigureAwait(false);
             }
+
+            return true;
         }
         catch (OperationCanceledException)
         {
             await attempt.AbandonClaimedAsync().ConfigureAwait(false);
+            return false;
         }
         catch (Exception e)
         {
             _logger.SubscriberInvocationFailed(e, message.StorageId);
+            return false;
         }
     }
 
     public ValueTask DisposeAsync()
     {
         return DisposeAsync(_options.ShutdownTimeout);
+    }
+
+    void IProcessingServerShutdown.Quiesce()
+    {
+        _Quiesce();
     }
 
     ValueTask IProcessingServerShutdown.StopAsync(TimeSpan timeout)
@@ -430,6 +450,8 @@ internal sealed class Dispatcher
 
     public async ValueTask DisposeAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
     {
+        _Quiesce();
+
         Task shutdownTask;
         TaskCompletionSource? shutdownCompletion = null;
         lock (_shutdownGate)
@@ -440,12 +462,6 @@ internal sealed class Dispatcher
             }
             else
             {
-                lock (_retryDispatchGate)
-                {
-                    _acceptingRetryDispatch = false;
-                }
-
-                _disposed = true;
                 shutdownCompletion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 shutdownTask = shutdownCompletion.Task;
                 _eventualCleanupTask = shutdownTask;
@@ -458,6 +474,23 @@ internal sealed class Dispatcher
         }
 
         await _WaitForShutdownAsync(shutdownTask, timeout).ConfigureAwait(false);
+    }
+
+    private void _Quiesce()
+    {
+        lock (_shutdownGate)
+        {
+            lock (_retryDispatchGate)
+            {
+                _acceptingRetryDispatch = false;
+            }
+
+            _disposed = true;
+            if (_tasksCts is not null)
+            {
+                _quiesceTask ??= _tasksCts.CancelAsync();
+            }
+        }
     }
 
 #pragma warning disable VSTHRD003 // The shared cleanup task is explicitly deadline-bounded and keeps running on timeout.
@@ -575,6 +608,7 @@ internal sealed class Dispatcher
             _processingTasks = [];
             _schedulerTask = null;
             _eventualCleanupTask = null;
+            _quiesceTask = null;
             _disposed = false;
         }
     }
@@ -615,7 +649,7 @@ internal sealed class Dispatcher
 
     #region Task Startup Methods
 
-    private Task _StartSendingTaskAsync()
+    private void _StartSendingTask()
     {
         // Fire-and-forget the sending loop on the thread pool, but attach a fault continuation so
         // unobserved exceptions surface in logs AND signal host shutdown (R2). Using `async Task`
@@ -634,10 +668,9 @@ internal sealed class Dispatcher
             TaskContinuationOptions.OnlyOnFaulted,
             TaskScheduler.Default
         );
-        return Task.CompletedTask;
     }
 
-    private Task _StartProcessingTasksAsync()
+    private void _StartProcessingTasks()
     {
         // Fire-and-forget per-thread processing loops; faults are signalled to the host (R2)
         // via _SignalLoopTermination. A dead processing loop would leave ReceivedChannel filling
@@ -658,8 +691,6 @@ internal sealed class Dispatcher
                 TaskScheduler.Default
             );
         }
-
-        return Task.CompletedTask;
     }
 
     private Task _StartSchedulerTaskAsync()
@@ -719,7 +750,7 @@ internal sealed class Dispatcher
 
             if (tasksCts is not null)
             {
-                var cancellationTask = tasksCts.CancelAsync();
+                var cancellationTask = _quiesceTask ?? tasksCts.CancelAsync();
                 await _AbandonUnreadRetryWorkAsync().ConfigureAwait(false);
 
 #pragma warning disable VSTHRD003 // The cancellation task is deliberately completed during eventual cleanup.
@@ -1026,21 +1057,22 @@ internal sealed class Dispatcher
         return _enableParallelExecute && message.Retries == 0;
     }
 
-    private ValueTask _WritePublishedRetryAsync(
+    private async ValueTask _WritePublishedRetryAsync(
         MediumMessage message,
         RetryDispatchAttempt attempt,
         CancellationToken cancellationToken
     )
     {
-        return _WriteRetryAsync(
-            PublishedChannel,
-            new PublishedDispatchWork(message, attempt),
-            attempt,
-            cancellationToken
-        );
+        _ = await _WriteRetryAsync(
+                PublishedChannel,
+                new PublishedDispatchWork(message, attempt),
+                attempt,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
-    private ValueTask _WriteReceivedRetryAsync(
+    private ValueTask<bool> _WriteReceivedRetryAsync(
         MediumMessage message,
         RetryDispatchAttempt attempt,
         CancellationToken cancellationToken
@@ -1054,7 +1086,7 @@ internal sealed class Dispatcher
         );
     }
 
-    private async ValueTask _WriteRetryAsync<T>(
+    private async ValueTask<bool> _WriteRetryAsync<T>(
         Channel<T> channel,
         T work,
         RetryDispatchAttempt attempt,
@@ -1063,7 +1095,7 @@ internal sealed class Dispatcher
     {
         if (!attempt.TryQueue())
         {
-            return;
+            return false;
         }
 
         try
@@ -1080,7 +1112,7 @@ internal sealed class Dispatcher
 
                     if (channel.Writer.TryWrite(work))
                     {
-                        return;
+                        return true;
                     }
                 }
 
@@ -1090,7 +1122,7 @@ internal sealed class Dispatcher
                 }
 
                 await attempt.AbandonQueuedAsync().ConfigureAwait(false);
-                return;
+                return false;
             }
         }
         catch
@@ -1100,6 +1132,7 @@ internal sealed class Dispatcher
         }
 
         await attempt.AbandonQueuedAsync().ConfigureAwait(false);
+        return false;
     }
 
     private async ValueTask<bool> _TryStartRetryAsync(RetryDispatchAttempt attempt)

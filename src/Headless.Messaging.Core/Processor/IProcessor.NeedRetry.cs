@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using Headless.Checks;
 using Headless.DistributedLocks;
@@ -28,10 +29,12 @@ internal sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorM
     private readonly TimeSpan _maxInterval;
     private readonly IOptions<MessagingOptions> _options;
     private readonly ICircuitBreakerMonitor? _circuitBreakerMonitor;
+    private readonly ICircuitBreakerStateManager? _circuitBreakerStateManager;
     private readonly bool _adaptivePolling;
     private readonly double _circuitOpenRateThreshold;
     private readonly Dictionary<RetryQuadrantKey, RetryQuadrantState> _quadrants;
     private readonly RetryQuadrantState[] _quadrantStates;
+    private readonly ConcurrentDictionary<Type, byte> _unsupportedCircuitDeferralProviders = new();
     private readonly Lock _pickupGate = new();
     private bool _acceptingPickup = true;
 
@@ -43,7 +46,8 @@ internal sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorM
         ILogger<MessageNeedToRetryProcessor> logger,
         IDispatcher dispatcher,
         [FromKeyedServices(MessagingKeys.LockProvider)] IDistributedLock lockProvider,
-        ICircuitBreakerMonitor? circuitBreakerMonitor = null
+        ICircuitBreakerMonitor? circuitBreakerMonitor = null,
+        ICircuitBreakerStateManager? circuitBreakerStateManager = null
     )
     {
         _options = options;
@@ -52,6 +56,7 @@ internal sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorM
         _baseInterval = retryOptions.Value.BaseInterval;
         LockProvider = lockProvider;
         _circuitBreakerMonitor = circuitBreakerMonitor;
+        _circuitBreakerStateManager = circuitBreakerStateManager;
 
         _adaptivePolling = retryOptions.Value.AdaptivePolling;
         _maxInterval = retryOptions.Value.MaxPollingInterval;
@@ -449,55 +454,119 @@ internal sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorM
         var messages = pickup.Messages.ToList();
         var enqueued = 0;
         var skippedCircuitOpen = 0;
-        var circuitOpenCache = new Dictionary<string, bool>(StringComparer.Ordinal);
+        var healthy = new List<MediumMessage>(messages.Count);
+        var circuitWork = new List<CircuitRetryWork>();
+
+        foreach (var message in messages)
+        {
+            var persistedLane = message.Lane;
+            if (persistedLane != state.Key.Lane)
+            {
+                throw new InvalidOperationException(
+                    $"Retry pickup for lane '{state.Key.Lane}' returned persisted lane '{persistedLane}'."
+                );
+            }
+
+            var group = message.Origin.GetGroup();
+            var decision = group is null
+                ? CircuitRetryDecision.Closed
+                : _GetCircuitRetryDecision(state.Key.Lane, group);
+            if (decision.Kind is CircuitRetryDecisionKind.Closed)
+            {
+                healthy.Add(message);
+                continue;
+            }
+
+            skippedCircuitOpen++;
+            if (_logger.IsEnabled(LogLevel.Debug))
+            {
+                _logger.RetrySkippedBecauseCircuitOpen(message.StorageId, LogSanitizer.Sanitize(group));
+            }
+            circuitWork.Add(new CircuitRetryWork(message, group!, decision));
+        }
+
+        // Circuit claims are deliberately absent from this generic release range. Once classified,
+        // only their dedicated exact deferral/probe-generation path may clear the lease.
+        var pendingProbeKeys = circuitWork
+            .Where(static work => work.Decision.Kind is CircuitRetryDecisionKind.ProbeAcquired)
+            .Select(work => CircuitBreakerGroupKeys.For(state.Key.Lane, work.Group))
+            .ToHashSet(StringComparer.Ordinal);
         var nextUnhanded = 0;
         try
         {
-            while (nextUnhanded < messages.Count)
+            try
             {
-                context.ThrowIfStopping();
-
-                var message = messages[nextUnhanded];
-                var group = message.Origin.GetGroup();
-                var persistedLane = message.Lane;
-                if (persistedLane != state.Key.Lane)
+                while (nextUnhanded < healthy.Count)
                 {
-                    throw new InvalidOperationException(
-                        $"Retry pickup for lane '{state.Key.Lane}' returned persisted lane '{persistedLane}'."
+                    context.ThrowIfStopping();
+
+                    var message = healthy[nextUnhanded];
+
+                    var transferred = await _DispatchReceivedAsync(message, context.CancellationToken)
+                        .ConfigureAwait(false);
+
+                    nextUnhanded++;
+                    if (transferred)
+                    {
+                        enqueued++;
+                    }
+                }
+            }
+            finally
+            {
+                await _ReleaseUnhandedAsync(connection, MessageType.Subscribe, healthy, nextUnhanded)
+                    .ConfigureAwait(false);
+            }
+
+            // Start the one acquired probe before waiting on siblings that joined its generation.
+            foreach (
+                var work in circuitWork.Where(static work =>
+                    work.Decision.Kind is CircuitRetryDecisionKind.ProbeAcquired
+                )
+            )
+            {
+                var probeKey = CircuitBreakerGroupKeys.For(state.Key.Lane, work.Group);
+                var transferred = false;
+                try
+                {
+                    transferred = await _DispatchReceivedAsync(work.Message, context.CancellationToken)
+                        .ConfigureAwait(false);
+                    if (transferred)
+                    {
+                        pendingProbeKeys.Remove(probeKey);
+                        enqueued++;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.CircuitRetryDispositionFailed(
+                        ex,
+                        work.Message.StorageId,
+                        LogSanitizer.Sanitize(work.Group)
                     );
                 }
 
-                if (group is not null && _IsCircuitOpen(state.Key.Lane, group, circuitOpenCache))
+                if (!transferred && pendingProbeKeys.Remove(probeKey))
                 {
-                    skippedCircuitOpen++;
-                    var safeGroup = LogSanitizer.Sanitize(group);
-                    _logger.RetrySkippedBecauseCircuitOpen(message.StorageId, safeGroup);
-                    await _ReleaseClaimedAsync(connection, MessageType.Subscribe, message).ConfigureAwait(false);
-                    nextUnhanded++;
-                    continue;
+                    _circuitBreakerStateManager?.ReleaseHalfOpenProbe(probeKey);
                 }
+            }
 
-                if (_dispatcher is IRetryDispatcher retryDispatcher)
-                {
-                    await retryDispatcher
-                        .DispatchReceivedAsync(message, context.CancellationToken)
-                        .ConfigureAwait(false);
-                }
-                else
-                {
-                    await _dispatcher
-                        .EnqueueToExecute(message, descriptor: null, context.CancellationToken)
-                        .ConfigureAwait(false);
-                }
-
-                nextUnhanded++;
-                enqueued++;
+            foreach (
+                var work in circuitWork.Where(static work =>
+                    work.Decision.Kind is not CircuitRetryDecisionKind.ProbeAcquired
+                )
+            )
+            {
+                await _DisposeCircuitClaimAsync(connection, work, context).ConfigureAwait(false);
             }
         }
         finally
         {
-            await _ReleaseUnhandedAsync(connection, MessageType.Subscribe, messages, nextUnhanded)
-                .ConfigureAwait(false);
+            foreach (var probeKey in pendingProbeKeys)
+            {
+                _circuitBreakerStateManager?.ReleaseHalfOpenProbe(probeKey);
+            }
         }
 
         if (_adaptivePolling)
@@ -505,6 +574,97 @@ internal sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorM
             _AdjustPollingInterval(state, enqueued, skippedCircuitOpen);
         }
     }
+
+    private async ValueTask<bool> _DispatchReceivedAsync(MediumMessage message, CancellationToken cancellationToken)
+    {
+        if (_dispatcher is IRetryDispatcher retryDispatcher)
+        {
+            return await retryDispatcher.DispatchReceivedAsync(message, cancellationToken).ConfigureAwait(false);
+        }
+
+        await _dispatcher.EnqueueToExecute(message, descriptor: null, cancellationToken).ConfigureAwait(false);
+        return true;
+    }
+
+    private CircuitRetryDecision _GetCircuitRetryDecision(MessageLane lane, string group)
+    {
+        if (_circuitBreakerStateManager is not null)
+        {
+            return _circuitBreakerStateManager.GetRetryDecision(lane, group);
+        }
+
+        // A read-only monitor cannot reserve the shared probe generation. Conservatively retain
+        // an open claim rather than recreating the old clear-without-deferral hot loop.
+        return _circuitBreakerMonitor?.IsOpen(CircuitBreakerGroupKeys.For(lane, group)) == true
+            ? new CircuitRetryDecision(CircuitRetryDecisionKind.ProbePending, NextProbeAt: null, ProbeOutcome: null)
+            : CircuitRetryDecision.Closed;
+    }
+
+    private async ValueTask _DisposeCircuitClaimAsync(
+        IDataStorage storage,
+        CircuitRetryWork work,
+        ProcessingContext context
+    )
+    {
+        try
+        {
+            switch (work.Decision.Kind)
+            {
+                case CircuitRetryDecisionKind.Defer:
+                    await _DeferCircuitClaimAsync(storage, work.Message, work.Decision.NextProbeAt!.Value)
+                        .ConfigureAwait(false);
+                    break;
+                case CircuitRetryDecisionKind.ProbePending when work.Decision.ProbeOutcome is { } outcomeTask:
+                    var outcome = await outcomeTask.WaitAsync(context.CancellationToken).ConfigureAwait(false);
+                    if (outcome.Kind is CircuitRetryProbeOutcomeKind.Closed)
+                    {
+                        await _ReleaseClaimedAsync(storage, MessageType.Subscribe, work.Message).ConfigureAwait(false);
+                    }
+                    else if (outcome.Kind is CircuitRetryProbeOutcomeKind.Reopened)
+                    {
+                        await _DeferCircuitClaimAsync(storage, work.Message, outcome.NextProbeAt!.Value)
+                            .ConfigureAwait(false);
+                    }
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            // An exception, cancellation, or unknown provider outcome leaves this exact lease in
+            // place. In particular, do not route it through the generic abandoned-claim releaser.
+            _logger.CircuitRetryDispositionFailed(ex, work.Message.StorageId, LogSanitizer.Sanitize(work.Group));
+        }
+    }
+
+    private ValueTask<bool> _DeferCircuitClaimAsync(
+        IDataStorage storage,
+        MediumMessage message,
+        DateTimeOffset nextRetryAt
+    )
+    {
+        if (storage is not ICircuitRetryDeferralStorage deferralStorage)
+        {
+            if (_unsupportedCircuitDeferralProviders.TryAdd(storage.GetType(), 0))
+            {
+                _logger.CircuitRetryDeferralUnsupported(storage.GetType().FullName ?? storage.GetType().Name);
+            }
+
+            return ValueTask.FromResult(false);
+        }
+
+        if (message.LockedUntil is not { } lockedUntil)
+        {
+            return ValueTask.FromResult(false);
+        }
+
+        var identity = new MessageLeaseIdentity(message.StorageId, message.Owner, lockedUntil, message.Lane);
+        return deferralStorage.DeferReceivedRetryAsync(
+            new CircuitRetryDeferral(identity, nextRetryAt),
+            CancellationToken.None
+        );
+    }
+
+    private readonly record struct CircuitRetryWork(MediumMessage Message, string Group, CircuitRetryDecision Decision);
 
     private static ValueTask _ReleaseUnhandedAsync(
         IDataStorage storage,
@@ -725,20 +885,6 @@ internal sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorM
         _logger.AdaptivePollingIntervalDecreased(decreasedInterval);
     }
 
-    private bool _IsCircuitOpen(MessageLane lane, string group, Dictionary<string, bool> cache)
-    {
-        var circuitBreakerGroup = CircuitBreakerGroupKeys.For(lane, group);
-
-        if (cache.TryGetValue(circuitBreakerGroup, out var isOpen))
-        {
-            return isOpen;
-        }
-
-        isOpen = _circuitBreakerMonitor?.IsOpen(circuitBreakerGroup) == true;
-        cache[circuitBreakerGroup] = isOpen;
-        return isOpen;
-    }
-
     private RetryQuadrantState _CreateState(MessageType direction, MessageLane lane)
     {
         var resource = direction switch
@@ -861,6 +1007,25 @@ internal static partial class RetryProcessorLog
         Message = "Skipping retry for message {StorageId} — circuit open for group {Group}"
     )]
     public static partial void RetrySkippedBecauseCircuitOpen(this ILogger logger, Guid storageId, string? group);
+
+    [LoggerMessage(
+        EventId = 3119,
+        Level = LogLevel.Warning,
+        Message = "Circuit retry disposition failed for message {StorageId} in group {Group}; retaining the claimed lease"
+    )]
+    public static partial void CircuitRetryDispositionFailed(
+        this ILogger logger,
+        Exception exception,
+        Guid storageId,
+        string? group
+    );
+
+    [LoggerMessage(
+        EventId = 3120,
+        Level = LogLevel.Warning,
+        Message = "Storage provider {Provider} does not support atomic circuit retry deferral; retaining circuit-open leases until expiry"
+    )]
+    public static partial void CircuitRetryDeferralUnsupported(this ILogger logger, string provider);
 
     [LoggerMessage(EventId = 3110, Level = LogLevel.Warning, Message = "Get messages from storage failed. Retrying...")]
     public static partial void GetMessagesFromStorageFailed(this ILogger logger, Exception ex);

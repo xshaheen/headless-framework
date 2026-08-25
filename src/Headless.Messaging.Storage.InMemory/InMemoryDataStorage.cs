@@ -21,7 +21,12 @@ internal sealed partial class InMemoryDataStorage(
     IGuidGenerator guidGenerator,
     TimeProvider timeProvider,
     INodeMembership nodeMembership
-) : IDataStorage, IDelayedMessageClaimStorage, IGracefulLeaseReleaseStorage, IDeliveryCoordinationResolver
+)
+    : IDataStorage,
+        IDelayedMessageClaimStorage,
+        IGracefulLeaseReleaseStorage,
+        ICircuitRetryDeferralStorage,
+        IDeliveryCoordinationResolver
 {
     public ConcurrentDictionary<Guid, MemoryMessage> PublishedMessages { get; } = new();
 
@@ -948,6 +953,40 @@ internal sealed partial class InMemoryDataStorage(
     )
     {
         return ValueTask.FromResult(_ReleaseLease(ReceivedMessages, identity, cancellationToken));
+    }
+
+    public ValueTask<bool> DeferReceivedRetryAsync(
+        CircuitRetryDeferral deferral,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        _ = MessageLaneCompatibility.ToPersistedValue(deferral.Identity.Lane);
+
+        if (!ReceivedMessages.TryGetValue(deferral.Identity.StorageId, out var current))
+        {
+            return ValueTask.FromResult(false);
+        }
+
+        lock (current)
+        {
+            var identity = deferral.Identity;
+            if (
+                current.Lane != identity.Lane
+                || !string.Equals(current.Owner, identity.Owner, StringComparison.Ordinal)
+                || current.LockedUntil != identity.LockedUntil
+                || current.LockedUntil <= timeProvider.GetUtcNow()
+                || (current.StatusName is StatusName.Succeeded or StatusName.Failed && current.NextRetryAt is null)
+            )
+            {
+                return ValueTask.FromResult(false);
+            }
+
+            current.NextRetryAt = deferral.NextRetryAt;
+            current.Owner = null;
+            current.LockedUntil = null;
+            return ValueTask.FromResult(true);
+        }
     }
 
     public ValueTask<int> ReleasePublishedLeasesAsync(

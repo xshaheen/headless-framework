@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Runtime.InteropServices;
+
 namespace Headless.Messaging.CircuitBreaker;
 
 /// <summary>
@@ -8,6 +10,12 @@ namespace Headless.Messaging.CircuitBreaker;
 /// </summary>
 internal interface ICircuitBreakerStateManager : ICircuitBreakerMonitor
 {
+    /// <summary>
+    /// Atomically classifies a claimed persisted retry against the lane-qualified circuit and,
+    /// when eligible, reserves the same HalfOpen probe slot used by transport deliveries.
+    /// </summary>
+    CircuitRetryDecision GetRetryDecision(MessageLane lane, string groupName);
+
     /// <summary>
     /// Freezes the set of valid consumer group names. After this call, unrecognized group names
     /// receive a no-op circuit state to prevent unbounded OTel cardinality. Should be called once
@@ -75,3 +83,34 @@ internal interface ICircuitBreakerStateManager : ICircuitBreakerMonitor
     /// <param name="groupName">The consumer group name.</param>
     ValueTask AbortHalfOpenProbeAsync(string groupName);
 }
+
+internal enum CircuitRetryDecisionKind
+{
+    Closed,
+    Defer,
+    ProbeAcquired,
+    ProbePending,
+}
+
+internal readonly record struct CircuitRetryDecision(
+    CircuitRetryDecisionKind Kind,
+    DateTimeOffset? NextProbeAt,
+    Task<CircuitRetryProbeOutcome>? ProbeOutcome
+)
+{
+    public static CircuitRetryDecision Closed { get; } =
+        new(CircuitRetryDecisionKind.Closed, NextProbeAt: null, ProbeOutcome: null);
+}
+
+internal enum CircuitRetryProbeOutcomeKind
+{
+    Closed,
+    Reopened,
+    Uncertain,
+}
+
+[StructLayout(LayoutKind.Auto)]
+internal readonly record struct CircuitRetryProbeOutcome(
+    CircuitRetryProbeOutcomeKind Kind,
+    DateTimeOffset? NextProbeAt
+);
