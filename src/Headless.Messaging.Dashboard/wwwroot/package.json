@@ -19,17 +19,17 @@
     "axios": "^1.19.0",
     "echarts": "^6.1.0",
     "json-bigint": "^1.0.0",
-    "pinia": "^4.0.2",
+    "pinia": "^4.0.3",
     "timeago.js": "^4.0.2",
     "vite-plugin-dynamic-base": "^1.4.1",
     "vue": "^3.5.41",
     "vue-echarts": "^8.1.0",
     "vue-router": "^5.2.0",
-    "vuetify": "^4.1.8"
+    "vuetify": "^4.1.10"
   },
   "devDependencies": {
     "@mdi/font": "^7.4.47",
-    "@tsconfig/node22": "^22.0.0",
+    "@tsconfig/node22": "^22.0.6",
     "@types/json-bigint": "^1.0.4",
     "@types/node": "^26.2.0",
     "@typescript/native": "npm:typescript@7.0.2",
@@ -47,7 +47,7 @@
     "vite-plugin-dts": "^5.0.3",
     "vite-plugin-vue-devtools": "^8.2.1",
     "vitest": "^4.1.10",
-    "vue-tsc": "^3.3.9"
+    "vue-tsc": "^3.3.10"
   },
   "overrides": {
     "brace-expansion": "5.0.9",
