@@ -8,6 +8,7 @@ using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
+using Headless.Messaging.Retry;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -165,10 +166,18 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         var message = _CreateMediumMessage();
 
         // when
-        var result = await executor.ExecuteAsync(message, _EmptyScope, _CreateDescriptor(), CancellationToken.None);
+        var executionState = new RetryExecutionState();
+        var result = await executor.ExecuteRetryAsync(
+            message,
+            _EmptyScope,
+            executionState,
+            _CreateDescriptor(),
+            AbortToken
+        );
 
         // then
         result.Succeeded.Should().BeTrue();
+        executionState.LeaseClearedByTransition.Should().BeTrue();
         attempts.Should().Be(5);
         // Inline retries do not increment MediumMessage.Retries (which now counts persisted pickups
         // only). The 5th attempt succeeded inline, so no persist-transition ever happened.
@@ -271,10 +280,18 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         var message = _CreateMediumMessage();
 
         // when
-        var result = await executor.ExecuteAsync(message, _EmptyScope, _CreateDescriptor(), CancellationToken.None);
+        var executionState = new RetryExecutionState();
+        var result = await executor.ExecuteRetryAsync(
+            message,
+            _EmptyScope,
+            executionState,
+            _CreateDescriptor(),
+            AbortToken
+        );
 
         // then
         result.Succeeded.Should().BeFalse();
+        executionState.LeaseClearedByTransition.Should().BeTrue();
         await storage
             .Received(1)
             .ChangeReceiveRetryStateAsync(

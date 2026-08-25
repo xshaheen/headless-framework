@@ -8,6 +8,7 @@ using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
+using Headless.Messaging.Retry;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -237,10 +238,12 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
         var descriptor = _CreateDescriptor();
 
         // when
-        var result = await executor.ExecuteAsync(message, _EmptyScope, descriptor, cts.Token);
+        var executionState = new RetryExecutionState();
+        var result = await executor.ExecuteRetryAsync(message, _EmptyScope, executionState, descriptor, cts.Token);
 
         // then — Shutdown OCE: no state write, no OnExhausted. Row keeps prior NextRetryAt/Status.
         result.Succeeded.Should().BeFalse();
+        executionState.LeaseClearedByTransition.Should().BeFalse();
         message.Retries.Should().Be(0);
         callbackInvoked.Should().BeFalse();
         await storage

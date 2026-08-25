@@ -7,6 +7,7 @@ using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
+using Headless.Messaging.Retry;
 using Headless.Messaging.Serialization;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -19,6 +20,8 @@ namespace Tests;
 
 public sealed class MessageSenderTests : TestBase
 {
+    private static readonly IServiceProvider _EmptyScope = new ServiceCollection().BuildServiceProvider();
+
     private static MediumMessage _CreateMediumMessage(MessageLane lane = MessageLane.Bus)
     {
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -221,10 +224,12 @@ public sealed class MessageSenderTests : TestBase
         );
 
         // when
-        var result = await sender.SendAsync(_CreateMediumMessage());
+        var executionState = new RetryExecutionState();
+        var result = await sender.SendRetryAsync(_CreateMediumMessage(), _EmptyScope, executionState);
 
         // then
         result.Succeeded.Should().BeTrue();
+        executionState.LeaseClearedByTransition.Should().BeTrue();
         attempts.Should().Be(5);
     }
 
@@ -339,10 +344,12 @@ public sealed class MessageSenderTests : TestBase
         );
 
         // when
-        var result = await sender.SendAsync(_CreateMediumMessage());
+        var executionState = new RetryExecutionState();
+        var result = await sender.SendRetryAsync(_CreateMediumMessage(), _EmptyScope, executionState);
 
         // then
         result.Succeeded.Should().BeFalse();
+        executionState.LeaseClearedByTransition.Should().BeTrue();
         await storage
             .Received(1)
             .ChangePublishRetryStateAsync(
