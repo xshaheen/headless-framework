@@ -1,7 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
+using System.Security.Claims;
+using Headless.Constants;
 using Headless.Dashboard.Authentication;
+using Headless.Jobs;
+using Headless.Jobs.Authorization;
 using Headless.Jobs.Hubs;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Http;
@@ -44,6 +48,45 @@ public sealed class JobsNotificationHubTests : TestBase
         context.DidNotReceive().Abort();
         context.Items["username"].Should().Be("operator");
         context.Items["authenticated"].Should().Be(true);
+    }
+
+    [Theory]
+    [InlineData(JobsDashboardPermissions.Read, false)]
+    [InlineData(JobsDashboardPermissions.Admin, false)]
+    [InlineData(null, true)]
+    public async Task should_require_effective_read_permission_under_host_authentication(
+        string? permission,
+        bool expectAbort
+    )
+    {
+        var authService = Substitute.For<IAuthService>();
+        authService
+            .AuthenticateAsync(Arg.Any<HttpContext>(), Arg.Any<CancellationToken>())
+            .Returns(AuthResult.Success("operator"));
+        var claims = new List<Claim> { new(ClaimTypes.Name, "operator") };
+        if (permission is not null)
+        {
+            claims.Add(new Claim(UserClaimTypes.Permission, permission));
+        }
+
+        var (hub, context, _, _) = _Create(
+            authService,
+            options: new DashboardOptionsBuilder().WithHostAuthentication(),
+            user: new ClaimsPrincipal(new ClaimsIdentity(claims, authenticationType: "test"))
+        );
+
+        await hub.OnConnectedAsync();
+
+        if (expectAbort)
+        {
+            context.Received(1).Abort();
+            context.Items.Should().NotContainKey("authenticated");
+        }
+        else
+        {
+            context.DidNotReceive().Abort();
+            context.Items["authenticated"].Should().Be(true);
+        }
     }
 
     [Theory]
@@ -133,12 +176,23 @@ public sealed class JobsNotificationHubTests : TestBase
         HubCallerContext Context,
         IClientProxy Caller,
         IGroupManager Groups
-    ) _Create(IAuthService authService, TimeProvider? timeProvider = null)
+    ) _Create(
+        IAuthService authService,
+        TimeProvider? timeProvider = null,
+        DashboardOptionsBuilder? options = null,
+        ClaimsPrincipal? user = null
+    )
     {
         var context = Substitute.For<HubCallerContext>();
         var items = new Dictionary<object, object?>();
         var features = new FeatureCollection();
-        features.Set<IHttpContextFeature>(new TestHttpContextFeature { HttpContext = new DefaultHttpContext() });
+        var httpContext = new DefaultHttpContext();
+        if (user is not null)
+        {
+            httpContext.User = user;
+        }
+
+        features.Set<IHttpContextFeature>(new TestHttpContextFeature { HttpContext = httpContext });
         context.ConnectionId.Returns("connection-1");
         context.Items.Returns(items);
         context.Features.Returns(features);
@@ -154,6 +208,7 @@ public sealed class JobsNotificationHubTests : TestBase
         var hub = new JobsNotificationHub(
             NullLogger<JobsNotificationHub>.Instance,
             authService,
+            new JobsDashboardAuthorizer(options ?? new DashboardOptionsBuilder().WithNoAuth()),
             timeProvider ?? TimeProvider.System
         )
         {

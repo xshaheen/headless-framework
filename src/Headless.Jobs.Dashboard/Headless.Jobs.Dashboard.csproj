@@ -10,6 +10,8 @@
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Jobs.Composition.Tests.Unit" />
+    <!-- Lets NSubstitute proxy internal types (IHubContext<JobsNotificationHub>). -->
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Coordination.Abstractions\Headless.Coordination.Abstractions.csproj" />

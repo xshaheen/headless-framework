@@ -1,14 +1,16 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Dashboard.Authentication;
+using Headless.Jobs.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
 
 namespace Headless.Jobs.Hubs;
 
-public partial class JobsNotificationHub(
+internal sealed class JobsNotificationHub(
     ILogger<JobsNotificationHub> logger,
     IAuthService authService,
+    JobsDashboardAuthorizer authorizer,
     TimeProvider timeProvider
 ) : Hub
 {
@@ -18,11 +20,20 @@ public partial class JobsNotificationHub(
         logger.ConnectionAttempt(connectionId);
 
         // Authenticate the connection using new auth service
-        var authResult = await authService.AuthenticateAsync(Context.GetHttpContext()!).ConfigureAwait(false);
+        var httpContext = Context.GetHttpContext()!;
+        var authResult = await authService.AuthenticateAsync(httpContext).ConfigureAwait(false);
 
         if (!authResult.IsAuthenticated)
         {
             logger.AuthenticationFailed(connectionId, authResult.ErrorMessage);
+            Context.Abort();
+            return;
+        }
+
+        // The hub pushes the same operational data as the read endpoints, so it needs effective read permission.
+        if (!authorizer.Resolve(httpContext, authenticated: true).CanRead)
+        {
+            logger.ReadPermissionDenied(connectionId, authResult.Username);
             Context.Abort();
             return;
         }
@@ -126,4 +137,11 @@ internal static partial class JobsNotificationHubLog
 
     [LoggerMessage(EventId = 2005, Level = LogLevel.Debug, Message = "User {Username} left group {GroupName}")]
     public static partial void UserLeftGroup(this ILogger logger, string? username, string groupName);
+
+    [LoggerMessage(
+        EventId = 2006,
+        Level = LogLevel.Warning,
+        Message = "SignalR connection rejected: {ConnectionId} - User {Username} lacks dashboard read permission"
+    )]
+    public static partial void ReadPermissionDenied(this ILogger logger, string connectionId, string? username);
 }

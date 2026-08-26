@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Constants;
 using Headless.Dashboard.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Cors.Infrastructure;
@@ -28,6 +29,9 @@ public sealed class DashboardOptionsBuilder
     // Tracks whether an authentication mode was explicitly chosen. The dashboard fails closed at startup
     // (see Validate) when this is false, so it cannot ship publicly by omission.
     internal bool AuthConfigured { get; private set; }
+
+    // Claim type the host-authentication mode inspects for JobsDashboardPermissions values.
+    internal string PermissionClaimType { get; private set; } = UserClaimTypes.Permission;
 
     /// <summary>Optional custom middleware inserted into the dashboard pipeline.</summary>
     public Action<IApplicationBuilder>? CustomMiddleware { get; set; }
@@ -132,7 +136,9 @@ public sealed class DashboardOptionsBuilder
     /// <summary>
     /// Delegates authentication to the host application's ASP.NET Core authentication middleware.
     /// When <paramref name="policy"/> is specified, the named authorization policy is enforced;
-    /// otherwise the default authorization policy applies.
+    /// otherwise the default authorization policy applies. On top of that gate, every route is classified
+    /// as read, tenant-row mutation, or admin and checked against the <see cref="JobsDashboardPermissions"/>
+    /// claim values on <c>HttpContext.User</c> (claim type: <see cref="WithPermissionClaimType"/>).
     /// </summary>
     /// <param name="policy">
     /// Optional authorization policy name (e.g., <c>"AdminPolicy"</c>). Pass <see langword="null"/>
@@ -143,6 +149,18 @@ public sealed class DashboardOptionsBuilder
         Auth.Mode = AuthMode.Host;
         Auth.HostAuthorizationPolicy = policy;
         AuthConfigured = true;
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the claim type under which the host application issues <see cref="JobsDashboardPermissions"/> values.
+    /// Defaults to <see cref="UserClaimTypes.Permission"/> (<c>permission</c>). Only consulted by
+    /// <see cref="WithHostAuthentication"/>; the other modes cannot express per-user permissions.
+    /// </summary>
+    /// <param name="claimType">The claim type, e.g. <c>permission</c> or <c>scope</c>.</param>
+    public DashboardOptionsBuilder WithPermissionClaimType(string claimType)
+    {
+        PermissionClaimType = Argument.IsNotNullOrWhiteSpace(claimType);
         return this;
     }
 

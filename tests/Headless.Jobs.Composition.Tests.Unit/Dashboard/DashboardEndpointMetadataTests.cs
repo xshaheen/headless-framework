@@ -2,6 +2,7 @@
 
 using Headless.Dashboard.Authentication;
 using Headless.Jobs;
+using Headless.Jobs.Authorization;
 using Headless.Jobs.Endpoints;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Interfaces;
@@ -94,6 +95,8 @@ public sealed class DashboardEndpointMetadataTests : TestBase
         builder.Services.AddSignalR();
         builder.Services.AddCors();
         builder.Services.AddSingleton(config);
+        builder.Services.AddSingleton<JobsDashboardAuthorizer>();
+        builder.Services.AddSingleton(Substitute.For<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>());
         builder.Services.AddSingleton(Substitute.For<IAuthService>());
         builder.Services.AddSingleton(new JobsExecutionContext());
         builder.Services.AddSingleton(new SchedulerOptionsBuilder());

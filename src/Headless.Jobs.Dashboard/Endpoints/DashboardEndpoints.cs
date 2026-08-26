@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Dashboard.Authentication;
+using Headless.Jobs.Authorization;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Hubs;
@@ -10,6 +11,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Jobs.Endpoints;
 
@@ -22,14 +24,15 @@ internal static class DashboardEndpoints
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
         where TCronJob : CronJobEntity, new()
     {
-        // New authentication endpoints
+        // Authentication bootstrap routes: explicitly anonymous so the SPA can discover the mode and log in.
         endpoints
             .MapGet("/api/auth/info", _GetAuthInfo)
             .WithName("GetAuthInfo")
             .WithSummary("Get authentication configuration")
             .WithTags("Jobs Dashboard")
             .RequireCors("HeadlessJobsDashboardCORS")
-            .AllowAnonymous();
+            .AllowAnonymous()
+            .WithAccess(DashboardAccess.Anonymous);
 
         endpoints
             .MapPost("/api/auth/validate", _ValidateAuth)
@@ -37,14 +40,17 @@ internal static class DashboardEndpoints
             .WithSummary("Validate authentication credentials")
             .WithTags("Jobs Dashboard")
             .RequireCors("HeadlessJobsDashboardCORS")
-            .AllowAnonymous();
+            .AllowAnonymous()
+            .WithAccess(DashboardAccess.Anonymous);
 
         var apiGroup = endpoints.MapGroup("/api").WithTags("Jobs Dashboard").RequireCors("HeadlessJobsDashboardCORS");
 
-        // Apply authentication if configured
+        // Authentication gate per mode. Host: the host's authorization middleware (default or named policy) rejects
+        // unauthenticated callers with 401 before any handler runs. Basic / ApiKey / Custom: AuthMiddleware does the
+        // same for every /api request. Permission enforcement (read / tenant-row / admin) is layered on top by the
+        // group filter below, which is the single decision point shared with the SignalR hub.
         if (config.Auth.Mode == AuthMode.Host)
         {
-            // For host authentication, use configured policy or default authorization
             if (!string.IsNullOrEmpty(config.Auth.HostAuthorizationPolicy))
             {
                 apiGroup.RequireAuthorization(config.Auth.HostAuthorizationPolicy);
@@ -54,177 +60,220 @@ internal static class DashboardEndpoints
                 apiGroup.RequireAuthorization();
             }
         }
-        // For other auth modes (Basic, Bearer, Custom), authentication is handled by AuthMiddleware
-        // API endpoints are automatically protected when auth is enabled
+
+        apiGroup.AddEndpointFilter(
+            static (context, next) =>
+                context
+                    .HttpContext.RequestServices.GetRequiredService<JobsDashboardAuthorizer>()
+                    .EnforceAsync(context, next)
+        );
 
         // Options endpoint
         apiGroup
             .MapGet("/options", _GetOptions<TTimeJob, TCronJob>)
             .WithName("GetOptions")
-            .WithSummary("Get dashboard options and status");
+            .WithSummary("Get dashboard options and status")
+            .WithAccess(DashboardAccess.Read);
 
         // Time Jobs endpoints
         apiGroup
             .MapGet("/time-jobs/paginated", _GetTimeJobsPaginated<TTimeJob, TCronJob>)
             .WithName("GetTimeJobsPaginated")
-            .WithSummary("Get paginated time jobs");
+            .WithSummary("Get paginated time jobs")
+            .WithAccess(DashboardAccess.Read);
 
         apiGroup
             .MapGet("/time-jobs/graph-data-range", _GetTimeJobsGraphDataRange<TTimeJob, TCronJob>)
             .WithName("GetTimeJobsGraphDataRange")
-            .WithSummary("Get time jobs graph data for specific date range");
+            .WithSummary("Get time jobs graph data for specific date range")
+            .WithAccess(DashboardAccess.Read);
 
         apiGroup
             .MapGet("/time-jobs/graph-data", _GetTimeJobsGraphData<TTimeJob, TCronJob>)
             .WithName("GetTimeJobsGraphData")
-            .WithSummary("Get time jobs graph data");
+            .WithSummary("Get time jobs graph data")
+            .WithAccess(DashboardAccess.Read);
 
         apiGroup
             .MapPost("/time-job/add", _CreateChainJobs<TTimeJob, TCronJob>)
             .WithName("CreateChainJobs")
             .WithSummary("Create chain jobs")
-            .WithMetadata(new RequestSizeLimitAttribute(DashboardOptionsBuilder.MaxRequestBodyBytes));
+            .WithMetadata(new RequestSizeLimitAttribute(DashboardOptionsBuilder.MaxRequestBodyBytes))
+            .WithAccess(DashboardAccess.Admin);
 
         apiGroup
             .MapPut("/time-job/update", _UpdateTimeJob<TTimeJob, TCronJob>)
             .WithName("UpdateTimeJob")
             .WithSummary("Update time job")
-            .WithMetadata(new RequestSizeLimitAttribute(DashboardOptionsBuilder.MaxRequestBodyBytes));
+            .WithMetadata(new RequestSizeLimitAttribute(DashboardOptionsBuilder.MaxRequestBodyBytes))
+            .WithAccess(DashboardAccess.TenantRowMutation);
 
         apiGroup
             .MapDelete("/time-job/delete", _DeleteTimeJob<TTimeJob, TCronJob>)
             .WithName("DeleteTimeJob")
-            .WithSummary("Delete time job");
+            .WithSummary("Delete time job")
+            .WithAccess(DashboardAccess.TenantRowMutation);
 
         apiGroup
             .MapDelete("/time-job/delete-batch", _DeleteTimeJobsBatch<TTimeJob, TCronJob>)
             .WithName("DeleteTimeJobsBatch")
             .WithSummary("Delete multiple time jobs")
-            .WithMetadata(new RequestSizeLimitAttribute(DashboardOptionsBuilder.MaxRequestBodyBytes));
+            .WithMetadata(new RequestSizeLimitAttribute(DashboardOptionsBuilder.MaxRequestBodyBytes))
+            .WithAccess(DashboardAccess.Admin);
 
-        // Cron Jobs endpoints
+        // Cron Jobs endpoints — cron definitions and occurrences are system scope, so every mutation is admin-only.
         apiGroup
             .MapGet("/cron-jobs/paginated", _GetCronJobsPaginated<TTimeJob, TCronJob>)
             .WithName("GetCronJobsPaginated")
-            .WithSummary("Get paginated cron jobs");
+            .WithSummary("Get paginated cron jobs")
+            .WithAccess(DashboardAccess.Read);
 
         apiGroup
             .MapGet("/cron-jobs/graph-data-range", _GetCronJobsGraphDataRange<TTimeJob, TCronJob>)
             .WithName("GetCronJobsGraphDataRange")
-            .WithSummary("Get cron jobs graph data for specific date range");
+            .WithSummary("Get cron jobs graph data for specific date range")
+            .WithAccess(DashboardAccess.Read);
 
         apiGroup
             .MapGet("/cron-jobs/graph-data-range-id", _GetCronJobsByIdGraphDataRange<TTimeJob, TCronJob>)
             .WithName("GetCronJobsByIdGraphDataRange")
-            .WithSummary("Get cron job graph data by ID for specific date range");
+            .WithSummary("Get cron job graph data by ID for specific date range")
+            .WithAccess(DashboardAccess.Read);
 
         apiGroup
             .MapGet("/cron-jobs/graph-data", _GetCronJobsGraphData<TTimeJob, TCronJob>)
             .WithName("GetCronJobsGraphData")
-            .WithSummary("Get cron jobs graph data");
+            .WithSummary("Get cron jobs graph data")
+            .WithAccess(DashboardAccess.Read);
 
         apiGroup
             .MapGet("/cron-job-occurrences/{cronJobId}/paginated", _GetCronJobOccurrencesPaginated<TTimeJob, TCronJob>)
             .WithName("GetCronJobOccurrencesPaginated")
-            .WithSummary("Get paginated cron job occurrences");
+            .WithSummary("Get paginated cron job occurrences")
+            .WithAccess(DashboardAccess.Read);
 
         apiGroup
             .MapGet("/cron-job-occurrences/{cronJobId}/graph-data", _GetCronJobOccurrencesGraphData<TTimeJob, TCronJob>)
             .WithName("GetCronJobOccurrencesGraphData")
-            .WithSummary("Get cron job occurrences graph data");
+            .WithSummary("Get cron job occurrences graph data")
+            .WithAccess(DashboardAccess.Read);
 
         apiGroup
             .MapPost("/cron-job/add", _AddCronJob<TTimeJob, TCronJob>)
             .WithName("AddCronJob")
             .WithSummary("Add cron job")
-            .WithMetadata(new RequestSizeLimitAttribute(DashboardOptionsBuilder.MaxRequestBodyBytes));
+            .WithMetadata(new RequestSizeLimitAttribute(DashboardOptionsBuilder.MaxRequestBodyBytes))
+            .WithAccess(DashboardAccess.Admin);
 
         apiGroup
             .MapPut("/cron-job/update", _UpdateCronJob<TTimeJob, TCronJob>)
             .WithName("UpdateCronJob")
             .WithSummary("Update cron job")
-            .WithMetadata(new RequestSizeLimitAttribute(DashboardOptionsBuilder.MaxRequestBodyBytes));
+            .WithMetadata(new RequestSizeLimitAttribute(DashboardOptionsBuilder.MaxRequestBodyBytes))
+            .WithAccess(DashboardAccess.Admin);
 
         apiGroup
             .MapPost("/cron-job/run", _RunCronJobOnDemand<TTimeJob, TCronJob>)
             .WithName("_RunCronJobOnDemand")
-            .WithSummary("Run cron job on demand");
+            .WithSummary("Run cron job on demand")
+            .WithAccess(DashboardAccess.Admin);
 
         apiGroup
             .MapDelete("/cron-job/delete", _DeleteCronJob<TTimeJob, TCronJob>)
             .WithName("DeleteCronJob")
-            .WithSummary("Delete cron job");
+            .WithSummary("Delete cron job")
+            .WithAccess(DashboardAccess.Admin);
 
         apiGroup
             .MapDelete("/cron-job-occurrence/delete", _DeleteCronJobOccurrence<TTimeJob, TCronJob>)
             .WithName("DeleteCronJobOccurrence")
-            .WithSummary("Delete cron job occurrence");
+            .WithSummary("Delete cron job occurrence")
+            .WithAccess(DashboardAccess.Admin);
 
         // Job operations
-        apiGroup.MapPost("/job/cancel", CancelJobAsync).WithName("CancelJob").WithSummary("Cancel job by ID");
+        apiGroup
+            .MapPost("/job/cancel", CancelJobAsync<TTimeJob, TCronJob>)
+            .WithName("CancelJob")
+            .WithSummary("Cancel job by ID")
+            .WithAccess(DashboardAccess.TenantRowMutation);
 
         // Literal "id" segment (not a route parameter): the SPA calls "job-request/id" and supplies
         // jobId + jobType via query string, which _GetJobRequest binds. Avoids a dead {id} route token.
         apiGroup
             .MapGet("/job-request/id", _GetJobRequest<TTimeJob, TCronJob>)
             .WithName("GetJobRequest")
-            .WithSummary("Get job request by ID");
+            .WithSummary("Get job request by ID")
+            .WithAccess(DashboardAccess.Read);
 
         apiGroup
             .MapGet("/job-functions", _GetJobFunctions<TTimeJob, TCronJob>)
             .WithName("GetJobFunctions")
-            .WithSummary("Get available job functions");
+            .WithSummary("Get available job functions")
+            .WithAccess(DashboardAccess.Read);
 
         // Host operations
         apiGroup
             .MapGet("/job-host/next-job", _GetNextJob<TTimeJob, TCronJob>)
             .WithName("GetNextJob")
-            .WithSummary("Get next planned job");
+            .WithSummary("Get next planned job")
+            .WithAccess(DashboardAccess.Read);
 
         apiGroup
             .MapPost("/job-host/stop", _StopJobHost<TTimeJob, TCronJob>)
             .WithName("StopJobHost")
-            .WithSummary("Stop job host");
+            .WithSummary("Stop job host")
+            .WithAccess(DashboardAccess.Admin);
 
         apiGroup
             .MapPost("/job-host/start", _StartJobHost<TTimeJob, TCronJob>)
             .WithName("StartJobHost")
-            .WithSummary("Start job host");
+            .WithSummary("Start job host")
+            .WithAccess(DashboardAccess.Admin);
 
         apiGroup
             .MapPost("/job-host/restart", _RestartJobHost<TTimeJob, TCronJob>)
             .WithName("RestartJobHost")
-            .WithSummary("Restart job host");
+            .WithSummary("Restart job host")
+            .WithAccess(DashboardAccess.Admin);
 
         apiGroup
             .MapGet("/job-host/status", _GetJobHostStatus<TTimeJob, TCronJob>)
             .WithName("GetJobHostStatus")
-            .WithSummary("Get job host status");
+            .WithSummary("Get job host status")
+            .WithAccess(DashboardAccess.Read);
 
         // Statistics endpoints
         apiGroup
             .MapGet("/job/statuses/get-last-week", _GetLastWeekJobStatus<TTimeJob, TCronJob>)
             .WithName("GetLastWeekJobStatus")
-            .WithSummary("Get last week job statuses");
+            .WithSummary("Get last week job statuses")
+            .WithAccess(DashboardAccess.Read);
 
         apiGroup
             .MapGet("/job/statuses/get", _GetJobStatuses<TTimeJob, TCronJob>)
             .WithName("GetJobStatuses")
-            .WithSummary("Get overall job statuses");
+            .WithSummary("Get overall job statuses")
+            .WithAccess(DashboardAccess.Read);
 
         apiGroup
             .MapGet("/job/machine/jobs", _GetMachineJobs<TTimeJob, TCronJob>)
             .WithName("GetMachineJobs")
-            .WithSummary("Get machine jobs");
+            .WithSummary("Get machine jobs")
+            .WithAccess(DashboardAccess.Read);
 
         // Live nodes (coordination membership liveness snapshot)
         apiGroup
             .MapGet("/nodes", _GetLiveNodes<TTimeJob, TCronJob>)
             .WithName("GetLiveNodes")
-            .WithSummary("Get live cluster nodes from the coordination membership substrate");
+            .WithSummary("Get live cluster nodes from the coordination membership substrate")
+            .WithAccess(DashboardAccess.Read);
 
-        // SignalR Hub - authentication handled in hub OnConnectedAsync
-        endpoints.MapHub<JobsNotificationHub>("/job-notification-hub").AllowAnonymous();
+        // SignalR hub: authentication + read-permission check happen in JobsNotificationHub.OnConnectedAsync
+        // (the hub path is outside /api, so neither AuthMiddleware nor the group filter covers it).
+        endpoints
+            .MapHub<JobsNotificationHub>("/job-notification-hub")
+            .AllowAnonymous()
+            .WithAccess(DashboardAccess.Read);
     }
 
     #region Endpoint Handlers
@@ -401,6 +450,8 @@ internal static class DashboardEndpoints
         Guid id,
         HttpContext context,
         ITimeJobManager<TTimeJob> timeJobsManager,
+        IJobPersistenceProvider<TTimeJob, TCronJob> persistenceProvider,
+        JobsDashboardAuthorizer authorizer,
         DashboardOptionsBuilder dashboardOptions,
         string timeZoneId,
         CancellationToken cancellationToken
@@ -408,6 +459,19 @@ internal static class DashboardEndpoints
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
         where TCronJob : CronJobEntity, new()
     {
+        var (stored, forbidden) = await _AuthorizeTimeJobRowAsync(
+                id,
+                context,
+                persistenceProvider,
+                authorizer,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+        if (forbidden is not null)
+        {
+            return forbidden;
+        }
+
         var (timeJob, bodyError) = await DashboardRequestBodyReader
             .ReadAsync<TTimeJob>(context, dashboardOptions.DashboardJsonOptions, cancellationToken)
             .ConfigureAwait(false);
@@ -416,8 +480,10 @@ internal static class DashboardEndpoints
             return bodyError;
         }
 
-        // Ensure the ID matches
+        // Ensure the ID matches, and pin the tenant to the persisted value: the body can never move a job between
+        // tenants (the manager preserves the stored root tenant too — this keeps the boundary explicit here).
         timeJob!.Id = id;
+        timeJob.TenantId = stored?.TenantId;
 
         if (timeJob.ExecutionTime is { } executionTime && !string.IsNullOrEmpty(timeZoneId))
         {
@@ -441,13 +507,29 @@ internal static class DashboardEndpoints
 
     private static async Task<IResult> _DeleteTimeJob<TTimeJob, TCronJob>(
         Guid id,
+        HttpContext context,
         ITimeJobManager<TTimeJob> timeJobsManager,
+        IJobPersistenceProvider<TTimeJob, TCronJob> persistenceProvider,
+        JobsDashboardAuthorizer authorizer,
         DashboardOptionsBuilder dashboardOptions,
         CancellationToken cancellationToken
     )
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
         where TCronJob : CronJobEntity, new()
     {
+        var (_, forbidden) = await _AuthorizeTimeJobRowAsync(
+                id,
+                context,
+                persistenceProvider,
+                authorizer,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+        if (forbidden is not null)
+        {
+            return forbidden;
+        }
+
         var result = await timeJobsManager.DeleteAsync(id, cancellationToken).ConfigureAwait(false);
 
         return Results.Json(
@@ -722,18 +804,64 @@ internal static class DashboardEndpoints
         return Results.Ok();
     }
 
-    internal static async Task<IResult> CancelJobAsync(
+    internal static async Task<IResult> CancelJobAsync<TTimeJob, TCronJob>(
         Guid id,
+        HttpContext context,
         IJobScheduler scheduler,
+        IJobPersistenceProvider<TTimeJob, TCronJob> persistenceProvider,
+        JobsDashboardAuthorizer authorizer,
         CancellationToken cancellationToken
     )
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
     {
+        var (_, forbidden) = await _AuthorizeTimeJobRowAsync(
+                id,
+                context,
+                persistenceProvider,
+                authorizer,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+        if (forbidden is not null)
+        {
+            return forbidden;
+        }
+
         if (await scheduler.CancelAsync(id, cancellationToken).ConfigureAwait(false))
         {
             return Results.Ok();
         }
 
         return Results.BadRequest();
+    }
+
+    /// <summary>
+    /// Loads the persisted time job and authorizes the caller against its stored tenant. The stored row is the only
+    /// authority — request bodies and query values never participate. A missing row passes through so the existing
+    /// not-found behavior of the manager / scheduler is preserved (no state can change for an unknown id).
+    /// </summary>
+    private static async Task<(TTimeJob? Stored, IResult? Forbidden)> _AuthorizeTimeJobRowAsync<TTimeJob, TCronJob>(
+        Guid id,
+        HttpContext context,
+        IJobPersistenceProvider<TTimeJob, TCronJob> persistenceProvider,
+        JobsDashboardAuthorizer authorizer,
+        CancellationToken cancellationToken
+    )
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
+    {
+        var stored = await persistenceProvider.GetTimeJobByIdAsync(id, cancellationToken).ConfigureAwait(false);
+        if (stored is null)
+        {
+            return (null, null);
+        }
+
+        var caller = authorizer.Resolve(context);
+
+        return JobsDashboardAuthorizer.CanMutateTimeJob(context, caller, stored.TenantId)
+            ? (stored, null)
+            : (stored, Results.StatusCode(StatusCodes.Status403Forbidden));
     }
 
     private static async Task<IResult> _GetJobRequest<TTimeJob, TCronJob>(

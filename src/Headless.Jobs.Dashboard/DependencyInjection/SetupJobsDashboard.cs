@@ -2,6 +2,7 @@
 
 using Headless.Coordination;
 using Headless.Dashboard.Authentication;
+using Headless.Jobs.Authorization;
 using Headless.Jobs.Coordination;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Hubs;
@@ -100,6 +101,7 @@ public static class SetupJobsDashboard
 
             services.AddDashboardService<TTimeJob, TCronJob>(dashboardConfig, requestSerializationOptions);
             services.AddSingleton<DashboardOptionsBuilder>(_ => dashboardConfig);
+            services.AddSingleton<JobsDashboardAuthorizer>();
 
             // Live-nodes bridge: pushes membership deltas to the hub. Resolved lazily so the in-memory /
             // no-coordination dashboard path (no INodeMembership registered) still builds — the bridge falls
