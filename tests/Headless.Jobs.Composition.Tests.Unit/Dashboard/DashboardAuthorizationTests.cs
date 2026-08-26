@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Security.Claims;
+using Headless.Abstractions;
 using Headless.Constants;
 using Headless.Dashboard.Authentication;
 using Headless.Jobs;
@@ -10,7 +11,6 @@ using Headless.Jobs.Entities;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Models;
-using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
