@@ -277,6 +277,136 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     }
 
     [Fact]
+    public async Task halfopen_failure_reopens_pending_sibling_at_new_open_boundary()
+    {
+        var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 8, 25, 12, 0, 0, TimeSpan.Zero));
+        var laneGroup = CircuitBreakerGroupKeys.For(MessageLane.Bus, _Group);
+        await using var sut = _Create(
+            failureThreshold: 1,
+            openDuration: TimeSpan.FromMinutes(1),
+            timeProvider: timeProvider
+        );
+        var sibling = await _OpenAndAcquireProbeWithPendingSiblingAsync(sut, laneGroup, timeProvider);
+
+        // Move the clock past the original open instant so the boundary can only be correct when
+        // it is derived from the reopen instant (clock + remaining), not OpenedAt + open duration.
+        timeProvider.Advance(TimeSpan.FromSeconds(10));
+        var reopenedAt = timeProvider.GetUtcNow();
+
+        await sut.ReportFailureAsync(laneGroup, new TimeoutException(), AbortToken);
+
+        var outcome = await sibling.ProbeOutcome!.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+        outcome.Kind.Should().Be(CircuitRetryProbeOutcomeKind.Reopened);
+        // HalfOpen failure escalates to level 2, so the effective open duration doubles.
+        outcome.NextProbeAt.Should().Be(reopenedAt.Add(TimeSpan.FromMinutes(2)));
+        sut.GetState(laneGroup).Should().Be(CircuitBreakerState.Open);
+        sut.GetRetryDecision(MessageLane.Bus, _Group).NextProbeAt.Should().Be(outcome.NextProbeAt);
+    }
+
+    [Fact]
+    public async Task halfopen_probe_abort_reopens_pending_sibling_without_escalation()
+    {
+        var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 8, 25, 12, 0, 0, TimeSpan.Zero));
+        var laneGroup = CircuitBreakerGroupKeys.For(MessageLane.Bus, _Group);
+        await using var sut = _Create(
+            failureThreshold: 1,
+            openDuration: TimeSpan.FromMinutes(1),
+            timeProvider: timeProvider
+        );
+        var sibling = await _OpenAndAcquireProbeWithPendingSiblingAsync(sut, laneGroup, timeProvider);
+
+        timeProvider.Advance(TimeSpan.FromSeconds(10));
+        var reopenedAt = timeProvider.GetUtcNow();
+
+        await sut.AbortHalfOpenProbeAsync(laneGroup);
+
+        var outcome = await sibling.ProbeOutcome!.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+        outcome.Kind.Should().Be(CircuitRetryProbeOutcomeKind.Reopened);
+        // Teardown abort is not a genuine failure: escalation level stays at 1 (base duration).
+        outcome.NextProbeAt.Should().Be(reopenedAt.Add(TimeSpan.FromMinutes(1)));
+        sut.GetState(laneGroup).Should().Be(CircuitBreakerState.Open);
+    }
+
+    [Fact]
+    public async Task releasing_halfopen_probe_resolves_pending_sibling_as_uncertain()
+    {
+        var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 8, 25, 12, 0, 0, TimeSpan.Zero));
+        var laneGroup = CircuitBreakerGroupKeys.For(MessageLane.Bus, _Group);
+        await using var sut = _Create(
+            failureThreshold: 1,
+            openDuration: TimeSpan.FromMinutes(1),
+            timeProvider: timeProvider
+        );
+        var sibling = await _OpenAndAcquireProbeWithPendingSiblingAsync(sut, laneGroup, timeProvider);
+
+        sut.ReleaseHalfOpenProbe(laneGroup);
+
+        var outcome = await sibling.ProbeOutcome!.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+        outcome.Kind.Should().Be(CircuitRetryProbeOutcomeKind.Uncertain);
+        outcome.NextProbeAt.Should().BeNull();
+        sut.GetState(laneGroup).Should().Be(CircuitBreakerState.HalfOpen, "release does not change state");
+    }
+
+    [Fact]
+    public async Task disposing_manager_resolves_pending_sibling_as_uncertain()
+    {
+        var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 8, 25, 12, 0, 0, TimeSpan.Zero));
+        var laneGroup = CircuitBreakerGroupKeys.For(MessageLane.Bus, _Group);
+        var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromMinutes(1), timeProvider: timeProvider);
+        var sibling = await _OpenAndAcquireProbeWithPendingSiblingAsync(sut, laneGroup, timeProvider);
+
+        await sut.DisposeAsync();
+
+        var outcome = await sibling.ProbeOutcome!.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+        outcome.Kind.Should().Be(CircuitRetryProbeOutcomeKind.Uncertain);
+        outcome.NextProbeAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task removing_group_resolves_pending_sibling_as_uncertain()
+    {
+        var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 8, 25, 12, 0, 0, TimeSpan.Zero));
+        var laneGroup = CircuitBreakerGroupKeys.For(MessageLane.Bus, _Group);
+        await using var sut = _Create(
+            failureThreshold: 1,
+            openDuration: TimeSpan.FromMinutes(1),
+            timeProvider: timeProvider
+        );
+        var sibling = await _OpenAndAcquireProbeWithPendingSiblingAsync(sut, laneGroup, timeProvider);
+
+        await sut.RemoveGroupAsync(laneGroup);
+
+        var outcome = await sibling.ProbeOutcome!.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+        outcome.Kind.Should().Be(CircuitRetryProbeOutcomeKind.Uncertain);
+        outcome.NextProbeAt.Should().BeNull();
+    }
+
+    /// <summary>
+    /// Opens <paramref name="laneGroup"/>, advances the fake clock to the probe boundary, acquires the
+    /// HalfOpen probe through the retry path, and returns a sibling <c>ProbePending</c> decision whose
+    /// <see cref="CircuitRetryDecision.ProbeOutcome"/> is still unresolved.
+    /// </summary>
+    private static async Task<CircuitRetryDecision> _OpenAndAcquireProbeWithPendingSiblingAsync(
+        CircuitBreakerStateManager sut,
+        string laneGroup,
+        FakeTimeProvider timeProvider
+    )
+    {
+        sut.RegisterGroupCallbacks(laneGroup, () => ValueTask.CompletedTask, () => ValueTask.CompletedTask);
+        await sut.ReportFailureAsync(laneGroup, new TimeoutException(), AbortToken);
+        timeProvider.Advance(TimeSpan.FromMinutes(1));
+
+        var retryProbe = sut.GetRetryDecision(MessageLane.Bus, _Group);
+        var sibling = sut.GetRetryDecision(MessageLane.Bus, _Group);
+
+        retryProbe.Kind.Should().Be(CircuitRetryDecisionKind.ProbeAcquired);
+        sibling.Kind.Should().Be(CircuitRetryDecisionKind.ProbePending);
+        sibling.ProbeOutcome!.IsCompleted.Should().BeFalse();
+
+        return sibling;
+    }
+
+    [Fact]
     public async Task should_close_on_halfopen_success()
     {
         // given

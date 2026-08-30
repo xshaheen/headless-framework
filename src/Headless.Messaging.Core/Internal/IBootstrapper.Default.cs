@@ -662,9 +662,19 @@ internal sealed class Bootstrapper(
         }
 
 #pragma warning disable VSTHRD003 // Every stop task was initiated above and remains fault-observed here.
-        await Task.WhenAll(stopTasks.Select(pair => _ObserveProcessorStopAsync(pair.Processor, pair.Task)))
+        var outcomes = await Task.WhenAll(
+                stopTasks.Select(pair => _ObserveProcessorStopAsync(pair.Processor, pair.Task))
+            )
             .ConfigureAwait(false);
 #pragma warning restore VSTHRD003
+
+        // Awaiting Task.WhenAll surfaces only the first fault; aggregate explicitly so callers see every
+        // processor that failed to stop, mirroring the start-failure path.
+        var failures = outcomes.OfType<Exception>().ToList();
+        if (failures.Count > 0)
+        {
+            throw new AggregateException("One or more messaging processors failed to stop cleanly.", failures);
+        }
     }
 
     private static ThirdPartyStopInitiation _InitiateThirdPartyStop(IProcessingServer processor)
@@ -687,22 +697,25 @@ internal sealed class Bootstrapper(
         return new ThirdPartyStopInitiation(stopTask, initiated.Task);
     }
 
-    private async Task _ObserveProcessorStopAsync(IProcessingServer processor, Task stopTask)
+    /// <summary>Observes one processor stop; returns the failure (null on success or expected cancellation).</summary>
+    private async Task<Exception?> _ObserveProcessorStopAsync(IProcessingServer processor, Task stopTask)
     {
         try
         {
 #pragma warning disable VSTHRD003 // The caller initiated this processor stop and this method owns observation.
             await stopTask.ConfigureAwait(false);
 #pragma warning restore VSTHRD003
+            return null;
         }
         catch (OperationCanceledException ex)
         {
             logger.ExpectedOperationCanceledException(ex, ex.Message);
+            return null;
         }
         catch (Exception ex)
         {
             logger.ProcessorStopFailed(ex, processor.GetType().FullName ?? processor.GetType().Name);
-            throw;
+            return ex;
         }
     }
 

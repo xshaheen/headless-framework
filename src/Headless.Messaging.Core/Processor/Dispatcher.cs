@@ -369,12 +369,27 @@ internal sealed class Dispatcher
         }
     }
 
+    ValueTask<bool> IRetryDispatcher.DispatchReceivedAsync(MediumMessage message, CancellationToken cancellationToken)
+    {
+        return ((IRetryDispatcher)this).DispatchReceivedAsync(
+            message,
+            onAbandonedBeforeExecution: null,
+            cancellationToken
+        );
+    }
+
     async ValueTask<bool> IRetryDispatcher.DispatchReceivedAsync(
         MediumMessage message,
+        Action? onAbandonedBeforeExecution,
         CancellationToken cancellationToken
     )
     {
-        var attempt = RetryDispatchAttempt.TryCreate(_storage, MessageType.Subscribe, message);
+        var attempt = RetryDispatchAttempt.TryCreate(
+            _storage,
+            MessageType.Subscribe,
+            message,
+            onAbandonedBeforeExecution
+        );
         if (attempt is null)
         {
             await EnqueueToExecute(message, descriptor: null, cancellationToken).ConfigureAwait(false);

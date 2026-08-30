@@ -90,6 +90,12 @@ internal enum CircuitRetryDecisionKind
     Defer,
     ProbeAcquired,
     ProbePending,
+
+    /// <summary>
+    /// The circuit is open but no <see cref="ICircuitBreakerStateManager"/> is available to defer the
+    /// claim or reserve a probe generation; the claimed lease is retained until it expires.
+    /// </summary>
+    Retain,
 }
 
 internal readonly record struct CircuitRetryDecision(

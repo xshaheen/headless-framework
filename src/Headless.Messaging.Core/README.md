@@ -467,7 +467,7 @@ Per-consumer-group circuit breaker that pauses transport consumption when a depe
 
 **State machine:** Closed → Open (pause transport) → HalfOpen (probe) → Closed (resume) or Open (re-trip). Open duration escalates exponentially on repeated trips and resets after consecutive successful close cycles.
 
-Persisted received retries share the same lane-qualified probe generation as transport delivery. While Open, claimed rows are durably deferred to the current circuit generation's next eligible probe time and their exact lease is released atomically; once HalfOpen, only one row or transport delivery owns the probe and sibling claims follow that probe's close/reopen outcome. Healthy groups in the same batch dispatch before circuit dispositions, preventing an open group from monopolizing retry pickup.
+Persisted received retries share the same lane-qualified probe generation as transport delivery. While Open, claimed rows are durably deferred to the current circuit generation's next eligible probe time and their exact lease is released atomically; once HalfOpen, only one row or transport delivery owns the probe, while sibling claims retain their exact leases for normal store-authoritative expiry without blocking healthy pickup. Healthy groups in the same batch dispatch before circuit dispositions, preventing an open group from monopolizing retry pickup.
 
 ### Global Configuration
 
