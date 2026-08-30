@@ -1,3 +1,5 @@
+
+
 <p align="center">
   <img src="assets/banner.svg" alt=".NET Headless Framework" width="100%">
 </p>
@@ -592,4 +594,4 @@ The index contains the framework's agent rules and links to per-domain documenta
 
 ## Contributing
 
-Contributions are welcome — issues, feature requests, and PRs. See individual package READMEs for package-specific details.
+Contributions are welcome — issues, feature requests, and PRs. See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for local setup and repository guidelines, and see individual package READMEs for package-specific details.
