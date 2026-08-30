@@ -11,6 +11,7 @@ internal sealed class ProcessingContext(
 ) : IAsyncDisposable
 {
     private AsyncServiceScope? _scope;
+    private readonly TimeProvider _timeProvider = timeProvider;
 
     private ProcessingContext(ProcessingContext other)
         : this(other.Provider, other._timeProvider, other.CancellationToken) { }
@@ -20,8 +21,6 @@ internal sealed class ProcessingContext(
     public CancellationToken CancellationToken { get; } = cancellationToken;
 
     public bool IsStopping => CancellationToken.IsCancellationRequested;
-
-    private readonly TimeProvider _timeProvider = timeProvider;
 
     public async ValueTask DisposeAsync()
     {

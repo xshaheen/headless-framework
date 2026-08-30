@@ -291,6 +291,35 @@ public sealed class BootstrapperTests : TestBase
     }
 
     [Fact]
+    public async Task stop_should_aggregate_every_processor_stop_failure()
+    {
+        var firstFailure = new InvalidOperationException("first stop boom");
+        var secondFailure = new InvalidOperationException("second stop boom");
+        await using var first = new FailingStopProcessingServer(firstFailure);
+        await using var healthy = new TrackingProcessingServer();
+        await using var second = new FailingStopProcessingServer(secondFailure);
+        var provider = _CreateProvider(
+            beforeMessaging: first,
+            afterMessaging: second,
+            extraSetup: services => services.AddSingleton<IProcessingServer>(healthy)
+        );
+        var bootstrapper = provider.GetRequiredService<IBootstrapper>();
+        await bootstrapper.BootstrapAsync(AbortToken);
+
+        var act = async () => await ((IHostedService)bootstrapper).StopAsync(CancellationToken.None);
+
+        var thrown = await act.Should().ThrowAsync<AggregateException>();
+        thrown.Which.InnerExceptions.Should().BeEquivalentTo([firstFailure, secondFailure]);
+        healthy.DisposeCount.Should().Be(1, "a faulting sibling must not prevent the other processors from stopping");
+        bootstrapper.IsStarted.Should().BeFalse();
+
+        // Shutdown is one shared idempotent operation, so disposing the provider observes the same
+        // aggregated outcome instead of retrying the stop.
+        var dispose = async () => await provider.DisposeAsync();
+        await dispose.Should().ThrowAsync<AggregateException>();
+    }
+
+    [Fact]
     public async Task should_stop_started_processors_when_later_processor_fails_during_bootstrap()
     {
         await using var startedProcessor = new TrackingProcessingServer();
@@ -712,6 +741,26 @@ public sealed class BootstrapperTests : TestBase
     private sealed class FailingProcessingServer(Exception exception) : IProcessingServer
     {
         public ValueTask StartAsync(CancellationToken stoppingToken)
+        {
+            return ValueTask.FromException(exception);
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class FailingStopProcessingServer(Exception exception) : IProcessingServer, IProcessingServerShutdown
+    {
+        public ValueTask StartAsync(CancellationToken stoppingToken)
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        public void Quiesce() { }
+
+        public ValueTask StopAsync(TimeSpan timeout)
         {
             return ValueTask.FromException(exception);
         }

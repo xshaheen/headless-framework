@@ -901,8 +901,13 @@ internal sealed class CircuitBreakerStateManager(
 
     private DateTimeOffset _GetNextProbeAt(GroupCircuitState state)
     {
-        return state.OpenedAtUtc?.Add(_GetOpenDuration(state))
-            ?? timeProvider.GetUtcNow().Add(_GetRemainingOpenDuration(state));
+        // Derive from the injected clock plus the monotonic remaining duration. Reconstructing
+        // OpenedAtUtc + open duration would pin the persisted boundary to a stale wall-clock
+        // reading if the application clock jumped after the circuit opened (already-due rows
+        // get reclaimed and deferred in a loop; a backward jump over-defers the group).
+        // Every Reopened call site assigns OpenedAt first, so the remaining duration equals the
+        // full open duration at reopen time.
+        return timeProvider.GetUtcNow().Add(_GetRemainingOpenDuration(state));
     }
 
     private static void _CompleteRetryProbeOutcome(

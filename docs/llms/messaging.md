@@ -493,6 +493,7 @@ Wires messaging into dependency injection: registration, publishing, dispatch, m
 - Storage-backed retry/outbox and cleanup processors.
 - Optional `IDelayedMessageClaimStorage` SPI for providers that can atomically claim, lease, and transition a bounded delayed-message batch before Core enqueues committed winners.
 - Optional `IGracefulLeaseReleaseStorage` SPI for providers that can exact-release completed or pre-execution-abandoned retry leases during bounded shutdown.
+- Internal `ICircuitRetryDeferralStorage` capability lets built-in storage atomically move circuit-open received retries to the circuit's next eligible probe time while releasing only the exact claimed lease generation; providers without it retain the claim until normal expiry.
 - Circuit breaker monitor/control APIs.
 - Host-cancellable consumer factory creation, metadata provisioning, and subscription.
 - Monitoring pagination uses zero-based `MessageQuery.CurrentPage` values, returns that value as `IndexPage.Index`, and normalizes negative values to zero.
@@ -905,7 +906,7 @@ Per-consumer-group circuit breaker that pauses transport consumption when a depe
 
 Open duration escalates exponentially on repeated trips and resets after consecutive successful close cycles.
 
-Persisted received retries share the same lane-qualified probe generation as transport delivery. Open rows are durably deferred to the current circuit generation's next-probe boundary; in HalfOpen, one row or transport delivery owns the probe and sibling claims follow its close/reopen outcome. Healthy groups in the same claimed batch dispatch before circuit dispositions, so an open group cannot monopolize retry pickup.
+Persisted received retries share the same lane-qualified probe generation as transport delivery. Open rows are durably deferred to the current circuit generation's next-probe boundary; in HalfOpen, one row or transport delivery owns the probe, while sibling claims retain their exact leases for normal store-authoritative expiry without blocking healthy pickup. Healthy groups in the same claimed batch dispatch before circuit dispositions, so an open group cannot monopolize retry pickup.
 
 ### Global Configuration
 
