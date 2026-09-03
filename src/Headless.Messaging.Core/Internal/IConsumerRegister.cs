@@ -814,6 +814,14 @@ internal sealed class ConsumerRegister(
 
     private async ValueTask _ResumeGroupAsync(GroupHandle handle)
     {
+        // The retry processor can raise a circuit resume after Quiesce() has already closed
+        // this register's pickup gate for shutdown. Reopening transport here would admit new
+        // deliveries into a dispatcher that is already draining, so treat it as a no-op.
+        if ((LifecycleState)Volatile.Read(ref _state) is LifecycleState.Disposing or LifecycleState.Disposed)
+        {
+            return;
+        }
+
         _logger.ResumingConsumersHalfOpen(handle.GroupName);
 
         // No CTS recreation needed — the original CTS was never cancelled during pause,

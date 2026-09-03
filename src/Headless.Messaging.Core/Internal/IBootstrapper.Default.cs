@@ -22,7 +22,6 @@ internal sealed class Bootstrapper(
 {
     private readonly Lock _bootstrapLock = new();
     private readonly TimeProvider _timeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
-    private TimeSpan _shutdownTimeout = TimeSpan.FromSeconds(30);
     private IReadOnlyList<IProcessingServer> _processors = [];
     private bool _disposed;
     private bool _isStopping;
@@ -99,11 +98,15 @@ internal sealed class Bootstrapper(
             _WarnIfNoOpProvider();
             _WarnIfNullNodeMembership();
             _WarnIfDispatchTimeoutMateriallyExceedsInitialGrace();
-            _shutdownTimeout = options.Value.ShutdownTimeout;
 
             // Publish the complete processor set after synchronous startup validation but before
-            // storage initialization can block, so shutdown can always reach every processor.
-            _processors = serviceProvider.GetServices<IProcessingServer>().ToArray();
+            // storage initialization can block, so shutdown can always reach every processor. Published
+            // under _bootstrapLock — the same lock the shutdown-side reader (_StopProcessorsAsync) takes —
+            // so the read is guaranteed to observe this write rather than the initial empty array.
+            lock (_bootstrapLock)
+            {
+                _processors = serviceProvider.GetServices<IProcessingServer>().ToArray();
+            }
 
             try
             {
@@ -603,7 +606,16 @@ internal sealed class Bootstrapper(
     private async Task _StopProcessorsAsync(long shutdownStarted)
     {
         logger.MessagingStopping();
-        var processors = _processors.Reverse().ToArray();
+
+        // Snapshot under the same lock the publisher uses, so a shutdown racing bootstrap
+        // is guaranteed to observe the fully-published processor set rather than the initial empty array.
+        IReadOnlyList<IProcessingServer> publishedProcessors;
+        lock (_bootstrapLock)
+        {
+            publishedProcessors = _processors;
+        }
+
+        var processors = publishedProcessors.Reverse().ToArray();
         var stopTasks = new List<(IProcessingServer Processor, Task Task)>(processors.Length);
         var thirdPartyInitiated = new List<Task>();
 
@@ -721,7 +733,10 @@ internal sealed class Bootstrapper(
 
     private TimeSpan _GetRemainingShutdownTime(long shutdownStarted)
     {
-        var remaining = _shutdownTimeout - _timeProvider.GetElapsedTime(shutdownStarted);
+        // Read the option directly rather than a value cached during bootstrap: a shutdown that
+        // starts before (or races) bootstrap completion must still honor the configured timeout,
+        // not a hard-coded default.
+        var remaining = options.Value.ShutdownTimeout - _timeProvider.GetElapsedTime(shutdownStarted);
         return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
     }
 

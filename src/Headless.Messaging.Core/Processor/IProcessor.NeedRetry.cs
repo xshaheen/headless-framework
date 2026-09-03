@@ -915,6 +915,13 @@ internal static partial class RetryProcessorLog
     public static partial void CircuitRetryDeferralUnsupported(this ILogger logger, string provider);
 
     [LoggerMessage(
+        EventId = 3121,
+        Level = LogLevel.Warning,
+        Message = "Circuit retry deferral was rejected by the store fence for message {StorageId} in group {Group} (stale generation, lapsed lease, or terminal row); the claim is retained until its lease expires"
+    )]
+    public static partial void CircuitRetryDeferralRejected(this ILogger logger, Guid storageId, string? group);
+
+    [LoggerMessage(
         EventId = 3122,
         Level = LogLevel.Warning,
         Message = "No ICircuitBreakerStateManager is registered; circuit-open retry claims (first: message {StorageId} in group {Group}) are retained until lease expiry instead of being deferred or probed"
