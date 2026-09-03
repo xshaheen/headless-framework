@@ -15,6 +15,7 @@ Provides a standardized abstraction layer for accessing request-scoped context (
 - `IProblemDetailsCreator` - Contract for building normalized RFC 7807 `ProblemDetails` responses (implemented in `Headless.Api.Core`)
 - `IAbsoluteUrlFactory` - Contract for building absolute URLs from the current request (implemented in `Headless.Api.Core`)
 - Framework constants for HTTP headers and common values
+- `RequireIfMatchAttribute` - Portable marker used by MVC and OpenAPI concurrency profiles
 
 ## Installation
 

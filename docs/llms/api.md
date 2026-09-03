@@ -201,6 +201,7 @@ Provides a standardized abstraction layer for accessing request-scoped context (
 - `IProblemDetailsCreator` — contract for building normalized RFC 7807 `ProblemDetails` responses (implemented in `Headless.Api.Core`)
 - `IAbsoluteUrlFactory` — contract for building absolute URLs from the current request (implemented in `Headless.Api.Core`)
 - Framework constants for HTTP headers and common values
+- `RequireIfMatchAttribute` — portable marker used by MVC and OpenAPI concurrency profiles
 
 ### Installation
 
@@ -985,6 +986,7 @@ Provides consistent MVC configuration, base controllers, and URL canonicalizatio
 - Direct MVC `ObjectResult` responses carrying Headless-normalized `ProblemDetails` run `ProblemDetailsOptions.CustomizeProblemDetails` once before serialization
 - `ApiResult<T>.ToActionResult(...)` / `ApiResult.ToActionResult(...)` — exception-equivalent ProblemDetails mapping for expected failures
 - API versioning integration with API Explorer
+- Opt-in strong ETag responses and `If-Match` request validation
 
 ### Installation
 
@@ -999,6 +1001,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.AddHeadless().ConfigureMvc();
 builder.Services.AddControllers();
+builder.Services.AddHeadlessEtagConcurrency();
 
 var app = builder.Build();
 
@@ -1021,6 +1024,10 @@ public sealed class OrdersController(IOrderService service, IProblemDetailsCreat
     }
 }
 ```
+
+#### ETag concurrency
+
+`AddHeadlessEtagConcurrency()` emits a strong `ETag` for successful MVC `ObjectResult` values implementing `IHasETag`. Add `[RequireIfMatch]` to write actions; the filter accepts exactly one strong Base64 tag and exposes the decoded token through scoped `IfMatchContext`. Missing tags return 428 with `g:if_match_required`, invalid tags return 400 with `g:if_match_invalid`, and persistence conflicts return 409 with `g:concurrency_failure`.
 
 #### URL Canonicalization
 
@@ -1047,6 +1054,7 @@ No additional configuration required.
 ### Dependencies
 
 - `Headless.Api.Core` (and `Headless.Api.ServiceDefaults` if you want the orchestrator)
+- `Headless.Domain`
 - `Asp.Versioning.Mvc`
 - `Asp.Versioning.Mvc.ApiExplorer`
 
@@ -1054,3 +1062,4 @@ No additional configuration required.
 
 - Configures `MvcOptions` and `JsonOptions` for controllers
 - Adds a result filter that applies ProblemDetails customization to Headless-generated MVC object results
+- When opted in, emits strong ETags for `IHasETag` responses

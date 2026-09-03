@@ -11,4 +11,6 @@ internal static class OpenApiStatusCodes
     public const string Conflict = "409";
     public const string UnprocessableEntity = "422";
     public const string TooManyRequests = "429";
+
+    public const string PreconditionRequired = "428";
 }
