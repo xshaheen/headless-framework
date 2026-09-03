@@ -9,6 +9,7 @@ using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Infrastructure;
 using Headless.Jobs.Interfaces;
+using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Internal;
 using Headless.Jobs.Models;
 using Headless.Testing.Tests;
@@ -125,6 +126,281 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         }
         finally
         {
+            await host.StopAsync(ct);
+        }
+    }
+
+    // R8/AE1: an append that commits after discovery invalidates the first delete attempt through the NoAction FK.
+    // The retry must discard that attempt, rediscover the new depth-three row, and report only the committed count.
+    public virtual async Task deleting_a_chain_retries_when_append_commits_after_discovery()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("chain-delete-append");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+        var manager = host.Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
+        var treeDeleteProvider = _TreeDeleteProvider(persistence);
+
+        try
+        {
+            var scheduler = host.Services.GetRequiredService<IJobScheduler>();
+            var builder = JobChain.Start(_Payload("append-root"), executionTime: DateTime.UtcNow.AddHours(1));
+            var child = builder.Root.Then(_Payload("append-child"));
+            var grandchild = child.Then(_Payload("append-grandchild"));
+            grandchild.Then(_Payload("append-great-grandchild"));
+            child.Catch(_Payload("append-catch"));
+
+            var rootId = await scheduler.EnqueueAsync(builder.Build(), ct);
+            var firstLevelChildId = (await _ChildrenAsync(rootId, ct)).Single().Id;
+            var appendStarted = 0;
+            var seamCalls = 0;
+            treeDeleteProvider.OnTreeDeleteBeforeFirstDelete = async () =>
+            {
+                Interlocked.Increment(ref seamCalls);
+                if (Interlocked.Exchange(ref appendStarted, 1) != 0)
+                {
+                    return;
+                }
+
+                await _AppendChildThroughManagerAsync(
+                    persistence,
+                    manager,
+                    rootId,
+                    firstLevelChildId,
+                    "appended-after-discovery",
+                    ct
+                );
+            };
+
+            var deleted = await persistence.RemoveTimeJobsAsync([rootId], ct);
+
+            deleted.Should().Be(6);
+            seamCalls.Should().Be(2, "the committed append must force one fresh-discovery retry");
+            (await fixture.CountTimeJobsAsync(ct)).Should().Be(0);
+        }
+        finally
+        {
+            treeDeleteProvider.OnTreeDeleteBeforeFirstDelete = null;
+            await host.StopAsync(ct);
+        }
+    }
+
+    // R9/AE2: once the delete commits, a stale graph cannot recreate a child whose parent no longer exists.
+    public virtual async Task appending_to_a_chain_after_delete_fails_without_creating_a_row()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("chain-append-after-delete");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var scheduler = host.Services.GetRequiredService<IJobScheduler>();
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            var manager = host.Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
+            var builder = JobChain.Start(_Payload("stale-root"), executionTime: DateTime.UtcNow.AddHours(1));
+            var child = builder.Root.Then(_Payload("stale-child"));
+            child.Then(_Payload("stale-grandchild"));
+
+            var rootId = await scheduler.EnqueueAsync(builder.Build(), ct);
+            var staleRoot = await persistence.GetTimeJobByIdAsync(rootId, ct);
+            staleRoot.Should().NotBeNull();
+            staleRoot!.Children.Add(_NewAppendedChild("stale-append"));
+
+            (await persistence.RemoveTimeJobsAsync([rootId], ct)).Should().Be(3);
+            var update = await manager.UpdateAsync(staleRoot, ct);
+
+            update.IsSucceeded.Should().BeFalse("the deleted parent cannot satisfy the child's foreign key");
+            update.Exception.Should().NotBeNull();
+            (await fixture.CountTimeJobsAsync(ct)).Should().Be(0);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    // R10: a conflict in one tree retries the whole batch, so the committed attempt counts both complete trees once.
+    public virtual async Task batch_chain_delete_retries_with_fresh_discovery_and_returns_exact_count()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("chain-delete-batch-append");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+        var manager = host.Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
+        var treeDeleteProvider = _TreeDeleteProvider(persistence);
+
+        try
+        {
+            var scheduler = host.Services.GetRequiredService<IJobScheduler>();
+            var firstBuilder = JobChain.Start(_Payload("batch-first-root"), executionTime: DateTime.UtcNow.AddHours(1));
+            var firstChild = firstBuilder.Root.Then(_Payload("batch-first-child"));
+            firstChild.Then(_Payload("batch-first-grandchild"));
+            var secondBuilder = JobChain.Start(
+                _Payload("batch-second-root"),
+                executionTime: DateTime.UtcNow.AddHours(1)
+            );
+            var secondChild = secondBuilder.Root.Then(_Payload("batch-second-child"));
+            secondChild.Then(_Payload("batch-second-grandchild"));
+
+            var firstRootId = await scheduler.EnqueueAsync(firstBuilder.Build(), ct);
+            var secondRootId = await scheduler.EnqueueAsync(secondBuilder.Build(), ct);
+            var secondFirstLevelChildId = (await _ChildrenAsync(secondRootId, ct)).Single().Id;
+            var appendStarted = 0;
+            var seamCalls = 0;
+            treeDeleteProvider.OnTreeDeleteBeforeFirstDelete = async () =>
+            {
+                Interlocked.Increment(ref seamCalls);
+                if (Interlocked.Exchange(ref appendStarted, 1) != 0)
+                {
+                    return;
+                }
+
+                await _AppendChildThroughManagerAsync(
+                    persistence,
+                    manager,
+                    secondRootId,
+                    secondFirstLevelChildId,
+                    "batch-appended-after-discovery",
+                    ct
+                );
+            };
+
+            var deleted = await persistence.RemoveTimeJobsAsync([firstRootId, secondRootId], ct);
+
+            deleted.Should().Be(7);
+            seamCalls.Should().Be(2, "the batch must retry as one fresh transaction");
+            (await fixture.CountTimeJobsAsync(ct)).Should().Be(0);
+        }
+        finally
+        {
+            treeDeleteProvider.OnTreeDeleteBeforeFirstDelete = null;
+            await host.StopAsync(ct);
+        }
+    }
+
+    // The level-one variant guards the frontier boundary: a child added directly under the root after discovery must
+    // also invalidate the first attempt and be included by the retry.
+    public virtual async Task deleting_a_chain_retries_when_child_is_appended_directly_to_root()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("chain-delete-root-append");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+        var manager = host.Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
+        var treeDeleteProvider = _TreeDeleteProvider(persistence);
+
+        try
+        {
+            var scheduler = host.Services.GetRequiredService<IJobScheduler>();
+            var builder = JobChain.Start(_Payload("root-append-root"), executionTime: DateTime.UtcNow.AddHours(1));
+            var child = builder.Root.Then(_Payload("root-append-child"));
+            var grandchild = child.Then(_Payload("root-append-grandchild"));
+            grandchild.Then(_Payload("root-append-great-grandchild"));
+            child.Catch(_Payload("root-append-catch"));
+
+            var rootId = await scheduler.EnqueueAsync(builder.Build(), ct);
+            var appendStarted = 0;
+            var seamCalls = 0;
+            treeDeleteProvider.OnTreeDeleteBeforeFirstDelete = async () =>
+            {
+                Interlocked.Increment(ref seamCalls);
+                if (Interlocked.Exchange(ref appendStarted, 1) != 0)
+                {
+                    return;
+                }
+
+                await _AppendChildThroughManagerAsync(
+                    persistence,
+                    manager,
+                    rootId,
+                    rootId,
+                    "root-appended-after-discovery",
+                    ct
+                );
+            };
+
+            var deleted = await persistence.RemoveTimeJobsAsync([rootId], ct);
+
+            deleted.Should().Be(6);
+            seamCalls.Should().Be(2, "the level-one append must force fresh discovery");
+            (await fixture.CountTimeJobsAsync(ct)).Should().Be(0);
+        }
+        finally
+        {
+            treeDeleteProvider.OnTreeDeleteBeforeFirstDelete = null;
+            await host.StopAsync(ct);
+        }
+    }
+
+    // Deleting a non-root subtree uses the same retry fence without widening the requested deletion to its ancestors
+    // or sibling branches.
+    public virtual async Task deleting_a_mid_tree_node_retries_and_preserves_unrelated_rows()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("chain-delete-mid-append");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+        var manager = host.Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
+        var treeDeleteProvider = _TreeDeleteProvider(persistence);
+
+        try
+        {
+            var scheduler = host.Services.GetRequiredService<IJobScheduler>();
+            var builder = JobChain.Start(_Payload("mid-root"), executionTime: DateTime.UtcNow.AddHours(1));
+            var subtree = builder.Root.Then(_Payload("mid-subtree"));
+            subtree.Then(_Payload("mid-grandchild"));
+            builder.Root.Catch(_Payload("mid-sibling"));
+
+            var rootId = await scheduler.EnqueueAsync(builder.Build(), ct);
+            var rootChildren = await _ChildrenAsync(rootId, ct);
+            var subtreeId = rootChildren.Single(x => x.Condition == RunCondition.OnSuccess).Id;
+            var siblingId = rootChildren.Single(x => x.Condition == RunCondition.OnFailure).Id;
+            var appendStarted = 0;
+            var seamCalls = 0;
+            treeDeleteProvider.OnTreeDeleteBeforeFirstDelete = async () =>
+            {
+                Interlocked.Increment(ref seamCalls);
+                if (Interlocked.Exchange(ref appendStarted, 1) != 0)
+                {
+                    return;
+                }
+
+                await _AppendChildThroughManagerAsync(
+                    persistence,
+                    manager,
+                    rootId,
+                    subtreeId,
+                    "mid-appended-after-discovery",
+                    ct
+                );
+            };
+
+            var deleted = await persistence.RemoveTimeJobsAsync([subtreeId], ct);
+
+            deleted.Should().Be(3);
+            seamCalls.Should().Be(2, "the subtree delete must retry with the appended child included");
+            (await fixture.CountTimeJobsAsync(ct)).Should().Be(2);
+            (await _ReadNodeAsync(rootId, ct)).ParentId.Should().BeNull();
+            var remainingChildren = await _ChildrenAsync(rootId, ct);
+            remainingChildren.Should().ContainSingle().Which.Id.Should().Be(siblingId);
+        }
+        finally
+        {
+            treeDeleteProvider.OnTreeDeleteBeforeFirstDelete = null;
             await host.StopAsync(ct);
         }
     }
@@ -1249,6 +1525,39 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
     // ----- helpers -------------------------------------------------------------------------------------------------
 
     private static CoordinatedFacadeRequest _Payload(string tag) => new(Guid.NewGuid(), tag);
+
+    private static JobsEfCorePersistenceProvider<JobsDbContext, TimeJobEntity, CronJobEntity> _TreeDeleteProvider(
+        IJobPersistenceProvider<TimeJobEntity, CronJobEntity> persistence
+    ) => (JobsEfCorePersistenceProvider<JobsDbContext, TimeJobEntity, CronJobEntity>)persistence;
+
+    private static async Task _AppendChildThroughManagerAsync(
+        IJobPersistenceProvider<TimeJobEntity, CronJobEntity> persistence,
+        ITimeJobManager<TimeJobEntity> manager,
+        Guid rootId,
+        Guid parentId,
+        string description,
+        CancellationToken ct
+    )
+    {
+        // The provider's management read intentionally loads one child level, which is the graph shape UpdateAsync
+        // accepts for appending either beneath the timed root or one of its immediate children.
+        var root = await persistence.GetTimeJobByIdAsync(rootId, ct);
+        root.Should().NotBeNull();
+        var parent = parentId == rootId ? root! : root!.Children.Single(x => x.Id == parentId);
+        parent.Children.Add(_NewAppendedChild(description));
+
+        var update = await manager.UpdateAsync(root, ct);
+        update.IsSucceeded.Should().BeTrue("the concurrent append must commit through the public update path");
+    }
+
+    private static TimeJobEntity _NewAppendedChild(string description) =>
+        new()
+        {
+            Function = JobsCoordinationFixtureExtensions.CoordinatedFacadeFunctionName,
+            Request = [],
+            Description = description,
+            RunCondition = RunCondition.OnSuccess,
+        };
 
     // Directly-seeded root row (ParentId == null). Bypasses JobChain so a test can seed a subtree wider than two
     // children per node — the shape the bounded sweep needs but the builder cannot express.
