@@ -175,6 +175,41 @@ public sealed class TimeJobDeleteConflictClassifierTests : TestBase
     }
 
     [Fact]
+    public void should_retry_transient_database_failure_that_wraps_a_socket_error()
+    {
+        // Drivers report a dropped connection as a transient DbException wrapping the IOException that caused it; the
+        // classifier must read the outer driver exception, not the innermost socket error.
+        var exception = new FakeDbException(isTransient: true, inner: new IOException("connection reset"));
+
+        var result = JobsTreeDeleteConflicts.IsRetryableTreeDeleteFailure(
+            "Unknown.Provider",
+            exception,
+            commitStarted: false,
+            CancellationToken.None
+        );
+
+        result.Should().BeTrue();
+    }
+
+    [Fact]
+    public void should_unwrap_to_the_first_database_failure_when_it_wraps_a_socket_error()
+    {
+        var exception = new DbUpdateException(
+            "delete failed",
+            new FakeDbException(sqlState: "23503", inner: new IOException("connection reset"))
+        );
+
+        var result = JobsTreeDeleteConflicts.IsRetryableTreeDeleteFailure(
+            _PostgreSqlProvider,
+            exception,
+            commitStarted: false,
+            CancellationToken.None
+        );
+
+        result.Should().BeTrue();
+    }
+
+    [Fact]
     public void should_not_retry_non_transient_database_failure_for_unknown_provider()
     {
         var exception = new FakeDbException(sqlState: "23503", number: 547);
@@ -189,8 +224,12 @@ public sealed class TimeJobDeleteConflictClassifierTests : TestBase
         result.Should().BeFalse();
     }
 
-    private sealed class FakeDbException(string? sqlState = null, int number = 0, bool isTransient = false)
-        : DbException
+    private sealed class FakeDbException(
+        string? sqlState = null,
+        int number = 0,
+        bool isTransient = false,
+        Exception? inner = null
+    ) : DbException("fake database failure", inner)
     {
         public override string? SqlState { get; } = sqlState;
 

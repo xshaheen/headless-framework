@@ -37,7 +37,10 @@ internal static class JobsTreeDeleteConflicts
             return false;
         }
 
-        if (exception.GetBaseException() is not DbException databaseException)
+        // Walk outer-first and stop at the FIRST DbException: drivers report a dropped connection as a transient
+        // DbException wrapping the underlying IOException or SocketException, so the innermost exception would be
+        // the socket error and the transient signal on the outer driver exception would be lost.
+        if (_FindDatabaseException(exception) is not { } databaseException)
         {
             return false;
         }
@@ -59,5 +62,18 @@ internal static class JobsTreeDeleteConflicts
         }
 
         return false;
+    }
+
+    private static DbException? _FindDatabaseException(Exception exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is DbException databaseException)
+            {
+                return databaseException;
+            }
+        }
+
+        return null;
     }
 }
