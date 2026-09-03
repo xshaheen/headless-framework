@@ -1,8 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Api.Concurrency;
 using Headless.Api.Options;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Headless.Api;
 
@@ -41,5 +43,18 @@ public static class SetupMvc
         builder.Services.ConfigureOptions<ConfigureMvcApiOptions>();
 
         return builder;
+    }
+
+    /// <summary>
+    /// Adds the opt-in MVC profile for strong ETag responses and <c>If-Match</c> preconditions.
+    /// </summary>
+    /// <param name="services">The service collection to configure.</param>
+    /// <returns><paramref name="services"/> for chaining.</returns>
+    public static IServiceCollection AddHeadlessEtagConcurrency(this IServiceCollection services)
+    {
+        services.TryAddScoped<IfMatchContext>();
+        services.ConfigureOptions<ConfigureEtagConcurrencyMvcOptions>();
+
+        return services;
     }
 }

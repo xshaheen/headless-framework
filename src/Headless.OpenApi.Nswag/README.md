@@ -16,7 +16,9 @@ Configuring NSwag from scratch requires wiring multiple schema and operation pro
 - `AddPrimitivesSwaggerMappings(JsonSchemaGeneratorSettings, Assembly[])` — discovers and applies primitive mappings from specific assemblies via `[PrimitiveAssembly]`
 - `AddAllPrimitivesSwaggerMappings(JsonSchemaGeneratorSettings)` — discovers and applies primitive mappings from all loaded assemblies marked with `[PrimitiveAssembly]`
 - Schema processors: `FluentValidationSchemaProcessor`, `GenericNullabilitySchemaProcessor`, `NullabilityAsRequiredSchemaProcessor`
-- Operation processors: `ApiExtraInformationOperationProcessor`, `CamelCaseQueryParameterOperationProcessor`, `UnauthorizedResponseOperationProcessor`, `ForbiddenResponseOperationProcessor`, `ProblemDetailsOperationProcessor`
+- Operation processors: `ApiExtraInformationOperationProcessor`, `CamelCaseQueryParameterOperationProcessor`, `UnauthorizedResponseOperationProcessor`, `ForbiddenResponseOperationProcessor`, `ProblemDetailsOperationProcessor`, `IfMatchOperationProcessor`
+
+`IfMatchOperationProcessor` documents a required `If-Match` header and a 428 response for MVC actions marked with `[RequireIfMatch]`.
 
 ## Design Notes
 

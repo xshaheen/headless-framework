@@ -16,6 +16,7 @@ Provides consistent MVC configuration, base controllers, and URL canonicalizatio
 - `ApiResult<T>.ToActionResult(...)` / `ApiResult.ToActionResult(...)` — maps expected failures to the same
   ProblemDetails shapes as `HeadlessApiExceptionHandler`
 - API versioning integration with API Explorer
+- Opt-in strong ETag responses and `If-Match` request validation
 
 ## Installation
 
@@ -30,6 +31,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.AddHeadless().ConfigureMvc();
 builder.Services.AddControllers();
+builder.Services.AddHeadlessEtagConcurrency();
 
 var app = builder.Build();
 
@@ -52,6 +54,19 @@ public sealed class OrdersController(IOrderService service, IProblemDetailsCreat
     }
 }
 ```
+
+### ETag concurrency
+
+`AddHeadlessEtagConcurrency()` adds an `ETag` response header when a successful MVC `ObjectResult` implements `IHasETag`. Mark a write action with `[RequireIfMatch]` to require exactly one strong Base64 entity tag. The decoded token is available from the scoped `IfMatchContext` for the persistence layer.
+
+```csharp
+[HttpPut("{id:guid}")]
+[RequireIfMatch]
+public Task<OrderDto> Update(Guid id, UpdateOrder request, [FromServices] IfMatchContext ifMatch, CancellationToken ct) =>
+    service.Update(id, request, ifMatch.ETag, ct);
+```
+
+Missing preconditions return 428 with `g:if_match_required`; malformed, weak, wildcard, or multiple tags return 400 with `g:if_match_invalid`. EF concurrency failures continue to return 409 with `g:concurrency_failure`.
 
 ### URL Canonicalization
 
@@ -78,6 +93,7 @@ No additional configuration required.
 ## Dependencies
 
 - `Headless.Api.Core`
+- `Headless.Domain`
 - `Asp.Versioning.Mvc`
 - `Asp.Versioning.Mvc.ApiExplorer`
 
@@ -85,3 +101,4 @@ No additional configuration required.
 
 - Configures `MvcOptions` and `JsonOptions` for controllers
 - Adds a result filter that applies ProblemDetails customization to Headless-generated MVC object results
+- When opted in, adds a result filter that emits strong ETags for `IHasETag` responses

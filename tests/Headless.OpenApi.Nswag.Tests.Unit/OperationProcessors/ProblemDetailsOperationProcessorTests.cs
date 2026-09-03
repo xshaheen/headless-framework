@@ -23,6 +23,7 @@ public sealed class ProblemDetailsOperationProcessorTests : TestBase
             { "404", typeof(EntityNotFoundProblemDetails) },
             { "409", typeof(ConflictProblemDetails) },
             { "422", typeof(UnprocessableEntityProblemDetails) },
+            { "428", typeof(PreconditionRequiredProblemDetails) },
             { "429", typeof(TooManyRequestsProblemDetails) },
         };
 
