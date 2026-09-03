@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Data.Common;
 using System.Linq.Expressions;
 using Headless.Abstractions;
 using Headless.Caching;
@@ -328,7 +327,7 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
 
     private async ValueTask<int> _RemoveTimeJobsAttemptAsync(Guid[] timeJobIds, ResilienceContext resilienceContext)
     {
-        resilienceContext.Properties.Set(_TreeDeleteCommitStartedKey, false);
+        resilienceContext.Properties.Set(_TreeDeleteCommitStartedKey, value: false);
         var cancellationToken = resilienceContext.CancellationToken;
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
@@ -387,46 +386,10 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
                 .ConfigureAwait(false);
         }
 
-        resilienceContext.Properties.Set(_TreeDeleteCommitStartedKey, true);
+        resilienceContext.Properties.Set(_TreeDeleteCommitStartedKey, value: true);
         await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
 
         return deleted;
-    }
-
-    internal static bool IsRetryableTreeDeleteFailure(
-        string? providerName,
-        Exception exception,
-        bool commitStarted,
-        CancellationToken cancellationToken
-    )
-    {
-        if (commitStarted || cancellationToken.IsCancellationRequested || exception is OperationCanceledException)
-        {
-            return false;
-        }
-
-        if (exception.GetBaseException() is not DbException databaseException)
-        {
-            return false;
-        }
-
-        if (databaseException.IsTransient)
-        {
-            return true;
-        }
-
-        if (string.Equals(providerName, "Npgsql.EntityFrameworkCore.PostgreSQL", StringComparison.Ordinal))
-        {
-            return databaseException.SqlState is "23503" or "40001" or "40P01";
-        }
-
-        if (string.Equals(providerName, "Microsoft.EntityFrameworkCore.SqlServer", StringComparison.Ordinal))
-        {
-            var number = databaseException.GetType().GetProperty("Number")?.GetValue(databaseException);
-            return number is 547 or 1205 or 3960;
-        }
-
-        return false;
     }
 
     private ResiliencePipeline _BuildTreeDeleteRetryPipeline(TimeProvider timeProvider, ILogger logger)
@@ -437,10 +400,10 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
                 {
                     ShouldHandle = args => new ValueTask<bool>(
                         args.Outcome.Exception is { } exception
-                            && IsRetryableTreeDeleteFailure(
+                            && JobsTreeDeleteConflicts.IsRetryableTreeDeleteFailure(
                                 _treeDeleteProviderName,
                                 exception,
-                                args.Context.Properties.GetValue(_TreeDeleteCommitStartedKey, false),
+                                args.Context.Properties.GetValue(_TreeDeleteCommitStartedKey, defaultValue: false),
                                 args.Context.CancellationToken
                             )
                     ),

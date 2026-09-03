@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
-using Headless.Jobs.Entities;
 using Headless.Jobs.Infrastructure;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
@@ -21,11 +20,12 @@ public sealed class TimeJobDeleteConflictClassifierTests : TestBase
     {
         var exception = new FakeDbException(sqlState: sqlState);
 
-        var result = JobsEfCorePersistenceProvider<
-            DbContext,
-            TimeJobEntity,
-            CronJobEntity
-        >.IsRetryableTreeDeleteFailure(_PostgreSqlProvider, exception, commitStarted: false, CancellationToken.None);
+        var result = JobsTreeDeleteConflicts.IsRetryableTreeDeleteFailure(
+            _PostgreSqlProvider,
+            exception,
+            commitStarted: false,
+            CancellationToken.None
+        );
 
         result.Should().BeTrue();
     }
@@ -35,11 +35,12 @@ public sealed class TimeJobDeleteConflictClassifierTests : TestBase
     {
         var exception = new FakeDbException(sqlState: "23505");
 
-        var result = JobsEfCorePersistenceProvider<
-            DbContext,
-            TimeJobEntity,
-            CronJobEntity
-        >.IsRetryableTreeDeleteFailure(_PostgreSqlProvider, exception, commitStarted: false, CancellationToken.None);
+        var result = JobsTreeDeleteConflicts.IsRetryableTreeDeleteFailure(
+            _PostgreSqlProvider,
+            exception,
+            commitStarted: false,
+            CancellationToken.None
+        );
 
         result.Should().BeFalse();
     }
@@ -52,11 +53,12 @@ public sealed class TimeJobDeleteConflictClassifierTests : TestBase
     {
         var exception = new FakeDbException(number: number);
 
-        var result = JobsEfCorePersistenceProvider<
-            DbContext,
-            TimeJobEntity,
-            CronJobEntity
-        >.IsRetryableTreeDeleteFailure(_SqlServerProvider, exception, commitStarted: false, CancellationToken.None);
+        var result = JobsTreeDeleteConflicts.IsRetryableTreeDeleteFailure(
+            _SqlServerProvider,
+            exception,
+            commitStarted: false,
+            CancellationToken.None
+        );
 
         result.Should().BeTrue();
     }
@@ -66,11 +68,12 @@ public sealed class TimeJobDeleteConflictClassifierTests : TestBase
     {
         var exception = new FakeDbException(number: 2627);
 
-        var result = JobsEfCorePersistenceProvider<
-            DbContext,
-            TimeJobEntity,
-            CronJobEntity
-        >.IsRetryableTreeDeleteFailure(_SqlServerProvider, exception, commitStarted: false, CancellationToken.None);
+        var result = JobsTreeDeleteConflicts.IsRetryableTreeDeleteFailure(
+            _SqlServerProvider,
+            exception,
+            commitStarted: false,
+            CancellationToken.None
+        );
 
         result.Should().BeFalse();
     }
@@ -80,11 +83,12 @@ public sealed class TimeJobDeleteConflictClassifierTests : TestBase
     {
         var exception = new FakeDbException(isTransient: true);
 
-        var result = JobsEfCorePersistenceProvider<
-            DbContext,
-            TimeJobEntity,
-            CronJobEntity
-        >.IsRetryableTreeDeleteFailure("Unknown.Provider", exception, commitStarted: false, CancellationToken.None);
+        var result = JobsTreeDeleteConflicts.IsRetryableTreeDeleteFailure(
+            "Unknown.Provider",
+            exception,
+            commitStarted: false,
+            CancellationToken.None
+        );
 
         result.Should().BeTrue();
     }
@@ -95,11 +99,7 @@ public sealed class TimeJobDeleteConflictClassifierTests : TestBase
     [InlineData("Unknown.Provider")]
     public void should_not_retry_operation_cancellation(string providerName)
     {
-        var result = JobsEfCorePersistenceProvider<
-            DbContext,
-            TimeJobEntity,
-            CronJobEntity
-        >.IsRetryableTreeDeleteFailure(
+        var result = JobsTreeDeleteConflicts.IsRetryableTreeDeleteFailure(
             providerName,
             new OperationCanceledException(),
             commitStarted: false,
@@ -115,11 +115,7 @@ public sealed class TimeJobDeleteConflictClassifierTests : TestBase
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
 
-        var result = JobsEfCorePersistenceProvider<
-            DbContext,
-            TimeJobEntity,
-            CronJobEntity
-        >.IsRetryableTreeDeleteFailure(
+        var result = JobsTreeDeleteConflicts.IsRetryableTreeDeleteFailure(
             _PostgreSqlProvider,
             new FakeDbException(sqlState: "23503"),
             commitStarted: false,
@@ -137,11 +133,12 @@ public sealed class TimeJobDeleteConflictClassifierTests : TestBase
     {
         var exception = new FakeDbException(sqlState: "23503", number: 547, isTransient: true);
 
-        var result = JobsEfCorePersistenceProvider<
-            DbContext,
-            TimeJobEntity,
-            CronJobEntity
-        >.IsRetryableTreeDeleteFailure(providerName, exception, commitStarted: true, CancellationToken.None);
+        var result = JobsTreeDeleteConflicts.IsRetryableTreeDeleteFailure(
+            providerName,
+            exception,
+            commitStarted: true,
+            CancellationToken.None
+        );
 
         result.Should().BeFalse();
     }
@@ -152,11 +149,7 @@ public sealed class TimeJobDeleteConflictClassifierTests : TestBase
     [InlineData("Unknown.Provider")]
     public void should_not_retry_invalid_operation_failure(string providerName)
     {
-        var result = JobsEfCorePersistenceProvider<
-            DbContext,
-            TimeJobEntity,
-            CronJobEntity
-        >.IsRetryableTreeDeleteFailure(
+        var result = JobsTreeDeleteConflicts.IsRetryableTreeDeleteFailure(
             providerName,
             new InvalidOperationException(),
             commitStarted: false,
@@ -171,11 +164,12 @@ public sealed class TimeJobDeleteConflictClassifierTests : TestBase
     {
         var exception = new DbUpdateException("delete failed", new FakeDbException(sqlState: "40P01"));
 
-        var result = JobsEfCorePersistenceProvider<
-            DbContext,
-            TimeJobEntity,
-            CronJobEntity
-        >.IsRetryableTreeDeleteFailure(_PostgreSqlProvider, exception, commitStarted: false, CancellationToken.None);
+        var result = JobsTreeDeleteConflicts.IsRetryableTreeDeleteFailure(
+            _PostgreSqlProvider,
+            exception,
+            commitStarted: false,
+            CancellationToken.None
+        );
 
         result.Should().BeTrue();
     }
@@ -185,11 +179,12 @@ public sealed class TimeJobDeleteConflictClassifierTests : TestBase
     {
         var exception = new FakeDbException(sqlState: "23503", number: 547);
 
-        var result = JobsEfCorePersistenceProvider<
-            DbContext,
-            TimeJobEntity,
-            CronJobEntity
-        >.IsRetryableTreeDeleteFailure("Unknown.Provider", exception, commitStarted: false, CancellationToken.None);
+        var result = JobsTreeDeleteConflicts.IsRetryableTreeDeleteFailure(
+            "Unknown.Provider",
+            exception,
+            commitStarted: false,
+            CancellationToken.None
+        );
 
         result.Should().BeFalse();
     }
