@@ -105,11 +105,8 @@ public sealed class TimeJobDeleteCascadeTests : TestBase
     {
         await using var fixture = await EfFixture.CreateAsync();
         var timeProvider = new FakeTimeProvider();
-        var logger = new CapturingLogger();
-        var sut = fixture.CreateProvider(timeProvider, logger);
-        var chain = _LinearChain(depth: 4);
+        var (sut, chain, logger) = await _SeedChainAsync(fixture, timeProvider);
         var survivor = _LinearChain(depth: 2);
-        await sut.AddTimeJobsAsync(chain, AbortToken);
         await sut.AddTimeJobsAsync(survivor, AbortToken);
         var attempts = 0;
         sut.OnTreeDeleteBeforeFirstDelete = () =>
@@ -151,10 +148,7 @@ public sealed class TimeJobDeleteCascadeTests : TestBase
     {
         await using var fixture = await EfFixture.CreateAsync();
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
-        var logger = new CapturingLogger();
-        var sut = fixture.CreateProvider(logger: logger);
-        var chain = _LinearChain(depth: 4);
-        await sut.AddTimeJobsAsync(chain, AbortToken);
+        var (sut, chain, logger) = await _SeedChainAsync(fixture);
         var attempts = 0;
         sut.OnTreeDeleteBeforeFirstDelete = () =>
         {
@@ -183,10 +177,7 @@ public sealed class TimeJobDeleteCascadeTests : TestBase
     {
         await using var fixture = await EfFixture.CreateAsync();
         var timeProvider = new FakeTimeProvider();
-        var logger = new CapturingLogger();
-        var sut = fixture.CreateProvider(timeProvider, logger);
-        var chain = _LinearChain(depth: 4);
-        await sut.AddTimeJobsAsync(chain, AbortToken);
+        var (sut, chain, logger) = await _SeedChainAsync(fixture, timeProvider);
         var failure = new TransientDbException();
         var attempts = 0;
         sut.OnTreeDeleteBeforeFirstDelete = () =>
@@ -216,10 +207,7 @@ public sealed class TimeJobDeleteCascadeTests : TestBase
     public async Task ef_remove_time_jobs_async_does_not_retry_non_retryable_failure_and_preserves_the_tree()
     {
         await using var fixture = await EfFixture.CreateAsync();
-        var logger = new CapturingLogger();
-        var sut = fixture.CreateProvider(logger: logger);
-        var chain = _LinearChain(depth: 4);
-        await sut.AddTimeJobsAsync(chain, AbortToken);
+        var (sut, chain, logger) = await _SeedChainAsync(fixture);
         var failure = new InvalidOperationException("non-retryable");
         var attempts = 0;
         sut.OnTreeDeleteBeforeFirstDelete = () =>
@@ -391,6 +379,21 @@ public sealed class TimeJobDeleteCascadeTests : TestBase
         }
 
         await Task.Yield();
+    }
+
+    // Seeds one four-level chain on a provider wired with a capturing logger — the scaffolding every retry-pipeline
+    // scenario shares, so each test keeps only the seam behavior that distinguishes it.
+    private static async Task<(
+        JobsEfCorePersistenceProvider<JobsDbContext, TimeJobEntity, CronJobEntity> Sut,
+        TimeJobEntity[] Chain,
+        CapturingLogger Logger
+    )> _SeedChainAsync(EfFixture fixture, TimeProvider? timeProvider = null)
+    {
+        var logger = new CapturingLogger();
+        var sut = fixture.CreateProvider(timeProvider, logger);
+        var chain = _LinearChain(depth: 4);
+        await sut.AddTimeJobsAsync(chain, AbortToken);
+        return (sut, chain, logger);
     }
 
     private static async Task _AssertRowsRemainAsync(

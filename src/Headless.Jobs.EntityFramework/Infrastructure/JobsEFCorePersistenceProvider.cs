@@ -332,7 +332,13 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
-        Interlocked.CompareExchange(ref _treeDeleteProviderName, dbContext.Database.ProviderName, comparand: null);
+        // The factory is bound to one provider for the instance's lifetime, so the name is captured once; the retry
+        // predicate reads it because Polly's predicate never sees the per-call state.
+        if (_treeDeleteProviderName is null)
+        {
+            Interlocked.CompareExchange(ref _treeDeleteProviderName, dbContext.Database.ProviderName, comparand: null);
+        }
+
         await using var transaction = await dbContext
             .Database.BeginTransactionAsync(cancellationToken)
             .ConfigureAwait(false);
