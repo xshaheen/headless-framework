@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data.Common;
+using System.Threading.Channels;
 using Headless.Abstractions;
 using Headless.Jobs;
 using Headless.Jobs.DbContextFactory;
@@ -12,7 +14,9 @@ using Headless.Testing.Tests;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests.Provider;
 
@@ -97,6 +101,161 @@ public sealed class TimeJobDeleteCascadeTests : TestBase
     }
 
     [Fact]
+    public async Task ef_remove_time_jobs_async_retries_the_whole_scope_then_deletes_the_tree_once()
+    {
+        await using var fixture = await EfFixture.CreateAsync();
+        var timeProvider = new FakeTimeProvider();
+        var logger = new CapturingLogger();
+        var sut = fixture.CreateProvider(timeProvider, logger);
+        var chain = _LinearChain(depth: 4);
+        var survivor = _LinearChain(depth: 2);
+        await sut.AddTimeJobsAsync(chain, AbortToken);
+        await sut.AddTimeJobsAsync(survivor, AbortToken);
+        var attempts = 0;
+        sut.OnTreeDeleteBeforeFirstDelete = () =>
+        {
+            if (Interlocked.Increment(ref attempts) == 1)
+            {
+                throw new TransientDbException();
+            }
+
+            return Task.CompletedTask;
+        };
+
+        try
+        {
+            var deletion = sut.RemoveTimeJobsAsync([chain[0].Id], AbortToken);
+            await _AdvancePastRetriesAsync(logger, timeProvider, expectedRetries: 1);
+
+            (await deletion).Should().Be(chain.Length);
+            attempts.Should().Be(2);
+            logger.RetryCount.Should().Be(1);
+            foreach (var node in chain)
+            {
+                (await sut.GetTimeJobByIdAsync(node.Id, AbortToken)).Should().BeNull();
+            }
+
+            foreach (var node in survivor)
+            {
+                (await sut.GetTimeJobByIdAsync(node.Id, AbortToken)).Should().NotBeNull();
+            }
+        }
+        finally
+        {
+            sut.OnTreeDeleteBeforeFirstDelete = null;
+        }
+    }
+
+    [Fact]
+    public async Task ef_remove_time_jobs_async_does_not_retry_cancellation_and_preserves_the_tree()
+    {
+        await using var fixture = await EfFixture.CreateAsync();
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        var logger = new CapturingLogger();
+        var sut = fixture.CreateProvider(logger: logger);
+        var chain = _LinearChain(depth: 4);
+        await sut.AddTimeJobsAsync(chain, AbortToken);
+        var attempts = 0;
+        sut.OnTreeDeleteBeforeFirstDelete = () =>
+        {
+            Interlocked.Increment(ref attempts);
+            cancellation.Cancel();
+            throw new OperationCanceledException(cancellation.Token);
+        };
+
+        try
+        {
+            var action = async () => await sut.RemoveTimeJobsAsync([chain[0].Id], cancellation.Token);
+
+            await action.Should().ThrowAsync<OperationCanceledException>();
+            attempts.Should().Be(1);
+            logger.RetryCount.Should().Be(0);
+            await _AssertRowsRemainAsync(sut, chain);
+        }
+        finally
+        {
+            sut.OnTreeDeleteBeforeFirstDelete = null;
+        }
+    }
+
+    [Fact]
+    public async Task ef_remove_time_jobs_async_rethrows_after_retry_exhaustion_and_preserves_the_tree()
+    {
+        await using var fixture = await EfFixture.CreateAsync();
+        var timeProvider = new FakeTimeProvider();
+        var logger = new CapturingLogger();
+        var sut = fixture.CreateProvider(timeProvider, logger);
+        var chain = _LinearChain(depth: 4);
+        await sut.AddTimeJobsAsync(chain, AbortToken);
+        var failure = new TransientDbException();
+        var attempts = 0;
+        sut.OnTreeDeleteBeforeFirstDelete = () =>
+        {
+            Interlocked.Increment(ref attempts);
+            throw failure;
+        };
+
+        try
+        {
+            var deletion = sut.RemoveTimeJobsAsync([chain[0].Id], AbortToken);
+            await _AdvancePastRetriesAsync(logger, timeProvider, expectedRetries: 3);
+
+            var action = async () => await deletion;
+            (await action.Should().ThrowAsync<TransientDbException>()).Which.Should().BeSameAs(failure);
+            attempts.Should().Be(4);
+            logger.RetryCount.Should().Be(3);
+            await _AssertRowsRemainAsync(sut, chain);
+        }
+        finally
+        {
+            sut.OnTreeDeleteBeforeFirstDelete = null;
+        }
+    }
+
+    [Fact]
+    public async Task ef_remove_time_jobs_async_does_not_retry_non_retryable_failure_and_preserves_the_tree()
+    {
+        await using var fixture = await EfFixture.CreateAsync();
+        var logger = new CapturingLogger();
+        var sut = fixture.CreateProvider(logger: logger);
+        var chain = _LinearChain(depth: 4);
+        await sut.AddTimeJobsAsync(chain, AbortToken);
+        var failure = new InvalidOperationException("non-retryable");
+        var attempts = 0;
+        sut.OnTreeDeleteBeforeFirstDelete = () =>
+        {
+            Interlocked.Increment(ref attempts);
+            throw failure;
+        };
+
+        try
+        {
+            var action = async () => await sut.RemoveTimeJobsAsync([chain[0].Id], AbortToken);
+
+            (await action.Should().ThrowAsync<InvalidOperationException>()).Which.Should().BeSameAs(failure);
+            attempts.Should().Be(1);
+            logger.RetryCount.Should().Be(0);
+            await _AssertRowsRemainAsync(sut, chain);
+        }
+        finally
+        {
+            sut.OnTreeDeleteBeforeFirstDelete = null;
+        }
+    }
+
+    [Fact]
+    public async Task ef_remove_time_jobs_async_with_no_ids_does_not_open_a_context()
+    {
+        await using var fixture = await EfFixture.CreateAsync();
+        var sut = fixture.CreateProvider();
+
+        var deleted = await sut.RemoveTimeJobsAsync([], AbortToken);
+
+        deleted.Should().Be(0);
+        fixture.ContextCreationCount.Should().Be(0);
+    }
+
+    [Fact]
     public async Task in_memory_remove_time_jobs_async_deletes_every_descendant_level()
     {
         // Provider parity: the in-memory store also stopped at the direct children.
@@ -164,28 +323,38 @@ public sealed class TimeJobDeleteCascadeTests : TestBase
             return fixture;
         }
 
-        public JobsEfCorePersistenceProvider<JobsDbContext, TimeJobEntity, CronJobEntity> CreateProvider()
+        private TestDbContextFactory? _dbContextFactory;
+
+        public int ContextCreationCount => _dbContextFactory?.CreateCount ?? 0;
+
+        public JobsEfCorePersistenceProvider<JobsDbContext, TimeJobEntity, CronJobEntity> CreateProvider(
+            TimeProvider? timeProvider = null,
+            ILogger? logger = null
+        )
         {
+            timeProvider ??= TimeProvider.System;
+            logger ??= NullLogger.Instance;
             var dbContextFactory = new TestDbContextFactory(_options);
+            _dbContextFactory = dbContextFactory;
             var ownerIdentity = new TestOwnerIdentity();
             var schedulerOptions = new SchedulerOptionsBuilder();
 
             return new(
                 dbContextFactory,
                 _options,
-                TimeProvider.System,
+                timeProvider,
                 new SequentialGuidGenerator(SequentialGuidType.Version7),
                 ownerIdentity,
                 schedulerOptions,
                 cache: null,
                 new EfCoreCasJobsClaimStrategy<JobsDbContext, TimeJobEntity, CronJobEntity>(
                     dbContextFactory,
-                    TimeProvider.System,
+                    timeProvider,
                     new SequentialGuidGenerator(SequentialGuidType.Version7),
                     ownerIdentity,
                     schedulerOptions
                 ),
-                NullLogger.Instance
+                logger
             );
         }
 
@@ -199,9 +368,86 @@ public sealed class TimeJobDeleteCascadeTests : TestBase
     private sealed class TestDbContextFactory(DbContextOptions<JobsDbContext> options)
         : IDbContextFactory<JobsDbContext>
     {
+        public int CreateCount { get; private set; }
+
         public JobsDbContext CreateDbContext()
         {
+            CreateCount++;
             return new(options);
+        }
+    }
+
+    private static async Task _AdvancePastRetriesAsync(
+        CapturingLogger logger,
+        FakeTimeProvider timeProvider,
+        int expectedRetries
+    )
+    {
+        for (var retry = 0; retry < expectedRetries; retry++)
+        {
+            await logger.Retries.Reader.ReadAsync(AbortToken);
+            await Task.Yield();
+            timeProvider.Advance(TimeSpan.FromSeconds(1));
+        }
+
+        await Task.Yield();
+    }
+
+    private static async Task _AssertRowsRemainAsync(
+        JobsEfCorePersistenceProvider<JobsDbContext, TimeJobEntity, CronJobEntity> sut,
+        IEnumerable<TimeJobEntity> jobs
+    )
+    {
+        foreach (var job in jobs)
+        {
+            (await sut.GetTimeJobByIdAsync(job.Id, AbortToken)).Should().NotBeNull();
+        }
+    }
+
+    private sealed class TransientDbException : DbException
+    {
+        public override bool IsTransient => true;
+    }
+
+    private sealed class CapturingLogger : ILogger
+    {
+        private int _retryCount;
+
+        public Channel<int> Retries { get; } = Channel.CreateUnbounded<int>();
+
+        public int RetryCount => Volatile.Read(ref _retryCount);
+
+        public IDisposable BeginScope<TState>(TState state)
+            where TState : notnull
+        {
+            return NullScope.Instance;
+        }
+
+        public bool IsEnabled(LogLevel logLevel)
+        {
+            return true;
+        }
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        )
+        {
+            if (eventId.Id == 3002)
+            {
+                var retryCount = Interlocked.Increment(ref _retryCount);
+                Retries.Writer.TryWrite(retryCount);
+            }
+        }
+
+        private sealed class NullScope : IDisposable
+        {
+            public static readonly NullScope Instance = new();
+
+            public void Dispose() { }
         }
     }
 

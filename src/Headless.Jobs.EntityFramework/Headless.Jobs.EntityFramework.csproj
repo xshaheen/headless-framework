@@ -16,6 +16,7 @@
   <ItemGroup>
     <PackageReference Include="FlexLabs.EntityFrameworkCore.Upsert" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
+    <PackageReference Include="Polly.Core" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Caching.Abstractions\Headless.Caching.Abstractions.csproj" />
