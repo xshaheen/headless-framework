@@ -36,6 +36,12 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
     private readonly RetryQuadrantState[] _quadrantStates;
     private readonly ConcurrentDictionary<Type, byte> _unsupportedCircuitDeferralProviders = new();
     private int _monitorOnlyRetainWarned;
+
+    // Process-lifetime once-only guard for a rejected deferral fence. A per-pickup-cycle bound would be
+    // more faithful to how transient this condition is, but threading a cycle-scoped counter through
+    // _DisposeCircuitClaimAsync would change its signature and its caller.
+    private int _circuitDeferralRejectedWarned;
+
     private readonly Lock _pickupGate = new();
     private bool _acceptingPickup = true;
 

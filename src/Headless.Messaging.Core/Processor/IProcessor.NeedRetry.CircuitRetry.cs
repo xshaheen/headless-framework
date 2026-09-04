@@ -91,11 +91,6 @@ internal sealed partial class MessageNeedToRetryProcessor
             );
     }
 
-    // Process-lifetime once-only guard for a rejected deferral fence. A per-pickup-cycle bound would be more
-    // faithful to how transient this condition is, but threading a cycle-scoped counter through here requires
-    // changing _DisposeCircuitClaimAsync's signature and its caller, which is out of scope for this fix.
-    private int _circuitDeferralRejectedWarned;
-
     private async ValueTask _DisposeCircuitClaimAsync(IDataStorage storage, CircuitRetryWork work)
     {
         try

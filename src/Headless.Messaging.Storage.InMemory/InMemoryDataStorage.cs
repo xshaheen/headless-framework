@@ -1080,14 +1080,13 @@ internal sealed partial class InMemoryDataStorage(
         // NOT leak into the dictionary entry when ChangeReceiveStateAsync's terminal guard rejects
         // the conditional UPDATE. The SQL providers naturally produce a snapshot because every column
         // comes back through deserialization; InMemory must do this explicitly.
+        //
         // Claim in (NextRetryAt, Id) order to match the relational providers' `ORDER BY NextRetryAt, Id`.
         // Without it InMemory claims in ConcurrentDictionary enumeration order, so a row scheduled much
-        // earlier can be starved indefinitely by later-scheduled rows once the batch limit is reached —
-        // and the retry-fairness contract (an open group must not monopolize the batch ahead of due
-        // healthy rows) is exactly what the batch limit is there to bound. Rows with no NextRetryAt sort
-        // last; they are rejected by the eligibility guards below and never consume a batch slot.
-        // The sort key is read outside the per-row lock, which is safe because every eligibility
-        // condition is re-validated under that lock before the row is leased.
+        // earlier can be starved indefinitely by later-scheduled rows once the batch limit is reached.
+        // Rows with no NextRetryAt sort last; they are rejected by the eligibility guards below and
+        // never consume a batch slot. The sort key is read outside the per-row lock, which is safe
+        // because every eligibility condition is re-validated under that lock before the row is leased.
         var claimed = new List<MediumMessage>();
         var ordered = source
             .Values.OrderBy(candidate => candidate.NextRetryAt ?? DateTimeOffset.MaxValue)
@@ -1148,19 +1147,6 @@ internal sealed partial class InMemoryDataStorage(
     private static bool _IsSupportedLane(MessageLane lane)
     {
         return lane is MessageLane.Bus or MessageLane.Queue;
-    }
-
-    private static bool _IsEligibleRetryCandidate(MemoryMessage candidate, DateTimeOffset now, int maxPersistedRetries)
-    {
-        if ((candidate.StatusName is StatusName.Succeeded or StatusName.Failed) && candidate.NextRetryAt is null)
-        {
-            return false;
-        }
-
-        return candidate.Retries <= maxPersistedRetries
-            && candidate.NextRetryAt is not null
-            && candidate.NextRetryAt <= now
-            && (candidate.LockedUntil is null || candidate.LockedUntil <= now);
     }
 
     /// <summary>
