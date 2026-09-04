@@ -4,6 +4,8 @@ using System.Reflection;
 using Headless.Abstractions;
 using Headless.OpenApi.Nswag;
 using Headless.Testing.Tests;
+using Microsoft.AspNetCore.Mvc.Abstractions;
+using Microsoft.AspNetCore.Mvc.ApiExplorer;
 using NJsonSchema.Generation;
 using NSwag;
 using NSwag.Generation;
@@ -37,6 +39,19 @@ public sealed class IfMatchOperationProcessorTests : TestBase
         context.OperationDescription.Operation.Parameters.Should().BeEmpty();
     }
 
+    [Fact]
+    public void should_document_required_header_from_minimal_api_endpoint_metadata()
+    {
+        var context = _CreateAspNetCoreContext([new RequireIfMatchAttribute()]);
+
+        new IfMatchOperationProcessor().Process(context);
+
+        context
+            .OperationDescription.Operation.Parameters.Should()
+            .ContainSingle(x => x.Name == "If-Match" && x.IsRequired);
+        context.OperationDescription.Operation.Responses.Should().ContainKey("428");
+    }
+
     private static OperationProcessorContext _CreateContext(string methodName)
     {
         var document = new OpenApiDocument();
@@ -53,6 +68,30 @@ public sealed class IfMatchOperationProcessorTests : TestBase
             settings,
             [description]
         );
+    }
+
+    private static AspNetCoreOperationProcessorContext _CreateAspNetCoreContext(IList<object> endpointMetadata)
+    {
+        var description = new OpenApiOperationDescription { Operation = new OpenApiOperation() };
+        return new AspNetCoreOperationProcessorContext(
+            new OpenApiDocument(),
+            description,
+            typeof(IfMatchOperationProcessorTests),
+            typeof(IfMatchOperationProcessorTests).GetMethod(
+                nameof(_OpenEndpoint),
+                BindingFlags.NonPublic | BindingFlags.Static
+            )!,
+            null!,
+            null!,
+            null!,
+            [description]
+        )
+        {
+            ApiDescription = new ApiDescription
+            {
+                ActionDescriptor = new ActionDescriptor { EndpointMetadata = endpointMetadata },
+            },
+        };
     }
 
     [RequireIfMatch]

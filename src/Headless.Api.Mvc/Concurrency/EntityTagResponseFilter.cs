@@ -12,12 +12,12 @@ internal sealed class EntityTagResponseFilter : IAsyncResultFilter
     public async Task OnResultExecutionAsync(ResultExecutingContext context, ResultExecutionDelegate next)
     {
         if (
-            context.Result is ObjectResult { Value: IHasEntityTag { EntityTag: { } entityTag } } result
-            && (result.StatusCode is null or (>= 200 and < 300))
+            context.Result is ObjectResult { Value: IHasEntityTag entityTagged } result
+            && (result.StatusCode ?? context.HttpContext.Response.StatusCode) is >= 200 and < 300
             && !context.HttpContext.Response.Headers.ContainsKey(HeaderNames.ETag)
         )
         {
-            context.HttpContext.Response.Headers.ETag = entityTag.HeaderValue;
+            context.HttpContext.Response.Headers.ETag = entityTagged.GetEntityTag().HeaderValue;
         }
 
         _ = await next().ConfigureAwait(false);

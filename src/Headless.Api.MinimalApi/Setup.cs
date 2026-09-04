@@ -9,6 +9,14 @@ namespace Headless.Api;
 [PublicAPI]
 public static class SetupMinimalApi
 {
+    /// <summary>Registers request-scoped services used by Minimal API entity-tag concurrency filters.</summary>
+    /// <param name="services">The service collection to configure.</param>
+    /// <returns><paramref name="services"/> for chaining.</returns>
+    public static IServiceCollection AddHeadlessMinimalApiEntityTagConcurrency(this IServiceCollection services)
+    {
+        return services.AddHeadlessEntityTagConcurrencyCore();
+    }
+
     /// <summary>
     /// Registers Headless Minimal API defaults on the service collection: Headless JSON serialization
     /// options for <c>Microsoft.AspNetCore.Http.Json.JsonOptions</c> (camel-case, enum strings, etc.)

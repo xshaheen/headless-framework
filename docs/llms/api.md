@@ -924,6 +924,7 @@ Provides consistent JSON serialization and validation for Minimal API endpoints 
 
 - Pre-configured JSON serialization options
 - `MinimalApiValidatorFilter` — FluentValidation integration via `.Validate<T>()` on endpoint builders
+- Entity-tag concurrency via `.WithEntityTag()` and `.RequireIfMatch()` endpoint filters
 - `ApiResult<T>.ToHttpResult(...)` / `ApiResult.ToHttpResult(...)` — exception-equivalent ProblemDetails mapping with automatic 200/204 and 401/403/404/409/422 OpenAPI metadata
 - API versioning integration
 - Endpoint discovery extensions
@@ -940,6 +941,7 @@ dotnet add package Headless.Api.MinimalApi
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddHeadless().ConfigureMinimalApi();
+builder.Services.AddHeadlessMinimalApiEntityTagConcurrency();
 
 var app = builder.Build();
 
@@ -947,7 +949,13 @@ app.MapGet(
     "/orders/{id:guid}",
     async (Guid id, IOrderService service, IProblemDetailsCreator problems, CancellationToken ct) =>
         (await service.GetAsync(id, ct)).ToHttpResult(problems)
-);
+).WithEntityTag();
+
+app.MapPut(
+    "/orders/{id:guid}",
+    async (Guid id, UpdateOrder request, IIfMatchContext ifMatch, IOrderService service, CancellationToken ct) =>
+        await service.UpdateAsync(id, request, ifMatch.EntityTag!, ct)
+).RequireIfMatch();
 
 app.Run();
 ```
@@ -960,12 +968,12 @@ No additional configuration required. Uses framework JSON settings automatically
 
 - `Headless.Api.Core` (and `Headless.Api.ServiceDefaults` if you want the orchestrator)
 - `Asp.Versioning.Http`
-- `Microsoft.EntityFrameworkCore`
 
 ### Side Effects
 
 - Configures `JsonOptions` for Minimal APIs
 - Returning `ToHttpResult(...)` makes the full ApiResult response set discoverable by OpenAPI without manual `.Produces(...)` calls
+- When opted in, endpoint filters emit ETags for successful `IHasEntityTag` results and reject missing or invalid `If-Match` preconditions before invoking the handler
 
 ---
 
@@ -1001,7 +1009,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.AddHeadless().ConfigureMvc();
 builder.Services.AddControllers();
-builder.Services.AddHeadlessEtagConcurrency();
+builder.Services.AddHeadlessMvcEntityTagConcurrency();
 
 var app = builder.Build();
 
@@ -1027,7 +1035,9 @@ public sealed class OrdersController(IOrderService service, IProblemDetailsCreat
 
 #### ETag concurrency
 
-`AddHeadlessEtagConcurrency()` emits a strong `ETag` for successful MVC `ObjectResult` values implementing `IHasETag`. Add `[RequireIfMatch]` to write actions; the filter accepts exactly one strong Base64 tag and exposes the decoded token through scoped `IfMatchContext`. Missing tags return 428 with `g:if_match_required`, invalid tags return 400 with `g:if_match_invalid`, and persistence conflicts return 409 with `g:concurrency_failure`.
+`AddHeadlessMvcEntityTagConcurrency()` emits an `ETag` for successful MVC `ObjectResult` values implementing `IHasEntityTag`. Add `[RequireIfMatch]` to write actions; the filter accepts exactly one strong tag and exposes it through scoped `IIfMatchContext`. Missing tags return 428 with `g:if_match_required`, invalid tags return 400 with `g:if_match_invalid`, and persistence conflicts return 409 with `g:concurrency_failure`.
+
+`EntityTag` is an HTTP representation value, independent from persistence. Keep database concurrency versions provider-native (`uint`/PostgreSQL `xmin`, `byte[]`/SQL Server `rowversion`) and convert them with `EntityTag.FromUInt32(...)` or `EntityTag.FromBytes(...)` at the response boundary. Minimal APIs register `AddHeadlessMinimalApiEntityTagConcurrency()`, add `.WithEntityTag()` to response endpoints, and add `.RequireIfMatch()` to conditional writes.
 
 #### URL Canonicalization
 
@@ -1054,7 +1064,6 @@ No additional configuration required.
 ### Dependencies
 
 - `Headless.Api.Core` (and `Headless.Api.ServiceDefaults` if you want the orchestrator)
-- `Headless.Domain`
 - `Asp.Versioning.Mvc`
 - `Asp.Versioning.Mvc.ApiExplorer`
 
@@ -1062,4 +1071,4 @@ No additional configuration required.
 
 - Configures `MvcOptions` and `JsonOptions` for controllers
 - Adds a result filter that applies ProblemDetails customization to Headless-generated MVC object results
-- When opted in, emits strong ETags for `IHasETag` responses
+- When opted in, emits ETags for `IHasEntityTag` responses

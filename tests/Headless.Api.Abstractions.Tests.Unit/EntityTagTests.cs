@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Text.Json;
 using Headless.Abstractions;
 using Headless.Testing.Tests;
 
@@ -53,5 +54,22 @@ public sealed class EntityTagTests : TestBase
     public void should_reject_values_that_are_not_single_entity_tags(string? value)
     {
         EntityTag.TryParse(value, out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public void should_not_add_entity_tag_metadata_to_serialized_response_bodies()
+    {
+        var response = new EntityTaggedResponse("order-42", EntityTag.CreateStrong("revision-7"));
+
+        var json = JsonSerializer.Serialize(response);
+
+        json.Should().Be("{\"Id\":\"order-42\"}");
+    }
+
+    private sealed class EntityTaggedResponse(string id, EntityTag entityTag) : IHasEntityTag
+    {
+        public string Id { get; } = id;
+
+        public EntityTag GetEntityTag() => entityTag;
     }
 }

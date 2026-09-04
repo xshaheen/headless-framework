@@ -18,7 +18,7 @@ Configuring NSwag from scratch requires wiring multiple schema and operation pro
 - Schema processors: `FluentValidationSchemaProcessor`, `GenericNullabilitySchemaProcessor`, `NullabilityAsRequiredSchemaProcessor`
 - Operation processors: `ApiExtraInformationOperationProcessor`, `CamelCaseQueryParameterOperationProcessor`, `UnauthorizedResponseOperationProcessor`, `ForbiddenResponseOperationProcessor`, `ProblemDetailsOperationProcessor`, `IfMatchOperationProcessor`
 
-`IfMatchOperationProcessor` documents a required `If-Match` header and a 428 response for MVC actions marked with `[RequireIfMatch]`.
+`IfMatchOperationProcessor` documents a required `If-Match` header and a 428 response for MVC actions or Minimal API endpoints marked with `[RequireIfMatch]` metadata.
 
 ## Design Notes
 

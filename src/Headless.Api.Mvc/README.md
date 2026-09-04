@@ -31,7 +31,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.AddHeadless().ConfigureMvc();
 builder.Services.AddControllers();
-builder.Services.AddHeadlessEtagConcurrency();
+builder.Services.AddHeadlessMvcEntityTagConcurrency();
 
 var app = builder.Build();
 
@@ -57,16 +57,22 @@ public sealed class OrdersController(IOrderService service, IProblemDetailsCreat
 
 ### ETag concurrency
 
-`AddHeadlessEtagConcurrency()` adds an `ETag` response header when a successful MVC `ObjectResult` implements `IHasETag`. Mark a write action with `[RequireIfMatch]` to require exactly one strong Base64 entity tag. The decoded token is available from the scoped `IfMatchContext` for the persistence layer.
+`AddHeadlessMvcEntityTagConcurrency()` adds an `ETag` response field when a successful MVC `ObjectResult` implements `IHasEntityTag`. Mark a write action with `[RequireIfMatch]` to require exactly one strong entity tag. The parsed value is available through scoped `IIfMatchContext`.
 
 ```csharp
 [HttpPut("{id:guid}")]
 [RequireIfMatch]
-public Task<OrderDto> Update(Guid id, UpdateOrder request, [FromServices] IfMatchContext ifMatch, CancellationToken ct) =>
-    service.Update(id, request, ifMatch.ETag, ct);
+public Task<OrderDto> Update(
+    Guid id,
+    UpdateOrder request,
+    [FromServices] IIfMatchContext ifMatch,
+    CancellationToken ct
+) => service.Update(id, request, ifMatch.EntityTag!, ct);
 ```
 
 Missing preconditions return 428 with `g:if_match_required`; malformed, weak, wildcard, or multiple tags return 400 with `g:if_match_invalid`. EF concurrency failures continue to return 409 with `g:concurrency_failure`.
+
+`EntityTag` identifies the HTTP representation rather than the database row. Keep the persistence version provider-native—`uint` mapped to PostgreSQL `xmin`, or `byte[]` mapped to SQL Server `rowversion`—then use `EntityTag.FromUInt32(...)` or `EntityTag.FromBytes(...)` at the response boundary. Implement `GetEntityTag()` on the response DTO; because it is a method, the metadata is not added to the JSON body.
 
 ### URL Canonicalization
 
@@ -93,7 +99,6 @@ No additional configuration required.
 ## Dependencies
 
 - `Headless.Api.Core`
-- `Headless.Domain`
 - `Asp.Versioning.Mvc`
 - `Asp.Versioning.Mvc.ApiExplorer`
 
@@ -101,4 +106,4 @@ No additional configuration required.
 
 - Configures `MvcOptions` and `JsonOptions` for controllers
 - Adds a result filter that applies ProblemDetails customization to Headless-generated MVC object results
-- When opted in, adds a result filter that emits strong ETags for `IHasETag` responses
+- When opted in, adds a result filter that emits ETags for `IHasEntityTag` responses

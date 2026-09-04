@@ -7,5 +7,5 @@ namespace Headless.Abstractions;
 public interface IHasEntityTag
 {
     /// <summary>Gets the entity tag that identifies the current response representation.</summary>
-    EntityTag EntityTag { get; }
+    EntityTag GetEntityTag();
 }
