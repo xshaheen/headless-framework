@@ -40,11 +40,6 @@ public interface IConsumerBuilderBase<TConsumer, out TBuilder>
     /// <returns>The same builder instance for chaining.</returns>
     TBuilder ConsumerIdentity(string consumerIdentity);
 
-    /// <summary>Sets the immutable version of this consumer's durable processing contract.</summary>
-    /// <param name="contractVersion">A non-whitespace version that changes only for an intentional dedupe reset.</param>
-    /// <returns>The same builder instance for chaining.</returns>
-    TBuilder ContractVersion(string contractVersion);
-
     /// <summary>Overrides the terminal inbox retention captured for future generations.</summary>
     /// <param name="retention">A positive whole-second duration no greater than <see cref="int.MaxValue"/> seconds.</param>
     /// <returns>The same builder instance for chaining.</returns>
@@ -108,12 +103,6 @@ internal abstract class ConsumerBuilderBase<TConsumer, TBuilder>(MessageConsumer
         return Self;
     }
 
-    public TBuilder ContractVersion(string contractVersion)
-    {
-        registration.SetContractVersion(contractVersion);
-        return Self;
-    }
-
     public TBuilder InboxRetention(TimeSpan retention)
     {
         registration.SetInboxRetention(retention);
@@ -154,8 +143,6 @@ internal sealed class MessageConsumerRegistrationBuilder(
 
     public string? ConsumerIdentity { get; private set; }
 
-    public string? ContractVersion { get; private set; }
-
     public TimeSpan? InboxRetention { get; private set; }
 
     public ConsumerCircuitBreakerOptions? CircuitBreakerOverride { get; private set; }
@@ -186,13 +173,6 @@ internal sealed class MessageConsumerRegistrationBuilder(
         Argument.IsNotNullOrWhiteSpace(consumerIdentity);
 
         ConsumerIdentity = consumerIdentity;
-    }
-
-    public void SetContractVersion(string contractVersion)
-    {
-        Argument.IsNotNullOrWhiteSpace(contractVersion);
-
-        ContractVersion = contractVersion;
     }
 
     public void SetInboxRetention(TimeSpan retention)
@@ -230,7 +210,6 @@ internal sealed class MessageConsumerRegistrationBuilder(
             Concurrency,
             HandlerId,
             ConsumerIdentity,
-            ContractVersion,
             CircuitBreakerOverride,
             _providerConfigs.BuildOverlay(messageProviderConfigs ?? new Dictionary<Type, object>()),
             InboxRetention

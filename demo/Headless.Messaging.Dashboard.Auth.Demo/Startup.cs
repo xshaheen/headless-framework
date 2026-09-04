@@ -186,6 +186,6 @@ public class Startup
             throw new InvalidOperationException($"Missing durable identity for {context.ConsumerType}.");
         }
 
-        consumer.ConsumerIdentity("dashboard-auth.person").ContractVersion("v1");
+        consumer.ConsumerIdentity("dashboard-auth.person");
     }
 }

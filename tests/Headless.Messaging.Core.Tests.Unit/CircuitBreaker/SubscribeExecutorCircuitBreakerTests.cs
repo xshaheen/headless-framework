@@ -118,7 +118,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         {
             setup.Bus.ForMessage<CbTestMessage>(message =>
                 message
-                    .MessageName(_MessageName)
+                    .Contract(_MessageName)
                     .Consumer<CbTestConsumer>(consumer => consumer.StableContract("tests.circuit-breaker"))
             );
             setup.UseInMemory();

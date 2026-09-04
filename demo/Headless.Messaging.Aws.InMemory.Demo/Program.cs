@@ -9,7 +9,7 @@ builder.Services.AddHeadlessMessaging(setup =>
 {
     setup.Bus.ForConsumersFromAssembly(
         typeof(Program).Assembly,
-        static (_, consumer) => consumer.ConsumerIdentity("aws-demo.sqs-message").ContractVersion("v1")
+        static (_, consumer) => consumer.ConsumerIdentity("aws-demo.sqs-message")
     );
     setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
     setup.UseInMemoryStorage();

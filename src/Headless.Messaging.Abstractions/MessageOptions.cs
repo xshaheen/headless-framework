@@ -26,6 +26,12 @@ public abstract record MessageOptions
     /// </summary>
     public const int MessageIdMaxLength = 200;
 
+    /// <summary>The initial schema version used when a message contract does not specify one.</summary>
+    public const string InitialContractVersion = "1";
+
+    /// <summary>Maximum supported message contract version length for durable inbox storage.</summary>
+    public const int ContractVersionMaxLength = 100;
+
     /// <summary>
     /// Maximum supported length for <see cref="TenantId"/> when publishing messages that may be stored durably.
     /// </summary>
@@ -46,6 +52,9 @@ public abstract record MessageOptions
     /// </summary>
     public string? MessageName { get; init; }
 
+    /// <summary>Gets the explicit message contract schema version override.</summary>
+    public string? ContractVersion { get; init; }
+
     /// <summary>
     /// Gets custom application headers. Reserved messaging headers are rejected, and header names/values
     /// cannot contain control characters.
@@ -65,6 +74,9 @@ public abstract record MessageOptions
     /// Gets the explicit correlation identifier override.
     /// </summary>
     public string? CorrelationId { get; init; }
+
+    /// <summary>Gets the identifier of the message that directly caused this message.</summary>
+    public string? CausationId { get; init; }
 
     /// <summary>
     /// Gets the explicit correlation sequence override.
@@ -125,8 +137,10 @@ public abstract record MessageOptions
         return DeliveryMode == other.DeliveryMode
             && Nullable.Equals(Delay, other.Delay)
             && string.Equals(MessageName, other.MessageName, StringComparison.Ordinal)
+            && string.Equals(ContractVersion, other.ContractVersion, StringComparison.Ordinal)
             && string.Equals(MessageId, other.MessageId, StringComparison.Ordinal)
             && string.Equals(CorrelationId, other.CorrelationId, StringComparison.Ordinal)
+            && string.Equals(CausationId, other.CausationId, StringComparison.Ordinal)
             && CorrelationSequence == other.CorrelationSequence
             // MessageType is internal-init and participates in equality so internally-produced options carrying a
             // captured response type are not silently treated as equal to otherwise-identical options (prevents
@@ -144,8 +158,10 @@ public abstract record MessageOptions
         hash.Add(DeliveryMode);
         hash.Add(Delay);
         hash.Add(MessageName, StringComparer.Ordinal);
+        hash.Add(ContractVersion, StringComparer.Ordinal);
         hash.Add(MessageId, StringComparer.Ordinal);
         hash.Add(CorrelationId, StringComparer.Ordinal);
+        hash.Add(CausationId, StringComparer.Ordinal);
         hash.Add(CorrelationSequence);
         // MessageType is internal-init and participates in equality so internally-produced options carrying a
         // captured response type are not silently treated as equal to otherwise-identical options (prevents

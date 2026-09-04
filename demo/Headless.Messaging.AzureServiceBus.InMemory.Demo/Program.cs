@@ -13,10 +13,8 @@ builder.Services.AddHeadlessMessaging(setup =>
 {
     setup.Bus.ForMessage<SampleMessage>(message =>
         message
-            .MessageName("messaging.sample.tests")
-            .Consumer<SampleSubscriber>(consumer =>
-                consumer.ConsumerIdentity("azure-service-bus.sample").ContractVersion("v1")
-            )
+            .Contract("messaging.sample.tests")
+            .Consumer<SampleSubscriber>(consumer => consumer.ConsumerIdentity("azure-service-bus.sample"))
     );
     setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
     setup.UseInMemoryStorage();

@@ -32,7 +32,6 @@ public sealed class KafkaMessageBuilderExtensionsTests
         builder.Consumer<TestConsumer>(consumer =>
             consumer
                 .ConsumerIdentity("tests.kafka.consumer-config")
-                .ContractVersion("v1")
                 .UseKafka(kafka => kafka.WithIsolationLevel(IsolationLevel.ReadCommitted))
         );
         var config = builder.Build().Consumers.Single().ProviderConfigs.Values.Single();

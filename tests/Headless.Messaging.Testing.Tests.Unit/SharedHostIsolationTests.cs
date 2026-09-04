@@ -50,17 +50,13 @@ public sealed class SharedHarnessFixture : IAsyncLifetime
                 setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
                 setup.Bus.ForMessage<AlphaEvent>(message =>
                     message
-                        .MessageName("alpha-messageName")
-                        .Consumer<AlphaConsumer>(consumer =>
-                            consumer.ConsumerIdentity("tests.messaging-testing.alpha").ContractVersion("v1")
-                        )
+                        .Contract("alpha-messageName")
+                        .Consumer<AlphaConsumer>(consumer => consumer.ConsumerIdentity("tests.messaging-testing.alpha"))
                 );
                 setup.Bus.ForMessage<BetaEvent>(message =>
                     message
-                        .MessageName("beta-messageName")
-                        .Consumer<BetaConsumer>(consumer =>
-                            consumer.ConsumerIdentity("tests.messaging-testing.beta").ContractVersion("v1")
-                        )
+                        .Contract("beta-messageName")
+                        .Consumer<BetaConsumer>(consumer => consumer.ConsumerIdentity("tests.messaging-testing.beta"))
                 );
             });
         });

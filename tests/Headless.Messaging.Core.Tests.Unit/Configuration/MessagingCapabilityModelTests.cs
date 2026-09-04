@@ -170,9 +170,7 @@ public sealed class MessagingCapabilityModelTests : TestBase
         {
             setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
             setup.Bus.ForMessage<SharedContract>(message =>
-                message.Consumer<SharedConsumer>(consumer =>
-                    consumer.ConsumerIdentity("orders-projection").ContractVersion("v1")
-                )
+                message.Consumer<SharedConsumer>(consumer => consumer.ConsumerIdentity("orders-projection"))
             );
         });
         services.AddMessagingProviderCapabilities(
@@ -264,8 +262,8 @@ public sealed class MessagingCapabilityModelTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Bus.ForMessage<SharedContract>(message => message.MessageName("orders.changed"));
-            setup.Queue.ForMessage<SharedContract>(message => message.MessageName("orders.changed"));
+            setup.Bus.ForMessage<SharedContract>(message => message.Contract("orders.changed"));
+            setup.Queue.ForMessage<SharedContract>(message => message.Contract("orders.changed"));
         });
         services.AddMessagingProviderCapabilities(
             _Transport("SharedTopology", [MessageLane.Bus, MessageLane.Queue], independentLaneTopology: false)
@@ -295,7 +293,7 @@ public sealed class MessagingCapabilityModelTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.WithMessageNameMapping<SharedContract>("orders.global");
-            setup.Bus.ForMessage<SharedContract>(message => message.MessageName("orders.bus"));
+            setup.Bus.ForMessage<SharedContract>(message => message.Contract("orders.bus"));
         });
         services.AddMessagingProviderCapabilities(
             _Transport("SharedTopology", [MessageLane.Bus, MessageLane.Queue], independentLaneTopology: false)
@@ -323,8 +321,8 @@ public sealed class MessagingCapabilityModelTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.WithMessageNameMapping<SharedContract>("orders.global");
-            setup.Bus.ForMessage<SharedContract>(message => message.MessageName("orders.bus"));
-            setup.Bus.ForMessage<OtherContract>(message => message.MessageName("orders.global"));
+            setup.Bus.ForMessage<SharedContract>(message => message.Contract("orders.bus"));
+            setup.Bus.ForMessage<OtherContract>(message => message.Contract("orders.global"));
         });
         services.AddMessagingProviderCapabilities(
             _Transport("IndependentTopology", [MessageLane.Bus, MessageLane.Queue], independentLaneTopology: true)

@@ -93,15 +93,32 @@ public sealed class MessagingRegistrationApiSurfaceTests : TestBase
     }
 
     [Fact]
-    public void durable_consumer_builders_expose_explicit_identity_and_contract_version()
+    public void message_contract_and_durable_consumer_identity_are_separate_concepts()
     {
         var genericMethods = typeof(IConsumerBuilderBase<,>).GetMethods(BindingFlags.Instance | BindingFlags.Public);
         var scannedMethods = typeof(IScannedConsumerBuilder).GetMethods(BindingFlags.Instance | BindingFlags.Public);
+        var busMessageMethods = typeof(IBusMessageBuilder<>).GetMethods(BindingFlags.Instance | BindingFlags.Public);
+        var queueMessageMethods = typeof(IQueueMessageBuilder<>).GetMethods(
+            BindingFlags.Instance | BindingFlags.Public
+        );
 
-        genericMethods.Should().Contain(method => method.Name == "ConsumerIdentity");
-        genericMethods.Should().Contain(method => method.Name == "ContractVersion");
-        scannedMethods.Should().Contain(method => method.Name == "ConsumerIdentity");
-        scannedMethods.Should().Contain(method => method.Name == "ContractVersion");
+        genericMethods
+            .Should()
+            .Contain(method => string.Equals(method.Name, "ConsumerIdentity", StringComparison.Ordinal));
+        genericMethods
+            .Should()
+            .NotContain(method => string.Equals(method.Name, "ContractVersion", StringComparison.Ordinal));
+        scannedMethods
+            .Should()
+            .Contain(method => string.Equals(method.Name, "ConsumerIdentity", StringComparison.Ordinal));
+        scannedMethods.Should().Contain(method => string.Equals(method.Name, "Contract", StringComparison.Ordinal));
+        scannedMethods
+            .Should()
+            .NotContain(method => string.Equals(method.Name, "ContractVersion", StringComparison.Ordinal));
+        busMessageMethods.Should().Contain(method => string.Equals(method.Name, "Contract", StringComparison.Ordinal));
+        queueMessageMethods
+            .Should()
+            .Contain(method => string.Equals(method.Name, "Contract", StringComparison.Ordinal));
     }
 
     [Theory]
@@ -111,7 +128,7 @@ public sealed class MessagingRegistrationApiSurfaceTests : TestBase
     {
         var consumerMethod = builderType
             .GetMethods(BindingFlags.Instance | BindingFlags.Public)
-            .Single(method => method.Name == "Consumer");
+            .Single(method => string.Equals(method.Name, "Consumer", StringComparison.Ordinal));
 
         consumerMethod.GetParameters().Should().ContainSingle();
     }
@@ -127,9 +144,15 @@ public sealed class MessagingRegistrationApiSurfaceTests : TestBase
             .ToArray();
 
         scanMethods.Should().HaveCount(2);
-        scanMethods.Single(method => method.Name == "ForConsumersFromAssembly").GetParameters().Should().HaveCount(2);
         scanMethods
-            .Single(method => method.Name == "ForConsumersFromAssemblyContaining")
+            .Single(method => string.Equals(method.Name, "ForConsumersFromAssembly", StringComparison.Ordinal))
+            .GetParameters()
+            .Should()
+            .HaveCount(2);
+        scanMethods
+            .Single(method =>
+                string.Equals(method.Name, "ForConsumersFromAssemblyContaining", StringComparison.Ordinal)
+            )
             .GetParameters()
             .Should()
             .ContainSingle();

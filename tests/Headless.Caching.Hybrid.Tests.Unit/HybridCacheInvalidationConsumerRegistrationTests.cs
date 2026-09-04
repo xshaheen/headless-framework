@@ -201,7 +201,7 @@ public sealed class HybridCacheInvalidationConsumerRegistrationTests : TestBase
         services.AddHeadlessMessaging(setup =>
             setup.Bus.ForMessage<CacheInvalidationMessage>(message =>
                 message.Consumer<HybridCacheInvalidationConsumer>(consumer =>
-                    consumer.ConsumerIdentity("headless.caching.hybrid.invalidation").ContractVersion("v1")
+                    consumer.ConsumerIdentity("headless.caching.hybrid.invalidation")
                 )
             )
         );
@@ -230,7 +230,7 @@ public sealed class HybridCacheInvalidationConsumerRegistrationTests : TestBase
         services.AddHeadlessMessaging(setup =>
             setup.Bus.ForMessage<CacheInvalidationMessage>(message =>
                 message.Consumer<HybridCacheInvalidationConsumer>(consumer =>
-                    consumer.ConsumerIdentity("headless.caching.hybrid.invalidation").ContractVersion("v1")
+                    consumer.ConsumerIdentity("headless.caching.hybrid.invalidation")
                 )
             )
         );

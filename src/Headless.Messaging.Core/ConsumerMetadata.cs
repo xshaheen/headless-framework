@@ -12,7 +12,7 @@ namespace Headless.Messaging;
 /// <param name="Concurrency">The maximum number of messages to process concurrently.</param>
 /// <param name="Lane">The delivery lane used to subscribe this consumer.</param>
 /// <param name="ConsumerIdentity">The operator-stable identity used by durable inbox state.</param>
-/// <param name="ContractVersion">The immutable version of the durable consumer contract.</param>
+/// <param name="MessageContractVersion">The schema version of the message contract.</param>
 /// <param name="HandlerId">The deterministic handler identity used for diagnostics and default group generation.</param>
 /// <remarks>
 /// This record stores the configuration metadata for a consumer registered via
@@ -27,7 +27,7 @@ public sealed record ConsumerMetadata(
     byte Concurrency,
     MessageLane Lane,
     string ConsumerIdentity,
-    string ContractVersion,
+    string MessageContractVersion,
     string? HandlerId = null
 )
 {

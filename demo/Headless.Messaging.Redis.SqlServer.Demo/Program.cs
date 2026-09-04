@@ -15,10 +15,8 @@ builder.Services.AddHeadlessMessaging(setup =>
 {
     setup.Queue.ForMessage<Person>(message =>
         message
-            .MessageName("test-message")
-            .Consumer<PersonConsumer>(consumer =>
-                consumer.ConsumerIdentity("redis-sqlserver.person").ContractVersion("v1")
-            )
+            .Contract("test-message")
+            .Consumer<PersonConsumer>(consumer => consumer.ConsumerIdentity("redis-sqlserver.person"))
     );
 
     setup.UseRedis(redis =>

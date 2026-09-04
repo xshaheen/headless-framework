@@ -20,10 +20,8 @@ builder.Services.AddHeadlessMessaging(setup =>
 {
     setup.Queue.ForMessage<KafkaMessage>(message =>
         message
-            .MessageName("sample.kafka.postgrsql")
-            .Consumer<KafkaMessageConsumer>(consumer =>
-                consumer.ConsumerIdentity("kafka-postgresql.message").ContractVersion("v1")
-            )
+            .Contract("sample.kafka.postgrsql")
+            .Consumer<KafkaMessageConsumer>(consumer => consumer.ConsumerIdentity("kafka-postgresql.message"))
     );
 
     //setup.UseEntityFramework<AppDbContext>();

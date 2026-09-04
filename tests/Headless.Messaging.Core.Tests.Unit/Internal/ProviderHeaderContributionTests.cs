@@ -166,7 +166,6 @@ public sealed class ProviderHeaderContributionTests
                     Concurrency: 1,
                     HandlerId: null,
                     ConsumerIdentity: "tests.provider-header",
-                    ContractVersion: "v1",
                     CircuitBreakerOverride: null,
                     ProviderConfigs: _Configs(consumerConfig)
                 ),

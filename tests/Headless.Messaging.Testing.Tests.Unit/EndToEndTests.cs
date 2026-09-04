@@ -116,9 +116,9 @@ public sealed class EndToEndTests : TestBase
             {
                 setup.Bus.ForMessage<OrderCreatedEvent>(message =>
                     message
-                        .MessageName("order-created")
+                        .Contract("order-created")
                         .Consumer<OrderCreatedConsumer>(consumer =>
-                            consumer.ConsumerIdentity("tests.messaging-testing.order-created").ContractVersion("v1")
+                            consumer.ConsumerIdentity("tests.messaging-testing.order-created")
                         )
                 );
             }
@@ -154,9 +154,9 @@ public sealed class EndToEndTests : TestBase
             {
                 setup.Bus.ForMessage<OrderCreatedEvent>(message =>
                     message
-                        .MessageName("order-created")
+                        .Contract("order-created")
                         .Consumer<FailingConsumer>(consumer =>
-                            consumer.ConsumerIdentity("tests.messaging-testing.failing").ContractVersion("v1")
+                            consumer.ConsumerIdentity("tests.messaging-testing.failing")
                         )
                 );
             }
@@ -191,9 +191,9 @@ public sealed class EndToEndTests : TestBase
                     options.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
                     options.Bus.ForMessage<OrderCreatedEvent>(message =>
                         message
-                            .MessageName("order-created")
+                            .Contract("order-created")
                             .Consumer<TestConsumer<OrderCreatedEvent>>(consumer =>
-                                consumer.ConsumerIdentity("tests.messaging-testing.test-consumer").ContractVersion("v1")
+                                consumer.ConsumerIdentity("tests.messaging-testing.test-consumer")
                             )
                     );
                 });
@@ -250,9 +250,9 @@ public sealed class EndToEndTests : TestBase
             {
                 setup.Bus.ForMessage<OrderCreatedEvent>(message =>
                     message
-                        .MessageName("order-created")
+                        .Contract("order-created")
                         .Consumer<OrderCreatedConsumer>(consumer =>
-                            consumer.ConsumerIdentity("tests.messaging-testing.order-created").ContractVersion("v1")
+                            consumer.ConsumerIdentity("tests.messaging-testing.order-created")
                         )
                 );
             }
@@ -263,9 +263,9 @@ public sealed class EndToEndTests : TestBase
             {
                 setup.Bus.ForMessage<OrderCreatedEvent>(message =>
                     message
-                        .MessageName("order-created")
+                        .Contract("order-created")
                         .Consumer<OrderCreatedConsumer>(consumer =>
-                            consumer.ConsumerIdentity("tests.messaging-testing.order-created").ContractVersion("v1")
+                            consumer.ConsumerIdentity("tests.messaging-testing.order-created")
                         )
                 );
             }
@@ -300,9 +300,9 @@ public sealed class EndToEndTests : TestBase
                     options.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
                     options.Bus.ForMessage<OrderCreatedEvent>(message =>
                         message
-                            .MessageName("order-created")
+                            .Contract("order-created")
                             .Consumer<NotifyingConsumer>(consumer =>
-                                consumer.ConsumerIdentity("tests.messaging-testing.notifying").ContractVersion("v1")
+                                consumer.ConsumerIdentity("tests.messaging-testing.notifying")
                             )
                     );
                 });
@@ -330,22 +330,16 @@ public sealed class EndToEndTests : TestBase
                 {
                     options.Bus.ForMessage<OrderCreatedEvent>(message =>
                         message
-                            .MessageName("order-created")
+                            .Contract("order-created")
                             .Consumer<BusLaneConsumer>(consumer =>
-                                consumer
-                                    .ConsumerIdentity("tests.messaging-testing.bus-lane")
-                                    .ContractVersion("v1")
-                                    .Group("bus-workers")
+                                consumer.ConsumerIdentity("tests.messaging-testing.bus-lane").Group("bus-workers")
                             )
                     );
                     options.Queue.ForMessage<OrderCreatedEvent>(message =>
                         message
-                            .MessageName("order-created")
+                            .Contract("order-created")
                             .Consumer<QueueLaneConsumer>(consumer =>
-                                consumer
-                                    .ConsumerIdentity("tests.messaging-testing.queue-lane")
-                                    .ContractVersion("v1")
-                                    .Group("queue-workers")
+                                consumer.ConsumerIdentity("tests.messaging-testing.queue-lane").Group("queue-workers")
                             )
                     );
                     options.UseInMemory();
@@ -422,21 +416,19 @@ public sealed class EndToEndTests : TestBase
                 {
                     options.Bus.ForMessage<OrderCreatedEvent>(message =>
                         message
-                            .MessageName("durable-order-created")
+                            .Contract("durable-order-created")
                             .Consumer<BusLaneConsumer>(consumer =>
                                 consumer
                                     .ConsumerIdentity("tests.messaging-testing.durable-bus-lane")
-                                    .ContractVersion("v1")
                                     .Group("durable-bus")
                             )
                     );
                     options.Queue.ForMessage<OrderCreatedEvent>(message =>
                         message
-                            .MessageName("durable-order-created")
+                            .Contract("durable-order-created")
                             .Consumer<QueueLaneConsumer>(consumer =>
                                 consumer
                                     .ConsumerIdentity("tests.messaging-testing.durable-queue-lane")
-                                    .ContractVersion("v1")
                                     .Group("durable-queue")
                             )
                     );
@@ -603,9 +595,9 @@ public sealed class EndToEndTests : TestBase
             options.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
             options.Bus.ForMessage<OrderCreatedEvent>(message =>
                 message
-                    .MessageName("order-created")
+                    .Contract("order-created")
                     .Consumer<OrderCreatedConsumer>(consumer =>
-                        consumer.ConsumerIdentity("tests.messaging-testing.order-created").ContractVersion("v1")
+                        consumer.ConsumerIdentity("tests.messaging-testing.order-created")
                     )
             );
         });
@@ -645,9 +637,9 @@ public sealed class EndToEndTests : TestBase
             {
                 options.Bus.ForMessage<OrderCreatedEvent>(message =>
                     message
-                        .MessageName("order-created")
+                        .Contract("order-created")
                         .Consumer<FailingConsumer>(consumer =>
-                            consumer.ConsumerIdentity("tests.messaging-testing.failing").ContractVersion("v1")
+                            consumer.ConsumerIdentity("tests.messaging-testing.failing")
                         )
                 );
                 options.Options.RetryPolicy.MaxPersistedRetries = 0;
@@ -697,9 +689,9 @@ public sealed class EndToEndTests : TestBase
             {
                 options.Bus.ForMessage<OrderCreatedEvent>(message =>
                     message
-                        .MessageName("order-created")
+                        .Contract("order-created")
                         .Consumer<FailingConsumer>(consumer =>
-                            consumer.ConsumerIdentity("tests.messaging-testing.failing").ContractVersion("v1")
+                            consumer.ConsumerIdentity("tests.messaging-testing.failing")
                         )
                 );
                 options.Options.RetryPolicy.MaxPersistedRetries = 0;

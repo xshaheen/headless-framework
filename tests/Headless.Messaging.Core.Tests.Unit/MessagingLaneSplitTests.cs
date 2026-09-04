@@ -38,7 +38,7 @@ public sealed class MessagingLaneSplitTests : TestBase
         services.AddHeadlessMessaging(setup =>
             setup.Bus.ForMessage<TestMessage>(message =>
                 message
-                    .MessageName("events.orders")
+                    .Contract("events.orders")
                     .Consumer<TestBusConsumer>(consumer => consumer.StableContract("tests.lane-split.bus"))
             )
         );
@@ -57,7 +57,7 @@ public sealed class MessagingLaneSplitTests : TestBase
         services.AddHeadlessMessaging(setup =>
             setup.Queue.ForMessage<TestMessage>(message =>
                 message
-                    .MessageName("jobs.orders")
+                    .Contract("jobs.orders")
                     .Consumer<TestQueueConsumer>(consumer => consumer.StableContract("tests.lane-split.queue"))
             )
         );
@@ -82,7 +82,7 @@ public sealed class MessagingLaneSplitTests : TestBase
                 1,
                 Lane: MessageLane.Bus,
                 ConsumerIdentity: "tests.lane-split.bus-registry",
-                ContractVersion: "v1"
+                MessageContractVersion: "v1"
             )
         );
         registry.Register(
@@ -94,7 +94,7 @@ public sealed class MessagingLaneSplitTests : TestBase
                 1,
                 Lane: MessageLane.Queue,
                 ConsumerIdentity: "tests.lane-split.queue-registry",
-                ContractVersion: "v1"
+                MessageContractVersion: "v1"
             )
         );
 
@@ -115,7 +115,7 @@ public sealed class MessagingLaneSplitTests : TestBase
                 1,
                 Lane: MessageLane.Queue,
                 ConsumerIdentity: "tests.lane-split.queue-bootstrap-failure",
-                ContractVersion: "v1"
+                MessageContractVersion: "v1"
             )
         );
 
@@ -161,7 +161,7 @@ public sealed class MessagingLaneSplitTests : TestBase
                 1,
                 Lane: MessageLane.Bus,
                 ConsumerIdentity: "tests.lane-split.bus-bootstrap-failure",
-                ContractVersion: "v1"
+                MessageContractVersion: "v1"
             )
         );
 
@@ -210,7 +210,7 @@ public sealed class MessagingLaneSplitTests : TestBase
                 1,
                 Lane: MessageLane.Queue,
                 ConsumerIdentity: "tests.lane-split.queue-bootstrap",
-                ContractVersion: "v1"
+                MessageContractVersion: "v1"
             )
         );
 

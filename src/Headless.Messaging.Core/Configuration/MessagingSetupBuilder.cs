@@ -153,7 +153,7 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
         byte concurrency,
         MessageLane lane,
         string consumerIdentity,
-        string contractVersion
+        string messageContractVersion
     )
     {
         var metadata = Options.CreateConsumerMetadata(
@@ -164,7 +164,7 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
             group,
             concurrency,
             consumerIdentity: consumerIdentity,
-            contractVersion: contractVersion,
+            messageContractVersion: messageContractVersion,
             lane: lane
         );
 

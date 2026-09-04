@@ -361,6 +361,8 @@ internal sealed class ConsumeMiddlewarePipeline(
         )!;
         var messageIdProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.MessageId))!;
         var correlationIdProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.CorrelationId))!;
+        var causationIdProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.CausationId))!;
+        var contractVersionProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.ContractVersion))!;
         var tenantIdProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.TenantId))!;
         var headersCtxProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.Headers))!;
         var timestampProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.Timestamp))!;
@@ -404,6 +406,25 @@ internal sealed class ConsumeMiddlewarePipeline(
         );
 
         var correlationIdBinding = Expression.Bind(correlationIdProperty, correlationIdExpression);
+        var causationIdBinding = Expression.Bind(
+            causationIdProperty,
+            Expression.Call(
+                typeof(ConsumeMiddlewarePipeline),
+                nameof(_ResolveOptionalHeader),
+                typeArguments: null,
+                headersProperty,
+                Expression.Constant(Headers.CausationId)
+            )
+        );
+        var contractVersionBinding = Expression.Bind(
+            contractVersionProperty,
+            Expression.Call(
+                typeof(ConsumeMiddlewarePipeline),
+                nameof(_ResolveContractVersion),
+                typeArguments: null,
+                headersProperty
+            )
+        );
         var tenantIdBinding = Expression.Bind(tenantIdProperty, tenantIdParam);
         var laneBinding = Expression.Bind(laneProperty, laneParam);
         var headersBinding = Expression.Bind(headersCtxProperty, consumeHeadersParam);
@@ -431,6 +452,8 @@ internal sealed class ConsumeMiddlewarePipeline(
             messageBinding,
             messageIdBinding,
             correlationIdBinding,
+            causationIdBinding,
+            contractVersionBinding,
             tenantIdBinding,
             laneBinding,
             headersBinding,
@@ -447,6 +470,16 @@ internal sealed class ConsumeMiddlewarePipeline(
             laneParam
         );
         return lambda.CompileFast();
+    }
+
+    private static string? _ResolveOptionalHeader(IDictionary<string, string?> headers, string name)
+    {
+        return headers.TryGetValue(name, out var value) && !string.IsNullOrWhiteSpace(value) ? value : null;
+    }
+
+    private static string _ResolveContractVersion(IDictionary<string, string?> headers)
+    {
+        return _ResolveOptionalHeader(headers, Headers.ContractVersion) ?? MessageOptions.InitialContractVersion;
     }
 
     private static ConsumeMiddlewareInvoker _CompileTypedInvoker(Type contextType)

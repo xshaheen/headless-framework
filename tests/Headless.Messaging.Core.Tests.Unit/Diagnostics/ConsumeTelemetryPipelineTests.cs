@@ -62,7 +62,7 @@ public sealed class ConsumeTelemetryPipelineTests : TestBase
         {
             setup.Bus.ForMessage<PipelineTestMessage>(message =>
                 message
-                    .MessageName("test.pipeline.messageName")
+                    .Contract("test.pipeline.messageName")
                     .Consumer<PipelineTestConsumer>(consumer => consumer.StableContract("tests.telemetry-pipeline"))
             );
             setup.UseInMemory();

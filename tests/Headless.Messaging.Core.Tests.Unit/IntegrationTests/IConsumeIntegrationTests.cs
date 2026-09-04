@@ -20,7 +20,7 @@ public sealed class IConsumeIntegrationTests
         {
             messaging.Bus.ForMessage<OrderPlaced>(message =>
                 message
-                    .MessageName("orders.placed")
+                    .Contract("orders.placed")
                     .Consumer<OrderPlacedConsumer>(consumer =>
                         consumer.StableContract("tests.integration.orders-primary").Group("order-service")
                     )
@@ -57,7 +57,7 @@ public sealed class IConsumeIntegrationTests
         {
             messaging.Bus.ForMessage<OrderPlaced>(message =>
                 message
-                    .MessageName("orders.placed")
+                    .Contract("orders.placed")
                     .Consumer<OrderPlacedConsumer>(consumer =>
                         consumer.StableContract("tests.integration.orders-primary")
                     )
@@ -102,7 +102,7 @@ public sealed class IConsumeIntegrationTests
         {
             messaging.Bus.ForMessage<OrderPlaced>(message =>
             {
-                message.MessageName("orders.placed");
+                message.Contract("orders.placed");
                 message.Consumer<OrderPlacedConsumer>(consumer =>
                     consumer.StableContract("tests.integration.orders-primary").Group("order-service")
                 );
@@ -140,7 +140,7 @@ public sealed class IConsumeIntegrationTests
         services.AddLogging();
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.Bus.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed"));
+            messaging.Bus.ForMessage<OrderPlaced>(message => message.Contract("orders.placed"));
             messaging.Bus.ForConsumersFromAssembly(
                 typeof(IConsumeIntegrationTests).Assembly,
                 StableConsumerTestContracts.ConfigureKnownScannedConsumer
@@ -208,7 +208,7 @@ public sealed class IConsumeIntegrationTests
         services.AddHeadlessMessaging(setup =>
             setup.Bus.ForMessage<OrderPlaced>(message =>
                 message
-                    .MessageName("orders.placed")
+                    .Contract("orders.placed")
                     .Consumer<OrderPlacedConsumer>(consumer =>
                         consumer.StableContract("tests.integration.orders-primary")
                     )
@@ -236,14 +236,14 @@ public sealed class IConsumeIntegrationTests
         {
             setup.Bus.ForMessage<OrderPlaced>(message =>
                 message
-                    .MessageName("orders.placed")
+                    .Contract("orders.placed")
                     .Consumer<OrderPlacedConsumer>(consumer =>
                         consumer.StableContract("tests.integration.orders-primary")
                     )
             );
             setup.Bus.ForMessage<OrderCancelled>(message =>
                 message
-                    .MessageName("orders.cancelled")
+                    .Contract("orders.cancelled")
                     .Consumer<OrderCancelledConsumer>(consumer =>
                         consumer.StableContract("tests.integration.orders-cancelled")
                     )

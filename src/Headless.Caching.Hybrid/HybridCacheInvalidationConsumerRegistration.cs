@@ -65,7 +65,7 @@ internal static class HybridCacheInvalidationConsumerRegistration
         services.AddFrameworkConsumerRegistration<CacheInvalidationMessage, HybridCacheInvalidationConsumer>(
             MessageLane.Bus,
             consumerIdentity: "headless.caching.hybrid.invalidation",
-            contractVersion: "v1"
+            messageContractVersion: "1"
         );
     }
 }

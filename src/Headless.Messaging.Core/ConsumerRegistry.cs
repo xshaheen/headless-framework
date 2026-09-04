@@ -418,7 +418,11 @@ internal sealed class ConsumerRegistry : IConsumerRegistry
             .FirstOrDefault(existing =>
                 existing.Lane == candidate.Lane
                 && string.Equals(existing.ConsumerIdentity, candidate.ConsumerIdentity, StringComparison.Ordinal)
-                && string.Equals(existing.ContractVersion, candidate.ContractVersion, StringComparison.Ordinal)
+                && string.Equals(
+                    existing.MessageContractVersion,
+                    candidate.MessageContractVersion,
+                    StringComparison.Ordinal
+                )
             );
     }
 
@@ -431,10 +435,7 @@ internal sealed class ConsumerRegistry : IConsumerRegistry
             throw new ArgumentException("Consumer identity cannot be null or whitespace.", nameof(metadata));
         }
 
-        if (string.IsNullOrWhiteSpace(metadata.ContractVersion))
-        {
-            throw new ArgumentException("Contract version cannot be null or whitespace.", nameof(metadata));
-        }
+        MessagingOptions.ValidateContractVersion(metadata.MessageContractVersion);
 
         if (
             metadata.InboxRetention <= TimeSpan.Zero
@@ -456,7 +457,7 @@ internal sealed class ConsumerRegistry : IConsumerRegistry
     {
         return new InvalidOperationException(
             $"Duplicate durable consumer identity '{candidate.ConsumerIdentity}' for lane {candidate.Lane} and "
-                + $"contract version '{candidate.ContractVersion}'. Existing consumer "
+                + $"message contract version '{candidate.MessageContractVersion}'. Existing consumer "
                 + $"'{existing.ConsumerType.FullName ?? existing.ConsumerType.Name}' conflicts with "
                 + $"'{candidate.ConsumerType.FullName ?? candidate.ConsumerType.Name}'."
         );

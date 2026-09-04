@@ -10,7 +10,7 @@ builder.Services.AddHeadlessMessaging(setup =>
 {
     setup.Bus.ForConsumersFromAssembly(
         typeof(Program).Assembly,
-        static (_, consumer) => consumer.ConsumerIdentity("pulsar-demo.message").ContractVersion("v1")
+        static (_, consumer) => consumer.ConsumerIdentity("pulsar-demo.message")
     );
     setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
     setup.UseInMemoryStorage();

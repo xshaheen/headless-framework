@@ -72,11 +72,10 @@ builder.Services.AddHeadlessMessaging(setup =>
 
     setup.Bus.ForMessage<OrderPlaced>(message =>
         message
-            .MessageName("orders.placed")
+            .Contract("orders.placed", version: "1")
             .Consumer<OrderPlacedConsumer>(consumer =>
                 consumer
                     .ConsumerIdentity("orders.order-placed")
-                    .ContractVersion("v1")
                     .Group("orders")
                     .Concurrency(4)
             )
@@ -140,8 +139,8 @@ builder.Services.AddHeadlessMessaging(setup =>
     });
 
     setup.Bus.ForMessage<OrderPlaced>(message =>
-        message.MessageName("orders.placed").Consumer<OrderPlacedConsumer>(consumer =>
-            consumer.ConsumerIdentity("orders.order-placed").ContractVersion("v1")
+        message.Contract("orders.placed").Consumer<OrderPlacedConsumer>(consumer =>
+            consumer.ConsumerIdentity("orders.order-placed")
         )
     );
 });
@@ -166,11 +165,13 @@ Inbox metrics use registered consumer identity and bounded lane, outcome, tier, 
 The transactional tier commits the fenced inbox outcome, compatible enlisted application state, and captured durable Bus/Queue work atomically. It does not guarantee exactly-once handler entry, direct transport, or external/non-enlisted effects.
 
 - `AddHeadlessMessaging(...)` is the primary DI entry point.
-- `setup.Bus` and `setup.Queue` are the only registration roots. `ForMessage<TMessage>(...)` inherits its lane from that root, `MessageName(...)` sets the lane-specific logical name, and `Consumer<TConsumer>(...)` registers the matching consumer behavior with an explicit durable identity and contract version.
-- `setup.Bus.ForMessage<TMessage>(message => message.MessageName("orders.placed"))` is valid without consumers and declares a Bus publisher-only mapping; use the Queue root for an enqueue-only mapping.
+- `setup.Bus` and `setup.Queue` are the only registration roots. `ForMessage<TMessage>(...)` inherits its lane from that root, `Contract(name, version)` sets the stable logical name and schema version, and `Consumer<TConsumer>(...)` registers the matching behavior with an explicit durable identity.
+- `setup.Bus.ForMessage<TMessage>(message => message.Contract("orders.placed"))` is valid without consumers and declares a Bus publisher-only mapping; use the Queue root for an enqueue-only mapping.
 - A plain class, record, or interface contract may use the same logical name on both roots. Registration, metadata, circuits, callbacks, retry/backpressure state, and transport selection remain lane-qualified. Every built-in dual-lane transport declares and proves independent physical topology; Kafka remains Queue-only and rejects Bus routes before readiness or side effects.
 - Library-owned automatic consumers use Core-owned inert immutable descriptors that bootstrap drains through the same lane-scoped registration pipeline. They may be added before or after `AddHeadlessMessaging(...)`; no public service-collection registration or contributor-based alternate root exists.
 - `CorrelationFrom(...)` derives `headless-corr-id` from the outgoing payload when `PublishOptions.CorrelationId` is not set. Correlation precedence is explicit publish option, message selector, ambient consume context, then framework message ID.
+- `headless-corr-id` identifies the root conversation, `headless-causation-id` identifies the immediate parent message, and `traceparent` remains tracing metadata. Publishing inside a consumer preserves correlation and automatically stamps causation.
+- `Contract(name, version)` is the normal schema-version authority and defaults to `"1"`. `PublishOptions.ContractVersion` is an explicit per-send override for controlled compatibility work. Consumers validate the version before payload deserialization and expose the resolved values through `ConsumeContext.ContractVersion` and `ConsumeContext.CausationId`; a missing version header maps to `"1"` for legacy or external producers.
 - Outbound header validation is centralized in the publish factory: reserved framework headers stay typed-only, provider contributions cannot overwrite framework-owned keys, and all stamped header names/values reject control characters before they reach a broker client.
 - Explicit `PublishOptions.MessageName` uses the same message-name validator as configured mappings: no leading/trailing dots, no consecutive dots, and only alphanumeric, `.`, `-`, and `_`.
 - Provider packages can add message-level escape hatches such as Kafka partition keys, Azure Service Bus partition keys, AWS FIFO message group IDs, and NATS subject shards. These physical-routing selectors run in the typed publish factory and are stamped as provider-owned headers; they do not change the logical `MessageName`.
@@ -178,11 +179,11 @@ The transactional tier commits the fenced inbox outcome, compatible enlisted app
 
 ```csharp
 setup.Bus.ForMessage<OrderPlaced>(message =>
-    message.MessageName("orders.placed").CorrelationFrom(order => order.OrderId.ToString())
+    message.Contract("orders.placed").CorrelationFrom(order => order.OrderId.ToString())
 );
 ```
 
-- `setup.Bus.ForConsumersFromAssembly(...)` / `ForConsumersFromAssemblyContaining<TMarker>(...)` and their Queue-root equivalents scan closed `IConsume<TMessage>` implementations for exactly one lane. The callback is mandatory and must assign each durable registration an application-owned `ConsumerIdentity(...)` and immutable `ContractVersion(...)`; use an explicit type-to-identity table so CLR and topology refactors do not change persisted identity. The same callback may configure `Group(...)`, `Concurrency(...)`, `HandlerId(...)`, `WithCircuitBreaker(...)`, or `Skip()`; lane selection never occurs inside the scan callback.
+- `setup.Bus.ForConsumersFromAssembly(...)` / `ForConsumersFromAssemblyContaining<TMarker>(...)` and their Queue-root equivalents scan closed `IConsume<TMessage>` implementations for exactly one lane. The callback is mandatory and must assign each durable registration an application-owned `ConsumerIdentity(...)`; use `Contract(name, version)` on the scan builder when the convention-derived message contract is not the intended durable contract. The same callback may configure `Group(...)`, `Concurrency(...)`, `HandlerId(...)`, `WithCircuitBreaker(...)`, or `Skip()`; lane selection never occurs inside the scan callback.
 - message-name mappings are lane-qualified and registered eagerly. Re-registering the same type/name on one lane merges compatible consumers; a divergent mapping or competing consumer on that lane fails. An equivalent registration on the other lane remains independent.
 - message-name and group defaults are deterministic; duplicate registrations fail fast by default.
 - runtime, monitoring, and dashboard projections expose `MessageLane` with stable `Bus = 0` / `Queue = 1` values. Storage providers retain the legacy `IntentType` column name and transports retain the `headless-intent` header at explicit compatibility boundaries. Retry pickup and received-message identity include the lane, so the two lanes do not collapse into one row.
@@ -511,7 +512,7 @@ builder.Services.AddHeadlessMessaging(setup =>
 {
     setup.Bus.ForMessage<PaymentProcessed>(message =>
         message
-            .MessageName("payments.process")
+            .Contract("payments.process")
             .Consumer<PaymentHandler>(consumer =>
                 consumer.WithCircuitBreaker(cb =>
                 {

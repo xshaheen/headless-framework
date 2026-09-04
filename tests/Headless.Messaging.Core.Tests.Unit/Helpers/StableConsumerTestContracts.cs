@@ -20,7 +20,7 @@ internal static class StableConsumerTestContracts
     )
         where TConsumer : class
     {
-        return builder.ConsumerIdentity(identity).ContractVersion("v1");
+        return builder.ConsumerIdentity(identity);
     }
 
     public static IQueueConsumerBuilder<TConsumer> StableContract<TConsumer>(
@@ -29,12 +29,12 @@ internal static class StableConsumerTestContracts
     )
         where TConsumer : class
     {
-        return builder.ConsumerIdentity(identity).ContractVersion("v1");
+        return builder.ConsumerIdentity(identity);
     }
 
     public static IScannedConsumerBuilder StableContract(this IScannedConsumerBuilder builder, string identity)
     {
-        return builder.ConsumerIdentity(identity).ContractVersion("v1");
+        return builder.ConsumerIdentity(identity);
     }
 
     public static void ConfigureKnownScannedConsumer(ScannedConsumerContext context, IScannedConsumerBuilder builder)

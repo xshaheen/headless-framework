@@ -54,10 +54,9 @@ public static class SetupMessaging
     ///     });
     ///
     ///     setup.Bus.ForMessage&lt;OrderPlaced&gt;(message => message
-    ///         .MessageName("orders.placed")
+    ///         .Contract("orders.placed")
     ///         .Consumer&lt;OrderPlacedHandler&gt;(consumer => consumer
     ///             .ConsumerIdentity("order-service.order-placed")
-    ///             .ContractVersion("v1")
     ///             .Group("order-service")
     ///             .Concurrency(5)));
     /// });
@@ -318,11 +317,11 @@ public static class SetupMessaging
                         contribution.Concurrency,
                         HandlerId: null,
                         ConsumerIdentity: contribution.ConsumerIdentity,
-                        ContractVersion: contribution.ContractVersion,
                         CircuitBreakerOverride: null,
                         ProviderConfigs: new Dictionary<Type, object>()
                     ),
-                ]
+                ],
+                ContractVersion: contribution.MessageContractVersion
             ))
         );
 
@@ -396,7 +395,7 @@ public static class SetupMessaging
                     consumer.Concurrency,
                     consumer.HandlerId,
                     consumer.ConsumerIdentity,
-                    consumer.ContractVersion,
+                    registration.ContractVersion,
                     registration.Lane
                 ) with
                 {
@@ -415,7 +414,7 @@ public static class SetupMessaging
                     resolved.Concurrency,
                     resolved.ResolvedHandlerId,
                     resolved.ConsumerIdentity,
-                    resolved.ContractVersion,
+                    resolved.MessageContractVersion,
                     resolved.InboxRetention,
                     ConsumerCircuitBreakerSettings.From(consumer.CircuitBreakerOverride),
                     resolved.ProviderConfigs
@@ -495,7 +494,7 @@ public static class SetupMessaging
         byte concurrency,
         string resolvedHandlerId,
         string consumerIdentity,
-        string contractVersion,
+        string messageContractVersion,
         TimeSpan inboxRetention,
         ConsumerCircuitBreakerSettings circuitBreaker,
         IReadOnlyDictionary<Type, object> providerConfigs
@@ -504,7 +503,7 @@ public static class SetupMessaging
         private readonly byte _concurrency = concurrency;
         private readonly string _resolvedHandlerId = resolvedHandlerId;
         private readonly string _consumerIdentity = consumerIdentity;
-        private readonly string _contractVersion = contractVersion;
+        private readonly string _messageContractVersion = messageContractVersion;
         private readonly TimeSpan _inboxRetention = inboxRetention;
         private readonly ConsumerCircuitBreakerSettings _circuitBreaker = circuitBreaker;
         private readonly IReadOnlyDictionary<Type, object> _providerConfigs = providerConfigs;
@@ -514,7 +513,7 @@ public static class SetupMessaging
             return _concurrency == other._concurrency
                 && string.Equals(_resolvedHandlerId, other._resolvedHandlerId, StringComparison.Ordinal)
                 && string.Equals(_consumerIdentity, other._consumerIdentity, StringComparison.Ordinal)
-                && string.Equals(_contractVersion, other._contractVersion, StringComparison.Ordinal)
+                && string.Equals(_messageContractVersion, other._messageContractVersion, StringComparison.Ordinal)
                 && _inboxRetention == other._inboxRetention
                 && _circuitBreaker == other._circuitBreaker
                 && _ProviderConfigsEqual(_providerConfigs, other._providerConfigs);
@@ -531,7 +530,7 @@ public static class SetupMessaging
             hash.Add(_concurrency);
             hash.Add(_resolvedHandlerId, StringComparer.Ordinal);
             hash.Add(_consumerIdentity, StringComparer.Ordinal);
-            hash.Add(_contractVersion, StringComparer.Ordinal);
+            hash.Add(_messageContractVersion, StringComparer.Ordinal);
             hash.Add(_inboxRetention);
             hash.Add(_circuitBreaker);
 

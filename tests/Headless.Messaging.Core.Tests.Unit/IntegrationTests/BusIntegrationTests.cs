@@ -38,7 +38,7 @@ public sealed class IBusIntegrationTests : TestBase
         {
             messaging.Bus.ForMessage<DirectTestMessage>(message =>
                 message
-                    .MessageName("direct-test-messageName")
+                    .Contract("direct-test-messageName")
                     .Consumer<DirectTestConsumer>(consumer => consumer.StableContract("tests.bus-integration.primary"))
             );
             messaging.Options.DefaultGroupName = "test-group";
@@ -82,7 +82,7 @@ public sealed class IBusIntegrationTests : TestBase
         {
             messaging.Bus.ForMessage<DirectTestMessage>(message =>
                 message
-                    .MessageName("direct-test-messageName")
+                    .Contract("direct-test-messageName")
                     .Consumer<DirectTestConsumer>(consumer => consumer.StableContract("tests.bus-integration.primary"))
             );
             messaging.Options.DefaultGroupName = "test-group";
@@ -119,7 +119,7 @@ public sealed class IBusIntegrationTests : TestBase
         {
             messaging.Bus.ForMessage<DirectTestMessage>(message =>
                 message
-                    .MessageName("custom-messageName-name")
+                    .Contract("custom-messageName-name")
                     .Consumer<DirectTestConsumer>(consumer => consumer.StableContract("tests.bus-integration.primary"))
             );
             messaging.Options.DefaultGroupName = "test-group";
@@ -155,7 +155,7 @@ public sealed class IBusIntegrationTests : TestBase
         {
             messaging.Bus.ForMessage<DirectTestMessage>(message =>
             {
-                message.MessageName("multi-group-test");
+                message.Contract("multi-group-test");
                 message.Consumer<DirectTestConsumer>(consumer =>
                     consumer.StableContract("tests.bus-integration.primary").Group("direct.primary")
                 );
@@ -198,7 +198,7 @@ public sealed class IBusIntegrationTests : TestBase
         {
             messaging.Bus.ForMessage<DirectTestMessage>(message =>
                 message
-                    .MessageName("prefixed-test")
+                    .Contract("prefixed-test")
                     .Consumer<DirectTestConsumer>(consumer => consumer.StableContract("tests.bus-integration.primary"))
             );
             messaging.Options.DefaultGroupName = "test-group";
@@ -234,7 +234,7 @@ public sealed class IBusIntegrationTests : TestBase
         {
             messaging.Bus.ForMessage<DirectTestMessage>(message =>
                 message
-                    .MessageName("header-test-messageName")
+                    .Contract("header-test-messageName")
                     .Consumer<DirectTestConsumerWithHeaders>(consumer =>
                         consumer.StableContract("tests.bus-integration.headers")
                     )
@@ -285,7 +285,7 @@ public sealed class IBusIntegrationTests : TestBase
         {
             messaging.Bus.ForMessage<DirectTestMessage>(message =>
                 message
-                    .MessageName("tenant-test-messageName")
+                    .Contract("tenant-test-messageName")
                     .Consumer<DirectTestConsumerWithHeaders>(consumer =>
                         consumer.StableContract("tests.bus-integration.headers")
                     )
@@ -330,7 +330,7 @@ public sealed class IBusIntegrationTests : TestBase
         {
             messaging.Bus.ForMessage<DirectTestMessage>(message =>
                 message
-                    .MessageName("tenant-unset-messageName")
+                    .Contract("tenant-unset-messageName")
                     .Consumer<DirectTestConsumerWithHeaders>(consumer =>
                         consumer.StableContract("tests.bus-integration.headers")
                     )
@@ -373,7 +373,7 @@ public sealed class IBusIntegrationTests : TestBase
         {
             messaging.Bus.ForMessage<DirectTestMessage>(message =>
                 message
-                    .MessageName("sequential-test")
+                    .Contract("sequential-test")
                     .Consumer<DirectTestConsumer>(consumer => consumer.StableContract("tests.bus-integration.primary"))
             );
             messaging.Options.DefaultGroupName = "test-group";

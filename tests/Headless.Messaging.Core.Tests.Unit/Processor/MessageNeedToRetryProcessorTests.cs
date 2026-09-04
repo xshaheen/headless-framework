@@ -71,7 +71,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             MessageName = "test.messageName",
             GroupName = group,
             ConsumerIdentity = "tests.retry.stable-consumer",
-            ContractVersion = "v1",
+            MessageContractVersion = "v1",
             Lane = MessageLane.Bus,
         };
     }

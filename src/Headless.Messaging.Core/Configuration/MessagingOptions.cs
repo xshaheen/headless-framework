@@ -378,6 +378,32 @@ public sealed class MessagingOptions
         _ValidateMessageName(messageName);
     }
 
+    internal static string ValidateContractVersion(string contractVersion)
+    {
+        Argument.IsNotNullOrWhiteSpace(contractVersion);
+        Argument.IsLessThanOrEqualTo(
+            contractVersion.Length,
+            MessageOptions.ContractVersionMaxLength,
+            $"Message contract version must be {MessageOptions.ContractVersionMaxLength} characters or fewer.",
+            nameof(contractVersion)
+        );
+
+        if (contractVersion.Any(char.IsControl))
+        {
+            throw new ArgumentException(
+                "Message contract version cannot contain control characters.",
+                nameof(contractVersion)
+            );
+        }
+
+        if (contractVersion.Any(char.IsWhiteSpace))
+        {
+            throw new ArgumentException("Message contract version cannot contain whitespace.", nameof(contractVersion));
+        }
+
+        return contractVersion;
+    }
+
     /// <summary>
     /// Validates message-name format and constraints.
     /// </summary>
@@ -430,7 +456,7 @@ public sealed class MessagingOptions
         byte concurrency,
         string? handlerId = null,
         string? consumerIdentity = null,
-        string? contractVersion = null,
+        string? messageContractVersion = null,
         MessageLane lane = MessageLane.Bus
     )
     {
@@ -441,10 +467,16 @@ public sealed class MessagingOptions
             );
         }
 
-        if (string.IsNullOrWhiteSpace(contractVersion))
+        string validatedMessageContractVersion;
+        try
+        {
+            validatedMessageContractVersion = ValidateContractVersion(messageContractVersion ?? string.Empty);
+        }
+        catch (ArgumentException exception)
         {
             throw new MessagingConfigurationException(
-                $"Durable consumer {consumerType.FullName ?? consumerType.Name} requires an explicit immutable contract version."
+                $"Durable consumer {consumerType.FullName ?? consumerType.Name} requires a valid message contract version.",
+                exception
             );
         }
 
@@ -465,7 +497,7 @@ public sealed class MessagingOptions
             concurrency,
             lane,
             consumerIdentity,
-            contractVersion,
+            validatedMessageContractVersion,
             finalHandlerId
         );
     }

@@ -691,7 +691,7 @@ internal sealed class SubscribeExecutor(
             if (!string.IsNullOrEmpty(ret.CallbackName))
             {
                 // TraceParent is NOT a reserved header, so it rides in PublishOptions.Headers alongside
-                // any user-supplied AddResponseHeader keys. The correlation identifiers ARE reserved
+                // any user-supplied AddResponseHeader keys. Lineage identifiers ARE reserved
                 // (MessagePublishRequestFactory rejects them as custom headers), so they must flow through
                 // the typed PublishOptions surface instead of CallbackHeader.
                 if (message.Origin.Headers.TryGetValue(Headers.TraceParent, out var traceParent))
@@ -710,7 +710,12 @@ internal sealed class SubscribeExecutor(
                             MessageName = ret.CallbackName,
                             Headers = ret.CallbackHeader,
                             MessageType = ret.ResultType,
-                            CorrelationId = message.Origin.Id,
+                            CorrelationId =
+                                message.Origin.Headers.TryGetValue(Headers.CorrelationId, out var correlationId)
+                                && !string.IsNullOrWhiteSpace(correlationId)
+                                    ? correlationId
+                                    : message.Origin.Id,
+                            CausationId = message.Origin.Id,
                             CorrelationSequence = message.Origin.GetCorrelationSequence() + 1,
                             // Chain the next hop: the published response carries this callback name so its
                             // consumer can react and publish a further response.

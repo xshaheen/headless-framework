@@ -26,7 +26,7 @@ public sealed class ConsumerMetadataTests : TestBase
             concurrency,
             Lane: MessageLane.Bus,
             ConsumerIdentity: "test-consumer",
-            ContractVersion: "v1"
+            MessageContractVersion: "v1"
         );
 
         // then
@@ -36,7 +36,7 @@ public sealed class ConsumerMetadataTests : TestBase
         metadata.Group.Should().Be(group);
         metadata.Concurrency.Should().Be(concurrency);
         metadata.ConsumerIdentity.Should().Be("test-consumer");
-        metadata.ContractVersion.Should().Be("v1");
+        metadata.MessageContractVersion.Should().Be("v1");
     }
 
     [Fact]
@@ -51,7 +51,7 @@ public sealed class ConsumerMetadataTests : TestBase
             1,
             Lane: MessageLane.Bus,
             ConsumerIdentity: "tests.metadata.null-group",
-            ContractVersion: "v1"
+            MessageContractVersion: "v1"
         );
 
         // then
@@ -70,7 +70,7 @@ public sealed class ConsumerMetadataTests : TestBase
             1,
             Lane: MessageLane.Bus,
             ConsumerIdentity: "tests.metadata.topic",
-            ContractVersion: "v1"
+            MessageContractVersion: "v1"
         );
 
         // when
@@ -99,7 +99,7 @@ public sealed class ConsumerMetadataTests : TestBase
             1,
             Lane: MessageLane.Bus,
             ConsumerIdentity: "tests.metadata.group",
-            ContractVersion: "v1"
+            MessageContractVersion: "v1"
         );
 
         // when
@@ -125,7 +125,7 @@ public sealed class ConsumerMetadataTests : TestBase
             1,
             Lane: MessageLane.Bus,
             ConsumerIdentity: "tests.metadata.concurrency",
-            ContractVersion: "v1"
+            MessageContractVersion: "v1"
         );
 
         // when
@@ -150,7 +150,7 @@ public sealed class ConsumerMetadataTests : TestBase
             5,
             Lane: MessageLane.Bus,
             ConsumerIdentity: "tests.metadata.equality",
-            ContractVersion: "v1"
+            MessageContractVersion: "v1"
         );
         var metadata2 = new ConsumerMetadata(
             typeof(MetadataTestMessage),
@@ -160,7 +160,7 @@ public sealed class ConsumerMetadataTests : TestBase
             5,
             Lane: MessageLane.Bus,
             ConsumerIdentity: "tests.metadata.equality",
-            ContractVersion: "v1"
+            MessageContractVersion: "v1"
         );
 
         // then
@@ -180,7 +180,7 @@ public sealed class ConsumerMetadataTests : TestBase
             5,
             Lane: MessageLane.Bus,
             ConsumerIdentity: "tests.metadata.difference",
-            ContractVersion: "v1"
+            MessageContractVersion: "v1"
         );
         var metadata2 = new ConsumerMetadata(
             typeof(MetadataTestMessage),
@@ -190,7 +190,7 @@ public sealed class ConsumerMetadataTests : TestBase
             5,
             Lane: MessageLane.Bus,
             ConsumerIdentity: "tests.metadata.difference",
-            ContractVersion: "v1"
+            MessageContractVersion: "v1"
         );
 
         // then
@@ -208,9 +208,9 @@ public sealed class ConsumerMetadataTests : TestBase
             "orders-primary",
             1,
             MessageLane.Bus,
-            HandlerId: "Tests.OriginalHandler",
             ConsumerIdentity: "orders-projection",
-            ContractVersion: "v3"
+            MessageContractVersion: "v3",
+            HandlerId: "Tests.OriginalHandler"
         );
 
         var refactored = original with
@@ -222,7 +222,7 @@ public sealed class ConsumerMetadataTests : TestBase
         };
 
         refactored.ConsumerIdentity.Should().Be("orders-projection");
-        refactored.ContractVersion.Should().Be("v3");
+        refactored.MessageContractVersion.Should().Be("v3");
     }
 }
 

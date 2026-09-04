@@ -16,17 +16,13 @@ container
     {
         setup.Bus.ForMessage<ShowTimeEvent>(message =>
             message
-                .MessageName("sample.console.showtime")
-                .Consumer<EventConsumer>(consumer =>
-                    consumer.ConsumerIdentity("console.showtime").ContractVersion("v1")
-                )
+                .Contract("sample.console.showtime")
+                .Consumer<EventConsumer>(consumer => consumer.ConsumerIdentity("console.showtime"))
         );
         setup.Bus.ForMessage<ShowTimeResponse>(message =>
             message
-                .MessageName("sample.console.showtime.response")
-                .Consumer<ShowTimeResponseConsumer>(consumer =>
-                    consumer.ConsumerIdentity("console.showtime-response").ContractVersion("v1")
-                )
+                .Contract("sample.console.showtime.response")
+                .Consumer<ShowTimeResponseConsumer>(consumer => consumer.ConsumerIdentity("console.showtime-response"))
         );
         // Console app does not support dashboard
         setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;

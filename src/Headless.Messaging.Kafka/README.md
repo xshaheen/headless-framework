@@ -33,7 +33,7 @@ builder.Services.AddHeadlessMessaging(options =>
 {
     options.Queue.ForMessage<OrderPlaced>(message =>
         message.Consumer<OrderPlacedConsumer>(consumer =>
-            consumer.ConsumerIdentity("orders.order-placed").ContractVersion("v1")
+            consumer.ConsumerIdentity("orders.order-placed")
         )
     );
     options.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
@@ -68,7 +68,7 @@ Message-level Kafka knobs attach to the Queue registration root:
 
 ```csharp
 options.Queue.ForMessage<OrderEvent>(message =>
-    message.MessageName("orders.events").UseKafka(kafka => kafka.PartitionBy(order => order.CustomerId.ToString()))
+    message.Contract("orders.events").UseKafka(kafka => kafka.PartitionBy(order => order.CustomerId.ToString()))
 );
 ```
 
@@ -94,7 +94,7 @@ Messages sent to the same partition are delivered in order. Use `UseKafka(...).P
 
 ```csharp
 options.Queue.ForMessage<OrderEvent>(message =>
-    message.MessageName("orders.events").UseKafka(kafka => kafka.PartitionBy(order => order.CustomerId.ToString()))
+    message.Contract("orders.events").UseKafka(kafka => kafka.PartitionBy(order => order.CustomerId.ToString()))
 );
 ```
 

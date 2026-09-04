@@ -188,7 +188,7 @@ services.AddHeadlessMessaging(setup =>
 
     setup.Bus.ForMessage<OrderPlaced>(message =>
         message
-            .MessageName("orders.placed")
+            .Contract("orders.placed")
             .CorrelationFrom(order => order.OrderId.ToString())
             .Consumer<OrderProjection>(consumer =>
                 consumer.Group("orders-projection").Concurrency(4).UseRabbitMq(rabbit => rabbit.PrefetchCount(20))
@@ -205,8 +205,8 @@ services.AddHeadlessMessaging(setup =>
 - **OpenTelemetry is native to `Messaging.Core`** (no satellite package). Subscribe traces/metrics with `AddMessagingInstrumentation()` on the `TracerProviderBuilder`/`MeterProviderBuilder`, and configure enrichers/suppression via `setup.Instrumentation` inside `AddHeadlessMessaging(...)`.
 - **Add `Messaging.Testing`** in test projects for integration testing with awaitable assertions. Use `AddMessagingTestHarness()` to decorate an existing host's DI container (WebApplicationFactory, IHost), or `MessagingTestHarness.CreateAsync()` for standalone harness.
 - **Add `Messaging.Dashboard`** when monitoring UI is needed; it exposes operational message actions and requires an explicit authentication choice (the host fails to start otherwise), so configure `WithBasicAuth`, `WithApiKey`, `WithHostAuthentication`, or `WithCustomAuth` — and `SetCorsOrigins` if the SPA is served cross-origin — before production exposure.
-- **Messages are type-safe and lane-owned**: Define plain class, record, or interface contracts. Register explicit consumers with `setup.Bus.ForMessage<TMessage>(...)` or `setup.Queue.ForMessage<TMessage>(...)`, then call `Consumer<TConsumer>(...)` with its durable contract settings. Assembly scans also start from a lane root (`ForConsumersFromAssembly*`); callbacks configure identity, contract version, group, concurrency, handler id, circuit breaker, or `Skip()`, never the lane.
-- **Durable consumer identity is explicit**: Every durable consumer must declare an operator-stable `ConsumerIdentity(...)` and immutable `ContractVersion(...)`; neither value is derived from a CLR type, group, destination, or display name. Assembly scans require a callback that assigns both values explicitly per discovered consumer.
+- **Messages are type-safe and lane-owned**: Define plain class, record, or interface contracts. Register their stable logical name and schema version with `Contract(name, version)` under `setup.Bus.ForMessage<TMessage>(...)` or `setup.Queue.ForMessage<TMessage>(...)`, then call `Consumer<TConsumer>(...)` with its durable consumer settings. Assembly scans also start from a lane root (`ForConsumersFromAssembly*`); callbacks configure contract metadata, identity, group, concurrency, handler id, circuit breaker, or `Skip()`, never the lane.
+- **Contract and consumer identity are separate**: `Contract(name, version)` belongs to the message schema. Every durable consumer declares only an operator-stable `ConsumerIdentity(...)`, which is independent from CLR type, group, destination, or display name. Intentional reprocessing uses an explicit linked inbox generation; changing a schema version is not a dedupe-reset mechanism.
 - **Library-owned consumers can register out of order**: Core-owned internal immutable contributions may be added before or after `AddHeadlessMessaging(...)`. Bootstrap drains them through the same lane-scoped registration pipeline; no public service-collection registration or contributor alternate root exists.
 - **The same contract can use both lanes**: an identical contract and logical name may have independent Bus and Queue registrations, metadata, middleware, circuits, retry/backpressure state, and transport selection. Every built-in dual-lane transport now declares and proves independent physical lane topology; Kafka remains Queue-only and rejects Bus registration before readiness or side effects.
 - **Runtime handlers are first-class**: Use `IRuntimeSubscriber` for ephemeral broker-attached delegates. They share scoped DI, middleware, diagnostics, retry, and correlation semantics with class handlers.
@@ -219,7 +219,7 @@ services.AddHeadlessMessaging(setup =>
 - **Ordering depends on transport**: Kafka orders by partition key. Azure Service Bus orders by session. RabbitMQ has no ordering with multiple consumers. Set `ConsumerThreadCount = 1` for strict ordering.
 - **RabbitMQ credentials**: The framework rejects default `guest`/`guest` credentials. Always configure explicit username/password.
 - **AWS SQS redrive is external**: Configure a dead-letter queue and redrive policy with a bounded receive count for handler failures. Headless terminally deletes malformed transport envelopes to prevent requeue storms and does not provision redrive infrastructure.
-- **Message-name mapping**: Map message types to lane-specific logical names via `setup.Bus.ForMessage<TMessage>(x => x.MessageName("message.name"))` or the Queue equivalent. `IMessagingBuilder.WithMessageNameMapping<TMessage>("message.name")` remains a global convention fallback when no lane-specific mapping exists.
+- **Message-name mapping**: Map message types to lane-specific logical names via `setup.Bus.ForMessage<TMessage>(x => x.Contract("message.name"))` or the Queue equivalent. `IMessagingBuilder.WithMessageNameMapping<TMessage>("message.name")` remains a global convention fallback when no lane-specific mapping exists.
 - **Fail-fast defaults**: Duplicate consumer or runtime registrations are rejected by default. Anonymous runtime delegates must provide `HandlerId`.
 - **Telemetry parity**: Existing diagnostic listener and metric names stay stable across direct publish, outbox publish, and runtime subscriptions.
 - **Inbox telemetry is bounded**: inbox counters use registered consumer identity plus finite lane, outcome, tier, and provider dimensions. Message/replay IDs, payloads, and headers are never metric labels. `setup.Instrumentation.IncludeTenantIdInMetricTags` is an explicit, default-off cardinality opt-in.
@@ -246,11 +246,12 @@ services.AddHeadlessMessaging(setup =>
 - **Delivery semantics — at-least-once, consumer idempotency required**: the framework never promises exactly-once. The commit-edge drain and the relay sweep can both deliver the same message in a narrow window (the `LockedUntil` lease and the Succeeded/Failed terminal-row guard minimize but do not eliminate duplicates), and a crash between broker accept and the success-mark write redelivers. Consumers must be idempotent — dedupe by business key or message id.
 - **Transactional inbox scope**: the transactional tier atomically commits the current fenced inbox outcome, compatible enlisted application state, and captured durable Bus/Queue work. It does not make handler entry, `TransportDirect`, or external/non-enlisted effects exactly once.
 - **Message lane**: Bus is broadcast/pub-sub and Queue is point-to-point. Registration, monitoring, dashboard JSON, testing, and runtime APIs use `MessageLane`; only intentional compatibility boundaries retain the `IntentType` database column, `headless-intent` header, and stable `0`/`1` values. Received-message identity includes the lane so the two paths do not collapse into one storage row.
-- **Envelope**: All transport messages carry framework headers such as message id, correlation id, message name, type, sent time, intent, and optional tenant id.
-- **Reserved headers**: `MessageId`, `CorrelationId`, `CorrelationSequence`, `CallbackName`, `MessageName`, `Type`, `SentTime`, `DelayTime`, and `Intent` are rejected in custom publish headers and provider contributions. `TenantId` is also framework-owned; provider contributions cannot write it, while raw publish headers are handled by the stricter tenant-integrity policy for compatibility.
+- **Envelope**: All transport messages carry framework headers such as message id, message-contract version, root correlation id, optional immediate causation id, message name, type, sent time, intent, and optional tenant id.
+- **Reserved headers**: `MessageId`, `ContractVersion`, `CorrelationId`, `CausationId`, `CorrelationSequence`, `CallbackName`, `MessageName`, `Type`, `SentTime`, `DelayTime`, and `Intent` are rejected in custom publish headers and provider contributions. `TenantId` is also framework-owned; provider contributions cannot write it, while raw publish headers are handled by the stricter tenant-integrity policy for compatibility.
 - **Header validation**: custom header names, custom header values, and framework/provider-stamped header values all reject control characters before publish. This includes explicit `MessageId`, `CorrelationId`, `CallbackName`, and typed `TenantId`.
 - **Explicit message names**: `PublishOptions.MessageName` follows the same validator as registered message mappings. Invalid dot shapes and invalid characters are rejected before publish.
-- **Correlation**: `PublishOptions.CorrelationId` wins. If absent, `CorrelationFrom(...)` runs against the payload. If absent, publishes inside a consumer inherit ambient `ConsumeContext.CorrelationId`. If absent, the message id becomes the correlation id.
+- **Contract version**: `Contract(name, version)` is the normal authority and defaults to version `"1"`. `PublishOptions.ContractVersion` is an explicit per-send override for controlled compatibility work. Consumers validate the header before deserialization, expose it through `ConsumeContext.ContractVersion`, and treat a missing header as version `"1"` for legacy or external producers.
+- **Correlation and causation**: `PublishOptions.CorrelationId` wins. If absent, `CorrelationFrom(...)` runs against the payload. If absent, publishes inside a consumer preserve ambient `ConsumeContext.CorrelationId`. If absent, the message id becomes the root correlation id. `PublishOptions.CausationId` wins for the immediate parent; otherwise an ambient consume context contributes its current message id. Consumers read it from `ConsumeContext.CausationId`.
 - **Tenant integrity**: use `MessageOptions.TenantId` or ambient tenancy. Do not write `Headers.TenantId` directly.
 - **Provider config bag**: provider packages attach opaque config objects keyed by config type. Consumer config overlays message config for the same provider type. Repeated message metadata registrations are deterministic: later metadata for the same message/config type overrides earlier metadata.
 - **Declared-contract authority**: lane-scoped registration selects the declared contract used for logical name and typed middleware; assignable-type fallback does not silently bind a concrete payload to another registration. The concrete payload or callback-response type is preserved separately for serialization and typed values. Explicit publish options still override their corresponding envelope fields.
@@ -491,9 +492,10 @@ Wires messaging into dependency injection: registration, publishing, dispatch, m
 
 - `services.AddHeadlessMessaging(setup => ...)`.
 - `setup.Bus.ForMessage<TMessage>(...)`, `setup.Queue.ForMessage<TMessage>(...)`, and root-scoped assembly scanning.
-- `MessageName(...)`, `CorrelationFrom(...)`, and `Consumer<TConsumer>(...)` inherit the selected root lane.
+- `Contract(...)`, `CorrelationFrom(...)`, and `Consumer<TConsumer>(...)` inherit the selected root lane.
 - Consumer settings: `Group(...)`, `Concurrency(...)`, `HandlerId(...)`, `WithCircuitBreaker(...)`.
-- Durable consumer contract settings: mandatory `ConsumerIdentity(...)` and `ContractVersion(...)`. Identity is stable across CLR and topology refactors; changing it intentionally creates a new durable consumer scope. Bus and Queue identities are collision-scoped independently.
+- Message contract settings: stable `Contract(name, version)` metadata, stamped on every outgoing envelope and checked before durable dispatch.
+- Durable consumer settings: mandatory `ConsumerIdentity(...)`. Identity is stable across CLR and topology refactors; changing it intentionally creates a new durable consumer scope. Bus and Queue identities are collision-scoped independently.
 - Publish and consume middleware.
 - Strict publish tenancy via `RequireTenantOnPublish()`.
 - Storage-backed retry/outbox and cleanup processors.
@@ -540,11 +542,10 @@ services.AddHeadlessMessaging(setup =>
 
     setup.Bus.ForMessage<OrderPlaced>(message =>
         message
-            .MessageName("orders.placed")
+            .Contract("orders.placed")
             .CorrelationFrom(order => order.OrderId.ToString())
             .Consumer<OrderPlacedConsumer>(consumer => consumer
                 .ConsumerIdentity("orders.projection")
-                .ContractVersion("v1")
                 .Group("orders"))
     );
 });
@@ -944,7 +945,7 @@ builder.Services.AddHeadlessMessaging(setup =>
 {
     setup.Bus.ForMessage<PaymentProcessed>(message =>
         message
-            .MessageName("payments.process")
+            .Contract("payments.process")
             .Consumer<PaymentHandler>(consumer =>
                 consumer.WithCircuitBreaker(cb =>
                 {
@@ -1254,11 +1255,11 @@ setup.UseAws(options =>
 
 setup.Queue.ForMessage<OrderPlaced>(message =>
     message
-        .MessageName("orders-placed.fifo")
+        .Contract("orders-placed.fifo")
         .UseAws(aws => aws.MessageGroupId(order => order.CustomerId.ToString()))
         .Consumer<OrderWorker>(consumer => consumer
             .ConsumerIdentity("orders.worker")
-            .ContractVersion("v1"))
+            )
 );
 ```
 
@@ -1315,7 +1316,7 @@ setup.Bus.ForMessage<OrderPlaced>(message =>
         .UseAzureServiceBus(asb => asb.PartitionKey(order => order.CustomerId.ToString()))
         .Consumer<OrderProjection>(consumer => consumer
             .ConsumerIdentity("orders.projection")
-            .ContractVersion("v1"))
+            )
 );
 ```
 
@@ -1440,7 +1441,7 @@ setup.UseKafka(options => options.Servers = "localhost:9092");
 
 setup.Queue.ForMessage<OrderPlaced>(message =>
     message
-        .MessageName("orders.placed")
+        .Contract("orders.placed")
         .UseKafka(kafka => kafka.PartitionBy(order => order.CustomerId.ToString()))
         .Consumer<OrderWorker>(consumer =>
             consumer.UseKafka(kafka => kafka.IsolationLevel(IsolationLevel.ReadCommitted))
@@ -1553,10 +1554,10 @@ setup.UsePulsar(options => options.ServiceUrl = "pulsar://localhost:6650");
 
 setup.Bus.ForMessage<OrderPlaced>(message =>
     message
-        .MessageName("persistent://public/default/orders.placed")
+        .Contract("persistent://public/default/orders.placed")
         .Consumer<OrderProjection>(consumer => consumer
             .ConsumerIdentity("orders.projection")
-            .ContractVersion("v1"))
+            )
 );
 ```
 

@@ -37,6 +37,39 @@ public sealed class ForMessageRegistrationTests : TestBase
         registration.Consumers[0].ConsumerType.Should().Be<OrderPlacedHandler>();
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData("v 2")]
+    [InlineData("2\r\ninvalid")]
+    public void should_reject_invalid_message_contract_versions(string version)
+    {
+        // when
+        var act = () =>
+            new ServiceCollection().AddHeadlessMessaging(setup =>
+                setup.Bus.ForMessage<OrderPlaced>(message => message.Contract("orders.placed", version))
+            );
+
+        // then
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void should_reject_message_contract_versions_longer_than_the_persistence_limit()
+    {
+        // given
+        var version = new string('v', MessageOptions.ContractVersionMaxLength + 1);
+
+        // when
+        var act = () =>
+            new ServiceCollection().AddHeadlessMessaging(setup =>
+                setup.Bus.ForMessage<OrderPlaced>(message => message.Contract("orders.placed", version))
+            );
+
+        // then
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
     [Fact]
     public void should_capture_valid_per_consumer_inbox_retention_and_reject_invalid_durations()
     {
@@ -113,14 +146,14 @@ public sealed class ForMessageRegistrationTests : TestBase
         {
             setup.Bus.ForMessage<OrderPlaced>(message =>
                 message
-                    .MessageName("orders.placed")
+                    .Contract("orders.placed")
                     .Consumer<OrderPlacedHandler>(consumer =>
                         consumer.StableContract("tests.registration.orders-primary")
                     )
             );
             setup.Queue.ForMessage<OrderPlaced>(message =>
                 message
-                    .MessageName("orders.placed")
+                    .Contract("orders.placed")
                     .Consumer<OrderPlacedHandler>(consumer =>
                         consumer.StableContract("tests.registration.orders-primary")
                     )
@@ -148,7 +181,7 @@ public sealed class ForMessageRegistrationTests : TestBase
         // when
         services.AddHeadlessMessaging(static setup =>
         {
-            setup.Bus.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed"));
+            setup.Bus.ForMessage<OrderPlaced>(message => message.Contract("orders.placed"));
             setup.UseInMemory();
             setup.UseProcessLocalInMemoryStorage();
         });
@@ -173,7 +206,7 @@ public sealed class ForMessageRegistrationTests : TestBase
         {
             setup.Queue.ForMessage<OrderPlaced>(message =>
                 message
-                    .MessageName("orders.placed")
+                    .Contract("orders.placed")
                     .Consumer<OrderPlacedHandler>(consumer =>
                         consumer
                             .StableContract("tests.registration.orders-primary")
@@ -207,7 +240,7 @@ public sealed class ForMessageRegistrationTests : TestBase
             setup.Bus.ForMessage<OrderPlaced>(message =>
             {
                 message
-                    .MessageName("orders.bus")
+                    .Contract("orders.bus")
                     .Consumer<OrderPlacedHandler>(consumer =>
                         consumer.StableContract("tests.registration.orders-primary").Group("bus")
                     );
@@ -218,7 +251,7 @@ public sealed class ForMessageRegistrationTests : TestBase
             setup.Queue.ForMessage<OrderPlaced>(message =>
             {
                 message
-                    .MessageName("orders.queue")
+                    .Contract("orders.queue")
                     .Consumer<OrderPlacedHandler>(consumer =>
                         consumer.StableContract("tests.registration.orders-primary").Group("queue")
                     );
@@ -348,14 +381,14 @@ public sealed class ForMessageRegistrationTests : TestBase
         {
             setup.Bus.ForMessage<OrderPlaced>(message =>
                 message
-                    .MessageName("orders.placed")
+                    .Contract("orders.placed")
                     .Consumer<OrderPlacedHandler>(consumer =>
                         consumer.StableContract("tests.registration.orders-primary")
                     )
             );
             setup.Queue.ForMessage<OrderPlaced>(message =>
                 message
-                    .MessageName("orders.placed")
+                    .Contract("orders.placed")
                     .Consumer<OrderPlacedAnalyticsHandler>(consumer =>
                         consumer.StableContract("tests.registration.orders-analytics")
                     )
@@ -384,7 +417,7 @@ public sealed class ForMessageRegistrationTests : TestBase
             {
                 setup.Bus.ForMessage<OrderPlaced>(message =>
                     message
-                        .MessageName("orders.placed")
+                        .Contract("orders.placed")
                         .Consumer<OrderPlacedHandler>(consumer =>
                             consumer.StableContract("tests.registration.orders-primary")
                         )
@@ -457,7 +490,7 @@ public sealed class ForMessageRegistrationTests : TestBase
             {
                 setup.Bus.ForMessage<OrderPlaced>(message =>
                     message
-                        .MessageName("orders.placed")
+                        .Contract("orders.placed")
                         .Consumer<OrderPlacedHandler>(consumer =>
                             consumer.StableContract("tests.registration.orders-primary").Group("orders")
                         )
@@ -490,14 +523,14 @@ public sealed class ForMessageRegistrationTests : TestBase
             {
                 setup.Bus.ForMessage<OrderPlaced>(message =>
                     message
-                        .MessageName("orders.placed")
+                        .Contract("orders.placed")
                         .Consumer<OrderPlacedHandler>(consumer =>
                             consumer.StableContract("tests.registration.orders-primary").Group("orders")
                         )
                 );
                 setup.Bus.ForMessage<OtherOrderPlaced>(message =>
                     message
-                        .MessageName("Orders.Placed")
+                        .Contract("Orders.Placed")
                         .Consumer<OtherOrderPlacedHandler>(consumer =>
                             consumer.StableContract("tests.registration.other-orders-primary").Group("orders")
                         )
@@ -525,8 +558,8 @@ public sealed class ForMessageRegistrationTests : TestBase
         var act = () =>
             services.AddHeadlessMessaging(static setup =>
             {
-                setup.Bus.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed"));
-                setup.Bus.ForMessage<OrderPlaced>(message => message.MessageName("Orders.Placed"));
+                setup.Bus.ForMessage<OrderPlaced>(message => message.Contract("orders.placed"));
+                setup.Bus.ForMessage<OrderPlaced>(message => message.Contract("Orders.Placed"));
                 setup.UseInMemory();
                 setup.UseProcessLocalInMemoryStorage();
             });
@@ -545,8 +578,8 @@ public sealed class ForMessageRegistrationTests : TestBase
         var act = () =>
             services.AddHeadlessMessaging(static setup =>
             {
-                setup.Bus.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed"));
-                setup.Bus.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed.v2"));
+                setup.Bus.ForMessage<OrderPlaced>(message => message.Contract("orders.placed"));
+                setup.Bus.ForMessage<OrderPlaced>(message => message.Contract("orders.placed.v2"));
                 setup.UseInMemory();
                 setup.UseProcessLocalInMemoryStorage();
             });
@@ -565,14 +598,14 @@ public sealed class ForMessageRegistrationTests : TestBase
         {
             setup.Bus.ForMessage<OrderPlaced>(message =>
                 message
-                    .MessageName("orders.same")
+                    .Contract("orders.same")
                     .Consumer<OrderPlacedHandler>(consumer =>
                         consumer.StableContract("tests.registration.orders-primary")
                     )
             );
             setup.Bus.ForMessage<OtherOrderPlaced>(message =>
                 message
-                    .MessageName("orders.same")
+                    .Contract("orders.same")
                     .Consumer<OtherOrderPlacedHandler>(consumer =>
                         consumer.StableContract("tests.registration.other-orders-primary")
                     )
@@ -604,14 +637,14 @@ public sealed class ForMessageRegistrationTests : TestBase
         {
             setup.Bus.ForMessage<OrderPlaced>(message =>
                 message
-                    .MessageName("orders.same")
+                    .Contract("orders.same")
                     .Consumer<OrderPlacedHandler>(consumer =>
                         consumer.StableContract("tests.registration.orders-primary")
                     )
             );
             setup.Bus.ForMessage<OtherOrderPlaced>(message =>
                 message
-                    .MessageName("Orders.Same")
+                    .Contract("Orders.Same")
                     .Consumer<OtherOrderPlacedHandler>(consumer =>
                         consumer.StableContract("tests.registration.other-orders-primary")
                     )
@@ -644,7 +677,7 @@ public sealed class ForMessageRegistrationTests : TestBase
             );
             setup.Bus.ForMessage<OtherOrderPlaced>(message =>
                 message
-                    .MessageName(nameof(OrderPlaced))
+                    .Contract(nameof(OrderPlaced))
                     .Consumer<OtherOrderPlacedHandler>(consumer =>
                         consumer.StableContract("tests.registration.other-orders-primary")
                     )
@@ -1295,7 +1328,7 @@ public sealed class ForMessageRegistrationTests : TestBase
         {
             setup.Bus.ForMessage<OrderPlaced>(message =>
                 message
-                    .MessageName("orders.placed")
+                    .Contract("orders.placed")
                     .Consumer<OrderPlacedHandler>(consumer =>
                         consumer.StableContract("tests.registration.orders-primary")
                     )

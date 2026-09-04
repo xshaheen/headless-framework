@@ -933,6 +933,8 @@ internal sealed class ConsumerRegister(
                     // Cached on the descriptor - recomputing it per message is pure reflection overhead.
                     var messageValueType = executor!.MessageValueType;
 
+                    _ValidateMessageContractVersion(transportMessage.Headers, executor);
+
                     message = await _serializer
                         .DeserializeAsync(transportMessage, messageValueType, hostShutdownToken)
                         .ConfigureAwait(false);
@@ -1075,8 +1077,10 @@ internal sealed class ConsumerRegister(
                 else
                 {
                     var consumerIdentity = executor!.ConsumerIdentity;
-                    var contractVersion = executor.ContractVersion;
-                    if (string.IsNullOrWhiteSpace(consumerIdentity) || string.IsNullOrWhiteSpace(contractVersion))
+                    var messageContractVersion = executor.MessageContractVersion;
+                    if (
+                        string.IsNullOrWhiteSpace(consumerIdentity) || string.IsNullOrWhiteSpace(messageContractVersion)
+                    )
                     {
                         // Runtime subscriptions are intentionally process-local and have no durable identity.
                         // Preserve their legacy delivery path; bootstrap validation prevents configured durable
@@ -1115,7 +1119,7 @@ internal sealed class ConsumerRegister(
                             name,
                             group,
                             consumerIdentity,
-                            contractVersion,
+                            message.Headers[Headers.ContractVersion]!,
                             new MediumMessage
                             {
                                 StorageId = Guid.Empty,
@@ -1207,6 +1211,29 @@ internal sealed class ConsumerRegister(
         }
 
         client.AttachCallbacks(onMessageCallback, _WriteLog);
+    }
+
+    private static void _ValidateMessageContractVersion(
+        IDictionary<string, string?> headers,
+        ConsumerExecutorDescriptor executor
+    )
+    {
+        var receivedVersion = headers.TryGetValue(Headers.ContractVersion, out var value)
+            ? MessagingOptions.ValidateContractVersion(value ?? string.Empty)
+            : MessageOptions.InitialContractVersion;
+
+        headers[Headers.ContractVersion] = receivedVersion;
+
+        if (
+            !string.IsNullOrWhiteSpace(executor.MessageContractVersion)
+            && !string.Equals(executor.MessageContractVersion, receivedVersion, StringComparison.Ordinal)
+        )
+        {
+            throw new InvalidOperationException(
+                $"Message contract version '{receivedVersion}' does not match registered message contract version "
+                    + $"'{executor.MessageContractVersion}' for '{executor.MessageName}'."
+            );
+        }
     }
 
     private void _WriteLog(LogMessageEventArgs logMessage)

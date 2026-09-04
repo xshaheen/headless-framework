@@ -59,7 +59,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             MessageName = "test.messageName",
             GroupName = "test-group",
             ConsumerIdentity = "tests.subscribe-retry",
-            ContractVersion = "v1",
+            MessageContractVersion = "1",
             Parameters = consumeMethod
                 .GetParameters()
                 .Select(p => new ParameterDescriptor
@@ -111,7 +111,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         {
             setup.Bus.ForMessage<CancellationExecutorTestMessage>(message =>
                 message
-                    .MessageName("test.messageName")
+                    .Contract("test.messageName")
                     .Consumer<CancellationExecutorTestConsumer>(consumer =>
                         consumer.StableContract("tests.subscribe-retry").Group("test-group")
                     )
@@ -146,7 +146,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             message.Origin.Id,
             MessageLane.Bus,
             "test.messageName",
-            "v1",
+            "1",
             "tests.subscribe-retry",
             Generation: 0
         );

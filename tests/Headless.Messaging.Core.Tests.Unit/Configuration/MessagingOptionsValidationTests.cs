@@ -470,7 +470,7 @@ public sealed class MessagingOptionsValidationTests : TestBase
                 group: "orders",
                 concurrency: 1,
                 consumerIdentity: consumerIdentity,
-                contractVersion: contractVersion,
+                messageContractVersion: contractVersion,
                 lane: MessageLane.Bus
             );
 

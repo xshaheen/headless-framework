@@ -10,7 +10,8 @@ internal sealed record MessageRegistration(
     string? MessageName,
     Func<object, string?>? CorrelationSelector,
     IReadOnlyDictionary<Type, object> ProviderConfigs,
-    IReadOnlyList<MessageConsumerRegistration> Consumers
+    IReadOnlyList<MessageConsumerRegistration> Consumers,
+    string ContractVersion = MessageOptions.InitialContractVersion
 );
 
 internal sealed record MessageConsumerRegistration(
@@ -21,7 +22,6 @@ internal sealed record MessageConsumerRegistration(
     byte Concurrency,
     string? HandlerId,
     string? ConsumerIdentity,
-    string? ContractVersion,
     ConsumerCircuitBreakerOptions? CircuitBreakerOverride,
     IReadOnlyDictionary<Type, object> ProviderConfigs,
     TimeSpan? InboxRetention = null

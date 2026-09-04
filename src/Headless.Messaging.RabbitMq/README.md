@@ -29,7 +29,7 @@ builder.Services.AddHeadlessMessaging(options =>
 {
     options.Bus.ForMessage<OrderPlaced>(message =>
         message.Consumer<OrderPlacedConsumer>(consumer =>
-            consumer.ConsumerIdentity("orders.order-placed").ContractVersion("v1")
+            consumer.ConsumerIdentity("orders.order-placed")
         )
     );
     options.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
@@ -69,7 +69,7 @@ options.UseRabbitMq(rmq =>
 
 options.Bus.ForMessage<OrderEvent>(message =>
     message
-        .MessageName("orders.events")
+        .Contract("orders.events")
         .Consumer<OrderProjection>(consumer =>
             consumer.Group("orders-projection").UseRabbitMq(rabbit => rabbit.PrefetchCount(20))
         )

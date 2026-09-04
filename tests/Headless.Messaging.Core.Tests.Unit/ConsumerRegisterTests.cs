@@ -348,7 +348,7 @@ public sealed class ConsumerRegisterTests : TestBase
             {
                 setup.Bus.ForMessage<BootstrapReadyMessage>(message =>
                     message
-                        .MessageName("ready-messageName")
+                        .Contract("ready-messageName")
                         .Consumer<BootstrapReadyConsumer>(consumer =>
                             consumer
                                 .StableContract("tests.consumer-register.bootstrap-ready")
@@ -381,7 +381,7 @@ public sealed class ConsumerRegisterTests : TestBase
     [Fact]
     public async Task inbox_admission_should_settle_before_single_winner_dispatch_and_suppress_duplicate()
     {
-        var client = new InboxConsumerClient();
+        await using var client = new InboxConsumerClient();
         var dispatcher = Substitute.For<IDispatcher>();
         dispatcher
             .EnqueueToExecute(
@@ -391,7 +391,7 @@ public sealed class ConsumerRegisterTests : TestBase
             )
             .Returns(_ =>
             {
-                client.CommitCount.Should().BeGreaterThan(0, "admission must settle before dispatch acceleration");
+                client.CommitCount.Should().BePositive("admission must settle before dispatch acceleration");
                 return ValueTask.CompletedTask;
             });
 
@@ -400,7 +400,7 @@ public sealed class ConsumerRegisterTests : TestBase
             {
                 setup.Bus.ForMessage<BootstrapReadyMessage>(message =>
                     message
-                        .MessageName("ready-messageName")
+                        .Contract("ready-messageName")
                         .Consumer<BootstrapReadyConsumer>(consumer =>
                             consumer.StableContract("tests.consumer-register.inbox").Group("ready-group").Concurrency(1)
                         )
@@ -413,24 +413,8 @@ public sealed class ConsumerRegisterTests : TestBase
             }
         );
         var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
-        typeof(ConsumerRegister)
-            .GetMethod("_RegisterMessageProcessor", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .Invoke(register, [client, "ready-group", "0:ready-group", MessageLane.Bus, CancellationToken.None]);
         var serializer = provider.GetRequiredService<Headless.Messaging.Serialization.ISerializer>();
-        foreach (
-            var (fieldName, value) in new (string FieldName, object Value)[]
-            {
-                ("_selector", provider.GetRequiredService<MethodMatcherCache>()),
-                ("_dispatcher", dispatcher),
-                ("_serializer", serializer),
-                ("_storage", provider.GetRequiredService<Headless.Messaging.Persistence.IDataStorage>()),
-            }
-        )
-        {
-            typeof(ConsumerRegister)
-                .GetField(fieldName, BindingFlags.NonPublic | BindingFlags.Instance)!
-                .SetValue(register, value);
-        }
+        _AttachInboxProcessor(provider, register, client, dispatcher, serializer);
 
         var origin = new Message(
             new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -471,6 +455,63 @@ public sealed class ConsumerRegisterTests : TestBase
     }
 
     [Fact]
+    public async Task contract_version_mismatch_should_be_poisoned_before_deserialization()
+    {
+        await using var client = new InboxConsumerClient();
+        var dispatcher = Substitute.For<IDispatcher>();
+        var serializer = Substitute.For<Headless.Messaging.Serialization.ISerializer>();
+        serializer.Serialize(Arg.Any<Message>()).Returns("{}");
+
+        await using var provider = _CreateProvider(
+            configureMessaging: setup =>
+            {
+                setup.Bus.ForMessage<BootstrapReadyMessage>(message =>
+                    message
+                        .Contract("ready-messageName", "2")
+                        .Consumer<BootstrapReadyConsumer>(consumer =>
+                            consumer.StableContract("tests.consumer-register.contract-v2").Group("ready-group")
+                        )
+                );
+            },
+            configureServices: services =>
+            {
+                services.AddSingleton<IDispatcher>(dispatcher);
+                services.AddSingleton<BootstrapReadyConsumer>();
+            }
+        );
+        var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
+        _AttachInboxProcessor(provider, register, client, dispatcher, serializer);
+
+        var transport = new TransportMessage(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [Headers.MessageId] = "contract-mismatch",
+                [Headers.MessageName] = "ready-messageName",
+                [Headers.Group] = "ready-group",
+                [Headers.ContractVersion] = "1",
+            },
+            "{}"u8.ToArray()
+        );
+
+        await client.OnMessageCallback!(transport, null);
+
+        client.CommitCount.Should().Be(1);
+        client.RejectCount.Should().Be(0);
+        serializer
+            .ReceivedCalls()
+            .Select(call => call.GetMethodInfo().Name)
+            .Should()
+            .NotContain(nameof(Headless.Messaging.Serialization.ISerializer.DeserializeAsync));
+        await dispatcher
+            .DidNotReceive()
+            .EnqueueToExecute(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<ConsumerExecutorDescriptor>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
     public Task startup_cancels_when_consumer_factory_creation_is_blocked()
     {
         return _AssertStartupCancellationAsync(StartupBoundary.FactoryCreation);
@@ -499,7 +540,7 @@ public sealed class ConsumerRegisterTests : TestBase
             {
                 setup.Bus.ForMessage<BootstrapReadyMessage>(message =>
                     message
-                        .MessageName("ready-messageName")
+                        .Contract("ready-messageName")
                         .Consumer<BootstrapReadyConsumer>(consumer =>
                             consumer
                                 .StableContract("tests.consumer-register.bootstrap-ready")
@@ -635,6 +676,47 @@ public sealed class ConsumerRegisterTests : TestBase
         return services.BuildServiceProvider();
     }
 
+    private static void _AttachInboxProcessor(
+        IServiceProvider provider,
+        ConsumerRegister register,
+        IConsumerClient client,
+        IDispatcher dispatcher,
+        Headless.Messaging.Serialization.ISerializer serializer
+    )
+    {
+        typeof(ConsumerRegister)
+            .GetMethod(
+                "_RegisterMessageProcessor",
+                BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+                binder: null,
+                types:
+                [
+                    typeof(IConsumerClient),
+                    typeof(string),
+                    typeof(string),
+                    typeof(MessageLane),
+                    typeof(CancellationToken),
+                ],
+                modifiers: null
+            )!
+            .Invoke(register, [client, "ready-group", "0:ready-group", MessageLane.Bus, CancellationToken.None]);
+
+        foreach (
+            var (fieldName, value) in new (string FieldName, object Value)[]
+            {
+                ("_selector", provider.GetRequiredService<MethodMatcherCache>()),
+                ("_dispatcher", dispatcher),
+                ("_serializer", serializer),
+                ("_storage", provider.GetRequiredService<Headless.Messaging.Persistence.IDataStorage>()),
+            }
+        )
+        {
+            typeof(ConsumerRegister)
+                .GetField(fieldName, BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly)!
+                .SetValue(register, value);
+        }
+    }
+
     private sealed class BootstrapReadyConsumer : IConsume<BootstrapReadyMessage>
     {
         public ValueTask ConsumeAsync(
@@ -674,7 +756,7 @@ public sealed class ConsumerRegisterTests : TestBase
             {
                 setup.Bus.ForMessage<BootstrapReadyMessage>(message =>
                     message
-                        .MessageName("ready-messageName")
+                        .Contract("ready-messageName")
                         .Consumer<BootstrapReadyConsumer>(consumer =>
                             consumer
                                 .StableContract("tests.consumer-register.bootstrap-ready")

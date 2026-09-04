@@ -188,7 +188,7 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
             .SelectMany(static entry => entry.Value)
             .Where(candidate =>
                 string.Equals(candidate.ConsumerIdentity, consumerIdentity, StringComparison.Ordinal)
-                && string.Equals(candidate.ContractVersion, contractVersion, StringComparison.Ordinal)
+                && string.Equals(candidate.MessageContractVersion, contractVersion, StringComparison.Ordinal)
             )
             .ToArray();
         descriptor = selector.SelectBestCandidate(contractIdentity, identityMatches);

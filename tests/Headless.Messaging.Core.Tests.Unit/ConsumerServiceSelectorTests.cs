@@ -22,7 +22,7 @@ public sealed class ConsumerServiceSelectorTests
         {
             messaging.Bus.ForMessage<SelectorTestMessage>(message =>
                 message
-                    .MessageName("test.messageName")
+                    .Contract("test.messageName")
                     .Consumer<SelectorTestConsumer>(consumer =>
                         consumer.StableContract("tests.selector.primary").Group("test-group")
                     )
@@ -58,7 +58,7 @@ public sealed class ConsumerServiceSelectorTests
         {
             messaging.Bus.ForMessage<SelectorTestMessage>(message =>
                 message
-                    .MessageName("test.messageName")
+                    .Contract("test.messageName")
                     .Consumer<SelectorTestConsumer>(consumer =>
                         consumer.StableContract("tests.selector.primary").Group("test-group")
                     )
@@ -91,7 +91,7 @@ public sealed class ConsumerServiceSelectorTests
         {
             messaging.Bus.ForMessage<SelectorTestMessage>(message =>
                 message
-                    .MessageName("test.messageName")
+                    .Contract("test.messageName")
                     .Consumer<SelectorTestConsumer>(consumer => consumer.StableContract("tests.selector.primary"))
             );
             messaging.UseConventions(conventions =>
@@ -127,7 +127,7 @@ public sealed class ConsumerServiceSelectorTests
         {
             messaging.Bus.ForMessage<SelectorTestMessage>(message =>
                 message
-                    .MessageName("test.messageName")
+                    .Contract("test.messageName")
                     .Consumer<SelectorTestConsumer>(consumer => consumer.StableContract("tests.selector.primary"))
             );
             messaging.Options.MessageNamePrefix = "my-app";
@@ -156,12 +156,12 @@ public sealed class ConsumerServiceSelectorTests
         {
             messaging.Bus.ForMessage<SelectorTestMessage>(message =>
                 message
-                    .MessageName("orders.placed")
+                    .Contract("orders.placed")
                     .Consumer<SelectorTestConsumer>(consumer => consumer.StableContract("tests.selector.primary"))
             );
             messaging.Bus.ForMessage<AnotherSelectorTestMessage>(message =>
                 message
-                    .MessageName("orders.cancelled")
+                    .Contract("orders.cancelled")
                     .Consumer<AnotherSelectorConsumer>(consumer => consumer.StableContract("tests.selector.another"))
             );
             messaging.Options.DefaultGroupName = "default";
@@ -191,7 +191,7 @@ public sealed class ConsumerServiceSelectorTests
         {
             messaging.Bus.ForMessage<SelectorTestMessage>(message =>
                 message
-                    .MessageName("orders.placed")
+                    .Contract("orders.placed")
                     .Consumer<SelectorTestConsumer>(consumer => consumer.StableContract("tests.selector.primary"))
             );
             messaging.Options.DefaultGroupName = "default";
@@ -227,7 +227,7 @@ public sealed class ConsumerServiceSelectorTests
                 concurrency: 1,
                 lane: MessageLane.Bus,
                 consumerIdentity: "tests.selector-wildcard",
-                contractVersion: "v1"
+                messageContractVersion: "v1"
             );
         });
 
@@ -253,7 +253,7 @@ public sealed class ConsumerServiceSelectorTests
         {
             messaging.Bus.ForMessage<SelectorTestMessage>(message =>
             {
-                message.MessageName("orders.placed");
+                message.Contract("orders.placed");
                 message.Consumer<SelectorTestConsumer>(consumer =>
                     consumer.StableContract("tests.selector.primary").Group("group1")
                 );
@@ -289,7 +289,7 @@ public sealed class ConsumerServiceSelectorTests
         {
             messaging.Bus.ForMessage<SelectorTestMessage>(message =>
                 message
-                    .MessageName("test.messageName")
+                    .Contract("test.messageName")
                     .Consumer<SelectorTestConsumer>(consumer => consumer.StableContract("tests.selector.primary"))
             );
             messaging.Options.DefaultGroupName = "default";
@@ -344,7 +344,7 @@ public sealed class ConsumerServiceSelectorTests
         {
             messaging.Bus.ForMessage<SelectorTestMessage>(message =>
                 message
-                    .MessageName("test.messageName")
+                    .Contract("test.messageName")
                     .Consumer<SelectorTestConsumer>(consumer =>
                         consumer.StableContract("tests.selector.primary").Concurrency(5)
                     )
@@ -374,7 +374,7 @@ public sealed class ConsumerServiceSelectorTests
         {
             messaging.Bus.ForMessage<SelectorTestMessage>(message =>
                 message
-                    .MessageName("test.messageName")
+                    .Contract("test.messageName")
                     .Consumer<SelectorTestConsumer>(consumer => consumer.StableContract("tests.selector.primary"))
             );
             messaging.Options.DefaultGroupName = "default";

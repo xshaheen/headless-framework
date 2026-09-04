@@ -50,7 +50,7 @@ public sealed class MessagingBuilderTests
         services.AddHeadlessMessaging(static setup =>
             setup.Bus.ForMessage<TestOrderMessage>(message =>
                 message
-                    .MessageName("orders.placed")
+                    .Contract("orders.placed")
                     .Consumer<TestOrderConsumer>(consumer => consumer.StableContract("tests.messaging-builder.orders"))
             )
         );
@@ -153,7 +153,7 @@ public sealed class MessagingBuilderTests
         {
             messaging.Bus.ForMessage<TestOrderMessage>(message =>
                 message
-                    .MessageName("orders.placed")
+                    .Contract("orders.placed")
                     .Consumer<TestOrderConsumer>(consumer => consumer.StableContract("tests.messaging-builder.orders"))
             );
             messaging.Options.DefaultGroupName = "shared-group";
@@ -177,7 +177,7 @@ public sealed class MessagingBuilderTests
         {
             messaging.Bus.ForMessage<TestOrderMessage>(message =>
                 message
-                    .MessageName("orders.placed")
+                    .Contract("orders.placed")
                     .Consumer<TestOrderConsumer>(consumer => consumer.StableContract("tests.messaging-builder.orders"))
             );
             messaging.Options.GroupNamePrefix = "tenant-a";
@@ -236,7 +236,7 @@ public sealed class MessagingBuilderTests
         services.AddHeadlessMessaging(static setup =>
             setup.Bus.ForMessage<TestOrderMessage>(message =>
                 message
-                    .MessageName("orders.placed")
+                    .Contract("orders.placed")
                     .Consumer<TestOrderConsumer>(consumer =>
                         consumer
                             .StableContract("tests.messaging-builder.orders")

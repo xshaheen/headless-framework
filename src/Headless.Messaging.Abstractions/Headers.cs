@@ -25,6 +25,12 @@ public static class Headers
     public const string MessageName = "headless-msg-name";
 
     /// <summary>
+    /// Schema version of the logical message contract. This is independent from consumer identity and inbox generation.
+    /// Value: "headless-contract-version"
+    /// </summary>
+    public const string ContractVersion = "headless-contract-version";
+
+    /// <summary>
     /// The consumer group that should receive this message.
     /// In Kafka, this maps to the consumer group; in RabbitMQ, it maps to the queue name.
     /// Value: "headless-msg-group"
@@ -44,6 +50,12 @@ public static class Headers
     /// Value: "headless-corr-id"
     /// </summary>
     public const string CorrelationId = "headless-corr-id";
+
+    /// <summary>
+    /// Identifier of the message that directly caused this message to be published.
+    /// Value: "headless-causation-id"
+    /// </summary>
+    public const string CausationId = "headless-causation-id";
 
     /// <summary>
     /// Sequence number for ordering correlated messages.

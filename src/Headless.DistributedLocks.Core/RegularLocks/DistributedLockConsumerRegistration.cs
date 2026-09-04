@@ -34,7 +34,7 @@ internal static class DistributedLockConsumerRegistration
         services.AddFrameworkConsumerRegistration<DistributedLockReleased, DistributedLock.LockReleasedConsumer>(
             MessageLane.Bus,
             consumerIdentity: "headless.distributed-locks.release",
-            contractVersion: "v1",
+            messageContractVersion: "1",
             messageName: "headless.locks.released",
             concurrency: 1
         );

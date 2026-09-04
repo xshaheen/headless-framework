@@ -29,7 +29,7 @@ builder.Services.AddHeadlessMessaging(options =>
 {
     options.Bus.ForMessage<OrderPlaced>(message =>
         message.Consumer<OrderPlacedConsumer>(consumer =>
-            consumer.ConsumerIdentity("orders.order-placed").ContractVersion("v1")
+            consumer.ConsumerIdentity("orders.order-placed")
         )
     );
     options.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
@@ -56,7 +56,7 @@ options.UseAzureServiceBus(asb =>
 
 options.Bus.ForMessage<OrderEvent>(message =>
     message
-        .MessageName("orders.events")
+        .Contract("orders.events")
         .UseAzureServiceBus(asb => asb.PartitionKey(order => order.CustomerId.ToString()))
 );
 ```

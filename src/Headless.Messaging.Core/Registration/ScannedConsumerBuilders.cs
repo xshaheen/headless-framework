@@ -2,6 +2,7 @@
 
 using Headless.Checks;
 using Headless.Messaging.CircuitBreaker;
+using Headless.Messaging.Configuration;
 
 namespace Headless.Messaging.Registration;
 
@@ -53,10 +54,11 @@ public interface IScannedConsumerBuilder
     /// <returns>The same builder instance for chaining.</returns>
     IScannedConsumerBuilder ConsumerIdentity(string consumerIdentity);
 
-    /// <summary>Sets the immutable version of this consumer's durable processing contract.</summary>
-    /// <param name="contractVersion">A non-whitespace version that changes only for an intentional dedupe reset.</param>
+    /// <summary>Defines the stable logical name and schema version of the discovered message contract.</summary>
+    /// <param name="name">The stable logical contract name.</param>
+    /// <param name="version">The schema version. Defaults to the initial version.</param>
     /// <returns>The same builder instance for chaining.</returns>
-    IScannedConsumerBuilder ContractVersion(string contractVersion);
+    IScannedConsumerBuilder Contract(string name, string version = MessageOptions.InitialContractVersion);
 
     /// <summary>Overrides the terminal inbox retention captured for future generations.</summary>
     /// <param name="retention">A positive whole-second duration no greater than <see cref="int.MaxValue"/> seconds.</param>
@@ -80,6 +82,10 @@ internal sealed class ScannedConsumerBuilder(Type consumerType, MessageLane lane
     private readonly MessageConsumerRegistrationBuilder _registration = new(consumerType, lane, isAssemblyScan: true);
 
     public bool IsSkipped { get; private set; }
+
+    public string? MessageName { get; private set; }
+
+    public string ContractVersion { get; private set; } = MessageOptions.InitialContractVersion;
 
     public IScannedConsumerBuilder Group(string group)
     {
@@ -105,9 +111,12 @@ internal sealed class ScannedConsumerBuilder(Type consumerType, MessageLane lane
         return this;
     }
 
-    public IScannedConsumerBuilder ContractVersion(string contractVersion)
+    public IScannedConsumerBuilder Contract(string name, string version = MessageOptions.InitialContractVersion)
     {
-        _registration.SetContractVersion(contractVersion);
+        Argument.IsNotNullOrWhiteSpace(name);
+        MessagingOptions.ValidateContractVersion(version);
+        MessageName = name;
+        ContractVersion = version;
         return this;
     }
 

@@ -14,10 +14,7 @@ public sealed class RabbitMqMessageBuilderExtensionsTests
         var builder = new BusMessageBuilder<TestMessage>(new ServiceCollection());
 
         builder.Consumer<TestConsumer>(consumer =>
-            consumer
-                .ConsumerIdentity("tests.rabbitmq.consumer-config")
-                .ContractVersion("v1")
-                .UseRabbitMq(rabbit => rabbit.PrefetchCount(20))
+            consumer.ConsumerIdentity("tests.rabbitmq.consumer-config").UseRabbitMq(rabbit => rabbit.PrefetchCount(20))
         );
         var config = builder.Build().Consumers.Single().ProviderConfigs.Values.Single();
 

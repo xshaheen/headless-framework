@@ -138,9 +138,9 @@ public sealed class TenantPropagationE2ETests : TestBase
             (_, setup) =>
                 setup.Bus.ForMessage<TenantOrderEvent>(message =>
                     message
-                        .MessageName("tenant-orders")
+                        .Contract("tenant-orders")
                         .Consumer<TenantCapturingConsumer>(consumer =>
-                            consumer.ConsumerIdentity("tests.tenant-propagation.capture").ContractVersion("v1")
+                            consumer.ConsumerIdentity("tests.tenant-propagation.capture")
                         )
                 )
         );
@@ -177,9 +177,9 @@ public sealed class TenantPropagationE2ETests : TestBase
             (_, setup) =>
                 setup.Bus.ForMessage<TenantOrderEvent>(message =>
                     message
-                        .MessageName("tenant-orders")
+                        .Contract("tenant-orders")
                         .Consumer<TenantCapturingConsumer>(consumer =>
-                            consumer.ConsumerIdentity("tests.tenant-propagation.capture").ContractVersion("v1")
+                            consumer.ConsumerIdentity("tests.tenant-propagation.capture")
                         )
                 )
         );
@@ -207,9 +207,9 @@ public sealed class TenantPropagationE2ETests : TestBase
             (_, setup) =>
                 setup.Bus.ForMessage<TenantOrderEvent>(message =>
                     message
-                        .MessageName("tenant-orders")
+                        .Contract("tenant-orders")
                         .Consumer<TenantCapturingConsumer>(consumer =>
-                            consumer.ConsumerIdentity("tests.tenant-propagation.capture").ContractVersion("v1")
+                            consumer.ConsumerIdentity("tests.tenant-propagation.capture")
                         )
                 )
         );
@@ -247,9 +247,9 @@ public sealed class TenantPropagationE2ETests : TestBase
             (_, setup) =>
                 setup.Bus.ForMessage<TenantOrderEvent>(message =>
                     message
-                        .MessageName("tenant-orders")
+                        .Contract("tenant-orders")
                         .Consumer<FlakyTenantConsumer>(consumer =>
-                            consumer.ConsumerIdentity("tests.tenant-propagation.flaky").ContractVersion("v1")
+                            consumer.ConsumerIdentity("tests.tenant-propagation.flaky")
                         )
                 )
         );
@@ -303,9 +303,9 @@ public sealed class TenantPropagationE2ETests : TestBase
             {
                 setup.Bus.ForMessage<TenantOrderEvent>(message =>
                     message
-                        .MessageName("tenant-orders")
+                        .Contract("tenant-orders")
                         .Consumer<TenantCapturingConsumer>(consumer =>
-                            consumer.ConsumerIdentity("tests.tenant-propagation.capture").ContractVersion("v1")
+                            consumer.ConsumerIdentity("tests.tenant-propagation.capture")
                         )
                 );
                 // Allow parallel subscriber execution to actually exercise concurrent dispatch
@@ -372,16 +372,16 @@ public sealed class TenantPropagationE2ETests : TestBase
             {
                 setup.Bus.ForMessage<TenantOrderUpstream>(message =>
                     message
-                        .MessageName("upstream-orders")
+                        .Contract("upstream-orders")
                         .Consumer<ChainedRepublishConsumer>(consumer =>
-                            consumer.ConsumerIdentity("tests.tenant-propagation.republish").ContractVersion("v1")
+                            consumer.ConsumerIdentity("tests.tenant-propagation.republish")
                         )
                 );
                 setup.Bus.ForMessage<TenantOrderEvent>(message =>
                     message
-                        .MessageName("tenant-orders")
+                        .Contract("tenant-orders")
                         .Consumer<TenantCapturingConsumer>(consumer =>
-                            consumer.ConsumerIdentity("tests.tenant-propagation.capture").ContractVersion("v1")
+                            consumer.ConsumerIdentity("tests.tenant-propagation.capture")
                         )
                 );
             }
@@ -420,9 +420,9 @@ public sealed class TenantPropagationE2ETests : TestBase
             (_, setup) =>
                 setup.Bus.ForMessage<TenantOrderEvent>(message =>
                     message
-                        .MessageName("tenant-orders")
+                        .Contract("tenant-orders")
                         .Consumer<TenantCapturingConsumer>(consumer =>
-                            consumer.ConsumerIdentity("tests.tenant-propagation.capture").ContractVersion("v1")
+                            consumer.ConsumerIdentity("tests.tenant-propagation.capture")
                         )
                 )
         );

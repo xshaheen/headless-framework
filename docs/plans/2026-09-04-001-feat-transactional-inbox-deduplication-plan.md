@@ -352,7 +352,7 @@ The Product Contract is unchanged. This section resolves the implementation choi
 ### Key Technical Decisions
 
 - KTD1. Start implementation from the final landed #808, #809, and #848 retry, lease, attempt, and shutdown model. Do not copy their current unmerged branch shape or introduce parallel lifecycle machinery. This gates U1 and governs the implementation of R9-R12.
-- KTD2. Add one required stable consumer identity and one explicit immutable contract version to durable consumer registration. Keep transport group and destination as routing metadata. Remove CLR-derived identity fallback from the durable path. (session-settled: user-approved — chosen over reusing `HandlerId`, group, or runtime handles: the persisted identity must survive handler and topology refactors.) This implements R2-R6.
+- KTD2. Register one stable message name and immutable schema version with the message contract, and require one operator-stable identity from each durable consumer. Keep transport group and destination as routing metadata. Remove CLR-derived identity fallback from the durable path. (session-settled: user-approved — chosen over reusing `HandlerId`, group, runtime handles, or schema version as consumer identity: persisted consumer identity must survive handler and topology refactors while schema evolution remains a message concern.) This implements R2-R6.
 - KTD3. Promote the existing received-message store into the inbox authority and evolve its provider-owned schema in place. Replace the old group-keyed uniqueness rule with the R6 key and enforce one ordinal persisted equality contract across providers, including an unambiguous no-tenant encoding. Serialize admission and child allocation on the base identity without generation so one retained generation is current. Give every generation an immutable incarnation identity for provenance and audit. Keep the existing storage/runtime version only as operational metadata. Do not add an EF migration stream or a second inbox ledger. (session-settled: user-approved — chosen over a parallel ledger or semantic backfill: the package is greenfield and one authority avoids divergent recovery state.) This implements R1, R6-R13, and R24-R26.
 - KTD4. Use two durable boundaries. One atomic admission transaction persists the complete recovery envelope and generation before dispatch or broker settlement. A separate committed claim precedes user code. Handler success then commits only the current fenced outcome, enlisted application state, and captured outgoing work. Failure recording occurs afterward under the same fence; loss of that write falls back to lease recovery. No transaction stays open across admission, dispatch, and handler execution. (session-settled: user-approved — chosen over one transaction spanning admission and handling: recovery must survive a settled duplicate followed by winner failure.) This implements R7-R11 and AE14.
 - KTD5. Make every claim and lifecycle mutation an atomic storage decision. Generation and attempt fences are atomically allocated persisted identities. The provider clock decides eligibility and lease timestamps but never supplies identity. All providers use one documented lock order across admission, claim, completion, force, hold, cleanup, and purge. A zero-row or rejected mutation is a terminal instruction to stop callbacks and roll back the current coordinated transaction. This implements R8-R15.
@@ -560,7 +560,7 @@ flowchart LR
 **Approach:**
 
 1. Record the landed retry/lease contract and remove any proposed inbox behavior that duplicates it.
-2. Add mandatory stable consumer identity and immutable contract version to all durable registration paths.
+2. Add mandatory stable consumer identity to every durable consumer and immutable name/version metadata to every message contract registration.
 3. Keep Bus and Queue collision scopes independent and remove CLR-derived fallback from durable metadata.
 4. Add declared inbox capability tiers and validate them before subscription creation or retry pickup.
 5. Expose the process-local InMemory tier and require an explicit opt-down for durable dedupe-only providers.
@@ -569,7 +569,7 @@ flowchart LR
 
 **Test Scenarios:**
 
-1. Register a durable consumer without stable identity or contract version; startup fails before transport or processor startup. Covers R2, R3, AE11.
+1. Register a durable consumer without stable identity, or a message contract without a valid schema version; configuration fails before transport or processor startup. Covers R2, R3, AE11.
 2. Register the same textual identity for Bus and Queue; both registrations succeed and remain lane-qualified. Covers R5, AE7.
 3. Register colliding identities for the same lane and contract version; startup reports the collision deterministically. Covers R5.
 4. Change CLR type, group, destination, or display name while identity remains stable; durable metadata remains unchanged. Covers R4, AE8.
@@ -897,7 +897,7 @@ flowchart LR
 ### Manual review gates
 
 - Re-query #808, #809, #848, and `origin/main` before implementation and again before final integration.
-- Review public API changes for mandatory stable identity, contract version, and explicit capability opt-down.
+- Review public API changes for stable message contract metadata, mandatory consumer identity, and explicit capability opt-down.
 - Review PostgreSQL and SQL Server upgrade SQL for provider locks, final index readiness, and rollback/restart behavior.
 - Review every metric label and dashboard projection for cardinality and sensitive-data exposure.
 - Verify `docs/llms/messaging.md` and package READMEs use at-least-once language and never imply exactly-once handler entry or external effects.
@@ -907,7 +907,7 @@ flowchart LR
 ## Definition of Done
 
 - Every R-ID, F-ID, and applicable AE-ID is implemented or proven by a named U-ID and verification scenario.
-- Stable consumer identity and contract version are mandatory for durable consumption; CLR type, group, destination, and runtime handles cannot become persisted dedupe identity.
+- Stable message name/schema version and consumer identity are distinct mandatory inputs to durable consumption; CLR type, group, destination, and runtime handles cannot become persisted dedupe identity. Intentional reprocessing uses a linked inbox generation instead of overloading schema version.
 - Admission is durable before broker settlement, and persisted recovery succeeds without another broker delivery.
 - InMemory, PostgreSQL, and SQL Server pass the shared lifecycle contract at their declared capability tiers.
 - PostgreSQL and SQL Server start safely from empty, current-baseline, partial, and concurrent initialization states; incompatible or legacy states fail closed.

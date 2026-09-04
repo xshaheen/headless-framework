@@ -78,10 +78,11 @@ internal abstract class MessageLaneRegistrationBuilder(MessagingSetupBuilder set
                 new MessageRegistration(
                     messageType,
                     lane,
-                    MessageName: null,
+                    builder.MessageName,
                     CorrelationSelector: null,
                     ProviderConfigs: new Dictionary<Type, object>(),
-                    Consumers: [builder.Build()]
+                    Consumers: [builder.Build()],
+                    ContractVersion: builder.ContractVersion
                 )
             );
         }
@@ -165,7 +166,7 @@ internal sealed record FrameworkConsumerRegistrationContribution(
     string? Group,
     byte Concurrency,
     string ConsumerIdentity,
-    string ContractVersion
+    string MessageContractVersion
 );
 
 internal static class FrameworkConsumerRegistrationExtensions
@@ -174,7 +175,7 @@ internal static class FrameworkConsumerRegistrationExtensions
         this IServiceCollection services,
         MessageLane lane,
         string consumerIdentity,
-        string contractVersion,
+        string messageContractVersion,
         string? messageName = null,
         string? group = null,
         byte concurrency = 1
@@ -183,7 +184,7 @@ internal static class FrameworkConsumerRegistrationExtensions
         where TConsumer : class, IConsume<TMessage>
     {
         Argument.IsNotNullOrWhiteSpace(consumerIdentity);
-        Argument.IsNotNullOrWhiteSpace(contractVersion);
+        MessagingOptions.ValidateContractVersion(messageContractVersion);
 
         if (
             services.Any(descriptor =>
@@ -209,7 +210,7 @@ internal static class FrameworkConsumerRegistrationExtensions
                 group,
                 concurrency,
                 consumerIdentity,
-                contractVersion
+                messageContractVersion
             )
         );
     }

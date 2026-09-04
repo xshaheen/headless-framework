@@ -80,7 +80,7 @@ public sealed class SharedConsumeScopeIntegrationTests : TestBase
             {
                 options.Bus.ForMessage<ScopedMessage>(message =>
                     message
-                        .MessageName("scope.class")
+                        .Contract("scope.class")
                         .Consumer<ScopedClassConsumer>(consumer =>
                             consumer.StableContract("tests.shared-scope.class").Group("scope.class")
                         )

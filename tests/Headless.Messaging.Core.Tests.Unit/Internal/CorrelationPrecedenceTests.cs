@@ -106,6 +106,52 @@ public sealed class CorrelationPrecedenceTests
     }
 
     [Fact]
+    public void should_use_ambient_message_id_as_causation_without_changing_root_correlation()
+    {
+        // given
+        var accessor = new AsyncLocalConsumeContextAccessor { Current = _ConsumeContext("root-correlation") };
+        var factory = _CreateFactory(accessor: accessor);
+
+        // when
+        var prepared = factory.Create(new TestMessage(null));
+
+        // then
+        prepared.Message.Headers[Headers.CorrelationId].Should().Be("root-correlation");
+        prepared.Message.Headers[Headers.CausationId].Should().Be("source-message");
+    }
+
+    [Fact]
+    public void should_prefer_explicit_causation_over_ambient_message_id()
+    {
+        // given
+        var accessor = new AsyncLocalConsumeContextAccessor { Current = _ConsumeContext("root-correlation") };
+        var factory = _CreateFactory(accessor: accessor);
+
+        // when
+        var prepared = factory.Create(new TestMessage(null), new PublishOptions { CausationId = "explicit-cause" });
+
+        // then
+        prepared.Message.Headers[Headers.CausationId].Should().Be("explicit-cause");
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData("v 2")]
+    [InlineData("2\r\ninvalid")]
+    public void should_reject_invalid_explicit_message_contract_versions(string version)
+    {
+        // given
+        var factory = _CreateFactory();
+
+        // when
+        var act = () => factory.Create(new TestMessage(null), new PublishOptions { ContractVersion = version });
+
+        // then
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
     public void should_not_invoke_selector_for_null_payload()
     {
         // given

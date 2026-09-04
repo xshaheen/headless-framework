@@ -113,7 +113,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
         {
             setup.Bus.ForMessage<CancellationExecutorTestMessage>(message =>
                 message
-                    .MessageName("test.messageName")
+                    .Contract("test.messageName")
                     .Consumer<CancellationExecutorTestConsumer>(consumer =>
                         consumer.StableContract("tests.subscribe-cancellation")
                     )
