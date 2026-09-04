@@ -197,17 +197,11 @@ internal sealed class MessageConsumerRegistrationBuilder(
 
     public void SetInboxRetention(TimeSpan retention)
     {
-        if (
-            retention <= TimeSpan.Zero
-            || retention.Ticks % TimeSpan.TicksPerSecond != 0
-            || retention.TotalSeconds > int.MaxValue
-        )
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(retention),
-                "Inbox retention must be a positive whole-second duration no greater than Int32.MaxValue seconds."
-            );
-        }
+        const string message =
+            "Inbox retention must be a positive whole-second duration no greater than Int32.MaxValue seconds.";
+        Argument.IsPositive(retention, message);
+        Argument.IsZero(retention.Ticks % TimeSpan.TicksPerSecond, message, nameof(retention));
+        Argument.IsLessThanOrEqualTo(retention.TotalSeconds, (double)int.MaxValue, message, nameof(retention));
 
         InboxRetention = retention;
     }

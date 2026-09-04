@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -75,6 +76,15 @@ public sealed class AuthMiddleware(RequestDelegate next, ILogger<AuthMiddleware>
         // Set user information for downstream middleware
         context.Items[UsernameKey] = authResult.Username;
         context.Items[AuthenticatedKey] = true;
+        if (context.User.Identity?.IsAuthenticated != true)
+        {
+            context.User = new ClaimsPrincipal(
+                new ClaimsIdentity(
+                    [new Claim(ClaimTypes.Name, authResult.Username!)],
+                    authenticationType: nameof(AuthMiddleware)
+                )
+            );
+        }
 
         await next(context);
     }

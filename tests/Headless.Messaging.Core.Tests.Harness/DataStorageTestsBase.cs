@@ -596,7 +596,7 @@ public abstract class DataStorageTestsBase : TestBase
                 Lane = lane,
             },
             generation,
-            cancellationToken: TestContext.Current.CancellationToken
+            cancellationToken: AbortToken
         );
     }
 

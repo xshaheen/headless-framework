@@ -1861,7 +1861,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
             },
             generation,
             inboxRetention,
-            cancellationToken: TestContext.Current.CancellationToken
+            cancellationToken: AbortToken
         );
     }
 

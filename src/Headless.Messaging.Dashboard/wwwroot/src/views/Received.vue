@@ -85,12 +85,12 @@
               <tr>
                 <th>Tenant</th><th>Message</th><th>Consumer</th><th>Lane</th><th>Outcome</th>
                 <th>Tier</th><th>Generation</th>
-                <th>Provenance</th><th>Hold</th><th>Expires</th><th>Recovery</th>
+                <th>Provenance</th><th>Hold</th><th>Expires</th><th>Recovery</th><th>Actions</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="inboxGenerations.length === 0">
-                <td colspan="11" class="text-center pa-4 text-medium-emphasis">No retained inbox generations</td>
+                <td colspan="12" class="text-center pa-4 text-medium-emphasis">No retained inbox generations</td>
               </tr>
               <tr v-for="generation in inboxGenerations" :key="generation.incarnationId">
                 <td>{{ generation.tenantId ?? '—' }}</td>
@@ -104,53 +104,48 @@
                 <td>{{ generation.isHeld ? 'Held' : 'Released' }}</td>
                 <td>{{ generation.effectiveExpiresAt ? formatDateTime(generation.effectiveExpiresAt) : '—' }}</td>
                 <td>{{ generation.isOrphaned ? 'Orphaned' : 'Routable' }}</td>
+                <td class="text-no-wrap">
+                  <v-btn
+                    icon="mdi-replay"
+                    size="x-small"
+                    variant="text"
+                    color="warning"
+                    title="Force reprocess"
+                    :disabled="!isTerminalInboxGeneration(generation.status)"
+                    @click="confirmInboxOperation('reexecute', generation)"
+                  />
+                  <v-btn
+                    :icon="generation.isHeld ? 'mdi-lock-open-variant' : 'mdi-lock'"
+                    size="x-small"
+                    variant="text"
+                    color="info"
+                    :title="generation.isHeld ? 'Release hold' : 'Hold generation'"
+                    :disabled="!isTerminalInboxGeneration(generation.status)"
+                    @click="confirmInboxOperation(generation.isHeld ? 'release' : 'hold', generation)"
+                  />
+                  <v-btn
+                    icon="mdi-delete"
+                    size="x-small"
+                    variant="text"
+                    color="error"
+                    title="Purge generation"
+                    :disabled="!isTerminalInboxGeneration(generation.status)"
+                    @click="confirmInboxOperation('delete', generation)"
+                  />
+                </td>
               </tr>
             </tbody>
           </v-table>
         </v-card-text>
       </v-card>
 
-      <!-- Batch Actions -->
-      <div v-if="selectedIds.length > 0" class="batch-actions mb-3">
-        <v-chip size="small" color="primary" variant="tonal" class="mr-2">
-          {{ selectedIds.length }} selected
-        </v-chip>
-        <v-btn
-          size="small"
-          color="warning"
-          variant="elevated"
-          prepend-icon="mdi-replay"
-          class="mr-2"
-          @click="handleBatchReexecute"
-        >
-          Re-execute Selected
-        </v-btn>
-        <v-btn
-          size="small"
-          color="error"
-          variant="elevated"
-          prepend-icon="mdi-delete"
-          @click="handleBatchDelete"
-        >
-          Delete Selected
-        </v-btn>
-      </div>
-
       <!-- Table -->
-      <TableSkeleton v-if="isLoading" :rows="5" :columns="11" />
+      <TableSkeleton v-if="isLoading" :rows="5" :columns="10" />
 
       <v-card v-else class="messages-card">
         <v-table density="comfortable" class="messages-table">
           <thead>
             <tr>
-              <th style="width: 40px">
-                <v-checkbox
-                  v-model="selectAll"
-                  hide-details
-                  density="compact"
-                  @update:model-value="toggleSelectAll"
-                />
-              </th>
               <th>Storage ID</th>
               <th>Message ID</th>
               <th>Name</th>
@@ -165,17 +160,9 @@
           </thead>
           <tbody>
             <tr v-if="messages.length === 0">
-              <td colspan="11" class="text-center pa-6 text-medium-emphasis">No messages found</td>
+              <td colspan="10" class="text-center pa-6 text-medium-emphasis">No messages found</td>
             </tr>
             <tr v-for="msg in messages" :key="msg.storageId">
-              <td>
-                <v-checkbox
-                  :model-value="selectedIds.includes(msg.storageId)"
-                  hide-details
-                  density="compact"
-                  @update:model-value="toggleSelect(msg.storageId)"
-                />
-              </td>
               <td class="text-caption">
                 <a class="id-link" @click="viewMessage(msg.storageId)">{{ msg.storageId }}</a>
               </td>
@@ -284,6 +271,47 @@ interface DashboardMeta {
   providerCapabilities: Array<{ role: string; inboxCapability: string | null }>
 }
 
+const inboxActions = {
+  reexecute: {
+    path: '/received/reexecute',
+    title: 'Force Reprocess Generation',
+    confirmText: 'Force Reprocess',
+    success: 'queued for reprocessing',
+    reason: 'Dashboard force reprocess',
+    color: '#ff9800',
+    icon: 'mdi-replay',
+  },
+  hold: {
+    path: '/inbox/hold',
+    title: 'Hold Generation',
+    confirmText: 'Hold',
+    success: 'held',
+    reason: 'Dashboard hold',
+    color: '#2196f3',
+    icon: 'mdi-lock',
+  },
+  release: {
+    path: '/inbox/release',
+    title: 'Release Generation Hold',
+    confirmText: 'Release Hold',
+    success: 'released',
+    reason: 'Dashboard release hold',
+    color: '#2196f3',
+    icon: 'mdi-lock-open-variant',
+  },
+  delete: {
+    path: '/received/delete',
+    title: 'Purge Generation',
+    confirmText: 'Purge',
+    success: 'purged',
+    reason: 'Dashboard purge',
+    color: '#f44336',
+    icon: 'mdi-delete',
+  },
+} as const
+
+type InboxAction = keyof typeof inboxActions
+
 const alertStore = useAlertStore()
 const messagingStore = useMessagingStore()
 const { stats } = storeToRefs(messagingStore)
@@ -332,8 +360,6 @@ const messages = ref<ReceivedMessage[]>([])
 const inboxGenerations = ref<InboxGeneration[]>([])
 const inboxTier = ref('Unavailable')
 const canLoadInbox = window.MessagingConfig?.auth?.enabled === true
-const selectedIds = ref<string[]>([])
-const selectAll = ref(false)
 const detailDialogOpen = ref(false)
 const detailMessage = ref<MessageDetail | null>(null)
 let pendingAction: (() => Promise<void>) | null = null
@@ -397,8 +423,6 @@ async function loadMessages(page?: number, pageSize?: number) {
       meta.providerCapabilities.find((capability) => capability.role === 'Storage')?.inboxCapability ??
       'Unavailable'
     pagination.totalCount.value = data.totals || 0
-    selectedIds.value = []
-    selectAll.value = false
   } catch (error) {
     if (generation !== loadGeneration) return
     console.error('Failed to load received messages:', error)
@@ -430,24 +454,6 @@ onUnmounted(() => {
   if (debounceTimer) clearTimeout(debounceTimer)
 })
 
-function toggleSelectAll(checked: boolean | null) {
-  if (checked) {
-    selectedIds.value = messages.value.map((m) => m.storageId)
-  } else {
-    selectedIds.value = []
-  }
-}
-
-function toggleSelect(storageId: string) {
-  const idx = selectedIds.value.indexOf(storageId)
-  if (idx >= 0) {
-    selectedIds.value.splice(idx, 1)
-  } else {
-    selectedIds.value.push(storageId)
-  }
-  selectAll.value = selectedIds.value.length === messages.value.length && messages.value.length > 0
-}
-
 async function viewMessage(storageId: string) {
   try {
     const dto = await httpService.get<MessageDetail>(`/received/message/${storageId}`)
@@ -458,40 +464,35 @@ async function viewMessage(storageId: string) {
   }
 }
 
-function handleBatchReexecute() {
-  pendingAction = async () => {
-    try {
-      await httpService.post('/received/reexecute', [...selectedIds.value])
-      alertStore.showSuccess(`${selectedIds.value.length} messages re-executed`)
-      await loadMessages()
-    } catch {
-      alertStore.showError('Failed to re-execute messages')
-    }
-  }
-  const props = new ConfirmDialogProps()
-  props.title = 'Re-execute Messages'
-  props.text = `Are you sure you want to re-execute ${selectedIds.value.length} messages?`
-  props.confirmText = 'Re-execute All'
-  props.confirmColor = '#ff9800'
-  props.icon = 'mdi-replay'
-  props.iconColor = '#ff9800'
-  confirmDialog.open(props)
+function isTerminalInboxGeneration(status: string) {
+  return status === 'Succeeded' || status === 'Failed'
 }
 
-function handleBatchDelete() {
+function confirmInboxOperation(actionName: InboxAction, generation: InboxGeneration) {
+  const action = inboxActions[actionName]
   pendingAction = async () => {
     try {
-      await httpService.post('/received/delete', [...selectedIds.value])
-      alertStore.showSuccess(`${selectedIds.value.length} messages deleted`)
+      await httpService.post(action.path, {
+        operationId: crypto.randomUUID(),
+        expectedIncarnationId: generation.incarnationId,
+        expectedStatus: generation.status,
+        reason: action.reason,
+      })
+      alertStore.showSuccess(`Inbox generation ${action.success}`)
       await loadMessages()
     } catch {
-      alertStore.showError('Failed to delete messages')
+      alertStore.showError(`Failed to ${action.confirmText.toLowerCase()} inbox generation`)
     }
   }
   const props = new ConfirmDialogProps()
-  props.title = 'Delete Messages'
-  props.text = `Are you sure you want to delete ${selectedIds.value.length} messages? This action cannot be undone.`
-  props.confirmText = 'Delete All'
+  props.title = action.title
+  props.text = `${action.title} ${generation.consumerIdentity} generation ${generation.generation}?${
+    actionName === 'delete' ? ' This action cannot be undone.' : ''
+  }`
+  props.confirmText = action.confirmText
+  props.confirmColor = action.color
+  props.icon = action.icon
+  props.iconColor = action.color
   confirmDialog.open(props)
 }
 

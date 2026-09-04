@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Claims;
 using Headless.Dashboard.Authentication;
@@ -363,6 +364,94 @@ public sealed class ReceivedMessageEndpointTests : TestBase
             );
     }
 
+    [Theory]
+    [InlineData("/api/received/reexecute", InboxOperationType.ForceReprocess)]
+    [InlineData("/api/inbox/hold", InboxOperationType.Hold)]
+    [InlineData("/api/inbox/release", InboxOperationType.ReleaseHold)]
+    public async Task should_route_generation_actions_through_audited_inbox_operations(
+        string path,
+        InboxOperationType operationType
+    )
+    {
+        var operationId = Guid.NewGuid();
+        var incarnationId = Guid.NewGuid();
+        var operations = Substitute.For<IInboxOperationsApi>();
+        var result = new InboxOperationResult(
+            operationId,
+            operationType,
+            InboxOperationOutcome.Applied,
+            incarnationId,
+            StatusName.Failed,
+            null,
+            null,
+            null,
+            null,
+            "dashboard-operator",
+            "dashboard action",
+            DateTimeOffset.UtcNow
+        );
+        operations
+            .ForceReprocessAsync(Arg.Any<InboxOperationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(result));
+        operations
+            .HoldAsync(Arg.Any<InboxOperationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(result));
+        operations
+            .ReleaseHoldAsync(Arg.Any<InboxOperationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(result));
+        _dataStorage.GetInboxOperationsApi().Returns(operations);
+        await using var app = _CreateTestApp(_dataStorage);
+        await app.StartAsync(AbortToken);
+        using var client = app.GetTestClient();
+
+        var response = await client.PostAsJsonAsync(
+            path,
+            new
+            {
+                operationId,
+                expectedIncarnationId = incarnationId,
+                expectedStatus = StatusName.Failed,
+                reason = "dashboard action",
+            },
+            AbortToken
+        );
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        Func<InboxOperationRequest, bool> matches = request =>
+            request.OperationId == operationId
+            && request.ExpectedIncarnationId == incarnationId
+            && request.Actor == "dashboard-operator";
+        switch (operationType)
+        {
+            case InboxOperationType.ForceReprocess:
+                await operations
+                    .Received(1)
+                    .ForceReprocessAsync(
+                        Arg.Is<InboxOperationRequest>(request => matches(request)),
+                        Arg.Any<CancellationToken>()
+                    );
+                break;
+            case InboxOperationType.Hold:
+                await operations
+                    .Received(1)
+                    .HoldAsync(
+                        Arg.Is<InboxOperationRequest>(request => matches(request)),
+                        Arg.Any<CancellationToken>()
+                    );
+                break;
+            case InboxOperationType.ReleaseHold:
+                await operations
+                    .Received(1)
+                    .ReleaseHoldAsync(
+                        Arg.Is<InboxOperationRequest>(request => matches(request)),
+                        Arg.Any<CancellationToken>()
+                    );
+                break;
+            default:
+                throw new InvalidOperationException($"Unsupported operation type: {operationType}.");
+        }
+    }
+
     [Fact]
     public async Task should_reject_inbox_mutation_without_authenticated_actor()
     {
@@ -383,9 +472,49 @@ public sealed class ReceivedMessageEndpointTests : TestBase
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
-    private static WebApplication _CreateTestApp(IDataStorage dataStorage, bool authenticate = true)
+    [Fact]
+    public async Task should_authorize_inbox_query_with_builtin_api_key_identity()
     {
-        var config = new MessagingDashboardOptionsBuilder().WithNoAuth();
+        var operations = Substitute.For<IInboxOperationsApi>();
+        operations
+            .QueryAsync(
+                Arg.Any<InboxGenerationQuery>(),
+                Arg.Any<InboxAuthorizationContext>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(new IndexPage<InboxGenerationView>([], 0, 20, 0)));
+        _dataStorage.GetInboxOperationsApi().Returns(operations);
+        var config = new MessagingDashboardOptionsBuilder().WithApiKey("secret");
+        await using var app = _CreateTestApp(
+            _dataStorage,
+            authenticate: false,
+            config: config,
+            useAuthenticationMiddleware: true
+        );
+        await app.StartAsync(AbortToken);
+        using var client = app.GetTestClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "secret");
+
+        var response = await client.GetAsync("/api/inbox", AbortToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        await operations
+            .Received(1)
+            .QueryAsync(
+                Arg.Any<InboxGenerationQuery>(),
+                Arg.Is<InboxAuthorizationContext>(authorization => authorization.Actor == "api-user"),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    private static WebApplication _CreateTestApp(
+        IDataStorage dataStorage,
+        bool authenticate = true,
+        MessagingDashboardOptionsBuilder? config = null,
+        bool useAuthenticationMiddleware = false
+    )
+    {
+        config ??= new MessagingDashboardOptionsBuilder().WithNoAuth();
 
         var appBuilder = WebApplication.CreateSlimBuilder();
         appBuilder.WebHost.UseTestServer();
@@ -410,7 +539,11 @@ public sealed class ReceivedMessageEndpointTests : TestBase
 
         var app = appBuilder.Build();
         app.UseRouting();
-        if (authenticate)
+        if (useAuthenticationMiddleware)
+        {
+            app.UseMiddleware<AuthMiddleware>();
+        }
+        else if (authenticate)
         {
             app.Use(
                 (context, next) =>
