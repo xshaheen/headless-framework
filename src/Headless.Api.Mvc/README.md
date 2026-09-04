@@ -72,6 +72,16 @@ public Task<OrderDto> Update(
 
 Missing preconditions return 428 with `g:if_match_required`; malformed, weak, wildcard, or multiple tags return 400 with `g:if_match_invalid`. EF concurrency failures continue to return 409 with `g:concurrency_failure`.
 
+If every conditional write in the API uses a specific representation format, configure one validator instead of adding another MVC filter:
+
+```csharp
+builder.Services.AddHeadlessMvcEntityTagConcurrency(options =>
+    options.IfMatchValidator = static tag => tag.TryGetUInt32(out _)
+);
+```
+
+The same option is available from `AddHeadlessMinimalApiEntityTagConcurrency(...)`.
+
 `EntityTag` identifies the HTTP representation rather than the database row. Keep the persistence version provider-native—`uint` mapped to PostgreSQL `xmin`, or `byte[]` mapped to SQL Server `rowversion`—then use `EntityTag.FromUInt32(...)` or `EntityTag.FromBytes(...)` at the response boundary. Implement `GetEntityTag()` on the response DTO; because it is a method, the metadata is not added to the JSON body.
 
 ### URL Canonicalization

@@ -55,4 +55,22 @@ public static class SetupMvc
 
         return services;
     }
+
+    /// <summary>
+    /// Adds the opt-in MVC profile for strong ETag responses and <c>If-Match</c> preconditions with
+    /// representation-specific validation.
+    /// </summary>
+    /// <param name="services">The service collection to configure.</param>
+    /// <param name="configure">Configures entity-tag concurrency validation.</param>
+    /// <returns><paramref name="services"/> for chaining.</returns>
+    public static IServiceCollection AddHeadlessMvcEntityTagConcurrency(
+        this IServiceCollection services,
+        Action<EntityTagConcurrencyOptions> configure
+    )
+    {
+        services.AddHeadlessMvcEntityTagConcurrency();
+        services.Configure(configure);
+
+        return services;
+    }
 }

@@ -962,7 +962,13 @@ app.Run();
 
 ### Configuration
 
-No additional configuration required. Uses framework JSON settings automatically.
+Representation validation is optional. The default accepts any strong entity tag. Configure the shared MVC and Minimal API validator when every conditional write uses a specific representation format:
+
+```csharp
+builder.Services.AddHeadlessMinimalApiEntityTagConcurrency(options =>
+    options.IfMatchValidator = static tag => tag.TryGetUInt32(out _)
+);
+```
 
 ### Dependencies
 
@@ -1036,6 +1042,8 @@ public sealed class OrdersController(IOrderService service, IProblemDetailsCreat
 #### ETag concurrency
 
 `AddHeadlessMvcEntityTagConcurrency()` emits an `ETag` for successful MVC `ObjectResult` values implementing `IHasEntityTag`. Add `[RequireIfMatch]` to write actions; the filter accepts exactly one strong tag and exposes it through scoped `IIfMatchContext`. Missing tags return 428 with `g:if_match_required`, invalid tags return 400 with `g:if_match_invalid`, and persistence conflicts return 409 with `g:concurrency_failure`.
+
+Use `AddHeadlessMvcEntityTagConcurrency(options => ...)` to apply API-wide representation validation after the strong tag is parsed. For PostgreSQL `xmin`, set `options.IfMatchValidator = static tag => tag.TryGetUInt32(out _)`. The same option is available for Minimal APIs.
 
 `EntityTag` is an HTTP representation value, independent from persistence. Keep database concurrency versions provider-native (`uint`/PostgreSQL `xmin`, `byte[]`/SQL Server `rowversion`) and convert them with `EntityTag.FromUInt32(...)` or `EntityTag.FromBytes(...)` at the response boundary. Minimal APIs register `AddHeadlessMinimalApiEntityTagConcurrency()`, add `.WithEntityTag()` to response endpoints, and add `.RequireIfMatch()` to conditional writes.
 

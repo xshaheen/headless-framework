@@ -55,6 +55,43 @@ public sealed class RequireIfMatchAttributeTests : TestBase
         ifMatch.EntityTag.Should().Be(EntityTag.CreateStrong("revision-42"));
     }
 
+    [Fact]
+    public async Task should_return_400_when_configured_if_match_validator_rejects_tag()
+    {
+        var (context, _) = _CreateContext(
+            "\"revision-42\"",
+            configure: options => options.IfMatchValidator = static tag => tag.TryGetUInt32(out _)
+        );
+
+        await new IfMatchActionFilter().OnActionExecutionAsync(context, _Next);
+
+        context.Result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(400);
+        context
+            .HttpContext.RequestServices.GetRequiredService<IProblemDetailsCreator>()
+            .Received(1)
+            .BadRequest(
+                Arg.Any<string>(),
+                Arg.Is<ErrorDescriptor>(descriptor => descriptor.Code == GeneralErrorCodes.IfMatchInvalid)
+            );
+    }
+
+    [Fact]
+    public async Task should_accept_tag_when_configured_if_match_validator_accepts_it()
+    {
+        var expected = EntityTag.FromUInt32(42);
+        var (context, ifMatch) = _CreateContext(
+            expected.HeaderValue,
+            configure: options => options.IfMatchValidator = static tag => tag.TryGetUInt32(out _)
+        );
+
+        await new IfMatchActionFilter().OnActionExecutionAsync(
+            context,
+            () => Task.FromResult(new ActionExecutedContext(context, [], new object()))
+        );
+
+        ifMatch.EntityTag.Should().Be(expected);
+    }
+
     [Theory]
     [InlineData("*")]
     [InlineData("W/\"revision-42\"")]
@@ -97,17 +134,19 @@ public sealed class RequireIfMatchAttributeTests : TestBase
 
     private static (ActionExecutingContext Context, IIfMatchContext IfMatch) _CreateContext(
         string? header = null,
-        bool requiresIfMatch = true
+        bool requiresIfMatch = true,
+        Action<EntityTagConcurrencyOptions>? configure = null
     )
     {
         var creator = Substitute.For<IProblemDetailsCreator>();
         creator.BadRequest(Arg.Any<string>(), Arg.Any<ErrorDescriptor>()).Returns(new ProblemDetails { Status = 400 });
-        var services = new ServiceCollection()
-            .AddSingleton(creator)
-            .AddHeadlessEntityTagConcurrencyCore()
-            .BuildServiceProvider();
-        var ifMatch = services.GetRequiredService<IIfMatchContext>();
-        var http = new DefaultHttpContext { RequestServices = services };
+        var services = new ServiceCollection().AddSingleton(creator);
+        _ = configure is null
+            ? services.AddHeadlessMvcEntityTagConcurrency()
+            : services.AddHeadlessMvcEntityTagConcurrency(configure);
+        var provider = services.BuildServiceProvider();
+        var ifMatch = provider.GetRequiredService<IIfMatchContext>();
+        var http = new DefaultHttpContext { RequestServices = provider };
         if (header is not null)
         {
             http.Request.Headers.IfMatch = header;

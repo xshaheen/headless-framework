@@ -5,6 +5,7 @@ using Headless.Api.Resources;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
 
 namespace Headless.Api.Concurrency;
@@ -33,6 +34,17 @@ internal static class IfMatchRequestValidator
                 .RequestServices.GetRequiredService<IProblemDetailsCreator>()
                 .BadRequest(
                     "If-Match must contain exactly one strong entity tag.",
+                    GeneralMessageDescriber.IfMatchInvalid()
+                );
+        }
+
+        var options = context.RequestServices.GetRequiredService<IOptions<EntityTagConcurrencyOptions>>().Value;
+        if (options.IfMatchValidator is not null && !options.IfMatchValidator(entityTag))
+        {
+            return context
+                .RequestServices.GetRequiredService<IProblemDetailsCreator>()
+                .BadRequest(
+                    "If-Match contains an entity tag that is not supported by this API.",
                     GeneralMessageDescriber.IfMatchInvalid()
                 );
         }
