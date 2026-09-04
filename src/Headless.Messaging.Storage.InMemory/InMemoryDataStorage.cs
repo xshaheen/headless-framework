@@ -582,6 +582,12 @@ internal sealed partial class InMemoryDataStorage(
                 return ValueTask.FromResult(false);
             }
 
+            if (current.IsInboxOrphaned == orphaned)
+            {
+                message.IsInboxOrphaned = orphaned;
+                return ValueTask.FromResult(false);
+            }
+
             current.IsInboxOrphaned = orphaned;
             message.IsInboxOrphaned = orphaned;
             return ValueTask.FromResult(true);

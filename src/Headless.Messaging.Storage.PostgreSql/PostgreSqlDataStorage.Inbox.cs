@@ -205,7 +205,8 @@ internal sealed partial class PostgreSqlDataStorage
               AND "GenerationIncarnationId"=@GenerationIncarnationId
               AND "AttemptId"=@AttemptId
               AND "Owner" IS NOT DISTINCT FROM @Owner
-              AND "LockedUntil"=@LockedUntil;
+              AND "LockedUntil"=@LockedUntil
+              AND "IsInboxOrphaned" IS DISTINCT FROM @IsInboxOrphaned;
             """;
         object[] parameters =
         [

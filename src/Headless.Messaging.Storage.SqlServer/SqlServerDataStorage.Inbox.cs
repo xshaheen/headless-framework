@@ -228,7 +228,8 @@ internal sealed partial class SqlServerDataStorage
               AND [GenerationIncarnationId]=@GenerationIncarnationId
               AND [AttemptId]=@AttemptId
               AND ([Owner]=@Owner OR ([Owner] IS NULL AND @Owner IS NULL))
-              AND [LockedUntil]=@LockedUntil;
+              AND [LockedUntil]=@LockedUntil
+              AND [IsInboxOrphaned]<>@IsInboxOrphaned;
             """;
         object[] parameters =
         [

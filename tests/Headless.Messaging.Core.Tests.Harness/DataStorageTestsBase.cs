@@ -243,6 +243,7 @@ public abstract class DataStorageTestsBase : TestBase
 
         (await storage.MarkReceivedInboxOrphanedAsync(stale, orphaned: true, AbortToken)).Should().BeFalse();
         (await storage.MarkReceivedInboxOrphanedAsync(first.Message, orphaned: true, AbortToken)).Should().BeTrue();
+        (await storage.MarkReceivedInboxOrphanedAsync(first.Message, orphaned: true, AbortToken)).Should().BeFalse();
 
         var releaseStorage = storage.Should().BeAssignableTo<IGracefulLeaseReleaseStorage>().Subject;
         var exactIdentity = new MessageLeaseIdentity(

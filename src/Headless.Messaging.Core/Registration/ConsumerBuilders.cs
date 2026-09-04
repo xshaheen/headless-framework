@@ -132,7 +132,7 @@ internal abstract class ConsumerBuilderBase<TConsumer, TBuilder>(MessageConsumer
     }
 
     // The concrete builder always implements TBuilder, so this is a safe self-cast that keeps
-    // the lane interface flowing through the fluent chain without duplicating the four methods.
+    // the lane interface flowing through the fluent chain without duplicating the shared fluent methods.
     private TBuilder Self => (TBuilder)(object)this;
 }
 

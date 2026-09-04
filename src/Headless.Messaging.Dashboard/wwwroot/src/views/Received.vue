@@ -280,6 +280,10 @@ interface InboxGeneration {
   isHeld: boolean
 }
 
+interface DashboardMeta {
+  providerCapabilities: Array<{ role: string; inboxCapability: string | null }>
+}
+
 const alertStore = useAlertStore()
 const messagingStore = useMessagingStore()
 const { stats } = storeToRefs(messagingStore)
@@ -336,6 +340,7 @@ let pendingAction: (() => Promise<void>) | null = null
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 let isExecuting = false
 let loadGeneration = 0
+let metaRequest: Promise<DashboardMeta> | null = null
 
 const confirmDialog = useDialog<ConfirmDialogProps>().withComponent(
   () => import('@/components/common/ConfirmDialog.vue'),
@@ -348,6 +353,14 @@ const pagination = usePagination(
   },
   { initialPage: 1, initialPageSize: 20 },
 )
+
+function loadProviderMeta(): Promise<DashboardMeta> {
+  metaRequest ??= httpService.get<DashboardMeta>('/meta').catch((error) => {
+    metaRequest = null
+    throw error
+  })
+  return metaRequest
+}
 
 async function loadMessages(page?: number, pageSize?: number) {
   const generation = ++loadGeneration
@@ -374,9 +387,7 @@ async function loadMessages(page?: number, pageSize?: number) {
         `/received/${activeStatus.value}?${params}`,
       ),
       inboxRequest,
-      httpService.get<{
-        providerCapabilities: Array<{ role: string; inboxCapability: string | null }>
-      }>('/meta'),
+      loadProviderMeta(),
       messagingStore.fetchStats(),
     ])
     if (generation !== loadGeneration) return
