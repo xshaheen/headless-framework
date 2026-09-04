@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Api.Concurrency;
+namespace Headless.Api;
 
 /// <summary>Provides the decoded strong entity tag supplied by the current request.</summary>
 [PublicAPI]
