@@ -34,6 +34,7 @@ Provides a framework-aware base `DbContext` with conventions for audit fields, E
 - **Domain-event at-most-once guard.** A guard inside the execution-strategy retry ensures domain-event handlers are invoked only on the first attempt and are not re-invoked on a replay. Because publication precedes commit, a handler can run on an attempt that ultimately fails to commit — keep domain-event side effects idempotent.
 - **Negative index pagination is page-from-end.** `ToIndexPageAsync(index: -1, size: N)` returns the final page, not just the last `N` rows, and normalizes the returned `IndexPage.Index` to the actual zero-based page index. EF queries use `Skip`/`Take` so providers can translate the slice to SQL.
 - **The EF model is the automatic audit policy source.** The fluent policy stays in this ORM package because built-in change capture is EF-specific, while audit storage remains provider-independent. Domain entities carry no audit marker or attributes, and there is no duplicate provider-neutral policy registry.
+- **Concurrency versions are provider-native.** Configure optimistic-concurrency properties explicitly for the selected database. PostgreSQL uses a `uint` property mapped to the `xmin` system column with `IsRowVersion()`; SQL Server uses a `byte[]` property mapped to `rowversion`. HTTP entity tags belong to `Headless.Api.Abstractions` and are derived from these versions at the API boundary.
 
 ## Installation
 
