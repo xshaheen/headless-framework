@@ -73,6 +73,43 @@ public sealed class ConsumerRegisterTests : TestBase
     }
 
     [Fact]
+    public async Task should_not_resume_group_when_register_is_quiesced()
+    {
+        await using var provider = _CreateProvider();
+        var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
+        var client = Substitute.For<IConsumerClient>();
+        client.ResumeAsync(Arg.Any<CancellationToken>()).Returns(ValueTask.CompletedTask);
+
+        var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
+        var handle = Activator.CreateInstance(handleType, nonPublic: true)!;
+        using var cts = new CancellationTokenSource();
+        handleType.GetProperty("Logger")!.SetValue(handle, NullLogger<ConsumerRegister>.Instance);
+        handleType.GetProperty("Cts")!.SetValue(handle, cts);
+        handleType.GetProperty("GroupName")!.SetValue(handle, "payments");
+        handleType.GetProperty("ConsumerTasks")!.SetValue(handle, new ConcurrentBag<Task>());
+
+        var addClient = handleType.GetMethod("AddClientAsync")!;
+        await (ValueTask)addClient.Invoke(handle, [client])!;
+
+        handleType.GetProperty("IsPaused")!.SetValue(handle, true);
+
+        // Real shutdown sequence: Quiesce() sets _state to Disposing synchronously before returning.
+        ((IProcessingServerShutdown)register).Quiesce();
+
+        var resumeGroup = typeof(ConsumerRegister).GetMethod(
+            "_ResumeGroupAsync",
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+        )!;
+
+        await (ValueTask)resumeGroup.Invoke(register, [handle])!;
+
+        ((bool)handleType.GetProperty("IsPaused")!.GetValue(handle)!)
+            .Should()
+            .BeTrue("a quiesced register must not reopen transport for a group it is already draining");
+        await client.DidNotReceive().ResumeAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task add_client_async_disposes_and_forgets_new_client_when_initial_pause_fails()
     {
         var expected = new InvalidOperationException("pause failed");

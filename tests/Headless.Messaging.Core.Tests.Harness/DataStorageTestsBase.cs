@@ -2059,6 +2059,104 @@ public abstract class DataStorageTestsBase : TestBase
         after.Content.Should().Be(beforeDeferral!.Content);
     }
 
+    // Pins AE4 / R14 (batch fairness, issue #808): once a full leading batch is deferred, the next
+    // pickup must reach a due healthy row instead of reclaiming the same head rows. Storage has no
+    // notion of circuit state, so an earlier-due leading batch stands in for the open-circuit group.
+    public virtual async Task should_reach_healthy_row_after_deferring_a_full_leading_open_batch()
+    {
+        const int batchSize = 3;
+        var storage = CreateStorageWithRetryBatchSize(batchSize);
+
+        if (storage is null)
+        {
+            Assert.Skip("Storage does not expose a configurable retry-batch test seam");
+            return;
+        }
+
+        var deferralStorage = storage.Should().BeAssignableTo<ICircuitRetryDeferralStorage>().Subject;
+        NodeMembership.SetIdentity("batch-fairness-owner");
+
+        var openRows = new List<MediumMessage>();
+
+        for (var index = 0; index < batchSize; index++)
+        {
+            var envelope = new MediumMessage
+            {
+                StorageId = Guid.Empty,
+                Origin = CreateMessage(),
+                Content = string.Empty,
+                Lane = MessageLane.Bus,
+            };
+            var stored = await storage.StoreReceivedMessageAsync(
+                $"batch-fairness-open-{index}",
+                "batch-fairness-open-group",
+                envelope,
+                AbortToken
+            );
+            await storage.ChangeReceiveStateAsync(
+                stored,
+                StatusName.Failed,
+                nextRetryAt: _Now().AddSeconds(-30 + index),
+                cancellationToken: AbortToken
+            );
+            openRows.Add(stored);
+        }
+
+        var openRowIds = openRows.Select(message => message.StorageId).ToHashSet();
+
+        var healthyEnvelope = new MediumMessage
+        {
+            StorageId = Guid.Empty,
+            Origin = CreateMessage(),
+            Content = string.Empty,
+            Lane = MessageLane.Bus,
+        };
+        var healthyStored = await storage.StoreReceivedMessageAsync(
+            "batch-fairness-healthy",
+            "batch-fairness-healthy-group",
+            healthyEnvelope,
+            AbortToken
+        );
+        // Due, but sorts after every open-group row under the claim query's ORDER BY NextRetryAt, Id.
+        await storage.ChangeReceiveStateAsync(
+            healthyStored,
+            StatusName.Failed,
+            nextRetryAt: _Now().AddSeconds(-1),
+            cancellationToken: AbortToken
+        );
+
+        // First pickup: 3 slots for 4 due rows, so the earlier-due open rows fill the claim. The
+        // healthy row's absence here is what proves starvation is possible without the fix.
+        // Scoped to this test's own rows: a sibling in this collection (PostgreSqlDeduplicationTest)
+        // leaves due rows in the reused container, which can take claim slots. That also rules out an
+        // unfiltered HaveCount — this test cannot guarantee its rows win every slot.
+        var firstClaim = (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken)).ToList();
+        var ownedIds = new HashSet<Guid>(openRowIds) { healthyStored.StorageId };
+        var ownedFirstClaim = firstClaim.Where(message => ownedIds.Contains(message.StorageId)).ToList();
+        ownedFirstClaim.Should().OnlyContain(message => openRowIds.Contains(message.StorageId));
+        ownedFirstClaim.Should().NotContain(message => message.StorageId == healthyStored.StorageId);
+
+        var deferUntil = _Now().AddMinutes(10);
+
+        foreach (var claimed in firstClaim)
+        {
+            var identity = new MessageLeaseIdentity(
+                claimed.StorageId,
+                claimed.Owner,
+                claimed.LockedUntil!.Value,
+                claimed.Lane
+            );
+            (await deferralStorage.DeferReceivedRetryAsync(new CircuitRetryDeferral(identity, deferUntil), AbortToken))
+                .Should()
+                .BeTrue();
+        }
+
+        // Second pickup: the deferred rows are now future-due, so the starved healthy row must surface.
+        var secondClaim = (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken)).ToList();
+        secondClaim.Should().ContainSingle(message => message.StorageId == healthyStored.StorageId);
+        secondClaim.Should().NotContain(message => openRowIds.Contains(message.StorageId));
+    }
+
     public virtual async Task should_not_release_terminal_retry_lease_generation()
     {
         var storage = GetStorage();

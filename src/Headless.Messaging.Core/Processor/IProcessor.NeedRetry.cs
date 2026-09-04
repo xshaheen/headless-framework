@@ -36,6 +36,7 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
     private readonly RetryQuadrantState[] _quadrantStates;
     private readonly ConcurrentDictionary<Type, byte> _unsupportedCircuitDeferralProviders = new();
     private int _monitorOnlyRetainWarned;
+
     private readonly Lock _pickupGate = new();
     private bool _acceptingPickup = true;
 
@@ -534,9 +535,12 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
 
             // Deferrals first; retained and pending-probe claims are no-ops that recover through
             // ordinary store-authoritative lease expiry.
+            // Cycle-scoped: one rejected-deferral warning per pickup, not per row and not per process.
+            var deferralRejectionLogged = false;
             foreach (var work in _OrderDispositions(circuitWork))
             {
-                await _DisposeCircuitClaimAsync(connection, work).ConfigureAwait(false);
+                deferralRejectionLogged = await _DisposeCircuitClaimAsync(connection, work, deferralRejectionLogged)
+                    .ConfigureAwait(false);
             }
         }
         finally
@@ -913,6 +917,13 @@ internal static partial class RetryProcessorLog
         Message = "Storage provider {Provider} does not support atomic circuit retry deferral; retaining circuit-open leases until expiry"
     )]
     public static partial void CircuitRetryDeferralUnsupported(this ILogger logger, string provider);
+
+    [LoggerMessage(
+        EventId = 3121,
+        Level = LogLevel.Warning,
+        Message = "Circuit retry deferral was rejected by the store fence for message {StorageId} in group {Group} (stale generation, lapsed lease, or terminal row); the claim is retained until its lease expires"
+    )]
+    public static partial void CircuitRetryDeferralRejected(this ILogger logger, Guid storageId, string? group);
 
     [LoggerMessage(
         EventId = 3122,
