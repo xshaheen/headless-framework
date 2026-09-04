@@ -3,6 +3,7 @@
 using Headless.Abstractions;
 using Headless.Api;
 using Headless.Api.Concurrency;
+using Headless.Api.Resources;
 using Headless.Primitives;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Http;
@@ -23,7 +24,16 @@ public sealed class RequireIfMatchAttributeTests : TestBase
 
         await new IfMatchActionFilter().OnActionExecutionAsync(context, _Next);
 
-        context.Result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(428);
+        var result = context.Result.Should().BeOfType<ObjectResult>().Which;
+        result.StatusCode.Should().Be(428);
+        result
+            .Value.Should()
+            .BeOfType<ProblemDetails>()
+            .Which.Extensions["error"]
+            .Should()
+            .BeOfType<ErrorDescriptor>()
+            .Which.Code.Should()
+            .Be(GeneralErrorCodes.IfMatchRequired);
     }
 
     [Fact]
@@ -57,6 +67,13 @@ public sealed class RequireIfMatchAttributeTests : TestBase
         await new IfMatchActionFilter().OnActionExecutionAsync(context, _Next);
 
         context.Result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(400);
+        context
+            .HttpContext.RequestServices.GetRequiredService<IProblemDetailsCreator>()
+            .Received(1)
+            .BadRequest(
+                Arg.Any<string>(),
+                Arg.Is<ErrorDescriptor>(descriptor => descriptor.Code == GeneralErrorCodes.IfMatchInvalid)
+            );
     }
 
     [Fact]

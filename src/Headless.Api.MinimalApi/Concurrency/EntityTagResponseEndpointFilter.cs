@@ -2,7 +2,6 @@
 
 using Headless.Abstractions;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Net.Http.Headers;
 
 namespace Headless.Api.Concurrency;
 
@@ -11,23 +10,20 @@ internal sealed class EntityTagResponseEndpointFilter : IEndpointFilter
     public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
     {
         var result = await next(context).ConfigureAwait(false);
-        var statusCode = (result as IStatusCodeHttpResult)?.StatusCode ?? context.HttpContext.Response.StatusCode;
-        if (statusCode is < 200 or >= 300 || context.HttpContext.Response.Headers.ContainsKey(HeaderNames.ETag))
+        var unwrappedResult = result;
+        while (unwrappedResult is INestedHttpResult nested)
         {
-            return result;
+            unwrappedResult = nested.Result;
         }
 
-        var entityTagged = result switch
+        var entityTagged = unwrappedResult switch
         {
             IHasEntityTag direct => direct,
             IValueHttpResult { Value: IHasEntityTag value } => value,
             _ => null,
         };
 
-        if (entityTagged is not null)
-        {
-            context.HttpContext.Response.Headers.ETag = entityTagged.GetEntityTag().HeaderValue;
-        }
+        EntityTagResponseWriter.Register(context.HttpContext, entityTagged);
 
         return result;
     }
