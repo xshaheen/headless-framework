@@ -26,7 +26,7 @@
     <value>A strong If-Match entity tag is required.</value>
   </data>
   <data name="g:if_match_invalid" xml:space="preserve">
-    <value>If-Match must contain exactly one strong Base64 entity tag.</value>
+    <value>If-Match must contain exactly one strong entity tag.</value>
   </data>
   <data name="g:feature_currently_unavailable" xml:space="preserve">
     <value>This feature currently unavailable.</value>

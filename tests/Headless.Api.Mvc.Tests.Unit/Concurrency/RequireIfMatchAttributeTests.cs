@@ -27,10 +27,9 @@ public sealed class RequireIfMatchAttributeTests : TestBase
     }
 
     [Fact]
-    public async Task should_decode_valid_tag_into_scoped_context()
+    public async Task should_expose_valid_strong_tag_through_scoped_context()
     {
-        byte[] token = [1, 2, 3, 4, 5];
-        var (context, ifMatch) = _CreateContext(EntityTagCodec.Format(token));
+        var (context, ifMatch) = _CreateContext("\"revision-42\"");
         var called = false;
 
         await new IfMatchActionFilter().OnActionExecutionAsync(
@@ -43,7 +42,21 @@ public sealed class RequireIfMatchAttributeTests : TestBase
         );
 
         called.Should().BeTrue();
-        ifMatch.ETag.ToArray().Should().Equal(token);
+        ifMatch.EntityTag.Should().Be(EntityTag.CreateStrong("revision-42"));
+    }
+
+    [Theory]
+    [InlineData("*")]
+    [InlineData("W/\"revision-42\"")]
+    [InlineData("\"one\", \"two\"")]
+    [InlineData("revision-42")]
+    public async Task should_return_400_when_if_match_is_not_one_strong_entity_tag(string value)
+    {
+        var (context, _) = _CreateContext(value);
+
+        await new IfMatchActionFilter().OnActionExecutionAsync(context, _Next);
+
+        context.Result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(400);
     }
 
     [Fact]
@@ -65,15 +78,18 @@ public sealed class RequireIfMatchAttributeTests : TestBase
         context.Result.Should().BeNull();
     }
 
-    private static (ActionExecutingContext Context, IfMatchContext IfMatch) _CreateContext(
+    private static (ActionExecutingContext Context, IIfMatchContext IfMatch) _CreateContext(
         string? header = null,
         bool requiresIfMatch = true
     )
     {
         var creator = Substitute.For<IProblemDetailsCreator>();
         creator.BadRequest(Arg.Any<string>(), Arg.Any<ErrorDescriptor>()).Returns(new ProblemDetails { Status = 400 });
-        var ifMatch = new IfMatchContext();
-        var services = new ServiceCollection().AddSingleton(creator).AddSingleton(ifMatch).BuildServiceProvider();
+        var services = new ServiceCollection()
+            .AddSingleton(creator)
+            .AddHeadlessEntityTagConcurrencyCore()
+            .BuildServiceProvider();
+        var ifMatch = services.GetRequiredService<IIfMatchContext>();
         var http = new DefaultHttpContext { RequestServices = services };
         if (header is not null)
         {

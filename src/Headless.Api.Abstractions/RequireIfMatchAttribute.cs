@@ -2,7 +2,7 @@
 
 namespace Headless.Abstractions;
 
-/// <summary>Marks an endpoint as requiring one strong, Base64-encoded <c>If-Match</c> entity tag.</summary>
+/// <summary>Marks an endpoint as requiring exactly one strong <c>If-Match</c> entity tag.</summary>
 [PublicAPI]
 [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method)]
 public sealed class RequireIfMatchAttribute : Attribute;

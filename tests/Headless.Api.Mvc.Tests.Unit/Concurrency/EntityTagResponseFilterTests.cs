@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Abstractions;
 using Headless.Api;
 using Headless.Api.Concurrency;
-using Headless.Domain;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -14,15 +14,15 @@ using Microsoft.Extensions.Options;
 
 namespace Tests.Concurrency;
 
-public sealed class EtagResponseFilterTests : TestBase
+public sealed class EntityTagResponseFilterTests : TestBase
 {
     [Fact]
     public async Task should_emit_a_strong_etag_for_successful_etag_results()
     {
-        var result = new OkObjectResult(new EtagResource { ETag = [1, 2, 3, 4] });
+        var result = new OkObjectResult(new EntityTaggedResource(EntityTag.FromUInt32(0x01020304)));
         var context = _CreateContext(result);
 
-        await new EtagResponseFilter().OnResultExecutionAsync(context, () => _Next(context));
+        await new EntityTagResponseFilter().OnResultExecutionAsync(context, () => _Next(context));
 
         context.HttpContext.Response.Headers.ETag.ToString().Should().Be("\"AQIDBA==\"");
     }
@@ -30,10 +30,10 @@ public sealed class EtagResponseFilterTests : TestBase
     [Fact]
     public async Task should_not_emit_an_etag_for_error_results()
     {
-        var result = new ObjectResult(new EtagResource { ETag = [1, 2, 3, 4] }) { StatusCode = 409 };
+        var result = new ObjectResult(new EntityTaggedResource(EntityTag.FromUInt32(0x01020304))) { StatusCode = 409 };
         var context = _CreateContext(result);
 
-        await new EtagResponseFilter().OnResultExecutionAsync(context, () => _Next(context));
+        await new EntityTagResponseFilter().OnResultExecutionAsync(context, () => _Next(context));
 
         context.HttpContext.Response.Headers.Should().NotContainKey("ETag");
     }
@@ -43,15 +43,15 @@ public sealed class EtagResponseFilterTests : TestBase
     {
         var services = new ServiceCollection();
 
-        services.AddHeadlessEtagConcurrency();
-        services.AddHeadlessEtagConcurrency();
+        services.AddHeadlessMvcEntityTagConcurrency();
+        services.AddHeadlessMvcEntityTagConcurrency();
 
         using var provider = services.BuildServiceProvider();
         provider
             .GetRequiredService<IOptions<MvcOptions>>()
             .Value.Filters.OfType<TypeFilterAttribute>()
             .Should()
-            .ContainSingle(x => x.ImplementationType == typeof(EtagResponseFilter));
+            .ContainSingle(x => x.ImplementationType == typeof(EntityTagResponseFilter));
         provider
             .GetRequiredService<IOptions<MvcOptions>>()
             .Value.Filters.OfType<TypeFilterAttribute>()
@@ -68,8 +68,5 @@ public sealed class EtagResponseFilterTests : TestBase
     private static Task<ResultExecutedContext> _Next(ResultExecutingContext context) =>
         Task.FromResult(new ResultExecutedContext(context, [], context.Result, context.Controller));
 
-    private sealed class EtagResource : IHasETag
-    {
-        public byte[]? ETag { get; set; }
-    }
+    private sealed record EntityTaggedResource(EntityTag EntityTag) : IHasEntityTag;
 }
