@@ -10,7 +10,18 @@ internal sealed class IfMatchActionFilter : IAsyncActionFilter
 {
     public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
     {
-        if (!context.ActionDescriptor.EndpointMetadata.OfType<RequireIfMatchAttribute>().Any())
+        var endpointMetadata = context.ActionDescriptor.EndpointMetadata;
+        var requiresIfMatch = false;
+        for (var index = 0; index < endpointMetadata.Count; index++)
+        {
+            if (endpointMetadata[index] is RequireIfMatchAttribute)
+            {
+                requiresIfMatch = true;
+                break;
+            }
+        }
+
+        if (!requiresIfMatch)
         {
             _ = await next().ConfigureAwait(false);
             return;

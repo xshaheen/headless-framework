@@ -26,7 +26,7 @@ public sealed class IfMatchOperationProcessorTests : TestBase
         context
             .OperationDescription.Operation.Parameters.Should()
             .ContainSingle(x => x.Name == "If-Match" && x.IsRequired);
-        context.OperationDescription.Operation.Responses.Should().ContainKey("428");
+        context.OperationDescription.Operation.Responses.Keys.Should().Contain(["400", "428"]);
     }
 
     [Fact]
@@ -49,7 +49,7 @@ public sealed class IfMatchOperationProcessorTests : TestBase
         context
             .OperationDescription.Operation.Parameters.Should()
             .ContainSingle(x => x.Name == "If-Match" && x.IsRequired);
-        context.OperationDescription.Operation.Responses.Should().ContainKey("428");
+        context.OperationDescription.Operation.Responses.Keys.Should().Contain(["400", "428"]);
     }
 
     private static OperationProcessorContext _CreateContext(string methodName)
@@ -62,7 +62,7 @@ public sealed class IfMatchOperationProcessorTests : TestBase
             document,
             description,
             typeof(IfMatchOperationProcessorTests),
-            typeof(IfMatchOperationProcessorTests).GetMethod(methodName, BindingFlags.NonPublic | BindingFlags.Static)!,
+            _GetEndpointMethod(methodName),
             new OpenApiDocumentGenerator(settings, resolver),
             resolver,
             settings,
@@ -77,10 +77,7 @@ public sealed class IfMatchOperationProcessorTests : TestBase
             new OpenApiDocument(),
             description,
             typeof(IfMatchOperationProcessorTests),
-            typeof(IfMatchOperationProcessorTests).GetMethod(
-                nameof(_OpenEndpoint),
-                BindingFlags.NonPublic | BindingFlags.Static
-            )!,
+            _GetEndpointMethod(nameof(_OpenEndpoint)),
             null!,
             null!,
             null!,
@@ -93,6 +90,15 @@ public sealed class IfMatchOperationProcessorTests : TestBase
             },
         };
     }
+
+    private static MethodInfo _GetEndpointMethod(string methodName) =>
+        typeof(IfMatchOperationProcessorTests).GetMethod(
+            methodName,
+            BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly,
+            binder: null,
+            types: Type.EmptyTypes,
+            modifiers: null
+        )!;
 
     [RequireIfMatch]
     private static void _ProtectedEndpoint() { }

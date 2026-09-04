@@ -27,13 +27,7 @@ internal static class IfMatchRequestValidator
             return problem;
         }
 
-        if (
-            !EntityTagHeaderValue.TryParseList(value, out var values)
-            || values is null
-            || values.Count != 1
-            || !EntityTag.TryParse(values[0].ToString(), out var entityTag)
-            || entityTag.IsWeak
-        )
+        if (value.Count != 1 || !EntityTag.TryParse(value[0], out var entityTag) || entityTag.IsWeak)
         {
             return context
                 .RequestServices.GetRequiredService<IProblemDetailsCreator>()
