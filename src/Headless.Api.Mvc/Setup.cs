@@ -3,7 +3,6 @@
 using Headless.Api.Options;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Headless.Api;
 
@@ -49,10 +48,10 @@ public static class SetupMvc
     /// </summary>
     /// <param name="services">The service collection to configure.</param>
     /// <returns><paramref name="services"/> for chaining.</returns>
-    public static IServiceCollection AddHeadlessEtagConcurrency(this IServiceCollection services)
+    public static IServiceCollection AddHeadlessMvcEntityTagConcurrency(this IServiceCollection services)
     {
-        services.TryAddScoped<IfMatchContext>();
-        services.ConfigureOptions<ConfigureEtagConcurrencyMvcOptions>();
+        services.AddHeadlessEntityTagConcurrencyCore();
+        services.ConfigureOptions<ConfigureEntityTagConcurrencyMvcOptions>();
 
         return services;
     }

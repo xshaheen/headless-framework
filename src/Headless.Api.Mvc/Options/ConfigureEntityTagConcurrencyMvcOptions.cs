@@ -6,7 +6,7 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Api.Options;
 
-internal sealed class ConfigureEtagConcurrencyMvcOptions : IConfigureOptions<MvcOptions>
+internal sealed class ConfigureEntityTagConcurrencyMvcOptions : IConfigureOptions<MvcOptions>
 {
     public void Configure(MvcOptions options)
     {
@@ -17,9 +17,13 @@ internal sealed class ConfigureEtagConcurrencyMvcOptions : IConfigureOptions<Mvc
             options.Filters.Add<IfMatchActionFilter>();
         }
 
-        if (!options.Filters.OfType<TypeFilterAttribute>().Any(x => x.ImplementationType == typeof(EtagResponseFilter)))
+        if (
+            !options
+                .Filters.OfType<TypeFilterAttribute>()
+                .Any(x => x.ImplementationType == typeof(EntityTagResponseFilter))
+        )
         {
-            options.Filters.Add<EtagResponseFilter>();
+            options.Filters.Add<EntityTagResponseFilter>();
         }
     }
 }
