@@ -95,6 +95,7 @@ Use these packages for ORM-level persistence primitives. For raw SQL connection 
 - **Raw SQL bypasses both protection layers** (`ExecuteSql`, stored procedures, triggers). For tenant-owned tables, include a `WHERE TenantId = @currentTenantId` predicate or wrap the call in `ITenantWriteGuardBypass.BeginBypass()`.
 - **Attach-then-modify is a known gap in write protection.** `Attach` populates `OriginalValue` from caller state; the in-memory guard's `OriginalValue == currentTenantId` check can pass for a row owned by another tenant. A SQL-level predicate on the generated UPDATE/DELETE is the planned follow-up.
 - Do not mix framework concurrency stamping with ASP.NET Identity `ConcurrencyStamp` ownership on identity entities.
+- Keep persistence concurrency versions provider-native: PostgreSQL maps a `uint` property to `xmin` with `IsRowVersion()`, while SQL Server maps a `byte[]` property to `rowversion`. Derive HTTP entity tags at the API boundary; do not model a provider-neutral `byte[]` property as a database-generated row version.
 - For Couchbase, use `CouchbaseBucketContext` + `IBucketContextProvider` and keep cluster/bucket names explicit. `DocumentSetExtensions` are constrained to `IEntity` models.
 
 ## Core Concepts
