@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
+using Headless.Constants;
 using Headless.Serializer;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
@@ -623,7 +624,7 @@ internal sealed class SqlServerMembershipStore(
 
     private static bool _IsDeadlockVictim(SqlException exception)
     {
-        return exception.Number == 1205;
+        return exception.Number == SqlErrorCodes.SqlServer.DeadlockVictim;
     }
 }
 #pragma warning restore CA2100

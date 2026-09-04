@@ -4,6 +4,7 @@ using System.Data.Common;
 using Headless.Abstractions;
 using Headless.Caching;
 using Headless.Checks;
+using Headless.Constants;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
@@ -1354,13 +1355,19 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
         if (string.Equals(providerName, "Npgsql.EntityFrameworkCore.PostgreSQL", StringComparison.Ordinal))
         {
-            return string.Equals(databaseException.SqlState, "23505", StringComparison.Ordinal);
+            return string.Equals(
+                databaseException.SqlState,
+                SqlErrorCodes.PostgreSql.UniqueViolation,
+                StringComparison.Ordinal
+            );
         }
 
         if (string.Equals(providerName, "Microsoft.EntityFrameworkCore.SqlServer", StringComparison.Ordinal))
         {
             var number = databaseException.GetType().GetProperty("Number")?.GetValue(databaseException);
-            return number is 2601 or 2627;
+            return number
+                is SqlErrorCodes.SqlServer.DuplicateKeyUniqueIndex
+                    or SqlErrorCodes.SqlServer.DuplicateKeyUniqueConstraint;
         }
 
         return false;

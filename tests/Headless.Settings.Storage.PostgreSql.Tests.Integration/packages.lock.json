@@ -845,6 +845,7 @@
       "headless.settings.storage.postgresql": {
         "type": "Project",
         "dependencies": {
+          "Headless.Extensions": "[1.0.0, )",
           "Headless.Serializer.Json": "[1.0.0, )",
           "Headless.Settings.Core": "[1.0.0, )",
           "Npgsql": "[10.0.3, )"

@@ -3,6 +3,7 @@
 using System.Data;
 using System.Runtime.CompilerServices;
 using Headless.Abstractions;
+using Headless.Constants;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Infrastructure;
@@ -549,7 +550,11 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         {
             inserted = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (SqlException ex) when (ex.Number is 2601 or 2627)
+        catch (SqlException ex)
+            when (ex.Number
+                    is SqlErrorCodes.SqlServer.DuplicateKeyUniqueIndex
+                        or SqlErrorCodes.SqlServer.DuplicateKeyUniqueConstraint
+            )
         {
             return null;
         }
@@ -861,7 +866,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                 new RetryStrategyOptions
                 {
                     ShouldHandle = static args => new ValueTask<bool>(
-                        args.Outcome.Exception is SqlException { Number: 1205 }
+                        args.Outcome.Exception is SqlException { Number: SqlErrorCodes.SqlServer.DeadlockVictim }
                     ),
                     MaxRetryAttempts = _MaxDeadlockRetryAttempts,
                     BackoffType = DelayBackoffType.Exponential,
