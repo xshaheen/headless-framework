@@ -20,10 +20,10 @@
     <value>فشل التزامن لا يمكن إجراء عمليتين في نفس الوقت.</value>
   </data>
   <data name="g:if_match_required" xml:space="preserve">
-    <value>يجب إرسال قيمة ETag الحالية ضمن ترويسة If-Match.</value>
+    <value>يجب إرسال قيمة ETag الحالية باستخدام If-Match.</value>
   </data>
   <data name="g:if_match_invalid" xml:space="preserve">
-    <value>قيمة ترويسة If-Match غير صالحة. أرسل قيمة ETag واحدة بترميز Base64، من دون استخدام قيمة ضعيفة أو الرمز *.</value>
+    <value>قيمة If-Match غير صالحة. أرسل قيمة ETag واحدة بترميز Base64، من دون استخدام ETag ضعيفة أو الرمز *.</value>
   </data>
   <data name="g:feature_currently_unavailable" xml:space="preserve">
     <value>هذه الميزة غير متوفرة حاليا.</value>
