@@ -20,6 +20,8 @@ internal sealed record MessageConsumerRegistration(
     string? Group,
     byte Concurrency,
     string? HandlerId,
+    string? ConsumerIdentity,
+    string? ContractVersion,
     ConsumerCircuitBreakerOptions? CircuitBreakerOverride,
     IReadOnlyDictionary<Type, object> ProviderConfigs
 );

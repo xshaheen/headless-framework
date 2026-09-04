@@ -18,10 +18,6 @@ public interface IBusMessageBuilder<TMessage>
     /// <summary>Derives a correlation identifier from the outgoing payload.</summary>
     IBusMessageBuilder<TMessage> CorrelationFrom(Func<TMessage, string?> selector);
 
-    /// <summary>Registers a Bus consumer.</summary>
-    IBusMessageBuilder<TMessage> Consumer<TConsumer>()
-        where TConsumer : class, IConsume<TMessage>;
-
     /// <summary>Registers and configures a Bus consumer.</summary>
     IBusMessageBuilder<TMessage> Consumer<TConsumer>(Action<IBusConsumerBuilder<TConsumer>> configure)
         where TConsumer : class, IConsume<TMessage>;
@@ -38,10 +34,6 @@ public interface IQueueMessageBuilder<TMessage>
 
     /// <summary>Derives a correlation identifier from the outgoing payload.</summary>
     IQueueMessageBuilder<TMessage> CorrelationFrom(Func<TMessage, string?> selector);
-
-    /// <summary>Registers a Queue consumer.</summary>
-    IQueueMessageBuilder<TMessage> Consumer<TConsumer>()
-        where TConsumer : class, IConsume<TMessage>;
 
     /// <summary>Registers and configures a Queue consumer.</summary>
     IQueueMessageBuilder<TMessage> Consumer<TConsumer>(Action<IQueueConsumerBuilder<TConsumer>> configure)
@@ -115,9 +107,6 @@ internal sealed class BusMessageBuilder<TMessage>(IServiceCollection services)
         return this;
     }
 
-    public IBusMessageBuilder<TMessage> Consumer<TConsumer>()
-        where TConsumer : class, IConsume<TMessage> => Consumer<TConsumer>(static _ => { });
-
     public IBusMessageBuilder<TMessage> Consumer<TConsumer>(Action<IBusConsumerBuilder<TConsumer>> configure)
         where TConsumer : class, IConsume<TMessage>
     {
@@ -145,9 +134,6 @@ internal sealed class QueueMessageBuilder<TMessage>(IServiceCollection services)
         SetCorrelationFrom(selector);
         return this;
     }
-
-    public IQueueMessageBuilder<TMessage> Consumer<TConsumer>()
-        where TConsumer : class, IConsume<TMessage> => Consumer<TConsumer>(static _ => { });
 
     public IQueueMessageBuilder<TMessage> Consumer<TConsumer>(Action<IQueueConsumerBuilder<TConsumer>> configure)
         where TConsumer : class, IConsume<TMessage>

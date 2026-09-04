@@ -3,6 +3,7 @@ using Headless.Caching;
 using Headless.DistributedLocks;
 using Headless.Domain;
 using Headless.Messaging;
+using Headless.Messaging.Configuration;
 using Headless.Security;
 using Headless.Settings;
 using Headless.Testing.Tests;
@@ -60,6 +61,7 @@ public abstract class SettingsTestBase(SettingsTestFixture fixture) : TestBase
         // Messages
         services.AddHeadlessMessaging(setup =>
         {
+            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
             setup.UseInMemory();
             setup.UseInMemoryStorage();
         });

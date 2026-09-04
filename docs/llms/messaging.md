@@ -205,13 +205,15 @@ services.AddHeadlessMessaging(setup =>
 - **OpenTelemetry is native to `Messaging.Core`** (no satellite package). Subscribe traces/metrics with `AddMessagingInstrumentation()` on the `TracerProviderBuilder`/`MeterProviderBuilder`, and configure enrichers/suppression via `setup.Instrumentation` inside `AddHeadlessMessaging(...)`.
 - **Add `Messaging.Testing`** in test projects for integration testing with awaitable assertions. Use `AddMessagingTestHarness()` to decorate an existing host's DI container (WebApplicationFactory, IHost), or `MessagingTestHarness.CreateAsync()` for standalone harness.
 - **Add `Messaging.Dashboard`** when monitoring UI is needed; it exposes operational message actions and requires an explicit authentication choice (the host fails to start otherwise), so configure `WithBasicAuth`, `WithApiKey`, `WithHostAuthentication`, or `WithCustomAuth` — and `SetCorsOrigins` if the SPA is served cross-origin — before production exposure.
-- **Messages are type-safe and lane-owned**: Define plain class, record, or interface contracts. Register explicit consumers with `setup.Bus.ForMessage<TMessage>(...)` or `setup.Queue.ForMessage<TMessage>(...)`, then call `Consumer<TConsumer>()`. Assembly scans also start from a lane root (`ForConsumersFromAssembly*`); callbacks configure group, concurrency, handler id, circuit breaker, or `Skip()`, never the lane.
+- **Messages are type-safe and lane-owned**: Define plain class, record, or interface contracts. Register explicit consumers with `setup.Bus.ForMessage<TMessage>(...)` or `setup.Queue.ForMessage<TMessage>(...)`, then call `Consumer<TConsumer>(...)` with its durable contract settings. Assembly scans also start from a lane root (`ForConsumersFromAssembly*`); callbacks configure identity, contract version, group, concurrency, handler id, circuit breaker, or `Skip()`, never the lane.
+- **Durable consumer identity is explicit**: Every durable consumer must declare an operator-stable `ConsumerIdentity(...)` and immutable `ContractVersion(...)`; neither value is derived from a CLR type, group, destination, or display name. Assembly scans require a callback that assigns both values explicitly per discovered consumer.
 - **Library-owned consumers can register out of order**: Core-owned internal immutable contributions may be added before or after `AddHeadlessMessaging(...)`. Bootstrap drains them through the same lane-scoped registration pipeline; no public service-collection registration or contributor alternate root exists.
 - **The same contract can use both lanes**: an identical contract and logical name may have independent Bus and Queue registrations, metadata, middleware, circuits, retry/backpressure state, and transport selection. Every built-in dual-lane transport now declares and proves independent physical lane topology; Kafka remains Queue-only and rejects Bus registration before readiness or side effects.
 - **Runtime handlers are first-class**: Use `IRuntimeSubscriber` for ephemeral broker-attached delegates. They share scoped DI, middleware, diagnostics, retry, and correlation semantics with class handlers.
 - **The publisher verb selects the lane**: Use `IBus.PublishAsync` for broadcast Bus delivery and `IQueue.EnqueueAsync` for point-to-point Queue delivery.
 - **Choose durability separately**: Set `DeliveryMode` on immutable publish/enqueue options: `Auto` captures under compatible coordination, sends directly with no coordination, and rejects an active incompatible boundary; `Durable` persists first; `TransportDirect` bypasses storage and coordination.
 - **Provider behavior is capability-gated**: immutable transport, storage, and coordination descriptors declare lanes, delayed scheduling, and physical lane-topology support. Bootstrap freezes and validates them before readiness or resolving provider implementations; direct and outbox calls reject unsupported combinations before middleware, storage writes, client creation, or transport I/O. Raw transport DI registration is not capability evidence.
+- **Durable inbox guarantees fail closed**: durable consumers require `MessagingOptions.RequiredInboxCapability`, which defaults to `Transactional`. Selecting `DurableDedupeOnly` is an explicit opt-down when duplicate suppression may commit separately from application state; selecting `ProcessLocal` is reserved for process-local development storage. Bootstrap validates the declared storage tier before subscription creation or retry pickup.
 - **The lane discriminator remains wire-compatible**: public/runtime APIs use `MessageLane`, while storage columns retain the legacy `IntentType` name and the `headless-intent` header retains its stable literal and `0`/`1` values. Retry drainers dispatch Bus rows through `IBusTransport` and Queue rows through `IQueueTransport`. A persisted row whose value has no matching capability fails terminally; undefined values never default to Bus.
 - **Do NOT use raw transport client libraries** (e.g., `RabbitMQ.Client`, `Confluent.Kafka`) directly -- always use the `Headless.Messaging` abstraction layer.
 - **Ordering depends on transport**: Kafka orders by partition key. Azure Service Bus orders by session. RabbitMQ has no ordering with multiple consumers. Set `ConsumerThreadCount = 1` for strict ordering.
@@ -486,8 +488,9 @@ Wires messaging into dependency injection: registration, publishing, dispatch, m
 
 - `services.AddHeadlessMessaging(setup => ...)`.
 - `setup.Bus.ForMessage<TMessage>(...)`, `setup.Queue.ForMessage<TMessage>(...)`, and root-scoped assembly scanning.
-- `MessageName(...)`, `CorrelationFrom(...)`, and `Consumer<TConsumer>()` inherit the selected root lane.
+- `MessageName(...)`, `CorrelationFrom(...)`, and `Consumer<TConsumer>(...)` inherit the selected root lane.
 - Consumer settings: `Group(...)`, `Concurrency(...)`, `HandlerId(...)`, `WithCircuitBreaker(...)`.
+- Durable consumer contract settings: mandatory `ConsumerIdentity(...)` and `ContractVersion(...)`. Identity is stable across CLR and topology refactors; changing it intentionally creates a new durable consumer scope. Bus and Queue identities are collision-scoped independently.
 - Publish and consume middleware.
 - Strict publish tenancy via `RequireTenantOnPublish()`.
 - Storage-backed retry/outbox and cleanup processors.
@@ -530,12 +533,16 @@ services.AddHeadlessMessaging(setup =>
 {
     setup.UseInMemory();
     setup.UseInMemoryStorage();
+    setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
 
     setup.Bus.ForMessage<OrderPlaced>(message =>
         message
             .MessageName("orders.placed")
             .CorrelationFrom(order => order.OrderId.ToString())
-            .Consumer<OrderPlacedConsumer>(consumer => consumer.Group("orders"))
+            .Consumer<OrderPlacedConsumer>(consumer => consumer
+                .ConsumerIdentity("orders.projection")
+                .ContractVersion("v1")
+                .Group("orders"))
     );
 });
 ```
@@ -543,6 +550,7 @@ services.AddHeadlessMessaging(setup =>
 ### Configuration
 
 - `MessagingOptions.DefaultGroupName`, `GroupNamePrefix`, `MessageNamePrefix`, and `Version` control naming and isolation. `Version` is validated non-empty and at most 20 characters — the SQL storage providers persist it as a literal into a `VARCHAR(20)`/`nvarchar(20)` column, so an over-long value is rejected at startup instead of failing every outbox insert.
+- `MessagingOptions.RequiredInboxCapability` defaults to `MessagingInboxCapabilityTier.Transactional`. Set `DurableDedupeOnly` only when the application accepts that inbox outcome and business state cannot commit atomically, or `ProcessLocal` for the in-process development provider. The configured storage must declare the selected tier before durable consumers can start.
 - `ConsumerThreadCount`, `SubscriberParallelExecuteThreadCount`, and `SubscriberParallelExecuteBufferFactor` accept 1 through 1,024; the subscriber thread-count × buffer-factor product must not exceed 100,000.
 - Retry configuration lives under `RetryPolicy`, publish/receive retry processors, and storage cleanup options. `RetryBatchSize` (default 200) and `SchedulerBatchSize` (default 1,000) accept 1 through 100,000. `SchedulerBatchSize` also bounds the in-memory near-term scheduler queue; overflow remains durable as `Delayed` work.
 - `UseStorageLock` coordinates retry processors through a messaging-keyed distributed lock provider.
@@ -1243,7 +1251,9 @@ setup.Queue.ForMessage<OrderPlaced>(message =>
     message
         .MessageName("orders-placed.fifo")
         .UseAws(aws => aws.MessageGroupId(order => order.CustomerId.ToString()))
-        .Consumer<OrderWorker>()
+        .Consumer<OrderWorker>(consumer => consumer
+            .ConsumerIdentity("orders.worker")
+            .ContractVersion("v1"))
 );
 ```
 
@@ -1296,7 +1306,11 @@ dotnet add package Headless.Messaging.AzureServiceBus
 setup.UseAzureServiceBus(options => options.ConnectionString = connectionString);
 
 setup.Bus.ForMessage<OrderPlaced>(message =>
-    message.UseAzureServiceBus(asb => asb.PartitionKey(order => order.CustomerId.ToString())).Consumer<OrderProjection>()
+    message
+        .UseAzureServiceBus(asb => asb.PartitionKey(order => order.CustomerId.ToString()))
+        .Consumer<OrderProjection>(consumer => consumer
+            .ConsumerIdentity("orders.projection")
+            .ContractVersion("v1"))
 );
 ```
 
@@ -1362,6 +1376,7 @@ Provides in-process messaging storage for local development and tests.
 
 - `setup.UseInMemoryStorage()`.
 - Stores published, received, failed, and monitoring state in memory.
+- Declares `MessagingInboxCapabilityTier.ProcessLocal`; state and duplicate suppression do not survive process restart and cannot satisfy a durable transactional requirement.
 
 InMemoryStorage uses its injected `TimeProvider` for both application-scheduled `NextRetryAt` and authoritative lease ownership. It implements the same duration-based lease SPI and returns the persisted `(LockedUntil, Owner)` identity. Delayed scheduling atomically transitions and leases each per-message winner before returning a deterministic bounded batch. Circuit-open received retries atomically advance `NextRetryAt` and clear only the exact live `(lane, Owner, LockedUntil)` lease generation under the per-row lock.
 
@@ -1532,7 +1547,11 @@ dotnet add package Headless.Messaging.Pulsar
 setup.UsePulsar(options => options.ServiceUrl = "pulsar://localhost:6650");
 
 setup.Bus.ForMessage<OrderPlaced>(message =>
-    message.MessageName("persistent://public/default/orders.placed").Consumer<OrderProjection>()
+    message
+        .MessageName("persistent://public/default/orders.placed")
+        .Consumer<OrderProjection>(consumer => consumer
+            .ConsumerIdentity("orders.projection")
+            .ContractVersion("v1"))
 );
 ```
 
@@ -1654,6 +1673,7 @@ Provides PostgreSQL durable storage for messaging publish/receive state, retries
 - `setup.UsePostgreSql(...)` — connection string, `IConfiguration` binding, `Action<PostgreSqlOptions>`, or `Action<PostgreSqlOptions, IServiceProvider>`.
 - PostgreSQL schema/table configuration.
 - Raw ADO.NET integration and startup initialization.
+- Declares `MessagingInboxCapabilityTier.DurableDedupeOnly`; applications with durable consumers must explicitly select that degraded tier until a compatible transaction runner is configured.
 - **GUID Row IDs**: Message storage identifiers come from the `Version7` keyed `IGuidGenerator` and are persisted as PostgreSQL `UUID` columns.
 
 Fresh dispatch, retry pickup, and delayed scheduling atomically compare and stamp ownership from one PostgreSQL clock snapshot. Delayed scheduling uses ordered `FOR UPDATE SKIP LOCKED` claiming, commits the transition to `Queued`, and only then returns winner messages for local enqueue. Circuit-open received retries atomically advance `NextRetryAt` and clear only the exact live `(lane, Owner, LockedUntil)` lease generation using PostgreSQL's authoritative clock and null-safe owner matching.
@@ -1701,6 +1721,7 @@ Provides SQL Server durable storage for messaging publish/receive state, retries
 - `setup.UseSqlServer(...)` — connection string, `IConfiguration` binding, `Action<SqlServerOptions>`, or `Action<SqlServerOptions, IServiceProvider>`.
 - SQL Server schema/table configuration.
 - Raw ADO.NET integration and startup initialization.
+- Declares `MessagingInboxCapabilityTier.DurableDedupeOnly`; applications with durable consumers must explicitly select that degraded tier until a compatible transaction runner is configured.
 - **GUID Row IDs**: Message storage identifiers come from the `SqlServer` keyed `IGuidGenerator` and are persisted as SQL Server `uniqueidentifier` columns.
 
 Fresh dispatch, retry pickup, and delayed scheduling atomically compare and stamp ownership from one SQL Server clock snapshot. Delayed scheduling uses ordered `UPDLOCK, READPAST` claiming, commits the transition to `Queued`, and only then returns winner messages for local enqueue. Circuit-open received retries atomically advance `NextRetryAt` and clear only the exact live `(lane, Owner, LockedUntil)` lease generation using SQL Server's authoritative clock and null-safe owner matching.

@@ -200,7 +200,9 @@ public sealed class HybridCacheInvalidationConsumerRegistrationTests : TestBase
         _AddDefaultHybrid(services, new InMemoryRemoteCacheAdapter(l2));
         services.AddHeadlessMessaging(setup =>
             setup.Bus.ForMessage<CacheInvalidationMessage>(message =>
-                message.Consumer<HybridCacheInvalidationConsumer>()
+                message.Consumer<HybridCacheInvalidationConsumer>(consumer =>
+                    consumer.ConsumerIdentity("headless.caching.hybrid.invalidation").ContractVersion("v1")
+                )
             )
         );
 
@@ -227,7 +229,9 @@ public sealed class HybridCacheInvalidationConsumerRegistrationTests : TestBase
         _AddDefaultHybrid(services, new InMemoryRemoteCacheAdapter(l2));
         services.AddHeadlessMessaging(setup =>
             setup.Bus.ForMessage<CacheInvalidationMessage>(message =>
-                message.Consumer<HybridCacheInvalidationConsumer>()
+                message.Consumer<HybridCacheInvalidationConsumer>(consumer =>
+                    consumer.ConsumerIdentity("headless.caching.hybrid.invalidation").ContractVersion("v1")
+                )
             )
         );
         using var provider = services.BuildServiceProvider();

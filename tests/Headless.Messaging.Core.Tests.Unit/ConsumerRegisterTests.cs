@@ -349,7 +349,12 @@ public sealed class ConsumerRegisterTests : TestBase
                 setup.Bus.ForMessage<BootstrapReadyMessage>(message =>
                     message
                         .MessageName("ready-messageName")
-                        .Consumer<BootstrapReadyConsumer>(consumer => consumer.Group("ready-group").Concurrency(1))
+                        .Consumer<BootstrapReadyConsumer>(consumer =>
+                            consumer
+                                .StableContract("tests.consumer-register.bootstrap-ready")
+                                .Group("ready-group")
+                                .Concurrency(1)
+                        )
                 );
             },
             configureServices: services =>
@@ -403,7 +408,12 @@ public sealed class ConsumerRegisterTests : TestBase
                 setup.Bus.ForMessage<BootstrapReadyMessage>(message =>
                     message
                         .MessageName("ready-messageName")
-                        .Consumer<BootstrapReadyConsumer>(consumer => consumer.Group("ready-group").Concurrency(1))
+                        .Consumer<BootstrapReadyConsumer>(consumer =>
+                            consumer
+                                .StableContract("tests.consumer-register.bootstrap-ready")
+                                .Group("ready-group")
+                                .Concurrency(1)
+                        )
                 );
             },
             configureServices: services =>
@@ -510,7 +520,7 @@ public sealed class ConsumerRegisterTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.UseInMemory();
-            setup.UseInMemoryStorage();
+            setup.UseProcessLocalInMemoryStorage();
             setup.UseConventions(c =>
             {
                 c.UseApplicationId("messaging-tests");
@@ -573,7 +583,12 @@ public sealed class ConsumerRegisterTests : TestBase
                 setup.Bus.ForMessage<BootstrapReadyMessage>(message =>
                     message
                         .MessageName("ready-messageName")
-                        .Consumer<BootstrapReadyConsumer>(consumer => consumer.Group("ready-group").Concurrency(1))
+                        .Consumer<BootstrapReadyConsumer>(consumer =>
+                            consumer
+                                .StableContract("tests.consumer-register.bootstrap-ready")
+                                .Group("ready-group")
+                                .Concurrency(1)
+                        )
                 );
             },
             configureServices: services =>

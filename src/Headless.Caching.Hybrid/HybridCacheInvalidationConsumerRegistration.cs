@@ -46,8 +46,9 @@ internal static class HybridCacheInvalidationConsumerRegistration
     /// </para>
     /// <para>
     /// The consumer shape mirrors the documented explicit snippet exactly
-    /// (Bus <c>Consumer&lt;HybridCacheInvalidationConsumer&gt;()</c> with the default group and convention-derived
-    /// message name) so an application that copied that snippet produces a matching registration the bootstrap
+    /// (Bus <c>Consumer&lt;HybridCacheInvalidationConsumer&gt;(...)</c> with the framework's stable identity,
+    /// contract version, default group, and convention-derived message name) so an application that copied that
+    /// snippet produces a matching registration the bootstrap
     /// drain merges instead of double-registering.
     /// </para>
     /// </remarks>
@@ -62,7 +63,9 @@ internal static class HybridCacheInvalidationConsumerRegistration
         }
 
         services.AddFrameworkConsumerRegistration<CacheInvalidationMessage, HybridCacheInvalidationConsumer>(
-            MessageLane.Bus
+            MessageLane.Bus,
+            consumerIdentity: "headless.caching.hybrid.invalidation",
+            contractVersion: "v1"
         );
     }
 }

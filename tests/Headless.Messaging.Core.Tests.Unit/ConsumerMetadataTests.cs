@@ -24,7 +24,9 @@ public sealed class ConsumerMetadataTests : TestBase
             messageName,
             group,
             concurrency,
-            Lane: MessageLane.Bus
+            Lane: MessageLane.Bus,
+            ConsumerIdentity: "test-consumer",
+            ContractVersion: "v1"
         );
 
         // then
@@ -33,6 +35,8 @@ public sealed class ConsumerMetadataTests : TestBase
         metadata.MessageName.Should().Be(messageName);
         metadata.Group.Should().Be(group);
         metadata.Concurrency.Should().Be(concurrency);
+        metadata.ConsumerIdentity.Should().Be("test-consumer");
+        metadata.ContractVersion.Should().Be("v1");
     }
 
     [Fact]
@@ -45,7 +49,9 @@ public sealed class ConsumerMetadataTests : TestBase
             "test.messageName",
             null,
             1,
-            Lane: MessageLane.Bus
+            Lane: MessageLane.Bus,
+            ConsumerIdentity: "tests.metadata.null-group",
+            ContractVersion: "v1"
         );
 
         // then
@@ -62,7 +68,9 @@ public sealed class ConsumerMetadataTests : TestBase
             "original.messageName",
             "group",
             1,
-            Lane: MessageLane.Bus
+            Lane: MessageLane.Bus,
+            ConsumerIdentity: "tests.metadata.topic",
+            ContractVersion: "v1"
         );
 
         // when
@@ -89,7 +97,9 @@ public sealed class ConsumerMetadataTests : TestBase
             "messageName",
             "original-group",
             1,
-            Lane: MessageLane.Bus
+            Lane: MessageLane.Bus,
+            ConsumerIdentity: "tests.metadata.group",
+            ContractVersion: "v1"
         );
 
         // when
@@ -113,7 +123,9 @@ public sealed class ConsumerMetadataTests : TestBase
             "messageName",
             "group",
             1,
-            Lane: MessageLane.Bus
+            Lane: MessageLane.Bus,
+            ConsumerIdentity: "tests.metadata.concurrency",
+            ContractVersion: "v1"
         );
 
         // when
@@ -136,7 +148,9 @@ public sealed class ConsumerMetadataTests : TestBase
             "messageName",
             "group",
             5,
-            Lane: MessageLane.Bus
+            Lane: MessageLane.Bus,
+            ConsumerIdentity: "tests.metadata.equality",
+            ContractVersion: "v1"
         );
         var metadata2 = new ConsumerMetadata(
             typeof(MetadataTestMessage),
@@ -144,7 +158,9 @@ public sealed class ConsumerMetadataTests : TestBase
             "messageName",
             "group",
             5,
-            Lane: MessageLane.Bus
+            Lane: MessageLane.Bus,
+            ConsumerIdentity: "tests.metadata.equality",
+            ContractVersion: "v1"
         );
 
         // then
@@ -162,7 +178,9 @@ public sealed class ConsumerMetadataTests : TestBase
             "messageName",
             "group",
             5,
-            Lane: MessageLane.Bus
+            Lane: MessageLane.Bus,
+            ConsumerIdentity: "tests.metadata.difference",
+            ContractVersion: "v1"
         );
         var metadata2 = new ConsumerMetadata(
             typeof(MetadataTestMessage),
@@ -170,18 +188,55 @@ public sealed class ConsumerMetadataTests : TestBase
             "different-messageName",
             "group",
             5,
-            Lane: MessageLane.Bus
+            Lane: MessageLane.Bus,
+            ConsumerIdentity: "tests.metadata.difference",
+            ContractVersion: "v1"
         );
 
         // then
         metadata1.Should().NotBe(metadata2);
         (metadata1 != metadata2).Should().BeTrue();
     }
+
+    [Fact]
+    public void durable_identity_is_independent_from_handler_and_topology_metadata()
+    {
+        var original = new ConsumerMetadata(
+            typeof(MetadataTestMessage),
+            typeof(MetadataTestConsumer),
+            "orders.placed",
+            "orders-primary",
+            1,
+            MessageLane.Bus,
+            HandlerId: "Tests.OriginalHandler",
+            ConsumerIdentity: "orders-projection",
+            ContractVersion: "v3"
+        );
+
+        var refactored = original with
+        {
+            ConsumerType = typeof(RefactoredMetadataTestConsumer),
+            MessageName = "orders.v2.placed",
+            Group = "orders-refactored",
+            HandlerId = "Tests.RefactoredHandler",
+        };
+
+        refactored.ConsumerIdentity.Should().Be("orders-projection");
+        refactored.ContractVersion.Should().Be("v3");
+    }
 }
 
 public sealed record MetadataTestMessage(string Value);
 
 public sealed class MetadataTestConsumer : IConsume<MetadataTestMessage>
+{
+    public ValueTask ConsumeAsync(ConsumeContext<MetadataTestMessage> context, CancellationToken cancellationToken)
+    {
+        return ValueTask.CompletedTask;
+    }
+}
+
+public sealed class RefactoredMetadataTestConsumer : IConsume<MetadataTestMessage>
 {
     public ValueTask ConsumeAsync(ConsumeContext<MetadataTestMessage> context, CancellationToken cancellationToken)
     {

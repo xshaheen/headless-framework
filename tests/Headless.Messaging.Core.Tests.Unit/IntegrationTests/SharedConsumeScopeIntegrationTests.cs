@@ -81,10 +81,12 @@ public sealed class SharedConsumeScopeIntegrationTests : TestBase
                 options.Bus.ForMessage<ScopedMessage>(message =>
                     message
                         .MessageName("scope.class")
-                        .Consumer<ScopedClassConsumer>(consumer => consumer.Group("scope.class"))
+                        .Consumer<ScopedClassConsumer>(consumer =>
+                            consumer.StableContract("tests.shared-scope.class").Group("scope.class")
+                        )
                 );
                 options.UseInMemory();
-                options.UseInMemoryStorage();
+                options.UseProcessLocalInMemoryStorage();
                 options.UseConventions(c =>
                 {
                     c.UseApplicationId("shared-scope-tests");

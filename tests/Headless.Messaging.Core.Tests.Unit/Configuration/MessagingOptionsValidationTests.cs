@@ -434,6 +434,50 @@ public sealed class MessagingOptionsValidationTests : TestBase
     }
 
     [Fact]
+    public void should_require_transactional_inbox_capability_by_default()
+    {
+        new MessagingOptions().RequiredInboxCapability.Should().Be(MessagingInboxCapabilityTier.Transactional);
+    }
+
+    [Fact]
+    public void should_reject_unknown_required_inbox_capability()
+    {
+        var result = new MessagingOptionsValidator().Validate(
+            new MessagingOptions { RequiredInboxCapability = (MessagingInboxCapabilityTier)999 }
+        );
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(error => error.PropertyName == nameof(MessagingOptions.RequiredInboxCapability));
+    }
+
+    [Theory]
+    [InlineData(null, "v1", "consumer identity")]
+    [InlineData("orders-projection", null, "contract version")]
+    public void should_reject_durable_metadata_without_explicit_identity_or_contract_version(
+        string? consumerIdentity,
+        string? contractVersion,
+        string expectedMessage
+    )
+    {
+        var options = new MessagingOptions();
+
+        var act = () =>
+            options.CreateConsumerMetadata(
+                typeof(TestConsumer),
+                typeof(TestMessage),
+                "orders.created",
+                mappedMessageName: null,
+                group: "orders",
+                concurrency: 1,
+                consumerIdentity: consumerIdentity,
+                contractVersion: contractVersion,
+                lane: MessageLane.Bus
+            );
+
+        act.Should().Throw<MessagingConfigurationException>().WithMessage($"*{expectedMessage}*");
+    }
+
+    [Fact]
     public void should_reject_duplicate_topic_mapping_with_different_topic()
     {
         // given
@@ -561,4 +605,12 @@ public sealed class MessagingOptionsValidationTests : TestBase
     }
 
     private sealed class TestMessage;
+
+    private sealed class TestConsumer : IConsume<TestMessage>
+    {
+        public ValueTask ConsumeAsync(ConsumeContext<TestMessage> context, CancellationToken cancellationToken)
+        {
+            return ValueTask.CompletedTask;
+        }
+    }
 }

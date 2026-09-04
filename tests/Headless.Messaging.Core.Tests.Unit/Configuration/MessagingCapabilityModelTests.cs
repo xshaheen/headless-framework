@@ -63,6 +63,142 @@ public sealed class MessagingCapabilityModelTests : TestBase
         act.Should().Throw<MessagingConfigurationException>().WithMessage("*exactly one storage provider*");
     }
 
+    [Fact]
+    public void should_reject_durable_dedupe_only_storage_when_transactional_inbox_is_required()
+    {
+        var model = MessagingCapabilityModel.Compose([
+            _Transport("Transport", [MessageLane.Bus], independentLaneTopology: true),
+            _Storage("PostgreSql", MessagingInboxCapabilityTier.DurableDedupeOnly),
+        ]);
+
+        var act = () =>
+            model.ValidateStartup(
+                [new MessageRouteKey(typeof(SharedContract), "orders.changed", MessageLane.Bus)],
+                hasDurableConsumers: true,
+                requiredInboxCapability: MessagingInboxCapabilityTier.Transactional
+            );
+
+        act.Should()
+            .Throw<MessagingConfigurationException>()
+            .WithMessage("*Transactional*PostgreSql*DurableDedupeOnly*explicitly*");
+    }
+
+    [Fact]
+    public void should_accept_explicit_durable_dedupe_only_opt_down_and_expose_provider_tier()
+    {
+        var model = MessagingCapabilityModel.Compose([
+            _Transport("Transport", [MessageLane.Bus], independentLaneTopology: true),
+            _Storage("PostgreSql", MessagingInboxCapabilityTier.DurableDedupeOnly),
+        ]);
+
+        model.ValidateStartup(
+            [new MessageRouteKey(typeof(SharedContract), "orders.changed", MessageLane.Bus)],
+            hasDurableConsumers: true,
+            requiredInboxCapability: MessagingInboxCapabilityTier.DurableDedupeOnly
+        );
+
+        model.InboxCapability.Should().Be(MessagingInboxCapabilityTier.DurableDedupeOnly);
+    }
+
+    [Fact]
+    public void process_local_storage_never_satisfies_a_durable_transactional_requirement()
+    {
+        var model = MessagingCapabilityModel.Compose([
+            _Transport("InMemory", [MessageLane.Bus], independentLaneTopology: true),
+            _Storage("InMemory", MessagingInboxCapabilityTier.ProcessLocal),
+        ]);
+
+        var act = () =>
+            model.ValidateStartup(
+                [new MessageRouteKey(typeof(SharedContract), "orders.changed", MessageLane.Bus)],
+                hasDurableConsumers: true,
+                requiredInboxCapability: MessagingInboxCapabilityTier.Transactional
+            );
+
+        act.Should().Throw<MessagingConfigurationException>().WithMessage("*Transactional*InMemory*ProcessLocal*");
+        model.InboxCapability.Should().Be(MessagingInboxCapabilityTier.ProcessLocal);
+
+        model.ValidateStartup(
+            [new MessageRouteKey(typeof(SharedContract), "orders.changed", MessageLane.Bus)],
+            hasDurableConsumers: true,
+            requiredInboxCapability: MessagingInboxCapabilityTier.ProcessLocal
+        );
+    }
+
+    [Fact]
+    public async Task should_reject_missing_durable_identity_before_storage_or_processors_start()
+    {
+        var storageInitializerCalls = 0;
+        var processingServerFactoryCalls = 0;
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessMessaging(setup =>
+            setup.Bus.ForMessage<SharedContract>(message => message.Consumer<SharedConsumer>(static _ => { }))
+        );
+        services.AddMessagingProviderCapabilities(
+            _Transport("Transport", [MessageLane.Bus], independentLaneTopology: true)
+        );
+        services.AddMessagingProviderCapabilities(
+            _Storage("Transactional", MessagingInboxCapabilityTier.Transactional)
+        );
+        services.AddSingleton<IStorageInitializer>(_ =>
+        {
+            Interlocked.Increment(ref storageInitializerCalls);
+            return new RecordingStorageInitializer(static () => { });
+        });
+        services.AddSingleton<IProcessingServer>(_ =>
+        {
+            Interlocked.Increment(ref processingServerFactoryCalls);
+            return new RecordingProcessingServer();
+        });
+
+        await using var provider = services.BuildServiceProvider();
+        var act = () => provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
+
+        await act.Should().ThrowAsync<MessagingConfigurationException>().WithMessage("*stable consumer identity*");
+        storageInitializerCalls.Should().Be(0);
+        processingServerFactoryCalls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_start_with_explicit_durable_dedupe_only_opt_down_and_expose_tier()
+    {
+        var storageInitializeCalls = 0;
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessMessaging(setup =>
+        {
+            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
+            setup.Bus.ForMessage<SharedContract>(message =>
+                message.Consumer<SharedConsumer>(consumer =>
+                    consumer.ConsumerIdentity("orders-projection").ContractVersion("v1")
+                )
+            );
+        });
+        services.AddMessagingProviderCapabilities(
+            _Transport("Transport", [MessageLane.Bus], independentLaneTopology: true)
+        );
+        services.AddMessagingProviderCapabilities(
+            _Storage("PostgreSql", MessagingInboxCapabilityTier.DurableDedupeOnly)
+        );
+        services.RemoveAll<IProcessingServer>();
+        services.AddSingleton<IStorageInitializer>(
+            new RecordingStorageInitializer(() => Interlocked.Increment(ref storageInitializeCalls))
+        );
+
+        await using var provider = services.BuildServiceProvider();
+        var bootstrapper = provider.GetRequiredService<IBootstrapper>();
+
+        await bootstrapper.BootstrapAsync(AbortToken);
+
+        bootstrapper.IsStarted.Should().BeTrue();
+        storageInitializeCalls.Should().Be(1);
+        provider
+            .GetRequiredService<IMessagingCapabilityModel>()
+            .InboxCapability.Should()
+            .Be(MessagingInboxCapabilityTier.DurableDedupeOnly);
+    }
+
     [Theory]
     [InlineData("NATS")]
     [InlineData("Apache Pulsar")]
@@ -301,7 +437,12 @@ public sealed class MessagingCapabilityModelTests : TestBase
         builder.AddPublishMiddlewareFor<RecordingTypedPublishMiddleware, SharedContract>(lane);
         services.AddMessagingProviderCapabilities(_Transport("Transport", [lane], independentLaneTopology: true));
         services.AddMessagingProviderCapabilities(
-            MessagingProviderCapabilities.Storage("NoDelayStorage", [lane], supportsDelayedScheduling: false)
+            MessagingProviderCapabilities.Storage(
+                "NoDelayStorage",
+                [lane],
+                supportsDelayedScheduling: false,
+                inboxCapability: MessagingInboxCapabilityTier.Transactional
+            )
         );
         services.AddSingleton<IDataStorage>(_ =>
         {
@@ -402,18 +543,30 @@ public sealed class MessagingCapabilityModelTests : TestBase
         return MessagingProviderCapabilities.Transport(provider, lanes, independentLaneTopology);
     }
 
-    private static MessagingProviderCapabilities _Storage(string provider)
+    private static MessagingProviderCapabilities _Storage(
+        string provider,
+        MessagingInboxCapabilityTier inboxCapability = MessagingInboxCapabilityTier.Transactional
+    )
     {
         return MessagingProviderCapabilities.Storage(
             provider,
             [MessageLane.Bus, MessageLane.Queue],
-            supportsDelayedScheduling: true
+            supportsDelayedScheduling: true,
+            inboxCapability: inboxCapability
         );
     }
 
     private sealed record SharedContract;
 
     private sealed record OtherContract;
+
+    private sealed class SharedConsumer : IConsume<SharedContract>
+    {
+        public ValueTask ConsumeAsync(ConsumeContext<SharedContract> context, CancellationToken cancellationToken)
+        {
+            return ValueTask.CompletedTask;
+        }
+    }
 
     private sealed class PublishSideEffectRecorder
     {

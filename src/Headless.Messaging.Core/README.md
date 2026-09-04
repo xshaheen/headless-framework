@@ -57,6 +57,7 @@ dotnet add package Headless.Messaging.Storage.InMemory
 
 ```csharp
 using Headless.Messaging;
+using Headless.Messaging.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -65,13 +66,20 @@ var builder = Host.CreateApplicationBuilder(args);
 
 builder.Services.AddHeadlessMessaging(setup =>
 {
+    setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
     setup.UseInMemoryStorage();
     setup.UseInMemory();
 
     setup.Bus.ForMessage<OrderPlaced>(message =>
         message
             .MessageName("orders.placed")
-            .Consumer<OrderPlacedConsumer>(consumer => consumer.Group("orders").Concurrency(4))
+            .Consumer<OrderPlacedConsumer>(consumer =>
+                consumer
+                    .ConsumerIdentity("orders.order-placed")
+                    .ContractVersion("v1")
+                    .Group("orders")
+                    .Concurrency(4)
+            )
     );
 });
 
@@ -118,6 +126,7 @@ using Polly.Retry;
 
 builder.Services.AddHeadlessMessaging(setup =>
 {
+    setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
     setup.UsePostgreSql(options =>
     {
         options.ConnectionString = builder.Configuration.GetConnectionString("Messaging");
@@ -131,7 +140,9 @@ builder.Services.AddHeadlessMessaging(setup =>
     });
 
     setup.Bus.ForMessage<OrderPlaced>(message =>
-        message.MessageName("orders.placed").Consumer<OrderPlacedConsumer>()
+        message.MessageName("orders.placed").Consumer<OrderPlacedConsumer>(consumer =>
+            consumer.ConsumerIdentity("orders.order-placed").ContractVersion("v1")
+        )
     );
 });
 ```
@@ -149,7 +160,7 @@ The write is atomic with the business data; delivery is still at-least-once, so 
 ## Defaults And Telemetry
 
 - `AddHeadlessMessaging(...)` is the primary DI entry point.
-- `setup.Bus` and `setup.Queue` are the only registration roots. `ForMessage<TMessage>(...)` inherits its lane from that root, `MessageName(...)` sets the lane-specific logical name, and `Consumer<TConsumer>()` registers the matching consumer behavior.
+- `setup.Bus` and `setup.Queue` are the only registration roots. `ForMessage<TMessage>(...)` inherits its lane from that root, `MessageName(...)` sets the lane-specific logical name, and `Consumer<TConsumer>(...)` registers the matching consumer behavior with an explicit durable identity and contract version.
 - `setup.Bus.ForMessage<TMessage>(message => message.MessageName("orders.placed"))` is valid without consumers and declares a Bus publisher-only mapping; use the Queue root for an enqueue-only mapping.
 - A plain class, record, or interface contract may use the same logical name on both roots. Registration, metadata, circuits, callbacks, retry/backpressure state, and transport selection remain lane-qualified. Every built-in dual-lane transport declares and proves independent physical topology; Kafka remains Queue-only and rejects Bus routes before readiness or side effects.
 - Library-owned automatic consumers use Core-owned inert immutable descriptors that bootstrap drains through the same lane-scoped registration pipeline. They may be added before or after `AddHeadlessMessaging(...)`; no public service-collection registration or contributor-based alternate root exists.
@@ -165,7 +176,7 @@ setup.Bus.ForMessage<OrderPlaced>(message =>
 );
 ```
 
-- `setup.Bus.ForConsumersFromAssembly(...)` / `ForConsumersFromAssemblyContaining<TMarker>()` and their Queue-root equivalents scan closed `IConsume<TMessage>` implementations for exactly one lane. Use callback overloads for `Group(...)`, `Concurrency(...)`, `HandlerId(...)`, `WithCircuitBreaker(...)`, or `Skip()`; lane selection never occurs inside the scan callback.
+- `setup.Bus.ForConsumersFromAssembly(...)` / `ForConsumersFromAssemblyContaining<TMarker>(...)` and their Queue-root equivalents scan closed `IConsume<TMessage>` implementations for exactly one lane. The callback is mandatory and must assign each durable registration an application-owned `ConsumerIdentity(...)` and immutable `ContractVersion(...)`; use an explicit type-to-identity table so CLR and topology refactors do not change persisted identity. The same callback may configure `Group(...)`, `Concurrency(...)`, `HandlerId(...)`, `WithCircuitBreaker(...)`, or `Skip()`; lane selection never occurs inside the scan callback.
 - message-name mappings are lane-qualified and registered eagerly. Re-registering the same type/name on one lane merges compatible consumers; a divergent mapping or competing consumer on that lane fails. An equivalent registration on the other lane remains independent.
 - message-name and group defaults are deterministic; duplicate registrations fail fast by default.
 - runtime, monitoring, and dashboard projections expose `MessageLane` with stable `Bus = 0` / `Queue = 1` values. Storage providers retain the legacy `IntentType` column name and transports retain the `headless-intent` header at explicit compatibility boundaries. Retry pickup and received-message identity include the lane, so the two lanes do not collapse into one row.

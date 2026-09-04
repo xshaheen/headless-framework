@@ -1,4 +1,5 @@
 using Headless.Messaging;
+using Headless.Messaging.Configuration;
 using Headless.Messaging.Dashboard;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
@@ -66,7 +67,8 @@ public class Startup
 
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Bus.ForConsumersFromAssembly(typeof(Startup).Assembly);
+            setup.Bus.ForConsumersFromAssembly(typeof(Startup).Assembly, _ConfigureConsumerContract);
+            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
             setup.UseInMemoryStorage();
             setup.UseInMemory();
 
@@ -99,7 +101,8 @@ public class Startup
 
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Bus.ForConsumersFromAssembly(typeof(Startup).Assembly);
+            setup.Bus.ForConsumersFromAssembly(typeof(Startup).Assembly, _ConfigureConsumerContract);
+            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
             setup.UseInMemoryStorage();
             setup.UseInMemory();
 
@@ -149,8 +152,9 @@ public class Startup
 
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Bus.ForConsumersFromAssembly(typeof(Startup).Assembly);
+            setup.Bus.ForConsumersFromAssembly(typeof(Startup).Assembly, _ConfigureConsumerContract);
             setup.UseDashboard(d => d.WithHostAuthentication(dashboardAuthorizationPolicy));
+            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
             setup.UseInMemoryStorage();
             setup.UseInMemory();
         });
@@ -162,12 +166,26 @@ public class Startup
     {
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Bus.ForConsumersFromAssembly(typeof(Startup).Assembly);
+            setup.Bus.ForConsumersFromAssembly(typeof(Startup).Assembly, _ConfigureConsumerContract);
             setup.UseDashboard(d => d.WithNoAuth());
+            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
             setup.UseInMemoryStorage();
             setup.UseInMemory();
         });
 
         return services;
+    }
+
+    private static void _ConfigureConsumerContract(
+        Headless.Messaging.Registration.ScannedConsumerContext context,
+        Headless.Messaging.Registration.IScannedConsumerBuilder consumer
+    )
+    {
+        if (context.ConsumerType.Name != "PersonConsumer")
+        {
+            throw new InvalidOperationException($"Missing durable identity for {context.ConsumerType}.");
+        }
+
+        consumer.ConsumerIdentity("dashboard-auth.person").ContractVersion("v1");
     }
 }

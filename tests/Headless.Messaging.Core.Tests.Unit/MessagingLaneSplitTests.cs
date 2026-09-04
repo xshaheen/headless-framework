@@ -37,7 +37,9 @@ public sealed class MessagingLaneSplitTests : TestBase
 
         services.AddHeadlessMessaging(setup =>
             setup.Bus.ForMessage<TestMessage>(message =>
-                message.MessageName("events.orders").Consumer<TestBusConsumer>()
+                message
+                    .MessageName("events.orders")
+                    .Consumer<TestBusConsumer>(consumer => consumer.StableContract("tests.lane-split.bus"))
             )
         );
 
@@ -54,7 +56,9 @@ public sealed class MessagingLaneSplitTests : TestBase
 
         services.AddHeadlessMessaging(setup =>
             setup.Queue.ForMessage<TestMessage>(message =>
-                message.MessageName("jobs.orders").Consumer<TestQueueConsumer>()
+                message
+                    .MessageName("jobs.orders")
+                    .Consumer<TestQueueConsumer>(consumer => consumer.StableContract("tests.lane-split.queue"))
             )
         );
 
@@ -76,7 +80,9 @@ public sealed class MessagingLaneSplitTests : TestBase
                 "orders",
                 "workers",
                 1,
-                Lane: MessageLane.Bus
+                Lane: MessageLane.Bus,
+                ConsumerIdentity: "tests.lane-split.bus-registry",
+                ContractVersion: "v1"
             )
         );
         registry.Register(
@@ -86,7 +92,9 @@ public sealed class MessagingLaneSplitTests : TestBase
                 "orders",
                 "workers",
                 1,
-                Lane: MessageLane.Queue
+                Lane: MessageLane.Queue,
+                ConsumerIdentity: "tests.lane-split.queue-registry",
+                ContractVersion: "v1"
             )
         );
 
@@ -105,7 +113,9 @@ public sealed class MessagingLaneSplitTests : TestBase
                 "jobs.orders",
                 "workers",
                 1,
-                Lane: MessageLane.Queue
+                Lane: MessageLane.Queue,
+                ConsumerIdentity: "tests.lane-split.queue-bootstrap-failure",
+                ContractVersion: "v1"
             )
         );
 
@@ -149,7 +159,9 @@ public sealed class MessagingLaneSplitTests : TestBase
                 "events.orders",
                 "workers",
                 1,
-                Lane: MessageLane.Bus
+                Lane: MessageLane.Bus,
+                ConsumerIdentity: "tests.lane-split.bus-bootstrap-failure",
+                ContractVersion: "v1"
             )
         );
 
@@ -196,7 +208,9 @@ public sealed class MessagingLaneSplitTests : TestBase
                 "jobs.orders",
                 "workers",
                 1,
-                Lane: MessageLane.Queue
+                Lane: MessageLane.Queue,
+                ConsumerIdentity: "tests.lane-split.queue-bootstrap",
+                ContractVersion: "v1"
             )
         );
 
@@ -525,7 +539,8 @@ public sealed class MessagingLaneSplitTests : TestBase
         return MessagingProviderCapabilities.Storage(
             "TestStorage",
             [MessageLane.Bus, MessageLane.Queue],
-            supportsDelayedScheduling: true
+            supportsDelayedScheduling: true,
+            inboxCapability: MessagingInboxCapabilityTier.Transactional
         );
     }
 

@@ -117,10 +117,12 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.Bus.ForMessage<CbTestMessage>(message =>
-                message.MessageName(_MessageName).Consumer<CbTestConsumer>()
+                message
+                    .MessageName(_MessageName)
+                    .Consumer<CbTestConsumer>(consumer => consumer.StableContract("tests.circuit-breaker"))
             );
             setup.UseInMemory();
-            setup.UseInMemoryStorage();
+            setup.UseProcessLocalInMemoryStorage();
         });
 
         var provider = services.BuildServiceProvider();

@@ -40,7 +40,12 @@ dotnet add package Headless.Messaging.InMemory
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
-    options.Bus.ForConsumersFromAssemblyContaining<Program>();
+    options.Bus.ForMessage<OrderPlaced>(message =>
+        message.Consumer<OrderPlacedConsumer>(consumer =>
+            consumer.ConsumerIdentity("orders.order-placed").ContractVersion("v1")
+        )
+    );
+    options.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
     options.UseInMemoryStorage();
     options.UseInMemory();
 });

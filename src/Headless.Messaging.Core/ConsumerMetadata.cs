@@ -11,7 +11,9 @@ namespace Headless.Messaging;
 /// <param name="Group">The consumer group name (Kafka group.id or RabbitMQ queue name).</param>
 /// <param name="Concurrency">The maximum number of messages to process concurrently.</param>
 /// <param name="Lane">The delivery lane used to subscribe this consumer.</param>
-/// <param name="HandlerId">The deterministic handler identity used for duplicate detection and diagnostics.</param>
+/// <param name="ConsumerIdentity">The operator-stable identity used by durable inbox state.</param>
+/// <param name="ContractVersion">The immutable version of the durable consumer contract.</param>
+/// <param name="HandlerId">The deterministic handler identity used for diagnostics and default group generation.</param>
 /// <remarks>
 /// This record stores the configuration metadata for a consumer registered via
 /// <c>ForMessage&lt;TMessage&gt;(...)</c> or assembly scanning.
@@ -24,6 +26,8 @@ public sealed record ConsumerMetadata(
     string? Group,
     byte Concurrency,
     MessageLane Lane,
+    string ConsumerIdentity,
+    string ContractVersion,
     string? HandlerId = null
 )
 {

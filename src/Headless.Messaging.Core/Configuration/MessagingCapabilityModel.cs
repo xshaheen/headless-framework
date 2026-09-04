@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics;
 using Headless.Checks;
 using Headless.Messaging.Internal;
 
@@ -18,13 +19,20 @@ public interface IMessagingCapabilityModel
     /// <summary>Always true for a composed model.</summary>
     bool IsFrozen { get; }
 
+    /// <summary>The inbox tier declared by the configured storage provider, when one is present.</summary>
+    MessagingInboxCapabilityTier? InboxCapability { get; }
+
     /// <summary>Returns whether a role supports a semantic lane.</summary>
     bool Supports(MessageLane lane, MessagingProviderRole role);
 }
 
 internal interface IMessageCapabilityGate : IMessagingCapabilityModel
 {
-    void ValidateStartup(IEnumerable<MessageRouteKey> routes);
+    void ValidateStartup(
+        IEnumerable<MessageRouteKey> routes,
+        bool hasDurableConsumers,
+        MessagingInboxCapabilityTier requiredInboxCapability
+    );
 
     void EnsureDirectSupported(MessageLane lane);
 
@@ -65,6 +73,12 @@ public sealed class MessagingCapabilityModel : IMessagingCapabilityModel, IMessa
     /// <inheritdoc />
     public bool IsFrozen => true;
 
+    /// <inheritdoc />
+    public MessagingInboxCapabilityTier? InboxCapability =>
+        _providersByRole.TryGetValue(MessagingProviderRole.Storage, out var storageProviders)
+            ? storageProviders.Single().InboxCapability
+            : null;
+
     /// <summary>Composes and freezes a deterministic capability model.</summary>
     public static MessagingCapabilityModel Compose(IEnumerable<MessagingProviderCapabilities> capabilities)
     {
@@ -96,13 +110,23 @@ public sealed class MessagingCapabilityModel : IMessagingCapabilityModel, IMessa
     }
 
     /// <summary>Validates the frozen model against every registered semantic route.</summary>
-    internal void ValidateStartup(IEnumerable<MessageRouteKey> routes)
+    internal void ValidateStartup(
+        IEnumerable<MessageRouteKey> routes,
+        bool hasDurableConsumers = false,
+        MessagingInboxCapabilityTier requiredInboxCapability = MessagingInboxCapabilityTier.Transactional
+    )
     {
         Argument.IsNotNull(routes);
+        Argument.IsInEnum(requiredInboxCapability);
 
         var routeArray = routes.ToArray();
         _RequireRole(MessagingProviderRole.Transport, "Messaging requires a transport provider contribution.");
         _RequireRole(MessagingProviderRole.Storage, "Messaging requires exactly one storage provider contribution.");
+
+        if (hasDurableConsumers)
+        {
+            _EnsureInboxSupported(requiredInboxCapability);
+        }
 
         foreach (var route in routeArray)
         {
@@ -134,6 +158,34 @@ public sealed class MessagingCapabilityModel : IMessagingCapabilityModel, IMessa
                     + $"for logical name '{route.MessageName}'."
             );
         }
+    }
+
+    private void _EnsureInboxSupported(MessagingInboxCapabilityTier requiredInboxCapability)
+    {
+        var storage = _providersByRole[MessagingProviderRole.Storage].Single();
+        var available = storage.InboxCapability!.Value;
+
+        var isSupported = requiredInboxCapability switch
+        {
+            MessagingInboxCapabilityTier.ProcessLocal => available is MessagingInboxCapabilityTier.ProcessLocal,
+            MessagingInboxCapabilityTier.DurableDedupeOnly => available
+                is MessagingInboxCapabilityTier.DurableDedupeOnly
+                    or MessagingInboxCapabilityTier.Transactional,
+            MessagingInboxCapabilityTier.Transactional => available is MessagingInboxCapabilityTier.Transactional,
+            _ => throw new UnreachableException(),
+        };
+
+        if (isSupported)
+        {
+            return;
+        }
+
+        throw new MessagingConfigurationException(
+            $"Durable consumers require the {requiredInboxCapability} inbox tier, but storage provider "
+                + $"'{storage.Provider}' declares {available}. Select {nameof(MessagingInboxCapabilityTier.DurableDedupeOnly)} "
+                + "explicitly when durable duplicate suppression without atomic application-state coordination is acceptable, "
+                + $"or select {nameof(MessagingInboxCapabilityTier.ProcessLocal)} explicitly for process-local development storage."
+        );
     }
 
     /// <summary>Rejects a direct publish when the selected lane has no declared transport capability.</summary>
@@ -279,7 +331,11 @@ public sealed class MessagingCapabilityModel : IMessagingCapabilityModel, IMessa
         Argument.IsInEnum(lane);
     }
 
-    void IMessageCapabilityGate.ValidateStartup(IEnumerable<MessageRouteKey> routes) => ValidateStartup(routes);
+    void IMessageCapabilityGate.ValidateStartup(
+        IEnumerable<MessageRouteKey> routes,
+        bool hasDurableConsumers,
+        MessagingInboxCapabilityTier requiredInboxCapability
+    ) => ValidateStartup(routes, hasDurableConsumers, requiredInboxCapability);
 
     void IMessageCapabilityGate.EnsureDirectSupported(MessageLane lane) => EnsureDirectSupported(lane);
 

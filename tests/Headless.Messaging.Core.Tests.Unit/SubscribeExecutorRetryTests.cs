@@ -110,10 +110,12 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             setup.Bus.ForMessage<CancellationExecutorTestMessage>(message =>
                 message
                     .MessageName("test.messageName")
-                    .Consumer<CancellationExecutorTestConsumer>(consumer => consumer.Group("test-group"))
+                    .Consumer<CancellationExecutorTestConsumer>(consumer =>
+                        consumer.StableContract("tests.subscribe-retry").Group("test-group")
+                    )
             );
             setup.UseInMemory();
-            setup.UseInMemoryStorage();
+            setup.UseProcessLocalInMemoryStorage();
         });
 
         var provider = services.BuildServiceProvider();

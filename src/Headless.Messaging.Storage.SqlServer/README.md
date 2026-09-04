@@ -31,7 +31,12 @@ For `UseEntityFramework<TContext>()` and the automatically coordinated transacti
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
-    options.Bus.ForConsumersFromAssemblyContaining<Program>();
+    options.Bus.ForMessage<OrderPlaced>(message =>
+        message.Consumer<OrderPlacedConsumer>(consumer =>
+            consumer.ConsumerIdentity("orders.order-placed").ContractVersion("v1")
+        )
+    );
+    options.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
     options.UseSqlServer(config =>
     {
         config.ConnectionString = "Server=localhost;Database=myapp;...";

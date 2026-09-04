@@ -151,7 +151,9 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
         string? messageName,
         string? group,
         byte concurrency,
-        MessageLane lane
+        MessageLane lane,
+        string consumerIdentity,
+        string contractVersion
     )
     {
         var metadata = Options.CreateConsumerMetadata(
@@ -161,6 +163,8 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
             Registry.TryGetRawMessageName(messageType, lane, out var mappedMessageName) ? mappedMessageName : null,
             group,
             concurrency,
+            consumerIdentity: consumerIdentity,
+            contractVersion: contractVersion,
             lane: lane
         );
 

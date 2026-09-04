@@ -244,6 +244,13 @@ public sealed class MessagingOptions
     public TimeSpan DeadNodeReconcileInterval { get; set; } = TimeSpan.FromMinutes(1);
 
     /// <summary>
+    /// Gets or sets the inbox guarantee required for durable consumers. Defaults to
+    /// <see cref="MessagingInboxCapabilityTier.Transactional"/>; selecting a weaker tier is an explicit opt-down.
+    /// </summary>
+    public MessagingInboxCapabilityTier RequiredInboxCapability { get; set; } =
+        MessagingInboxCapabilityTier.Transactional;
+
+    /// <summary>
     /// Gets the global circuit breaker configuration that applies to all consumer groups.
     /// Individual consumers may override specific properties via
     /// <see cref="IConsumerBuilderBase{TConsumer,TBuilder}.WithCircuitBreaker"/>.
@@ -300,6 +307,7 @@ public sealed class MessagingOptions
         target.CommandTimeout = CommandTimeout;
         target.ShutdownTimeout = ShutdownTimeout;
         target.DeadNodeReconcileInterval = DeadNodeReconcileInterval;
+        target.RequiredInboxCapability = RequiredInboxCapability;
         _CopyJsonSerializerOptions(JsonSerializerOptions, target.JsonSerializerOptions);
         RetryPolicy.CopyTo(target.RetryPolicy);
         CircuitBreaker.CopyTo(target.CircuitBreaker);
@@ -421,9 +429,25 @@ public sealed class MessagingOptions
         string? group,
         byte concurrency,
         string? handlerId = null,
+        string? consumerIdentity = null,
+        string? contractVersion = null,
         MessageLane lane = MessageLane.Bus
     )
     {
+        if (string.IsNullOrWhiteSpace(consumerIdentity))
+        {
+            throw new MessagingConfigurationException(
+                $"Durable consumer {consumerType.FullName ?? consumerType.Name} requires an explicit stable consumer identity."
+            );
+        }
+
+        if (string.IsNullOrWhiteSpace(contractVersion))
+        {
+            throw new MessagingConfigurationException(
+                $"Durable consumer {consumerType.FullName ?? consumerType.Name} requires an explicit immutable contract version."
+            );
+        }
+
         var conventions = Conventions;
         conventions.Version = Version;
 
@@ -440,6 +464,8 @@ public sealed class MessagingOptions
             finalGroup,
             concurrency,
             lane,
+            consumerIdentity,
+            contractVersion,
             finalHandlerId
         );
     }
@@ -488,6 +514,9 @@ internal sealed class MessagingOptionsValidator : AbstractValidator<MessagingOpt
         RuleFor(x => x.DeadNodeReconcileInterval)
             .GreaterThan(TimeSpan.Zero)
             .WithMessage("DeadNodeReconcileInterval must be greater than zero.");
+        RuleFor(x => x.RequiredInboxCapability)
+            .IsInEnum()
+            .WithMessage("RequiredInboxCapability must be a defined inbox capability tier.");
         // #2 — Version is persisted as a literal into a VARCHAR(20)/nvarchar(20) column by the SQL
         // storage providers; reject >20 chars at startup instead of failing every outbox insert at runtime.
         RuleFor(x => x.Version)

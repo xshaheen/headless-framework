@@ -648,7 +648,7 @@ public sealed class BusTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.UseInMemory();
-            setup.UseInMemoryStorage();
+            setup.UseProcessLocalInMemoryStorage();
         });
 
         // when
@@ -669,7 +669,7 @@ public sealed class BusTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.UseInMemory();
-            setup.UseInMemoryStorage();
+            setup.UseProcessLocalInMemoryStorage();
         });
 
         // when

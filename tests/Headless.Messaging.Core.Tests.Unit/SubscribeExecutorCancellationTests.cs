@@ -112,10 +112,14 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.Bus.ForMessage<CancellationExecutorTestMessage>(message =>
-                message.MessageName("test.messageName").Consumer<CancellationExecutorTestConsumer>()
+                message
+                    .MessageName("test.messageName")
+                    .Consumer<CancellationExecutorTestConsumer>(consumer =>
+                        consumer.StableContract("tests.subscribe-cancellation")
+                    )
             );
             setup.UseInMemory();
-            setup.UseInMemoryStorage();
+            setup.UseProcessLocalInMemoryStorage();
         });
 
         var provider = services.BuildServiceProvider();

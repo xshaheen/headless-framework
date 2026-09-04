@@ -31,7 +31,12 @@ dotnet add package Headless.Messaging.Kafka
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
-    options.Queue.ForConsumersFromAssemblyContaining<Program>();
+    options.Queue.ForMessage<OrderPlaced>(message =>
+        message.Consumer<OrderPlacedConsumer>(consumer =>
+            consumer.ConsumerIdentity("orders.order-placed").ContractVersion("v1")
+        )
+    );
+    options.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
     options.UsePostgreSql("connection_string");
 
     options.UseKafka(kafka =>

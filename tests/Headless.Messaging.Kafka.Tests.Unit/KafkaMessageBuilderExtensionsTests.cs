@@ -30,7 +30,10 @@ public sealed class KafkaMessageBuilderExtensionsTests
         var builder = new QueueMessageBuilder<TestMessage>(new ServiceCollection());
 
         builder.Consumer<TestConsumer>(consumer =>
-            consumer.UseKafka(kafka => kafka.WithIsolationLevel(IsolationLevel.ReadCommitted))
+            consumer
+                .ConsumerIdentity("tests.kafka.consumer-config")
+                .ContractVersion("v1")
+                .UseKafka(kafka => kafka.WithIsolationLevel(IsolationLevel.ReadCommitted))
         );
         var config = builder.Build().Consumers.Single().ProviderConfigs.Values.Single();
 

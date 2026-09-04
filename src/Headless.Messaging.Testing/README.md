@@ -30,8 +30,14 @@ await using var harness = await MessagingTestHarness.CreateAsync(services =>
     services.AddHeadlessMessaging(options =>
     {
         options.Bus.ForMessage<OrderCreated>(message =>
-            message.MessageName("orders.created").Consumer<OrderCreatedConsumer>(consumer => consumer.Group("order-svc"))
+            message.MessageName("orders.created").Consumer<OrderCreatedConsumer>(consumer =>
+                consumer
+                    .ConsumerIdentity("orders.created-handler")
+                    .ContractVersion("v1")
+                    .Group("order-svc")
+            )
         );
+        options.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
         options.UseInMemory();
         options.UseInMemoryStorage();
     });
@@ -95,8 +101,11 @@ await using var harness = await MessagingTestHarness.CreateAsync(services =>
     services.AddHeadlessMessaging(options =>
     {
         options.Bus.ForMessage<OrderCreated>(message =>
-            message.MessageName("orders.created").Consumer<TestConsumer<OrderCreated>>()
+            message.MessageName("orders.created").Consumer<TestConsumer<OrderCreated>>(consumer =>
+                consumer.ConsumerIdentity("orders.created-test-recorder").ContractVersion("v1")
+            )
         );
+        options.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
         options.UseInMemory();
         options.UseInMemoryStorage();
     });
@@ -133,8 +142,11 @@ public sealed class OrderMessagingTests : TestBase
             services.AddHeadlessMessaging(options =>
             {
                 options.Bus.ForMessage<OrderCreated>(message =>
-                    message.MessageName("orders.created").Consumer<OrderCreatedConsumer>()
+                    message.MessageName("orders.created").Consumer<OrderCreatedConsumer>(consumer =>
+                        consumer.ConsumerIdentity("orders.created-handler").ContractVersion("v1")
+                    )
                 );
+                options.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
                 options.UseInMemory();
                 options.UseInMemoryStorage();
             });
@@ -165,8 +177,11 @@ public sealed class OrderHarnessFixture : IAsyncLifetime
             services.AddHeadlessMessaging(options =>
             {
                 options.Bus.ForMessage<OrderCreated>(message =>
-                    message.MessageName("orders.created").Consumer<TestConsumer<OrderCreated>>()
+                    message.MessageName("orders.created").Consumer<TestConsumer<OrderCreated>>(consumer =>
+                        consumer.ConsumerIdentity("orders.created-test-recorder").ContractVersion("v1")
+                    )
                 );
+                options.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
                 options.UseInMemory();
                 options.UseInMemoryStorage();
             });
@@ -245,8 +260,11 @@ public sealed class OrderApiTests : TestBase
         builder.Services.AddHeadlessMessaging(options =>
         {
             options.Bus.ForMessage<OrderCreated>(message =>
-                message.MessageName("orders.created").Consumer<OrderCreatedConsumer>()
+                message.MessageName("orders.created").Consumer<OrderCreatedConsumer>(consumer =>
+                    consumer.ConsumerIdentity("orders.created-handler").ContractVersion("v1")
+                )
             );
+            options.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
             options.UseInMemory();
             options.UseInMemoryStorage();
         });

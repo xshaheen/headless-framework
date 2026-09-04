@@ -27,7 +27,12 @@ dotnet add package Headless.Messaging.RabbitMq
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
-    options.Bus.ForConsumersFromAssemblyContaining<Program>();
+    options.Bus.ForMessage<OrderPlaced>(message =>
+        message.Consumer<OrderPlacedConsumer>(consumer =>
+            consumer.ConsumerIdentity("orders.order-placed").ContractVersion("v1")
+        )
+    );
+    options.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
     options.UsePostgreSql("connection_string");
 
     options.UseRabbitMq(rmq =>

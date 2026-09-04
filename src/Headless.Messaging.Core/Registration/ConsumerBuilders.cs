@@ -30,10 +30,20 @@ public interface IConsumerBuilderBase<TConsumer, out TBuilder>
     /// <returns>The same builder instance for chaining.</returns>
     TBuilder Concurrency(byte maxConcurrent);
 
-    /// <summary>Overrides the deterministic handler identity for this consumer registration.</summary>
-    /// <param name="handlerId">An explicit, stable handler identity string used for diagnostics and group generation.</param>
+    /// <summary>Overrides the deterministic handler identity for diagnostics and default group generation.</summary>
+    /// <param name="handlerId">An explicit handler identity string; this is not the durable inbox identity.</param>
     /// <returns>The same builder instance for chaining.</returns>
     TBuilder HandlerId(string handlerId);
+
+    /// <summary>Sets the operator-stable identity used by the durable inbox.</summary>
+    /// <param name="consumerIdentity">Identity that remains unchanged across handler and topology refactors.</param>
+    /// <returns>The same builder instance for chaining.</returns>
+    TBuilder ConsumerIdentity(string consumerIdentity);
+
+    /// <summary>Sets the immutable version of this consumer's durable processing contract.</summary>
+    /// <param name="contractVersion">A non-whitespace version that changes only for an intentional dedupe reset.</param>
+    /// <returns>The same builder instance for chaining.</returns>
+    TBuilder ContractVersion(string contractVersion);
 
     /// <summary>Configures per-consumer circuit breaker overrides for this registration.</summary>
     /// <param name="configure">A callback that mutates a <see cref="ConsumerCircuitBreakerOptions"/> instance for this consumer.</param>
@@ -87,6 +97,18 @@ internal abstract class ConsumerBuilderBase<TConsumer, TBuilder>(MessageConsumer
         return Self;
     }
 
+    public TBuilder ConsumerIdentity(string consumerIdentity)
+    {
+        registration.SetConsumerIdentity(consumerIdentity);
+        return Self;
+    }
+
+    public TBuilder ContractVersion(string contractVersion)
+    {
+        registration.SetContractVersion(contractVersion);
+        return Self;
+    }
+
     public TBuilder WithCircuitBreaker(Action<ConsumerCircuitBreakerOptions> configure)
     {
         registration.SetCircuitBreaker(configure);
@@ -119,6 +141,10 @@ internal sealed class MessageConsumerRegistrationBuilder(
 
     public string? HandlerId { get; private set; }
 
+    public string? ConsumerIdentity { get; private set; }
+
+    public string? ContractVersion { get; private set; }
+
     public ConsumerCircuitBreakerOptions? CircuitBreakerOverride { get; private set; }
 
     public void SetGroup(string group)
@@ -140,6 +166,20 @@ internal sealed class MessageConsumerRegistrationBuilder(
         Argument.IsNotNullOrWhiteSpace(handlerId);
 
         HandlerId = handlerId;
+    }
+
+    public void SetConsumerIdentity(string consumerIdentity)
+    {
+        Argument.IsNotNullOrWhiteSpace(consumerIdentity);
+
+        ConsumerIdentity = consumerIdentity;
+    }
+
+    public void SetContractVersion(string contractVersion)
+    {
+        Argument.IsNotNullOrWhiteSpace(contractVersion);
+
+        ContractVersion = contractVersion;
     }
 
     public void SetCircuitBreaker(Action<ConsumerCircuitBreakerOptions> configure)
@@ -165,6 +205,8 @@ internal sealed class MessageConsumerRegistrationBuilder(
             Group,
             Concurrency,
             HandlerId,
+            ConsumerIdentity,
+            ContractVersion,
             CircuitBreakerOverride,
             _providerConfigs.BuildOverlay(messageProviderConfigs ?? new Dictionary<Type, object>())
         );

@@ -55,8 +55,11 @@ public static class SetupMessaging
     ///
     ///     setup.Bus.ForMessage&lt;OrderPlaced&gt;(message => message
     ///         .MessageName("orders.placed")
-    ///         .Consumer&lt;OrderPlacedHandler&gt;(consumer => consumer.Group("order-service").Concurrency(5)));
-    ///     setup.Bus.ForConsumersFromAssemblyContaining&lt;Program&gt;();
+    ///         .Consumer&lt;OrderPlacedHandler&gt;(consumer => consumer
+    ///             .ConsumerIdentity("order-service.order-placed")
+    ///             .ContractVersion("v1")
+    ///             .Group("order-service")
+    ///             .Concurrency(5)));
     /// });
     /// </code>
     /// </para>
@@ -313,6 +316,8 @@ public static class SetupMessaging
                         contribution.Group,
                         contribution.Concurrency,
                         HandlerId: null,
+                        ConsumerIdentity: contribution.ConsumerIdentity,
+                        ContractVersion: contribution.ContractVersion,
                         CircuitBreakerOverride: null,
                         ProviderConfigs: new Dictionary<Type, object>()
                     ),
@@ -389,6 +394,8 @@ public static class SetupMessaging
                     consumer.Group,
                     consumer.Concurrency,
                     consumer.HandlerId,
+                    consumer.ConsumerIdentity,
+                    consumer.ContractVersion,
                     registration.Lane
                 ) with
                 {
@@ -405,6 +412,8 @@ public static class SetupMessaging
                 var settings = new ConsumerRegistrationSettings(
                     resolved.Concurrency,
                     resolved.ResolvedHandlerId,
+                    resolved.ConsumerIdentity,
+                    resolved.ContractVersion,
                     ConsumerCircuitBreakerSettings.From(consumer.CircuitBreakerOverride),
                     resolved.ProviderConfigs
                 );
@@ -482,12 +491,16 @@ public static class SetupMessaging
     private readonly struct ConsumerRegistrationSettings(
         byte concurrency,
         string resolvedHandlerId,
+        string consumerIdentity,
+        string contractVersion,
         ConsumerCircuitBreakerSettings circuitBreaker,
         IReadOnlyDictionary<Type, object> providerConfigs
     ) : IEquatable<ConsumerRegistrationSettings>
     {
         private readonly byte _concurrency = concurrency;
         private readonly string _resolvedHandlerId = resolvedHandlerId;
+        private readonly string _consumerIdentity = consumerIdentity;
+        private readonly string _contractVersion = contractVersion;
         private readonly ConsumerCircuitBreakerSettings _circuitBreaker = circuitBreaker;
         private readonly IReadOnlyDictionary<Type, object> _providerConfigs = providerConfigs;
 
@@ -495,6 +508,8 @@ public static class SetupMessaging
         {
             return _concurrency == other._concurrency
                 && string.Equals(_resolvedHandlerId, other._resolvedHandlerId, StringComparison.Ordinal)
+                && string.Equals(_consumerIdentity, other._consumerIdentity, StringComparison.Ordinal)
+                && string.Equals(_contractVersion, other._contractVersion, StringComparison.Ordinal)
                 && _circuitBreaker == other._circuitBreaker
                 && _ProviderConfigsEqual(_providerConfigs, other._providerConfigs);
         }
@@ -509,6 +524,8 @@ public static class SetupMessaging
             var hash = new HashCode();
             hash.Add(_concurrency);
             hash.Add(_resolvedHandlerId, StringComparer.Ordinal);
+            hash.Add(_consumerIdentity, StringComparer.Ordinal);
+            hash.Add(_contractVersion, StringComparer.Ordinal);
             hash.Add(_circuitBreaker);
 
             foreach (var pair in _providerConfigs.OrderBy(static pair => pair.Key.FullName, StringComparer.Ordinal))

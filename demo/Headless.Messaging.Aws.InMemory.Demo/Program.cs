@@ -1,12 +1,17 @@
 using Amazon;
 using Headless.Messaging;
+using Headless.Messaging.Configuration;
 using Headless.Messaging.Dashboard;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddHeadlessMessaging(setup =>
 {
-    setup.Bus.ForConsumersFromAssembly(typeof(Program).Assembly);
+    setup.Bus.ForConsumersFromAssembly(
+        typeof(Program).Assembly,
+        static (_, consumer) => consumer.ConsumerIdentity("aws-demo.sqs-message").ContractVersion("v1")
+    );
+    setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
     setup.UseInMemoryStorage();
     setup.UseAws(RegionEndpoint.CNNorthWest1);
     setup.UseDashboard(d => d.WithNoAuth());

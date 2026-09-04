@@ -43,10 +43,20 @@ public interface IScannedConsumerBuilder
     /// <returns>The same builder instance for chaining.</returns>
     IScannedConsumerBuilder Concurrency(byte maxConcurrent);
 
-    /// <summary>Overrides the deterministic handler identity for this scanned consumer registration.</summary>
-    /// <param name="handlerId">An explicit, stable handler identity string used for diagnostics and group generation.</param>
+    /// <summary>Overrides the deterministic handler identity for diagnostics and default group generation.</summary>
+    /// <param name="handlerId">An explicit handler identity string; this is not the durable inbox identity.</param>
     /// <returns>The same builder instance for chaining.</returns>
     IScannedConsumerBuilder HandlerId(string handlerId);
+
+    /// <summary>Sets the operator-stable identity used by the durable inbox.</summary>
+    /// <param name="consumerIdentity">Identity that remains unchanged across handler and topology refactors.</param>
+    /// <returns>The same builder instance for chaining.</returns>
+    IScannedConsumerBuilder ConsumerIdentity(string consumerIdentity);
+
+    /// <summary>Sets the immutable version of this consumer's durable processing contract.</summary>
+    /// <param name="contractVersion">A non-whitespace version that changes only for an intentional dedupe reset.</param>
+    /// <returns>The same builder instance for chaining.</returns>
+    IScannedConsumerBuilder ContractVersion(string contractVersion);
 
     /// <summary>Configures per-consumer circuit breaker overrides for this scanned registration.</summary>
     /// <param name="configure">A callback that mutates a <see cref="ConsumerCircuitBreakerOptions"/> instance for this consumer.</param>
@@ -81,6 +91,18 @@ internal sealed class ScannedConsumerBuilder(Type consumerType, MessageLane lane
     public IScannedConsumerBuilder HandlerId(string handlerId)
     {
         _registration.SetHandlerId(handlerId);
+        return this;
+    }
+
+    public IScannedConsumerBuilder ConsumerIdentity(string consumerIdentity)
+    {
+        _registration.SetConsumerIdentity(consumerIdentity);
+        return this;
+    }
+
+    public IScannedConsumerBuilder ContractVersion(string contractVersion)
+    {
+        _registration.SetContractVersion(contractVersion);
         return this;
     }
 

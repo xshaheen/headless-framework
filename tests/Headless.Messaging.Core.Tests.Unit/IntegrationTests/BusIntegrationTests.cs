@@ -37,12 +37,14 @@ public sealed class IBusIntegrationTests : TestBase
         services.AddHeadlessMessaging(messaging =>
         {
             messaging.Bus.ForMessage<DirectTestMessage>(message =>
-                message.MessageName("direct-test-messageName").Consumer<DirectTestConsumer>()
+                message
+                    .MessageName("direct-test-messageName")
+                    .Consumer<DirectTestConsumer>(consumer => consumer.StableContract("tests.bus-integration.primary"))
             );
             messaging.Options.DefaultGroupName = "test-group";
             messaging.Options.Version = "v1";
             messaging.UseInMemory();
-            messaging.UseInMemoryStorage();
+            messaging.UseProcessLocalInMemoryStorage();
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -79,12 +81,14 @@ public sealed class IBusIntegrationTests : TestBase
         services.AddHeadlessMessaging(messaging =>
         {
             messaging.Bus.ForMessage<DirectTestMessage>(message =>
-                message.MessageName("direct-test-messageName").Consumer<DirectTestConsumer>()
+                message
+                    .MessageName("direct-test-messageName")
+                    .Consumer<DirectTestConsumer>(consumer => consumer.StableContract("tests.bus-integration.primary"))
             );
             messaging.Options.DefaultGroupName = "test-group";
             messaging.Options.Version = "v1";
             messaging.UseInMemory();
-            messaging.UseInMemoryStorage();
+            messaging.UseProcessLocalInMemoryStorage();
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -114,12 +118,14 @@ public sealed class IBusIntegrationTests : TestBase
         services.AddHeadlessMessaging(messaging =>
         {
             messaging.Bus.ForMessage<DirectTestMessage>(message =>
-                message.MessageName("custom-messageName-name").Consumer<DirectTestConsumer>()
+                message
+                    .MessageName("custom-messageName-name")
+                    .Consumer<DirectTestConsumer>(consumer => consumer.StableContract("tests.bus-integration.primary"))
             );
             messaging.Options.DefaultGroupName = "test-group";
             messaging.Options.Version = "v1";
             messaging.UseInMemory();
-            messaging.UseInMemoryStorage();
+            messaging.UseProcessLocalInMemoryStorage();
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -150,13 +156,17 @@ public sealed class IBusIntegrationTests : TestBase
             messaging.Bus.ForMessage<DirectTestMessage>(message =>
             {
                 message.MessageName("multi-group-test");
-                message.Consumer<DirectTestConsumer>(consumer => consumer.Group("direct.primary"));
-                message.Consumer<DirectAnalyticsConsumer>(consumer => consumer.Group("direct.analytics"));
+                message.Consumer<DirectTestConsumer>(consumer =>
+                    consumer.StableContract("tests.bus-integration.primary").Group("direct.primary")
+                );
+                message.Consumer<DirectAnalyticsConsumer>(consumer =>
+                    consumer.StableContract("tests.bus-integration.analytics").Group("direct.analytics")
+                );
             });
             messaging.Options.DefaultGroupName = "test-group";
             messaging.Options.Version = "v1";
             messaging.UseInMemory();
-            messaging.UseInMemoryStorage();
+            messaging.UseProcessLocalInMemoryStorage();
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -187,13 +197,15 @@ public sealed class IBusIntegrationTests : TestBase
         services.AddHeadlessMessaging(messaging =>
         {
             messaging.Bus.ForMessage<DirectTestMessage>(message =>
-                message.MessageName("prefixed-test").Consumer<DirectTestConsumer>()
+                message
+                    .MessageName("prefixed-test")
+                    .Consumer<DirectTestConsumer>(consumer => consumer.StableContract("tests.bus-integration.primary"))
             );
             messaging.Options.DefaultGroupName = "test-group";
             messaging.Options.Version = "v1";
             messaging.Options.MessageNamePrefix = "myapp";
             messaging.UseInMemory();
-            messaging.UseInMemoryStorage();
+            messaging.UseProcessLocalInMemoryStorage();
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -221,12 +233,16 @@ public sealed class IBusIntegrationTests : TestBase
         services.AddHeadlessMessaging(messaging =>
         {
             messaging.Bus.ForMessage<DirectTestMessage>(message =>
-                message.MessageName("header-test-messageName").Consumer<DirectTestConsumerWithHeaders>()
+                message
+                    .MessageName("header-test-messageName")
+                    .Consumer<DirectTestConsumerWithHeaders>(consumer =>
+                        consumer.StableContract("tests.bus-integration.headers")
+                    )
             );
             messaging.Options.DefaultGroupName = "test-group";
             messaging.Options.Version = "v1";
             messaging.UseInMemory();
-            messaging.UseInMemoryStorage();
+            messaging.UseProcessLocalInMemoryStorage();
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -268,12 +284,16 @@ public sealed class IBusIntegrationTests : TestBase
         services.AddHeadlessMessaging(messaging =>
         {
             messaging.Bus.ForMessage<DirectTestMessage>(message =>
-                message.MessageName("tenant-test-messageName").Consumer<DirectTestConsumerWithHeaders>()
+                message
+                    .MessageName("tenant-test-messageName")
+                    .Consumer<DirectTestConsumerWithHeaders>(consumer =>
+                        consumer.StableContract("tests.bus-integration.headers")
+                    )
             );
             messaging.Options.DefaultGroupName = "test-group";
             messaging.Options.Version = "v1";
             messaging.UseInMemory();
-            messaging.UseInMemoryStorage();
+            messaging.UseProcessLocalInMemoryStorage();
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -309,12 +329,16 @@ public sealed class IBusIntegrationTests : TestBase
         services.AddHeadlessMessaging(messaging =>
         {
             messaging.Bus.ForMessage<DirectTestMessage>(message =>
-                message.MessageName("tenant-unset-messageName").Consumer<DirectTestConsumerWithHeaders>()
+                message
+                    .MessageName("tenant-unset-messageName")
+                    .Consumer<DirectTestConsumerWithHeaders>(consumer =>
+                        consumer.StableContract("tests.bus-integration.headers")
+                    )
             );
             messaging.Options.DefaultGroupName = "test-group";
             messaging.Options.Version = "v1";
             messaging.UseInMemory();
-            messaging.UseInMemoryStorage();
+            messaging.UseProcessLocalInMemoryStorage();
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -348,12 +372,14 @@ public sealed class IBusIntegrationTests : TestBase
         services.AddHeadlessMessaging(messaging =>
         {
             messaging.Bus.ForMessage<DirectTestMessage>(message =>
-                message.MessageName("sequential-test").Consumer<DirectTestConsumer>()
+                message
+                    .MessageName("sequential-test")
+                    .Consumer<DirectTestConsumer>(consumer => consumer.StableContract("tests.bus-integration.primary"))
             );
             messaging.Options.DefaultGroupName = "test-group";
             messaging.Options.Version = "v1";
             messaging.UseInMemory();
-            messaging.UseInMemoryStorage();
+            messaging.UseProcessLocalInMemoryStorage();
         });
 
         await using var provider = services.BuildServiceProvider();

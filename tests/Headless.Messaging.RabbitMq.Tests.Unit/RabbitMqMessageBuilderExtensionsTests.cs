@@ -13,7 +13,12 @@ public sealed class RabbitMqMessageBuilderExtensionsTests
     {
         var builder = new BusMessageBuilder<TestMessage>(new ServiceCollection());
 
-        builder.Consumer<TestConsumer>(consumer => consumer.UseRabbitMq(rabbit => rabbit.PrefetchCount(20)));
+        builder.Consumer<TestConsumer>(consumer =>
+            consumer
+                .ConsumerIdentity("tests.rabbitmq.consumer-config")
+                .ContractVersion("v1")
+                .UseRabbitMq(rabbit => rabbit.PrefetchCount(20))
+        );
         var config = builder.Build().Consumers.Single().ProviderConfigs.Values.Single();
 
         config.Should().BeEquivalentTo(new RabbitMqConsumerConfig(20));

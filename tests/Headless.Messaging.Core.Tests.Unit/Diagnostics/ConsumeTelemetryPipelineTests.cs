@@ -61,10 +61,12 @@ public sealed class ConsumeTelemetryPipelineTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.Bus.ForMessage<PipelineTestMessage>(message =>
-                message.MessageName("test.pipeline.messageName").Consumer<PipelineTestConsumer>()
+                message
+                    .MessageName("test.pipeline.messageName")
+                    .Consumer<PipelineTestConsumer>(consumer => consumer.StableContract("tests.telemetry-pipeline"))
             );
             setup.UseInMemory();
-            setup.UseInMemoryStorage();
+            setup.UseProcessLocalInMemoryStorage();
         });
 
         await using var provider = services.BuildServiceProvider();

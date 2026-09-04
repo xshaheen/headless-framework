@@ -91,4 +91,47 @@ public sealed class MessagingRegistrationApiSurfaceTests : TestBase
                 method.GetParameters().Should().Contain(parameter => parameter.ParameterType == typeof(MessageLane))
             );
     }
+
+    [Fact]
+    public void durable_consumer_builders_expose_explicit_identity_and_contract_version()
+    {
+        var genericMethods = typeof(IConsumerBuilderBase<,>).GetMethods(BindingFlags.Instance | BindingFlags.Public);
+        var scannedMethods = typeof(IScannedConsumerBuilder).GetMethods(BindingFlags.Instance | BindingFlags.Public);
+
+        genericMethods.Should().Contain(method => method.Name == "ConsumerIdentity");
+        genericMethods.Should().Contain(method => method.Name == "ContractVersion");
+        scannedMethods.Should().Contain(method => method.Name == "ConsumerIdentity");
+        scannedMethods.Should().Contain(method => method.Name == "ContractVersion");
+    }
+
+    [Theory]
+    [InlineData(typeof(IBusMessageBuilder<>))]
+    [InlineData(typeof(IQueueMessageBuilder<>))]
+    public void direct_consumer_registration_requires_an_explicit_contract_callback(Type builderType)
+    {
+        var consumerMethod = builderType
+            .GetMethods(BindingFlags.Instance | BindingFlags.Public)
+            .Single(method => method.Name == "Consumer");
+
+        consumerMethod.GetParameters().Should().ContainSingle();
+    }
+
+    [Theory]
+    [InlineData(typeof(IBusRegistrationBuilder))]
+    [InlineData(typeof(IQueueRegistrationBuilder))]
+    public void assembly_scanning_requires_an_explicit_consumer_contract_callback(Type builderType)
+    {
+        var scanMethods = builderType
+            .GetMethods(BindingFlags.Instance | BindingFlags.Public)
+            .Where(method => method.Name.StartsWith("ForConsumersFromAssembly", StringComparison.Ordinal))
+            .ToArray();
+
+        scanMethods.Should().HaveCount(2);
+        scanMethods.Single(method => method.Name == "ForConsumersFromAssembly").GetParameters().Should().HaveCount(2);
+        scanMethods
+            .Single(method => method.Name == "ForConsumersFromAssemblyContaining")
+            .GetParameters()
+            .Should()
+            .ContainSingle();
+    }
 }

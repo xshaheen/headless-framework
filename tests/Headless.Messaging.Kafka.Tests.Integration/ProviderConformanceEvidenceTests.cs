@@ -78,7 +78,8 @@ public sealed class ProviderConformanceEvidenceTests(KafkaFixture fixture) : Tes
             MessagingProviderCapabilities.Storage(
                 "TestStorage",
                 [MessageLane.Bus, MessageLane.Queue],
-                supportsDelayedScheduling: true
+                supportsDelayedScheduling: true,
+                inboxCapability: MessagingInboxCapabilityTier.Transactional
             )
         );
         services.AddSingleton<IStorageInitializer>(new RecordingStorageInitializer(() => storageInitializeCalls++));

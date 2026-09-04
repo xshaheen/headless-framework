@@ -99,6 +99,7 @@ public sealed class EndToEndTests : TestBase
             {
                 setup.UseInMemory();
                 setup.UseInMemoryStorage();
+                setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
                 configure(services, setup);
             });
         });
@@ -114,7 +115,11 @@ public sealed class EndToEndTests : TestBase
             (_, setup) =>
             {
                 setup.Bus.ForMessage<OrderCreatedEvent>(message =>
-                    message.MessageName("order-created").Consumer<OrderCreatedConsumer>()
+                    message
+                        .MessageName("order-created")
+                        .Consumer<OrderCreatedConsumer>(consumer =>
+                            consumer.ConsumerIdentity("tests.messaging-testing.order-created").ContractVersion("v1")
+                        )
                 );
             }
         );
@@ -148,7 +153,11 @@ public sealed class EndToEndTests : TestBase
             (_, setup) =>
             {
                 setup.Bus.ForMessage<OrderCreatedEvent>(message =>
-                    message.MessageName("order-created").Consumer<FailingConsumer>()
+                    message
+                        .MessageName("order-created")
+                        .Consumer<FailingConsumer>(consumer =>
+                            consumer.ConsumerIdentity("tests.messaging-testing.failing").ContractVersion("v1")
+                        )
                 );
             }
         );
@@ -179,8 +188,13 @@ public sealed class EndToEndTests : TestBase
                 {
                     options.UseInMemory();
                     options.UseInMemoryStorage();
+                    options.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
                     options.Bus.ForMessage<OrderCreatedEvent>(message =>
-                        message.MessageName("order-created").Consumer<TestConsumer<OrderCreatedEvent>>()
+                        message
+                            .MessageName("order-created")
+                            .Consumer<TestConsumer<OrderCreatedEvent>>(consumer =>
+                                consumer.ConsumerIdentity("tests.messaging-testing.test-consumer").ContractVersion("v1")
+                            )
                     );
                 });
             },
@@ -235,7 +249,11 @@ public sealed class EndToEndTests : TestBase
             (_, setup) =>
             {
                 setup.Bus.ForMessage<OrderCreatedEvent>(message =>
-                    message.MessageName("order-created").Consumer<OrderCreatedConsumer>()
+                    message
+                        .MessageName("order-created")
+                        .Consumer<OrderCreatedConsumer>(consumer =>
+                            consumer.ConsumerIdentity("tests.messaging-testing.order-created").ContractVersion("v1")
+                        )
                 );
             }
         );
@@ -244,7 +262,11 @@ public sealed class EndToEndTests : TestBase
             (_, setup) =>
             {
                 setup.Bus.ForMessage<OrderCreatedEvent>(message =>
-                    message.MessageName("order-created").Consumer<OrderCreatedConsumer>()
+                    message
+                        .MessageName("order-created")
+                        .Consumer<OrderCreatedConsumer>(consumer =>
+                            consumer.ConsumerIdentity("tests.messaging-testing.order-created").ContractVersion("v1")
+                        )
                 );
             }
         );
@@ -275,8 +297,13 @@ public sealed class EndToEndTests : TestBase
                 {
                     options.UseInMemory();
                     options.UseInMemoryStorage();
+                    options.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
                     options.Bus.ForMessage<OrderCreatedEvent>(message =>
-                        message.MessageName("order-created").Consumer<NotifyingConsumer>()
+                        message
+                            .MessageName("order-created")
+                            .Consumer<NotifyingConsumer>(consumer =>
+                                consumer.ConsumerIdentity("tests.messaging-testing.notifying").ContractVersion("v1")
+                            )
                     );
                 });
             },
@@ -304,15 +331,26 @@ public sealed class EndToEndTests : TestBase
                     options.Bus.ForMessage<OrderCreatedEvent>(message =>
                         message
                             .MessageName("order-created")
-                            .Consumer<BusLaneConsumer>(consumer => consumer.Group("bus-workers"))
+                            .Consumer<BusLaneConsumer>(consumer =>
+                                consumer
+                                    .ConsumerIdentity("tests.messaging-testing.bus-lane")
+                                    .ContractVersion("v1")
+                                    .Group("bus-workers")
+                            )
                     );
                     options.Queue.ForMessage<OrderCreatedEvent>(message =>
                         message
                             .MessageName("order-created")
-                            .Consumer<QueueLaneConsumer>(consumer => consumer.Group("queue-workers"))
+                            .Consumer<QueueLaneConsumer>(consumer =>
+                                consumer
+                                    .ConsumerIdentity("tests.messaging-testing.queue-lane")
+                                    .ContractVersion("v1")
+                                    .Group("queue-workers")
+                            )
                     );
                     options.UseInMemory();
                     options.UseInMemoryStorage();
+                    options.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
                 });
             },
             AbortToken
@@ -385,15 +423,26 @@ public sealed class EndToEndTests : TestBase
                     options.Bus.ForMessage<OrderCreatedEvent>(message =>
                         message
                             .MessageName("durable-order-created")
-                            .Consumer<BusLaneConsumer>(consumer => consumer.Group("durable-bus"))
+                            .Consumer<BusLaneConsumer>(consumer =>
+                                consumer
+                                    .ConsumerIdentity("tests.messaging-testing.durable-bus-lane")
+                                    .ContractVersion("v1")
+                                    .Group("durable-bus")
+                            )
                     );
                     options.Queue.ForMessage<OrderCreatedEvent>(message =>
                         message
                             .MessageName("durable-order-created")
-                            .Consumer<QueueLaneConsumer>(consumer => consumer.Group("durable-queue"))
+                            .Consumer<QueueLaneConsumer>(consumer =>
+                                consumer
+                                    .ConsumerIdentity("tests.messaging-testing.durable-queue-lane")
+                                    .ContractVersion("v1")
+                                    .Group("durable-queue")
+                            )
                     );
                     options.UseInMemory();
                     options.UseInMemoryStorage();
+                    options.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
                 });
             },
             AbortToken
@@ -458,6 +507,7 @@ public sealed class EndToEndTests : TestBase
                 services.AddHeadlessMessaging(options =>
                 {
                     options.UseInMemoryStorage();
+                    options.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
                     options.RegisterExtension(new QueueOnlyTransportExtension());
                 });
             },
@@ -550,8 +600,13 @@ public sealed class EndToEndTests : TestBase
         {
             options.UseInMemory();
             options.UseInMemoryStorage();
+            options.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
             options.Bus.ForMessage<OrderCreatedEvent>(message =>
-                message.MessageName("order-created").Consumer<OrderCreatedConsumer>()
+                message
+                    .MessageName("order-created")
+                    .Consumer<OrderCreatedConsumer>(consumer =>
+                        consumer.ConsumerIdentity("tests.messaging-testing.order-created").ContractVersion("v1")
+                    )
             );
         });
 
@@ -589,7 +644,11 @@ public sealed class EndToEndTests : TestBase
             (services, options) =>
             {
                 options.Bus.ForMessage<OrderCreatedEvent>(message =>
-                    message.MessageName("order-created").Consumer<FailingConsumer>()
+                    message
+                        .MessageName("order-created")
+                        .Consumer<FailingConsumer>(consumer =>
+                            consumer.ConsumerIdentity("tests.messaging-testing.failing").ContractVersion("v1")
+                        )
                 );
                 options.Options.RetryPolicy.MaxPersistedRetries = 0;
                 options.Options.RetryPolicy.RetryStrategy = new RetryStrategyOptions
@@ -637,7 +696,11 @@ public sealed class EndToEndTests : TestBase
             (services, options) =>
             {
                 options.Bus.ForMessage<OrderCreatedEvent>(message =>
-                    message.MessageName("order-created").Consumer<FailingConsumer>()
+                    message
+                        .MessageName("order-created")
+                        .Consumer<FailingConsumer>(consumer =>
+                            consumer.ConsumerIdentity("tests.messaging-testing.failing").ContractVersion("v1")
+                        )
                 );
                 options.Options.RetryPolicy.MaxPersistedRetries = 0;
                 options.Options.RetryPolicy.RetryStrategy = new RetryStrategyOptions

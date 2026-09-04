@@ -293,7 +293,8 @@ public sealed class MessagePublisherDeliveryTests : TestBase
             MessagingProviderCapabilities.Storage(
                 "TestStorage",
                 [MessageLane.Bus, MessageLane.Queue],
-                supportsDelayedScheduling: true
+                supportsDelayedScheduling: true,
+                inboxCapability: MessagingInboxCapabilityTier.Transactional
             ),
         ]);
         var transportLanes = new List<MessageLane>();
