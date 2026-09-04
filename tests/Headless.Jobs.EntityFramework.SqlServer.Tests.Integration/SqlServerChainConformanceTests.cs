@@ -20,6 +20,36 @@ public sealed class SqlServerChainConformanceTests(SqlServerJobsCoordinationFixt
     }
 
     [Fact]
+    public override Task deleting_a_chain_retries_when_append_commits_after_discovery()
+    {
+        return base.deleting_a_chain_retries_when_append_commits_after_discovery();
+    }
+
+    [Fact]
+    public override Task appending_to_a_chain_after_delete_fails_without_creating_a_row()
+    {
+        return base.appending_to_a_chain_after_delete_fails_without_creating_a_row();
+    }
+
+    [Fact]
+    public override Task batch_chain_delete_retries_with_fresh_discovery_and_returns_exact_count()
+    {
+        return base.batch_chain_delete_retries_with_fresh_discovery_and_returns_exact_count();
+    }
+
+    [Fact]
+    public override Task deleting_a_chain_retries_when_child_is_appended_directly_to_root()
+    {
+        return base.deleting_a_chain_retries_when_child_is_appended_directly_to_root();
+    }
+
+    [Fact]
+    public override Task deleting_a_mid_tree_node_retries_and_preserves_unrelated_rows()
+    {
+        return base.deleting_a_mid_tree_node_retries_and_preserves_unrelated_rows();
+    }
+
+    [Fact]
     public override Task deep_chain_claim_stamps_every_descendant_to_configured_depth()
     {
         return base.deep_chain_claim_stamps_every_descendant_to_configured_depth();
