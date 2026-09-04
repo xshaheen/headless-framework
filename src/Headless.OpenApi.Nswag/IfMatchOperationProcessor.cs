@@ -1,13 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
-using Headless.Api.Concurrency;
+using Headless.Abstractions;
 using NJsonSchema;
 using NSwag;
 using NSwag.Generation.Processors;
 using NSwag.Generation.Processors.Contexts;
 
-namespace Headless.OpenApi.Nswag.OperationProcessors;
+namespace Headless.OpenApi.Nswag;
 
 /// <summary>Adds the required <c>If-Match</c> header and 428 response to annotated operations.</summary>
 public sealed class IfMatchOperationProcessor : IOperationProcessor

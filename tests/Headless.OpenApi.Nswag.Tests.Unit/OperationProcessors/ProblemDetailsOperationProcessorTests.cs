@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
+using Headless.OpenApi.Nswag;
 using Headless.OpenApi.Nswag.Models;
 using Headless.OpenApi.Nswag.OperationProcessors;
 using Headless.Testing.Tests;
@@ -83,7 +84,7 @@ public sealed class ProblemDetailsOperationProcessorTests : TestBase
 
         response.Content.Should().BeEmpty();
         context.Document.Definitions.Should().HaveCount(definitions.Count);
-        context.Document.Definitions.Should().ContainKeys(definitions.Keys.ToArray());
+        context.Document.Definitions.Should().ContainKeys([.. definitions.Keys]);
         context.Document.Definitions.Should().ContainKey(nameof(HeadlessProblemDetails));
     }
 

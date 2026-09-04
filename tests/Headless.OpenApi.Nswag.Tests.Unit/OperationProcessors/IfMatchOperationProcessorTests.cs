@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
-using Headless.Api.Concurrency;
-using Headless.OpenApi.Nswag.OperationProcessors;
+using Headless.Abstractions;
+using Headless.OpenApi.Nswag;
 using Headless.Testing.Tests;
 using NJsonSchema.Generation;
 using NSwag;

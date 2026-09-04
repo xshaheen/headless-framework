@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
+using Headless.Api;
 using Headless.Api.Concurrency;
 using Headless.Primitives;
 using Headless.Testing.Tests;
@@ -84,7 +85,15 @@ public sealed class RequireIfMatchAttributeTests : TestBase
             EndpointMetadata = requiresIfMatch ? [new RequireIfMatchAttribute()] : [],
         };
         var action = new ActionContext(http, new RouteData(), descriptor);
-        return (new ActionExecutingContext(action, [], new Dictionary<string, object?>(), new object()), ifMatch);
+        return (
+            new ActionExecutingContext(
+                action,
+                [],
+                new Dictionary<string, object?>(StringComparer.Ordinal),
+                new object()
+            ),
+            ifMatch
+        );
     }
 
     private static Task<ActionExecutedContext> _Next() =>
