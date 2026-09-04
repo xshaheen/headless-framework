@@ -435,6 +435,18 @@ internal sealed class ConsumerRegistry : IConsumerRegistry
         {
             throw new ArgumentException("Contract version cannot be null or whitespace.", nameof(metadata));
         }
+
+        if (
+            metadata.InboxRetention <= TimeSpan.Zero
+            || metadata.InboxRetention.Ticks % TimeSpan.TicksPerSecond != 0
+            || metadata.InboxRetention.TotalSeconds > int.MaxValue
+        )
+        {
+            throw new ArgumentException(
+                "Inbox retention must be a positive whole-second duration no greater than Int32.MaxValue seconds.",
+                nameof(metadata)
+            );
+        }
     }
 
     private static InvalidOperationException _CreateDurableIdentityCollision(

@@ -58,6 +58,11 @@ public interface IScannedConsumerBuilder
     /// <returns>The same builder instance for chaining.</returns>
     IScannedConsumerBuilder ContractVersion(string contractVersion);
 
+    /// <summary>Overrides the terminal inbox retention captured for future generations.</summary>
+    /// <param name="retention">A positive whole-second duration no greater than <see cref="int.MaxValue"/> seconds.</param>
+    /// <returns>The same builder instance for chaining.</returns>
+    IScannedConsumerBuilder InboxRetention(TimeSpan retention);
+
     /// <summary>Configures per-consumer circuit breaker overrides for this scanned registration.</summary>
     /// <param name="configure">A callback that mutates a <see cref="ConsumerCircuitBreakerOptions"/> instance for this consumer.</param>
     /// <returns>The same builder instance for chaining.</returns>
@@ -103,6 +108,12 @@ internal sealed class ScannedConsumerBuilder(Type consumerType, MessageLane lane
     public IScannedConsumerBuilder ContractVersion(string contractVersion)
     {
         _registration.SetContractVersion(contractVersion);
+        return this;
+    }
+
+    public IScannedConsumerBuilder InboxRetention(TimeSpan retention)
+    {
+        _registration.SetInboxRetention(retention);
         return this;
     }
 

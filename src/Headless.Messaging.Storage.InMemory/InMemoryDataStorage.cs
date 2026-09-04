@@ -45,6 +45,10 @@ internal sealed partial class InMemoryDataStorage(
 
     private readonly Dictionary<InboxKey, Guid> _inboxIdentityIndex = new();
 
+    private readonly Dictionary<Guid, InboxOperationResult> _inboxOperationReceipts = new();
+
+    private readonly List<InMemoryInboxAudit> _inboxAudit = [];
+
     // Serializes the lookup-then-insert/update paths in BOTH StoreReceivedExceptionMessageAsync
     // and StoreReceivedMessageAsync so two concurrent broker redeliveries (or two concurrent first
     // arrivals via the consume path) cannot both decide "not found" and race to insert duplicate
@@ -72,6 +76,8 @@ internal sealed partial class InMemoryDataStorage(
             ReceivedMessages.Clear();
             _receivedIdentityIndex.Clear();
             _inboxIdentityIndex.Clear();
+            _inboxOperationReceipts.Clear();
+            _inboxAudit.Clear();
         }
     }
 
@@ -423,6 +429,17 @@ internal sealed partial class InMemoryDataStorage(
             current.Retries = message.Retries;
             current.InlineAttempts = message.InlineAttempts;
             current.InboxAttemptFence = utcLockedUntil is null ? null : message.InboxAttemptFence;
+            if (
+                current.InboxGeneration is not null
+                && state is StatusName.Succeeded or StatusName.Failed
+                && utcNextRetryAt is null
+            )
+            {
+                var terminalAt = timeProvider.GetUtcNow();
+                current.TerminalAt = terminalAt;
+                current.EffectiveExpiresAt = terminalAt.Add(current.InboxRetention);
+            }
+
             _WriteContent(current, message, contentWrite);
             current.ExceptionInfo = message.ExceptionInfo;
             updated = true;
@@ -473,6 +490,7 @@ internal sealed partial class InMemoryDataStorage(
         string contractVersion,
         MediumMessage message,
         long generation = 0,
+        TimeSpan? inboxRetention = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -481,6 +499,18 @@ internal sealed partial class InMemoryDataStorage(
         var messageId = message.Origin.Id;
         var tenantId = TenantContextScope.ResolveTenantId(message.Origin.Headers, logger: null);
         var key = new InboxKey(tenantId, messageId, message.Lane, name, contractVersion, consumerIdentity, generation);
+        var retention = inboxRetention ?? TimeSpan.FromDays(30);
+        if (
+            retention <= TimeSpan.Zero
+            || retention.Ticks % TimeSpan.TicksPerSecond != 0
+            || retention.TotalSeconds > int.MaxValue
+        )
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(inboxRetention),
+                "Inbox retention must be a positive whole-second duration no greater than Int32.MaxValue seconds."
+            );
+        }
 
         lock (_receivedUpsertLock)
         {
@@ -521,6 +551,7 @@ internal sealed partial class InMemoryDataStorage(
                 StatusName = StatusName.Scheduled,
                 InboxKey = key,
                 InboxGeneration = new InboxGeneration(key.Generation, guidGenerator.Create()),
+                InboxRetention = retention,
             };
 
             ReceivedMessages[stored.StorageId] = stored;
@@ -994,20 +1025,54 @@ internal sealed partial class InMemoryDataStorage(
         {
             lock (_receivedUpsertLock)
             {
-                var ids = ReceivedMessages
+                var now = timeProvider.GetUtcNow();
+                var rows = ReceivedMessages
                     .Values.Where(x =>
                         _IsSupportedLane(x.Lane)
-                        && x.ExpiresAt < timeout
+                        && (x.InboxGeneration is null ? x.ExpiresAt < timeout : !x.IsHeld && x.EffectiveExpiresAt < now)
                         && x.NextRetryAt is null
                         && (x.StatusName == StatusName.Succeeded || x.StatusName == StatusName.Failed)
                     )
-                    .Select(x => x.StorageId)
                     .Take(batchCount)
                     .ToList();
 
-                foreach (var id in ids)
+                foreach (var row in rows)
                 {
-                    if (ReceivedMessages.TryRemove(id, out var removedMsg))
+                    if (row.InboxGeneration is { } generation)
+                    {
+                        var operationId = guidGenerator.Create();
+                        var actor = "headless.messaging.collector";
+                        var reason = "retention_expired";
+                        var result = new InboxOperationResult(
+                            operationId,
+                            InboxOperationType.Cleanup,
+                            InboxOperationOutcome.Applied,
+                            generation.IncarnationId,
+                            row.StatusName,
+                            row.StorageId,
+                            null,
+                            null,
+                            null,
+                            actor,
+                            reason,
+                            now
+                        );
+                        _inboxOperationReceipts.Add(operationId, result);
+                        _inboxAudit.Add(
+                            new InMemoryInboxAudit(
+                                guidGenerator.Create(),
+                                operationId,
+                                generation.IncarnationId,
+                                InboxOperationType.Cleanup,
+                                actor,
+                                reason,
+                                InboxOperationOutcome.Applied,
+                                now
+                            )
+                        );
+                    }
+
+                    if (ReceivedMessages.TryRemove(row.StorageId, out var removedMsg))
                     {
                         _RemoveFromIdentityIndex(removedMsg);
                         removed++;

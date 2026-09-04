@@ -121,6 +121,7 @@ internal sealed class ConsumerServiceSelector(IServiceProvider serviceProvider) 
                 HandlerId = consumer.ResolvedHandlerId,
                 ConsumerIdentity = consumer.ConsumerIdentity,
                 ContractVersion = consumer.ContractVersion,
+                InboxRetention = consumer.InboxRetention,
                 Lane = consumer.Lane,
             };
 

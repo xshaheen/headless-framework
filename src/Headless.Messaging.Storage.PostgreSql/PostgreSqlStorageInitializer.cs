@@ -440,9 +440,36 @@ internal sealed class PostgreSqlStorageInitializer(
             );
         }
 
+        var operationShapeReady = await connection
+            .ExecuteScalarAsync(
+                """
+                SELECT (
+                    EXISTS (SELECT 1 FROM pg_constraint WHERE conname='ck_received_inbox_retention_v3')
+                    AND EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_schema=@Schema AND table_name='inbox_operation_receipts' AND column_name='ExpectedStatus'
+                    )
+                    AND EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_schema=@Schema AND table_name='inbox_operation_receipts' AND column_name='Outcome'
+                    )
+                )::int;
+                """,
+                commandTimeout: messagingOptions.Value.CommandTimeout,
+                sqlParams: [new NpgsqlParameter("@Schema", postgreSqlOptions.Value.Schema)],
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
+        if (operationShapeReady != 1)
+        {
+            throw new InvalidOperationException(
+                "Headless.Messaging inbox schema is incomplete: the v3 retention or operation receipt contract is missing."
+            );
+        }
+
         var sql = $"""
             INSERT INTO "{postgreSqlOptions.Value.Schema}"."schema_state" ("Component","SchemaVersion","ReadyAt")
-            VALUES ('inbox', 2, statement_timestamp())
+            VALUES ('inbox', 3, statement_timestamp())
             ON CONFLICT ("Component") DO UPDATE
             SET "SchemaVersion"=EXCLUDED."SchemaVersion", "ReadyAt"=EXCLUDED."ReadyAt";
             """;
@@ -471,8 +498,8 @@ internal sealed class PostgreSqlStorageInitializer(
                     FROM "{schema}"."schema_state"
                     WHERE "Component"='inbox';
 
-                    IF current_schema_version > 2 THEN
-                        RAISE EXCEPTION 'Headless.Messaging inbox schema version % is newer than supported version 2. Upgrade the application before starting this binary.', current_schema_version;
+                    IF current_schema_version > 3 THEN
+                        RAISE EXCEPTION 'Headless.Messaging inbox schema version % is newer than supported version 3. Upgrade the application before starting this binary.', current_schema_version;
                     END IF;
                 END IF;
             END
@@ -514,7 +541,8 @@ internal sealed class PostgreSqlStorageInitializer(
                 "HeldAt" TIMESTAMPTZ NULL,
                 "HeldBy" VARCHAR(200) COLLATE "C" NULL,
                 "HoldReason" VARCHAR(1000) NULL,
-                "HoldOperationId" UUID NULL
+                "HoldOperationId" UUID NULL,
+                "InboxRetentionSeconds" BIGINT NOT NULL DEFAULT 2592000
             );
 
             -- A nonempty legacy received table has no trustworthy stable consumer or contract identity.
@@ -551,7 +579,8 @@ internal sealed class PostgreSqlStorageInitializer(
                     ADD COLUMN IF NOT EXISTS "HeldAt" TIMESTAMPTZ NULL,
                     ADD COLUMN IF NOT EXISTS "HeldBy" VARCHAR(200) COLLATE "C" NULL,
                     ADD COLUMN IF NOT EXISTS "HoldReason" VARCHAR(1000) NULL,
-                    ADD COLUMN IF NOT EXISTS "HoldOperationId" UUID NULL;
+                    ADD COLUMN IF NOT EXISTS "HoldOperationId" UUID NULL,
+                    ADD COLUMN IF NOT EXISTS "InboxRetentionSeconds" BIGINT NOT NULL DEFAULT 2592000;
 
                 ALTER TABLE {GetReceivedTableName()}
                     ALTER COLUMN "MessageId" TYPE VARCHAR(200) COLLATE "C",
@@ -570,6 +599,7 @@ internal sealed class PostgreSqlStorageInitializer(
                     ALTER TABLE {GetReceivedTableName()} ADD CONSTRAINT "ck_received_inbox_identity" CHECK (
                         NOT "IsInboxRecord" OR (
                             "Generation" >= 0
+                            AND "InboxRetentionSeconds" BETWEEN 1 AND 2147483647
                             AND "GenerationIncarnationId" IS NOT NULL
                             AND length("MessageId") BETWEEN 1 AND 200
                             AND length("ContractIdentity") BETWEEN 1 AND 200
@@ -577,6 +607,16 @@ internal sealed class PostgreSqlStorageInitializer(
                             AND length("ConsumerIdentity") BETWEEN 1 AND 200
                             AND ((NOT "TenantPresent" AND "TenantId" = '') OR ("TenantPresent" AND length("TenantId") BETWEEN 1 AND 200))
                         )
+                    );
+                END IF;
+            END
+            $headless$;
+
+            DO $headless$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_received_inbox_retention_v3') THEN
+                    ALTER TABLE {GetReceivedTableName()} ADD CONSTRAINT "ck_received_inbox_retention_v3" CHECK (
+                        NOT "IsInboxRecord" OR "InboxRetentionSeconds" BETWEEN 1 AND 2147483647
                     );
                 END IF;
             END
@@ -607,10 +647,24 @@ internal sealed class PostgreSqlStorageInitializer(
                 "OperationId" UUID PRIMARY KEY NOT NULL,
                 "GenerationIncarnationId" UUID NOT NULL,
                 "OperationType" VARCHAR(50) COLLATE "C" NOT NULL,
+                "ExpectedStatus" VARCHAR(50) COLLATE "C" NOT NULL,
                 "Actor" VARCHAR(200) COLLATE "C" NOT NULL,
                 "Reason" VARCHAR(1000) NOT NULL,
+                "Outcome" VARCHAR(50) COLLATE "C" NOT NULL,
+                "StorageId" UUID NULL,
+                "ChildStorageId" UUID NULL,
+                "ChildGeneration" BIGINT NULL,
+                "ChildIncarnationId" UUID NULL,
                 "CreatedAt" TIMESTAMPTZ NOT NULL
             );
+
+            ALTER TABLE "{schema}"."inbox_operation_receipts"
+                ADD COLUMN IF NOT EXISTS "Outcome" VARCHAR(50) COLLATE "C" NOT NULL DEFAULT 'StateConflict',
+                ADD COLUMN IF NOT EXISTS "ExpectedStatus" VARCHAR(50) COLLATE "C" NOT NULL DEFAULT 'Failed',
+                ADD COLUMN IF NOT EXISTS "StorageId" UUID NULL,
+                ADD COLUMN IF NOT EXISTS "ChildStorageId" UUID NULL,
+                ADD COLUMN IF NOT EXISTS "ChildGeneration" BIGINT NULL,
+                ADD COLUMN IF NOT EXISTS "ChildIncarnationId" UUID NULL;
 
             CREATE TABLE IF NOT EXISTS "{schema}"."inbox_audit"(
                 "AuditId" UUID PRIMARY KEY NOT NULL,

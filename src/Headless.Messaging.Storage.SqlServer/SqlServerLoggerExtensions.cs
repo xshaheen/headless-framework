@@ -47,4 +47,12 @@ internal static partial class SqlServerLoggerExtensions
         string table,
         Exception exception
     );
+
+    [LoggerMessage(
+        EventId = 5,
+        EventName = "InboxCommitProbeFailed",
+        Level = LogLevel.Warning,
+        Message = "Could not reconcile an ambiguous transactional inbox commit; recovery will treat the outcome as indeterminate."
+    )]
+    public static partial void LogInboxCommitProbeFailed(this ILogger logger, Exception exception);
 }

@@ -1119,6 +1119,7 @@ internal sealed class ConsumerRegister(
                                 Content = string.Empty,
                                 Lane = lane,
                             },
+                            inboxRetention: executor.InboxRetention,
                             cancellationToken: CancellationToken.None
                         )
                         .ConfigureAwait(false);

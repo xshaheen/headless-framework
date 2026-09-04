@@ -52,4 +52,7 @@ public sealed record ConsumerMetadata(
     /// Provider-specific consumer configuration registered through provider escape hatches.
     /// </summary>
     internal IReadOnlyDictionary<Type, object> ProviderConfigs { get; init; } = _EmptyProviderConfigs;
+
+    /// <summary>Terminal retention captured into each newly admitted inbox generation.</summary>
+    public TimeSpan InboxRetention { get; init; } = TimeSpan.FromDays(30);
 }

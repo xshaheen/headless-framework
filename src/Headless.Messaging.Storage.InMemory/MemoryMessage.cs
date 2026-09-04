@@ -13,6 +13,28 @@ internal sealed class MemoryMessage : MediumMessage
 
     public StatusName StatusName { get; set; }
 
+    public bool IsCurrentGeneration { get; set; } = true;
+
+    public Guid? ReplayParentIncarnationId { get; set; }
+
+    public Guid? ReplayOperationId { get; set; }
+
+    public DateTimeOffset? TerminalAt { get; set; }
+
+    public DateTimeOffset? EffectiveExpiresAt { get; set; }
+
+    public bool IsHeld { get; set; }
+
+    public DateTimeOffset? HeldAt { get; set; }
+
+    public string? HeldBy { get; set; }
+
+    public string? HoldReason { get; set; }
+
+    public Guid? HoldOperationId { get; set; }
+
+    public TimeSpan InboxRetention { get; set; } = TimeSpan.FromDays(30);
+
     /// <summary>
     /// Version identifier copied from <c>MessagingOptions.Version</c> at write time.
     /// Pickup and scheduler queries filter on this to isolate messages across version boundaries,

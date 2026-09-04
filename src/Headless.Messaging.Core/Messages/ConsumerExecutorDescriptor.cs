@@ -45,6 +45,9 @@ public sealed class ConsumerExecutorDescriptor
     /// <summary>The immutable durable contract version used to isolate inbox generations.</summary>
     public string? ContractVersion { get; init; }
 
+    /// <summary>Terminal retention captured when this consumer admits a new inbox generation.</summary>
+    public TimeSpan InboxRetention { get; init; } = TimeSpan.FromDays(30);
+
     /// <summary>
     /// Delivery intent used to subscribe this consumer.
     /// </summary>

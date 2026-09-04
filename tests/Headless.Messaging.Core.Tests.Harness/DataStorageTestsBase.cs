@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using System.Security.Claims;
 using Headless.Messaging;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
@@ -499,6 +500,78 @@ public abstract class DataStorageTestsBase : TestBase
         redelivery.Message.StorageId.Should().Be(admitted.Message.StorageId);
     }
 
+    public virtual async Task should_apply_audited_inbox_operations_once_and_reject_operation_identity_reuse()
+    {
+        var storage = GetStorage();
+        var admitted = await _AdmitInboxAsync(
+            storage,
+            CreateMessage($"inbox-operations-{Guid.NewGuid():N}", "orders.created")
+        );
+        admitted.Message.InlineAttempts++;
+        (await storage.LeaseReceiveAndReserveAttemptAsync(admitted.Message, TimeSpan.FromMinutes(1), 0, AbortToken))
+            .Should()
+            .BeTrue();
+        (
+            await storage.ChangeReceiveRetryStateAsync(
+                admitted.Message,
+                StatusName.Failed,
+                MessageContentWrite.Preserve,
+                null,
+                null,
+                0,
+                1,
+                AbortToken
+            )
+        )
+            .Should()
+            .BeTrue();
+
+        var principal = new ClaimsPrincipal(
+            new ClaimsIdentity([new Claim(ClaimTypes.Name, "operator-a")], authenticationType: "test")
+        );
+        var authorization = new InboxAuthorizationContext(principal);
+        var operationId = Guid.NewGuid();
+        var incarnation = admitted.Message.InboxGeneration!.IncarnationId;
+        var request = new InboxOperationRequest(
+            operationId,
+            incarnation,
+            StatusName.Failed,
+            "retry after repair",
+            authorization
+        );
+        var operations = storage.GetInboxOperationsApi();
+
+        var attempts = await Task.WhenAll(
+            Enumerable.Range(0, 8).Select(_ => operations.ForceReprocessAsync(request, AbortToken).AsTask())
+        );
+        var first = attempts.Should().ContainSingle(result => !result.IsReplay).Which;
+        attempts.Should().OnlyContain(result => result.Outcome == InboxOperationOutcome.Applied);
+        attempts.Select(result => result.ChildIncarnationId).Distinct().Should().ContainSingle();
+        var replay = await operations.ForceReprocessAsync(request, AbortToken);
+        var conflict = await operations.ForceReprocessAsync(
+            request with
+            {
+                ExpectedStatus = StatusName.Succeeded,
+            },
+            AbortToken
+        );
+
+        first.Outcome.Should().Be(InboxOperationOutcome.Applied);
+        first.ChildGeneration.Should().Be(admitted.Message.InboxGeneration.Number + 1);
+        replay.IsReplay.Should().BeTrue();
+        replay.ChildIncarnationId.Should().Be(first.ChildIncarnationId);
+        conflict.Outcome.Should().Be(InboxOperationOutcome.OperationConflict);
+
+        var page = await operations.QueryAsync(
+            new InboxGenerationQuery { IncarnationId = first.ChildIncarnationId },
+            authorization,
+            AbortToken
+        );
+        page.Items.Should().ContainSingle();
+        page.Items[0].ReplayParentIncarnationId.Should().Be(incarnation);
+        page.Items[0].ReplayOperationId.Should().Be(operationId);
+    }
+
     private static ValueTask<InboxAdmissionResult> _AdmitInboxAsync(
         IDataStorage storage,
         Message origin,
@@ -522,7 +595,7 @@ public abstract class DataStorageTestsBase : TestBase
                 Lane = lane,
             },
             generation,
-            TestContext.Current.CancellationToken
+            cancellationToken: TestContext.Current.CancellationToken
         );
     }
 

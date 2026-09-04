@@ -45,6 +45,11 @@ public interface IConsumerBuilderBase<TConsumer, out TBuilder>
     /// <returns>The same builder instance for chaining.</returns>
     TBuilder ContractVersion(string contractVersion);
 
+    /// <summary>Overrides the terminal inbox retention captured for future generations.</summary>
+    /// <param name="retention">A positive whole-second duration no greater than <see cref="int.MaxValue"/> seconds.</param>
+    /// <returns>The same builder instance for chaining.</returns>
+    TBuilder InboxRetention(TimeSpan retention);
+
     /// <summary>Configures per-consumer circuit breaker overrides for this registration.</summary>
     /// <param name="configure">A callback that mutates a <see cref="ConsumerCircuitBreakerOptions"/> instance for this consumer.</param>
     /// <returns>The same builder instance for chaining.</returns>
@@ -109,6 +114,12 @@ internal abstract class ConsumerBuilderBase<TConsumer, TBuilder>(MessageConsumer
         return Self;
     }
 
+    public TBuilder InboxRetention(TimeSpan retention)
+    {
+        registration.SetInboxRetention(retention);
+        return Self;
+    }
+
     public TBuilder WithCircuitBreaker(Action<ConsumerCircuitBreakerOptions> configure)
     {
         registration.SetCircuitBreaker(configure);
@@ -144,6 +155,8 @@ internal sealed class MessageConsumerRegistrationBuilder(
     public string? ConsumerIdentity { get; private set; }
 
     public string? ContractVersion { get; private set; }
+
+    public TimeSpan? InboxRetention { get; private set; }
 
     public ConsumerCircuitBreakerOptions? CircuitBreakerOverride { get; private set; }
 
@@ -182,6 +195,23 @@ internal sealed class MessageConsumerRegistrationBuilder(
         ContractVersion = contractVersion;
     }
 
+    public void SetInboxRetention(TimeSpan retention)
+    {
+        if (
+            retention <= TimeSpan.Zero
+            || retention.Ticks % TimeSpan.TicksPerSecond != 0
+            || retention.TotalSeconds > int.MaxValue
+        )
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(retention),
+                "Inbox retention must be a positive whole-second duration no greater than Int32.MaxValue seconds."
+            );
+        }
+
+        InboxRetention = retention;
+    }
+
     public void SetCircuitBreaker(Action<ConsumerCircuitBreakerOptions> configure)
     {
         Argument.IsNotNull(configure);
@@ -208,7 +238,8 @@ internal sealed class MessageConsumerRegistrationBuilder(
             ConsumerIdentity,
             ContractVersion,
             CircuitBreakerOverride,
-            _providerConfigs.BuildOverlay(messageProviderConfigs ?? new Dictionary<Type, object>())
+            _providerConfigs.BuildOverlay(messageProviderConfigs ?? new Dictionary<Type, object>()),
+            InboxRetention
         );
     }
 }

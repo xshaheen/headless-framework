@@ -38,6 +38,42 @@ public sealed class ForMessageRegistrationTests : TestBase
     }
 
     [Fact]
+    public void should_capture_valid_per_consumer_inbox_retention_and_reject_invalid_durations()
+    {
+        var services = new ServiceCollection();
+        services.AddHeadlessMessaging(static setup =>
+        {
+            setup.Bus.ForMessage<OrderPlaced>(message =>
+                message.Consumer<OrderPlacedHandler>(consumer =>
+                    consumer.StableContract("tests.registration.orders-retention").InboxRetention(TimeSpan.FromDays(45))
+                )
+            );
+            setup.UseInMemory();
+            setup.UseProcessLocalInMemoryStorage();
+        });
+
+        using var provider = services.BuildServiceProvider();
+        provider
+            .GetDrainedConsumerRegistry()
+            .GetAll()
+            .Single(consumer => consumer.ConsumerType == typeof(OrderPlacedHandler))
+            .InboxRetention.Should()
+            .Be(TimeSpan.FromDays(45));
+
+        Action invalid = () =>
+            new ServiceCollection().AddHeadlessMessaging(static setup =>
+                setup.Bus.ForMessage<OrderPlaced>(message =>
+                    message.Consumer<OrderPlacedHandler>(consumer =>
+                        consumer
+                            .StableContract("tests.registration.orders-invalid-retention")
+                            .InboxRetention(TimeSpan.FromMilliseconds(1500))
+                    )
+                )
+            );
+        invalid.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
     public void should_register_multiple_consumers_for_one_message()
     {
         // given

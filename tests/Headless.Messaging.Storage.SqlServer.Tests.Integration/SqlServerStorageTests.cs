@@ -314,46 +314,111 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
     }
 
     [Fact]
+    public override Task should_apply_audited_inbox_operations_once_and_reject_operation_identity_reuse() =>
+        base.should_apply_audited_inbox_operations_once_and_reject_operation_identity_reuse();
+
+    [Fact]
     public async Task should_publish_final_inbox_schema_marker_and_key_index()
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
-        var state = await connection.QuerySingleAsync<(int SchemaVersion, long IndexCount)>(
+        var state = await connection.QuerySingleAsync<(
+            int SchemaVersion,
+            long IndexCount,
+            long ConstraintCount,
+            long ReceiptColumnCount
+        )>(
             """
             SELECT state.SchemaVersion, (
                 SELECT COUNT_BIG(*) FROM sys.indexes
                 WHERE object_id=OBJECT_ID(N'messaging.Received') AND name=N'UX_messaging_Received_InboxKey'
-            ) AS IndexCount
+            ) AS IndexCount, (
+                SELECT COUNT_BIG(*) FROM sys.check_constraints WHERE name=N'CK_messaging_Received_InboxRetentionV3'
+            ) AS ConstraintCount, (
+                SELECT COUNT_BIG(*) FROM sys.columns
+                WHERE object_id=OBJECT_ID(N'messaging.InboxOperationReceipts')
+                  AND name IN(N'ExpectedStatus',N'Outcome',N'ChildIncarnationId')
+            ) AS ReceiptColumnCount
             FROM messaging.SchemaState AS state
             WHERE state.Component=N'inbox';
             """
         );
 
-        state.SchemaVersion.Should().Be(2);
+        state.SchemaVersion.Should().Be(3);
         state.IndexCount.Should().Be(1);
+        state.ConstraintCount.Should().Be(1);
+        state.ReceiptColumnCount.Should().Be(3);
+    }
+
+    [Fact]
+    public async Task should_preserve_cleanup_receipt_and_audit_after_inbox_row_deletion()
+    {
+        var storage = _storage!;
+        var admitted = await storage.AdmitReceivedMessageAsync(
+            "orders.created",
+            "orders-group",
+            "orders.cleanup",
+            "v1",
+            new MediumMessage
+            {
+                StorageId = Guid.Empty,
+                Origin = CreateMessage($"cleanup-{Guid.NewGuid():N}", "orders.created"),
+                Content = string.Empty,
+                Lane = MessageLane.Bus,
+            },
+            cancellationToken: AbortToken
+        );
+        await using var connection = new SqlConnection(fixture.ConnectionString);
+        await connection.ExecuteAsync(
+            """
+            UPDATE messaging.Received SET StatusName=N'Failed',NextRetryAt=NULL,TerminalAt=DATEADD(day,-2,SYSDATETIMEOFFSET()),EffectiveExpiresAt=DATEADD(day,-1,SYSDATETIMEOFFSET())
+            WHERE Id=@Id;
+            """,
+            new { Id = admitted.Message.StorageId }
+        );
+
+        (
+            await storage.DeleteExpiresAsync(
+                _initializer!.GetReceivedTableName(),
+                DateTimeOffset.UtcNow,
+                cancellationToken: AbortToken
+            )
+        )
+            .Should()
+            .Be(1);
+        var persisted = await connection.QuerySingleAsync<(long Rows, long Receipts, long Audits)>(
+            """
+            SELECT
+              (SELECT COUNT_BIG(*) FROM messaging.Received WHERE Id=@Id) AS Rows,
+              (SELECT COUNT_BIG(*) FROM messaging.InboxOperationReceipts WHERE StorageId=@Id AND OperationType=N'Cleanup') AS Receipts,
+              (SELECT COUNT_BIG(*) FROM messaging.InboxAudit a JOIN messaging.InboxOperationReceipts r ON r.OperationId=a.OperationId WHERE r.StorageId=@Id AND a.OperationType=N'Cleanup') AS Audits;
+            """,
+            new { Id = admitted.Message.StorageId }
+        );
+        persisted.Should().Be((0, 1, 1));
     }
 
     [Fact]
     public async Task should_fail_closed_when_inbox_schema_is_newer_than_supported()
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.ExecuteAsync("UPDATE messaging.SchemaState SET SchemaVersion=3 WHERE Component=N'inbox';");
+        await connection.ExecuteAsync("UPDATE messaging.SchemaState SET SchemaVersion=4 WHERE Component=N'inbox';");
 
         try
         {
             var act = async () => await GetInitializer().InitializeAsync(AbortToken);
 
-            await act.Should().ThrowAsync<SqlException>().WithMessage("*newer than supported version 2*");
+            await act.Should().ThrowAsync<SqlException>().WithMessage("*newer than supported version 3*");
             (
                 await connection.ExecuteScalarAsync<int>(
                     "SELECT SchemaVersion FROM messaging.SchemaState WHERE Component=N'inbox';"
                 )
             )
                 .Should()
-                .Be(3, "a rejected older binary must not rewrite the newer readiness marker");
+                .Be(4, "a rejected older binary must not rewrite the newer readiness marker");
         }
         finally
         {
-            await connection.ExecuteAsync("UPDATE messaging.SchemaState SET SchemaVersion=2 WHERE Component=N'inbox';");
+            await connection.ExecuteAsync("UPDATE messaging.SchemaState SET SchemaVersion=3 WHERE Component=N'inbox';");
         }
     }
 

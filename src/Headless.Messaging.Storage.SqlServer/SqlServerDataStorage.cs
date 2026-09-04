@@ -38,6 +38,7 @@ internal sealed partial class SqlServerDataStorage(
         IGracefulLeaseReleaseStorage,
         ICircuitRetryDeferralStorage,
         ITransactionalInboxStorage,
+        IInboxOperationsApi,
         IDeliveryCoordinationResolver
 {
     /// <summary>
@@ -315,7 +316,7 @@ internal sealed partial class SqlServerDataStorage(
             // X1 terminal-row guard: refuses updates to rows that are already terminal AND
             // have NextRetryAt cleared. Failed rows with non-null NextRetryAt stay mutable so
             // the retry processor can rewrite them — see the matching note in PostgreSqlDataStorage.
-            $"DECLARE @LeaseNow datetimeoffset(7) = SYSUTCDATETIME(); UPDATE {_receivedTable} SET {contentAssignment}Retries=@Retries, InlineAttempts=@InlineAttempts, ExpiresAt=@ExpiresAt, NextRetryAt=@NextRetryAt, LockedUntil=@LockedUntil, Owner=@Owner, StatusName=@StatusName, ExceptionInfo=@ExceptionInfo, AttemptId=CASE WHEN @LockedUntil IS NULL THEN NULL ELSE AttemptId END, TerminalAt=CASE WHEN IsInboxRecord=1 AND @IsTerminal=1 THEN @LeaseNow ELSE TerminalAt END, EffectiveExpiresAt=CASE WHEN IsInboxRecord=1 AND @IsTerminal=1 THEN DATEADD(day,30,@LeaseNow) ELSE EffectiveExpiresAt END WHERE Id=@Id AND {_TerminalRowGuardWithRetries} AND (@OriginalInlineAttempts IS NULL OR (((LockedUntil IS NULL AND @OriginalLockedUntil IS NULL) OR LockedUntil=@OriginalLockedUntil) AND ((Owner IS NULL AND @OriginalOwner IS NULL) OR Owner=@OriginalOwner) AND LockedUntil>@LeaseNow)) AND (IsInboxRecord=0 OR (IntentType=@InboxIntentType AND Generation=@InboxGeneration AND GenerationIncarnationId=@InboxGenerationIncarnationId AND AttemptId=@InboxAttemptId AND ((Owner=@InboxOwner) OR (Owner IS NULL AND @InboxOwner IS NULL)) AND LockedUntil=@InboxLockedUntil))";
+            $"DECLARE @LeaseNow datetimeoffset(7) = SYSUTCDATETIME(); UPDATE {_receivedTable} SET {contentAssignment}Retries=@Retries, InlineAttempts=@InlineAttempts, ExpiresAt=@ExpiresAt, NextRetryAt=@NextRetryAt, LockedUntil=@LockedUntil, Owner=@Owner, StatusName=@StatusName, ExceptionInfo=@ExceptionInfo, AttemptId=CASE WHEN @LockedUntil IS NULL THEN NULL ELSE AttemptId END, TerminalAt=CASE WHEN IsInboxRecord=1 AND @IsTerminal=1 THEN @LeaseNow ELSE TerminalAt END, EffectiveExpiresAt=CASE WHEN IsInboxRecord=1 AND @IsTerminal=1 THEN DATEADD(second,InboxRetentionSeconds,@LeaseNow) ELSE EffectiveExpiresAt END WHERE Id=@Id AND {_TerminalRowGuardWithRetries} AND (@OriginalInlineAttempts IS NULL OR (((LockedUntil IS NULL AND @OriginalLockedUntil IS NULL) OR LockedUntil=@OriginalLockedUntil) AND ((Owner IS NULL AND @OriginalOwner IS NULL) OR Owner=@OriginalOwner) AND LockedUntil>@LeaseNow)) AND (IsInboxRecord=0 OR (IntentType=@InboxIntentType AND Generation=@InboxGeneration AND GenerationIncarnationId=@InboxGenerationIncarnationId AND AttemptId=@InboxAttemptId AND ((Owner=@InboxOwner) OR (Owner IS NULL AND @InboxOwner IS NULL)) AND LockedUntil=@InboxLockedUntil))";
 
         var inboxFence = message.InboxAttemptFence;
 
@@ -476,8 +477,9 @@ internal sealed partial class SqlServerDataStorage(
         {
             throw;
         }
-        catch
+        catch (Exception ex)
         {
+            logger.LogInboxCommitProbeFailed(ex);
             return InboxCommitProbe.Indeterminate;
         }
     }
@@ -853,9 +855,48 @@ internal sealed partial class SqlServerDataStorage(
     )
     {
         await using var connection = new SqlConnection(options.Value.ConnectionString);
-        var expiryPredicate = string.Equals(table, _receivedTable, StringComparison.Ordinal)
-            ? "((IsInboxRecord=0 AND ExpiresAt < @timeout) OR (IsInboxRecord=1 AND IsHeld=0 AND EffectiveExpiresAt < SYSDATETIMEOFFSET()))"
-            : "ExpiresAt < @timeout";
+
+        if (string.Equals(table, _receivedTable, StringComparison.Ordinal))
+        {
+            return await connection
+                .ExecuteReaderAsync(
+                    $"""
+                    SET NOCOUNT ON;
+                    SET XACT_ABORT ON;
+                    BEGIN TRANSACTION;
+                    DECLARE @Now datetimeoffset(7)=SYSDATETIMEOFFSET();
+                    DECLARE @Candidates TABLE(Id uniqueidentifier PRIMARY KEY,IsInboxRecord bit,GenerationIncarnationId uniqueidentifier NULL,StatusName nvarchar(50),OperationId uniqueidentifier NULL,AuditId uniqueidentifier NULL);
+                    INSERT INTO @Candidates
+                    SELECT TOP (@batchCount) Id,IsInboxRecord,GenerationIncarnationId,StatusName,
+                           CASE WHEN IsInboxRecord=1 THEN NEWID() END,CASE WHEN IsInboxRecord=1 THEN NEWID() END
+                    FROM {_receivedTable} WITH (UPDLOCK,ROWLOCK)
+                    WHERE ((IsInboxRecord=0 AND ExpiresAt < @timeout) OR (IsInboxRecord=1 AND IsHeld=0 AND EffectiveExpiresAt < @Now))
+                      AND StatusName IN(N'Succeeded',N'Failed') AND NextRetryAt IS NULL AND IntentType IN(0,1)
+                    ORDER BY EffectiveExpiresAt,Id;
+                    INSERT INTO {InboxReceiptsTable}(OperationId,GenerationIncarnationId,OperationType,ExpectedStatus,Actor,Reason,Outcome,StorageId,CreatedAt)
+                    SELECT OperationId,GenerationIncarnationId,N'Cleanup',StatusName,N'headless.messaging.collector',N'retention_expired',N'Applied',Id,@Now FROM @Candidates WHERE IsInboxRecord=1;
+                    INSERT INTO {InboxAuditTable}(AuditId,OperationId,GenerationIncarnationId,OperationType,Actor,Reason,Outcome,CreatedAt)
+                    SELECT AuditId,OperationId,GenerationIncarnationId,N'Cleanup',N'headless.messaging.collector',N'retention_expired',N'Applied',@Now FROM @Candidates WHERE IsInboxRecord=1;
+                    DELETE target FROM {_receivedTable} target JOIN @Candidates candidate ON candidate.Id=target.Id;
+                    DECLARE @Deleted int=@@ROWCOUNT;
+                    COMMIT TRANSACTION;
+                    SELECT @Deleted;
+                    """,
+                    static async (reader, token) =>
+                    {
+                        while (await reader.ReadAsync(token).ConfigureAwait(false))
+                        {
+                            return reader.GetInt32(0);
+                        }
+
+                        return 0;
+                    },
+                    commandTimeout: messagingOptions.Value.CommandTimeout,
+                    sqlParams: [new SqlParameter("@timeout", timeout), new SqlParameter("@batchCount", batchCount)],
+                    cancellationToken: cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
 
         return await connection
             .ExecuteNonQueryAsync(
@@ -865,7 +906,7 @@ internal sealed partial class SqlServerDataStorage(
                  AND Id IN (
                      SELECT TOP (@batchCount) Id
                      FROM {table} WITH (READPAST)
-                     WHERE {expiryPredicate}
+                     WHERE ExpiresAt < @timeout
                      AND StatusName IN('{nameof(StatusName.Succeeded)}','{nameof(StatusName.Failed)}')
                      AND NextRetryAt IS NULL
                      AND IntentType IN (0, 1)
@@ -1375,6 +1416,8 @@ internal sealed partial class SqlServerDataStorage(
     {
         return new SqlServerMonitoringApi(options, messagingOptions, initializer, serializer, timeProvider);
     }
+
+    public IInboxOperationsApi GetInboxOperationsApi() => this;
 
     // NOTE: ChangeReceiveStateAsync does not call this helper because the receive path additionally
     // writes ExceptionInfo, a column absent from the published table schema. Keep these two methods

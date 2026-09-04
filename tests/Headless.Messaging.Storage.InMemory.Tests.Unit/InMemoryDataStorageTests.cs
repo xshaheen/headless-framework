@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Security.Claims;
 using Headless.Abstractions;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
@@ -1728,6 +1729,113 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
         redelivery.Message.StorageId.Should().Be(admitted.Message.StorageId);
     }
 
+    [Fact]
+    public async Task inbox_operations_should_force_once_reject_reused_identity_and_preserve_hold_through_cleanup()
+    {
+        _EnsureInitialized();
+        var storage = GetStorage();
+        var admitted = await _AdmitAsync(
+            storage,
+            CreateMessage("inbox-operations", "orders.created"),
+            inboxRetention: TimeSpan.FromDays(2)
+        );
+        admitted.Message.InlineAttempts++;
+        (await storage.LeaseReceiveAndReserveAttemptAsync(admitted.Message, TimeSpan.FromMinutes(1), 0, AbortToken))
+            .Should()
+            .BeTrue();
+        (
+            await storage.ChangeReceiveRetryStateAsync(
+                admitted.Message,
+                StatusName.Failed,
+                MessageContentWrite.Preserve,
+                null,
+                null,
+                0,
+                1,
+                AbortToken
+            )
+        )
+            .Should()
+            .BeTrue();
+
+        var principal = new ClaimsPrincipal(
+            new ClaimsIdentity([new Claim(ClaimTypes.Name, "operator-a")], authenticationType: "test")
+        );
+        var authorization = new InboxAuthorizationContext(principal);
+        var incarnation = admitted.Message.InboxGeneration!.IncarnationId;
+        var operationId = Guid.NewGuid();
+        var request = new InboxOperationRequest(
+            operationId,
+            incarnation,
+            StatusName.Failed,
+            "retry after repair",
+            authorization
+        );
+        var operations = storage.GetInboxOperationsApi();
+
+        var deniedRequest = request with
+        {
+            OperationId = Guid.NewGuid(),
+            Authorization = new InboxAuthorizationContext(new ClaimsPrincipal(new ClaimsIdentity())),
+        };
+        Func<Task> denied = async () => await operations.HoldAsync(deniedRequest, AbortToken);
+        await denied.Should().ThrowAsync<UnauthorizedAccessException>();
+
+        var attempts = await Task.WhenAll(
+            Enumerable.Range(0, 8).Select(_ => operations.ForceReprocessAsync(request, AbortToken).AsTask())
+        );
+        var first = attempts.Should().ContainSingle(result => !result.IsReplay).Which;
+        attempts.Should().OnlyContain(result => result.Outcome == InboxOperationOutcome.Applied);
+        attempts.Select(result => result.ChildIncarnationId).Distinct().Should().ContainSingle();
+        var replay = await operations.ForceReprocessAsync(request, AbortToken);
+        var conflict = await operations.ForceReprocessAsync(request with { Reason = "different request" }, AbortToken);
+
+        first.Outcome.Should().Be(InboxOperationOutcome.Applied);
+        replay.IsReplay.Should().BeTrue();
+        replay.ChildIncarnationId.Should().Be(first.ChildIncarnationId);
+        conflict.Outcome.Should().Be(InboxOperationOutcome.OperationConflict);
+
+        var page = await operations.QueryAsync(new InboxGenerationQuery(), authorization, AbortToken);
+        page.Items.Should().HaveCount(2);
+        var parent = page.Items.Single(x => x.IncarnationId == incarnation);
+        parent.IsHeld.Should().BeFalse();
+        (parent.EffectiveExpiresAt - parent.TerminalAt).Should().Be(TimeSpan.FromDays(2));
+        page.Items.Single(x => x.IncarnationId == first.ChildIncarnationId)
+            .ReplayParentIncarnationId.Should()
+            .Be(incarnation);
+
+        var hold = await operations.HoldAsync(
+            new InboxOperationRequest(Guid.NewGuid(), incarnation, StatusName.Failed, "legal hold", authorization),
+            AbortToken
+        );
+        hold.Outcome.Should().Be(InboxOperationOutcome.Applied);
+        _fakeTimeProvider!.Advance(TimeSpan.FromDays(3));
+        (
+            await storage.DeleteExpiresAsync(
+                _initializer!.GetReceivedTableName(),
+                _fakeTimeProvider.GetUtcNow(),
+                cancellationToken: AbortToken
+            )
+        )
+            .Should()
+            .Be(0);
+
+        var release = await operations.ReleaseHoldAsync(
+            new InboxOperationRequest(Guid.NewGuid(), incarnation, StatusName.Failed, "hold complete", authorization),
+            AbortToken
+        );
+        release.Outcome.Should().Be(InboxOperationOutcome.Applied);
+        (
+            await storage.DeleteExpiresAsync(
+                _initializer.GetReceivedTableName(),
+                _fakeTimeProvider.GetUtcNow(),
+                cancellationToken: AbortToken
+            )
+        )
+            .Should()
+            .Be(1);
+    }
+
     private static ValueTask<InboxAdmissionResult> _AdmitAsync(
         IDataStorage storage,
         Message origin,
@@ -1735,7 +1843,8 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
         string consumerIdentity = "orders.consumer-a",
         string contractVersion = "v1",
         MessageLane lane = MessageLane.Bus,
-        long generation = 0
+        long generation = 0,
+        TimeSpan? inboxRetention = null
     )
     {
         return storage.AdmitReceivedMessageAsync(
@@ -1751,7 +1860,8 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
                 Lane = lane,
             },
             generation,
-            TestContext.Current.CancellationToken
+            inboxRetention,
+            cancellationToken: TestContext.Current.CancellationToken
         );
     }
 

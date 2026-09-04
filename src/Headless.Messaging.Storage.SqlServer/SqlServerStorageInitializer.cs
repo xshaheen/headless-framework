@@ -107,8 +107,8 @@ internal sealed class SqlServerStorageInitializer(
 
             IF OBJECT_ID(N'{schema}.SchemaState',N'U') IS NOT NULL
                 EXEC(N'
-                    IF EXISTS (SELECT 1 FROM [{schema}].[SchemaState] WHERE [Component]=N''inbox'' AND [SchemaVersion] > 2)
-                        THROW 50003, N''Headless.Messaging inbox schema is newer than supported version 2. Upgrade the application before starting this binary.'', 1;
+                    IF EXISTS (SELECT 1 FROM [{schema}].[SchemaState] WHERE [Component]=N''inbox'' AND [SchemaVersion] > 3)
+                        THROW 50003, N''Headless.Messaging inbox schema is newer than supported version 3. Upgrade the application before starting this binary.'', 1;
                     DELETE FROM [{schema}].[SchemaState] WHERE [Component]=N''inbox'';
                 ');
 
@@ -183,6 +183,7 @@ internal sealed class SqlServerStorageInitializer(
                         [HeldBy] [nvarchar](200) COLLATE Latin1_General_100_BIN2 NULL,
                         [HoldReason] [nvarchar](1000) NULL,
                         [HoldOperationId] [uniqueidentifier] NULL,
+                        [InboxRetentionSeconds] [bigint] NOT NULL CONSTRAINT [DF_{receivedPrefix}_InboxRetentionSeconds] DEFAULT 2592000,
                         [TenantIdOrdinal] AS CONVERT(varbinary(400),[TenantId]) PERSISTED,
                         [MessageIdOrdinal] AS CONVERT(varbinary(400),[MessageId]) PERSISTED,
                         [ContractIdentityOrdinal] AS CONVERT(varbinary(400),[ContractIdentity]) PERSISTED,
@@ -244,6 +245,8 @@ internal sealed class SqlServerStorageInitializer(
                 ALTER TABLE {GetReceivedTableName()} ADD [HoldReason] [nvarchar](1000) NULL;
             IF COL_LENGTH(N'{GetReceivedTableName()}', N'HoldOperationId') IS NULL
                 ALTER TABLE {GetReceivedTableName()} ADD [HoldOperationId] [uniqueidentifier] NULL;
+            IF COL_LENGTH(N'{GetReceivedTableName()}', N'InboxRetentionSeconds') IS NULL
+                ALTER TABLE {GetReceivedTableName()} ADD [InboxRetentionSeconds] [bigint] NOT NULL CONSTRAINT [DF_{receivedPrefix}_InboxRetentionSeconds] DEFAULT 2592000;
             IF COL_LENGTH(N'{GetReceivedTableName()}', N'TenantIdOrdinal') IS NULL
                 EXEC(N'ALTER TABLE {GetReceivedTableName()} ADD [TenantIdOrdinal] AS CONVERT(varbinary(400),[TenantId]) PERSISTED');
             IF COL_LENGTH(N'{GetReceivedTableName()}', N'MessageIdOrdinal') IS NULL
@@ -263,13 +266,18 @@ internal sealed class SqlServerStorageInitializer(
             IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_{receivedPrefix}_InboxIdentity')
                 EXEC(N'ALTER TABLE {GetReceivedTableName()} ADD CONSTRAINT [CK_{receivedPrefix}_InboxIdentity] CHECK (
                     [IsInboxRecord]=0 OR (
-                        [Generation]>=0 AND [GenerationIncarnationId] IS NOT NULL AND [InboxKeyHash] IS NOT NULL
+                        [Generation]>=0 AND [InboxRetentionSeconds] BETWEEN 1 AND 2147483647 AND [GenerationIncarnationId] IS NOT NULL AND [InboxKeyHash] IS NOT NULL
                         AND LEN([MessageId]) BETWEEN 1 AND 200
                         AND LEN([ContractIdentity]) BETWEEN 1 AND 200
                         AND LEN([ContractVersion]) BETWEEN 1 AND 100
                         AND LEN([ConsumerIdentity]) BETWEEN 1 AND 200
                         AND (([TenantPresent]=0 AND DATALENGTH([TenantId])=0) OR ([TenantPresent]=1 AND LEN([TenantId]) BETWEEN 1 AND 200))
                     )
+                )');
+
+            IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_{receivedPrefix}_InboxRetentionV3')
+                EXEC(N'ALTER TABLE {GetReceivedTableName()} ADD CONSTRAINT [CK_{receivedPrefix}_InboxRetentionV3] CHECK (
+                    [IsInboxRecord]=0 OR [InboxRetentionSeconds] BETWEEN 1 AND 2147483647
                 )');
 
             BEGIN TRY
@@ -415,12 +423,31 @@ internal sealed class SqlServerStorageInitializer(
                     [OperationId] [uniqueidentifier] NOT NULL,
                     [GenerationIncarnationId] [uniqueidentifier] NOT NULL,
                     [OperationType] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NOT NULL,
+                    [ExpectedStatus] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NOT NULL,
                     [Actor] [nvarchar](200) COLLATE Latin1_General_100_BIN2 NOT NULL,
                     [Reason] [nvarchar](1000) NOT NULL,
+                    [Outcome] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NOT NULL,
+                    [StorageId] [uniqueidentifier] NULL,
+                    [ChildStorageId] [uniqueidentifier] NULL,
+                    [ChildGeneration] [bigint] NULL,
+                    [ChildIncarnationId] [uniqueidentifier] NULL,
                     [CreatedAt] [datetimeoffset](7) NOT NULL,
                     CONSTRAINT [PK_{schema}_InboxOperationReceipts] PRIMARY KEY CLUSTERED ([OperationId])
                 );
             END;
+
+            IF COL_LENGTH(N'{schema}.InboxOperationReceipts', N'Outcome') IS NULL
+                ALTER TABLE [{schema}].[InboxOperationReceipts] ADD [Outcome] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NOT NULL CONSTRAINT [DF_{schema}_InboxOperationReceipts_Outcome] DEFAULT N'StateConflict';
+            IF COL_LENGTH(N'{schema}.InboxOperationReceipts', N'ExpectedStatus') IS NULL
+                ALTER TABLE [{schema}].[InboxOperationReceipts] ADD [ExpectedStatus] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NOT NULL CONSTRAINT [DF_{schema}_InboxOperationReceipts_ExpectedStatus] DEFAULT N'Failed';
+            IF COL_LENGTH(N'{schema}.InboxOperationReceipts', N'StorageId') IS NULL
+                ALTER TABLE [{schema}].[InboxOperationReceipts] ADD [StorageId] [uniqueidentifier] NULL;
+            IF COL_LENGTH(N'{schema}.InboxOperationReceipts', N'ChildStorageId') IS NULL
+                ALTER TABLE [{schema}].[InboxOperationReceipts] ADD [ChildStorageId] [uniqueidentifier] NULL;
+            IF COL_LENGTH(N'{schema}.InboxOperationReceipts', N'ChildGeneration') IS NULL
+                ALTER TABLE [{schema}].[InboxOperationReceipts] ADD [ChildGeneration] [bigint] NULL;
+            IF COL_LENGTH(N'{schema}.InboxOperationReceipts', N'ChildIncarnationId') IS NULL
+                ALTER TABLE [{schema}].[InboxOperationReceipts] ADD [ChildIncarnationId] [uniqueidentifier] NULL;
 
             IF OBJECT_ID(N'{schema}.InboxAudit',N'U') IS NULL
             BEGIN
@@ -456,8 +483,13 @@ internal sealed class SqlServerStorageInitializer(
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'UX_{receivedPrefix}_InboxKey' AND object_id=OBJECT_ID(N'{GetReceivedTableName()}'))
                 THROW 50002, N'Headless.Messaging inbox schema is incomplete: the final inbox key index is missing.', 1;
 
+            IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name=N'CK_{receivedPrefix}_InboxRetentionV3')
+               OR COL_LENGTH(N'{schema}.InboxOperationReceipts',N'ExpectedStatus') IS NULL
+               OR COL_LENGTH(N'{schema}.InboxOperationReceipts',N'Outcome') IS NULL
+                THROW 50004, N'Headless.Messaging inbox schema is incomplete: the v3 retention or operation receipt contract is missing.', 1;
+
             MERGE [{schema}].[SchemaState] WITH (HOLDLOCK) AS target
-            USING (SELECT N'inbox' AS [Component], 2 AS [SchemaVersion], SYSDATETIMEOFFSET() AS [ReadyAt]) AS source
+            USING (SELECT N'inbox' AS [Component], 3 AS [SchemaVersion], SYSDATETIMEOFFSET() AS [ReadyAt]) AS source
             ON target.[Component]=source.[Component]
             WHEN MATCHED THEN UPDATE SET [SchemaVersion]=source.[SchemaVersion],[ReadyAt]=source.[ReadyAt]
             WHEN NOT MATCHED THEN INSERT ([Component],[SchemaVersion],[ReadyAt]) VALUES (source.[Component],source.[SchemaVersion],source.[ReadyAt]);

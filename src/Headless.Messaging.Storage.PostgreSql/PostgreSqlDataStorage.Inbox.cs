@@ -68,6 +68,7 @@ internal sealed partial class PostgreSqlDataStorage
         string contractVersion,
         MediumMessage message,
         long generation = 0,
+        TimeSpan? inboxRetention = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -78,6 +79,7 @@ internal sealed partial class PostgreSqlDataStorage
         var incarnationId = guidGenerator.Create();
         var content = serializer.Serialize(message.Origin);
         var intentType = MessageLaneCompatibility.ToPersistedValue(message.Lane);
+        var retentionSeconds = _ValidateInboxRetention(inboxRetention);
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
@@ -89,12 +91,12 @@ internal sealed partial class PostgreSqlDataStorage
                 "Id","Version","Name","Group","Content","IntentType","Retries","InlineAttempts",
                 "Added","ExpiresAt","NextRetryAt","LockedUntil","Owner","StatusName","MessageId","ExceptionInfo",
                 "TenantPresent","TenantId","ContractIdentity","ContractVersion","ConsumerIdentity","Generation",
-                "GenerationIncarnationId","AttemptId","IsInboxOrphaned","IsCurrentGeneration","IsInboxRecord"
+                "GenerationIncarnationId","AttemptId","IsInboxOrphaned","IsCurrentGeneration","IsInboxRecord","InboxRetentionSeconds"
             )
             SELECT @Id,@Version,@Name,@Group,@Content,@IntentType,0,0,
                 clock.now,NULL,clock.now + (@InitialDispatchGraceSeconds * INTERVAL '1 second'),NULL,NULL,@StatusName,@MessageId,NULL,
                 @TenantPresent,@TenantId,@ContractIdentity,@ContractVersion,@ConsumerIdentity,@Generation,
-                @GenerationIncarnationId,NULL,FALSE,TRUE,TRUE
+                @GenerationIncarnationId,NULL,FALSE,TRUE,TRUE,@InboxRetentionSeconds
             FROM clock
             ON CONFLICT ("TenantPresent","TenantId","MessageId","IntentType","ContractIdentity","ContractVersion","ConsumerIdentity","Generation")
             WHERE "IsInboxRecord"
@@ -123,6 +125,7 @@ internal sealed partial class PostgreSqlDataStorage
             new NpgsqlParameter("@ConsumerIdentity", consumerIdentity),
             new NpgsqlParameter("@Generation", generation),
             new NpgsqlParameter("@GenerationIncarnationId", incarnationId),
+            new NpgsqlParameter("@InboxRetentionSeconds", retentionSeconds),
         ];
 
         var insertedId = await connection
@@ -166,6 +169,20 @@ internal sealed partial class PostgreSqlDataStorage
             };
 
         return new InboxAdmissionResult(disposition, stored.Message);
+    }
+
+    private static long _ValidateInboxRetention(TimeSpan? retention)
+    {
+        var value = retention ?? TimeSpan.FromDays(30);
+        if (value <= TimeSpan.Zero || value.Ticks % TimeSpan.TicksPerSecond != 0 || value.TotalSeconds > int.MaxValue)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(retention),
+                "Inbox retention must be a positive whole-second duration."
+            );
+        }
+
+        return checked((int)value.TotalSeconds);
     }
 
     public async ValueTask<bool> MarkReceivedInboxOrphanedAsync(

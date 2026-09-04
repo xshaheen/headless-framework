@@ -2,6 +2,7 @@
 
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Claims;
 using Headless.Dashboard.Authentication;
 using Headless.Messaging;
 using Headless.Messaging.Dashboard;
@@ -240,27 +241,87 @@ public sealed class ReceivedMessageEndpointTests : TestBase
     }
 
     [Fact]
-    public async Task should_return_204_on_success_when_received_delete()
+    public async Task should_route_received_delete_through_audited_inbox_operations()
     {
         // given
-        var messageId = new Guid(0x11111111, 0x1111, 0x1111, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x17, 0x89);
+        var operationId = Guid.NewGuid();
+        var incarnationId = Guid.NewGuid();
+        var operations = Substitute.For<IInboxOperationsApi>();
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
-        _dataStorage
-            .DeleteReceivedMessageAsync(messageId, Arg.Any<CancellationToken>())
-            .Returns(ValueTask.FromResult(1));
+        _dataStorage.GetInboxOperationsApi().Returns(operations);
+        operations
+            .PurgeAsync(Arg.Any<InboxOperationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(
+                ValueTask.FromResult(
+                    new InboxOperationResult(
+                        operationId,
+                        InboxOperationType.Purge,
+                        InboxOperationOutcome.Applied,
+                        incarnationId,
+                        StatusName.Failed,
+                        Guid.NewGuid(),
+                        null,
+                        null,
+                        null,
+                        "dashboard-operator",
+                        "retention complete",
+                        DateTimeOffset.UtcNow
+                    )
+                )
+            );
 
         await using var app = _CreateTestApp(_dataStorage);
         await app.StartAsync(AbortToken);
         using var client = app.GetTestClient();
 
         // when
-        var response = await client.PostAsJsonAsync("/api/received/delete", new[] { messageId }, AbortToken);
+        var response = await client.PostAsJsonAsync(
+            "/api/received/delete",
+            new
+            {
+                operationId,
+                expectedIncarnationId = incarnationId,
+                expectedStatus = StatusName.Failed,
+                reason = "retention complete",
+            },
+            AbortToken
+        );
 
         // then
-        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        await operations
+            .Received(1)
+            .PurgeAsync(
+                Arg.Is<InboxOperationRequest>(request =>
+                    request.OperationId == operationId
+                    && request.ExpectedIncarnationId == incarnationId
+                    && request.Actor == "dashboard-operator"
+                ),
+                Arg.Any<CancellationToken>()
+            );
     }
 
-    private static WebApplication _CreateTestApp(IDataStorage dataStorage)
+    [Fact]
+    public async Task should_reject_inbox_mutation_without_authenticated_actor()
+    {
+        await using var app = _CreateTestApp(_dataStorage, authenticate: false);
+        await app.StartAsync(AbortToken);
+        using var client = app.GetTestClient();
+        var response = await client.PostAsJsonAsync(
+            "/api/received/delete",
+            new
+            {
+                operationId = Guid.NewGuid(),
+                expectedIncarnationId = Guid.NewGuid(),
+                expectedStatus = StatusName.Failed,
+                reason = "retention complete",
+            },
+            AbortToken
+        );
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    private static WebApplication _CreateTestApp(IDataStorage dataStorage, bool authenticate = true)
     {
         var config = new MessagingDashboardOptionsBuilder().WithNoAuth();
 
@@ -287,6 +348,21 @@ public sealed class ReceivedMessageEndpointTests : TestBase
 
         var app = appBuilder.Build();
         app.UseRouting();
+        if (authenticate)
+        {
+            app.Use(
+                (context, next) =>
+                {
+                    context.User = new ClaimsPrincipal(
+                        new ClaimsIdentity(
+                            [new Claim(ClaimTypes.Name, "dashboard-operator")],
+                            authenticationType: "test"
+                        )
+                    );
+                    return next(context);
+                }
+            );
+        }
         app.UseCors("HeadlessMessagingDashboardCORS");
         app.MapMessagingDashboardEndpoints(config);
 

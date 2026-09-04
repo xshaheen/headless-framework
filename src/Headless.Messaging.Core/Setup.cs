@@ -400,6 +400,7 @@ public static class SetupMessaging
                 ) with
                 {
                     ProviderConfigs = consumer.ProviderConfigs,
+                    InboxRetention = consumer.InboxRetention ?? TimeSpan.FromDays(30),
                 };
 
                 var key = new ConsumerRegistrationKey(
@@ -414,6 +415,7 @@ public static class SetupMessaging
                     resolved.ResolvedHandlerId,
                     resolved.ConsumerIdentity,
                     resolved.ContractVersion,
+                    resolved.InboxRetention,
                     ConsumerCircuitBreakerSettings.From(consumer.CircuitBreakerOverride),
                     resolved.ProviderConfigs
                 );
@@ -493,6 +495,7 @@ public static class SetupMessaging
         string resolvedHandlerId,
         string consumerIdentity,
         string contractVersion,
+        TimeSpan inboxRetention,
         ConsumerCircuitBreakerSettings circuitBreaker,
         IReadOnlyDictionary<Type, object> providerConfigs
     ) : IEquatable<ConsumerRegistrationSettings>
@@ -501,6 +504,7 @@ public static class SetupMessaging
         private readonly string _resolvedHandlerId = resolvedHandlerId;
         private readonly string _consumerIdentity = consumerIdentity;
         private readonly string _contractVersion = contractVersion;
+        private readonly TimeSpan _inboxRetention = inboxRetention;
         private readonly ConsumerCircuitBreakerSettings _circuitBreaker = circuitBreaker;
         private readonly IReadOnlyDictionary<Type, object> _providerConfigs = providerConfigs;
 
@@ -510,6 +514,7 @@ public static class SetupMessaging
                 && string.Equals(_resolvedHandlerId, other._resolvedHandlerId, StringComparison.Ordinal)
                 && string.Equals(_consumerIdentity, other._consumerIdentity, StringComparison.Ordinal)
                 && string.Equals(_contractVersion, other._contractVersion, StringComparison.Ordinal)
+                && _inboxRetention == other._inboxRetention
                 && _circuitBreaker == other._circuitBreaker
                 && _ProviderConfigsEqual(_providerConfigs, other._providerConfigs);
         }
@@ -526,6 +531,7 @@ public static class SetupMessaging
             hash.Add(_resolvedHandlerId, StringComparer.Ordinal);
             hash.Add(_consumerIdentity, StringComparer.Ordinal);
             hash.Add(_contractVersion, StringComparer.Ordinal);
+            hash.Add(_inboxRetention);
             hash.Add(_circuitBreaker);
 
             foreach (var pair in _providerConfigs.OrderBy(static pair => pair.Key.FullName, StringComparer.Ordinal))

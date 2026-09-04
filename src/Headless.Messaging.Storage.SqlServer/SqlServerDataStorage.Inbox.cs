@@ -65,6 +65,7 @@ internal sealed partial class SqlServerDataStorage
         string contractVersion,
         MediumMessage message,
         long generation = 0,
+        TimeSpan? inboxRetention = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -75,6 +76,7 @@ internal sealed partial class SqlServerDataStorage
         var incarnationId = guidGenerator.Create();
         var content = serializer.Serialize(message.Origin);
         var intentType = MessageLaneCompatibility.ToPersistedValue(message.Lane);
+        var retentionSeconds = _ValidateInboxRetention(inboxRetention);
         var inboxKeyHash = _CreateInboxKeyHash(
             tenantPresent,
             normalizedTenantId,
@@ -103,12 +105,12 @@ internal sealed partial class SqlServerDataStorage
                 [Id],[Version],[Name],[Group],[Content],[IntentType],[Retries],[InlineAttempts],
                 [Added],[ExpiresAt],[NextRetryAt],[LockedUntil],[Owner],[StatusName],[MessageId],[ExceptionInfo],
                 [TenantPresent],[TenantId],[ContractIdentity],[ContractVersion],[ConsumerIdentity],[Generation],
-                [GenerationIncarnationId],[AttemptId],[IsInboxOrphaned],[IsCurrentGeneration],[IsInboxRecord],[InboxKeyHash]
+                [GenerationIncarnationId],[AttemptId],[IsInboxOrphaned],[IsCurrentGeneration],[IsInboxRecord],[InboxKeyHash],[InboxRetentionSeconds]
             )
             SELECT @Id,@Version,@Name,@Group,@Content,@IntentType,0,0,
                 @AdmissionNow,NULL,DATEADD(nanosecond,@GraceNanoseconds,DATEADD(second,@GraceWholeSeconds,@AdmissionNow)),
                 NULL,NULL,@StatusName,@MessageId,NULL,@TenantPresent,@TenantId,@ContractIdentity,@ContractVersion,
-                @ConsumerIdentity,@Generation,@GenerationIncarnationId,NULL,0,1,1,@InboxKeyHash
+                @ConsumerIdentity,@Generation,@GenerationIncarnationId,NULL,0,1,1,@InboxKeyHash,@InboxRetentionSeconds
             WHERE NOT EXISTS (
                 SELECT 1 FROM {_receivedTable} WITH (UPDLOCK,HOLDLOCK)
                 WHERE [InboxKeyHash]=@InboxKeyHash
@@ -145,6 +147,7 @@ internal sealed partial class SqlServerDataStorage
             new SqlParameter("@Generation", SqlDbType.BigInt) { Value = generation },
             new SqlParameter("@GenerationIncarnationId", incarnationId),
             new SqlParameter("@InboxKeyHash", SqlDbType.Binary, 32) { Value = inboxKeyHash },
+            new SqlParameter("@InboxRetentionSeconds", SqlDbType.BigInt) { Value = retentionSeconds },
         ];
 
         var inserted = await connection
@@ -189,6 +192,20 @@ internal sealed partial class SqlServerDataStorage
                 };
 
         return new InboxAdmissionResult(disposition, stored.Message);
+    }
+
+    private static long _ValidateInboxRetention(TimeSpan? retention)
+    {
+        var value = retention ?? TimeSpan.FromDays(30);
+        if (value <= TimeSpan.Zero || value.Ticks % TimeSpan.TicksPerSecond != 0 || value.TotalSeconds > int.MaxValue)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(retention),
+                "Inbox retention must be a positive whole-second duration."
+            );
+        }
+
+        return checked((int)value.TotalSeconds);
     }
 
     public async ValueTask<bool> MarkReceivedInboxOrphanedAsync(

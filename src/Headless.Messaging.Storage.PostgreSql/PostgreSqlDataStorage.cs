@@ -39,6 +39,7 @@ internal sealed partial class PostgreSqlDataStorage(
         IGracefulLeaseReleaseStorage,
         ICircuitRetryDeferralStorage,
         ITransactionalInboxStorage,
+        IInboxOperationsApi,
         IDeliveryCoordinationResolver
 {
     /// <summary>
@@ -112,6 +113,8 @@ internal sealed partial class PostgreSqlDataStorage(
     {
         return new PostgreSqlMonitoringApi(postgreSqlOptions, messagingOptions, initializer, serializer, timeProvider);
     }
+
+    public IInboxOperationsApi GetInboxOperationsApi() => this;
 
     /// <summary>
     /// Bulk-transitions the specified published messages to <c>Delayed</c> status.
@@ -333,7 +336,7 @@ internal sealed partial class PostgreSqlDataStorage(
         var refreshContent = contentWrite is MessageContentWrite.Refresh;
         var contentAssignment = refreshContent ? "\"Content\"=@Content," : "";
         var sql =
-            $"UPDATE {_receivedTable} SET {contentAssignment}\"Retries\"=@Retries,\"InlineAttempts\"=@InlineAttempts,\"ExpiresAt\"=@ExpiresAt,\"NextRetryAt\"=@NextRetryAt,\"LockedUntil\"=@LockedUntil,\"Owner\"=@Owner,\"StatusName\"=@StatusName,\"ExceptionInfo\"=@ExceptionInfo,\"AttemptId\"=CASE WHEN @LockedUntil IS NULL THEN NULL ELSE \"AttemptId\" END,\"TerminalAt\"=CASE WHEN \"IsInboxRecord\" AND @IsTerminal THEN statement_timestamp() ELSE \"TerminalAt\" END,\"EffectiveExpiresAt\"=CASE WHEN \"IsInboxRecord\" AND @IsTerminal THEN statement_timestamp() + INTERVAL '30 days' ELSE \"EffectiveExpiresAt\" END WHERE \"Id\"=@Id AND {_TerminalRowGuardWithRetries} AND (@OriginalInlineAttempts IS NULL OR (\"LockedUntil\" IS NOT DISTINCT FROM @OriginalLockedUntil AND \"Owner\" IS NOT DISTINCT FROM @OriginalOwner AND \"LockedUntil\">statement_timestamp())) AND (NOT \"IsInboxRecord\" OR (\"IntentType\"=@InboxIntentType AND \"Generation\"=@InboxGeneration AND \"GenerationIncarnationId\"=@InboxGenerationIncarnationId AND \"AttemptId\"=@InboxAttemptId AND \"Owner\" IS NOT DISTINCT FROM @InboxOwner AND \"LockedUntil\"=@InboxLockedUntil))";
+            $"UPDATE {_receivedTable} SET {contentAssignment}\"Retries\"=@Retries,\"InlineAttempts\"=@InlineAttempts,\"ExpiresAt\"=@ExpiresAt,\"NextRetryAt\"=@NextRetryAt,\"LockedUntil\"=@LockedUntil,\"Owner\"=@Owner,\"StatusName\"=@StatusName,\"ExceptionInfo\"=@ExceptionInfo,\"AttemptId\"=CASE WHEN @LockedUntil IS NULL THEN NULL ELSE \"AttemptId\" END,\"TerminalAt\"=CASE WHEN \"IsInboxRecord\" AND @IsTerminal THEN statement_timestamp() ELSE \"TerminalAt\" END,\"EffectiveExpiresAt\"=CASE WHEN \"IsInboxRecord\" AND @IsTerminal THEN statement_timestamp() + (\"InboxRetentionSeconds\" * INTERVAL '1 second') ELSE \"EffectiveExpiresAt\" END WHERE \"Id\"=@Id AND {_TerminalRowGuardWithRetries} AND (@OriginalInlineAttempts IS NULL OR (\"LockedUntil\" IS NOT DISTINCT FROM @OriginalLockedUntil AND \"Owner\" IS NOT DISTINCT FROM @OriginalOwner AND \"LockedUntil\">statement_timestamp())) AND (NOT \"IsInboxRecord\" OR (\"IntentType\"=@InboxIntentType AND \"Generation\"=@InboxGeneration AND \"GenerationIncarnationId\"=@InboxGenerationIncarnationId AND \"AttemptId\"=@InboxAttemptId AND \"Owner\" IS NOT DISTINCT FROM @InboxOwner AND \"LockedUntil\"=@InboxLockedUntil))";
 
         var inboxFence = message.InboxAttemptFence;
 
@@ -496,8 +499,9 @@ internal sealed partial class PostgreSqlDataStorage(
         {
             throw;
         }
-        catch
+        catch (Exception ex)
         {
+            logger.LogInboxCommitProbeFailed(ex);
             return InboxCommitProbe.Indeterminate;
         }
     }
@@ -843,11 +847,44 @@ internal sealed partial class PostgreSqlDataStorage(
     )
     {
         await using var connection = postgreSqlOptions.Value.CreateConnection();
-        var expiryPredicate = string.Equals(table, _receivedTable, StringComparison.Ordinal)
-            ? "((NOT \"IsInboxRecord\" AND \"ExpiresAt\" < @timeout) OR (\"IsInboxRecord\" AND NOT \"IsHeld\" AND \"EffectiveExpiresAt\" < statement_timestamp()))"
-            : "\"ExpiresAt\" < @timeout";
-
         object[] sqlParams = [new NpgsqlParameter("@timeout", timeout), new NpgsqlParameter("@batchCount", batchCount)];
+
+        if (string.Equals(table, _receivedTable, StringComparison.Ordinal))
+        {
+            return await connection
+                .ExecuteNonQueryAsync(
+                    $"""
+                    WITH candidates AS MATERIALIZED (
+                        SELECT "Id","IsInboxRecord","GenerationIncarnationId","StatusName",
+                               CASE WHEN "IsInboxRecord" THEN gen_random_uuid() END AS "OperationId",
+                               CASE WHEN "IsInboxRecord" THEN gen_random_uuid() END AS "AuditId"
+                        FROM {_receivedTable}
+                        WHERE ((NOT "IsInboxRecord" AND "ExpiresAt" < @timeout)
+                               OR ("IsInboxRecord" AND NOT "IsHeld" AND "EffectiveExpiresAt" < transaction_timestamp()))
+                          AND "StatusName" IN ('Succeeded','Failed') AND "NextRetryAt" IS NULL AND "IntentType" IN (0,1)
+                        ORDER BY "EffectiveExpiresAt" NULLS LAST,"Id"
+                        FOR UPDATE SKIP LOCKED LIMIT @batchCount
+                    ), receipts AS (
+                        INSERT INTO {InboxReceiptsTable}("OperationId","GenerationIncarnationId","OperationType","ExpectedStatus","Actor","Reason","Outcome","StorageId","CreatedAt")
+                        SELECT "OperationId","GenerationIncarnationId",'Cleanup',"StatusName",'headless.messaging.collector','retention_expired','Applied',"Id",transaction_timestamp()
+                        FROM candidates WHERE "IsInboxRecord"
+                        RETURNING "OperationId"
+                    ), audits AS (
+                        INSERT INTO {InboxAuditTable}("AuditId","OperationId","GenerationIncarnationId","OperationType","Actor","Reason","Outcome","CreatedAt")
+                        SELECT c."AuditId",c."OperationId",c."GenerationIncarnationId",'Cleanup','headless.messaging.collector','retention_expired','Applied',transaction_timestamp()
+                        FROM candidates c JOIN receipts r ON r."OperationId"=c."OperationId"
+                        RETURNING "OperationId"
+                    )
+                    DELETE FROM {_receivedTable} target
+                    USING candidates c
+                    WHERE target."Id"=c."Id" AND (NOT c."IsInboxRecord" OR EXISTS (SELECT 1 FROM audits a WHERE a."OperationId"=c."OperationId"));
+                    """,
+                    commandTimeout: messagingOptions.Value.CommandTimeout,
+                    sqlParams: sqlParams,
+                    cancellationToken: cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
 
         return await connection
             .ExecuteNonQueryAsync(
@@ -856,7 +893,7 @@ internal sealed partial class PostgreSqlDataStorage(
                 WHERE "Id" IN (
                     SELECT "Id"
                     FROM {table}
-                    WHERE {expiryPredicate}
+                    WHERE "ExpiresAt" < @timeout
                     AND "StatusName" IN ('{nameof(StatusName.Succeeded)}','{nameof(StatusName.Failed)}')
                     AND "NextRetryAt" IS NULL
                     AND "IntentType" IN (0, 1)
