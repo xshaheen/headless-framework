@@ -14,8 +14,11 @@ Provides a standardized abstraction layer for accessing request-scoped context (
 - `IRequestedApiVersion` - API versioning abstraction
 - `IProblemDetailsCreator` - Contract for building normalized RFC 7807 `ProblemDetails` responses (implemented in `Headless.Api.Core`)
 - `IAbsoluteUrlFactory` - Contract for building absolute URLs from the current request (implemented in `Headless.Api.Core`)
+- `EntityTag` - Validated HTTP entity-tag value with strong/weak parsing and helpers for binary and PostgreSQL `xmin` versions
+- `IHasEntityTag` - Response-metadata contract used to emit `ETag` without adding metadata to the serialized body
+- `IIfMatchContext` - Request-scoped access to the strong entity tag supplied through `If-Match`
 - Framework constants for HTTP headers and common values
-- `RequireIfMatchAttribute` - Portable marker used by MVC and OpenAPI concurrency profiles
+- `RequireIfMatchAttribute` - Portable marker used by MVC, Minimal API, and OpenAPI concurrency profiles
 
 ## Installation
 

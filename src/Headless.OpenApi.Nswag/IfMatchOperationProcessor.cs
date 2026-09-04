@@ -4,6 +4,7 @@ using System.Reflection;
 using Headless.Abstractions;
 using NJsonSchema;
 using NSwag;
+using NSwag.Generation.AspNetCore;
 using NSwag.Generation.Processors;
 using NSwag.Generation.Processors.Contexts;
 
@@ -17,7 +18,11 @@ public sealed class IfMatchOperationProcessor : IOperationProcessor
     {
         var requiresIfMatch =
             context.MethodInfo?.IsDefined(typeof(RequireIfMatchAttribute), inherit: true) == true
-            || context.ControllerType?.IsDefined(typeof(RequireIfMatchAttribute), inherit: true) == true;
+            || context.ControllerType?.IsDefined(typeof(RequireIfMatchAttribute), inherit: true) == true
+            || context is AspNetCoreOperationProcessorContext aspNetCoreContext
+                && aspNetCoreContext
+                    .ApiDescription.ActionDescriptor.EndpointMetadata.OfType<RequireIfMatchAttribute>()
+                    .Any();
         if (!requiresIfMatch)
         {
             return true;
@@ -29,7 +34,7 @@ public sealed class IfMatchOperationProcessor : IOperationProcessor
                 Name = "If-Match",
                 Kind = OpenApiParameterKind.Header,
                 IsRequired = true,
-                Description = "One strong Base64 entity tag returned by the resource.",
+                Description = "One strong entity tag returned by the resource.",
                 Schema = new JsonSchema { Type = JsonObjectType.String },
             }
         );

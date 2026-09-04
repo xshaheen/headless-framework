@@ -68,5 +68,8 @@ public sealed class EntityTagResponseFilterTests : TestBase
     private static Task<ResultExecutedContext> _Next(ResultExecutingContext context) =>
         Task.FromResult(new ResultExecutedContext(context, [], context.Result, context.Controller));
 
-    private sealed record EntityTaggedResource(EntityTag EntityTag) : IHasEntityTag;
+    private sealed record EntityTaggedResource(EntityTag Tag) : IHasEntityTag
+    {
+        public EntityTag GetEntityTag() => Tag;
+    }
 }
