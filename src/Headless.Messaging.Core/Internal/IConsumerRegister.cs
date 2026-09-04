@@ -55,6 +55,7 @@ internal sealed class ConsumerRegister(
     private readonly SemaphoreSlim _restartGate = new(1, 1);
 #pragma warning restore CA2213
     private Task? _shutdownTask;
+    private Task? _quiesceTask;
     private volatile bool _isHealthy = true;
     private int _pendingTopologyRefresh;
 
@@ -77,7 +78,10 @@ internal sealed class ConsumerRegister(
     {
         lock (_shutdownLock)
         {
-            if (_shutdownTask is not null)
+            if (
+                _shutdownTask is not null
+                || (LifecycleState)Volatile.Read(ref _state) is LifecycleState.Disposing or LifecycleState.Disposed
+            )
             {
                 return;
             }
@@ -224,6 +228,11 @@ internal sealed class ConsumerRegister(
         return new ValueTask(_StartShutdown(_options.ShutdownTimeout));
     }
 
+    void IProcessingServerShutdown.Quiesce()
+    {
+        _Quiesce();
+    }
+
     ValueTask IProcessingServerShutdown.StopAsync(TimeSpan timeout)
     {
         return new ValueTask(_StartShutdown(timeout));
@@ -231,9 +240,11 @@ internal sealed class ConsumerRegister(
 
     private Task _StartShutdown(TimeSpan timeout)
     {
+        _Quiesce();
+
         TaskCompletionSource completion;
         Task shutdownTask;
-        CancellationTokenSource stoppingCts;
+        Task quiesceTask;
 
         lock (_shutdownLock)
         {
@@ -242,28 +253,34 @@ internal sealed class ConsumerRegister(
                 return _shutdownTask;
             }
 
-            Interlocked.Exchange(ref _state, (int)LifecycleState.Disposing);
             completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             shutdownTask = completion.Task;
             _shutdownTask = shutdownTask;
-            stoppingCts = _stoppingCts;
+            quiesceTask = _quiesceTask ?? Task.CompletedTask;
         }
 
-        _ = _RunShutdownAsync(timeout, stoppingCts, completion);
+        _ = _RunShutdownAsync(timeout, quiesceTask, completion);
         return shutdownTask;
     }
 
-    private async Task _RunShutdownAsync(
-        TimeSpan timeout,
-        CancellationTokenSource stoppingCts,
-        TaskCompletionSource completion
-    )
+    private void _Quiesce()
+    {
+        lock (_shutdownLock)
+        {
+            Interlocked.Exchange(ref _state, (int)LifecycleState.Disposing);
+            _quiesceTask ??= _stoppingCts.CancelAsync();
+        }
+    }
+
+    private async Task _RunShutdownAsync(TimeSpan timeout, Task quiesceTask, TaskCompletionSource completion)
     {
         try
         {
             try
             {
-                await stoppingCts.CancelAsync().ConfigureAwait(false);
+#pragma warning disable VSTHRD003 // Quiesce starts this generation-owned CancelAsync task before drain begins.
+                await quiesceTask.ConfigureAwait(false);
+#pragma warning restore VSTHRD003
             }
             catch (ObjectDisposedException)
             {

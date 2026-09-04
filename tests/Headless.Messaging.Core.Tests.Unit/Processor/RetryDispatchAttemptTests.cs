@@ -95,6 +95,67 @@ public sealed class RetryDispatchAttemptTests : TestBase
     }
 
     [Fact]
+    public async Task should_invoke_pre_execution_hook_exactly_once_when_queued_attempt_is_drained()
+    {
+        var (storage, counter) = _CreateCountingReleaseStorage();
+        var hookCalls = 0;
+        var attempt = RetryDispatchAttempt.TryCreate(
+            storage,
+            MessageType.Subscribe,
+            _CreateLeasedMessage(),
+            () => hookCalls++
+        );
+        attempt.Should().NotBeNull();
+        attempt!.TryQueue().Should().BeTrue();
+
+        await RetryDispatchAttempt.ReleaseAbandonedBatchAsync([attempt]);
+        await attempt.AbandonAsync();
+
+        hookCalls.Should().Be(1, "the Queued→Abandoned CAS is the single ownership transfer");
+        counter.Count.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_invoke_pre_execution_hook_when_queued_attempt_is_refused_at_start()
+    {
+        var (storage, _) = _CreateCountingReleaseStorage();
+        var hookCalls = 0;
+        var attempt = RetryDispatchAttempt.TryCreate(
+            storage,
+            MessageType.Subscribe,
+            _CreateLeasedMessage(),
+            () => hookCalls++
+        );
+        attempt!.TryQueue().Should().BeTrue();
+
+        await attempt.AbandonAsync();
+        await attempt.AbandonAsync();
+
+        hookCalls.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_not_invoke_pre_execution_hook_once_execution_started()
+    {
+        var (storage, counter) = _CreateCountingReleaseStorage();
+        var hookCalls = 0;
+        var attempt = RetryDispatchAttempt.TryCreate(
+            storage,
+            MessageType.Subscribe,
+            _CreateLeasedMessage(),
+            () => hookCalls++
+        );
+        attempt!.TryQueue().Should().BeTrue();
+        attempt.TryStart().Should().BeTrue();
+
+        await attempt.AbandonAsync();
+        await attempt.CompleteAsync();
+
+        hookCalls.Should().Be(0, "the executor owns the probe generation once the attempt is running");
+        counter.Count.Should().Be(1);
+    }
+
+    [Fact]
     public void should_return_null_when_storage_lacks_graceful_release_capability()
     {
         var storage = Substitute.For<IDataStorage>();

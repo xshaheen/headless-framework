@@ -22,6 +22,7 @@ internal sealed class Bootstrapper(
 {
     private readonly Lock _bootstrapLock = new();
     private readonly TimeProvider _timeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
+    private TimeSpan _shutdownTimeout = TimeSpan.FromSeconds(30);
     private IReadOnlyList<IProcessingServer> _processors = [];
     private bool _disposed;
     private bool _isStopping;
@@ -98,6 +99,11 @@ internal sealed class Bootstrapper(
             _WarnIfNoOpProvider();
             _WarnIfNullNodeMembership();
             _WarnIfDispatchTimeoutMateriallyExceedsInitialGrace();
+            _shutdownTimeout = options.Value.ShutdownTimeout;
+
+            // Publish the complete processor set after synchronous startup validation but before
+            // storage initialization can block, so shutdown can always reach every processor.
+            _processors = serviceProvider.GetServices<IProcessingServer>().ToArray();
 
             try
             {
@@ -108,6 +114,11 @@ internal sealed class Bootstrapper(
             {
                 logger.StorageInitFailed(e);
                 throw;
+            }
+
+            if (_IsShutdownStarted())
+            {
+                return;
             }
 
             await _BootstrapCoreAsync(startupToken).ConfigureAwait(false);
@@ -176,7 +187,6 @@ internal sealed class Bootstrapper(
     private async Task _BootstrapCoreAsync(CancellationToken cancellationToken)
     {
         List<Exception>? failures = null;
-        _processors = serviceProvider.GetServices<IProcessingServer>().ToArray();
 
         foreach (var item in _processors)
         {
@@ -185,6 +195,11 @@ internal sealed class Bootstrapper(
                 cancellationToken.ThrowIfCancellationRequested();
 
                 await item.StartAsync(cancellationToken).ConfigureAwait(false);
+
+                if (_IsShutdownStarted())
+                {
+                    _QuiesceLateStartedProcessor(item);
+                }
             }
             catch (OperationCanceledException)
             {
@@ -464,6 +479,7 @@ internal sealed class Bootstrapper(
         Task? pendingBootstrap;
         CancellationTokenSource? runtimeCts;
         Task shutdownTask;
+        long shutdownStarted;
 
         lock (_bootstrapLock)
         {
@@ -488,30 +504,32 @@ internal sealed class Bootstrapper(
             shutdownCompletion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             shutdownTask = shutdownCompletion.Task;
             _shutdownTask = shutdownTask;
+            shutdownStarted = _timeProvider.GetTimestamp();
         }
 
-        _ = _RunShutdownAsync(pendingBootstrap, runtimeCts, shutdownCompletion);
+        _ = _RunShutdownAsync(pendingBootstrap, runtimeCts, shutdownStarted, shutdownCompletion);
         return shutdownTask;
     }
 
     private async Task _RunShutdownAsync(
         Task? pendingBootstrap,
         CancellationTokenSource? runtimeCts,
+        long shutdownStarted,
         TaskCompletionSource shutdownCompletion
     )
     {
-        var cleanupTask = _ShutdownCoreAsync(pendingBootstrap, runtimeCts);
+        var cleanupTask = _ShutdownCoreAsync(pendingBootstrap, runtimeCts, shutdownStarted);
 
         try
         {
             await cleanupTask
-                .WaitAsync(options.Value.ShutdownTimeout, _timeProvider, CancellationToken.None)
+                .WaitAsync(_GetRemainingShutdownTime(shutdownStarted), _timeProvider, CancellationToken.None)
                 .ConfigureAwait(false);
             shutdownCompletion.TrySetResult();
         }
         catch (TimeoutException)
         {
-            _ = _ObserveEventualShutdownAsync(cleanupTask);
+            _ = _ObserveCompletionAsync(cleanupTask);
             shutdownCompletion.TrySetResult();
         }
         catch (Exception ex)
@@ -520,37 +538,22 @@ internal sealed class Bootstrapper(
         }
     }
 
-    private async Task _ShutdownCoreAsync(Task? pendingBootstrap, CancellationTokenSource? runtimeCts)
+    private async Task _ShutdownCoreAsync(
+        Task? pendingBootstrap,
+        CancellationTokenSource? runtimeCts,
+        long shutdownStarted
+    )
     {
-        var shutdownStarted = _timeProvider.GetTimestamp();
+        // Phase 1 reaches the complete processor set before awaiting bootstrap, cancellation
+        // callbacks, or any processor drain. Third-party DisposeAsync entry is isolated because
+        // it is the only stop signal their public contract exposes and may block synchronously.
+        var processorStops = _StopProcessorsAsync(shutdownStarted);
+        var runtimeCancellation = _CancelRuntimeAsync(runtimeCts);
+        var bootstrapObservation = _ObserveCompletionAsync(pendingBootstrap);
 
         try
         {
-            if (runtimeCts is not null)
-            {
-                try
-                {
-                    await runtimeCts.CancelAsync().ConfigureAwait(false);
-                }
-                catch (ObjectDisposedException)
-                {
-                    // Startup failure cleanup may have won the race and disposed the source.
-                }
-            }
-
-            if (pendingBootstrap is not null)
-            {
-#pragma warning disable ERP022 // Shutdown observes startup completion but preserves its original caller-facing outcome.
-                try
-                {
-                    await pendingBootstrap.WaitAsync(CancellationToken.None).ConfigureAwait(false);
-                }
-                // ReSharper disable once EmptyGeneralCatchClause
-                catch { }
-#pragma warning restore ERP022
-            }
-
-            await _StopProcessorsAsync(shutdownStarted).ConfigureAwait(false);
+            await Task.WhenAll(processorStops, runtimeCancellation, bootstrapObservation).ConfigureAwait(false);
         }
         finally
         {
@@ -558,12 +561,34 @@ internal sealed class Bootstrapper(
         }
     }
 
-    private static async Task _ObserveEventualShutdownAsync(Task cleanupTask)
+    private static async Task _CancelRuntimeAsync(CancellationTokenSource? runtimeCts)
     {
-#pragma warning disable ERP022 // Individual processor failures are logged by _StopProcessorsAsync.
+        if (runtimeCts is null)
+        {
+            return;
+        }
+
         try
         {
-            await cleanupTask.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+            await runtimeCts.CancelAsync().ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException)
+        {
+            // Startup failure cleanup may have won the race and disposed the source.
+        }
+    }
+
+    private static async Task _ObserveCompletionAsync(Task? task)
+    {
+        if (task is null)
+        {
+            return;
+        }
+
+#pragma warning disable ERP022 // Shutdown preserves source outcomes while preventing unobserved cleanup failures.
+        try
+        {
+            await task.WaitAsync(CancellationToken.None).ConfigureAwait(false);
         }
         // ReSharper disable once EmptyGeneralCatchClause
         catch { }
@@ -578,59 +603,160 @@ internal sealed class Bootstrapper(
     private async Task _StopProcessorsAsync(long shutdownStarted)
     {
         logger.MessagingStopping();
+        var processors = _processors.Reverse().ToArray();
+        var stopTasks = new List<(IProcessingServer Processor, Task Task)>(processors.Length);
+        var thirdPartyInitiated = new List<Task>();
 
-        List<Exception>? failures = null;
-
-        foreach (var item in _processors.Reverse())
+        // Phase 1a: quiesce every processor that exposes the split shutdown capability.
+        foreach (var item in processors)
         {
-            Task? stopTask = null;
-            try
+            if (item is IProcessingServerShutdown bounded)
             {
-                var remaining = options.Value.ShutdownTimeout - _timeProvider.GetElapsedTime(shutdownStarted);
-                stopTask = item is IProcessingServerShutdown bounded
-                    ? bounded.StopAsync(remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero).AsTask()
-                    : item.DisposeAsync().AsTask();
-
-                if (remaining <= TimeSpan.Zero)
+                try
                 {
-                    logger.ProcessorStopFailed(
-                        new TimeoutException("The shared messaging shutdown deadline has expired."),
-                        item.GetType().FullName ?? item.GetType().Name
-                    );
-                    _ = _ObserveEventualShutdownAsync(stopTask);
-                    continue;
+                    bounded.Quiesce();
                 }
-
-                await stopTask.WaitAsync(remaining, _timeProvider, CancellationToken.None).ConfigureAwait(false);
-            }
-            catch (TimeoutException ex)
-            {
-                logger.ProcessorStopFailed(ex, item.GetType().FullName ?? item.GetType().Name);
-                if (stopTask is not null)
+                catch (Exception ex)
                 {
-                    _ = _ObserveEventualShutdownAsync(stopTask);
+                    stopTasks.Add((item, Task.FromException(ex)));
                 }
-            }
-            catch (OperationCanceledException ex)
-            {
-                logger.ExpectedOperationCanceledException(ex, ex.Message);
-            }
-            catch (Exception ex)
-            {
-                // Continue shutting down remaining processors instead of aborting on the first
-                // failure — partial shutdown leaves orphaned subscriptions/leases. Collect and
-                // surface all failures via AggregateException so callers can diagnose.
-                logger.ProcessorStopFailed(ex, item.GetType().FullName ?? item.GetType().Name);
-                failures ??= [];
-                failures.Add(ex);
             }
         }
 
-        if (failures is { Count: > 0 })
+        // Phase 1b: third-party processors expose only combined disposal. Isolate each call after
+        // every split-capable processor is quiesced, then confirm every call was entered before drain.
+        foreach (var item in processors)
+        {
+            if (item is IProcessingServerShutdown)
+            {
+                continue;
+            }
+
+            var initiation = _InitiateThirdPartyStop(item);
+            stopTasks.Add((item, initiation.StopTask));
+            thirdPartyInitiated.Add(initiation.Initiated);
+        }
+
+        if (thirdPartyInitiated.Count > 0)
+        {
+            await Task.WhenAll(thirdPartyInitiated).ConfigureAwait(false);
+        }
+
+        // Phase 2: all built-ins now share the one monotonic remaining deadline. Initiate every
+        // drain before awaiting any one processor so a blocked first processor cannot starve later ones.
+        foreach (var item in processors)
+        {
+            if (item is not IProcessingServerShutdown bounded)
+            {
+                continue;
+            }
+
+            try
+            {
+                stopTasks.Add((item, bounded.StopAsync(_GetRemainingShutdownTime(shutdownStarted)).AsTask()));
+            }
+            catch (Exception ex)
+            {
+                stopTasks.Add((item, Task.FromException(ex)));
+            }
+        }
+
+#pragma warning disable VSTHRD003 // Every stop task was initiated above and remains fault-observed here.
+        var outcomes = await Task.WhenAll(
+                stopTasks.Select(pair => _ObserveProcessorStopAsync(pair.Processor, pair.Task))
+            )
+            .ConfigureAwait(false);
+#pragma warning restore VSTHRD003
+
+        // Awaiting Task.WhenAll surfaces only the first fault; aggregate explicitly so callers see every
+        // processor that failed to stop, mirroring the start-failure path.
+        var failures = outcomes.OfType<Exception>().ToList();
+        if (failures.Count > 0)
         {
             throw new AggregateException("One or more messaging processors failed to stop cleanly.", failures);
         }
     }
+
+    private static ThirdPartyStopInitiation _InitiateThirdPartyStop(IProcessingServer processor)
+    {
+        var initiated = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        // A third-party DisposeAsync may block before returning its ValueTask. Use a dedicated worker
+        // so thread-pool congestion cannot prevent phase 1 from reaching it and starve every built-in drain.
+        var stopTask = Task
+            .Factory.StartNew(
+                async () =>
+                {
+                    initiated.TrySetResult();
+                    await processor.DisposeAsync().ConfigureAwait(false);
+                },
+                CancellationToken.None,
+                TaskCreationOptions.DenyChildAttach | TaskCreationOptions.LongRunning,
+                TaskScheduler.Default
+            )
+            .Unwrap();
+        return new ThirdPartyStopInitiation(stopTask, initiated.Task);
+    }
+
+    /// <summary>Observes one processor stop; returns the failure (null on success or expected cancellation).</summary>
+    private async Task<Exception?> _ObserveProcessorStopAsync(IProcessingServer processor, Task stopTask)
+    {
+        try
+        {
+#pragma warning disable VSTHRD003 // The caller initiated this processor stop and this method owns observation.
+            await stopTask.ConfigureAwait(false);
+#pragma warning restore VSTHRD003
+            return null;
+        }
+        catch (OperationCanceledException ex)
+        {
+            logger.ExpectedOperationCanceledException(ex, ex.Message);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            logger.ProcessorStopFailed(ex, processor.GetType().FullName ?? processor.GetType().Name);
+            return ex;
+        }
+    }
+
+    private TimeSpan _GetRemainingShutdownTime(long shutdownStarted)
+    {
+        var remaining = _shutdownTimeout - _timeProvider.GetElapsedTime(shutdownStarted);
+        return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
+    }
+
+    private bool _IsShutdownStarted()
+    {
+        lock (_bootstrapLock)
+        {
+            return _isStopping;
+        }
+    }
+
+    private void _QuiesceLateStartedProcessor(IProcessingServer processor)
+    {
+        try
+        {
+            Task stopTask;
+            if (processor is IProcessingServerShutdown bounded)
+            {
+                bounded.Quiesce();
+                stopTask = bounded.StopAsync(TimeSpan.Zero).AsTask();
+            }
+            else
+            {
+                stopTask = _InitiateThirdPartyStop(processor).StopTask;
+            }
+
+            _ = _ObserveCompletionAsync(stopTask);
+        }
+        catch (Exception ex)
+        {
+            logger.ProcessorStopFailed(ex, processor.GetType().FullName ?? processor.GetType().Name);
+        }
+    }
+
+    private readonly record struct ThirdPartyStopInitiation(Task StopTask, Task Initiated);
 
     private void _DrainPendingMessageRegistrations()
     {

@@ -9,29 +9,56 @@ internal interface IRetryDispatcher
 {
     ValueTask DispatchPublishedAsync(MediumMessage message, CancellationToken cancellationToken = default);
 
-    ValueTask DispatchReceivedAsync(MediumMessage message, CancellationToken cancellationToken = default);
+    ValueTask<bool> DispatchReceivedAsync(MediumMessage message, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Dispatches a claimed received retry. <paramref name="onAbandonedBeforeExecution"/> runs exactly
+    /// once if the attempt is abandoned before execution starts (refused, drained during quiesce, or
+    /// cancelled while queued); it never runs once the executor has taken ownership of the attempt.
+    /// </summary>
+    ValueTask<bool> DispatchReceivedAsync(
+        MediumMessage message,
+        Action? onAbandonedBeforeExecution,
+        CancellationToken cancellationToken = default
+    );
 }
 
 internal sealed class RetryDispatchAttempt
 {
     private readonly IGracefulLeaseReleaseStorage _storage;
     private readonly MessageType _direction;
+    private readonly Action? _onAbandonedBeforeExecution;
     private int _state = (int)AttemptState.Claimed;
 
     private RetryDispatchAttempt(
         IGracefulLeaseReleaseStorage storage,
         MessageType direction,
-        MessageLeaseIdentity identity
+        MessageLeaseIdentity identity,
+        Action? onAbandonedBeforeExecution
     )
     {
         _storage = storage;
         _direction = direction;
         Identity = identity;
+        _onAbandonedBeforeExecution = onAbandonedBeforeExecution;
     }
 
     public MessageLeaseIdentity Identity { get; }
 
-    public static RetryDispatchAttempt? TryCreate(IDataStorage storage, MessageType direction, MediumMessage message)
+    /// <summary>Creates a durable attempt for a claimed retry, or <see langword="null"/> when the store cannot release exact leases.</summary>
+    /// <param name="storage">The storage that owns the claimed lease.</param>
+    /// <param name="direction">The message direction of the claim.</param>
+    /// <param name="message">The claimed message.</param>
+    /// <param name="onAbandonedBeforeExecution">
+    /// Invoked exactly once when the attempt transitions to Abandoned from Claimed or Queued, i.e.
+    /// before execution ever started. Never invoked after <see cref="TryStart"/> succeeded.
+    /// </param>
+    public static RetryDispatchAttempt? TryCreate(
+        IDataStorage storage,
+        MessageType direction,
+        MediumMessage message,
+        Action? onAbandonedBeforeExecution = null
+    )
     {
         if (storage is not IGracefulLeaseReleaseStorage releaser || message.LockedUntil is not { } lockedUntil)
         {
@@ -41,7 +68,8 @@ internal sealed class RetryDispatchAttempt
         return new RetryDispatchAttempt(
             releaser,
             direction,
-            new MessageLeaseIdentity(message.StorageId, message.Owner, lockedUntil, message.Lane)
+            new MessageLeaseIdentity(message.StorageId, message.Owner, lockedUntil, message.Lane),
+            onAbandonedBeforeExecution
         );
     }
 
@@ -85,6 +113,7 @@ internal sealed class RetryDispatchAttempt
     public static async ValueTask ReleaseAbandonedBatchAsync(IEnumerable<RetryDispatchAttempt> attempts)
     {
         var batches = new Dictionary<IGracefulLeaseReleaseStorage, ReleaseBatch>(ReferenceEqualityComparer.Instance);
+        var abandoned = new List<RetryDispatchAttempt>();
         foreach (var attempt in attempts)
         {
             if (
@@ -95,6 +124,7 @@ internal sealed class RetryDispatchAttempt
                 continue;
             }
 
+            abandoned.Add(attempt);
             if (!batches.TryGetValue(attempt._storage, out var batch))
             {
                 batch = new ReleaseBatch();
@@ -110,20 +140,32 @@ internal sealed class RetryDispatchAttempt
             identities.Add(attempt.Identity);
         }
 
-        foreach (var (storage, batch) in batches)
+        try
         {
-            if (batch.Published.Count > 0)
+            foreach (var (storage, batch) in batches)
             {
-                _ = await storage
-                    .ReleasePublishedLeasesAsync(batch.Published, CancellationToken.None)
-                    .ConfigureAwait(false);
-            }
+                if (batch.Published.Count > 0)
+                {
+                    _ = await storage
+                        .ReleasePublishedLeasesAsync(batch.Published, CancellationToken.None)
+                        .ConfigureAwait(false);
+                }
 
-            if (batch.Received.Count > 0)
+                if (batch.Received.Count > 0)
+                {
+                    _ = await storage
+                        .ReleaseReceivedLeasesAsync(batch.Received, CancellationToken.None)
+                        .ConfigureAwait(false);
+                }
+            }
+        }
+        finally
+        {
+            // The CAS above is the single ownership transfer, so each hook fires at most once even if
+            // the storage release faults.
+            foreach (var attempt in abandoned)
             {
-                _ = await storage
-                    .ReleaseReceivedLeasesAsync(batch.Received, CancellationToken.None)
-                    .ConfigureAwait(false);
+                attempt._onAbandonedBeforeExecution?.Invoke();
             }
         }
     }
@@ -182,16 +224,28 @@ internal sealed class RetryDispatchAttempt
             return;
         }
 
-        _ = _direction switch
+        try
         {
-            MessageType.Publish => await _storage
-                .ReleasePublishedLeaseAsync(Identity, CancellationToken.None)
-                .ConfigureAwait(false),
-            MessageType.Subscribe => await _storage
-                .ReleaseReceivedLeaseAsync(Identity, CancellationToken.None)
-                .ConfigureAwait(false),
-            _ => throw new InvalidOperationException($"Unsupported retry direction '{_direction}'."),
-        };
+            _ = _direction switch
+            {
+                MessageType.Publish => await _storage
+                    .ReleasePublishedLeaseAsync(Identity, CancellationToken.None)
+                    .ConfigureAwait(false),
+                MessageType.Subscribe => await _storage
+                    .ReleaseReceivedLeaseAsync(Identity, CancellationToken.None)
+                    .ConfigureAwait(false),
+                _ => throw new InvalidOperationException($"Unsupported retry direction '{_direction}'."),
+            };
+        }
+        finally
+        {
+            // Only Claimed→Abandoned and Queued→Abandoned reach here with next == Abandoned; the
+            // Running→Completed transition never fires the pre-execution hook.
+            if (next is AttemptState.Abandoned)
+            {
+                _onAbandonedBeforeExecution?.Invoke();
+            }
+        }
     }
 
     private enum AttemptState

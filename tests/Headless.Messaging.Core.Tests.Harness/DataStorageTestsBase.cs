@@ -1877,6 +1877,188 @@ public abstract class DataStorageTestsBase : TestBase
             .ContainSingle(message => message.StorageId == stored.StorageId);
     }
 
+    public virtual async Task should_atomically_defer_only_exact_live_received_retry_lease_generation()
+    {
+        var storage = GetStorage();
+        var deferralStorage = storage.Should().BeAssignableTo<ICircuitRetryDeferralStorage>().Subject;
+        NodeMembership.SetIdentity("circuit-deferral-owner");
+        var stored = await _StoreFailedReceivedMessageAsync("circuit-deferral", "circuit-deferral-group");
+        var claimed = (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
+            .Should()
+            .ContainSingle(message => message.StorageId == stored.StorageId)
+            .Subject;
+        var identity = new MessageLeaseIdentity(
+            claimed.StorageId,
+            claimed.Owner,
+            claimed.LockedUntil!.Value,
+            claimed.Lane
+        );
+        var deferUntil = _Now().AddMinutes(5);
+        var before = await storage.GetMonitoringApi().GetReceivedMessageAsync(claimed.StorageId, AbortToken);
+        before.Should().NotBeNull();
+
+        (
+            await deferralStorage.DeferReceivedRetryAsync(
+                new CircuitRetryDeferral(identity with { StorageId = Guid.NewGuid() }, deferUntil),
+                AbortToken
+            )
+        )
+            .Should()
+            .BeFalse();
+        (
+            await deferralStorage.DeferReceivedRetryAsync(
+                new CircuitRetryDeferral(identity with { Owner = "stale-owner" }, deferUntil),
+                AbortToken
+            )
+        )
+            .Should()
+            .BeFalse();
+        (
+            await deferralStorage.DeferReceivedRetryAsync(
+                new CircuitRetryDeferral(
+                    identity with
+                    {
+                        LockedUntil = identity.LockedUntil.AddMilliseconds(1),
+                    },
+                    deferUntil
+                ),
+                AbortToken
+            )
+        )
+            .Should()
+            .BeFalse();
+        (
+            await deferralStorage.DeferReceivedRetryAsync(
+                new CircuitRetryDeferral(identity with { Lane = MessageLane.Queue }, deferUntil),
+                AbortToken
+            )
+        )
+            .Should()
+            .BeFalse();
+
+        var afterStaleAttempts = await storage
+            .GetMonitoringApi()
+            .GetReceivedMessageAsync(claimed.StorageId, AbortToken);
+        afterStaleAttempts.Should().BeEquivalentTo(before, options => options.Excluding(message => message.Origin));
+        afterStaleAttempts!.Content.Should().Be(before!.Content);
+
+        (await deferralStorage.DeferReceivedRetryAsync(new CircuitRetryDeferral(identity, deferUntil), AbortToken))
+            .Should()
+            .BeTrue();
+
+        var after = await storage.GetMonitoringApi().GetReceivedMessageAsync(claimed.StorageId, AbortToken);
+        after.Should().NotBeNull();
+        after!
+            .Should()
+            .BeEquivalentTo(
+                before,
+                options =>
+                    options
+                        .Excluding(message => message.NextRetryAt)
+                        .Excluding(message => message.Owner)
+                        .Excluding(message => message.LockedUntil)
+                        .Excluding(message => message.Origin)
+            );
+        after.Content.Should().Be(before!.Content);
+        after.NextRetryAt.Should().BeCloseTo(deferUntil, TimeSpan.FromMicroseconds(1));
+        after.Owner.Should().BeNull();
+        after.LockedUntil.Should().BeNull();
+        (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
+            .Should()
+            .NotContain(message => message.StorageId == stored.StorageId);
+    }
+
+    public virtual async Task should_atomically_defer_received_retry_lease_with_null_owner()
+    {
+        var storage = GetStorage();
+        var deferralStorage = storage.Should().BeAssignableTo<ICircuitRetryDeferralStorage>().Subject;
+        var stored = await _StoreFailedReceivedMessageAsync("circuit-deferral-null-owner", "null-owner-group");
+        var claimed = (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
+            .Should()
+            .ContainSingle(message => message.StorageId == stored.StorageId)
+            .Subject;
+        claimed.Owner.Should().BeNull();
+        var identity = new MessageLeaseIdentity(
+            claimed.StorageId,
+            claimed.Owner,
+            claimed.LockedUntil!.Value,
+            claimed.Lane
+        );
+
+        (
+            await deferralStorage.DeferReceivedRetryAsync(
+                new CircuitRetryDeferral(identity, _Now().AddMinutes(5)),
+                AbortToken
+            )
+        )
+            .Should()
+            .BeTrue();
+    }
+
+    public virtual async Task should_not_defer_expired_received_retry_lease()
+    {
+        var storage = GetStorage();
+        var deferralStorage = storage.Should().BeAssignableTo<ICircuitRetryDeferralStorage>().Subject;
+        NodeMembership.SetIdentity("circuit-deferral-expired-owner");
+        var stored = await _StoreFailedReceivedMessageAsync("circuit-deferral-expired", "expired-group");
+        (await storage.LeaseReceiveAsync(stored, TimeSpan.FromSeconds(-1), AbortToken)).Should().BeTrue();
+        var identity = new MessageLeaseIdentity(stored.StorageId, stored.Owner, stored.LockedUntil!.Value, stored.Lane);
+
+        (
+            await deferralStorage.DeferReceivedRetryAsync(
+                new CircuitRetryDeferral(identity, _Now().AddMinutes(5)),
+                AbortToken
+            )
+        )
+            .Should()
+            .BeFalse();
+    }
+
+    public virtual async Task should_not_defer_terminal_received_retry_lease()
+    {
+        var storage = GetStorage();
+        var deferralStorage = storage.Should().BeAssignableTo<ICircuitRetryDeferralStorage>().Subject;
+        NodeMembership.SetIdentity("circuit-deferral-terminal-owner");
+        var stored = await _StoreFailedReceivedMessageAsync("circuit-deferral-terminal", "terminal-group");
+        var claimed = (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
+            .Should()
+            .ContainSingle(message => message.StorageId == stored.StorageId)
+            .Subject;
+        var identity = new MessageLeaseIdentity(
+            claimed.StorageId,
+            claimed.Owner,
+            claimed.LockedUntil!.Value,
+            claimed.Lane
+        );
+        (
+            await storage.ChangeReceiveStateAsync(
+                claimed,
+                StatusName.Succeeded,
+                nextRetryAt: null,
+                lockedUntil: identity.LockedUntil,
+                cancellationToken: AbortToken
+            )
+        )
+            .Should()
+            .BeTrue();
+        var beforeDeferral = await storage.GetMonitoringApi().GetReceivedMessageAsync(claimed.StorageId, AbortToken);
+        beforeDeferral.Should().NotBeNull();
+
+        (
+            await deferralStorage.DeferReceivedRetryAsync(
+                new CircuitRetryDeferral(identity, _Now().AddMinutes(5)),
+                AbortToken
+            )
+        )
+            .Should()
+            .BeFalse();
+
+        var after = await storage.GetMonitoringApi().GetReceivedMessageAsync(claimed.StorageId, AbortToken);
+        after.Should().NotBeNull();
+        after!.Should().BeEquivalentTo(beforeDeferral, options => options.Excluding(message => message.Origin));
+        after.Content.Should().Be(beforeDeferral!.Content);
+    }
+
     public virtual async Task should_not_release_terminal_retry_lease_generation()
     {
         var storage = GetStorage();

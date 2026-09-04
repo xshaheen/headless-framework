@@ -281,6 +281,68 @@ public sealed class DispatcherTests : TestBase
     }
 
     [Fact]
+    public async Task should_release_probe_exactly_once_when_queued_probe_retry_is_drained_during_shutdown()
+    {
+        var runningEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseRunning = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var executor = Substitute.For<ISubscribeExecutor>();
+        executor
+            .ExecuteRetryAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<IServiceProvider>(),
+                Arg.Any<RetryExecutionState>(),
+                Arg.Any<ConsumerExecutorDescriptor?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(async _ =>
+            {
+                runningEntered.TrySetResult();
+                await releaseRunning.Task.ConfigureAwait(false);
+                return OperateResult.Success;
+            });
+        var storage = Substitute.For<IDataStorage, IGracefulLeaseReleaseStorage>();
+        await using var dispatcher = new Dispatcher(
+            _logger,
+            Substitute.For<IMessageSender>(),
+            Options.Create(
+                new MessagingOptions
+                {
+                    EnableSubscriberParallelExecute = true,
+                    SubscriberParallelExecuteThreadCount = 1,
+                    ShutdownTimeout = TimeSpan.FromSeconds(2),
+                }
+            ),
+            executor,
+            storage,
+            TimeProvider.System,
+            _scopeFactory
+        );
+        await dispatcher.StartAsync(AbortToken);
+        var retryDispatcher = (IRetryDispatcher)dispatcher;
+        var running = _CreateRetryMessage(owner: "node-a", lockedUntil: DateTimeOffset.UtcNow.AddMinutes(5));
+        var probe = _CreateRetryMessage(owner: "node-a", lockedUntil: DateTimeOffset.UtcNow.AddMinutes(5));
+        var probeReleases = 0;
+
+        (await retryDispatcher.DispatchReceivedAsync(running, AbortToken)).Should().BeTrue();
+        await runningEntered.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+        var transferred = await retryDispatcher.DispatchReceivedAsync(
+            probe,
+            () => Interlocked.Increment(ref probeReleases),
+            AbortToken
+        );
+        transferred.Should().BeTrue("the probe row is queued behind the running worker");
+        probeReleases.Should().Be(0, "a queued probe still owns its generation");
+
+        var disposeTask = dispatcher.DisposeAsync(TimeSpan.FromSeconds(2), AbortToken).AsTask();
+        releaseRunning.TrySetResult();
+        await disposeTask.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // Whether the shutdown drain or the worker's post-quiesce refusal wins the queued attempt,
+        // the pre-execution hook is the single owner of the probe generation.
+        probeReleases.Should().Be(1, "the drained queued probe must release its generation exactly once");
+    }
+
+    [Fact]
     public async Task shutdown_releases_queued_retry_but_not_running_retry()
     {
         var timeProvider = new FakeTimeProvider();
@@ -1975,6 +2037,53 @@ public sealed class DispatcherTests : TestBase
 
         release.TrySetResult();
         await dispose;
+    }
+
+    [Fact]
+    public async Task concurrent_quiesce_cannot_be_undone_by_dispatcher_start_publication()
+    {
+        var storage = Substitute.For<IDataStorage, IGracefulLeaseReleaseStorage>();
+        await using var dispatcher = new Dispatcher(
+            _logger,
+            Substitute.For<IMessageSender>(),
+            Options.Create(new MessagingOptions { EnablePublishParallelSend = false }),
+            _executor,
+            storage,
+            TimeProvider.System,
+            _scopeFactory
+        );
+        using var releaseStart = new ManualResetEventSlim(initialState: false);
+        var startPublishing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        dispatcher.StartPublicationHookForTest = () =>
+        {
+            startPublishing.TrySetResult();
+            releaseStart.Wait();
+        };
+
+        var startTask = Task
+            .Factory.StartNew(
+                () => dispatcher.StartAsync(AbortToken).AsTask(),
+                CancellationToken.None,
+                TaskCreationOptions.DenyChildAttach | TaskCreationOptions.LongRunning,
+                TaskScheduler.Default
+            )
+            .Unwrap();
+        await startPublishing.Task.WaitAsync(AbortToken);
+        var quiesceTask = Task.Factory.StartNew(
+            () => ((IProcessingServerShutdown)dispatcher).Quiesce(),
+            CancellationToken.None,
+            TaskCreationOptions.DenyChildAttach | TaskCreationOptions.LongRunning,
+            TaskScheduler.Default
+        );
+
+        releaseStart.Set();
+        await Task.WhenAll(startTask, quiesceTask);
+        var message = _CreateRetryMessage(owner: "node-a", lockedUntil: DateTimeOffset.UtcNow.AddMinutes(5));
+
+        var transferred = await ((IRetryDispatcher)dispatcher).DispatchReceivedAsync(message, AbortToken);
+
+        transferred.Should().BeFalse("quiesce must remain authoritative after startup");
+        await ((IProcessingServerShutdown)dispatcher).StopAsync(TimeSpan.FromSeconds(2));
     }
 
     private static MediumMessage _CreateTestMessage(int storageId)
