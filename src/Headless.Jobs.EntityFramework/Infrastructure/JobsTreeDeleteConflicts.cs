@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
+using Headless.Constants;
 
 namespace Headless.Jobs.Infrastructure;
 
@@ -52,13 +53,19 @@ internal static class JobsTreeDeleteConflicts
 
         if (string.Equals(providerName, "Npgsql.EntityFrameworkCore.PostgreSQL", StringComparison.Ordinal))
         {
-            return databaseException.SqlState is "23503" or "40001" or "40P01";
+            return databaseException.SqlState
+                is SqlErrorCodes.PostgreSql.ForeignKeyViolation
+                    or SqlErrorCodes.PostgreSql.SerializationFailure
+                    or SqlErrorCodes.PostgreSql.DeadlockDetected;
         }
 
         if (string.Equals(providerName, "Microsoft.EntityFrameworkCore.SqlServer", StringComparison.Ordinal))
         {
             var number = databaseException.GetType().GetProperty("Number")?.GetValue(databaseException);
-            return number is 547 or 1205 or 3960;
+            return number
+                is SqlErrorCodes.SqlServer.ConstraintViolation
+                    or SqlErrorCodes.SqlServer.DeadlockVictim
+                    or SqlErrorCodes.SqlServer.SnapshotUpdateConflict;
         }
 
         return false;
