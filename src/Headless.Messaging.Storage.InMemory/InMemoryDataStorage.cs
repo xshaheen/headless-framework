@@ -1081,9 +1081,13 @@ internal sealed partial class InMemoryDataStorage(
         // the conditional UPDATE. The SQL providers naturally produce a snapshot because every column
         // comes back through deserialization; InMemory must do this explicitly.
         //
-        // Claim in (NextRetryAt, Id) order to match the relational providers' `ORDER BY NextRetryAt, Id`.
-        // Without it InMemory claims in ConcurrentDictionary enumeration order, so a row scheduled much
-        // earlier can be starved indefinitely by later-scheduled rows once the batch limit is reached.
+        // Claim due rows in NextRetryAt order, as the relational providers do, with StorageId as a
+        // deterministic tie-break. The tie-break is NOT byte-comparable with theirs — .NET orders Guid
+        // field-wise, PostgreSQL orders uuid bytewise, and SQL Server orders uniqueidentifier by its last
+        // six bytes first — but that only reorders rows sharing an identical NextRetryAt, which no
+        // fairness guarantee depends on. Without the primary key InMemory claims in ConcurrentDictionary
+        // enumeration order, so a row scheduled much earlier can be starved indefinitely by
+        // later-scheduled rows once the batch limit is reached.
         // Rows with no NextRetryAt sort last; they are rejected by the eligibility guards below and
         // never consume a batch slot. The sort key is read outside the per-row lock, which is safe
         // because every eligibility condition is re-validated under that lock before the row is leased.

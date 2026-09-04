@@ -91,27 +91,36 @@ internal sealed partial class MessageNeedToRetryProcessor
             );
     }
 
-    private async ValueTask _DisposeCircuitClaimAsync(IDataStorage storage, CircuitRetryWork work)
+    /// <summary>
+    /// Disposes one classified circuit-open claim. <paramref name="deferralRejectionLogged"/> carries the
+    /// suppression state for EventId 3121 across a single pickup cycle and is returned updated, so an
+    /// operator sees a recurring fence rejection on every poll it happens without one warning per row.
+    /// </summary>
+    private async ValueTask<bool> _DisposeCircuitClaimAsync(
+        IDataStorage storage,
+        CircuitRetryWork work,
+        bool deferralRejectionLogged
+    )
     {
         try
         {
             switch (work.Decision.Kind)
             {
                 case CircuitRetryDecisionKind.Defer:
-                    var deferred = await _DeferCircuitClaimAsync(
-                            storage,
-                            work.Message,
-                            work.Decision.NextProbeAt!.Value
-                        )
+                    var outcome = await _DeferCircuitClaimAsync(storage, work.Message, work.Decision.NextProbeAt!.Value)
                         .ConfigureAwait(false);
-                    if (!deferred && Interlocked.Exchange(ref _circuitDeferralRejectedWarned, 1) == 0)
+                    // Only a genuine fence rejection belongs here: an unsupported provider already reports
+                    // itself once per provider type (3120), and a claim without a live lease never reached
+                    // the store at all. All three leave the row on ordinary lease-expiry recovery.
+                    if (outcome is CircuitDeferralOutcome.FenceRejected && !deferralRejectionLogged)
                     {
                         // The provider's deferral write is fenced on row, lane, exact owner, a still-live
-                        // lease, and a non-terminal status. A `false` result means one of those no longer
-                        // matched, but not which — do not assert a cause here. Either way the row keeps its
-                        // stale owner and an unchanged, already-past NextRetryAt, so it is immediately
-                        // reclaimable on the next poll: exactly the churn this deferral path exists to prevent.
+                        // lease, and a non-terminal status; one of those no longer matched, but not which —
+                        // do not assert a cause here. The row keeps its stale owner and an unchanged,
+                        // already-past NextRetryAt, so it is immediately reclaimable on the next poll:
+                        // exactly the churn this deferral path exists to prevent.
                         _logger.CircuitRetryDeferralRejected(work.Message.StorageId, LogSanitizer.Sanitize(work.Group));
+                        deferralRejectionLogged = true;
                     }
                     break;
                 case CircuitRetryDecisionKind.Retain:
@@ -135,9 +144,11 @@ internal sealed partial class MessageNeedToRetryProcessor
             // place. In particular, do not route it through the generic abandoned-claim releaser.
             _logger.CircuitRetryDispositionFailed(ex, work.Message.StorageId, LogSanitizer.Sanitize(work.Group));
         }
+
+        return deferralRejectionLogged;
     }
 
-    private ValueTask<bool> _DeferCircuitClaimAsync(
+    private async ValueTask<CircuitDeferralOutcome> _DeferCircuitClaimAsync(
         IDataStorage storage,
         MediumMessage message,
         DateTimeOffset nextRetryAt
@@ -150,22 +161,39 @@ internal sealed partial class MessageNeedToRetryProcessor
                 _logger.CircuitRetryDeferralUnsupported(storage.GetType().FullName ?? storage.GetType().Name);
             }
 
-            return ValueTask.FromResult(false);
+            return CircuitDeferralOutcome.Unsupported;
         }
 
         if (message.LockedUntil is not { } lockedUntil)
         {
-            return ValueTask.FromResult(false);
+            return CircuitDeferralOutcome.NoLiveLease;
         }
 
         var identity = new MessageLeaseIdentity(message.StorageId, message.Owner, lockedUntil, message.Lane);
-        return deferralStorage.DeferReceivedRetryAsync(
-            new CircuitRetryDeferral(identity, nextRetryAt),
-            CancellationToken.None
-        );
+        var deferred = await deferralStorage
+            .DeferReceivedRetryAsync(new CircuitRetryDeferral(identity, nextRetryAt), CancellationToken.None)
+            .ConfigureAwait(false);
+
+        return deferred ? CircuitDeferralOutcome.Deferred : CircuitDeferralOutcome.FenceRejected;
     }
 
     private readonly record struct CircuitRetryWork(MediumMessage Message, string Group, CircuitRetryDecision Decision);
+
+    /// <summary>Distinguishes why a circuit-open claim's deferral write did or did not land.</summary>
+    private enum CircuitDeferralOutcome
+    {
+        /// <summary>The provider does not implement <see cref="ICircuitRetryDeferralStorage"/> (reported as EventId 3120).</summary>
+        Unsupported,
+
+        /// <summary>The claim carries no live lease, so there is no exact generation to fence the write on.</summary>
+        NoLiveLease,
+
+        /// <summary>The provider's fence matched no row: stale generation, lapsed lease, or terminal status.</summary>
+        FenceRejected,
+
+        /// <summary>The row was moved to the authoritative next-probe boundary.</summary>
+        Deferred,
+    }
 
     /// <summary>
     /// Owns one acquired half-open probe generation for the duration of a pickup cycle. Release is

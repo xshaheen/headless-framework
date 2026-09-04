@@ -103,9 +103,13 @@ internal sealed class Bootstrapper(
             // storage initialization can block, so shutdown can always reach every processor. Published
             // under _bootstrapLock — the same lock the shutdown-side reader (_StopProcessorsAsync) takes —
             // so the read is guaranteed to observe this write rather than the initial empty array.
+            // Resolution stays outside the lock: it runs third-party processor factories, which may block
+            // or throw, and every other _bootstrapLock holder (including shutdown) would wait behind them.
+            var resolvedProcessors = serviceProvider.GetServices<IProcessingServer>().ToArray();
+
             lock (_bootstrapLock)
             {
-                _processors = serviceProvider.GetServices<IProcessingServer>().ToArray();
+                _processors = resolvedProcessors;
             }
 
             try

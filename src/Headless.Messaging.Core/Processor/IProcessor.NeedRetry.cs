@@ -37,11 +37,6 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
     private readonly ConcurrentDictionary<Type, byte> _unsupportedCircuitDeferralProviders = new();
     private int _monitorOnlyRetainWarned;
 
-    // Process-lifetime once-only guard for a rejected deferral fence. A per-pickup-cycle bound would be
-    // more faithful to how transient this condition is, but threading a cycle-scoped counter through
-    // _DisposeCircuitClaimAsync would change its signature and its caller.
-    private int _circuitDeferralRejectedWarned;
-
     private readonly Lock _pickupGate = new();
     private bool _acceptingPickup = true;
 
@@ -540,9 +535,12 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
 
             // Deferrals first; retained and pending-probe claims are no-ops that recover through
             // ordinary store-authoritative lease expiry.
+            // Cycle-scoped: one rejected-deferral warning per pickup, not per row and not per process.
+            var deferralRejectionLogged = false;
             foreach (var work in _OrderDispositions(circuitWork))
             {
-                await _DisposeCircuitClaimAsync(connection, work).ConfigureAwait(false);
+                deferralRejectionLogged = await _DisposeCircuitClaimAsync(connection, work, deferralRejectionLogged)
+                    .ConfigureAwait(false);
             }
         }
         finally
