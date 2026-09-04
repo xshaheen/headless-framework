@@ -9,6 +9,7 @@ using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
+using Headless.Messaging.Runtime;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -30,6 +31,7 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
     private readonly IOptions<MessagingOptions> _options;
     private readonly ICircuitBreakerMonitor? _circuitBreakerMonitor;
     private readonly ICircuitBreakerStateManager? _circuitBreakerStateManager;
+    private readonly MethodMatcherCache? _consumerResolver;
     private readonly bool _adaptivePolling;
     private readonly double _circuitOpenRateThreshold;
     private readonly Dictionary<RetryQuadrantKey, RetryQuadrantState> _quadrants;
@@ -48,7 +50,8 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
         IDispatcher dispatcher,
         [FromKeyedServices(MessagingKeys.LockProvider)] IDistributedLock lockProvider,
         ICircuitBreakerMonitor? circuitBreakerMonitor = null,
-        ICircuitBreakerStateManager? circuitBreakerStateManager = null
+        ICircuitBreakerStateManager? circuitBreakerStateManager = null,
+        MethodMatcherCache? consumerResolver = null
     )
     {
         _options = options;
@@ -58,6 +61,7 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
         LockProvider = lockProvider;
         _circuitBreakerMonitor = circuitBreakerMonitor;
         _circuitBreakerStateManager = circuitBreakerStateManager;
+        _consumerResolver = consumerResolver;
 
         _adaptivePolling = retryOptions.Value.AdaptivePolling;
         _maxInterval = retryOptions.Value.MaxPollingInterval;
@@ -466,6 +470,31 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
                 throw new InvalidOperationException(
                     $"Retry pickup for lane '{state.Key.Lane}' returned persisted lane '{persistedLane}'."
                 );
+            }
+
+            if (message.InboxKey is { } inboxKey)
+            {
+                if (
+                    _consumerResolver is null
+                    || !_consumerResolver.TryGetInboxExecutor(
+                        inboxKey.ConsumerIdentity,
+                        inboxKey.ContractIdentity,
+                        inboxKey.ContractVersion,
+                        inboxKey.Lane,
+                        out var descriptor
+                    )
+                )
+                {
+                    await connection
+                        .MarkReceivedInboxOrphanedAsync(message, orphaned: true, CancellationToken.None)
+                        .ConfigureAwait(false);
+                    continue;
+                }
+
+                await connection
+                    .MarkReceivedInboxOrphanedAsync(message, orphaned: false, CancellationToken.None)
+                    .ConfigureAwait(false);
+                message.Origin.Headers[Headers.Group] = descriptor.GroupName;
             }
 
             var group = message.Origin.GetGroup();

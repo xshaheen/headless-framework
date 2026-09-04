@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Data.Common;
+using Headless.Abstractions;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
@@ -15,6 +16,7 @@ internal sealed partial class InMemoryDataStorage
         MediumMessage message,
         int originalInlineAttempts,
         TimeProvider timeProvider,
+        IGuidGenerator? fenceGenerator,
         CancellationToken cancellationToken
     )
     {
@@ -40,6 +42,7 @@ internal sealed partial class InMemoryDataStorage
             }
 
             current.InlineAttempts = message.InlineAttempts;
+            _AllocateInboxFence(current, message, fenceGenerator);
             return ValueTask.FromResult(true);
         }
     }
@@ -51,6 +54,7 @@ internal sealed partial class InMemoryDataStorage
         int originalInlineAttempts,
         TimeProvider timeProvider,
         string? owner,
+        IGuidGenerator? fenceGenerator,
         CancellationToken cancellationToken
     )
     {
@@ -82,19 +86,48 @@ internal sealed partial class InMemoryDataStorage
             current.InlineAttempts = message.InlineAttempts;
             message.LockedUntil = lockedUntil;
             message.Owner = owner;
+            _AllocateInboxFence(current, message, fenceGenerator);
             return ValueTask.FromResult(true);
         }
+    }
+
+    private static void _AllocateInboxFence(
+        MemoryMessage current,
+        MediumMessage message,
+        IGuidGenerator? fenceGenerator
+    )
+    {
+        if (current.InboxGeneration is null || current.LockedUntil is null || fenceGenerator is null)
+        {
+            return;
+        }
+
+        var fence = new InboxAttemptFence(
+            current.StorageId,
+            current.Lane,
+            current.InboxGeneration.Number,
+            current.InboxGeneration.IncarnationId,
+            fenceGenerator.Create(),
+            current.Owner,
+            current.LockedUntil.Value
+        );
+        current.InboxAttemptFence = fence;
+        message.InboxAttemptFence = fence;
     }
 
     public ValueTask<int> DeleteReceivedMessageAsync(Guid id, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (ReceivedMessages.TryRemove(id, out var removed))
+        lock (_receivedUpsertLock)
         {
-            _RemoveFromIdentityIndex(removed);
-            return ValueTask.FromResult(1);
+            if (ReceivedMessages.TryRemove(id, out var removed))
+            {
+                _RemoveFromIdentityIndex(removed);
+                return ValueTask.FromResult(1);
+            }
+
+            return ValueTask.FromResult(0);
         }
-        return ValueTask.FromResult(0);
     }
 
     public ValueTask<int> DeleteReceivedMessagesAsync(
@@ -105,13 +138,16 @@ internal sealed partial class InMemoryDataStorage
         cancellationToken.ThrowIfCancellationRequested();
         var deleted = 0;
 
-        foreach (var id in ids)
+        lock (_receivedUpsertLock)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (ReceivedMessages.TryRemove(id, out var removed))
+            foreach (var id in ids)
             {
-                _RemoveFromIdentityIndex(removed);
-                deleted++;
+                cancellationToken.ThrowIfCancellationRequested();
+                if (ReceivedMessages.TryRemove(id, out var removed))
+                {
+                    _RemoveFromIdentityIndex(removed);
+                    deleted++;
+                }
             }
         }
 
@@ -120,6 +156,11 @@ internal sealed partial class InMemoryDataStorage
 
     private void _RemoveFromIdentityIndex(MemoryMessage removed)
     {
+        if (removed.InboxKey is not null)
+        {
+            _inboxIdentityIndex.Remove(removed.InboxKey);
+        }
+
         if (removed.Origin.Headers.TryGetValue(Headers.MessageId, out var messageId) && messageId is not null)
         {
             _receivedIdentityIndex.TryRemove((removed.Version, messageId, removed.Group, removed.Lane), out _);

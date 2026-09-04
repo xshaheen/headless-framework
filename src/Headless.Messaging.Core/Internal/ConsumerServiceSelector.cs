@@ -119,6 +119,8 @@ internal sealed class ConsumerServiceSelector(IServiceProvider serviceProvider) 
                 MessageNamePrefix = _messagingOptions.MessageNamePrefix,
                 Concurrency = consumer.Concurrency,
                 HandlerId = consumer.ResolvedHandlerId,
+                ConsumerIdentity = consumer.ConsumerIdentity,
+                ContractVersion = consumer.ContractVersion,
                 Lane = consumer.Lane,
             };
 

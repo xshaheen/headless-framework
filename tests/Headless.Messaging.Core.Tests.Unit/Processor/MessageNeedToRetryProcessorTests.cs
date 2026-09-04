@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using System.Reflection;
 using Headless.DistributedLocks;
 using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
@@ -9,6 +10,7 @@ using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Processor;
+using Headless.Messaging.Runtime;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -50,6 +52,20 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             StorageId = Guid.NewGuid(),
             Origin = new Message(headers, null),
             Content = "{}",
+            Lane = MessageLane.Bus,
+        };
+    }
+
+    private static ConsumerExecutorDescriptor _CreateInboxDescriptor(string group = "renamed-group")
+    {
+        return new ConsumerExecutorDescriptor
+        {
+            MethodInfo = typeof(object).GetMethod(nameof(ToString), BindingFlags.Public | BindingFlags.Instance)!,
+            ImplTypeInfo = typeof(object).GetTypeInfo(),
+            MessageName = "test.messageName",
+            GroupName = group,
+            ConsumerIdentity = "tests.retry.stable-consumer",
+            ContractVersion = "v1",
             Lane = MessageLane.Bus,
         };
     }
@@ -342,6 +358,91 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         await dispatcher.Received(1).EnqueueToExecute(msg2, null, Arg.Any<CancellationToken>());
         await dispatcher.DidNotReceive().EnqueueToExecute(msg1, null, Arg.Any<CancellationToken>());
         await dispatcher.DidNotReceive().EnqueueToExecute(msg3, null, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task inbox_retry_should_mark_missing_stable_registration_orphaned_without_misrouting()
+    {
+        var message = _CreateMessage("obsolete-group");
+        message.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(1);
+        message.Owner = "node-a";
+        message.InboxKey = new InboxKey(
+            TenantId: null,
+            message.Origin.Id,
+            MessageLane.Bus,
+            message.Origin.Name,
+            "v1",
+            "tests.retry.missing-consumer",
+            Generation: 0
+        );
+
+        var storage = Substitute.For<IDataStorage>();
+        _SetupReceivedMessages(storage, message);
+        storage
+            .MarkReceivedInboxOrphanedAsync(message, true, Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(true));
+        var selector = Substitute.For<IConsumerServiceSelector>();
+        selector.SelectCandidates().Returns([]);
+        var dispatcher = Substitute.For<IDispatcher>();
+        var sut = new MessageNeedToRetryProcessor(
+            Options.Create(new MessagingOptions()),
+            Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.Zero, AdaptivePolling = false }),
+            NullLogger<MessageNeedToRetryProcessor>.Instance,
+            dispatcher,
+            Substitute.For<IDistributedLock>(),
+            consumerResolver: new MethodMatcherCache(selector)
+        );
+        await using var context = _CreateContext(new ServiceCollection().AddSingleton(storage).BuildServiceProvider());
+
+        await _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus);
+
+        await storage.Received(1).MarkReceivedInboxOrphanedAsync(message, true, CancellationToken.None);
+        await dispatcher.DidNotReceive().EnqueueToExecute(Arg.Any<MediumMessage>(), null, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task inbox_retry_should_route_by_stable_identity_after_mutable_group_refactor()
+    {
+        var message = _CreateMessage("obsolete-group");
+        message.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(1);
+        message.Owner = "node-a";
+        message.InboxKey = new InboxKey(
+            TenantId: null,
+            message.Origin.Id,
+            MessageLane.Bus,
+            message.Origin.Name,
+            "v1",
+            "tests.retry.stable-consumer",
+            Generation: 0
+        );
+
+        var storage = Substitute.For<IDataStorage>();
+        _SetupReceivedMessages(storage, message);
+        storage
+            .MarkReceivedInboxOrphanedAsync(message, false, Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(true));
+        var selector = Substitute.For<IConsumerServiceSelector>();
+        var descriptor = _CreateInboxDescriptor();
+        selector.SelectCandidates().Returns([descriptor]);
+        selector
+            .SelectBestCandidate("test.messageName", Arg.Any<IReadOnlyList<ConsumerExecutorDescriptor>>())
+            .Returns(descriptor);
+        var dispatcher = Substitute.For<IDispatcher>();
+        var sut = new MessageNeedToRetryProcessor(
+            Options.Create(new MessagingOptions()),
+            Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.Zero, AdaptivePolling = false }),
+            NullLogger<MessageNeedToRetryProcessor>.Instance,
+            dispatcher,
+            Substitute.For<IDistributedLock>(),
+            consumerResolver: new MethodMatcherCache(selector)
+        );
+        await using var context = _CreateContext(new ServiceCollection().AddSingleton(storage).BuildServiceProvider());
+
+        await _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus);
+
+        message.Origin.GetGroup().Should().Be("renamed-group");
+        await storage.Received(1).MarkReceivedInboxOrphanedAsync(message, false, CancellationToken.None);
+        await dispatcher.Received(1).EnqueueToExecute(message, null, Arg.Any<CancellationToken>());
     }
 
     [Fact]

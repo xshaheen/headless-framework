@@ -39,6 +39,12 @@ public sealed class ConsumerExecutorDescriptor
     /// </summary>
     public string? HandlerId { get; init; }
 
+    /// <summary>The operator-stable identity used to route persisted inbox recovery.</summary>
+    public string? ConsumerIdentity { get; init; }
+
+    /// <summary>The immutable durable contract version used to isolate inbox generations.</summary>
+    public string? ContractVersion { get; init; }
+
     /// <summary>
     /// Delivery intent used to subscribe this consumer.
     /// </summary>

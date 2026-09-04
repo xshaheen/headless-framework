@@ -58,6 +58,8 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             MethodInfo = consumeMethod,
             MessageName = "test.messageName",
             GroupName = "test-group",
+            ConsumerIdentity = "tests.subscribe-retry",
+            ContractVersion = "v1",
             Parameters = consumeMethod
                 .GetParameters()
                 .Select(p => new ParameterDescriptor
@@ -122,6 +124,38 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         var logger = provider.GetRequiredService<ILogger<SubscribeExecutor>>();
 
         return new SubscribeExecutor(provider, storage, invoker, TimeProvider.System, logger, Options.Create(options));
+    }
+
+    [Fact]
+    public async Task persisted_inbox_retry_should_resolve_by_stable_identity_after_group_refactor()
+    {
+        var storage = Substitute.For<IDataStorage>();
+        var invoker = Substitute.For<ISubscribeInvoker>();
+        invoker
+            .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new ConsumerExecutedResult(null, null, null!, null, null)));
+        var executor = _CreateExecutor(invoker, storage, new MessagingOptions());
+        var message = _CreateMediumMessage();
+        message.Origin.Headers[Headers.Group] = "obsolete-group";
+        message.InboxKey = new InboxKey(
+            TenantId: null,
+            message.Origin.Id,
+            MessageLane.Bus,
+            "test.messageName",
+            "v1",
+            "tests.subscribe-retry",
+            Generation: 0
+        );
+
+        var result = await executor.ExecuteAsync(message, _EmptyScope, descriptor: null, AbortToken);
+
+        result.Succeeded.Should().BeTrue();
+        await invoker
+            .Received(1)
+            .InvokeAsync(
+                Arg.Is<ConsumerContext>(context => context.ConsumerDescriptor.GroupName == "test-group"),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]

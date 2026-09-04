@@ -102,14 +102,21 @@ internal sealed class SubscribeExecutor(
         if (descriptor == null)
         {
             var selector = provider.GetRequiredService<MethodMatcherCache>();
-            if (
-                !selector.TryGetMessageNameExecutor(
+            var found = message.InboxKey is { } inboxKey
+                ? selector.TryGetInboxExecutor(
+                    inboxKey.ConsumerIdentity,
+                    inboxKey.ContractIdentity,
+                    inboxKey.ContractVersion,
+                    inboxKey.Lane,
+                    out descriptor
+                )
+                : selector.TryGetMessageNameExecutor(
                     message.Origin.Name,
                     message.Origin.GetGroup()!,
                     message.Lane,
                     out descriptor
-                )
-            )
+                );
+            if (!found)
             {
                 var safeName = LogSanitizer.Sanitize(message.Origin.Name);
                 var safeGroup = LogSanitizer.Sanitize(message.Origin.GetGroup());
@@ -141,7 +148,7 @@ internal sealed class SubscribeExecutor(
 
         return await _retryPipeline
             .ExecuteAsync(
-                (_, ct) => _ExecuteWithoutRetryAsync(message, descriptor, executionState, ct),
+                (_, ct) => _ExecuteWithoutRetryAsync(message, descriptor!, executionState, ct),
                 (inlineRetries, exception, delay, strategyFailed, ct) =>
                     _HandleRetryAsync(
                         message,

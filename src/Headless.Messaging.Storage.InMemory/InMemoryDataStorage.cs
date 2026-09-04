@@ -43,6 +43,8 @@ internal sealed partial class InMemoryDataStorage(
         Guid
     > _receivedIdentityIndex = new();
 
+    private readonly Dictionary<InboxKey, Guid> _inboxIdentityIndex = new();
+
     // Serializes the lookup-then-insert/update paths in BOTH StoreReceivedExceptionMessageAsync
     // and StoreReceivedMessageAsync so two concurrent broker redeliveries (or two concurrent first
     // arrivals via the consume path) cannot both decide "not found" and race to insert duplicate
@@ -65,8 +67,12 @@ internal sealed partial class InMemoryDataStorage(
     public void Clear()
     {
         PublishedMessages.Clear();
-        ReceivedMessages.Clear();
-        _receivedIdentityIndex.Clear();
+        lock (_receivedUpsertLock)
+        {
+            ReceivedMessages.Clear();
+            _receivedIdentityIndex.Clear();
+            _inboxIdentityIndex.Clear();
+        }
     }
 
     public ValueTask ChangePublishStateToDelayedAsync(Guid[] storageIds, CancellationToken cancellationToken = default)
@@ -160,7 +166,8 @@ internal sealed partial class InMemoryDataStorage(
             message,
             originalInlineAttempts,
             timeProvider,
-            cancellationToken
+            fenceGenerator: null,
+            cancellationToken: cancellationToken
         );
     }
 
@@ -285,7 +292,8 @@ internal sealed partial class InMemoryDataStorage(
             originalInlineAttempts,
             timeProvider,
             nodeMembership.GetOwnerTag(),
-            cancellationToken
+            fenceGenerator: null,
+            cancellationToken: cancellationToken
         );
     }
 
@@ -340,7 +348,14 @@ internal sealed partial class InMemoryDataStorage(
         CancellationToken cancellationToken = default
     )
     {
-        return _ReserveAttemptAsync(ReceivedMessages, message, originalInlineAttempts, timeProvider, cancellationToken);
+        return _ReserveAttemptAsync(
+            ReceivedMessages,
+            message,
+            originalInlineAttempts,
+            timeProvider,
+            guidGenerator,
+            cancellationToken
+        );
     }
 
     private ValueTask<bool> _ChangeReceiveStateAsync(
@@ -380,6 +395,11 @@ internal sealed partial class InMemoryDataStorage(
                 return ValueTask.FromResult(false);
             }
 
+            if (current.InboxGeneration is not null && !_MatchesInboxFence(current, message.InboxAttemptFence))
+            {
+                return ValueTask.FromResult(false);
+            }
+
             if (
                 originalInlineAttempts.HasValue
                 && (
@@ -402,6 +422,7 @@ internal sealed partial class InMemoryDataStorage(
             current.Owner = utcLockedUntil is null ? null : nodeMembership.GetOwnerTag();
             current.Retries = message.Retries;
             current.InlineAttempts = message.InlineAttempts;
+            current.InboxAttemptFence = utcLockedUntil is null ? null : message.InboxAttemptFence;
             _WriteContent(current, message, contentWrite);
             current.ExceptionInfo = message.ExceptionInfo;
             updated = true;
@@ -440,8 +461,100 @@ internal sealed partial class InMemoryDataStorage(
             originalInlineAttempts,
             timeProvider,
             nodeMembership.GetOwnerTag(),
+            guidGenerator,
             cancellationToken
         );
+    }
+
+    public ValueTask<InboxAdmissionResult> AdmitReceivedMessageAsync(
+        string name,
+        string group,
+        string consumerIdentity,
+        string contractVersion,
+        MediumMessage message,
+        long generation = 0,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var messageId = message.Origin.Id;
+        var tenantId = TenantContextScope.ResolveTenantId(message.Origin.Headers, logger: null);
+        var key = new InboxKey(tenantId, messageId, message.Lane, name, contractVersion, consumerIdentity, generation);
+
+        lock (_receivedUpsertLock)
+        {
+            if (
+                _inboxIdentityIndex.TryGetValue(key, out var existingId)
+                && ReceivedMessages.TryGetValue(existingId, out var existing)
+            )
+            {
+                lock (existing)
+                {
+                    var disposition = existing.StatusName switch
+                    {
+                        StatusName.Succeeded when existing.NextRetryAt is null =>
+                            InboxAdmissionDisposition.SucceededDuplicate,
+                        StatusName.Failed when existing.NextRetryAt is null =>
+                            InboxAdmissionDisposition.TerminalFailedDuplicate,
+                        _ => InboxAdmissionDisposition.InFlightDuplicate,
+                    };
+
+                    return ValueTask.FromResult(new InboxAdmissionResult(disposition, _ToSnapshot(existing)));
+                }
+            }
+
+            _inboxIdentityIndex.Remove(key);
+
+            var now = timeProvider.GetUtcNow();
+            var stored = new MemoryMessage
+            {
+                StorageId = guidGenerator.Create(),
+                Origin = _CloneOrigin(message.Origin),
+                Content = serializer.Serialize(message.Origin),
+                Lane = message.Lane,
+                Name = name,
+                Group = group,
+                Version = messagingOptions.Value.Version,
+                Added = now,
+                NextRetryAt = now.Add(messagingOptions.Value.RetryPolicy.InitialDispatchGrace),
+                StatusName = StatusName.Scheduled,
+                InboxKey = key,
+                InboxGeneration = new InboxGeneration(key.Generation, guidGenerator.Create()),
+            };
+
+            ReceivedMessages[stored.StorageId] = stored;
+            _inboxIdentityIndex[key] = stored.StorageId;
+
+            return ValueTask.FromResult(
+                new InboxAdmissionResult(InboxAdmissionDisposition.Winner, _ToSnapshot(stored))
+            );
+        }
+    }
+
+    public ValueTask<bool> MarkReceivedInboxOrphanedAsync(
+        MediumMessage message,
+        bool orphaned,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!ReceivedMessages.TryGetValue(message.StorageId, out var current))
+        {
+            return ValueTask.FromResult(false);
+        }
+
+        lock (current)
+        {
+            if (current.InboxKey is null || !_MatchesInboxFence(current, message.InboxAttemptFence))
+            {
+                return ValueTask.FromResult(false);
+            }
+
+            current.IsInboxOrphaned = orphaned;
+            message.IsInboxOrphaned = orphaned;
+            return ValueTask.FromResult(true);
+        }
     }
 
     public ValueTask<MediumMessage> StoreMessageAsync(
@@ -879,23 +992,26 @@ internal sealed partial class InMemoryDataStorage(
         }
         else
         {
-            var ids = ReceivedMessages
-                .Values.Where(x =>
-                    _IsSupportedLane(x.Lane)
-                    && x.ExpiresAt < timeout
-                    && x.NextRetryAt is null
-                    && (x.StatusName == StatusName.Succeeded || x.StatusName == StatusName.Failed)
-                )
-                .Select(x => x.StorageId)
-                .Take(batchCount)
-                .ToList();
-
-            foreach (var id in ids)
+            lock (_receivedUpsertLock)
             {
-                if (ReceivedMessages.TryRemove(id, out var removedMsg))
+                var ids = ReceivedMessages
+                    .Values.Where(x =>
+                        _IsSupportedLane(x.Lane)
+                        && x.ExpiresAt < timeout
+                        && x.NextRetryAt is null
+                        && (x.StatusName == StatusName.Succeeded || x.StatusName == StatusName.Failed)
+                    )
+                    .Select(x => x.StorageId)
+                    .Take(batchCount)
+                    .ToList();
+
+                foreach (var id in ids)
                 {
-                    _RemoveFromIdentityIndex(removedMsg);
-                    removed++;
+                    if (ReceivedMessages.TryRemove(id, out var removedMsg))
+                    {
+                        _RemoveFromIdentityIndex(removedMsg);
+                        removed++;
+                    }
                 }
             }
         }
@@ -1126,6 +1242,18 @@ internal sealed partial class InMemoryDataStorage(
                 // block was unreachable and has been removed.
                 candidate.LockedUntil = newLease;
                 candidate.Owner = nodeMembership.GetOwnerTag();
+                if (candidate.InboxGeneration is not null)
+                {
+                    candidate.InboxAttemptFence = new InboxAttemptFence(
+                        candidate.StorageId,
+                        candidate.Lane,
+                        candidate.InboxGeneration.Number,
+                        candidate.InboxGeneration.IncarnationId,
+                        guidGenerator.Create(),
+                        candidate.Owner,
+                        newLease
+                    );
+                }
                 claimed.Add(_ToSnapshot(candidate));
             }
         }
@@ -1176,9 +1304,25 @@ internal sealed partial class InMemoryDataStorage(
             Owner = m.Owner,
             Retries = m.Retries,
             InlineAttempts = m.InlineAttempts,
+            InboxKey = m.InboxKey,
+            InboxGeneration = m.InboxGeneration,
+            InboxAttemptFence = m.InboxAttemptFence,
+            IsInboxOrphaned = m.IsInboxOrphaned,
             ExceptionInfo = m.ExceptionInfo,
             Lane = m.Lane,
         };
+    }
+
+    private static bool _MatchesInboxFence(MemoryMessage current, InboxAttemptFence? fence)
+    {
+        return fence is not null
+            && current.InboxAttemptFence == fence
+            && fence.StorageId == current.StorageId
+            && fence.Lane == current.Lane
+            && current.InboxGeneration?.Number == fence.Generation
+            && current.InboxGeneration?.IncarnationId == fence.GenerationIncarnationId
+            && string.Equals(current.Owner, fence.Owner, StringComparison.Ordinal)
+            && current.LockedUntil == fence.LockedUntil;
     }
 
     private static ValueTask<bool> _LeaseAsync(

@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging.Persistence;
+
 namespace Headless.Messaging.Messages;
 
 /// <summary>
@@ -56,6 +58,18 @@ public class MediumMessage
     /// grant a fresh inline budget. It resets to zero when <see cref="Retries"/> advances.
     /// </summary>
     public int InlineAttempts { get; set; }
+
+    /// <summary>The durable logical inbox key when this is a received inbox row.</summary>
+    public InboxKey? InboxKey { get; set; }
+
+    /// <summary>The immutable generation identity allocated at admission.</summary>
+    public InboxGeneration? InboxGeneration { get; set; }
+
+    /// <summary>The exact active attempt fence, populated only after a successful reservation.</summary>
+    public InboxAttemptFence? InboxAttemptFence { get; set; }
+
+    /// <summary>Whether persisted recovery currently has no matching stable consumer registration.</summary>
+    public bool IsInboxOrphaned { get; set; }
 
     public string? ExceptionInfo { get; set; }
 }

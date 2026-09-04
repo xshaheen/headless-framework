@@ -379,6 +379,98 @@ public sealed class ConsumerRegisterTests : TestBase
     }
 
     [Fact]
+    public async Task inbox_admission_should_settle_before_single_winner_dispatch_and_suppress_duplicate()
+    {
+        var client = new InboxConsumerClient();
+        var dispatcher = Substitute.For<IDispatcher>();
+        dispatcher
+            .EnqueueToExecute(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<ConsumerExecutorDescriptor>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(_ =>
+            {
+                client.CommitCount.Should().BeGreaterThan(0, "admission must settle before dispatch acceleration");
+                return ValueTask.CompletedTask;
+            });
+
+        await using var provider = _CreateProvider(
+            configureMessaging: setup =>
+            {
+                setup.Bus.ForMessage<BootstrapReadyMessage>(message =>
+                    message
+                        .MessageName("ready-messageName")
+                        .Consumer<BootstrapReadyConsumer>(consumer =>
+                            consumer.StableContract("tests.consumer-register.inbox").Group("ready-group").Concurrency(1)
+                        )
+                );
+            },
+            configureServices: services =>
+            {
+                services.AddSingleton<IDispatcher>(dispatcher);
+                services.AddSingleton<BootstrapReadyConsumer>();
+            }
+        );
+        var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
+        typeof(ConsumerRegister)
+            .GetMethod("_RegisterMessageProcessor", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(register, [client, "ready-group", "0:ready-group", MessageLane.Bus, CancellationToken.None]);
+        var serializer = provider.GetRequiredService<Headless.Messaging.Serialization.ISerializer>();
+        foreach (
+            var (fieldName, value) in new (string FieldName, object Value)[]
+            {
+                ("_selector", provider.GetRequiredService<MethodMatcherCache>()),
+                ("_dispatcher", dispatcher),
+                ("_serializer", serializer),
+                ("_storage", provider.GetRequiredService<Headless.Messaging.Persistence.IDataStorage>()),
+            }
+        )
+        {
+            typeof(ConsumerRegister)
+                .GetField(fieldName, BindingFlags.NonPublic | BindingFlags.Instance)!
+                .SetValue(register, value);
+        }
+
+        var origin = new Message(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [Headers.MessageId] = "inbox-delivery",
+                [Headers.MessageName] = "ready-messageName",
+                [Headers.Group] = "ready-group",
+            },
+            new BootstrapReadyMessage()
+        );
+        var transport = await serializer.SerializeToTransportMessageAsync(origin, AbortToken);
+
+        await client.OnMessageCallback!(transport, null);
+        await client.OnMessageCallback!(transport, null);
+
+        client.CommitCount.Should().Be(2);
+        await dispatcher
+            .Received(1)
+            .EnqueueToExecute(
+                Arg.Is<MediumMessage>(message => message.InboxKey != null),
+                Arg.Any<ConsumerExecutorDescriptor>(),
+                CancellationToken.None
+            );
+
+        dispatcher
+            .EnqueueToExecute(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<ConsumerExecutorDescriptor>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromException(new InvalidOperationException("dispatch acceleration failed")));
+        transport.Headers[Headers.MessageId] = "inbox-delivery-after-settlement";
+
+        await client.OnMessageCallback!(transport, null);
+
+        client.CommitCount.Should().Be(3);
+        client.RejectCount.Should().Be(0, "a persisted delivery must not be rejected after broker settlement");
+    }
+
+    [Fact]
     public Task startup_cancels_when_consumer_factory_creation_is_blocked()
     {
         return _AssertStartupCancellationAsync(StartupBoundary.FactoryCreation);
@@ -815,6 +907,62 @@ public sealed class ConsumerRegisterTests : TestBase
         {
             return ValueTask.CompletedTask;
         }
+    }
+
+    private sealed class InboxConsumerClient : IConsumerClient
+    {
+        private int _commitCount;
+        private int _rejectCount;
+
+        public int CommitCount => Volatile.Read(ref _commitCount);
+
+        public int RejectCount => Volatile.Read(ref _rejectCount);
+
+        public BrokerAddress BrokerAddress => new("test", "inbox");
+
+        public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
+
+        public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
+
+        public void AttachCallbacks(
+            Func<TransportMessage, object?, Task>? onMessage,
+            Action<LogMessageEventArgs>? onLog
+        )
+        {
+            OnMessageCallback = onMessage;
+            OnLogCallback = onLog;
+        }
+
+        public ValueTask<ICollection<string>> FetchMessageNamesAsync(
+            IEnumerable<string> messageNames,
+            CancellationToken cancellationToken = default
+        ) => ValueTask.FromResult<ICollection<string>>(messageNames.ToArray());
+
+        public ValueTask SubscribeAsync(
+            IEnumerable<string> messageNames,
+            CancellationToken cancellationToken = default
+        ) => ValueTask.CompletedTask;
+
+        public ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
+            ValueTask.CompletedTask;
+
+        public ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref _commitCount);
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref _rejectCount);
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask PauseAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+
+        public ValueTask ResumeAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
     private sealed class StartupControlledConsumerClient : IConsumerClient
