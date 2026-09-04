@@ -329,16 +329,21 @@ internal sealed partial class PostgreSqlDataStorage(
         var refreshContent = contentWrite is MessageContentWrite.Refresh;
         var contentAssignment = refreshContent ? "\"Content\"=@Content," : "";
         var sql =
-            $"UPDATE {_receivedTable} SET {contentAssignment}\"Retries\"=@Retries,\"InlineAttempts\"=@InlineAttempts,\"ExpiresAt\"=@ExpiresAt,\"NextRetryAt\"=@NextRetryAt,\"LockedUntil\"=@LockedUntil,\"Owner\"=@Owner,\"StatusName\"=@StatusName,\"ExceptionInfo\"=@ExceptionInfo WHERE \"Id\"=@Id AND {_TerminalRowGuardWithRetries} AND (@OriginalInlineAttempts IS NULL OR (\"LockedUntil\" IS NOT DISTINCT FROM @OriginalLockedUntil AND \"Owner\" IS NOT DISTINCT FROM @OriginalOwner AND \"LockedUntil\">statement_timestamp()))";
+            $"UPDATE {_receivedTable} SET {contentAssignment}\"Retries\"=@Retries,\"InlineAttempts\"=@InlineAttempts,\"ExpiresAt\"=@ExpiresAt,\"NextRetryAt\"=@NextRetryAt,\"LockedUntil\"=@LockedUntil,\"Owner\"=@Owner,\"StatusName\"=@StatusName,\"ExceptionInfo\"=@ExceptionInfo,\"AttemptId\"=CASE WHEN @LockedUntil IS NULL THEN NULL ELSE \"AttemptId\" END,\"TerminalAt\"=CASE WHEN \"IsInboxRecord\" AND @IsTerminal THEN statement_timestamp() ELSE \"TerminalAt\" END,\"EffectiveExpiresAt\"=CASE WHEN \"IsInboxRecord\" AND @IsTerminal THEN statement_timestamp() + INTERVAL '30 days' ELSE \"EffectiveExpiresAt\" END WHERE \"Id\"=@Id AND {_TerminalRowGuardWithRetries} AND (@OriginalInlineAttempts IS NULL OR (\"LockedUntil\" IS NOT DISTINCT FROM @OriginalLockedUntil AND \"Owner\" IS NOT DISTINCT FROM @OriginalOwner AND \"LockedUntil\">statement_timestamp())) AND (NOT \"IsInboxRecord\" OR (\"IntentType\"=@InboxIntentType AND \"Generation\"=@InboxGeneration AND \"GenerationIncarnationId\"=@InboxGenerationIncarnationId AND \"AttemptId\"=@InboxAttemptId AND \"Owner\" IS NOT DISTINCT FROM @InboxOwner AND \"LockedUntil\"=@InboxLockedUntil))";
+
+        var inboxFence = message.InboxAttemptFence;
 
         object[] stateParams =
         [
             new NpgsqlParameter("@Id", message.StorageId),
             new NpgsqlParameter("@Retries", message.Retries),
             new NpgsqlParameter("@InlineAttempts", message.InlineAttempts),
-            new NpgsqlParameter("@ExpiresAt", message.ExpiresAt.ToUtcParameterValue()),
-            new NpgsqlParameter("@NextRetryAt", nextRetryAt.ToUtcParameterValue()),
-            new NpgsqlParameter("@LockedUntil", lockedUntil.ToUtcParameterValue()),
+            new NpgsqlParameter("@ExpiresAt", NpgsqlDbType.TimestampTz)
+            {
+                Value = message.ExpiresAt.ToUtcParameterValue(),
+            },
+            new NpgsqlParameter("@NextRetryAt", NpgsqlDbType.TimestampTz) { Value = nextRetryAt.ToUtcParameterValue() },
+            new NpgsqlParameter("@LockedUntil", NpgsqlDbType.TimestampTz) { Value = lockedUntil.ToUtcParameterValue() },
             new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar)
             {
                 Value = nodeMembership.GetOwnerParameterValue(lockedUntil),
@@ -351,13 +356,46 @@ internal sealed partial class PostgreSqlDataStorage(
             {
                 Value = originalInlineAttempts ?? (object)DBNull.Value,
             },
-            new NpgsqlParameter("@OriginalLockedUntil", message.LockedUntil.ToUtcParameterValue()),
+            new NpgsqlParameter("@OriginalLockedUntil", NpgsqlDbType.TimestampTz)
+            {
+                Value = message.LockedUntil.ToUtcParameterValue(),
+            },
             new NpgsqlParameter("@OriginalOwner", NpgsqlDbType.Varchar)
             {
                 Value = message.Owner ?? (object)DBNull.Value,
             },
             new NpgsqlParameter("@StatusName", state.ToString("G")),
             new NpgsqlParameter("@ExceptionInfo", message.ExceptionInfo ?? (object)DBNull.Value),
+            new NpgsqlParameter(
+                "@IsTerminal",
+                (state is StatusName.Succeeded or StatusName.Failed) && nextRetryAt is null
+            ),
+            new NpgsqlParameter("@InboxIntentType", NpgsqlDbType.Smallint)
+            {
+                Value = inboxFence is null
+                    ? (object)DBNull.Value
+                    : MessageLaneCompatibility.ToPersistedValue(inboxFence.Lane),
+            },
+            new NpgsqlParameter("@InboxGeneration", NpgsqlDbType.Bigint)
+            {
+                Value = inboxFence?.Generation ?? (object)DBNull.Value,
+            },
+            new NpgsqlParameter("@InboxGenerationIncarnationId", NpgsqlDbType.Uuid)
+            {
+                Value = inboxFence?.GenerationIncarnationId ?? (object)DBNull.Value,
+            },
+            new NpgsqlParameter("@InboxAttemptId", NpgsqlDbType.Uuid)
+            {
+                Value = inboxFence?.AttemptId ?? (object)DBNull.Value,
+            },
+            new NpgsqlParameter("@InboxOwner", NpgsqlDbType.Varchar)
+            {
+                Value = inboxFence?.Owner ?? (object)DBNull.Value,
+            },
+            new NpgsqlParameter("@InboxLockedUntil", NpgsqlDbType.TimestampTz)
+            {
+                Value = inboxFence?.LockedUntil ?? (object)DBNull.Value,
+            },
         ];
 
         object[] sqlParams = refreshContent
@@ -718,6 +756,9 @@ internal sealed partial class PostgreSqlDataStorage(
     )
     {
         await using var connection = postgreSqlOptions.Value.CreateConnection();
+        var expiryPredicate = string.Equals(table, _receivedTable, StringComparison.Ordinal)
+            ? "((NOT \"IsInboxRecord\" AND \"ExpiresAt\" < @timeout) OR (\"IsInboxRecord\" AND NOT \"IsHeld\" AND \"EffectiveExpiresAt\" < statement_timestamp()))"
+            : "\"ExpiresAt\" < @timeout";
 
         object[] sqlParams = [new NpgsqlParameter("@timeout", timeout), new NpgsqlParameter("@batchCount", batchCount)];
 
@@ -728,7 +769,7 @@ internal sealed partial class PostgreSqlDataStorage(
                 WHERE "Id" IN (
                     SELECT "Id"
                     FROM {table}
-                    WHERE "ExpiresAt" < @timeout
+                    WHERE {expiryPredicate}
                     AND "StatusName" IN ('{nameof(StatusName.Succeeded)}','{nameof(StatusName.Failed)}')
                     AND "NextRetryAt" IS NULL
                     AND "IntentType" IN (0, 1)
@@ -822,9 +863,18 @@ internal sealed partial class PostgreSqlDataStorage(
               AND "Owner" IS NOT DISTINCT FROM @Owner
               AND "LockedUntil" = @LockedUntil
               AND "LockedUntil" > statement_timestamp()
+              AND (NOT "IsInboxRecord" OR (
+                    "Id"=@InboxStorageId
+                AND "IntentType"=@InboxIntentType
+                AND "Generation"=@InboxGeneration
+                AND "GenerationIncarnationId"=@InboxGenerationIncarnationId
+                AND "AttemptId"=@InboxAttemptId
+                AND "Owner" IS NOT DISTINCT FROM @InboxOwner
+                AND "LockedUntil"=@InboxLockedUntil))
               AND {_TerminalRowGuardSimple};
             """;
         var identity = deferral.Identity;
+        var inboxFence = identity.InboxAttemptFence;
         object[] sqlParams =
         [
             new NpgsqlParameter("@Id", identity.StorageId),
@@ -835,6 +885,36 @@ internal sealed partial class PostgreSqlDataStorage(
             new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar) { Value = identity.Owner ?? (object)DBNull.Value },
             new NpgsqlParameter("@LockedUntil", NpgsqlDbType.TimestampTz) { Value = identity.LockedUntil },
             new NpgsqlParameter("@NextRetryAt", NpgsqlDbType.TimestampTz) { Value = deferral.NextRetryAt },
+            new NpgsqlParameter("@InboxStorageId", NpgsqlDbType.Uuid)
+            {
+                Value = inboxFence?.StorageId ?? (object)DBNull.Value,
+            },
+            new NpgsqlParameter("@InboxIntentType", NpgsqlDbType.Smallint)
+            {
+                Value = inboxFence is null
+                    ? (object)DBNull.Value
+                    : MessageLaneCompatibility.ToPersistedValue(inboxFence.Lane),
+            },
+            new NpgsqlParameter("@InboxGeneration", NpgsqlDbType.Bigint)
+            {
+                Value = inboxFence?.Generation ?? (object)DBNull.Value,
+            },
+            new NpgsqlParameter("@InboxGenerationIncarnationId", NpgsqlDbType.Uuid)
+            {
+                Value = inboxFence?.GenerationIncarnationId ?? (object)DBNull.Value,
+            },
+            new NpgsqlParameter("@InboxAttemptId", NpgsqlDbType.Uuid)
+            {
+                Value = inboxFence?.AttemptId ?? (object)DBNull.Value,
+            },
+            new NpgsqlParameter("@InboxOwner", NpgsqlDbType.Varchar)
+            {
+                Value = inboxFence?.Owner ?? (object)DBNull.Value,
+            },
+            new NpgsqlParameter("@InboxLockedUntil", NpgsqlDbType.TimestampTz)
+            {
+                Value = inboxFence?.LockedUntil ?? (object)DBNull.Value,
+            },
         ];
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();
@@ -871,6 +951,10 @@ internal sealed partial class PostgreSqlDataStorage(
         CancellationToken cancellationToken
     )
     {
+        var isReceivedTable = string.Equals(table, _receivedTable, StringComparison.Ordinal);
+        var inboxGuard = isReceivedTable
+            ? " AND (NOT \"IsInboxRecord\" OR (\"Id\"=@InboxStorageId AND \"IntentType\"=@InboxIntentType AND \"Generation\"=@InboxGeneration AND \"GenerationIncarnationId\"=@InboxGenerationIncarnationId AND \"AttemptId\"=@InboxAttemptId AND \"Owner\" IS NOT DISTINCT FROM @InboxOwner AND \"LockedUntil\"=@InboxLockedUntil))"
+            : string.Empty;
         var sql = $"""
             UPDATE {table}
             SET "Owner" = NULL, "LockedUntil" = NULL
@@ -878,8 +962,9 @@ internal sealed partial class PostgreSqlDataStorage(
               AND "IntentType" = @IntentType
               AND "Owner" IS NOT DISTINCT FROM @Owner
               AND "LockedUntil" = @LockedUntil
-              AND {_TerminalRowGuardSimple};
+              AND {_TerminalRowGuardSimple}{inboxGuard};
             """;
+        var inboxFence = identity.InboxAttemptFence;
         object[] sqlParams =
         [
             new NpgsqlParameter("@Id", identity.StorageId),
@@ -889,6 +974,36 @@ internal sealed partial class PostgreSqlDataStorage(
             },
             new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar) { Value = identity.Owner ?? (object)DBNull.Value },
             new NpgsqlParameter("@LockedUntil", NpgsqlDbType.TimestampTz) { Value = identity.LockedUntil },
+            new NpgsqlParameter("@InboxStorageId", NpgsqlDbType.Uuid)
+            {
+                Value = inboxFence?.StorageId ?? (object)DBNull.Value,
+            },
+            new NpgsqlParameter("@InboxIntentType", NpgsqlDbType.Smallint)
+            {
+                Value = inboxFence is null
+                    ? (object)DBNull.Value
+                    : MessageLaneCompatibility.ToPersistedValue(inboxFence.Lane),
+            },
+            new NpgsqlParameter("@InboxGeneration", NpgsqlDbType.Bigint)
+            {
+                Value = inboxFence?.Generation ?? (object)DBNull.Value,
+            },
+            new NpgsqlParameter("@InboxGenerationIncarnationId", NpgsqlDbType.Uuid)
+            {
+                Value = inboxFence?.GenerationIncarnationId ?? (object)DBNull.Value,
+            },
+            new NpgsqlParameter("@InboxAttemptId", NpgsqlDbType.Uuid)
+            {
+                Value = inboxFence?.AttemptId ?? (object)DBNull.Value,
+            },
+            new NpgsqlParameter("@InboxOwner", NpgsqlDbType.Varchar)
+            {
+                Value = inboxFence?.Owner ?? (object)DBNull.Value,
+            },
+            new NpgsqlParameter("@InboxLockedUntil", NpgsqlDbType.TimestampTz)
+            {
+                Value = inboxFence?.LockedUntil ?? (object)DBNull.Value,
+            },
         ];
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();
@@ -919,15 +1034,29 @@ internal sealed partial class PostgreSqlDataStorage(
         foreach (var batch in identities.Chunk(_LeaseReleaseBatchSize))
         {
             var predicates = new string[batch.Length];
-            var sqlParams = new List<object>(batch.Length * 4);
+            var isReceivedTable = string.Equals(table, _receivedTable, StringComparison.Ordinal);
+            var sqlParams = new List<object>(batch.Length * (isReceivedTable ? 11 : 4));
             for (var index = 0; index < batch.Length; index++)
             {
                 var identity = batch[index];
+                var inboxFence = identity.InboxAttemptFence;
+                var inboxGuard = isReceivedTable
+                    ? $"""
+                         AND (NOT "IsInboxRecord" OR (
+                                "Id"=@InboxStorageId{index}
+                            AND "IntentType"=@InboxIntentType{index}
+                            AND "Generation"=@InboxGeneration{index}
+                            AND "GenerationIncarnationId"=@InboxGenerationIncarnationId{index}
+                            AND "AttemptId"=@InboxAttemptId{index}
+                            AND "Owner" IS NOT DISTINCT FROM @InboxOwner{index}
+                            AND "LockedUntil"=@InboxLockedUntil{index}))
+                        """
+                    : string.Empty;
                 predicates[index] = $"""
                     ("Id" = @Id{index}
                      AND "IntentType" = @IntentType{index}
                      AND "Owner" IS NOT DISTINCT FROM @Owner{index}
-                     AND "LockedUntil" = @LockedUntil{index})
+                     AND "LockedUntil" = @LockedUntil{index}{inboxGuard})
                     """;
                 sqlParams.Add(new NpgsqlParameter($"@Id{index}", identity.StorageId));
                 sqlParams.Add(
@@ -948,6 +1077,53 @@ internal sealed partial class PostgreSqlDataStorage(
                         Value = identity.LockedUntil,
                     }
                 );
+                if (isReceivedTable)
+                {
+                    sqlParams.Add(
+                        new NpgsqlParameter($"@InboxStorageId{index}", NpgsqlDbType.Uuid)
+                        {
+                            Value = inboxFence?.StorageId ?? (object)DBNull.Value,
+                        }
+                    );
+                    sqlParams.Add(
+                        new NpgsqlParameter($"@InboxIntentType{index}", NpgsqlDbType.Smallint)
+                        {
+                            Value = inboxFence is null
+                                ? (object)DBNull.Value
+                                : MessageLaneCompatibility.ToPersistedValue(inboxFence.Lane),
+                        }
+                    );
+                    sqlParams.Add(
+                        new NpgsqlParameter($"@InboxGeneration{index}", NpgsqlDbType.Bigint)
+                        {
+                            Value = inboxFence?.Generation ?? (object)DBNull.Value,
+                        }
+                    );
+                    sqlParams.Add(
+                        new NpgsqlParameter($"@InboxGenerationIncarnationId{index}", NpgsqlDbType.Uuid)
+                        {
+                            Value = inboxFence?.GenerationIncarnationId ?? (object)DBNull.Value,
+                        }
+                    );
+                    sqlParams.Add(
+                        new NpgsqlParameter($"@InboxAttemptId{index}", NpgsqlDbType.Uuid)
+                        {
+                            Value = inboxFence?.AttemptId ?? (object)DBNull.Value,
+                        }
+                    );
+                    sqlParams.Add(
+                        new NpgsqlParameter($"@InboxOwner{index}", NpgsqlDbType.Varchar)
+                        {
+                            Value = inboxFence?.Owner ?? (object)DBNull.Value,
+                        }
+                    );
+                    sqlParams.Add(
+                        new NpgsqlParameter($"@InboxLockedUntil{index}", NpgsqlDbType.TimestampTz)
+                        {
+                            Value = inboxFence?.LockedUntil ?? (object)DBNull.Value,
+                        }
+                    );
+                }
             }
 
             var sql = $"""
@@ -1065,8 +1241,13 @@ internal sealed partial class PostgreSqlDataStorage(
         CancellationToken cancellationToken
     )
     {
+        var isReceivedTable = string.Equals(tableName, _receivedTable, StringComparison.Ordinal);
+        var inboxGuard = isReceivedTable
+            ? " AND (NOT \"IsInboxRecord\" OR (\"IntentType\"=@InboxIntentType AND \"Generation\"=@InboxGeneration AND \"GenerationIncarnationId\"=@InboxGenerationIncarnationId AND \"AttemptId\"=@InboxAttemptId))"
+            : string.Empty;
         var sql =
-            $"UPDATE {tableName} SET \"InlineAttempts\"=@InlineAttempts WHERE \"Id\"=@Id AND {_TerminalRowGuardWithRetries} AND \"LockedUntil\" IS NOT DISTINCT FROM @LockedUntil AND \"Owner\" IS NOT DISTINCT FROM @CurrentOwner AND \"LockedUntil\">statement_timestamp()";
+            $"UPDATE {tableName} SET \"InlineAttempts\"=@InlineAttempts WHERE \"Id\"=@Id AND {_TerminalRowGuardWithRetries} AND \"LockedUntil\" IS NOT DISTINCT FROM @LockedUntil AND \"Owner\" IS NOT DISTINCT FROM @CurrentOwner AND \"LockedUntil\">statement_timestamp(){inboxGuard}";
+        var inboxFence = message.InboxAttemptFence;
         object[] sqlParams =
         [
             new NpgsqlParameter("@Id", message.StorageId),
@@ -1077,6 +1258,24 @@ internal sealed partial class PostgreSqlDataStorage(
             new NpgsqlParameter("@CurrentOwner", NpgsqlDbType.Varchar)
             {
                 Value = message.Owner ?? (object)DBNull.Value,
+            },
+            new NpgsqlParameter("@InboxIntentType", NpgsqlDbType.Smallint)
+            {
+                Value = inboxFence is null
+                    ? (object)DBNull.Value
+                    : MessageLaneCompatibility.ToPersistedValue(inboxFence.Lane),
+            },
+            new NpgsqlParameter("@InboxGeneration", NpgsqlDbType.Bigint)
+            {
+                Value = inboxFence?.Generation ?? (object)DBNull.Value,
+            },
+            new NpgsqlParameter("@InboxGenerationIncarnationId", NpgsqlDbType.Uuid)
+            {
+                Value = inboxFence?.GenerationIncarnationId ?? (object)DBNull.Value,
+            },
+            new NpgsqlParameter("@InboxAttemptId", NpgsqlDbType.Uuid)
+            {
+                Value = inboxFence?.AttemptId ?? (object)DBNull.Value,
             },
         ];
         await using var connection = postgreSqlOptions.Value.CreateConnection();
@@ -1230,7 +1429,9 @@ internal sealed partial class PostgreSqlDataStorage(
         var sql = $"""
             INSERT INTO {_receivedTable}("Id","Version","Name","Group","Content","IntentType","Retries","InlineAttempts","Added","ExpiresAt","NextRetryAt","LockedUntil","Owner","StatusName","MessageId","ExceptionInfo")
             VALUES(@Id,'{messagingOptions.Value.Version}',@Name,@Group,@Content,@IntentType,@Retries,@InlineAttempts,@Added,@ExpiresAt,@NextRetryAt,@LockedUntil,@Owner,@StatusName,@MessageId,@ExceptionInfo)
-            ON CONFLICT ("Version", "MessageId", (COALESCE("Group", '')), "IntentType") DO UPDATE SET
+            ON CONFLICT ("Version", "MessageId", (COALESCE("Group", '')), "IntentType")
+            WHERE NOT "IsInboxRecord"
+            DO UPDATE SET
                 "StatusName"=EXCLUDED."StatusName",
                 "ExpiresAt"=EXCLUDED."ExpiresAt",
                 "NextRetryAt"=EXCLUDED."NextRetryAt",
@@ -1238,7 +1439,8 @@ internal sealed partial class PostgreSqlDataStorage(
                 "Owner"=EXCLUDED."Owner",
                 "Content"=EXCLUDED."Content",
                 "ExceptionInfo"=EXCLUDED."ExceptionInfo"
-            WHERE NOT ({_receivedTable}."StatusName" IN ('{nameof(StatusName.Succeeded)}','{nameof(
+            WHERE NOT {_receivedTable}."IsInboxRecord"
+              AND NOT ({_receivedTable}."StatusName" IN ('{nameof(StatusName.Succeeded)}','{nameof(
                 StatusName.Failed
             )}') AND {_receivedTable}."NextRetryAt" IS NULL)
               AND ({_receivedTable}."LockedUntil" IS NULL OR {_receivedTable}."LockedUntil" <= statement_timestamp())
@@ -1274,17 +1476,22 @@ internal sealed partial class PostgreSqlDataStorage(
         // Ownership time is the database's: one statement-stable snapshot supplies both the expiry
         // comparison and the new deadline. Returning the stored identity keeps the caller's fence
         // byte-for-byte aligned with durable state.
+        var isReceivedTable = string.Equals(tableName, _receivedTable, StringComparison.Ordinal);
+        var attemptAssignment = isReceivedTable
+            ? ",\n                \"AttemptId\"=CASE WHEN message.\"IsInboxRecord\" THEN gen_random_uuid() ELSE NULL END"
+            : string.Empty;
+        var attemptProjection = isReceivedTable ? "message.\"AttemptId\"" : "NULL::uuid";
         var sql = $"""
             WITH clock AS (SELECT statement_timestamp() AS now)
             UPDATE {tableName} AS message
             SET "LockedUntil"=clock.now + (@LeaseSeconds * INTERVAL '1 second'),
                 "Owner"=@Owner,
-                "InlineAttempts"=@InlineAttempts
+                "InlineAttempts"=@InlineAttempts{attemptAssignment}
             FROM clock
             WHERE message."Id"=@Id
               AND (message."LockedUntil" IS NULL OR message."LockedUntil" <= clock.now)
               AND {_TerminalRowGuardWithRetries}
-            RETURNING message."LockedUntil",message."Owner"
+            RETURNING message."LockedUntil",message."Owner",{attemptProjection}
             """;
 
         var owner = nodeMembership.GetOwnerTag();
@@ -1302,14 +1509,14 @@ internal sealed partial class PostgreSqlDataStorage(
         var storedLease = await connection
             .ExecuteReaderAsync(
                 sql,
-                LeaseDeadlineReader.ReadAsync,
+                _ReadInboxLeaseAsync,
                 commandTimeout: messagingOptions.Value.CommandTimeout,
                 sqlParams: sqlParams,
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
 
-        return _ApplyStoredLease(message, storedLease);
+        return _ApplyInboxLease(message, storedLease);
     }
 
     private async ValueTask<bool> _LeaseMessageAsync(
@@ -1378,6 +1585,13 @@ internal sealed partial class PostgreSqlDataStorage(
     )
     {
         var intentValue = MessageLaneCompatibility.ToPersistedValue(lane);
+        var isReceivedTable = string.Equals(tableName, _receivedTable, StringComparison.Ordinal);
+        var attemptAssignment = isReceivedTable
+            ? ",\n                \"AttemptId\" = CASE WHEN message.\"IsInboxRecord\" THEN gen_random_uuid() ELSE NULL END"
+            : string.Empty;
+        var inboxProjection = isReceivedTable
+            ? "message.\"IsInboxRecord\",message.\"TenantPresent\",message.\"TenantId\",message.\"MessageId\",message.\"ContractIdentity\",message.\"ContractVersion\",message.\"ConsumerIdentity\",message.\"Generation\",message.\"GenerationIncarnationId\",message.\"AttemptId\",message.\"IsInboxOrphaned\""
+            : "FALSE";
         // Transactional poison handling and claim-and-return. Unknown persisted lanes are excluded
         // before ordering and limiting, so they cannot consume a batch slot and are never leased,
         // deserialized, or mutated by automatic retry pickup. The claim UPDATE performs leasing and
@@ -1411,10 +1625,11 @@ internal sealed partial class PostgreSqlDataStorage(
             )
             UPDATE {tableName} AS message
             SET "LockedUntil" = statement_timestamp() + (@LeaseSeconds * INTERVAL '1 second'),
-                "Owner" = @Owner
+                "Owner" = @Owner{attemptAssignment}
             FROM candidates
             WHERE message."Id" = candidates."Id"
-            RETURNING message."Id",message."Content",message."IntentType",message."Retries",message."InlineAttempts",message."Added",message."NextRetryAt",message."LockedUntil",message."Owner";
+            RETURNING message."Id",message."Content",message."IntentType",message."Retries",message."InlineAttempts",message."Added",message."NextRetryAt",message."LockedUntil",message."Owner",
+                {inboxProjection};
             """;
 
         object[] sqlParams =
@@ -1474,6 +1689,38 @@ internal sealed partial class PostgreSqlDataStorage(
                                 Owner = reader.IsDBNull(8) ? null : reader.GetString(8),
 #pragma warning restore CA1849, VSTHRD103, AsyncFixer02, MA0042
                             };
+
+                            if (reader.GetBoolean(9))
+                            {
+                                var generation = reader.GetInt64(16);
+                                var incarnationId = reader.GetGuid(17);
+                                var lockedUntil =
+                                    mediumMessage.LockedUntil
+                                    ?? throw new InvalidOperationException(
+                                        "Claimed inbox row has no durable lease deadline."
+                                    );
+                                var attemptId = reader.GetGuid(18);
+                                mediumMessage.InboxKey = new InboxKey(
+                                    reader.GetBoolean(10) ? reader.GetString(11) : null,
+                                    reader.GetString(12),
+                                    persistedLane,
+                                    reader.GetString(13),
+                                    reader.GetString(14),
+                                    reader.GetString(15),
+                                    generation
+                                );
+                                mediumMessage.InboxGeneration = new InboxGeneration(generation, incarnationId);
+                                mediumMessage.InboxAttemptFence = new InboxAttemptFence(
+                                    storageId,
+                                    persistedLane,
+                                    generation,
+                                    incarnationId,
+                                    attemptId,
+                                    mediumMessage.Owner,
+                                    lockedUntil
+                                );
+                                mediumMessage.IsInboxOrphaned = reader.GetBoolean(19);
+                            }
                         }
 #pragma warning disable CA1031 // deliberately broad: one un-deserializable row must not abort/starve the batch (#3)
                         catch (Exception ex)

@@ -310,6 +310,84 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     }
 
     [Fact]
+    public override Task should_converge_inbox_admission_and_require_exact_fence()
+    {
+        return base.should_converge_inbox_admission_and_require_exact_fence();
+    }
+
+    [Fact]
+    public override Task should_converge_n_way_inbox_admission_on_one_generation()
+    {
+        return base.should_converge_n_way_inbox_admission_on_one_generation();
+    }
+
+    [Fact]
+    public override Task should_isolate_every_persisted_inbox_key_component()
+    {
+        return base.should_isolate_every_persisted_inbox_key_component();
+    }
+
+    [Fact]
+    public override Task should_enforce_inbox_key_length_boundaries_without_truncation()
+    {
+        return base.should_enforce_inbox_key_length_boundaries_without_truncation();
+    }
+
+    [Fact]
+    public override Task should_suppress_terminal_inbox_redelivery_independent_of_topology_group()
+    {
+        return base.should_suppress_terminal_inbox_redelivery_independent_of_topology_group();
+    }
+
+    [Fact]
+    public async Task should_publish_final_inbox_schema_marker_and_key_index()
+    {
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        var state = await connection.QuerySingleAsync<(int SchemaVersion, long IndexCount)>(
+            """
+            SELECT state."SchemaVersion", (
+                SELECT COUNT(*) FROM pg_indexes
+                WHERE schemaname='messaging' AND indexname='uq_received_inbox_key'
+            ) AS "IndexCount"
+            FROM messaging.schema_state AS state
+            WHERE state."Component"='inbox';
+            """
+        );
+
+        state.SchemaVersion.Should().Be(2);
+        state.IndexCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_fail_closed_when_inbox_schema_is_newer_than_supported()
+    {
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.ExecuteAsync(
+            "UPDATE messaging.schema_state SET \"SchemaVersion\"=3 WHERE \"Component\"='inbox';"
+        );
+
+        try
+        {
+            var act = async () => await GetInitializer().InitializeAsync(AbortToken);
+
+            await act.Should().ThrowAsync<PostgresException>().WithMessage("*newer than supported version 2*");
+            (
+                await connection.ExecuteScalarAsync<int>(
+                    "SELECT \"SchemaVersion\" FROM messaging.schema_state WHERE \"Component\"='inbox';"
+                )
+            )
+                .Should()
+                .Be(3, "a rejected older binary must not rewrite the newer readiness marker");
+        }
+        finally
+        {
+            await connection.ExecuteAsync(
+                "UPDATE messaging.schema_state SET \"SchemaVersion\"=2 WHERE \"Component\"='inbox';"
+            );
+        }
+    }
+
+    [Fact]
     public override Task should_store_published_message()
     {
         return base.should_store_published_message();

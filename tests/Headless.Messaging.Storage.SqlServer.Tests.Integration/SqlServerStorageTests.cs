@@ -283,6 +283,80 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
     }
 
     [Fact]
+    public override Task should_converge_inbox_admission_and_require_exact_fence()
+    {
+        return base.should_converge_inbox_admission_and_require_exact_fence();
+    }
+
+    [Fact]
+    public override Task should_converge_n_way_inbox_admission_on_one_generation()
+    {
+        return base.should_converge_n_way_inbox_admission_on_one_generation();
+    }
+
+    [Fact]
+    public override Task should_isolate_every_persisted_inbox_key_component()
+    {
+        return base.should_isolate_every_persisted_inbox_key_component();
+    }
+
+    [Fact]
+    public override Task should_enforce_inbox_key_length_boundaries_without_truncation()
+    {
+        return base.should_enforce_inbox_key_length_boundaries_without_truncation();
+    }
+
+    [Fact]
+    public override Task should_suppress_terminal_inbox_redelivery_independent_of_topology_group()
+    {
+        return base.should_suppress_terminal_inbox_redelivery_independent_of_topology_group();
+    }
+
+    [Fact]
+    public async Task should_publish_final_inbox_schema_marker_and_key_index()
+    {
+        await using var connection = new SqlConnection(fixture.ConnectionString);
+        var state = await connection.QuerySingleAsync<(int SchemaVersion, long IndexCount)>(
+            """
+            SELECT state.SchemaVersion, (
+                SELECT COUNT_BIG(*) FROM sys.indexes
+                WHERE object_id=OBJECT_ID(N'messaging.Received') AND name=N'UX_messaging_Received_InboxKey'
+            ) AS IndexCount
+            FROM messaging.SchemaState AS state
+            WHERE state.Component=N'inbox';
+            """
+        );
+
+        state.SchemaVersion.Should().Be(2);
+        state.IndexCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_fail_closed_when_inbox_schema_is_newer_than_supported()
+    {
+        await using var connection = new SqlConnection(fixture.ConnectionString);
+        await connection.ExecuteAsync("UPDATE messaging.SchemaState SET SchemaVersion=3 WHERE Component=N'inbox';");
+
+        try
+        {
+            var act = async () => await GetInitializer().InitializeAsync(AbortToken);
+
+            await act.Should().ThrowAsync<SqlException>().WithMessage("*newer than supported version 2*");
+            (
+                await connection.ExecuteScalarAsync<int>(
+                    "SELECT SchemaVersion FROM messaging.SchemaState WHERE Component=N'inbox';"
+                )
+            )
+                .Should()
+                .Be(3, "a rejected older binary must not rewrite the newer readiness marker");
+        }
+        finally
+        {
+            await connection.ExecuteAsync("UPDATE messaging.SchemaState SET SchemaVersion=2 WHERE Component=N'inbox';");
+        }
+    }
+
+    [Fact]
     public override Task should_store_published_message()
     {
         return base.should_store_published_message();
@@ -1423,6 +1497,75 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
         picked.Should().NotContain(message => message.StorageId == newestId);
     }
 
+    [Fact]
+    public async Task should_claim_received_recovery_when_read_committed_snapshot_is_enabled()
+    {
+        var databaseName = $"headless_messaging_rcsi_{Guid.NewGuid():N}";
+        var masterBuilder = new SqlConnectionStringBuilder(fixture.ConnectionString)
+        {
+            InitialCatalog = "master",
+            Pooling = false,
+        };
+        var databaseBuilder = new SqlConnectionStringBuilder(fixture.ConnectionString)
+        {
+            InitialCatalog = databaseName,
+            Pooling = false,
+        };
+
+        await using var master = new SqlConnection(masterBuilder.ConnectionString);
+        await master.OpenAsync(AbortToken);
+        await master.ExecuteAsync($"CREATE DATABASE [{databaseName}];");
+
+        try
+        {
+            await master.ExecuteAsync(
+                $"ALTER DATABASE [{databaseName}] SET READ_COMMITTED_SNAPSHOT ON WITH ROLLBACK IMMEDIATE;"
+            );
+            var messagingOptions = new MessagingOptions { Version = "v1", RetryBatchSize = 1 };
+            var sqlServerOptions = Options.Create(
+                new SqlServerOptions { ConnectionString = databaseBuilder.ConnectionString, Schema = "messaging" }
+            );
+            var initializer = new SqlServerStorageInitializer(
+                NullLogger<SqlServerStorageInitializer>.Instance,
+                sqlServerOptions,
+                Options.Create(messagingOptions)
+            );
+            await initializer.InitializeAsync(AbortToken);
+            var storage = _CreateStorage(messagingOptions, databaseBuilder.ConnectionString);
+
+            var retryId = Guid.NewGuid();
+            await using (var connection = new SqlConnection(databaseBuilder.ConnectionString))
+            {
+                await connection.OpenAsync(AbortToken);
+                (
+                    await connection.ExecuteScalarAsync<bool>(
+                        "SELECT is_read_committed_snapshot_on FROM sys.databases WHERE name=DB_NAME();"
+                    )
+                )
+                    .Should()
+                    .BeTrue();
+                await _InsertHealthyRetryRowAsync(
+                    connection,
+                    "Received",
+                    retryId,
+                    GetSerializer().Serialize(CreateMessage("sql-rcsi-recovery")),
+                    DateTimeOffset.UtcNow.AddMinutes(-1)
+                );
+            }
+
+            var claimed = await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken);
+
+            claimed.Should().ContainSingle(message => message.StorageId == retryId);
+        }
+        finally
+        {
+            SqlConnection.ClearAllPools();
+            await master.ExecuteAsync(
+                $"ALTER DATABASE [{databaseName}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [{databaseName}];"
+            );
+        }
+    }
+
     // -------------------------------------------------------------------------
     // Filtered-index shape verification — pins the SQL Server analog of the
     // PostgreSqlStorageTests partial-index test (`should_key_retry_pickup_index_on_version_then_next_retry_at`).
@@ -1543,11 +1686,16 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
 
     private SqlServerDataStorage _CreateStorage(MessagingOptions messagingOptions)
     {
+        return _CreateStorage(messagingOptions, fixture.ConnectionString);
+    }
+
+    private SqlServerDataStorage _CreateStorage(MessagingOptions messagingOptions, string connectionString)
+    {
         messagingOptions.RetryPolicy.MaxPersistedRetries = 4;
         messagingOptions.FailedMessageExpiredAfter = 3600;
 
         var sqlServerOptions = Options.Create(
-            new SqlServerOptions { ConnectionString = fixture.ConnectionString, Schema = "messaging" }
+            new SqlServerOptions { ConnectionString = connectionString, Schema = "messaging" }
         );
         var initializer = new SqlServerStorageInitializer(
             NullLogger<SqlServerStorageInitializer>.Instance,
