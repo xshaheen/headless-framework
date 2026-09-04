@@ -13,12 +13,15 @@ Provides real-time visibility into message processing, failures, retries, and sy
 - **Failure Management**: View and retry failed messages
 - **Node Discovery**: Multi-instance cluster visibility through async `INodeDiscoveryProvider` operations with optional trailing cancellation tokens; implementations propagate caller-requested cancellation instead of converting it to an empty or not-found result
 - **Provider Capabilities**: The protected metadata endpoint and responsive footer dialog show every registered provider role. Transport cards report delivery lanes and topology, storage cards report delivery lanes and delayed scheduling, and coordination cards report cluster coordination without exposing broker resource names or credentials
+- **Authorized Inbox Generations**: The received view shows bounded outcome, tier, generation, replay provenance, hold, expiry, and routability fields from the authenticated inbox operations projection. It does not project payloads or raw headers.
 - **Performance Metrics**: Consumer processing stats and bottlenecks
 - **5-Mode Auth**: None, Basic, API Key, Host, Custom (shared with Jobs Dashboard)
 
 ## Design Notes
 
 The dashboard exposes operational endpoints for inspecting, retrying, re-executing, and deleting message records. Its protected `/api/meta` response also projects sanitized registered-provider descriptors; deployment cutover state remains operator-owned and is never inferred by the dashboard. Treat `WithNoAuth()` as development-only unless the dashboard is isolated behind trusted network controls. Production deployments should use `WithHostAuthentication(...)`, `WithBasicAuth(...)`, `WithApiKey(...)`, or `WithCustomAuth(...)`, and should set an explicit CORS policy before exposing the dashboard cross-origin.
+
+Inbox operations are generation-fenced and audited. Terminal identity is retained for 30 days by default or the consumer's `InboxRetention(...)` override. Expiry and purge reset duplicate-suppression identity; force reprocessing creates a linked child generation.
 
 ## Installation
 

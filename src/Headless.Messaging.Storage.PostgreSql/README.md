@@ -18,6 +18,8 @@ Provides durable raw ADO.NET message storage using PostgreSQL with automatic sch
 
 Fresh dispatch, retry pickup, and delayed scheduling atomically compare and stamp ownership from one PostgreSQL clock snapshot. Delayed scheduling uses ordered `FOR UPDATE SKIP LOCKED` claiming, commits the transition to `Queued`, and only then returns winner messages for local enqueue. Circuit-open received retries atomically advance `NextRetryAt` and clear only the exact live `(lane, Owner, LockedUntil)` lease generation using PostgreSQL's authoritative clock and null-safe owner matching.
 
+The raw provider declares `DurableDedupeOnly`: inbox state survives restart but does not commit with application state. Terminal generations retain identity for 30 days by default, with `InboxRetention(...)` per consumer. Expiry or authorized purge resets identity; force reprocessing records linked replay provenance.
+
 ## Installation
 
 ```bash

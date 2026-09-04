@@ -241,6 +241,68 @@ public sealed class ReceivedMessageEndpointTests : TestBase
     }
 
     [Fact]
+    public async Task should_return_authorized_safe_inbox_generation_projection()
+    {
+        var operations = Substitute.For<IInboxOperationsApi>();
+        var incarnationId = Guid.NewGuid();
+        operations
+            .QueryAsync(
+                Arg.Any<InboxGenerationQuery>(),
+                Arg.Any<InboxAuthorizationContext>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(
+                ValueTask.FromResult(
+                    new IndexPage<InboxGenerationView>(
+                        [
+                            new InboxGenerationView(
+                                Guid.NewGuid(),
+                                incarnationId,
+                                3,
+                                "tenant-7",
+                                "message-1",
+                                MessageLane.Queue,
+                                "orders.created",
+                                "v1",
+                                "orders.consumer",
+                                StatusName.Failed,
+                                true,
+                                true,
+                                Guid.NewGuid(),
+                                Guid.NewGuid(),
+                                DateTimeOffset.UtcNow,
+                                DateTimeOffset.UtcNow.AddDays(30),
+                                true,
+                                DateTimeOffset.UtcNow,
+                                "dashboard-operator",
+                                "investigation"
+                            ),
+                        ],
+                        index: 0,
+                        size: 20,
+                        totalItems: 1
+                    )
+                )
+            );
+        _dataStorage.GetInboxOperationsApi().Returns(operations);
+        await using var app = _CreateTestApp(_dataStorage);
+        await app.StartAsync(AbortToken);
+        using var client = app.GetTestClient();
+
+        var response = await client.GetAsync("/api/inbox?currentPage=1&perPage=20", AbortToken);
+
+        response.EnsureSuccessStatusCode();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(AbortToken));
+        var json = document.RootElement.ToString();
+        json.Should()
+            .Contain("tenant-7")
+            .And.Contain("message-1")
+            .And.Contain("orders.consumer")
+            .And.Contain(incarnationId.ToString());
+        json.Should().NotContain("content").And.NotContain("headers").And.NotContain("payload");
+    }
+
+    [Fact]
     public async Task should_route_received_delete_through_audited_inbox_operations()
     {
         // given

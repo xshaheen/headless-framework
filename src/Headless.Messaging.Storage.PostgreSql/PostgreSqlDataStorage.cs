@@ -851,11 +851,12 @@ internal sealed partial class PostgreSqlDataStorage(
 
         if (string.Equals(table, _receivedTable, StringComparison.Ordinal))
         {
-            return await connection
-                .ExecuteNonQueryAsync(
+            var (deletedCount, inboxRows) = await connection
+                .ExecuteReaderAsync(
                     $"""
                     WITH candidates AS MATERIALIZED (
                         SELECT "Id","IsInboxRecord","GenerationIncarnationId","StatusName",
+                               "ConsumerIdentity","IntentType",
                                CASE WHEN "IsInboxRecord" THEN gen_random_uuid() END AS "OperationId",
                                CASE WHEN "IsInboxRecord" THEN gen_random_uuid() END AS "AuditId"
                         FROM {_receivedTable}
@@ -874,16 +875,52 @@ internal sealed partial class PostgreSqlDataStorage(
                         SELECT c."AuditId",c."OperationId",c."GenerationIncarnationId",'Cleanup','headless.messaging.collector','retention_expired','Applied',transaction_timestamp()
                         FROM candidates c JOIN receipts r ON r."OperationId"=c."OperationId"
                         RETURNING "OperationId"
-                    )
+                    ), deleted AS (
                     DELETE FROM {_receivedTable} target
                     USING candidates c
-                    WHERE target."Id"=c."Id" AND (NOT c."IsInboxRecord" OR EXISTS (SELECT 1 FROM audits a WHERE a."OperationId"=c."OperationId"));
+                    WHERE target."Id"=c."Id" AND (NOT c."IsInboxRecord" OR EXISTS (SELECT 1 FROM audits a WHERE a."OperationId"=c."OperationId"))
+                    RETURNING target."IsInboxRecord",target."ConsumerIdentity",target."IntentType"
+                    )
+                    SELECT "IsInboxRecord","ConsumerIdentity","IntentType" FROM deleted;
                     """,
+                    static async (reader, token) =>
+                    {
+                        var deletedCount = 0;
+                        List<(string ConsumerIdentity, MessageLane Lane)> inboxRows = [];
+                        while (await reader.ReadAsync(token).ConfigureAwait(false))
+                        {
+                            deletedCount++;
+                            if (reader.GetBoolean(0))
+                            {
+                                inboxRows.Add(
+                                    (
+                                        reader.GetString(1),
+                                        MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(2))
+                                    )
+                                );
+                            }
+                        }
+
+                        return (DeletedCount: deletedCount, InboxRows: inboxRows);
+                    },
                     commandTimeout: messagingOptions.Value.CommandTimeout,
                     sqlParams: sqlParams,
                     cancellationToken: cancellationToken
                 )
                 .ConfigureAwait(false);
+            foreach (var (consumerIdentity, lane) in inboxRows)
+            {
+                MessagingMetrics.RecordInbox(
+                    InboxMetricKind.Retention,
+                    consumerIdentity,
+                    lane,
+                    InboxMetricOutcome.Expired,
+                    messagingOptions.Value.RequiredInboxCapability,
+                    "PostgreSql"
+                );
+            }
+
+            return deletedCount;
         }
 
         return await connection

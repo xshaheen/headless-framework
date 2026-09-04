@@ -86,6 +86,8 @@ Use Commit Coordination when a framework subsystem must defer work until the dat
 
 The coordinator guarantees exactly-once callback invocation per coordinator instance. It does not guarantee exactly-once business effects for brokers, external services, or processes that crash after commit.
 
+Messaging's transactional inbox uses the application `DbContext` transaction to commit the fenced inbox outcome, enlisted application state, and captured durable Bus/Queue rows together. User code is never wrapped in transparent execution-strategy replay. Handler entry, direct transport, and external or otherwise non-enlisted effects can repeat.
+
 **Commit detection is an acceleration hook, not a correctness mechanism.** A detected signal (SQL Server SqlClient diagnostic, EF interceptor) only dispatches deferred work *sooner*; correctness must not depend on it firing. The consumer commits a durable row inside the transaction and recovers it through an independent polling sweep, so if the signal is missed, delayed, or disabled, the work is still found and executed. In-memory accelerator buffers (`InMemoryWorkBuffer<T>`) therefore require the consumer to own that durable store plus recovery (messaging: outbox rows + retry sweep); `DurableWorkBuffer<TRow>` writes rows in-transaction and does not depend on detection at all.
 
 ## Agent Instructions

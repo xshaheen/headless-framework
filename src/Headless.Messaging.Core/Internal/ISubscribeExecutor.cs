@@ -65,6 +65,9 @@ internal sealed class SubscribeExecutor(
     private readonly MessagingTelemetry _telemetry = telemetry ?? MessagingTelemetry.Default;
     private readonly string? _hostName = HostIdentity.GetInstanceHostname();
     private readonly MessagingOptions _options = options.Value;
+    private readonly InboxMetricPolicy _inboxMetricPolicy =
+        provider.GetService<InboxMetricPolicy>() ?? new InboxMetricPolicy(IncludeTenantId: false);
+    private readonly IMessagingCapabilityModel? _capabilityModel = provider.GetService<IMessagingCapabilityModel>();
     private readonly RetryPolicyOptions _retryPolicy = options.Value.RetryPolicy;
     private readonly MessagingRetryPipeline _retryPipeline = new(options.Value.RetryPolicy, timeProvider, logger);
 
@@ -239,6 +242,8 @@ internal sealed class SubscribeExecutor(
                 await _InvokeConsumerMethodAsync(message, descriptor, cancellationToken).ConfigureAwait(false);
                 await _SetSuccessfulState(message, executionState).ConfigureAwait(false);
             }
+
+            _RecordInboxMetric(message, InboxMetricKind.Terminal, InboxMetricOutcome.Succeeded);
 
             sp.Stop();
 
@@ -520,6 +525,7 @@ internal sealed class SubscribeExecutor(
 
         if (affected && decision.Outcome == MessagingRetryDecision.Kind.Exhausted)
         {
+            _RecordInboxMetric(message, InboxMetricKind.Terminal, InboxMetricOutcome.FailedExhausted);
             // #6 — shared OnExhausted body lives in RetryHelper; only MessageType varies per path.
             await RetryHelper
                 .RunOnExhaustedAsync(
@@ -600,6 +606,10 @@ internal sealed class SubscribeExecutor(
         {
             message.InlineAttempts = originalInlineAttempts;
         }
+        else
+        {
+            _RecordInboxMetric(message, InboxMetricKind.Attempt, InboxMetricOutcome.Reserved);
+        }
 
         return reserved;
     }
@@ -615,8 +625,39 @@ internal sealed class SubscribeExecutor(
         {
             message.InlineAttempts = originalInlineAttempts;
         }
+        else
+        {
+            _RecordInboxMetric(message, InboxMetricKind.Attempt, InboxMetricOutcome.Reserved);
+        }
 
         return reserved;
+    }
+
+    private void _RecordInboxMetric(MediumMessage message, InboxMetricKind kind, InboxMetricOutcome outcome)
+    {
+        if (message.InboxKey is not { } key || _capabilityModel is null)
+        {
+            return;
+        }
+
+        var storageCapability = _capabilityModel.Providers.FirstOrDefault(capability =>
+            capability.Role is MessagingProviderRole.Storage
+        );
+        if (storageCapability?.InboxCapability is not { } tier)
+        {
+            return;
+        }
+
+        MessagingMetrics.RecordInbox(
+            kind,
+            key.ConsumerIdentity,
+            key.Lane,
+            outcome,
+            tier,
+            storageCapability.Provider,
+            message.Origin.Headers.TryGetValue(Headers.TenantId, out var tenantId) ? tenantId : null,
+            _inboxMetricPolicy.IncludeTenantId
+        );
     }
 
     private void _LogRetryDecision(MediumMessage message, Exception ex, MessagingRetryDecision decision)

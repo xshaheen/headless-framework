@@ -77,6 +77,39 @@
         />
       </div>
 
+      <v-card v-if="canLoadInbox" class="messages-card mb-4">
+        <v-card-title class="text-subtitle-1">Authorized Inbox Generations</v-card-title>
+        <v-card-text>
+          <v-table density="compact">
+            <thead>
+              <tr>
+                <th>Tenant</th><th>Message</th><th>Consumer</th><th>Lane</th><th>Outcome</th>
+                <th>Tier</th><th>Generation</th>
+                <th>Provenance</th><th>Hold</th><th>Expires</th><th>Recovery</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="inboxGenerations.length === 0">
+                <td colspan="11" class="text-center pa-4 text-medium-emphasis">No retained inbox generations</td>
+              </tr>
+              <tr v-for="generation in inboxGenerations" :key="generation.incarnationId">
+                <td>{{ generation.tenantId ?? '—' }}</td>
+                <td>{{ generation.messageId }}</td>
+                <td>{{ generation.consumerIdentity }}</td>
+                <td>{{ generation.lane }}</td>
+                <td>{{ generation.status }}</td>
+                <td>{{ inboxTier }}</td>
+                <td>{{ generation.generation }}</td>
+                <td>{{ generation.replayParentIncarnationId ? 'Replay' : 'Original' }}</td>
+                <td>{{ generation.isHeld ? 'Held' : 'Released' }}</td>
+                <td>{{ generation.effectiveExpiresAt ? formatDateTime(generation.effectiveExpiresAt) : '—' }}</td>
+                <td>{{ generation.isOrphaned ? 'Orphaned' : 'Routable' }}</td>
+              </tr>
+            </tbody>
+          </v-table>
+        </v-card-text>
+      </v-card>
+
       <!-- Batch Actions -->
       <div v-if="selectedIds.length > 0" class="batch-actions mb-3">
         <v-chip size="small" color="primary" variant="tonal" class="mr-2">
@@ -233,6 +266,20 @@ interface ReceivedMessage {
   resolvedDeliveryMode: DeliveryMode | null
 }
 
+interface InboxGeneration {
+  incarnationId: string
+  generation: number
+  tenantId: string | null
+  messageId: string
+  lane: MessageLane
+  consumerIdentity: string
+  status: string
+  isOrphaned: boolean
+  replayParentIncarnationId: string | null
+  effectiveExpiresAt: string | null
+  isHeld: boolean
+}
+
 const alertStore = useAlertStore()
 const messagingStore = useMessagingStore()
 const { stats } = storeToRefs(messagingStore)
@@ -278,6 +325,9 @@ const groupFilter = ref('')
 const contentFilter = ref('')
 const isLoading = ref(false)
 const messages = ref<ReceivedMessage[]>([])
+const inboxGenerations = ref<InboxGeneration[]>([])
+const inboxTier = ref('Unavailable')
+const canLoadInbox = window.MessagingConfig?.auth?.enabled === true
 const selectedIds = ref<string[]>([])
 const selectAll = ref(false)
 const detailDialogOpen = ref(false)
@@ -314,14 +364,27 @@ async function loadMessages(page?: number, pageSize?: number) {
     if (groupFilter.value) params.set('group', groupFilter.value)
     if (contentFilter.value) params.set('content', contentFilter.value)
 
-    const [data] = await Promise.all([
+    const inboxRequest = canLoadInbox
+      ? httpService
+          .get<{ items: InboxGeneration[] }>('/inbox?currentPage=1&perPage=20')
+          .catch(() => ({ items: [] }))
+      : Promise.resolve({ items: [] as InboxGeneration[] })
+    const [data, inbox, meta] = await Promise.all([
       httpService.get<{ items: ReceivedMessage[]; totals: number }>(
         `/received/${activeStatus.value}?${params}`,
       ),
+      inboxRequest,
+      httpService.get<{
+        providerCapabilities: Array<{ role: string; inboxCapability: string | null }>
+      }>('/meta'),
       messagingStore.fetchStats(),
     ])
     if (generation !== loadGeneration) return
     messages.value = data.items || []
+    inboxGenerations.value = inbox.items || []
+    inboxTier.value =
+      meta.providerCapabilities.find((capability) => capability.role === 'Storage')?.inboxCapability ??
+      'Unavailable'
     pagination.totalCount.value = data.totals || 0
     selectedIds.value = []
     selectAll.value = false

@@ -1075,6 +1075,17 @@ internal sealed partial class InMemoryDataStorage(
                     if (ReceivedMessages.TryRemove(row.StorageId, out var removedMsg))
                     {
                         _RemoveFromIdentityIndex(removedMsg);
+                        if (removedMsg.InboxKey is { } key)
+                        {
+                            MessagingMetrics.RecordInbox(
+                                InboxMetricKind.Retention,
+                                key.ConsumerIdentity,
+                                key.Lane,
+                                InboxMetricOutcome.Expired,
+                                MessagingInboxCapabilityTier.ProcessLocal,
+                                "InMemory"
+                            );
+                        }
                         removed++;
                     }
                 }

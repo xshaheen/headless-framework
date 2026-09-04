@@ -232,7 +232,36 @@ internal sealed partial class PostgreSqlDataStorage
         await _WritePostgreSqlReceiptAndAuditAsync(connection, transaction, result, cancellationToken)
             .ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        _RecordPostgreSqlInboxOperation(row, operationType, outcome);
         return result;
+    }
+
+    private void _RecordPostgreSqlInboxOperation(
+        InboxOperationRow? row,
+        InboxOperationType operationType,
+        InboxOperationOutcome outcome
+    )
+    {
+        if (row is null || outcome is not InboxOperationOutcome.Applied)
+            return;
+        var kind =
+            operationType is InboxOperationType.ForceReprocess ? InboxMetricKind.Replay : InboxMetricKind.Retention;
+        var metricOutcome = operationType switch
+        {
+            InboxOperationType.Hold => InboxMetricOutcome.Held,
+            InboxOperationType.ReleaseHold => InboxMetricOutcome.Released,
+            InboxOperationType.ForceReprocess => InboxMetricOutcome.Replayed,
+            InboxOperationType.Purge => InboxMetricOutcome.Purged,
+            _ => throw new ArgumentOutOfRangeException(nameof(operationType), operationType, message: null),
+        };
+        MessagingMetrics.RecordInbox(
+            kind,
+            row.ConsumerIdentity,
+            row.Lane,
+            metricOutcome,
+            messagingOptions.Value.RequiredInboxCapability,
+            "PostgreSql"
+        );
     }
 
     private static InboxOperationOutcome _EvaluateRelationalOperation(
@@ -371,7 +400,7 @@ internal sealed partial class PostgreSqlDataStorage
     )
     {
         await using var command = new NpgsqlCommand(
-            $"SELECT \"Id\",\"StatusName\",\"NextRetryAt\",\"IsHeld\",\"IsCurrentGeneration\",\"Generation\" FROM {_receivedTable} WHERE \"IsInboxRecord\" AND \"GenerationIncarnationId\"=@IncarnationId FOR UPDATE;",
+            $"SELECT \"Id\",\"StatusName\",\"NextRetryAt\",\"IsHeld\",\"IsCurrentGeneration\",\"Generation\",\"IntentType\",\"ConsumerIdentity\" FROM {_receivedTable} WHERE \"IsInboxRecord\" AND \"GenerationIncarnationId\"=@IncarnationId FOR UPDATE;",
             connection,
             transaction
         );
@@ -384,7 +413,9 @@ internal sealed partial class PostgreSqlDataStorage
                 reader.IsDBNull(2) ? null : reader.GetFieldValue<DateTimeOffset>(2),
                 reader.GetBoolean(3),
                 reader.GetBoolean(4),
-                reader.GetInt64(5)
+                reader.GetInt64(5),
+                MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(6)),
+                reader.GetString(7)
             )
             : null;
     }
@@ -546,7 +577,9 @@ internal sealed partial class PostgreSqlDataStorage
         DateTimeOffset? NextRetryAt,
         bool IsHeld,
         bool IsCurrent,
-        long Generation
+        long Generation,
+        MessageLane Lane,
+        string ConsumerIdentity
     );
 }
 

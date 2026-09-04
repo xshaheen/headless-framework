@@ -60,7 +60,13 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     {
         return new ConsumerExecutorDescriptor
         {
-            MethodInfo = typeof(object).GetMethod(nameof(ToString), BindingFlags.Public | BindingFlags.Instance)!,
+            MethodInfo = typeof(object).GetMethod(
+                nameof(ToString),
+                BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+                binder: null,
+                types: Type.EmptyTypes,
+                modifiers: null
+            )!,
             ImplTypeInfo = typeof(object).GetTypeInfo(),
             MessageName = "test.messageName",
             GroupName = group,

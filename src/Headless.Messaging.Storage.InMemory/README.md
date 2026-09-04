@@ -17,6 +17,8 @@ Provides ephemeral message storage without database dependencies for local devel
 
 InMemoryStorage uses its injected `TimeProvider` for both application-scheduled `NextRetryAt` and authoritative lease ownership. It implements the same duration-based lease SPI and returns the persisted `(LockedUntil, Owner)` identity. Delayed scheduling atomically transitions and leases each per-message winner before returning a deterministic bounded batch. Circuit-open received retries atomically advance `NextRetryAt` and clear only the exact live `(lane, Owner, LockedUntil)` lease generation under the per-row lock.
 
+Its inbox tier is `ProcessLocal`: duplicate suppression, 30-day default terminal retention, per-consumer `InboxRetention(...)`, replay provenance, holds, and recovery state disappear on process restart. Expiry or purge resets the deduplication identity.
+
 ## Installation
 
 ```bash

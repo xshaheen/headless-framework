@@ -858,7 +858,7 @@ internal sealed partial class SqlServerDataStorage(
 
         if (string.Equals(table, _receivedTable, StringComparison.Ordinal))
         {
-            return await connection
+            var (deletedCount, inboxRows) = await connection
                 .ExecuteReaderAsync(
                     $"""
                     SET NOCOUNT ON;
@@ -877,25 +877,51 @@ internal sealed partial class SqlServerDataStorage(
                     SELECT OperationId,GenerationIncarnationId,N'Cleanup',StatusName,N'headless.messaging.collector',N'retention_expired',N'Applied',Id,@Now FROM @Candidates WHERE IsInboxRecord=1;
                     INSERT INTO {InboxAuditTable}(AuditId,OperationId,GenerationIncarnationId,OperationType,Actor,Reason,Outcome,CreatedAt)
                     SELECT AuditId,OperationId,GenerationIncarnationId,N'Cleanup',N'headless.messaging.collector',N'retention_expired',N'Applied',@Now FROM @Candidates WHERE IsInboxRecord=1;
-                    DELETE target FROM {_receivedTable} target JOIN @Candidates candidate ON candidate.Id=target.Id;
-                    DECLARE @Deleted int=@@ROWCOUNT;
+                    DECLARE @DeletedRows TABLE(IsInboxRecord bit,ConsumerIdentity nvarchar(200),IntentType smallint);
+                    DELETE target
+                    OUTPUT DELETED.IsInboxRecord,DELETED.ConsumerIdentity,DELETED.IntentType INTO @DeletedRows
+                    FROM {_receivedTable} target JOIN @Candidates candidate ON candidate.Id=target.Id;
                     COMMIT TRANSACTION;
-                    SELECT @Deleted;
+                    SELECT IsInboxRecord,ConsumerIdentity,IntentType FROM @DeletedRows;
                     """,
                     static async (reader, token) =>
                     {
+                        var deletedCount = 0;
+                        List<(string ConsumerIdentity, MessageLane Lane)> inboxRows = [];
                         while (await reader.ReadAsync(token).ConfigureAwait(false))
                         {
-                            return reader.GetInt32(0);
+                            deletedCount++;
+                            if (reader.GetBoolean(0))
+                            {
+                                inboxRows.Add(
+                                    (
+                                        reader.GetString(1),
+                                        MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(2))
+                                    )
+                                );
+                            }
                         }
 
-                        return 0;
+                        return (DeletedCount: deletedCount, InboxRows: inboxRows);
                     },
                     commandTimeout: messagingOptions.Value.CommandTimeout,
                     sqlParams: [new SqlParameter("@timeout", timeout), new SqlParameter("@batchCount", batchCount)],
                     cancellationToken: cancellationToken
                 )
                 .ConfigureAwait(false);
+            foreach (var (consumerIdentity, lane) in inboxRows)
+            {
+                MessagingMetrics.RecordInbox(
+                    InboxMetricKind.Retention,
+                    consumerIdentity,
+                    lane,
+                    InboxMetricOutcome.Expired,
+                    messagingOptions.Value.RequiredInboxCapability,
+                    "SqlServer"
+                );
+            }
+
+            return deletedCount;
         }
 
         return await connection

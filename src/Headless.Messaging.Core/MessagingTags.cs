@@ -41,4 +41,16 @@ public static class MessagingTags
 
     /// <summary>Elapsed time (ms) for invoking a subscriber handler.</summary>
     public const string InvokeDurationMs = "headless.messaging.invoke.duration_ms";
+
+    /// <summary>Registered stable consumer identity used by bounded inbox metrics.</summary>
+    public const string InboxConsumer = "headless.messaging.inbox.consumer";
+
+    /// <summary>Finite inbox lifecycle outcome.</summary>
+    public const string InboxOutcome = "headless.messaging.inbox.outcome";
+
+    /// <summary>Configured inbox guarantee tier.</summary>
+    public const string InboxTier = "headless.messaging.inbox.tier";
+
+    /// <summary>Configured storage provider name.</summary>
+    public const string InboxProvider = "headless.messaging.inbox.provider";
 }

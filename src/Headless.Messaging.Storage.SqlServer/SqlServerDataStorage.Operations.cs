@@ -236,7 +236,33 @@ internal sealed partial class SqlServerDataStorage
         await _WriteSqlServerReceiptAndAuditAsync(connection, transaction, result, cancellationToken)
             .ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        _RecordSqlServerInboxOperation(row, operationType, outcome);
         return result;
+    }
+
+    private void _RecordSqlServerInboxOperation(
+        SqlServerInboxOperationRow? row,
+        InboxOperationType operationType,
+        InboxOperationOutcome outcome
+    )
+    {
+        if (row is null || outcome is not InboxOperationOutcome.Applied)
+            return;
+        MessagingMetrics.RecordInbox(
+            operationType is InboxOperationType.ForceReprocess ? InboxMetricKind.Replay : InboxMetricKind.Retention,
+            row.ConsumerIdentity,
+            MessageLaneCompatibility.FromPersistedValue(row.IntentType),
+            operationType switch
+            {
+                InboxOperationType.Hold => InboxMetricOutcome.Held,
+                InboxOperationType.ReleaseHold => InboxMetricOutcome.Released,
+                InboxOperationType.ForceReprocess => InboxMetricOutcome.Replayed,
+                InboxOperationType.Purge => InboxMetricOutcome.Purged,
+                _ => throw new ArgumentOutOfRangeException(nameof(operationType), operationType, message: null),
+            },
+            messagingOptions.Value.RequiredInboxCapability,
+            "SqlServer"
+        );
     }
 
     private static InboxOperationOutcome _EvaluateRelationalOperation(

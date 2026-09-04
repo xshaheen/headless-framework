@@ -32,6 +32,8 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
     private readonly ICircuitBreakerMonitor? _circuitBreakerMonitor;
     private readonly ICircuitBreakerStateManager? _circuitBreakerStateManager;
     private readonly MethodMatcherCache? _consumerResolver;
+    private readonly IMessagingCapabilityModel? _capabilityModel;
+    private readonly InboxMetricPolicy _inboxMetricPolicy;
     private readonly bool _adaptivePolling;
     private readonly double _circuitOpenRateThreshold;
     private readonly Dictionary<RetryQuadrantKey, RetryQuadrantState> _quadrants;
@@ -51,7 +53,9 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
         [FromKeyedServices(MessagingKeys.LockProvider)] IDistributedLock lockProvider,
         ICircuitBreakerMonitor? circuitBreakerMonitor = null,
         ICircuitBreakerStateManager? circuitBreakerStateManager = null,
-        MethodMatcherCache? consumerResolver = null
+        MethodMatcherCache? consumerResolver = null,
+        IMessagingCapabilityModel? capabilityModel = null,
+        InboxMetricPolicy? inboxMetricPolicy = null
     )
     {
         _options = options;
@@ -62,6 +66,8 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
         _circuitBreakerMonitor = circuitBreakerMonitor;
         _circuitBreakerStateManager = circuitBreakerStateManager;
         _consumerResolver = consumerResolver;
+        _capabilityModel = capabilityModel;
+        _inboxMetricPolicy = inboxMetricPolicy ?? new InboxMetricPolicy(IncludeTenantId: false);
 
         _adaptivePolling = retryOptions.Value.AdaptivePolling;
         _maxInterval = retryOptions.Value.MaxPollingInterval;
@@ -485,15 +491,23 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
                     )
                 )
                 {
-                    await connection
+                    var orphaned = await connection
                         .MarkReceivedInboxOrphanedAsync(message, orphaned: true, CancellationToken.None)
                         .ConfigureAwait(false);
+                    if (orphaned)
+                    {
+                        _RecordInboxRecovery(message, InboxMetricOutcome.Orphaned);
+                    }
                     continue;
                 }
 
-                await connection
+                var routable = await connection
                     .MarkReceivedInboxOrphanedAsync(message, orphaned: false, CancellationToken.None)
                     .ConfigureAwait(false);
+                if (routable)
+                {
+                    _RecordInboxRecovery(message, InboxMetricOutcome.Routable);
+                }
                 message.Origin.Headers[Headers.Group] = descriptor.GroupName;
             }
 
@@ -580,6 +594,33 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
         {
             _AdjustPollingInterval(state, enqueued, skippedCircuitOpen);
         }
+    }
+
+    private void _RecordInboxRecovery(MediumMessage message, InboxMetricOutcome outcome)
+    {
+        if (message.InboxKey is not { } key || _capabilityModel is null)
+        {
+            return;
+        }
+
+        var storageCapability = _capabilityModel.Providers.FirstOrDefault(capability =>
+            capability.Role is MessagingProviderRole.Storage
+        );
+        if (storageCapability?.InboxCapability is not { } tier)
+        {
+            return;
+        }
+
+        MessagingMetrics.RecordInbox(
+            InboxMetricKind.Recovery,
+            key.ConsumerIdentity,
+            key.Lane,
+            outcome,
+            tier,
+            storageCapability.Provider,
+            message.Origin.Headers.TryGetValue(Headers.TenantId, out var tenantId) ? tenantId : null,
+            _inboxMetricPolicy.IncludeTenantId
+        );
     }
 
     private static ValueTask _ReleaseUnhandedAsync(

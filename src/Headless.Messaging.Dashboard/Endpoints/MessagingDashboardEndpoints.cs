@@ -242,6 +242,7 @@ public static class MessagingDashboardEndpoints
                 Lanes = capability.Lanes.Order().Select(lane => lane.ToString()).ToArray(),
                 capability.SupportsIndependentLaneTopology,
                 capability.SupportsDelayedScheduling,
+                InboxCapability = capability.InboxCapability?.ToString("G"),
             });
 
         return Results.Json(

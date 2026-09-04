@@ -159,6 +159,12 @@ The write is atomic with the business data; delivery is still at-least-once, so 
 
 ## Defaults And Telemetry
 
+Terminal inbox generations are retained for 30 days by default. Use `InboxRetention(...)` on a durable consumer for a deliberate override. Expiry or authorized purge removes that deduplication identity; force reprocessing instead creates a linked child generation with replay provenance.
+
+Inbox metrics use registered consumer identity and bounded lane, outcome, tier, and provider dimensions. They exclude message/replay IDs, payloads, and headers. Tenant identity is excluded unless `setup.Instrumentation.IncludeTenantIdInMetricTags = true` explicitly accepts the cardinality cost.
+
+The transactional tier commits the fenced inbox outcome, compatible enlisted application state, and captured durable Bus/Queue work atomically. It does not guarantee exactly-once handler entry, direct transport, or external/non-enlisted effects.
+
 - `AddHeadlessMessaging(...)` is the primary DI entry point.
 - `setup.Bus` and `setup.Queue` are the only registration roots. `ForMessage<TMessage>(...)` inherits its lane from that root, `MessageName(...)` sets the lane-specific logical name, and `Consumer<TConsumer>(...)` registers the matching consumer behavior with an explicit durable identity and contract version.
 - `setup.Bus.ForMessage<TMessage>(message => message.MessageName("orders.placed"))` is valid without consumers and declares a Bus publisher-only mapping; use the Queue root for an enqueue-only mapping.
@@ -620,7 +626,7 @@ Operational invariant: set Coordination's dead threshold no lower than the large
 
 ## Observability
 
-Emits OpenTelemetry metrics and traces natively under a single instrumentation name, `Headless.Messaging` (both `Meter` and `ActivitySource`), exposed as `MessagingDiagnostics.SourceName`. Register with `TracerProviderBuilder.AddMessagingInstrumentation()` / `MeterProviderBuilder.AddMessagingInstrumentation()` (typed helpers, `OpenTelemetry.Api` only — no SDK dependency), or subscribe by name. Instrument names and dimensions follow the OTel messaging semantic conventions (`messaging.publish.messages`, `messaging.consume.duration`, dims `messaging.operation`/`messaging.system`/`messaging.consumer.group`/`error.type`); framework-specific span attributes are namespaced `headless.messaging.*`. W3C `traceparent`/baggage propagation is built into publish/consume. Custom span enrichers implement `IActivityTagEnricher` (synchronous) and register via `setup.Instrumentation` inside `AddHeadlessMessaging(...)`; tenant-id/intent/retry-count built-ins are suppressible there. See [docs/llms/messaging.md](../../docs/llms/messaging.md) for the full instrument table.
+Emits OpenTelemetry metrics and traces natively under a single instrumentation name, `Headless.Messaging` (both `Meter` and `ActivitySource`), exposed as `MessagingDiagnostics.SourceName`. Register with `TracerProviderBuilder.AddMessagingInstrumentation()` / `MeterProviderBuilder.AddMessagingInstrumentation()` (typed helpers, `OpenTelemetry.Api` only — no SDK dependency), or subscribe by name. Standard instruments follow the OTel messaging semantic conventions. Inbox lifecycle counters cover duplicate, attempt, recovery, terminal, replay, retention, and capability events with bounded consumer/lane/outcome/tier/provider tags. Framework-specific attributes are namespaced `headless.messaging.*`. W3C `traceparent`/baggage propagation is built into publish/consume. Custom span enrichers implement `IActivityTagEnricher` (synchronous) and register via `setup.Instrumentation` inside `AddHeadlessMessaging(...)`. See [docs/llms/messaging.md](../../docs/llms/messaging.md) for the full instrument table.
 
 ## Dependencies
 

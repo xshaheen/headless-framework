@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging.Configuration;
+using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
@@ -232,6 +234,26 @@ internal sealed partial class InMemoryDataStorage
                     now
                 )
             );
+            if (row?.InboxKey is { } key && outcome is InboxOperationOutcome.Applied)
+            {
+                MessagingMetrics.RecordInbox(
+                    operationType is InboxOperationType.ForceReprocess
+                        ? InboxMetricKind.Replay
+                        : InboxMetricKind.Retention,
+                    key.ConsumerIdentity,
+                    key.Lane,
+                    operationType switch
+                    {
+                        InboxOperationType.Hold => InboxMetricOutcome.Held,
+                        InboxOperationType.ReleaseHold => InboxMetricOutcome.Released,
+                        InboxOperationType.ForceReprocess => InboxMetricOutcome.Replayed,
+                        InboxOperationType.Purge => InboxMetricOutcome.Purged,
+                        _ => throw new ArgumentOutOfRangeException(nameof(operationType), operationType, message: null),
+                    },
+                    MessagingInboxCapabilityTier.ProcessLocal,
+                    "InMemory"
+                );
+            }
             return ValueTask.FromResult(result);
         }
     }

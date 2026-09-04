@@ -42,6 +42,10 @@ internal sealed class ConsumerRegister(
     private readonly TimeProvider _timeProvider = serviceProvider.GetRequiredService<TimeProvider>();
     private readonly MessagingTelemetry _telemetry =
         serviceProvider.GetService<MessagingTelemetry>() ?? MessagingTelemetry.Default;
+    private readonly InboxMetricPolicy _inboxMetricPolicy =
+        serviceProvider.GetService<InboxMetricPolicy>() ?? new InboxMetricPolicy(IncludeTenantId: false);
+    private readonly IMessagingCapabilityModel _capabilityModel =
+        serviceProvider.GetRequiredService<IMessagingCapabilityModel>();
     private readonly TimeSpan _pollingDelay = TimeSpan.FromSeconds(1);
 
     private ICircuitBreakerStateManager? _circuitBreakerStateManager;
@@ -1125,6 +1129,35 @@ internal sealed class ConsumerRegister(
                         .ConfigureAwait(false);
 
                     admission.Message.Origin = message;
+
+                    var storageCapability = _capabilityModel.Providers.FirstOrDefault(capability =>
+                        capability.Role is MessagingProviderRole.Storage
+                    );
+                    if (storageCapability?.InboxCapability is { } inboxTier)
+                    {
+                        MessagingMetrics.RecordInbox(
+                            admission.Disposition is InboxAdmissionDisposition.Winner
+                                ? InboxMetricKind.Capability
+                                : InboxMetricKind.Duplicate,
+                            consumerIdentity,
+                            lane,
+                            admission.Disposition switch
+                            {
+                                InboxAdmissionDisposition.Winner => InboxMetricOutcome.Winner,
+                                InboxAdmissionDisposition.InFlightDuplicate => InboxMetricOutcome.InFlightDuplicate,
+                                InboxAdmissionDisposition.SucceededDuplicate => InboxMetricOutcome.SucceededDuplicate,
+                                InboxAdmissionDisposition.TerminalFailedDuplicate =>
+                                    InboxMetricOutcome.TerminalFailedDuplicate,
+                                _ => throw new InvalidOperationException(
+                                    $"Unsupported inbox admission disposition '{admission.Disposition}'."
+                                ),
+                            },
+                            inboxTier,
+                            storageCapability.Provider,
+                            message.Headers.TryGetValue(Headers.TenantId, out var tenantId) ? tenantId : null,
+                            _inboxMetricPolicy.IncludeTenantId
+                        );
+                    }
 
                     _TracingAfter(traceHandle, transportMessage, _serverAddress);
                     consumeOutcomeRecorded = true;
