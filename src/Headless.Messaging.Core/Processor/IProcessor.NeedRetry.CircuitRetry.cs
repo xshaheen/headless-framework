@@ -92,9 +92,9 @@ internal sealed partial class MessageNeedToRetryProcessor
     }
 
     /// <summary>
-    /// Disposes one classified circuit-open claim. <paramref name="deferralRejectionLogged"/> carries the
-    /// suppression state for EventId 3121 across a single pickup cycle and is returned updated, so an
-    /// operator sees a recurring fence rejection on every poll it happens without one warning per row.
+    /// Disposes one classified circuit-open claim. <paramref name="deferralRejectionLogged"/> carries
+    /// EventId 3121 suppression across a pickup cycle and is returned updated: one warning per poll,
+    /// not per row and not per process.
     /// </summary>
     private async ValueTask<bool> _DisposeCircuitClaimAsync(
         IDataStorage storage,
@@ -109,16 +109,13 @@ internal sealed partial class MessageNeedToRetryProcessor
                 case CircuitRetryDecisionKind.Defer:
                     var outcome = await _DeferCircuitClaimAsync(storage, work.Message, work.Decision.NextProbeAt!.Value)
                         .ConfigureAwait(false);
-                    // Only a genuine fence rejection belongs here: an unsupported provider already reports
-                    // itself once per provider type (3120), and a claim without a live lease never reached
-                    // the store at all. All three leave the row on ordinary lease-expiry recovery.
+                    // Only a genuine fence rejection: an unsupported provider reports itself via 3120,
+                    // and a claim with no live lease never reached the store. All three outcomes leave
+                    // the row on ordinary lease-expiry recovery.
                     if (outcome is CircuitDeferralOutcome.FenceRejected && !deferralRejectionLogged)
                     {
-                        // The provider's deferral write is fenced on row, lane, exact owner, a still-live
-                        // lease, and a non-terminal status; one of those no longer matched, but not which —
-                        // do not assert a cause here. The row keeps its stale owner and an unchanged,
-                        // already-past NextRetryAt, so it is immediately reclaimable on the next poll:
-                        // exactly the churn this deferral path exists to prevent.
+                        // The row keeps its stale owner and past NextRetryAt, so the next poll reclaims
+                        // it — the churn this path exists to prevent.
                         _logger.CircuitRetryDeferralRejected(work.Message.StorageId, LogSanitizer.Sanitize(work.Group));
                         deferralRejectionLogged = true;
                     }

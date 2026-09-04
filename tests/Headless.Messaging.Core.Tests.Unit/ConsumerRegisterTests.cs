@@ -93,9 +93,7 @@ public sealed class ConsumerRegisterTests : TestBase
 
         handleType.GetProperty("IsPaused")!.SetValue(handle, true);
 
-        // Mirror the real shutdown sequence: Quiesce() closes this register generation's pickup
-        // gate for shutdown synchronously (sets _state to Disposing before returning), which is
-        // exactly the race the guard in _ResumeGroupAsync protects against.
+        // Real shutdown sequence: Quiesce() sets _state to Disposing synchronously before returning.
         ((IProcessingServerShutdown)register).Quiesce();
 
         var resumeGroup = typeof(ConsumerRegister).GetMethod(

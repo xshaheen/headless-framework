@@ -99,12 +99,9 @@ internal sealed class Bootstrapper(
             _WarnIfNullNodeMembership();
             _WarnIfDispatchTimeoutMateriallyExceedsInitialGrace();
 
-            // Publish the complete processor set after synchronous startup validation but before
-            // storage initialization can block, so shutdown can always reach every processor. Published
-            // under _bootstrapLock — the same lock the shutdown-side reader (_StopProcessorsAsync) takes —
-            // so the read is guaranteed to observe this write rather than the initial empty array.
-            // Resolution stays outside the lock: it runs third-party processor factories, which may block
-            // or throw, and every other _bootstrapLock holder (including shutdown) would wait behind them.
+            // Publish before storage initialization can block, so shutdown always reaches every
+            // processor. Resolution stays outside the lock: processor factories are third-party code
+            // that can block or throw, and every other _bootstrapLock holder would wait behind them.
             var resolvedProcessors = serviceProvider.GetServices<IProcessingServer>().ToArray();
 
             lock (_bootstrapLock)
@@ -611,8 +608,7 @@ internal sealed class Bootstrapper(
     {
         logger.MessagingStopping();
 
-        // Snapshot under the same lock the publisher uses, so a shutdown racing bootstrap
-        // is guaranteed to observe the fully-published processor set rather than the initial empty array.
+        // Snapshot under the publisher's lock so a shutdown racing bootstrap sees the full set.
         IReadOnlyList<IProcessingServer> publishedProcessors;
         lock (_bootstrapLock)
         {
@@ -737,9 +733,8 @@ internal sealed class Bootstrapper(
 
     private TimeSpan _GetRemainingShutdownTime(long shutdownStarted)
     {
-        // Read the option directly rather than a value cached during bootstrap: a shutdown that
-        // starts before (or races) bootstrap completion must still honor the configured timeout,
-        // not a hard-coded default.
+        // Read at use time rather than caching at bootstrap: one less field whose staleness a
+        // future refactor could expose.
         var remaining = options.Value.ShutdownTimeout - _timeProvider.GetElapsedTime(shutdownStarted);
         return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
     }

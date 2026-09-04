@@ -2059,13 +2059,9 @@ public abstract class DataStorageTestsBase : TestBase
         after.Content.Should().Be(beforeDeferral!.Content);
     }
 
-    // Pins AE4 / plan requirement R14 (batch fairness): after a full leading batch of circuit-open
-    // rows is deferred, the next pickup must reach a due healthy-group row instead of reclaiming the
-    // same head rows. This is the starvation defect issue #808 exists for. The storage layer has no
-    // notion of "circuit state" itself, so the scenario is reproduced with the primitives it does
-    // expose: an earlier-due leading batch (standing in for the open-circuit group) that fills the
-    // whole claim, a deferral of every claimed row (standing in for the processor's circuit-open
-    // disposition), and a second pickup that must surface the previously-starved healthy row.
+    // Pins AE4 / R14 (batch fairness, issue #808): once a full leading batch is deferred, the next
+    // pickup must reach a due healthy row instead of reclaiming the same head rows. Storage has no
+    // notion of circuit state, so an earlier-due leading batch stands in for the open-circuit group.
     public virtual async Task should_reach_healthy_row_after_deferring_a_full_leading_open_batch()
     {
         const int batchSize = 3;
@@ -2129,17 +2125,11 @@ public abstract class DataStorageTestsBase : TestBase
             cancellationToken: AbortToken
         );
 
-        // First pickup: batch size (3) is strictly less than the total due-row count (4), so the
-        // earlier-due open-group rows fill the whole claim. Asserting the healthy row's absence here
-        // is what proves starvation is possible without a fix.
-        // Scope the shape assertions to rows this test owns: this collection also runs
-        // PostgreSqlDeduplicationTest against the same reused container with no TRUNCATE teardown,
-        // so leftover due rows from that sibling can occupy claim slots. An unfiltered HaveCount would
-        // spuriously fail when foreign rows are present, so it is dropped rather than scoped: this
-        // test cannot guarantee its own open rows win every slot once other due rows exist in the
-        // shared table. The membership checks below stay unfiltered-safe because they only look at
-        // rows this test created, which is what the starvation proof (and the deferral loop that
-        // follows) actually depends on.
+        // First pickup: 3 slots for 4 due rows, so the earlier-due open rows fill the claim. The
+        // healthy row's absence here is what proves starvation is possible without the fix.
+        // Scoped to this test's own rows: a sibling in this collection (PostgreSqlDeduplicationTest)
+        // leaves due rows in the reused container, which can take claim slots. That also rules out an
+        // unfiltered HaveCount — this test cannot guarantee its rows win every slot.
         var firstClaim = (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken)).ToList();
         var ownedIds = new HashSet<Guid>(openRowIds) { healthyStored.StorageId };
         var ownedFirstClaim = firstClaim.Where(message => ownedIds.Contains(message.StorageId)).ToList();
@@ -2161,8 +2151,7 @@ public abstract class DataStorageTestsBase : TestBase
                 .BeTrue();
         }
 
-        // Second pickup: the deferred open-group rows are now due only in the future, so the
-        // previously-starved healthy row must surface, and none of the deferred rows may reappear.
+        // Second pickup: the deferred rows are now future-due, so the starved healthy row must surface.
         var secondClaim = (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken)).ToList();
         secondClaim.Should().ContainSingle(message => message.StorageId == healthyStored.StorageId);
         secondClaim.Should().NotContain(message => openRowIds.Contains(message.StorageId));
