@@ -38,6 +38,7 @@ internal sealed partial class PostgreSqlDataStorage(
         IDelayedMessageClaimStorage,
         IGracefulLeaseReleaseStorage,
         ICircuitRetryDeferralStorage,
+        ITransactionalInboxStorage,
         IDeliveryCoordinationResolver
 {
     /// <summary>
@@ -177,7 +178,7 @@ internal sealed partial class PostgreSqlDataStorage(
             lockedUntil,
             originalRetries,
             originalInlineAttempts: null,
-            cancellationToken
+            cancellationToken: cancellationToken
         );
     }
 
@@ -202,7 +203,7 @@ internal sealed partial class PostgreSqlDataStorage(
             lockedUntil,
             originalRetries,
             originalInlineAttempts,
-            cancellationToken
+            cancellationToken: cancellationToken
         );
     }
 
@@ -268,7 +269,8 @@ internal sealed partial class PostgreSqlDataStorage(
             lockedUntil,
             originalRetries,
             originalInlineAttempts: null,
-            cancellationToken
+            transaction: null,
+            cancellationToken: cancellationToken
         );
     }
 
@@ -291,7 +293,8 @@ internal sealed partial class PostgreSqlDataStorage(
             lockedUntil,
             originalRetries,
             originalInlineAttempts,
-            cancellationToken
+            transaction: null,
+            cancellationToken: cancellationToken
         );
     }
 
@@ -312,6 +315,7 @@ internal sealed partial class PostgreSqlDataStorage(
         DateTimeOffset? lockedUntil,
         int? originalRetries,
         int? originalInlineAttempts,
+        DbTransaction? transaction,
         CancellationToken cancellationToken
     )
     {
@@ -402,10 +406,15 @@ internal sealed partial class PostgreSqlDataStorage(
             ? [new NpgsqlParameter("@Content", _RefreshContent(message)), .. stateParams]
             : stateParams;
 
-        await using var connection = postgreSqlOptions.Value.CreateConnection();
+        await using var ownedConnection = transaction is null ? postgreSqlOptions.Value.CreateConnection() : null;
+        var connection =
+            transaction?.Connection
+            ?? ownedConnection
+            ?? throw new InvalidOperationException("The inbox completion transaction has no active connection.");
         var affectedRows = await connection
             .ExecuteNonQueryAsync(
                 sql,
+                transaction,
                 commandTimeout: messagingOptions.Value.CommandTimeout,
                 sqlParams: sqlParams,
                 cancellationToken: cancellationToken
@@ -413,6 +422,84 @@ internal sealed partial class PostgreSqlDataStorage(
             .ConfigureAwait(false);
 
         return affectedRows > 0;
+    }
+
+    ValueTask<bool> ITransactionalInboxStorage.CompleteReceivedInboxAsync(
+        MediumMessage message,
+        DbTransaction transaction,
+        CancellationToken cancellationToken
+    )
+    {
+        return _ChangeReceiveStateAsync(
+            message,
+            StatusName.Succeeded,
+            MessageContentWrite.Refresh,
+            nextRetryAt: null,
+            lockedUntil: null,
+            originalRetries: message.Retries,
+            originalInlineAttempts: message.InlineAttempts,
+            transaction,
+            cancellationToken
+        );
+    }
+
+    async ValueTask<InboxCommitProbe> ITransactionalInboxStorage.ProbeReceivedInboxCommitAsync(
+        MediumMessage message,
+        CancellationToken cancellationToken
+    )
+    {
+        if (message.InboxAttemptFence is not { } fence)
+        {
+            return InboxCommitProbe.Indeterminate;
+        }
+
+        var sql = $"""
+            SELECT "StatusName"='Succeeded' AND "NextRetryAt" IS NULL AND "AttemptId" IS NULL
+            FROM {_receivedTable}
+            WHERE "Id"=@Id
+              AND "IsInboxRecord"
+              AND "IntentType"=@IntentType
+              AND "Generation"=@Generation
+              AND "GenerationIncarnationId"=@GenerationIncarnationId;
+            """;
+        object[] sqlParams =
+        [
+            new NpgsqlParameter("@Id", fence.StorageId),
+            new NpgsqlParameter("@IntentType", NpgsqlDbType.Smallint)
+            {
+                Value = MessageLaneCompatibility.ToPersistedValue(fence.Lane),
+            },
+            new NpgsqlParameter("@Generation", NpgsqlDbType.Bigint) { Value = fence.Generation },
+            new NpgsqlParameter("@GenerationIncarnationId", NpgsqlDbType.Uuid)
+            {
+                Value = fence.GenerationIncarnationId,
+            },
+        ];
+
+        try
+        {
+            await using var connection = postgreSqlOptions.Value.CreateConnection();
+            return await connection
+                .ExecuteReaderAsync(
+                    sql,
+                    async (reader, ct) =>
+                        await reader.ReadAsync(ct).ConfigureAwait(false) && reader.GetBoolean(0)
+                            ? InboxCommitProbe.Committed
+                            : InboxCommitProbe.Indeterminate,
+                    commandTimeout: messagingOptions.Value.CommandTimeout,
+                    sqlParams: sqlParams,
+                    cancellationToken: cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            return InboxCommitProbe.Indeterminate;
+        }
     }
 
     /// <summary>

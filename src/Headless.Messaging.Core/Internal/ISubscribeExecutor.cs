@@ -148,7 +148,7 @@ internal sealed class SubscribeExecutor(
 
         return await _retryPipeline
             .ExecuteAsync(
-                (_, ct) => _ExecuteWithoutRetryAsync(message, descriptor!, executionState, ct),
+                (_, ct) => _ExecuteWithoutRetryAsync(message, descriptor!, dispatchServices, executionState, ct),
                 (inlineRetries, exception, delay, strategyFailed, ct) =>
                     _HandleRetryAsync(
                         message,
@@ -171,6 +171,7 @@ internal sealed class SubscribeExecutor(
     private async Task<MessagingRetryAttempt> _ExecuteWithoutRetryAsync(
         MediumMessage message,
         ConsumerExecutorDescriptor descriptor,
+        IServiceProvider dispatchServices,
         RetryExecutionState? executionState,
         CancellationToken cancellationToken
     )
@@ -220,11 +221,26 @@ internal sealed class SubscribeExecutor(
 
             var sp = Stopwatch.StartNew();
 
-            await _InvokeConsumerMethodAsync(message, descriptor, cancellationToken).ConfigureAwait(false);
+            if (
+                message.InboxKey is not null
+                && _options.RequiredInboxCapability is MessagingInboxCapabilityTier.Transactional
+            )
+            {
+                message.ExpiresAt = timeProvider.GetUtcNow().AddSeconds(_options.SucceedMessageExpiredAfter);
+                var transactionRunner = dispatchServices.GetRequiredService<IInboxTransactionRunner>();
+                await transactionRunner
+                    .ExecuteAsync(message, ct => _InvokeConsumerMethodAsync(message, descriptor, ct), cancellationToken)
+                    .ConfigureAwait(false);
+                executionState?.RecordLeaseTransition(affected: true, lockedUntil: null);
+                await _ReportSuccessfulStateAsync(message).ConfigureAwait(false);
+            }
+            else
+            {
+                await _InvokeConsumerMethodAsync(message, descriptor, cancellationToken).ConfigureAwait(false);
+                await _SetSuccessfulState(message, executionState).ConfigureAwait(false);
+            }
 
             sp.Stop();
-
-            await _SetSuccessfulState(message, executionState).ConfigureAwait(false);
 
             MessageEventCounterSource.Log.WriteInvokeTimeMetrics(sp.Elapsed.TotalMilliseconds);
             if (logger.IsEnabled(LogLevel.Information))
@@ -240,6 +256,22 @@ internal sealed class SubscribeExecutor(
             }
 
             return MessagingRetryAttempt.Completed(OperateResult.Success);
+        }
+        catch (Exception ex)
+            when (ex
+                    is StaleInboxAttemptException
+                        or UncommittedInboxCommitException
+                        or IndeterminateInboxCommitException
+            )
+        {
+            logger.ConsumerExecuteFailed(
+                ex,
+                LogSanitizer.Sanitize(message.Origin.Name),
+                message.StorageId,
+                message.Origin.GetExecutionInstanceId()
+            );
+            _ReleaseHalfOpenProbe(message);
+            return MessagingRetryAttempt.Completed(OperateResult.Failed(ex));
         }
         catch (Exception ex)
         {
@@ -288,6 +320,11 @@ internal sealed class SubscribeExecutor(
             logger.SkippingSuccessfulAlreadyTerminal(message.StorageId);
         }
 
+        await _ReportSuccessfulStateAsync(message).ConfigureAwait(false);
+    }
+
+    private async ValueTask _ReportSuccessfulStateAsync(MediumMessage message)
+    {
         if (circuitBreakerStateManager is not null)
         {
             var circuitBreakerGroup = CircuitBreakerGroupKeys.For(message);

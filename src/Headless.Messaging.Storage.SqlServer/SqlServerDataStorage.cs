@@ -37,6 +37,7 @@ internal sealed partial class SqlServerDataStorage(
         IDelayedMessageClaimStorage,
         IGracefulLeaseReleaseStorage,
         ICircuitRetryDeferralStorage,
+        ITransactionalInboxStorage,
         IDeliveryCoordinationResolver
 {
     /// <summary>
@@ -164,7 +165,7 @@ internal sealed partial class SqlServerDataStorage(
             lockedUntil,
             originalRetries,
             originalInlineAttempts: null,
-            cancellationToken
+            cancellationToken: cancellationToken
         );
     }
 
@@ -189,7 +190,7 @@ internal sealed partial class SqlServerDataStorage(
             lockedUntil,
             originalRetries,
             originalInlineAttempts,
-            cancellationToken
+            cancellationToken: cancellationToken
         );
     }
 
@@ -255,7 +256,8 @@ internal sealed partial class SqlServerDataStorage(
             lockedUntil,
             originalRetries,
             originalInlineAttempts: null,
-            cancellationToken
+            transaction: null,
+            cancellationToken: cancellationToken
         );
     }
 
@@ -278,7 +280,8 @@ internal sealed partial class SqlServerDataStorage(
             lockedUntil,
             originalRetries,
             originalInlineAttempts,
-            cancellationToken
+            transaction: null,
+            cancellationToken: cancellationToken
         );
     }
 
@@ -299,6 +302,7 @@ internal sealed partial class SqlServerDataStorage(
         DateTimeOffset? lockedUntil,
         int? originalRetries,
         int? originalInlineAttempts,
+        DbTransaction? transaction,
         CancellationToken cancellationToken
     )
     {
@@ -378,11 +382,18 @@ internal sealed partial class SqlServerDataStorage(
             ? [new SqlParameter("@Content", _RefreshContent(message)), .. stateParams]
             : stateParams;
 
-        await using var connection = new SqlConnection(options.Value.ConnectionString);
+        await using var ownedConnection = transaction is null
+            ? new SqlConnection(options.Value.ConnectionString)
+            : null;
+        var connection =
+            transaction?.Connection
+            ?? ownedConnection
+            ?? throw new InvalidOperationException("The inbox completion transaction has no active connection.");
 
         var affectedRows = await connection
             .ExecuteNonQueryAsync(
                 sql,
+                transaction,
                 commandTimeout: messagingOptions.Value.CommandTimeout,
                 sqlParams: sqlParams,
                 cancellationToken: cancellationToken
@@ -390,6 +401,85 @@ internal sealed partial class SqlServerDataStorage(
             .ConfigureAwait(false);
 
         return affectedRows > 0;
+    }
+
+    ValueTask<bool> ITransactionalInboxStorage.CompleteReceivedInboxAsync(
+        MediumMessage message,
+        DbTransaction transaction,
+        CancellationToken cancellationToken
+    )
+    {
+        return _ChangeReceiveStateAsync(
+            message,
+            StatusName.Succeeded,
+            MessageContentWrite.Refresh,
+            nextRetryAt: null,
+            lockedUntil: null,
+            originalRetries: message.Retries,
+            originalInlineAttempts: message.InlineAttempts,
+            transaction,
+            cancellationToken
+        );
+    }
+
+    async ValueTask<InboxCommitProbe> ITransactionalInboxStorage.ProbeReceivedInboxCommitAsync(
+        MediumMessage message,
+        CancellationToken cancellationToken
+    )
+    {
+        if (message.InboxAttemptFence is not { } fence)
+        {
+            return InboxCommitProbe.Indeterminate;
+        }
+
+        var sql = $"""
+            SELECT CAST(CASE WHEN StatusName='Succeeded' AND NextRetryAt IS NULL AND AttemptId IS NULL
+                THEN 1 ELSE 0 END AS bit)
+            FROM {_receivedTable}
+            WHERE Id=@Id
+              AND IsInboxRecord=1
+              AND IntentType=@IntentType
+              AND Generation=@Generation
+              AND GenerationIncarnationId=@GenerationIncarnationId;
+            """;
+        object[] sqlParams =
+        [
+            new SqlParameter("@Id", fence.StorageId),
+            new SqlParameter("@IntentType", SqlDbType.SmallInt)
+            {
+                Value = MessageLaneCompatibility.ToPersistedValue(fence.Lane),
+            },
+            new SqlParameter("@Generation", SqlDbType.BigInt) { Value = fence.Generation },
+            new SqlParameter("@GenerationIncarnationId", SqlDbType.UniqueIdentifier)
+            {
+                Value = fence.GenerationIncarnationId,
+            },
+        ];
+
+        try
+        {
+            await using var connection = new SqlConnection(options.Value.ConnectionString);
+            return await connection
+                .ExecuteReaderAsync(
+                    sql,
+                    async (reader, ct) =>
+                        await reader.ReadAsync(ct).ConfigureAwait(false) && reader.GetBoolean(0)
+                            ? InboxCommitProbe.Committed
+                            : InboxCommitProbe.Indeterminate,
+                    commandTimeout: messagingOptions.Value.CommandTimeout,
+                    sqlParams: sqlParams,
+                    cancellationToken: cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            return InboxCommitProbe.Indeterminate;
+        }
     }
 
     /// <summary>

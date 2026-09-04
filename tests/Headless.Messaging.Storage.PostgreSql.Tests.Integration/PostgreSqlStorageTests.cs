@@ -4,6 +4,7 @@ using Dapper;
 using Headless.Abstractions;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
+using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
@@ -1083,6 +1084,68 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
             "SELECT schema_name FROM information_schema.schemata WHERE schema_name = 'messaging'"
         );
         result.Should().Be("messaging");
+    }
+
+    [Fact]
+    public async Task transactional_inbox_completion_should_disappear_when_provider_transaction_rolls_back()
+    {
+        var storage = GetStorage();
+        var origin = CreateMessage($"transactional-rollback-{Guid.NewGuid():N}", "orders.created");
+        var admission = await storage.AdmitReceivedMessageAsync(
+            "orders.created",
+            "orders-topology-a",
+            "orders.consumer",
+            "v1",
+            new MediumMessage
+            {
+                StorageId = Guid.NewGuid(),
+                Origin = origin,
+                Content = string.Empty,
+                Lane = MessageLane.Bus,
+            },
+            generation: 0,
+            cancellationToken: AbortToken
+        );
+        var message = admission.Message;
+        var originalInlineAttempts = message.InlineAttempts++;
+        NodeMembership.SetIdentity("postgresql-transactional-inbox");
+        (
+            await storage.LeaseReceiveAndReserveAttemptAsync(
+                message,
+                TimeSpan.FromMinutes(1),
+                originalInlineAttempts,
+                AbortToken
+            )
+        )
+            .Should()
+            .BeTrue();
+
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        await using var transaction = await connection.BeginTransactionAsync(AbortToken);
+        (await ((ITransactionalInboxStorage)storage).CompleteReceivedInboxAsync(message, transaction, AbortToken))
+            .Should()
+            .BeTrue();
+        var succeededInside = await connection.ExecuteScalarAsync<bool>(
+            new CommandDefinition(
+                """SELECT "StatusName"='Succeeded' FROM messaging.received WHERE "Id"=@Id""",
+                new { Id = message.StorageId },
+                transaction,
+                cancellationToken: AbortToken
+            )
+        );
+        succeededInside.Should().BeTrue();
+
+        await transaction.RollbackAsync(AbortToken);
+
+        var succeededOutside = await connection.ExecuteScalarAsync<bool>(
+            new CommandDefinition(
+                """SELECT "StatusName"='Succeeded' FROM messaging.received WHERE "Id"=@Id""",
+                new { Id = message.StorageId },
+                cancellationToken: AbortToken
+            )
+        );
+        succeededOutside.Should().BeFalse();
     }
 
     [Theory]

@@ -1,12 +1,17 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data;
 using Headless.Checks;
 using Headless.CommitCoordination;
+using Headless.CommitCoordination.EntityFramework;
 using Headless.Messaging.Configuration;
+using Headless.Messaging.Internal;
+using Headless.Messaging.Messages;
 using Headless.Messaging.Runtime;
 using Headless.Messaging.Storage.SqlServer;
 using Headless.Messaging.Storage.SqlServer.EntityFramework;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -67,6 +72,149 @@ public static class SetupSqlServerEntityFrameworkMessaging
             if (options.EnableTransactionalOutbox)
             {
                 services.AddCommitCoordinationWithStartupGate(typeof(TContext));
+                _PromoteStorageCapability(services, "SqlServer");
+                services.AddScoped<IInboxTransactionRunner>(
+                    serviceProvider => new SqlServerInboxTransactionRunner<TContext>(
+                        serviceProvider.GetRequiredService<TContext>(),
+                        serviceProvider,
+                        serviceProvider.GetRequiredService<ICurrentCommitCoordinator>(),
+                        serviceProvider.GetRequiredService<IDeliveryCoordinationResolver>(),
+                        serviceProvider.GetRequiredService<SqlServerDataStorage>(),
+                        serviceProvider.GetRequiredService<EntityFrameworkCommitSignalSource>()
+                    )
+                );
+            }
+        }
+    }
+
+    private static void _PromoteStorageCapability(IServiceCollection services, string provider)
+    {
+        var descriptor = services.LastOrDefault(candidate =>
+            candidate.ServiceType == typeof(MessagingProviderCapabilities)
+            && candidate.ImplementationInstance
+                is MessagingProviderCapabilities
+                {
+                    Role: MessagingProviderRole.Storage,
+                    Provider: var registeredProvider,
+                }
+            && string.Equals(registeredProvider, provider, StringComparison.Ordinal)
+        );
+        var current =
+            descriptor?.ImplementationInstance as MessagingProviderCapabilities
+            ?? throw new InvalidOperationException(
+                $"The {provider} storage capability must be registered before enabling its EF inbox transaction runner."
+            );
+
+        services.Remove(descriptor!);
+        services.AddMessagingProviderCapabilities(
+            MessagingProviderCapabilities.Storage(
+                current.Provider,
+                current.Lanes.ToArray(),
+                current.SupportsDelayedScheduling,
+                MessagingInboxCapabilityTier.Transactional
+            )
+        );
+    }
+
+    private sealed class SqlServerInboxTransactionRunner<TContext>(
+        TContext context,
+        IServiceProvider services,
+        ICurrentCommitCoordinator currentCoordinator,
+        IDeliveryCoordinationResolver coordinationResolver,
+        SqlServerDataStorage storage,
+        EntityFrameworkCommitSignalSource signalSource
+    ) : IInboxTransactionRunner
+        where TContext : DbContext
+    {
+        public async Task ExecuteAsync(
+            MediumMessage message,
+            Func<CancellationToken, Task> handler,
+            CancellationToken cancellationToken
+        )
+        {
+            if (currentCoordinator.Current is not null || context.Database.CurrentTransaction is not null)
+            {
+                throw new InvalidOperationException(
+                    "Transactional inbox execution cannot enter an already-active or nested transaction boundary."
+                );
+            }
+
+            await using var transaction = await context
+                .Database.CreateExecutionStrategy()
+                .ExecuteAsync(
+                    context,
+                    static (dbContext, ct) =>
+                        dbContext.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+            var dbTransaction = transaction.GetDbTransaction();
+            await using var coordinationScope = context.Database.EnlistCommitCoordination(
+                transaction,
+                services,
+                cancellationToken
+            );
+            var coordinator =
+                currentCoordinator.Current
+                ?? throw new InvalidOperationException(
+                    "The EF inbox transaction did not establish commit coordination before handler entry."
+                );
+            var coordination = coordinationResolver.Resolve(coordinator);
+            if (coordination.Status is not DeliveryCoordinationStatus.Compatible)
+            {
+                throw new InvalidOperationException(
+                    $"The EF inbox transaction is incompatible with messaging storage: {coordination.Mismatch}."
+                );
+            }
+
+            await handler(cancellationToken).ConfigureAwait(false);
+            await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            var completed = await ((ITransactionalInboxStorage)storage)
+                .CompleteReceivedInboxAsync(message, dbTransaction, cancellationToken)
+                .ConfigureAwait(false);
+            if (!completed)
+            {
+                throw new StaleInboxAttemptException(message.StorageId);
+            }
+
+            try
+            {
+                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                await signalSource.SignalCommittedAsync(dbTransaction).ConfigureAwait(false);
+            }
+            catch (Exception commitException)
+            {
+                if (
+                    await ((ITransactionalInboxStorage)storage)
+                        .ProbeReceivedInboxCommitAsync(message, CancellationToken.None)
+                        .ConfigureAwait(false) is InboxCommitProbe.Committed
+                )
+                {
+                    await signalSource.SignalCommittedAsync(dbTransaction).ConfigureAwait(false);
+                    return;
+                }
+
+                try
+                {
+                    await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+                    await signalSource.SignalRolledBackAsync(dbTransaction).ConfigureAwait(false);
+                }
+                catch (Exception rollbackException)
+                {
+                    if (
+                        await ((ITransactionalInboxStorage)storage)
+                            .ProbeReceivedInboxCommitAsync(message, CancellationToken.None)
+                            .ConfigureAwait(false) is InboxCommitProbe.Committed
+                    )
+                    {
+                        await signalSource.SignalCommittedAsync(dbTransaction).ConfigureAwait(false);
+                        return;
+                    }
+
+                    throw new IndeterminateInboxCommitException(message.StorageId, commitException, rollbackException);
+                }
+
+                throw new UncommittedInboxCommitException(message.StorageId, commitException);
             }
         }
     }
