@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
+using Headless.Constants;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
@@ -134,7 +135,12 @@ internal sealed class PostgresFencingTokenSource(
 
                 await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
             }
-            catch (PostgresException exception) when (exception.SqlState is "42P06" or "42P07" or "23505")
+            catch (PostgresException exception)
+                when (exception.SqlState
+                        is SqlErrorCodes.PostgreSql.DuplicateSchema
+                            or SqlErrorCodes.PostgreSql.DuplicateTable
+                            or SqlErrorCodes.PostgreSql.UniqueViolation
+                )
             {
                 // A concurrent replica created the sequence (or its schema) between our lock acquire and
                 // the create: duplicate_schema / duplicate_table / unique_violation all mean "already

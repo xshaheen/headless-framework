@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Constants;
 using Headless.Hosting.Initialization;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -56,7 +57,13 @@ internal sealed partial class PostgreSqlAuditLogStorageInitializer(
         // a foreign initializer running concurrent DDL can still trigger this path — absorb it
         // and treat the schema as initialized. Index creation runs in a separate transaction
         // below so it isn't wiped by this rollback.
-        catch (PostgresException ex) when (ex.SqlState is "42P06" or "42P07" or "42710" or "23505")
+        catch (PostgresException ex)
+            when (ex.SqlState
+                    is SqlErrorCodes.PostgreSql.DuplicateSchema
+                        or SqlErrorCodes.PostgreSql.DuplicateTable
+                        or SqlErrorCodes.PostgreSql.DuplicateObject
+                        or SqlErrorCodes.PostgreSql.UniqueViolation
+            )
         {
             await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
             LogSchemaRaceObserved(_logger, ex.SqlState, ex.MessageText);
@@ -81,7 +88,8 @@ internal sealed partial class PostgreSqlAuditLogStorageInitializer(
         }
         // Each CREATE INDEX uses IF NOT EXISTS so re-runs are idempotent; absorb any racing
         // duplicate-object state codes from a foreign initializer running concurrent DDL.
-        catch (PostgresException ex) when (ex.SqlState is "42P07" or "42710")
+        catch (PostgresException ex)
+            when (ex.SqlState is SqlErrorCodes.PostgreSql.DuplicateTable or SqlErrorCodes.PostgreSql.DuplicateObject)
         {
             await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
             LogSchemaRaceObserved(_logger, ex.SqlState, ex.MessageText);
