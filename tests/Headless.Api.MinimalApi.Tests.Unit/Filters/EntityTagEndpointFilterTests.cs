@@ -3,6 +3,7 @@
 using Headless.Abstractions;
 using Headless.Api;
 using Headless.Api.Concurrency;
+using Headless.Api.Resources;
 using Headless.Primitives;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
@@ -41,6 +42,40 @@ public sealed class EntityTagEndpointFilterTests : TestBase
 
         result.Should().BeSameAs(expected);
         ifMatch.EntityTag.Should().Be(EntityTag.CreateStrong("revision-42"));
+    }
+
+    [Fact]
+    public async Task should_return_400_when_configured_if_match_validator_rejects_tag()
+    {
+        var (context, _) = _CreateContext(
+            "\"revision-42\"",
+            configure: options => options.IfMatchValidator = static tag => tag.TryGetUInt32(out _)
+        );
+
+        var result = await new IfMatchEndpointFilter().InvokeAsync(context, _UnexpectedNext);
+
+        result.Should().BeAssignableTo<IStatusCodeHttpResult>().Which.StatusCode.Should().Be(400);
+        context
+            .HttpContext.RequestServices.GetRequiredService<IProblemDetailsCreator>()
+            .Received(1)
+            .BadRequest(
+                Arg.Any<string>(),
+                Arg.Is<ErrorDescriptor>(descriptor => descriptor.Code == GeneralErrorCodes.IfMatchInvalid)
+            );
+    }
+
+    [Fact]
+    public async Task should_accept_tag_when_configured_if_match_validator_accepts_it()
+    {
+        var expected = EntityTag.FromUInt32(42);
+        var (context, ifMatch) = _CreateContext(
+            expected.HeaderValue,
+            configure: options => options.IfMatchValidator = static tag => tag.TryGetUInt32(out _)
+        );
+
+        _ = await new IfMatchEndpointFilter().InvokeAsync(context, _ => ValueTask.FromResult<object?>(new object()));
+
+        ifMatch.EntityTag.Should().Be(expected);
     }
 
     [Theory]
@@ -161,12 +196,15 @@ public sealed class EntityTagEndpointFilterTests : TestBase
 
     private static (EndpointFilterInvocationContext Context, IIfMatchContext IfMatch) _CreateContext(
         string? ifMatchHeader = null,
-        IProblemDetailsCreator? creator = null
+        IProblemDetailsCreator? creator = null,
+        Action<EntityTagConcurrencyOptions>? configure = null
     )
     {
         var services = new ServiceCollection();
         services.AddSingleton(creator ?? _CreateProblemDetailsCreator());
-        services.AddHeadlessMinimalApiEntityTagConcurrency();
+        _ = configure is null
+            ? services.AddHeadlessMinimalApiEntityTagConcurrency()
+            : services.AddHeadlessMinimalApiEntityTagConcurrency(configure);
 
         var httpContext = new DefaultHttpContext { RequestServices = services.BuildServiceProvider() };
         httpContext.Features.Set<IHttpResponseFeature>(new CallbackResponseFeature());

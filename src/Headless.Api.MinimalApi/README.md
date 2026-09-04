@@ -47,9 +47,11 @@ app.MapPut(
 app.Run();
 ```
 
+Use `AddHeadlessMinimalApiEntityTagConcurrency(options => ...)` to validate the parsed strong tag against an API-wide representation format. For PostgreSQL `xmin`, set `options.IfMatchValidator = static tag => tag.TryGetUInt32(out _)`.
+
 ## Configuration
 
-No additional configuration required. Uses framework JSON settings automatically.
+Representation validation is optional. The default accepts any strong entity tag.
 
 ## Dependencies
 
