@@ -67,7 +67,7 @@ public sealed class RecordingHeadlessMessageDispatcher : ILocalEventBus, IHeadle
     }
 
     public Task DispatchAsync(
-        IReadOnlyList<IIntegrationEvent> integrationEvents,
+        IReadOnlyList<EventOccurrence<IIntegrationEvent>> integrationEvents,
         CancellationToken cancellationToken = default
     )
     {
@@ -75,7 +75,7 @@ public sealed class RecordingHeadlessMessageDispatcher : ILocalEventBus, IHeadle
         return Task.CompletedTask;
     }
 
-    public void Dispatch(IReadOnlyList<IIntegrationEvent> integrationEvents)
+    public void Dispatch(IReadOnlyList<EventOccurrence<IIntegrationEvent>> integrationEvents)
     {
         _RecordDistributed(integrationEvents);
     }
@@ -86,10 +86,11 @@ public sealed class RecordingHeadlessMessageDispatcher : ILocalEventBus, IHeadle
         _calls.Add(new DispatchCall(NextIndex(), DispatchKind.Local, domainEvent));
     }
 
-    private void _RecordDistributed(IReadOnlyList<IIntegrationEvent> integrationEvents)
+    private void _RecordDistributed(IReadOnlyList<EventOccurrence<IIntegrationEvent>> integrationEvents)
     {
-        EmittedDistributedMessages.AddRange(integrationEvents);
-        _calls.Add(new DispatchCall(NextIndex(), DispatchKind.Distributed, integrationEvents));
+        var payloads = integrationEvents.Select(occurrence => occurrence.Payload).ToArray();
+        EmittedDistributedMessages.AddRange(payloads);
+        _calls.Add(new DispatchCall(NextIndex(), DispatchKind.Distributed, payloads));
     }
 }
 

@@ -9,6 +9,8 @@ namespace Headless.EntityFramework;
 /// Transactionally enqueues integration events collected during EF saves into the outbox.
 /// </summary>
 /// <remarks>
+/// Preserve each occurrence's captured identity and business lineage, including absent causation and tenant,
+/// across persistence retries. The Messaging bridge uses the occurrence EventId as the logical MessageId.
 /// Invoked after entities persist but before the EF transaction commits, and may be retried by the EF
 /// execution strategy. The save pipeline opens a <b>commit-coordinated</b> transaction before invoking this,
 /// so the commit coordinator is already ambient: publish each event through the messaging outbox
@@ -24,10 +26,10 @@ public interface IHeadlessOutboxDispatcher
 {
     /// <summary>Enqueues integration events into transaction-bound storage for post-commit delivery.</summary>
     Task DispatchAsync(
-        IReadOnlyList<IIntegrationEvent> integrationEvents,
+        IReadOnlyList<EventOccurrence<IIntegrationEvent>> integrationEvents,
         CancellationToken cancellationToken = default
     );
 
     /// <summary>Enqueues integration events into transaction-bound storage for post-commit delivery.</summary>
-    void Dispatch(IReadOnlyList<IIntegrationEvent> integrationEvents);
+    void Dispatch(IReadOnlyList<EventOccurrence<IIntegrationEvent>> integrationEvents);
 }

@@ -888,19 +888,19 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
         }
 
         public Task DispatchAsync(
-            IReadOnlyList<IIntegrationEvent> integrationEvents,
+            IReadOnlyList<EventOccurrence<IIntegrationEvent>> integrationEvents,
             CancellationToken cancellationToken = default
         )
         {
             OnDistributed?.Invoke();
-            DistributedEmitters.AddRange(integrationEvents);
+            DistributedEmitters.AddRange(integrationEvents.Select(occurrence => occurrence.Payload));
             return Task.CompletedTask;
         }
 
-        public void Dispatch(IReadOnlyList<IIntegrationEvent> integrationEvents)
+        public void Dispatch(IReadOnlyList<EventOccurrence<IIntegrationEvent>> integrationEvents)
         {
             OnDistributed?.Invoke();
-            DistributedEmitters.AddRange(integrationEvents);
+            DistributedEmitters.AddRange(integrationEvents.Select(occurrence => occurrence.Payload));
         }
     }
 

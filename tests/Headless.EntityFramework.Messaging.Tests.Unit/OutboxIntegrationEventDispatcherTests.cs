@@ -27,7 +27,12 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
 
     private sealed class RecordingBus : IBus
     {
-        public List<(Type GenericType, object? Payload, DeliveryMode DeliveryMode)> Published { get; } = [];
+        public List<(
+            Type GenericType,
+            object? Payload,
+            DeliveryMode DeliveryMode,
+            PublishOptions? Options
+        )> Published { get; } = [];
 
         public Task PublishAsync<T>(
             T? contentObj,
@@ -35,7 +40,7 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
             CancellationToken cancellationToken = default
         )
         {
-            Published.Add((typeof(T), contentObj, options?.DeliveryMode ?? DeliveryMode.Auto));
+            Published.Add((typeof(T), contentObj, options?.DeliveryMode ?? DeliveryMode.Auto, options));
             return Task.CompletedTask;
         }
     }
@@ -67,7 +72,7 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
 
         // when
         var invoke = cache.GetPublishInvoker(integrationEvent.GetType());
-        await invoke(bus, integrationEvent, AbortToken);
+        await invoke(bus, integrationEvent, new PublishOptions { DeliveryMode = DeliveryMode.Durable }, AbortToken);
 
         // then
         bus.Published.Should().ContainSingle();
@@ -100,8 +105,8 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
         IIntegrationEvent second = new PaymentCaptured("payment");
 
         // when
-        await cache.GetPublishInvoker(first.GetType())(bus, first, AbortToken);
-        await cache.GetPublishInvoker(second.GetType())(bus, second, AbortToken);
+        await cache.GetPublishInvoker(first.GetType())(bus, first, new PublishOptions(), AbortToken);
+        await cache.GetPublishInvoker(second.GetType())(bus, second, new PublishOptions(), AbortToken);
 
         // then
         bus.Published.Select(x => x.GenericType).Should().Equal(typeof(OrderPlaced), typeof(PaymentCaptured));
@@ -139,7 +144,11 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
             _AmbientCoordinator(),
             new IntegrationEventPublishInvokerCache()
         );
-        IReadOnlyList<IIntegrationEvent> events = [new OrderPlaced("order-1"), new PaymentCaptured("payment-1")];
+        IReadOnlyList<EventOccurrence<IIntegrationEvent>> events =
+        [
+            new(new OrderPlaced("order-1"), new("occurrence-1", "root-1", "parent-1", "tenant-1")),
+            new(new PaymentCaptured("payment-1"), new("occurrence-2", "root-2", null, null)),
+        ];
 
         // when
         await dispatcher.DispatchAsync(events, AbortToken);
@@ -148,6 +157,23 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
         bus.Published.Should().HaveCount(2);
         bus.Published[0].GenericType.Should().Be<OrderPlaced>();
         bus.Published[1].GenericType.Should().Be<PaymentCaptured>();
+        for (var i = 0; i < events.Count; i++)
+        {
+            bus.Published[i].Payload.Should().BeSameAs(events[i].Payload);
+            bus.Published[i]
+                .Options.Should()
+                .Be(
+                    new PublishOptions
+                    {
+                        DeliveryMode = DeliveryMode.Durable,
+                        MessageId = events[i].Context.EventId,
+                        CorrelationId = events[i].Context.CorrelationId,
+                        CausationId = events[i].Context.CausationId,
+                        TenantId = events[i].Context.TenantId,
+                        SuppressAmbientBusinessContext = true,
+                    }
+                );
+        }
     }
 
     [Fact]
@@ -160,7 +186,10 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
             _AmbientCoordinator(),
             new IntegrationEventPublishInvokerCache()
         );
-        IReadOnlyList<IIntegrationEvent> events = [new OrderPlaced("order-1")];
+        IReadOnlyList<EventOccurrence<IIntegrationEvent>> events =
+        [
+            EventOccurrence.Capture<IIntegrationEvent>(new OrderPlaced("order-1")),
+        ];
 
         // when
         var act = async () => await dispatcher.DispatchAsync(events, AbortToken);
@@ -180,7 +209,10 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
             _AmbientCoordinator(),
             new IntegrationEventPublishInvokerCache()
         );
-        IReadOnlyList<IIntegrationEvent> events = [new OrderPlaced("order-1")];
+        IReadOnlyList<EventOccurrence<IIntegrationEvent>> events =
+        [
+            EventOccurrence.Capture<IIntegrationEvent>(new OrderPlaced("order-1")),
+        ];
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
@@ -202,7 +234,10 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
             _AmbientCoordinator(),
             new IntegrationEventPublishInvokerCache()
         );
-        IReadOnlyList<IIntegrationEvent> events = [new OrderPlaced("order-1")];
+        IReadOnlyList<EventOccurrence<IIntegrationEvent>> events =
+        [
+            EventOccurrence.Capture<IIntegrationEvent>(new OrderPlaced("order-1")),
+        ];
 
         // when
         dispatcher.Dispatch(events);
@@ -226,7 +261,10 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
             coordinator,
             new IntegrationEventPublishInvokerCache()
         );
-        IReadOnlyList<IIntegrationEvent> events = [new OrderPlaced("order-1")];
+        IReadOnlyList<EventOccurrence<IIntegrationEvent>> events =
+        [
+            EventOccurrence.Capture<IIntegrationEvent>(new OrderPlaced("order-1")),
+        ];
 
         // when
         var act = async () => await dispatcher.DispatchAsync(events, AbortToken);

@@ -16,40 +16,42 @@ namespace Headless.EntityFramework;
 /// </summary>
 internal sealed class IntegrationEventPublishInvokerCache
 {
-    private readonly ConcurrentDictionary<Type, Func<IBus, IIntegrationEvent, CancellationToken, Task>> _invokers =
-        new();
+    private readonly ConcurrentDictionary<
+        Type,
+        Func<IBus, IIntegrationEvent, PublishOptions, CancellationToken, Task>
+    > _invokers = new();
 
     private static readonly MethodInfo _GenericPublishAsync = typeof(IBus)
         .GetMethods(BindingFlags.Public | BindingFlags.Instance)
         .Single(m => m is { Name: nameof(IBus.PublishAsync), IsGenericMethodDefinition: true });
 
-    private static readonly PublishOptions _DurableOptions = new() { DeliveryMode = DeliveryMode.Durable };
-
-    public Func<IBus, IIntegrationEvent, CancellationToken, Task> GetPublishInvoker(Type eventType)
+    public Func<IBus, IIntegrationEvent, PublishOptions, CancellationToken, Task> GetPublishInvoker(Type eventType)
     {
         return _invokers.GetOrAdd(eventType, _CreateInvoker);
     }
 
-    private static Func<IBus, IIntegrationEvent, CancellationToken, Task> _CreateInvoker(Type eventType)
+    private static Func<IBus, IIntegrationEvent, PublishOptions, CancellationToken, Task> _CreateInvoker(Type eventType)
     {
         var bus = Expression.Parameter(typeof(IBus), "bus");
         var integrationEvent = Expression.Parameter(typeof(IIntegrationEvent), "integrationEvent");
+        var options = Expression.Parameter(typeof(PublishOptions), "options");
         var cancellationToken = Expression.Parameter(typeof(CancellationToken), "cancellationToken");
 
-        // bus.PublishAsync<TConcrete>((TConcrete)integrationEvent, durableOptions, cancellationToken)
+        // Keep concrete contract resolution while supplying the emission snapshot for each individual publish.
         var call = Expression.Call(
             bus,
             _GenericPublishAsync.MakeGenericMethod(eventType),
             Expression.Convert(integrationEvent, eventType),
-            Expression.Constant(_DurableOptions, typeof(PublishOptions)),
+            options,
             cancellationToken
         );
 
         return Expression
-            .Lambda<Func<IBus, IIntegrationEvent, CancellationToken, Task>>(
+            .Lambda<Func<IBus, IIntegrationEvent, PublishOptions, CancellationToken, Task>>(
                 call,
                 bus,
                 integrationEvent,
+                options,
                 cancellationToken
             )
             .Compile();

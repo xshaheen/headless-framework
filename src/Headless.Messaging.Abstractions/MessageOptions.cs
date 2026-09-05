@@ -78,6 +78,13 @@ public abstract record MessageOptions
     /// <summary>Gets the identifier of the message that directly caused this message.</summary>
     public string? CausationId { get; init; }
 
+    /// <summary>Suppresses ambient correlation, causation, and tenant defaults when forwarding a captured business snapshot.</summary>
+    /// <remarks>
+    /// Defaults to false. Contract resolution and diagnostic trace propagation are unchanged.
+    /// Required tenancy still rejects a missing explicit tenant; suppression never bypasses tenant enforcement.
+    /// </remarks>
+    public bool SuppressAmbientBusinessContext { get; init; }
+
     /// <summary>
     /// Gets the explicit correlation sequence override.
     /// </summary>
@@ -96,8 +103,9 @@ public abstract record MessageOptions
     /// <remarks>
     /// <para>
     /// When set, the publish pipeline stamps the value into the <c>Headers.TenantId</c> wire header.
-    /// When <see langword="null"/>, no header is written and consumers observe a <see langword="null"/>
-    /// <c>ConsumeContext&lt;TMessage&gt;.TenantId</c>.
+    /// When <see langword="null"/>, configured tenant propagation or required-tenancy resolution may use the
+    /// ambient tenant unless <see cref="SuppressAmbientBusinessContext"/> is enabled. Without a resolved tenant,
+    /// no header is written; required tenancy rejects the publish instead.
     /// </para>
     /// <para>
     /// The publish pipeline enforces a strict 4-case integrity policy. A raw write to
@@ -141,6 +149,7 @@ public abstract record MessageOptions
             && string.Equals(MessageId, other.MessageId, StringComparison.Ordinal)
             && string.Equals(CorrelationId, other.CorrelationId, StringComparison.Ordinal)
             && string.Equals(CausationId, other.CausationId, StringComparison.Ordinal)
+            && SuppressAmbientBusinessContext == other.SuppressAmbientBusinessContext
             && CorrelationSequence == other.CorrelationSequence
             // MessageType is internal-init and participates in equality so internally-produced options carrying a
             // captured response type are not silently treated as equal to otherwise-identical options (prevents
@@ -162,6 +171,7 @@ public abstract record MessageOptions
         hash.Add(MessageId, StringComparer.Ordinal);
         hash.Add(CorrelationId, StringComparer.Ordinal);
         hash.Add(CausationId, StringComparer.Ordinal);
+        hash.Add(SuppressAmbientBusinessContext);
         hash.Add(CorrelationSequence);
         // MessageType is internal-init and participates in equality so internally-produced options carrying a
         // captured response type are not silently treated as equal to otherwise-identical options (prevents

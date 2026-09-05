@@ -334,7 +334,6 @@ internal sealed class HeadlessSaveChangesPipeline(
                 var integrationEvents = state
                     .SaveContext.IntegrationEventEmitters.SelectMany(static emitter => emitter.Events)
                     .DistinctBy(static occurrence => occurrence.Context.EventId, StringComparer.Ordinal)
-                    .Select(static occurrence => occurrence.Payload)
                     .ToArray();
 
                 await dispatcher.DispatchAsync(integrationEvents, state.CancellationToken).ConfigureAwait(false);
@@ -416,7 +415,6 @@ internal sealed class HeadlessSaveChangesPipeline(
                 var integrationEvents = state
                     .SaveContext.IntegrationEventEmitters.SelectMany(static emitter => emitter.Events)
                     .DistinctBy(static occurrence => occurrence.Context.EventId, StringComparer.Ordinal)
-                    .Select(static occurrence => occurrence.Payload)
                     .ToArray();
 
                 dispatcher.Dispatch(integrationEvents);

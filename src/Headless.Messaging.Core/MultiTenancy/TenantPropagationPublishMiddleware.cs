@@ -25,7 +25,11 @@ public sealed class TenantPropagationPublishMiddleware(
         Argument.IsNotNull(context);
         Argument.IsNotNull(next);
 
-        if (context.Options?.TenantId is null && _currentTenant.Id is { } ambientTenantId)
+        if (
+            context.Options?.SuppressAmbientBusinessContext != true
+            && context.Options?.TenantId is null
+            && _currentTenant.Id is { } ambientTenantId
+        )
         {
             if (string.IsNullOrWhiteSpace(ambientTenantId))
             {

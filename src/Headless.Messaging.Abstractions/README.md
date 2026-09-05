@@ -13,6 +13,7 @@ Defines the stable message envelope, consume context, consumer contract, publish
 - `Message`, `TransportMessage`, headers, and publish option base types.
 - `IRuntimeSubscriber` for scoped runtime delegate subscriptions.
 - Verb-specific publisher contracts: `IBus` and `IQueue`, with immutable delivery-mode options.
+- `MessageOptions.SuppressAmbientBusinessContext` preserves captured business metadata by disabling ambient correlation, causation, and tenant defaults. It defaults to `false`; explicit options, registered contract/selector resolution, and diagnostic trace propagation remain unchanged. Required tenancy still rejects a null explicit tenant when suppression is enabled.
 
 ## Installation
 

@@ -172,6 +172,8 @@ builder.Services.AddHeadlessDbContextServices(options =>
 
 Within a pipeline-owned transaction, the order is: domain events via `ILocalEventBus` → business `SaveChanges` → audit persistence → integration events via `IHeadlessOutboxDispatcher` → commit.
 
+Custom `IHeadlessOutboxDispatcher` implementations now receive `IReadOnlyList<EventOccurrence<IIntegrationEvent>>` in both dispatch methods. Preserve the snapshot through retries: the Messaging bridge uses `Context.EventId` as `MessageId` and publishes `Payload` with the captured correlation, causation, and tenant. Rebuild custom dispatchers with the matching EF and bridge packages.
+
 A completed local drain is not repeated by persistence retry; a failed local handler can run again. Atomic outbox persistence does not promise exactly-once delivery or external effects. Each successful save clears only its saved batch, including when a caller-owned transaction has not yet committed.
 
 ### Module Model Mapping
