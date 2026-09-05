@@ -510,11 +510,21 @@ public sealed class JobSchedulerTests : TestBase
     }
 
     [Fact]
-    public void should_expose_only_the_job_id_cancellation_method_and_seven_scheduling_overloads()
+    public void should_expose_ordinary_scheduling_and_generation_fenced_keyed_control()
     {
         var methods = typeof(IJobScheduler).GetMethods(BindingFlags.Instance | BindingFlags.Public);
 
-        methods.Should().HaveCount(10);
+        methods.Should().HaveCount(15);
+        methods.Count(method => method.ReturnType == typeof(Task<JobScheduleResult>)).Should().Be(5);
+        var keyedSchedules = methods.Where(method =>
+            method.Name is nameof(IJobScheduler.ScheduleKeyedAsync) or nameof(IJobScheduler.ReplaceKeyedAsync)
+        );
+        keyedSchedules.Should().HaveCount(4);
+        keyedSchedules
+            .Should()
+            .OnlyContain(method =>
+                method.GetParameters().Any(parameter => parameter.ParameterType == typeof(DateTimeOffset))
+            );
         methods.Count(method => method.ReturnType == typeof(Task<Guid>)).Should().Be(7);
         var cancellation = methods.Single(method =>
             string.Equals(method.Name, nameof(IJobScheduler.CancelAsync), StringComparison.Ordinal)

@@ -6,7 +6,7 @@ using Headless.Jobs.Models;
 namespace Headless.Jobs;
 
 /// <summary>
-/// An immutable, typed authoring model for a conditional sequential job chain. A chain is a tree of steps where each
+/// An immutable, typed authoring model for a static conditional continuation tree. A chain is a tree of steps where each
 /// step attaches at most one on-success child (<c>Then</c>) and at most one on-failure child (<c>Catch</c>); the
 /// scheduler resolves every step's generated descriptor and persists the whole tree atomically at enqueue.
 /// </summary>
@@ -16,6 +16,8 @@ namespace Headless.Jobs;
 /// immutable instance. The chain never references a handler contract (no <c>TJob</c>, <c>IJob&lt;TArgs&gt;</c>, or
 /// <c>ICronJob</c>): step identity is a generated <see cref="JobFunctionDescriptor"/>, resolved from the captured
 /// payload type where a step supplies a payload.
+/// Keyed scheduling/control, signals, joins, waits, compensation, mutable definitions, process state, and stream
+/// coordinates are not supported by this continuation-tree model.
 /// </remarks>
 [PublicAPI]
 public sealed class JobChain

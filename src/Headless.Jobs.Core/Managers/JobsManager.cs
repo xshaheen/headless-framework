@@ -65,6 +65,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     // See the throw-on-failure note on ICronJobManager.AddAsync above — the same applies to the time-job Add path.
     Task<TTimeJob> ITimeJobManager<TTimeJob>.AddAsync(TTimeJob entity, CancellationToken cancellationToken)
     {
+        JobIntentFingerprint.RejectOrdinaryMutation(entity);
         return _AddTimeJobAsync(entity, cancellationToken);
     }
 
@@ -99,6 +100,11 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         CancellationToken cancellationToken
     )
     {
+        foreach (var entity in entities)
+        {
+            JobIntentFingerprint.RejectOrdinaryMutation(entity);
+        }
+
         return _AddTimeJobsBatchAsync(entities, cancellationToken);
     }
 

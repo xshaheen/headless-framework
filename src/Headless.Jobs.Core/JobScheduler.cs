@@ -9,7 +9,7 @@ using Headless.Jobs.Models;
 
 namespace Headless.Jobs;
 
-internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
+internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {

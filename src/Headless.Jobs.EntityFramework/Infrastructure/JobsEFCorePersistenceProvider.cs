@@ -16,7 +16,7 @@ using Microsoft.Extensions.Logging;
 #pragma warning disable MA0133 // EF must keep DateTime.UtcNow in expression trees so providers translate the database clock before the DateTimeOffset assignment.
 namespace Headless.Jobs.Infrastructure;
 
-internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
+internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     IDbContextFactory<TDbContext> dbContextFactory,
     DbContextOptions<TDbContext> coordinatedWriteOptions,
     TimeProvider timeProvider,
@@ -77,6 +77,11 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
         CancellationToken cancellationToken
     )
     {
+        foreach (var job in jobs)
+        {
+            JobIntentFingerprint.RejectOrdinaryMutation(job);
+        }
+
         await using var dbContext = _CreateCoordinatedContext(relationalContext);
         await dbContext.Set<TTimeJob>().AddRangeAsync(jobs, cancellationToken).ConfigureAwait(false);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
@@ -248,6 +253,11 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
 
     public async Task<int> AddTimeJobsAsync(TTimeJob[] jobs, CancellationToken cancellationToken = default)
     {
+        foreach (var job in jobs)
+        {
+            JobIntentFingerprint.RejectOrdinaryMutation(job);
+        }
+
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -265,6 +275,28 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
 
         dbContext.Set<TTimeJob>().UpdateRange(timeJobs);
 
+        foreach (var candidate in dbContext.ChangeTracker.Entries<TTimeJob>())
+        {
+            JobIntentFingerprint.RejectOrdinaryMutation(candidate.Entity);
+        }
+
+        var updatedIds = dbContext.ChangeTracker.Entries<TTimeJob>().Select(entry => entry.Entity.Id).ToArray();
+        await using var transaction = await dbContext
+            .Database.BeginTransactionAsync(cancellationToken)
+            .ConfigureAwait(false);
+        await JobsKeyLock.AcquireRunsAsync(dbContext, updatedIds, cancellationToken).ConfigureAwait(false);
+        if (
+            await dbContext
+                .Set<TTimeJob>()
+                .AnyAsync(row => updatedIds.Contains(row.Id) && row.BusinessKey != null, cancellationToken)
+                .ConfigureAwait(false)
+        )
+        {
+            throw new InvalidOperationException(
+                "Ordinary updates, resets, and retries cannot mutate retained keyed jobs. Use generation-fenced keyed control."
+            );
+        }
+
         // Ownership and business lineage are captured at scheduling; ordinary edits cannot replace them.
         foreach (var entry in dbContext.ChangeTracker.Entries<TTimeJob>())
         {
@@ -273,7 +305,9 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
             entry.Property(nameof(Entities.BaseEntity.BaseJobEntity.CausationId)).IsModified = false;
         }
 
-        return await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        var affected = await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        return affected;
     }
 
     public async Task<int> RemoveTimeJobsAsync(Guid[] timeJobIds, CancellationToken cancellationToken = default)
@@ -321,6 +355,20 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
             .ConfigureAwait(false);
 
         // Deepest level first: with a non-cascading FK a row may only be deleted once its children are gone.
+        var retainedIds = visited.ToArray();
+        await JobsKeyLock.AcquireRunsAsync(dbContext, retainedIds, cancellationToken).ConfigureAwait(false);
+        if (
+            await dbContext
+                .Set<TTimeJob>()
+                .AnyAsync(row => retainedIds.Contains(row.Id) && row.BusinessKey != null, cancellationToken)
+                .ConfigureAwait(false)
+        )
+        {
+            throw new InvalidOperationException(
+                "Keyed jobs and all historical generations are retained indefinitely. No member of this delete batch was removed."
+            );
+        }
+
         var deleted = 0;
         for (var level = levels.Count - 1; level >= 0; level--)
         {

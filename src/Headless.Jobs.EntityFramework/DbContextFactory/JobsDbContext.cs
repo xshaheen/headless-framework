@@ -32,6 +32,7 @@ public class JobsDbContext<TTimeJob, TCronJob> : DbContext
         modelBuilder.ApplyConfiguration(new CronJobConfigurations<TCronJob>(schema, contractCollation));
         modelBuilder.ApplyConfiguration(new CronJobOccurrenceConfigurations<TCronJob>(schema, contractCollation));
         base.OnModelCreating(modelBuilder);
+        JobsKeyedModelConfiguration.Configure<TTimeJob>(modelBuilder, this);
     }
 }
 

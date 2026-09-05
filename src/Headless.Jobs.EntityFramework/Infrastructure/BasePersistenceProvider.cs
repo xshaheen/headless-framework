@@ -357,13 +357,38 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 setters =>
                     setters
                         .SetProperty(x => x.CancelRequested, valueExpression: true)
-                        .SetProperty(x => x.Status, x => x.Status == JobStatus.Idle ? JobStatus.Cancelled : x.Status)
+                        .SetProperty(
+                            x => x.Status,
+                            x =>
+                                x.Status == JobStatus.Idle
+                                && (x.BusinessKey == null || (x.OwnerId == null && x.LockedUntil == null))
+                                    ? JobStatus.Cancelled
+                                    : x.Status
+                        )
                         .SetProperty(
                             x => x.ExecutedAt,
-                            x => x.Status == JobStatus.Idle ? DateTime.UtcNow : x.ExecutedAt
+                            x =>
+                                x.Status == JobStatus.Idle
+                                && (x.BusinessKey == null || (x.OwnerId == null && x.LockedUntil == null))
+                                    ? DateTime.UtcNow
+                                    : x.ExecutedAt
                         )
-                        .SetProperty(x => x.OwnerId, x => x.Status == JobStatus.Idle ? null : x.OwnerId)
-                        .SetProperty(x => x.LockedUntil, x => x.Status == JobStatus.Idle ? null : x.LockedUntil)
+                        .SetProperty(
+                            x => x.OwnerId,
+                            x =>
+                                x.Status == JobStatus.Idle
+                                && (x.BusinessKey == null || (x.OwnerId == null && x.LockedUntil == null))
+                                    ? null
+                                    : x.OwnerId
+                        )
+                        .SetProperty(
+                            x => x.LockedUntil,
+                            x =>
+                                x.Status == JobStatus.Idle
+                                && (x.BusinessKey == null || (x.OwnerId == null && x.LockedUntil == null))
+                                    ? null
+                                    : x.LockedUntil
+                        )
                         .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
                 cancellationToken
             )

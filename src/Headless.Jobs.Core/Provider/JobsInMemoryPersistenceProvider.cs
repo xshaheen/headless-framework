@@ -14,7 +14,8 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Jobs.Provider;
 
-internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJobPersistenceProvider<TTimeJob, TCronJob>
+internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob>
+    : IJobPersistenceProvider<TTimeJob, TCronJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {
@@ -424,7 +425,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
     {
         if (_timeJobs.TryGetValue(id, out var job))
         {
-            return Task.FromResult(job.Request ?? []);
+            return Task.FromResult(job.Request?.ToArray() ?? []);
         }
 
         return Task.FromResult(Array.Empty<byte>());
@@ -432,50 +433,59 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
     public Task<bool> RequestTimeJobCancellationAsync(Guid jobId, CancellationToken cancellationToken = default)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        while (true)
+        lock (_keyedOperations)
         {
-            if (!_timeJobs.TryGetValue(jobId, out var job))
+            cancellationToken.ThrowIfCancellationRequested();
+
+            while (true)
             {
-                return Task.FromResult(false);
+                if (!_timeJobs.TryGetValue(jobId, out var job))
+                {
+                    return Task.FromResult(false);
+                }
+
+                if (
+                    job.CancelRequested
+                    || job.Status is not (JobStatus.Idle or JobStatus.Queued or JobStatus.InProgress)
+                )
+                {
+                    return Task.FromResult(false);
+                }
+
+                var now = _timeProvider.GetUtcNow();
+                var updated = _CloneTicker(job);
+                updated.CancelRequested = true;
+                updated.UpdatedAt = now;
+
+                if (
+                    job.Status == JobStatus.Idle
+                    && (job.BusinessKey is null || (job.OwnerId is null && job.LockedUntil is null))
+                )
+                {
+                    updated.Status = JobStatus.Cancelled;
+                    updated.ExecutedAt = now;
+                    updated.OwnerId = null;
+                    updated.LockedUntil = null;
+                }
+
+                if (!_timeJobs.TryUpdate(jobId, updated, job))
+                {
+                    continue;
+                }
+
+                _SyncReconcileCandidate(updated);
+
+                if (job.Status == JobStatus.Idle)
+                {
+                    // Non-timed children keep the existing cancellation handling. U5/KTD3: the cancelled parent's TIMED
+                    // children are reconciled by ApplyParentTerminalRunConditionsAsync, driven post-cancellation by the
+                    // manager so the released-child scheduler wake is threaded through the same path as the executor/sweep
+                    // reconcile (and by the poll-time / sweep reconcile as a backstop).
+                    _ApplyCancelledParentRunConditions(jobId, now);
+                }
+
+                return Task.FromResult(true);
             }
-
-            if (job.CancelRequested || job.Status is not (JobStatus.Idle or JobStatus.Queued or JobStatus.InProgress))
-            {
-                return Task.FromResult(false);
-            }
-
-            var now = _timeProvider.GetUtcNow();
-            var updated = _CloneTicker(job);
-            updated.CancelRequested = true;
-            updated.UpdatedAt = now;
-
-            if (job.Status == JobStatus.Idle)
-            {
-                updated.Status = JobStatus.Cancelled;
-                updated.ExecutedAt = now;
-                updated.OwnerId = null;
-                updated.LockedUntil = null;
-            }
-
-            if (!_timeJobs.TryUpdate(jobId, updated, job))
-            {
-                continue;
-            }
-
-            _SyncReconcileCandidate(updated);
-
-            if (job.Status == JobStatus.Idle)
-            {
-                // Non-timed children keep the existing cancellation handling. U5/KTD3: the cancelled parent's TIMED
-                // children are reconciled by ApplyParentTerminalRunConditionsAsync, driven post-cancellation by the
-                // manager so the released-child scheduler wake is threaded through the same path as the executor/sweep
-                // reconcile (and by the poll-time / sweep reconcile as a backstop).
-                _ApplyCancelledParentRunConditions(jobId, now);
-            }
-
-            return Task.FromResult(true);
         }
     }
 
@@ -1011,34 +1021,39 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
     public Task<int> AddTimeJobsAsync(TTimeJob[] jobs, CancellationToken cancellationToken = default)
     {
-        // KTD6 cross-root all-or-nothing (IJobPersistenceProvider.AddTimeJobsAsync contract): the WHOLE call — every
-        // root AND every descendant across ALL chains — is one atomic unit. Phase 1 flattens every subtree and validates
-        // ids (unique within this call — whether in the same or another root's subtree — AND absent from stored state);
-        // phase 2 commits. A collision anywhere leaves NOTHING from the call visible, so one bad root can never strand a
-        // sibling root's tree (the old per-root loop committed each subtree independently and violated this).
-        var flattened = new List<TTimeJob>();
-        foreach (var job in jobs)
+        lock (_keyedOperations)
         {
-            _CollectSubtree(job, parentId: null, flattened);
-        }
-
-        var seen = new HashSet<Guid>(flattened.Count);
-        foreach (var node in flattened)
-        {
-            JobContract.ValidateName(node.Function);
-            JobContract.ValidateVersion(node.ContractVersion);
-            if (!seen.Add(node.Id) || _timeJobs.ContainsKey(node.Id))
+            // KTD6 cross-root all-or-nothing (IJobPersistenceProvider.AddTimeJobsAsync contract): the WHOLE call — every
+            // root AND every descendant across ALL chains — is one atomic unit. Phase 1 flattens every subtree and validates
+            // ids (unique within this call — whether in the same or another root's subtree — AND absent from stored state);
+            // phase 2 commits. A collision anywhere leaves NOTHING from the call visible, so one bad root can never strand a
+            // sibling root's tree (the old per-root loop committed each subtree independently and violated this).
+            var flattened = new List<TTimeJob>();
+            foreach (var job in jobs)
             {
-                // Duplicate id within the call, or a collision with an existing row — reject the whole call.
-                return Task.FromResult(0);
+                JobIntentFingerprint.RejectOrdinaryMutation(job);
+                _CollectSubtree(job, parentId: null, flattened);
             }
-        }
 
-        return Task.FromResult(_CommitValidatedSubtrees(flattened));
+            var seen = new HashSet<Guid>(flattened.Count);
+            foreach (var node in flattened)
+            {
+                JobContract.ValidateName(node.Function);
+                JobContract.ValidateVersion(node.ContractVersion);
+                if (!seen.Add(node.Id) || _timeJobs.ContainsKey(node.Id))
+                {
+                    // Duplicate id within the call, or a collision with an existing row — reject the whole call.
+                    return Task.FromResult(0);
+                }
+            }
+
+            return Task.FromResult(_CommitValidatedSubtrees(flattened));
+        }
     }
 
     private int _AddTickerWithChildren(TTimeJob job, Guid? parentId = null)
     {
+        JobIntentFingerprint.RejectOrdinaryMutation(job);
         // KTD6 all-or-nothing: validate the WHOLE subtree — structure and id uniqueness, both within the subtree and
         // against already-stored rows — BEFORE mutating any shared dictionary, so a collision anywhere leaves nothing
         // visible (never a partially-added parent). Flattening also stamps each node's ParentId.
@@ -1158,13 +1173,21 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
     public Task<int> UpdateTimeJobsAsync(TTimeJob[] jobs, CancellationToken cancellationToken = default)
     {
-        var count = 0;
-        foreach (var job in jobs)
+        lock (_keyedOperations)
         {
-            count += _UpdateTickerWithChildren(job);
-        }
+            foreach (var candidate in jobs)
+            {
+                _RejectKeyedTreeUpdate(candidate);
+            }
 
-        return Task.FromResult(count);
+            var count = 0;
+            foreach (var job in jobs)
+            {
+                count += _UpdateTickerWithChildren(job);
+            }
+
+            return Task.FromResult(count);
+        }
     }
 
     private int _UpdateTickerWithChildren(TTimeJob job, Guid? parentId = null)
@@ -1232,40 +1255,51 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
     public Task<int> RemoveTimeJobsAsync(Guid[] jobIds, CancellationToken cancellationToken = default)
     {
-        var count = 0;
-
-        // Deletes the WHOLE subtree, not just the direct children — parity with the EF provider, where a surviving
-        // grandchild is either permanently unreachable (non-timed) or escapes the parent-terminal gate (timed). The
-        // visited set keeps a corrupted parent cycle from looping forever.
-        var visited = new HashSet<Guid>(jobIds);
-        var pending = new Stack<Guid>(jobIds);
-
-        while (pending.TryPop(out var id))
+        lock (_keyedOperations)
         {
-            foreach (var childId in _GetChildrenIds(id))
+            foreach (var candidateId in jobIds)
             {
-                if (visited.Add(childId))
+                if (_timeJobs.TryGetValue(candidateId, out var candidate))
                 {
-                    pending.Push(childId);
+                    JobIntentFingerprint.RejectOrdinaryMutation(_BuildTickerHierarchy(candidate));
                 }
             }
 
-            if (!_timeJobs.TryRemove(id, out var removed))
+            var count = 0;
+
+            // Deletes the WHOLE subtree, not just the direct children — parity with the EF provider, where a surviving
+            // grandchild is either permanently unreachable (non-timed) or escapes the parent-terminal gate (timed). The
+            // visited set keeps a corrupted parent cycle from looping forever.
+            var visited = new HashSet<Guid>(jobIds);
+            var pending = new Stack<Guid>(jobIds);
+
+            while (pending.TryPop(out var id))
             {
-                continue;
+                foreach (var childId in _GetChildrenIds(id))
+                {
+                    if (visited.Add(childId))
+                    {
+                        pending.Push(childId);
+                    }
+                }
+
+                if (!_timeJobs.TryRemove(id, out var removed))
+                {
+                    continue;
+                }
+
+                count++;
+                _reconcileCandidates.TryRemove(id, out _);
+
+                // Clean children index
+                if (removed.ParentId.HasValue)
+                {
+                    _RemoveChildIndex(removed.ParentId.Value, removed.Id);
+                }
             }
 
-            count++;
-            _reconcileCandidates.TryRemove(id, out _);
-
-            // Clean children index
-            if (removed.ParentId.HasValue)
-            {
-                _RemoveChildIndex(removed.ParentId.Value, removed.Id);
-            }
+            return Task.FromResult(count);
         }
-
-        return Task.FromResult(count);
     }
 
     public Task<int> ReleaseDeadNodeTimeJobResourcesAsync(
@@ -3460,6 +3494,11 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             Id = job.Id,
             Function = job.Function,
             ContractVersion = job.ContractVersion,
+            BusinessKey = job.BusinessKey,
+            IntentFingerprint = job.IntentFingerprint,
+            FingerprintAlgorithm = job.FingerprintAlgorithm,
+            Generation = job.Generation,
+            IsCurrentGeneration = job.IsCurrentGeneration,
             CorrelationId = job.CorrelationId,
             CausationId = job.CausationId,
             Status = job.Status,
@@ -3472,11 +3511,11 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             LockedUntil = job.LockedUntil,
             OnNodeDeath = job.OnNodeDeath,
             ParentId = job.ParentId,
-            Request = job.Request,
+            Request = job.Request?.ToArray(),
             ExceptionMessage = job.ExceptionMessage,
             SkippedReason = job.SkippedReason,
             ElapsedTime = job.ElapsedTime,
-            RetryIntervals = job.RetryIntervals,
+            RetryIntervals = job.RetryIntervals?.ToArray(),
             RunCondition = job.RunCondition,
             ExecutedAt = job.ExecutedAt,
             CancelRequested = job.CancelRequested,

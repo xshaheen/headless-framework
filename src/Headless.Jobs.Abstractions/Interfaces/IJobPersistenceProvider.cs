@@ -75,6 +75,22 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
 {
     #region Time_Ticker_Core_Methods
 
+    /// <summary>Atomically inserts or observes a standalone scoped key; an observed generation requests pending-only replacement.</summary>
+    Task<JobScheduleResult> ScheduleKeyedTimeJobAsync(
+        JobKey key,
+        TTimeJob job,
+        long? expectedGeneration = null,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>Conditionally cancels only the observed current generation, retaining every generation indefinitely.</summary>
+    Task<JobScheduleResult> CancelKeyedTimeJobAsync(
+        JobKeyScope scope,
+        JobKey key,
+        long expectedGeneration,
+        CancellationToken cancellationToken = default
+    );
+
     /// <summary>
     /// Claims the supplied due time jobs for this node on the main scheduler path: each row that is still
     /// acquirable and unchanged since <paramref name="timeJobs"/> was read is stamped with this node's owner id,

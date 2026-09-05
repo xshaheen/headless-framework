@@ -39,6 +39,15 @@ public class TimeJobConfigurations<TTimeJob>(
 
         builder.Property(x => x.TenantId).IsRequired(false).HasMaxLength(JobsTenancyOptions.TenantIdMaxLength);
 
+        builder.Property(x => x.BusinessKey).HasMaxLength(JobKey.MaxLength);
+        builder.Property(x => x.IntentFingerprint).HasMaxLength(64);
+        builder.Property(x => x.FingerprintAlgorithm).HasMaxLength(16);
+        if (contractCollation is not null)
+        {
+            builder.Property(x => x.BusinessKey).UseCollation(contractCollation);
+            builder.Property(x => x.TenantId).UseCollation(contractCollation);
+        }
+
         // Transient schedule-time authorization flag (KTD2): never a column.
         builder.Ignore(x => x.IsSystemJob);
 
@@ -74,5 +83,11 @@ public class TimeJobConfigurations<TTimeJob>(
         builder.HasIndex("OwnerId", "Status").HasDatabaseName("IX_TimeJob_OwnerId_Status");
 
         builder.ToTable("TimeJobs", schema);
+        // Both supported providers convert the quoted constant to the column's Boolean type.
+        JobsKeyedModelConfiguration.Configure(
+            builder,
+            static name => "\"" + name.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"",
+            "'1'"
+        );
     }
 }
