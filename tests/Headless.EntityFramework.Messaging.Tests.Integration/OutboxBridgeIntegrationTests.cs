@@ -27,7 +27,7 @@ namespace Tests;
 /// across the sync/async save paths, and each concrete event type is routed through its own publish overload.
 /// </summary>
 [Collection<OutboxBridgeTestFixture>]
-public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture) : TestBase
+public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture) : TestBase
 {
     protected override async ValueTask DisposeAsyncCore()
     {
@@ -41,6 +41,7 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
                 TRUNCATE TABLE messaging."published" CASCADE;
                 TRUNCATE TABLE messaging."received" CASCADE;
                 TRUNCATE TABLE "Orders" CASCADE;
+                TRUNCATE TABLE "DeadlineReceipts" CASCADE;
                 """;
             await command.ExecuteNonQueryAsync(AbortToken);
         }
@@ -505,7 +506,8 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
     private async Task<ServiceProvider> _BuildProviderAsync(
         Action<IServiceCollection>? configureServices = null,
         Action<DbContextOptionsBuilder>? configureDbContext = null,
-        bool requireTenant = false
+        bool requireTenant = false,
+        bool includeJobs = false
     )
     {
         var services = new ServiceCollection();
@@ -517,7 +519,14 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
         {
             setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
             setup.Options.TenantContextRequired = requireTenant;
-            setup.Bus.ForMessage<OrderShipped>(message => message.Contract("orders.shipped", "2"));
+            setup.Bus.ForMessage<OrderShipped>(message =>
+            {
+                message.Contract("orders.shipped", "2");
+                if (includeJobs)
+                {
+                    message.Consumer<DeadlineConsumer>(consumer => consumer.ConsumerIdentity("tests.bridge.deadline"));
+                }
+            });
             setup.Bus.ForMessage<OrderInvoiced>(message => message.Contract("orders.invoiced", "3"));
             setup.Bus.ForMessage<ShipOrder>(message =>
                 message
@@ -536,6 +545,10 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
             options.UseNpgsql(fixture.ConnectionString).AddHeadlessExtension();
             configureDbContext?.Invoke(options);
         });
+        if (includeJobs)
+        {
+            _RegisterJobs(services);
+        }
         configureServices?.Invoke(services);
 
         var provider = services.BuildServiceProvider();
@@ -547,18 +560,18 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<BridgeTestDbContext>();
 
-        // EnsureCreated would no-op (Testcontainers already created the database, so it considers the schema
-        // present). Create the model's tables directly; ignore duplicate-table when a prior test already did.
-        var creator = db.GetService<IRelationalDatabaseCreator>();
-        try
-        {
-            await creator.CreateTablesAsync(AbortToken);
-        }
-        catch (PostgresException e)
-            when (string.Equals(e.SqlState, PostgresErrorCodes.DuplicateTable, StringComparison.Ordinal))
-        {
-            // Orders table already created by an earlier test in this collection.
-        }
+        // A reused container may have an older fixture model. Recreate only this test's business tables so a
+        // duplicate-table exception cannot hide a missing new table or roll back the collection's cleanup batch.
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            DROP TABLE IF EXISTS "DeadlineReceipts";
+            DROP TABLE IF EXISTS "Orders";
+            TRUNCATE TABLE messaging."published" CASCADE;
+            TRUNCATE TABLE messaging."received" CASCADE;
+            """,
+            AbortToken
+        );
+        await db.GetService<IRelationalDatabaseCreator>().CreateTablesAsync(AbortToken);
 
         return provider;
     }
@@ -790,10 +803,14 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
         }
     }
 
-    private sealed class BridgeTestDbContext(HeadlessDbContextServices services, DbContextOptions options)
-        : HeadlessDbContext(services, options)
+    private sealed class BridgeTestDbContext(
+        HeadlessDbContextServices services,
+        DbContextOptions<BridgeTestDbContext> options
+    ) : HeadlessDbContext(services, options)
     {
         public DbSet<OrderEntity> Orders => Set<OrderEntity>();
+
+        public DbSet<DeadlineReceipt> DeadlineReceipts => Set<DeadlineReceipt>();
 
         public override string DefaultSchema => "";
 
@@ -801,6 +818,7 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
         {
             base.OnModelCreating(modelBuilder);
             modelBuilder.Entity<OrderEntity>().Property(e => e.Id).ValueGeneratedNever();
+            modelBuilder.Entity<DeadlineReceipt>().Property(e => e.Id).ValueGeneratedNever();
         }
     }
 
