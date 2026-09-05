@@ -983,6 +983,8 @@
       "headless.jobs.entityframework.postgresql": {
         "type": "Project",
         "dependencies": {
+          "Headless.CommitCoordination.EntityFramework": "[1.0.0, )",
+          "Headless.Coordination.PostgreSql": "[1.0.0, )",
           "Headless.Jobs.EntityFramework": "[1.0.0, )",
           "Npgsql.EntityFrameworkCore.PostgreSQL": "[10.0.2, )"
         }

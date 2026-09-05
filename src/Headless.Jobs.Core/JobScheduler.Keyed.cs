@@ -129,7 +129,7 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob>
         Argument.IsNotNull(scope);
         var descriptor =
             _descriptorByName(scope.Function) ?? throw new Exceptions.JobFunctionNotFoundException(scope.Function);
-        var policy = _policies.Resolve(descriptor, null);
+        var policy = _policies.Resolve(descriptor, call: null);
         return _timeJobManager.CancelKeyedAsync(
             scope,
             key,
@@ -174,7 +174,7 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob>
             ExecutionTime = executionTime.UtcDateTime,
             Description = options?.Description,
             Retries = options?.Retries ?? 0,
-            RetryIntervals = options?.RetryIntervals?.ToArray(),
+            RetryIntervals = options?.RetryIntervals,
             OnNodeDeath = options?.OnNodeDeath ?? NodeDeathPolicy.Retry,
             TenantId = options?.TenantId,
             IsSystemJob = options?.IsSystemJob ?? false,

@@ -27,6 +27,19 @@ using Microsoft.Extensions.Logging;
 namespace Tests;
 
 /// <summary>
+/// Adds the application-context setup path to the provider-neutral Jobs fixture.
+/// </summary>
+public interface IJobsApplicationConfigurationFixture : IJobsCoordinationFixture
+{
+    /// <summary>Configures jobs through the application DbContext convenience API.</summary>
+    void ConfigureApplicationJobs<TContext>(
+        JobsOptionsBuilder<TimeJobEntity, CronJobEntity> builder,
+        Action<CoordinationOptions> configureCoordination
+    )
+        where TContext : DbContext;
+}
+
+/// <summary>
 /// Provider-neutral contract for a Jobs+Coordination integration fixture. Each leaf fixture owns its own
 /// Testcontainers instance (Postgres or SQL Server) and implements these members; all shared host wiring,
 /// schema creation, reset, and raw-SQL seeding live in <see cref="JobsCoordinationFixtureExtensions" />.

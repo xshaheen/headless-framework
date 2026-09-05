@@ -314,7 +314,7 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
             ExecutionTime = executionTime,
             Description = options?.Description,
             Retries = options?.Retries ?? 0,
-            RetryIntervals = options?.RetryIntervals is { } intervals ? [.. intervals] : null,
+            RetryIntervals = options?.RetryIntervals,
             OnNodeDeath = options?.OnNodeDeath ?? Enums.NodeDeathPolicy.Retry,
             TenantId = options?.TenantId,
             IsSystemJob = options?.IsSystemJob ?? false,
@@ -360,7 +360,7 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
             Description = options?.Description,
             TimeZoneId = options?.TimeZoneId,
             Retries = policy.Retries ?? 0,
-            RetryIntervals = policy.RetryIntervals is { } intervals ? [.. intervals] : null,
+            RetryIntervals = policy.RetryIntervals,
             OnNodeDeath = policy.OnNodeDeath ?? Enums.NodeDeathPolicy.Retry,
         };
 
@@ -385,7 +385,7 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
             ExecutionTime = node.ExecutionTime?.UtcDateTime,
             Description = options.Description,
             Retries = options.Retries ?? 0,
-            RetryIntervals = options.RetryIntervals is { } intervals ? [.. intervals] : null,
+            RetryIntervals = options.RetryIntervals,
             OnNodeDeath = options.OnNodeDeath ?? Enums.NodeDeathPolicy.Retry,
             RequireAtomicEnlistment = options.RequireAtomicEnlistment,
             TenantId = options.TenantId,

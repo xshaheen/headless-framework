@@ -143,16 +143,16 @@ Mark job methods with `[JobFunction("name")]` (or `[JobFunction("name", cronExpr
 - Call `AddHeadlessJobs()` on `IServiceCollection`. There is no `app.UseJobs()` call — the scheduler starts automatically through `IHostedService` registered by `AddHeadlessJobs`.
 - Configure every `AddJobsDiscovery(...)` assembly inside the `AddHeadlessJobs` callback. Jobs loads those assemblies before freezing the process-wide generated catalog; late generated registrations fail deterministically. Runtime services and Dashboard use an immutable configuration-resolved registry owned by each `IHost`.
 - Use `Jobs.EntityFramework` for durable persistence. Without it, jobs live in memory and are lost on restart.
-- Configure `UsePostgreSqlClaims()` or `UseSqlServerClaims()` inside the existing `UseEntityFramework` builder when the matching provider package is installed. Configure only one. Omitting both deliberately keeps the portable EF optimistic-CAS claim path. The selected package also fixes the GUID ordering every EF Jobs row is keyed with — SQL Server comb, PostgreSQL UUIDv7 — so occurrence ids stay index-friendly on the paths that do not run through the native claim strategy.
+- Prefer `jobs.UsePostgreSql<AppDbContext>(coordination => coordination.ClusterName = "orders")` or the SQL Server sibling after registering the application context. These configure models, native claims, same-database cluster membership, and EF commit coordination. For advanced composition, configure `UsePostgreSqlClaims()` or `UseSqlServerClaims()` inside the existing `UseEntityFramework` builder. Configure only one. Omitting both deliberately keeps the portable EF optimistic-CAS claim path. The selected package also fixes the GUID ordering every EF Jobs row is keyed with — SQL Server comb, PostgreSQL UUIDv7 — so occurrence ids stay index-friendly on the paths that do not run through the native claim strategy.
 - The EF store creates a cron definition at runtime by reading the backend's **current statement** clock, and only PostgreSQL and SQL Server have one. On any other EF backend `ICronJobManager.AddAsync` / `AddBatchAsync` (coordinated or not) throws `NotSupportedException`; time jobs and the unseeded `IJobPersistenceProvider.InsertCronJobsAsync(jobs, ct)` overload still work. Seed cron definitions from `[JobFunction]` attributes or position rows yourself on such a backend.
 - Custom `IJobPersistenceProvider` authors must not re-derive the coalesce-recovery decision. Snapshot `CronRecoveryPlanner.GetInspectionWindow(request)`, call `CronRecoveryPlanner.CreatePlan(...)`, and apply the returned `CronRecoveryPlan` with the store's own fenced writes. See [Applying a recovery pass](#applying-a-recovery-pass).
-- For the durable operational store, register `AddHeadlessCoordination(c => c.Use…(conn))` BEFORE `AddHeadlessJobs(o => o.UseEntityFramework(…))`. Without coordination, startup throws `InvalidOperationException` naming `AddHeadlessCoordination`.
+- The application-context provider convenience methods register coordination themselves; do not register a second provider. For the advanced `UseEntityFramework` path, register `AddHeadlessCoordination(c => c.Use…(conn))` before `AddHeadlessJobs`. Without coordination, startup throws `InvalidOperationException` naming `AddHeadlessCoordination`.
 - On the durable path, node identity is `node@incarnation` (store-allocated by Coordination), not `Environment.MachineName`. `SchedulerOptionsBuilder.NodeId` is only a pre-registration display fallback — it is NOT the row owner on the durable path.
 - Running jobs slide their pickup lease forward on the `LeaseRenewalInterval` cadence (default ≈ `LeaseDuration / 3`), so `LeaseDuration` (default 5 min) no longer needs to exceed the longest job runtime. Keep `LeaseDuration` ≥ `FallbackIntervalChecker` to avoid spurious re-claims of rows that are claimed but not yet started.
 - Set `OnNodeDeath = NodeDeathPolicy.MarkFailed` or `Skip` on non-idempotent jobs — default `Retry` will re-run the job after a node crash.
 - Do NOT install a Jobs-specific cache package. Jobs cron-expression caching reuses the host's `ICache` (`Headless.Caching.InMemory`, `.Redis`, or `.Hybrid`). Without a registered `ICache`, cron expressions are read directly from the database.
 - Required transactional deadlines: set `JobOptions.RequireAtomicEnlistment = true` (or the transient entity flag for manager callers). Missing/incompatible relational capability rejects before middleware; Messaging delay is not a substitute. Keyed results are provisional until outer commit, and required keyed cancellation uses the overload with `requireAtomicEnlistment: true`.
-- Atomic enqueue: call `IJobScheduler` or the low-level manager inside `db.ExecuteCoordinatedTransactionAsync(...)` to commit domain writes and the job row as one unit. The facade persists through the same managers and inherits their deferred post-commit side effects. Requires a `Headless.CommitCoordination` provider (`AddPostgreSqlCommitCoordination()` / `AddSqlServerCommitCoordination()`) — a different subsystem from `AddHeadlessCoordination`. The coordinated path throws on any failure; wrap in `try/catch`.
+- Atomic enqueue: call `IJobScheduler` or the low-level manager inside `db.ExecuteCoordinatedTransactionAsync(...)` to commit domain writes and the job row as one unit. The facade persists through the same managers and inherits their deferred post-commit side effects. Requires a commit-coordination provider: the application-context convenience method supplies the EF adapter; advanced plain EF setup uses `AddEntityFrameworkCommitCoordination<TContext>()`, while raw ADO uses `AddPostgreSqlCommitCoordination()` / `AddSqlServerCommitCoordination()`. Cluster membership and transaction coordination remain different subsystems. The coordinated path throws on any failure; wrap in `try/catch`.
 - Establish commit coordination synchronously before entering asynchronous work. The provided `ExecuteCoordinatedTransactionAsync` helpers do this correctly; once established, the scope flows across awaits inside the operation, so domain writes and message publishes may be awaited before `AddAsync`.
 - Use `[JobsConstructor]` (`JobsConstructorAttribute`) on the constructor the source generator should use when a class has multiple constructors.
 - Use `IJobScheduler` for routine immediate, delayed, and recurring scheduling. Typed overloads resolve generated metadata from `typeof(TArgs)`; requestless overloads require a generated `JobFunctionDescriptor` from the generated `AppJobs` catalog.
@@ -261,38 +261,23 @@ The durable operational store (EF provider) uses `Headless.Coordination` for:
 
 ### Commit-Coordinated Enqueue (Atomic Enqueue)
 
-When a `Headless.CommitCoordination` provider is registered (`services.AddPostgreSqlCommitCoordination()` or `services.AddSqlServerCommitCoordination()`), `ITimeJobManager.AddAsync` / `AddBatchAsync` and `ICronJobManager.AddAsync` / `AddBatchAsync` write the job row inside the caller's ambient transaction and defer dispatch, scheduler restart, notifications, and cron-cache invalidation to post-commit.
+With the application-context provider convenience method (or an explicitly registered commit-coordination adapter), `ITimeJobManager.AddAsync` / `AddBatchAsync` and `ICronJobManager.AddAsync` / `AddBatchAsync` write the job row inside the caller's ambient transaction and defer dispatch, scheduler restart, notifications, and cron-cache invalidation to post-commit.
 
 ```csharp
-// db is a relational DbContext; services is the DI scope; both are enlisted by the helper.
+// Capture a stable absolute deadline before any retry of the business operation.
+var reminderDueAt = timeProvider.GetUtcNow().AddHours(24);
 await db.ExecuteCoordinatedTransactionAsync(
     async (ctx, ct) =>
     {
-        ctx.Orders.Add(order);
+        ctx.Set<Order>().Add(order);
         await ctx.SaveChangesAsync(ct);
-
-        await bus.PublishAsync(
-            new OrderPlaced(order.Id),
-            new PublishOptions { DeliveryMode = DeliveryMode.Durable },
-            ct
-        );
-
-        await timeJobManager.AddAsync(
-            new TimeJobEntity // enlists in same transaction
-            {
-                Function = "SendOrderReminder",
-                ExecutionTime = DateTime.UtcNow.AddHours(24),
-                // requestSerialization is the host's JobsRequestSerializationOptions singleton (resolve from DI)
-                Request = JobsHelper.CreateJobRequest(new { order.Id }, requestSerialization),
-            },
-            ct
-        );
+        await bus.PublishAsync(new OrderPlaced(order.Id), ct);
+        await jobScheduler.ScheduleAsync(new OrderReminderRequest(order.Id), reminderDueAt, ct);
     },
-    services,
-    ct
+    services: requestServiceProvider,
+    cancellationToken: cancellationToken
 );
-// On commit: order row + durable message + job row all persist; dispatch fires post-commit.
-// On rollback: none persist, no dispatch.
+// Application row, durable message, and job row commit or roll back together.
 ```
 
 **Footguns:**
@@ -300,7 +285,7 @@ await db.ExecuteCoordinatedTransactionAsync(
 - Coordinated enqueues in one scope must be sequential — the scope's DB connection/transaction is not thread-safe.
 - `AddAsync` / `AddBatchAsync` **throw** on failure (validation, dead/completed transaction, mis-wire). `Update` / `Delete` return `JobResult<T>` and do not throw.
 - A returned entity on the coordinated path means the row was **enlisted** (commits with the transaction), not that dispatch ran. Post-commit side effects are bounded by `PostCommitDrainTimeout` (default 30s; valid range `> 0` through `5m`); timeout releases the commit thread and the fallback poll sweep recovers dispatch.
-- The durable coordinated path needs **two separate registrations**: `AddHeadlessCoordination(...)` (the `Headless.Coordination` distributed-lock/membership subsystem for the operational store) AND a `Add{Provider}CommitCoordination()` (the `Headless.CommitCoordination` transactional scope subsystem). Similar names, different systems.
+- Cluster membership (`Headless.Coordination`) and transactional enlistment (`Headless.CommitCoordination`) remain separate subsystems. `UsePostgreSql<TContext>` / `UseSqlServer<TContext>` compose both; advanced setup registers each explicitly. Configure `jobs.ConfigureJob<OrderReminderRequest>(new JobOptions { RequireAtomicEnlistment = true })` to reject calls outside a compatible transaction without repeating the option at every schedule call.
 
 ### Tenant Propagation
 
@@ -737,6 +722,8 @@ Cron control is durable and definition-specific. Pause returns `true` only when 
 
 Routine calls accept a positional cancellation token: `EnqueueAsync(request, ct)`, `ScheduleAsync(request, dueAt, ct)`, `ScheduleAfterAsync(request, delay, ct)`, and `ScheduleRecurringAsync(request, cron, ct)`. Options overloads require the options argument; nullable retry and node-death fields inherit configured defaults, while `Retries = 0` explicitly disables retries. Absolute facade schedules use `DateTimeOffset` and persist the same instant in UTC. Relative ordinary schedules use the injected `TimeProvider`, accept zero delay, and reject negative or overflowing delays before persistence. Keyed schedules remain absolute: capture the due instant once and reuse it when retrying the same intent.
 
+Omit an unused cancellation token, or pass a literal default token as `cancellationToken: default`. A bare positional `default` is ambiguous between the token and options overloads; typed token variables and explicit options remain valid.
+
 Requestless jobs have generated `AppJobs` handles in the consuming assembly's namespace: `await jobs.EnqueueAsync(AppJobs.Cleanup, ct)` for `[JobFunction("Cleanup")]`. Import that namespace or qualify the catalog when several assemblies supply jobs. Handles reference the same immutable canonical descriptors used for registration; applications do not need a string dictionary lookup.
 
 ### Configuration
@@ -881,6 +868,8 @@ public sealed class OrderService(IJobScheduler scheduler)
 ```
 
 Routine calls accept a positional cancellation token: `EnqueueAsync(request, ct)`, `ScheduleAsync(request, dueAt, ct)`, `ScheduleAfterAsync(request, delay, ct)`, and `ScheduleRecurringAsync(request, cron, ct)`. Options overloads require the options argument; nullable retry and node-death fields inherit configured defaults, while `Retries = 0` explicitly disables retries. Absolute facade schedules use `DateTimeOffset` and persist the same instant in UTC. Relative ordinary schedules use the injected `TimeProvider`, accept zero delay, and reject negative or overflowing delays before persistence. Keyed schedules remain absolute: capture the due instant once and reuse it when retrying the same intent.
+
+Omit an unused cancellation token, or pass a literal default token as `cancellationToken: default`. A bare positional `default` is ambiguous between the token and options overloads; typed token variables and explicit options remain valid.
 
 Requestless jobs have generated `AppJobs` handles in the consuming assembly's namespace: `await jobs.EnqueueAsync(AppJobs.Cleanup, ct)` for `[JobFunction("Cleanup")]`. Import that namespace or qualify the catalog when several assemblies supply jobs. Handles reference the same immutable canonical descriptors used for registration; applications do not need a string dictionary lookup.
 
@@ -1586,9 +1575,11 @@ The claim predicate's lease-expiry re-claim arm is gated on `OnNodeDeath == Retr
 
 Replaces the portable EF select-and-compare-and-swap pickup path with PostgreSQL-native atomic claim-and-return operations under scheduler contention.
 
-This is an optimization extension for `Headless.Jobs.EntityFramework`, not an independent Jobs persistence provider. EF continues to own job storage, mapping definitions, recovery, the public persistence contract, and transaction-lifecycle primitives; this package owns PostgreSQL-specific claim execution, including SQL, parameters, and locking behavior.
+This package composes `Headless.Jobs.EntityFramework` with PostgreSQL claims and an application DbContext setup path. EF continues to own job storage, mapping definitions, recovery, the public persistence contract, and transaction-lifecycle primitives; this package owns PostgreSQL-specific claim execution, including SQL, parameters, and locking behavior.
 
 ### Key Features
+
+- `UsePostgreSql<TContext>(configureCoordination)` reuses the registered application database and wires Jobs models, native claims, cluster membership, and EF commit coordination.
 
 - **Ordinal contract storage**: Jobs function/version columns use PostgreSQL `C` collation. Physical `varchar(200)`/`varchar(100)` limits count Unicode code points; the shared runtime contract counts UTF-16 units, so supplementary characters require the same runtime UTF-16 validation. Native creation snapshots name, version, and request together under the definition lock; existing claims hydrate the stored occurrence tuple.
 - Claims existing time jobs and cron occurrences with `UPDATE ... RETURNING` over a `FOR UPDATE SKIP LOCKED` candidate query.
@@ -1614,28 +1605,39 @@ dotnet add package Headless.Jobs.EntityFramework.PostgreSql
 
 ```csharp
 using Headless.Jobs;
-using Headless.Jobs.DbContextFactory;
+using Headless.Jobs.Models;
 using Microsoft.EntityFrameworkCore;
 
-builder
-    .Services.AddHeadlessJobs()
-    .UseEntityFramework(ef =>
-    {
-        ef.UseJobsDbContext<JobsDbContext>(db => db.UseNpgsql(connectionString));
-        ef.UsePostgreSqlClaims();
-    });
+builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(connectionString));
+builder.Services.AddHeadlessJobs(jobs =>
+{
+    jobs.UsePostgreSql<AppDbContext>(coordination => coordination.ClusterName = "orders");
+    jobs.ConfigureJob<OrderReminder>(new JobOptions { RequireAtomicEnlistment = true });
+});
 ```
 
 ### Configuration
+
+Register `AppDbContext` first, with a public constructor accepting only `DbContextOptions<AppDbContext>`. The convenience method derives the connection string in a temporary DI scope and rejects an EF context configured for another backend. It adds Jobs mappings in the `jobs` schema while retaining application `OnModelCreating` configuration. It does not create application/Jobs tables: create the fresh application schema from that combined model before starting workers.
+
+This convenience API targets the standard `TimeJobEntity` / `CronJobEntity` store and one fixed application database. Per-request or per-tenant database selection is not supported: singleton cluster membership captures the configured connection once. Provider authentication callbacks and data-source customizations are not copied from EF options.
+
+Cluster identity is explicit. This call selects one PostgreSQL coordination provider with its default storage options, including coordination-table initialization at startup. Do not also register `AddHeadlessCoordination`: duplicate provider configuration fails. For a separately configured coordination store, custom provider options/data source/authentication callbacks, custom Jobs entities, dedicated Jobs context, schema/pool settings, or a custom model customizer, use the existing `UseEntityFramework(ef => ...)` path and configure those integrations explicitly. The optional `modelConfiguration: ConfigurationType.IgnoreModelCustomizer` argument retains an application-owned model customizer; the application must then add the Jobs mappings itself.
+
+Inside `db.ExecuteCoordinatedTransactionAsync(operation, requestServiceProvider, cancellationToken: ct)`, application writes, same-database durable Messaging publishes, and job schedules share the transaction. Configure Messaging transport/storage separately. `RequireAtomicEnlistment` rejects scheduling outside a compatible transaction; it does not start one. External message delivery and job execution happen after durable acceptance and remain at-least-once.
 
 `UsePostgreSqlClaims()` has no provider-specific options. Configure the `DbContext`, schema, and pool size through the existing Jobs EF builder. Register exactly one native claim provider. Omitting this call keeps the portable EF optimistic-CAS fallback.
 
 ### Dependencies
 
 - `Headless.Jobs.EntityFramework`
+- `Headless.CommitCoordination.EntityFramework`
+- `Headless.Coordination.PostgreSql`
 - `Npgsql.EntityFrameworkCore.PostgreSQL`
 
 ### Side Effects
+
+- The application-context convenience method attaches the commit interceptor and its startup empty-transaction probe (Warn by default), registers cluster membership and its initializer, and applies Jobs model configuration.
 
 - Replaces the default Jobs EF claim strategy with the PostgreSQL atomic strategy.
 - Executes provider-native, parameterized SQL against the mapped Jobs tables during pickup.
@@ -1649,9 +1651,11 @@ builder
 
 Replaces the portable EF select-and-compare-and-swap pickup path with SQL Server-native atomic claim-and-output operations under scheduler contention.
 
-This is an optimization extension for `Headless.Jobs.EntityFramework`, not an independent Jobs persistence provider. EF continues to own job storage, mapping definitions, recovery, the public persistence contract, and transaction-lifecycle primitives; this package owns SQL Server-specific claim execution, including SQL, parameters, and locking behavior.
+This package composes `Headless.Jobs.EntityFramework` with SQL Server claims and an application DbContext setup path. EF continues to own job storage, mapping definitions, recovery, the public persistence contract, and transaction-lifecycle primitives; this package owns SQL Server-specific claim execution, including SQL, parameters, and locking behavior.
 
 ### Key Features
+
+- `UseSqlServer<TContext>(configureCoordination)` reuses the registered application database and wires Jobs models, native claims, cluster membership, and EF commit coordination.
 
 - **Ordinal contract storage**: Jobs function/version columns use `Latin1_General_100_BIN2` and `nvarchar(200)`/`nvarchar(100)`, matching the shared UTF-16 bounds without case normalization. Runtime validation reject surrounding whitespace so SQL padding does not introduce alternate identities. Native creation snapshots name, version, and request together under the definition lock; existing claims hydrate the stored occurrence tuple.
 - Selects claim candidates with `UPDLOCK`, `READPAST`, and `ROWLOCK`, then returns winners from the same update through `OUTPUT inserted...`.
@@ -1678,28 +1682,40 @@ dotnet add package Headless.Jobs.EntityFramework.SqlServer
 
 ```csharp
 using Headless.Jobs;
-using Headless.Jobs.DbContextFactory;
+using Headless.Jobs.Models;
 using Microsoft.EntityFrameworkCore;
 
-builder
-    .Services.AddHeadlessJobs()
-    .UseEntityFramework(ef =>
-    {
-        ef.UseJobsDbContext<JobsDbContext>(db => db.UseSqlServer(connectionString));
-        ef.UseSqlServerClaims();
-    });
+builder.Services.AddDbContext<AppDbContext>(options => options.UseSqlServer(connectionString));
+builder.Services.AddHeadlessJobs(jobs =>
+{
+    jobs.UseSqlServer<AppDbContext>(coordination => coordination.ClusterName = "orders");
+    jobs.ConfigureJob<OrderReminder>(new JobOptions { RequireAtomicEnlistment = true });
+});
 ```
 
 ### Configuration
+
+Register `AppDbContext` first, with a public constructor accepting only `DbContextOptions<AppDbContext>`. The convenience method derives the connection string in a temporary DI scope and rejects an EF context configured for another backend. It adds Jobs mappings in the `jobs` schema while retaining application `OnModelCreating` configuration. It does not create application/Jobs tables: create the fresh application schema from that combined model before starting workers.
+
+This convenience API targets the standard `TimeJobEntity` / `CronJobEntity` store and one fixed application database. Per-request or per-tenant database selection is not supported: singleton cluster membership captures the configured connection once. Provider authentication callbacks and data-source customizations are not copied from EF options.
+
+Cluster identity is explicit. This call selects one SQL Server coordination provider with its default storage options, including coordination-table initialization at startup. Do not also register `AddHeadlessCoordination`: duplicate provider configuration fails. For a separately configured coordination store, custom provider options/data source/authentication callbacks, custom Jobs entities, dedicated Jobs context, schema/pool settings, or a custom model customizer, use the existing `UseEntityFramework(ef => ...)` path and configure those integrations explicitly. The optional `modelConfiguration: ConfigurationType.IgnoreModelCustomizer` argument retains an application-owned model customizer; the application must then add the Jobs mappings itself.
+
+Inside `db.ExecuteCoordinatedTransactionAsync(operation, requestServiceProvider, cancellationToken: ct)`, application writes, same-database durable Messaging publishes, and job schedules share the transaction. Configure Messaging transport/storage separately. `RequireAtomicEnlistment` rejects scheduling outside a compatible transaction; it does not start one. External message delivery and job execution happen after durable acceptance and remain at-least-once.
 
 `UseSqlServerClaims()` has no provider-specific options. Configure the `DbContext`, schema, and pool size through the existing Jobs EF builder. Register exactly one native claim provider. Omitting this call keeps the portable EF optimistic-CAS fallback. The strategy detects `READ_COMMITTED_SNAPSHOT` and adjusts its locking hints.
 
 ### Dependencies
 
 - `Headless.Jobs.EntityFramework`
+- `Headless.CommitCoordination.EntityFramework`
+- `Headless.Coordination.SqlServer`
 - `Microsoft.EntityFrameworkCore.SqlServer`
+- `Polly.Core`
 
 ### Side Effects
+
+- The application-context convenience method attaches the commit interceptor and its startup empty-transaction probe (Warn by default), registers cluster membership and its initializer, and applies Jobs model configuration.
 
 - Replaces the default Jobs EF claim strategy with the SQL Server atomic strategy.
 - Executes provider-native, parameterized SQL against the mapped Jobs tables during pickup.

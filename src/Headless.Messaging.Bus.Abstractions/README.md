@@ -33,6 +33,8 @@ public sealed class OrderEvents(IBus bus)
 
 The short overload uses the registered message contract and captures durably by default, including outside a transaction. Pass `PublishOptions` before the cancellation token for metadata or delivery overrides. Durable acceptance waits for storage, not consumer completion; restart survival requires persistent storage. Inside a compatible coordination boundary the capture commits with application state, while an incompatible boundary is rejected. Explicit `Auto` captures in a compatible boundary and sends directly with no boundary. `TransportDirect` bypasses storage and coordination and cannot be combined with `Delay`.
 
+Omit an unused cancellation token, or pass a literal default token as `cancellationToken: default`. A bare positional `default` is ambiguous between the token and options overloads; typed token variables and explicit options remain valid.
+
 ## Configuration
 
 None in this package. Runtime wiring is provided by `Headless.Messaging.Core` plus bus transport and storage providers.

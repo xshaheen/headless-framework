@@ -9,7 +9,7 @@ namespace Headless.EntityFramework;
 
 /// <summary>
 /// Caches per-runtime-type compiled invokers that bridge a runtime-typed integration payload to the
-/// generic <see cref="IBus.PublishAsync{T}"/>. <see cref="IBus"/> exposes no non-generic publish
+/// generic <see cref="IBus.PublishAsync{T}(T, PublishOptions, CancellationToken)"/>. <see cref="IBus"/> exposes no non-generic publish
 /// overload, so each concrete event type must be dispatched through its own closed generic method; compiling
 /// the call once per type avoids per-publish reflection cost (prior art: the messaging consume pipeline).
 /// </summary>
@@ -20,7 +20,11 @@ internal sealed class IntegrationEventPublishInvokerCache
 
     private static readonly MethodInfo _GenericPublishAsync = typeof(IBus)
         .GetMethods(BindingFlags.Public | BindingFlags.Instance)
-        .Single(m => m is { Name: nameof(IBus.PublishAsync), IsGenericMethodDefinition: true });
+        .Single(m =>
+            m is { Name: nameof(IBus.PublishAsync), IsGenericMethodDefinition: true }
+            && m.GetParameters() is [_, { ParameterType: var optionsType }, _]
+            && optionsType == typeof(PublishOptions)
+        );
 
     public Func<IBus, object, PublishOptions, CancellationToken, Task> GetPublishInvoker(Type eventType)
     {

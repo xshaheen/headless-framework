@@ -34,22 +34,28 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
             PublishOptions? Options
         )> Published { get; } = [];
 
+        public Task PublishAsync<T>(T? contentObj, CancellationToken cancellationToken = default) =>
+            PublishAsync(contentObj, options: null, cancellationToken);
+
         public Task PublishAsync<T>(
             T? contentObj,
-            PublishOptions? options = null,
+            PublishOptions? options,
             CancellationToken cancellationToken = default
         )
         {
-            Published.Add((typeof(T), contentObj, options?.DeliveryMode ?? DeliveryMode.Auto, options));
+            Published.Add((typeof(T), contentObj, options?.DeliveryMode ?? DeliveryMode.Durable, options));
             return Task.CompletedTask;
         }
     }
 
     private sealed class ThrowingBus : IBus
     {
+        public Task PublishAsync<T>(T? contentObj, CancellationToken cancellationToken = default) =>
+            PublishAsync(contentObj, options: null, cancellationToken);
+
         public Task PublishAsync<T>(
             T? contentObj,
-            PublishOptions? options = null,
+            PublishOptions? options,
             CancellationToken cancellationToken = default
         )
         {

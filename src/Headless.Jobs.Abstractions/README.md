@@ -183,6 +183,8 @@ await timeJobManager.AddAsync(
 
 Routine calls accept a positional cancellation token: `EnqueueAsync(request, ct)`, `ScheduleAsync(request, dueAt, ct)`, `ScheduleAfterAsync(request, delay, ct)`, and `ScheduleRecurringAsync(request, cron, ct)`. Options overloads require the options argument; nullable retry and node-death fields inherit configured defaults, while `Retries = 0` explicitly disables retries. Absolute facade schedules use `DateTimeOffset` and persist the same instant in UTC. Relative ordinary schedules use the injected `TimeProvider`, accept zero delay, and reject negative or overflowing delays before persistence. Keyed schedules remain absolute: capture the due instant once and reuse it when retrying the same intent.
 
+Omit an unused cancellation token, or pass a literal default token as `cancellationToken: default`. A bare positional `default` is ambiguous between the token and options overloads; typed token variables and explicit options remain valid.
+
 Requestless jobs have generated `AppJobs` handles in the consuming assembly's namespace: `await jobs.EnqueueAsync(AppJobs.Cleanup, ct)` for `[JobFunction("Cleanup")]`. Import that namespace or qualify the catalog when several assemblies supply jobs. Handles reference the same immutable canonical descriptors used for registration; applications do not need a string dictionary lookup.
 
 ## Configuration
@@ -213,21 +215,17 @@ Preflight inspects the actual configured provider, endpoint, and database after 
 
 A normal `Existing`/`Conflict` disposition leaves a read-committed caller transaction usable. Higher isolation levels can preserve an older snapshot or raise serialization/uniqueness failures despite transaction-owned key locks; these remain exceptions, never successful dispositions. Savepoint restoration does not promise every provider transaction is recoverable. If restoration fails, or a serialization/deadlock error poisons the transaction before commit, roll back the outer unit of work. Retry a known rollback with fresh application state, context lease, and job candidates. An unknown commit may already be durable; rollback cannot be assumed to undo it. Never automatically replay it: reconcile business state and the retained key using the same captured absolute due instant before deciding recovery. Messaging transport delay does not provide this Jobs capability.
 
-When a `Headless.CommitCoordination` provider is registered (`services.AddPostgreSqlCommitCoordination()` or `services.AddSqlServerCommitCoordination()`), `IJobScheduler` inherits the same atomic behavior from the managers it calls. `ITimeJobManager.AddAsync` / `AddBatchAsync` and `ICronJobManager.AddAsync` / `AddBatchAsync` write the job row inside the caller's ambient transaction and defer dispatch, scheduler restart, notifications, and cron-cache invalidation to post-commit.
+With the application-context provider convenience method (or an explicitly registered commit-coordination adapter), `IJobScheduler` inherits the same atomic behavior from the managers it calls. `ITimeJobManager.AddAsync` / `AddBatchAsync` and `ICronJobManager.AddAsync` / `AddBatchAsync` write the job row inside the caller's ambient transaction and defer dispatch, scheduler restart, notifications, and cron-cache invalidation to post-commit.
 
 ```csharp
 var reminderDueAt = DateTimeOffset.UtcNow.AddHours(24);
 await db.ExecuteCoordinatedTransactionAsync(
     async (ctx, ct) =>
     {
-        ctx.Orders.Add(order);
+        ctx.Set<Order>().Add(order);
         await ctx.SaveChangesAsync(ct);
 
-        await bus.PublishAsync(
-            new OrderPlaced(order.Id),
-            new PublishOptions { DeliveryMode = DeliveryMode.Durable },
-            ct
-        );
+        await bus.PublishAsync(new OrderPlaced(order.Id), ct);
 
         await jobScheduler.ScheduleKeyedAsync(
             new JobKey($"order-reminder:{order.Id}"),
@@ -242,6 +240,6 @@ await db.ExecuteCoordinatedTransactionAsync(
 );
 ```
 
-The coordinated path needs **two** separate registrations: `AddHeadlessCoordination(...)` (the `Headless.Coordination` distributed-lock/membership subsystem for the operational store) AND `Add{Provider}CommitCoordination()` (the `Headless.CommitCoordination` transactional scope subsystem). Similar names, different systems.
+The application-context `UsePostgreSql<TContext>(configureCoordination)` / `UseSqlServer<TContext>(configureCoordination)` methods compose cluster membership and EF commit coordination from the registered application database. These remain separate subsystems. Advanced `UseEntityFramework` setup registers each explicitly; plain EF transactions use `AddEntityFrameworkCommitCoordination<TContext>()`, while raw ADO transactions use their provider adapter. Set per-function `ConfigureJob<TRequest>(new JobOptions { RequireAtomicEnlistment = true })` to require atomic scheduling without repeating the assertion at every call.
 
 `AddAsync` / `AddBatchAsync` **throw** on failure; wrap in `try/catch`. Establish the coordinated scope synchronously (the provided `ExecuteCoordinatedTransactionAsync` helpers do this correctly). Once established, the scope flows across awaits inside the operation, so domain writes and message publishes may be awaited before the job enqueue.

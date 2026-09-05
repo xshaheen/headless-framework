@@ -266,8 +266,8 @@ public sealed class JobSchedulingDefaultsTests : TestBase
             cron,
             type => type == typeof(Request) ? _Typed : null,
             name =>
-                name == _Typed.FunctionName ? _Typed
-                : name == _Requestless.FunctionName ? _Requestless
+                string.Equals(name, _Typed.FunctionName, StringComparison.Ordinal) ? _Typed
+                : string.Equals(name, _Requestless.FunctionName, StringComparison.Ordinal) ? _Requestless
                 : null,
             Substitute.For<IInternalJobManager>(),
             Substitute.For<IJobsHostScheduler>(),

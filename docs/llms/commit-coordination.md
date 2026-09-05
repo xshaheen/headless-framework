@@ -275,16 +275,18 @@ Bridges EF Core's transaction commit/rollback edges to commit coordination, so w
 ### Key Features
 
 - Internal `EntityFrameworkCommitSignalSource` registered as `ICommitSignalSource`.
-- DI extension `AddEntityFrameworkCommitCoordination()`.
+- `AddEntityFrameworkCommitCoordination<TContext>()` wires the registered context, commit interceptor, and startup probe. The nongeneric overload registers services only for advanced integrations.
 - `DbContext.ExecuteCoordinatedTransactionAsync(operation, services, …)` — single-call resilient coordinated transaction (plain `DbContext`; pass the request scope). `HeadlessDbContext` and `HeadlessIdentityDbContext` (any `IHeadlessDbContext`) have a scope-free overload in `Headless.EntityFramework`.
-- Auto-attach of DI-registered interceptors to a consumer's own `DbContext` options via `IDbContextOptionsConfiguration<TContext>` (EF Core 9+). The public helper `services.AddDiRegisteredInterceptorsConfiguration<TContext>()` (in `Headless.EntityFramework`, namespace `Headless.EntityFramework`) registers a configuration that runs against every `DbContext<TContext>` options build — including a plain `AddDbContext<TContext>` with no `AddInterceptors(...)`. `options.AddDiRegisteredInterceptors(sp)` remains the explicit per-options-action form.
+- The generic helper auto-attaches only the commit-coordination interceptor through `IDbContextOptionsConfiguration<TContext>`, including plain `AddDbContext<TContext>` registrations. Repeated calls are idempotent.
 - Startup gate `CommitInterceptorStartupGate<TContext>` with `CommitProbeMode` (`Disabled` / `Warn` / `Strict`, default `Warn`) configured through `CommitInterceptorProbeOptions`.
 
 ### Design Notes
 
-**Interceptor attachment is the wiring footgun, and the framework now closes it two ways.** EF Core does not auto-discover `IInterceptor` registrations from the application container, so an interceptor registered "in DI only" never observes the commit edge and coordinated work silently drains as rollback. The fix is `IDbContextOptionsConfiguration<TContext>`: a DI-registered configuration that EF Core applies during every `DbContext<TContext>` options build, including a plain `AddDbContext<TContext>`. The messaging EF storage path and `AddHeadlessDbContext`/`AddHeadlessIdentityDbContext` register it for you; a plain `AddDbContext` consumer wiring its own options action calls `services.AddDiRegisteredInterceptorsConfiguration<TContext>()` once, or `options.AddDiRegisteredInterceptors(sp)` inside the action.
+EF Core does not auto-discover `IInterceptor` registrations from the application container. Use `AddEntityFrameworkCommitCoordination<TContext>()` after registering a plain application context: it attaches the commit interceptor to every options build and registers the startup probe. The nongeneric overload is a service-only seam for integrations that already own attachment and probing. The Jobs application-context provider convenience methods and the messaging EF storage path wire the generic stack automatically.
 
-**The startup gate turns the silent mis-wire into a boot-time signal.** When the outbox/coordination is enabled but the interceptor is not actually attached, the old failure mode was a transaction that *looks* transactional but isn't — publishes drain as rollback and vanish with no error. `CommitInterceptorStartupGate<TContext>` runs before any hosted service: it opens a transaction on the consumer's `DbContext`, commits an **empty** transaction (no data mutated), and asserts the commit interceptor fired. On a mis-wire it logs a loud warning (`Warn`, the default) or throws at startup (`Strict`, opt-in via `services.Configure<CommitInterceptorProbeOptions>(o => o.Mode = CommitProbeMode.Strict)`). This is the EF sibling of the SqlServer diagnostic self-probe (D11) — same Warn-default / Strict-opt-in posture, but the EF probe asserts interceptor attachment rather than SqlClient diagnostic compatibility. The on-by-default messaging wiring (see [messaging.md](messaging.md) → Core Concepts → Transactional outbox) enables this gate automatically on the EF storage path; the raw-ADO storage paths attach no interceptor and use the SqlServer/PostgreSql sources instead.
+**The startup gate turns the silent mis-wire into a boot-time signal.** When coordination is enabled but the interceptor is not actually attached, a transaction *looks* transactional but isn't — publishes drain as rollback and vanish with no error. `CommitInterceptorStartupGate<TContext>` runs before any hosted service: it commits an empty transaction (no data mutated) on the consumer's `DbContext` and asserts the commit interceptor fired. On a mis-wire it logs a loud warning (`Warn`, the default) or throws at startup (`Strict`, opt-in via `services.Configure<CommitInterceptorProbeOptions>(o => o.Mode = CommitProbeMode.Strict)`). The on-by-default `Headless.Messaging.Core` EF storage path enables this gate automatically; raw-ADO storage paths attach no interceptor and use the SqlServer/PostgreSql signal sources instead.
+
+The probe opens a real (empty) transaction against the database on every host start. Set `Mode = CommitProbeMode.Disabled` to skip that round-trip — the escape-hatch for a cold-start latency budget or a boot environment where the database is not yet reachable. The cost is losing early mis-wire detection; durability is unaffected because the outbox row and relay sweep recover the work either way.
 
 ### Installation
 
@@ -299,16 +301,11 @@ dotnet add package Headless.CommitCoordination.EntityFramework
 The EF execution strategy may replay failures that occur before commit starts. Once `CommitAsync` begins, the helper surfaces any exception without replay because the server may already have committed; callers should reconcile by a client-generated key or another durable idempotency key before deciding to retry the business operation.
 
 ```csharp
-services.AddEntityFrameworkCommitCoordination();
+using Headless.CommitCoordination;
+using Microsoft.EntityFrameworkCore;
 
-// A plain AddDbContext must attach the commit interceptor to its options — EF Core does NOT auto-discover
-// IInterceptor registrations, so without it the commit edge is never observed and coordinated work silently
-// drains as rollback. Two equivalent ways: the inline AddDiRegisteredInterceptors(sp) shown here, or a one-time
-// services.AddDiRegisteredInterceptorsConfiguration<MyDbContext>() (both from Headless.EntityFramework).
-// AddHeadlessDbContext / AddHeadlessIdentityDbContext and the messaging EF storage path do this for you.
-services.AddDbContext<MyDbContext>(
-    (sp, options) => options.UseNpgsql(connectionString).AddDiRegisteredInterceptors(sp)
-);
+services.AddDbContext<MyDbContext>(options => options.UseNpgsql(connectionString));
+services.AddEntityFrameworkCommitCoordination<MyDbContext>();
 
 // Open + enlist + commit in one call; publishes inside the operation drain atomically on commit.
 await db.ExecuteCoordinatedTransactionAsync(
@@ -323,7 +320,7 @@ await db.ExecuteCoordinatedTransactionAsync(
 
 ### Configuration
 
-None.
+Configure `CommitInterceptorProbeOptions.Mode`: `Warn` by default, `Strict` to fail startup on a miswired interceptor, or `Disabled` to skip the startup database probe.
 
 ### Dependencies
 
@@ -336,7 +333,7 @@ None.
 
 ### Side Effects
 
-Registers core commit coordination services, the internal `EntityFrameworkCommitSignalSource` (exposed as `ICommitSignalSource`), and the internal EF transaction interceptor **in DI only** — the interceptor still has to reach the context options. `Headless.EntityFramework.CommitCoordination`, `AddHeadlessIdentityDbContext`, and the on-by-default messaging EF storage path wire it automatically (via `IDbContextOptionsConfiguration<TContext>`, registered by `AddDiRegisteredInterceptorsConfiguration<TContext>()`); a plain `AddDbContext` consumer wiring its own options action calls `options.AddDiRegisteredInterceptors(sp)` (or `options.AddInterceptors(sp.GetServices<IInterceptor>())`) inside the action, or registers `AddDiRegisteredInterceptorsConfiguration<TContext>()` once — otherwise the commit edge is never observed. When the startup gate is enabled it also registers `CommitInterceptorStartupGate<TContext>`, which runs an empty-commit probe before hosted services start (`CommitProbeMode` Warn default / Strict opt-in).
+Both overloads register core commit coordination, the EF commit signal source, and its transaction interceptor. The generic overload additionally attaches that interceptor to the selected context and registers an empty-transaction startup probe. It creates no schema and does not automatically start or enlist application transactions; use `ExecuteCoordinatedTransactionAsync` for the operation boundary.
 
 ## Headless.EntityFramework.CommitCoordination
 

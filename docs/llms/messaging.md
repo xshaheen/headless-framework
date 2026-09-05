@@ -358,6 +358,7 @@ Conformance tests exercise the provider behavior; a deployment must still config
 Use matching versions of the `Headless.Messaging.*` packages. The package-family probe verifies the complete current package graph and its public API:
 
 - Publish through `IBus.PublishAsync(...)` and enqueue through `IQueue.EnqueueAsync(...)`. Both default to `DeliveryMode.Durable`, including when options are omitted or null; `Auto` and `TransportDirect` are explicit overrides.
+- Omit an unused cancellation token, or pass a literal default token as `cancellationToken: default`. A bare positional `default` is ambiguous between the token and options overloads; typed token variables and explicit options remain valid.
 - Register consumers through `setup.Bus` or `setup.Queue`; public APIs use `MessageLane`.
 - Dashboard and monitoring JSON expose `lane`, `requestedDeliveryMode`, and `resolvedDeliveryMode`. Storage uses the `IntentType` column and the `headless-intent` header with `Bus = 0` and `Queue = 1`.
 - `Delay` is a one-shot durable scheduling request: `Auto` resolves to durable capture, `Durable` remains durable, and `TransportDirect` is rejected before side effects. The delay controls initial outbox eligibility and is removed from transport dispatch so broker recovery does not schedule it again.

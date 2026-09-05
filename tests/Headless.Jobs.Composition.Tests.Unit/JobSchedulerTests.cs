@@ -222,7 +222,7 @@ public sealed class JobSchedulerTests : TestBase
     public async Task should_schedule_requestless_delayed_job_without_payload()
     {
         var (scheduler, timeManager, _) = _CreateScheduler();
-        var executionTime = new DateTime(2026, 7, 14, 3, 0, 0, DateTimeKind.Utc);
+        var executionTime = new DateTimeOffset(2026, 7, 14, 3, 0, 0, TimeSpan.Zero);
         var persistedId = Guid.NewGuid();
         TimeJobEntity? captured = null;
         timeManager
@@ -240,14 +240,14 @@ public sealed class JobSchedulerTests : TestBase
         captured.Should().NotBeNull();
         captured.Function.Should().Be("requestless");
         captured.Request.Should().BeNull();
-        captured.ExecutionTime.Should().Be(executionTime);
+        captured.ExecutionTime.Should().Be(executionTime.UtcDateTime);
     }
 
     [Fact]
     public async Task should_schedule_typed_delayed_job_with_default_options()
     {
         var (scheduler, timeManager, _) = _CreateScheduler();
-        var executionTime = new DateTime(2026, 7, 15, 3, 0, 0, DateTimeKind.Utc);
+        var executionTime = new DateTimeOffset(2026, 7, 15, 3, 0, 0, TimeSpan.Zero);
         TimeJobEntity? captured = null;
         timeManager
             .AddAsync(Arg.Any<TimeJobEntity>(), AbortToken)
@@ -260,7 +260,7 @@ public sealed class JobSchedulerTests : TestBase
         await scheduler.ScheduleAsync(new SampleRequest("delayed"), executionTime, cancellationToken: AbortToken);
 
         captured.Should().NotBeNull();
-        captured!.ExecutionTime.Should().Be(executionTime);
+        captured!.ExecutionTime.Should().Be(executionTime.UtcDateTime);
         captured.Description.Should().BeNull();
         captured.Retries.Should().Be(0);
         captured.RetryIntervals.Should().BeNull();

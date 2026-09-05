@@ -395,9 +395,9 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
             var character = contract[index];
             if (
                 (
-                    character >= 'A' && character <= 'Z'
-                    || character >= 'a' && character <= 'z'
-                    || index > 0 && character >= '0' && character <= '9'
+                    (character >= 'A' && character <= 'Z')
+                    || (character >= 'a' && character <= 'z')
+                    || (index > 0 && character >= '0' && character <= '9')
                 ) && !(reserved && index == 0)
             )
             {

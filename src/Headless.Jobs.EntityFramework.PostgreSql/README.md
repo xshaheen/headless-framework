@@ -4,9 +4,11 @@
 
 Replaces the portable EF select-and-compare-and-swap pickup path with PostgreSQL-native atomic claim-and-return operations under scheduler contention.
 
-This is an optimization extension for `Headless.Jobs.EntityFramework`, not an independent Jobs persistence provider. EF continues to own job storage, mapping definitions, recovery, the public persistence contract, and transaction-lifecycle primitives; this package owns PostgreSQL-specific claim execution, including SQL, parameters, and locking behavior.
+This package composes `Headless.Jobs.EntityFramework` with PostgreSQL claims and an application DbContext setup path. EF continues to own job storage, mapping definitions, recovery, the public persistence contract, and transaction-lifecycle primitives; this package owns PostgreSQL-specific claim execution, including SQL, parameters, and locking behavior.
 
 ## Key Features
+
+- `UsePostgreSql<TContext>(configureCoordination)` reuses the registered application database and wires Jobs models, native claims, cluster membership, and EF commit coordination.
 
 - **Ordinal contract storage**: Jobs function/version columns use PostgreSQL `C` collation. Physical `varchar(200)`/`varchar(100)` limits count Unicode code points; the shared runtime contract counts UTF-16 units, so supplementary characters require the same runtime UTF-16 validation. Native creation snapshots name, version, and request together under the definition lock; existing claims hydrate the stored occurrence tuple.
 - Claims existing time jobs and cron occurrences with `UPDATE ... RETURNING` over a `FOR UPDATE SKIP LOCKED` candidate query.
@@ -32,28 +34,39 @@ dotnet add package Headless.Jobs.EntityFramework.PostgreSql
 
 ```csharp
 using Headless.Jobs;
-using Headless.Jobs.DbContextFactory;
+using Headless.Jobs.Models;
 using Microsoft.EntityFrameworkCore;
 
-builder
-    .Services.AddHeadlessJobs()
-    .UseEntityFramework(ef =>
-    {
-        ef.UseJobsDbContext<JobsDbContext>(db => db.UseNpgsql(connectionString));
-        ef.UsePostgreSqlClaims();
-    });
+builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(connectionString));
+builder.Services.AddHeadlessJobs(jobs =>
+{
+    jobs.UsePostgreSql<AppDbContext>(coordination => coordination.ClusterName = "orders");
+    jobs.ConfigureJob<OrderReminder>(new JobOptions { RequireAtomicEnlistment = true });
+});
 ```
 
 ## Configuration
+
+Register `AppDbContext` first, with a public constructor accepting only `DbContextOptions<AppDbContext>`. The convenience method derives the connection string in a temporary DI scope and rejects an EF context configured for another backend. It adds Jobs mappings in the `jobs` schema while retaining application `OnModelCreating` configuration. It does not create application/Jobs tables: create the fresh application schema from that combined model before starting workers.
+
+This convenience API targets the standard `TimeJobEntity` / `CronJobEntity` store and one fixed application database. Per-request or per-tenant database selection is not supported: singleton cluster membership captures the configured connection once. Provider authentication callbacks and data-source customizations are not copied from EF options.
+
+Cluster identity is explicit. This call selects one PostgreSQL coordination provider with its default storage options, including coordination-table initialization at startup. Do not also register `AddHeadlessCoordination`: duplicate provider configuration fails. For a separately configured coordination store, custom provider options/data source/authentication callbacks, custom Jobs entities, dedicated Jobs context, schema/pool settings, or a custom model customizer, use the existing `UseEntityFramework(ef => ...)` path and configure those integrations explicitly. The optional `modelConfiguration: ConfigurationType.IgnoreModelCustomizer` argument retains an application-owned model customizer; the application must then add the Jobs mappings itself.
+
+Inside `db.ExecuteCoordinatedTransactionAsync(operation, requestServiceProvider, cancellationToken: ct)`, application writes, same-database durable Messaging publishes, and job schedules share the transaction. Configure Messaging transport/storage separately. `RequireAtomicEnlistment` rejects scheduling outside a compatible transaction; it does not start one. External message delivery and job execution happen after durable acceptance and remain at-least-once.
 
 `UsePostgreSqlClaims()` has no provider-specific options. Configure the `DbContext`, schema, and pool size through the existing Jobs EF builder. Register exactly one native claim provider. Omitting this call keeps the portable EF optimistic-CAS fallback.
 
 ## Dependencies
 
 - `Headless.Jobs.EntityFramework`
+- `Headless.CommitCoordination.EntityFramework`
+- `Headless.Coordination.PostgreSql`
 - `Npgsql.EntityFrameworkCore.PostgreSQL`
 
 ## Side Effects
+
+- The application-context convenience method attaches the commit interceptor and its startup empty-transaction probe (Warn by default), registers cluster membership and its initializer, and applies Jobs model configuration.
 
 - Replaces the default Jobs EF claim strategy with the PostgreSQL atomic strategy.
 - Executes provider-native, parameterized SQL against the mapped Jobs tables during pickup.

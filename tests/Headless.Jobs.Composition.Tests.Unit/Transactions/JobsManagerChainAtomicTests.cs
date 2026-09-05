@@ -49,7 +49,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
                 Arg.Any<CancellationToken>()
             );
         sut.Scheduler.DidNotReceiveWithAnyArgs().RestartIfNeeded(default);
-        await sut.Notification.DidNotReceiveWithAnyArgs().AddTimeJobNotifyAsync(default(Guid));
+        await sut.Notification.DidNotReceiveWithAnyArgs().AddTimeJobNotifyAsync(default);
     }
 
     [Theory]
@@ -107,7 +107,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
         var builder = JobChain.Start(
             descriptor,
             new JobOptions { RequireAtomicEnlistment = requiredNode == "root" },
-            executionTime: DateTime.UtcNow.AddHours(1)
+            executionTime: DateTimeOffset.UtcNow.AddHours(1)
         );
         builder.Root.Then(descriptor, new JobOptions { RequireAtomicEnlistment = requiredNode == "success" });
         builder.Root.Catch(descriptor, new JobOptions { RequireAtomicEnlistment = requiredNode == "failure" });

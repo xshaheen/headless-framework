@@ -65,7 +65,7 @@ internal sealed class JobSchedulingPolicies
         var function =
             _byFunction.GetValueOrDefault(descriptor.FunctionName)
             ?? (descriptor.RequestType is { } requestType ? _byRequest.GetValueOrDefault(requestType) : null);
-        var result = (call ?? new JobOptions()) with
+        var result = (call ?? _defaults) with
         {
             Retries = call?.Retries ?? function?.Retries ?? _defaults.Retries ?? 0,
             RetryIntervals = (call?.RetryIntervals ?? function?.RetryIntervals ?? _defaults.RetryIntervals)?.ToArray(),
