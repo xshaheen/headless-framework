@@ -2,6 +2,7 @@
 
 using System.Diagnostics;
 using System.Net;
+using System.Text.Json.Serialization;
 using Headless.Dashboard.Authentication;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Dashboard.GatewayProxy;
@@ -27,6 +28,18 @@ public static class MessagingDashboardEndpoints
     internal const string PingHttpClientName = "Headless.Messaging.Dashboard.Ping";
     private const int _MaxPageSize = 200;
     private const int _MaxBulkActionSize = 500;
+
+    // Inbox requests and responses share a wire contract independent of the hosting application's JSON settings.
+    private static readonly JsonSerializerOptions _InboxJsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        Converters =
+        {
+            new JsonStringEnumConverter<StatusName>(allowIntegerValues: false),
+            new JsonStringEnumConverter<MessageLane>(allowIntegerValues: false),
+            new JsonStringEnumConverter<InboxOperationType>(allowIntegerValues: false),
+            new JsonStringEnumConverter<InboxOperationOutcome>(allowIntegerValues: false),
+        },
+    };
 
     internal static void MapMessagingDashboardEndpoints(
         this IEndpointRouteBuilder endpoints,
@@ -563,7 +576,9 @@ public static class MessagingDashboardEndpoints
     )
     {
         if (!_TryCreateInboxAuthority(httpContext, out var authorization))
+        {
             return Results.Unauthorized();
+        }
         var result = await sp.GetRequiredService<IDataStorage>()
             .GetInboxOperationsApi()
             .QueryAsync(
@@ -582,7 +597,7 @@ public static class MessagingDashboardEndpoints
                 httpContext.RequestAborted
             )
             .ConfigureAwait(false);
-        return Results.Json(result);
+        return Results.Json(result, _InboxJsonOptions);
     }
 
     private static async Task<IResult> _ExecuteInboxDashboardOperationAsync(
@@ -592,12 +607,17 @@ public static class MessagingDashboardEndpoints
     )
     {
         if (!_TryCreateInboxAuthority(httpContext, out var authorization))
+        {
             return Results.Unauthorized();
+        }
         InboxDashboardOperationRequest? payload;
         try
         {
             payload = await httpContext
-                .Request.ReadFromJsonAsync<InboxDashboardOperationRequest>(httpContext.RequestAborted)
+                .Request.ReadFromJsonAsync<InboxDashboardOperationRequest>(
+                    _InboxJsonOptions,
+                    httpContext.RequestAborted
+                )
                 .ConfigureAwait(false);
         }
         catch (JsonException)
@@ -606,7 +626,9 @@ public static class MessagingDashboardEndpoints
         }
 
         if (payload is null)
+        {
             return Results.UnprocessableEntity();
+        }
         var request = new InboxOperationRequest(
             payload.OperationId,
             payload.ExpectedIncarnationId,
@@ -622,12 +644,13 @@ public static class MessagingDashboardEndpoints
                     httpContext.RequestAborted
                 )
                 .ConfigureAwait(false);
-            return result.Outcome switch
+            var statusCode = result.Outcome switch
             {
-                InboxOperationOutcome.Applied => Results.Json(result),
-                InboxOperationOutcome.NotFound => Results.NotFound(result),
-                _ => Results.Conflict(result),
+                InboxOperationOutcome.Applied => StatusCodes.Status200OK,
+                InboxOperationOutcome.NotFound => StatusCodes.Status404NotFound,
+                _ => StatusCodes.Status409Conflict,
             };
+            return Results.Json(result, _InboxJsonOptions, statusCode: statusCode);
         }
         catch (InvalidOperationException)
         {

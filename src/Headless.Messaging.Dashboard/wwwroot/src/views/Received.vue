@@ -225,6 +225,11 @@ defineOptions({ name: 'ReceivedView' })
 import { ref, computed, watch, onUnmounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { httpService } from '@/services/http'
+import {
+  createInboxOperationRequest,
+  isTerminalInboxGeneration,
+  type InboxGeneration,
+} from '@/services/inbox'
 import { useAlertStore } from '@/stores/alertStore'
 import { useMessagingStore } from '@/stores/messagingStore'
 import { usePagination } from '@/composables/usePagination'
@@ -251,20 +256,6 @@ interface ReceivedMessage {
   lane: MessageLane
   requestedDeliveryMode: DeliveryMode | null
   resolvedDeliveryMode: DeliveryMode | null
-}
-
-interface InboxGeneration {
-  incarnationId: string
-  generation: number
-  tenantId: string | null
-  messageId: string
-  lane: MessageLane
-  consumerIdentity: string
-  status: string
-  isOrphaned: boolean
-  replayParentIncarnationId: string | null
-  effectiveExpiresAt: string | null
-  isHeld: boolean
 }
 
 interface DashboardMeta {
@@ -464,20 +455,14 @@ async function viewMessage(storageId: string) {
   }
 }
 
-function isTerminalInboxGeneration(status: string) {
-  return status === 'Succeeded' || status === 'Failed'
-}
-
 function confirmInboxOperation(actionName: InboxAction, generation: InboxGeneration) {
   const action = inboxActions[actionName]
   pendingAction = async () => {
     try {
-      await httpService.post(action.path, {
-        operationId: crypto.randomUUID(),
-        expectedIncarnationId: generation.incarnationId,
-        expectedStatus: generation.status,
-        reason: action.reason,
-      })
+      await httpService.post(
+        action.path,
+        createInboxOperationRequest(generation, crypto.randomUUID(), action.reason),
+      )
       alertStore.showSuccess(`Inbox generation ${action.success}`)
       await loadMessages()
     } catch {
