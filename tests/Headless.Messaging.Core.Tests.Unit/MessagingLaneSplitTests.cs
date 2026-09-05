@@ -550,6 +550,8 @@ public sealed class MessagingLaneSplitTests : TestBase
     )
     {
         var model = MessagingCapabilityModel.Compose(capabilities);
+        services.AddSingleton(model);
+        services.AddSingleton<IMessageMetadataRegistry>(new MessageMetadataRegistry([]));
         services.AddSingleton<IMessagingCapabilityModel>(model);
         services.AddSingleton<IMessageCapabilityGate>(model);
         services.AddSingleton<IStorageInitializer, NoOpStorageInitializer>();

@@ -15,6 +15,95 @@ namespace Tests.Configuration;
 public sealed class MessagingCapabilityModelTests : TestBase
 {
     [Fact]
+    public async Task should_reject_required_affinity_before_storage_processors_or_clients_start()
+    {
+        var sideEffects = 0;
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessMessaging(setup =>
+            setup.Bus.ForMessage<SharedContract>(message => message.Contract("orders").RequireRoutingAffinity())
+        );
+        services.AddMessagingProviderCapabilities(_Transport("Unsupported", [MessageLane.Bus], true));
+        services.AddMessagingProviderCapabilities(_Storage("InMemory"));
+        services.AddSingleton<IStorageInitializer>(_ =>
+        {
+            sideEffects++;
+            return new RecordingStorageInitializer(static () => { });
+        });
+        services.AddSingleton<IProcessingServer>(_ =>
+        {
+            sideEffects++;
+            return new RecordingProcessingServer();
+        });
+        services.AddSingleton<IBusTransport>(_ =>
+        {
+            sideEffects++;
+            return Substitute.For<IBusTransport>();
+        });
+        await using var provider = services.BuildServiceProvider();
+
+        var act = () => provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
+
+        await act.Should().ThrowAsync<MessagingConfigurationException>().WithMessage("*affinity*unsupported*");
+        sideEffects.Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData(DeliveryMode.Durable)]
+    [InlineData(DeliveryMode.TransportDirect)]
+    public async Task should_reject_unknown_keyed_override_before_storage_or_transport_resolution(DeliveryMode mode)
+    {
+        var sideEffects = 0;
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessMessaging(setup =>
+            setup.Bus.ForMessage<SharedContract>(message => message.Contract("orders"))
+        );
+        services.AddMessagingProviderCapabilities(
+            MessagingProviderCapabilities.Transport(
+                "Mapped",
+                [MessageLane.Bus],
+                true,
+                [
+                    new MessagingRoutingAffinityRoute(
+                        MessageLane.Bus,
+                        "orders",
+                        new MessagingRoutingAffinityMapping("native-key")
+                    ),
+                ]
+            )
+        );
+        services.AddMessagingProviderCapabilities(_Storage("InMemory"));
+        services.AddSingleton<IDataStorage>(_ =>
+        {
+            sideEffects++;
+            return Substitute.For<IDataStorage>();
+        });
+        services.AddSingleton<IBusTransport>(_ =>
+        {
+            sideEffects++;
+            return Substitute.For<IBusTransport>();
+        });
+        await using var provider = services.BuildServiceProvider();
+        var bus = provider.GetRequiredService<IBus>();
+
+        var act = () =>
+            bus.PublishAsync(
+                new SharedContract(),
+                new PublishOptions
+                {
+                    MessageName = "dynamic-unknown",
+                    RoutingAffinityKey = "order-42",
+                    DeliveryMode = mode,
+                },
+                AbortToken
+            );
+
+        await act.Should().ThrowAsync<MessagingConfigurationException>().WithMessage("*affinity*registered*verified*");
+        sideEffects.Should().Be(0);
+    }
+
+    [Fact]
     public void should_compose_disjoint_bus_and_queue_contributions_from_same_provider()
     {
         var model = MessagingCapabilityModel.Compose([

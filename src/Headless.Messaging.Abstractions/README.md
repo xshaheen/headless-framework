@@ -54,6 +54,8 @@ Callback delivery is at-least-once — make response consumers idempotent (dedup
 
 ## Configuration
 
+`MessageOptions.RoutingAffinityKey` is an optional provider-neutral string. `TransportMessage.RoutingAffinityKey` reads its reserved `headless-routing-affinity-key` envelope header. Use the typed option; custom writes to that neutral header are rejected. Null preserves unkeyed behavior. Nonempty keys must satisfy the configured provider bounds and raw provider adapters must agree with the typed value.
+
 None. This package only defines contracts.
 
 Retry configuration is owned by `Headless.Messaging.Core`, which exposes Polly.Core contracts directly. This abstractions package intentionally defines no retry strategy or decision wrapper.

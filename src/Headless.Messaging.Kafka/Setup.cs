@@ -2,10 +2,12 @@
 
 using Headless.Checks;
 using Headless.Messaging.Configuration;
+using Headless.Messaging.Internal;
 using Headless.Messaging.Kafka;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Messaging;
@@ -103,14 +105,37 @@ public static class SetupKafkaMessaging
     private sealed class KafkaMessagingOptionsExtension(Action<IServiceCollection> configureOptions)
         : IMessagesOptionsExtension
     {
+        private static IEnumerable<MessageMetadata> _GetAffinityRoutes(IServiceProvider sp)
+        {
+            var routes = sp.GetRequiredService<IMessageMetadataRegistry>().GetAll();
+            var options = sp.GetRequiredService<IOptions<KafkaMessagingOptions>>().Value;
+            var partitioner = options.MainConfig.GetValueOrDefault("partitioner", "consistent_random");
+            var supported =
+                partitioner
+                is "consistent"
+                    or "consistent_random"
+                    or "murmur2"
+                    or "murmur2_random"
+                    or "fnv1a"
+                    or "fnv1a_random";
+            return routes.Where(route => supported && route.Route.Lane == MessageLane.Queue);
+        }
+
         public void AddServices(IServiceCollection services)
         {
             services.AddSingleton(new MessageQueueMarkerService("Kafka"));
-            services.AddMessagingProviderCapabilities(
+            services.AddMessagingProviderCapabilities(sp =>
                 MessagingProviderCapabilities.Transport(
                     "Kafka",
                     [MessageLane.Queue],
-                    supportsIndependentLaneTopology: false
+                    supportsIndependentLaneTopology: false,
+                    routingAffinityRoutes: _GetAffinityRoutes(sp)
+                        .Select(static metadata => new MessagingRoutingAffinityRoute(
+                            metadata.Route.Lane,
+                            metadata.Route.MessageName,
+                            KafkaRoutingAffinity.Mapping
+                        ))
+                        .ToArray()
                 )
             );
 

@@ -36,6 +36,13 @@ internal interface IMessageCapabilityGate : IMessagingCapabilityModel
 
     void EnsureDirectSupported(MessageLane lane);
 
+    void EnsureRoutingAffinitySupported(
+        string messageName,
+        MessageLane lane,
+        string key,
+        IDictionary<string, string?> headers
+    );
+
     void EnsureOutboxSupported(MessageLane lane, bool scheduled);
 }
 
@@ -48,12 +55,20 @@ public sealed class MessagingCapabilityModel : IMessagingCapabilityModel, IMessa
     // The model is immutable once composed, so the role/lane union is resolved here instead of scanning
     // the provider arrays with a capturing predicate on every publish gate check.
     private readonly FrozenSet<(MessagingProviderRole Role, MessageLane Lane)> _supportedRoleLanes;
+    private readonly FrozenDictionary<
+        (MessageLane Lane, string MessageName),
+        MessagingRoutingAffinityMapping
+    > _affinityRoutes;
 
     private MessagingCapabilityModel(
         MessagingProviderCapabilities[] declaredCapabilities,
         MessagingProviderCapabilities[] providers
     )
     {
+        _affinityRoutes = providers
+            .Where(static provider => provider.Role == MessagingProviderRole.Transport)
+            .SelectMany(static provider => provider.RoutingAffinityRoutes)
+            .ToFrozenDictionary(static route => (route.Lane, route.MessageName), static route => route.Mapping);
         DeclaredCapabilities = Array.AsReadOnly(declaredCapabilities);
         Providers = Array.AsReadOnly(providers);
         _providersByRole = providers
@@ -188,6 +203,36 @@ public sealed class MessagingCapabilityModel : IMessagingCapabilityModel, IMessa
         );
     }
 
+    internal void ValidateRoutingAffinityStartup(IEnumerable<MessageMetadata> routes)
+    {
+        foreach (var metadata in routes.Where(static route => route.RequiresRoutingAffinity))
+        {
+            if (!_affinityRoutes.ContainsKey((metadata.Route.Lane, metadata.Route.MessageName)))
+            {
+                throw new MessagingConfigurationException(
+                    $"Routing affinity is required but unsupported for '{metadata.Route.MessageName}' ({metadata.Route.Lane})."
+                );
+            }
+        }
+    }
+
+    internal void EnsureRoutingAffinitySupported(
+        string messageName,
+        MessageLane lane,
+        string key,
+        IDictionary<string, string?> headers
+    )
+    {
+        if (!_affinityRoutes.TryGetValue((lane, messageName), out var mapping))
+        {
+            throw new MessagingConfigurationException(
+                $"Routing affinity is unsupported or unverifiable for '{messageName}' ({lane})."
+            );
+        }
+
+        mapping.Validate(key, headers);
+    }
+
     /// <summary>Rejects a direct publish when the selected lane has no declared transport capability.</summary>
     internal void EnsureDirectSupported(MessageLane lane)
     {
@@ -291,7 +336,12 @@ public sealed class MessagingCapabilityModel : IMessagingCapabilityModel, IMessa
         }
 
         providers.Add(
-            MessagingProviderCapabilities.Transport(providerNames[0], occupiedLanes.ToArray(), topologyValues[0])
+            MessagingProviderCapabilities.Transport(
+                providerNames[0],
+                occupiedLanes.ToArray(),
+                topologyValues[0],
+                contributions.SelectMany(static contribution => contribution.RoutingAffinityRoutes).ToArray()
+            )
         );
     }
 
@@ -338,6 +388,13 @@ public sealed class MessagingCapabilityModel : IMessagingCapabilityModel, IMessa
     ) => ValidateStartup(routes, hasDurableConsumers, requiredInboxCapability);
 
     void IMessageCapabilityGate.EnsureDirectSupported(MessageLane lane) => EnsureDirectSupported(lane);
+
+    void IMessageCapabilityGate.EnsureRoutingAffinitySupported(
+        string messageName,
+        MessageLane lane,
+        string key,
+        IDictionary<string, string?> headers
+    ) => EnsureRoutingAffinitySupported(messageName, lane, key, headers);
 
     void IMessageCapabilityGate.EnsureOutboxSupported(MessageLane lane, bool scheduled) =>
         EnsureOutboxSupported(lane, scheduled);

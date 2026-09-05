@@ -23,6 +23,65 @@ public sealed class PulsarTransportTests : TestBase
     }
 
     [Fact]
+    public async Task should_pass_affinity_to_native_producer_message_builder()
+    {
+        var producer = Substitute.For<global::Pulsar.Client.Api.IProducer<byte[]>>();
+        _connectionFactory.CreateProducerAsync("headless-bus-orders").Returns(producer);
+        await using var transport = new PulsarTransport(_logger, _connectionFactory);
+        var message = new TransportMessage(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [MessagingHeaders.MessageId] = "message-1",
+                [MessagingHeaders.MessageName] = "orders",
+                [MessagingHeaders.RoutingAffinityKey] = "order-42",
+            },
+            "payload"u8.ToArray()
+        );
+
+        await transport.SendAsync(message, AbortToken);
+
+        producer.Received(1).NewMessage(Arg.Any<byte[]>(), "order-42", Arg.Any<IReadOnlyDictionary<string, string>>());
+    }
+
+    [Fact]
+    public async Task should_reject_conflicting_affinity_before_creating_producer()
+    {
+        await using var transport = new PulsarTransport(_logger, _connectionFactory);
+        var message = new TransportMessage(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [MessagingHeaders.MessageId] = "message-1",
+                [MessagingHeaders.MessageName] = "orders",
+                [MessagingHeaders.RoutingAffinityKey] = "order-42",
+                [PulsarMessagingHeaders.PulsarKey] = "other",
+            },
+            default
+        );
+
+        var result = await transport.SendAsync(message, AbortToken);
+
+        result.Succeeded.Should().BeFalse();
+        await _connectionFactory.DidNotReceive().CreateProducerAsync(Arg.Any<string>());
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("order-42")]
+    public void should_resolve_native_affinity_key(string? raw)
+    {
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [MessagingHeaders.RoutingAffinityKey] = "order-42",
+        };
+        if (raw is not null)
+        {
+            headers[PulsarMessagingHeaders.PulsarKey] = raw;
+        }
+
+        PulsarRoutingAffinity.Mapping.ResolveKey(new TransportMessage(headers, default)).Should().Be("order-42");
+    }
+
+    [Fact]
     public async Task should_have_correct_broker_address()
     {
         // given, when

@@ -50,6 +50,8 @@ builder.Services.AddHeadlessMessaging(options =>
 
 ## Configuration
 
+The current NATS subjects and stream topology do not provide the provider-neutral routing-affinity contract. `RequireRoutingAffinity()` fails during startup; a supplied `RoutingAffinityKey` is rejected before persistence or transport effects. Existing raw subject-shard hooks remain provider-specific configuration and do not establish a neutral key mapping. No transparent sharding topology is introduced.
+
 ```csharp
 options.UseNats(nats =>
 {

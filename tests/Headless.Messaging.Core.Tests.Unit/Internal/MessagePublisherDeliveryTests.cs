@@ -19,6 +19,63 @@ namespace Tests.Internal;
 
 public sealed class MessagePublisherDeliveryTests : TestBase
 {
+    [Theory]
+    [InlineData(MessageLane.Bus)]
+    [InlineData(MessageLane.Queue)]
+    public async Task should_preserve_same_affinity_in_direct_transport_and_committed_outbox(MessageLane lane)
+    {
+        await using var harness = _CreateHarness();
+        var serializer = new JsonUtf8Serializer(Options.Create(new MessagingOptions()));
+        harness
+            .Storage.StoreMessageAsync(
+                Arg.Any<string>(),
+                Arg.Any<MediumMessage>(),
+                Arg.Any<System.Data.Common.DbTransaction?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(call =>
+            {
+                var stored = call.ArgAt<MediumMessage>(1);
+                stored.StorageId = Guid.NewGuid();
+                stored.Content = serializer.Serialize(stored.Origin);
+                stored.Origin = serializer.Deserialize(stored.Content)!;
+                return ValueTask.FromResult(stored);
+            });
+        MessageOptions direct =
+            lane == MessageLane.Bus
+                ? new PublishOptions
+                {
+                    MessageName = "delivery.message",
+                    RoutingAffinityKey = "order-42",
+                    DeliveryMode = DeliveryMode.TransportDirect,
+                }
+                : new EnqueueOptions
+                {
+                    MessageName = "delivery.message",
+                    RoutingAffinityKey = "order-42",
+                    DeliveryMode = DeliveryMode.TransportDirect,
+                };
+
+        await harness.Publisher.PublishAsync(lane, new DeliveryMessage("payload"), direct, AbortToken);
+        await harness.Publisher.PublishAsync(
+            lane,
+            new DeliveryMessage("payload"),
+            direct with
+            {
+                DeliveryMode = DeliveryMode.Durable,
+            },
+            AbortToken
+        );
+
+        var sent = harness.TransportMessages.Should().ContainSingle().Subject;
+        var committed = harness.Dispatcher.CommittedMessages.Should().ContainSingle().Subject;
+        sent.RoutingAffinityKey.Should().Be("order-42");
+        committed.RoutingAffinityKey.Should().Be(sent.RoutingAffinityKey);
+        committed.Lane.Should().Be(lane);
+        var restored = await serializer.SerializeToTransportMessageAsync(committed.Origin, AbortToken);
+        restored.RoutingAffinityKey.Should().Be(sent.RoutingAffinityKey);
+    }
+
     [Fact]
     public async Task should_send_auto_directly_without_coordination_or_storage_side_effects()
     {
@@ -274,21 +331,16 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         var options = Options.Create(new MessagingOptions());
         var registry = new ConsumerRegistry();
         registry.RegisterMessageName(typeof(DeliveryMessage), "delivery.message");
-        var requestFactory = new MessagePublishRequestFactory(
-            new SequentialGuidGenerator(SequentialGuidType.SqlServer),
-            timeProvider,
-            options,
-            registry,
-            new NullCurrentTenant()
-        );
-        var services = new ServiceCollection().BuildServiceProvider();
-        var pipeline = new PublishMiddlewarePipeline(services);
-        var writer = new OutboxMessageWriter(storage, dispatcher, timeProvider);
         var capabilities = MessagingCapabilityModel.Compose([
             MessagingProviderCapabilities.Transport(
                 "TestTransport",
                 [MessageLane.Bus, MessageLane.Queue],
-                supportsIndependentLaneTopology: true
+                supportsIndependentLaneTopology: true,
+                routingAffinityRoutes:
+                [
+                    new(MessageLane.Bus, "delivery.message", new MessagingRoutingAffinityMapping("native-key")),
+                    new(MessageLane.Queue, "delivery.message", new MessagingRoutingAffinityMapping("native-key")),
+                ]
             ),
             MessagingProviderCapabilities.Storage(
                 "TestStorage",
@@ -297,6 +349,36 @@ public sealed class MessagePublisherDeliveryTests : TestBase
                 inboxCapability: MessagingInboxCapabilityTier.Transactional
             ),
         ]);
+        var requestFactory = new MessagePublishRequestFactory(
+            new SequentialGuidGenerator(SequentialGuidType.SqlServer),
+            timeProvider,
+            options,
+            registry,
+            new NullCurrentTenant(),
+            new MessageMetadataRegistry([
+                new Headless.Messaging.Registration.MessageRegistration(
+                    typeof(DeliveryMessage),
+                    MessageLane.Bus,
+                    "delivery.message",
+                    null,
+                    new Dictionary<Type, object>(),
+                    []
+                ),
+                new Headless.Messaging.Registration.MessageRegistration(
+                    typeof(DeliveryMessage),
+                    MessageLane.Queue,
+                    "delivery.message",
+                    null,
+                    new Dictionary<Type, object>(),
+                    []
+                ),
+            ]),
+            capabilityGate: capabilities
+        );
+        var services = new ServiceCollection().BuildServiceProvider();
+        var pipeline = new PublishMiddlewarePipeline(services);
+        var writer = new OutboxMessageWriter(storage, dispatcher, timeProvider);
+
         var transportLanes = new List<MessageLane>();
         var transportMessages = new List<TransportMessage>();
         var transports = new Dictionary<MessageLane, ITransport>

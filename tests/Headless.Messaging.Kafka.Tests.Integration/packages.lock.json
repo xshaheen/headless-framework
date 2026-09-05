@@ -855,6 +855,7 @@
           "DeepCloner": "[0.10.4, )",
           "Headless.Messaging.Abstractions": "[1.0.0, )",
           "Headless.Messaging.Core": "[1.0.0, )",
+          "Headless.Messaging.Storage.InMemory": "[1.0.0, )",
           "Headless.Testing": "[1.0.0, )",
           "NSubstitute": "[5.3.0, )",
           "Testcontainers": "[4.13.0, )",
@@ -874,6 +875,12 @@
         "type": "Project",
         "dependencies": {
           "Headless.Messaging.Abstractions": "[1.0.0, )"
+        }
+      },
+      "headless.messaging.storage.inmemory": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Messaging.Core": "[1.0.0, )"
         }
       },
       "headless.multitenancy": {

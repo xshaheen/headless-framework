@@ -13,6 +13,48 @@ namespace Tests;
 
 public sealed class SetupTests : TestBase
 {
+    [Theory]
+    [InlineData("random", false)]
+    [InlineData("unknown", false)]
+    [InlineData("consistent_random", true)]
+    [InlineData("murmur2", true)]
+    public async Task should_snapshot_affinity_support_without_resolving_clients(string partitioner, bool supported)
+    {
+        var effects = 0;
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessMessaging(setup =>
+        {
+            setup.UseKafka(options =>
+            {
+                options.Servers = "localhost:9092";
+                options.MainConfig["partitioner"] = partitioner;
+            });
+            setup.Queue.ForMessage<KafkaBusContract>(message => message.Contract("orders").RequireRoutingAffinity());
+        });
+        services.AddSingleton<IKafkaConnectionPool>(_ =>
+        {
+            effects++;
+            return Substitute.For<IKafkaConnectionPool>();
+        });
+        services.AddSingleton<IQueueTransport>(_ =>
+        {
+            effects++;
+            return Substitute.For<IQueueTransport>();
+        });
+        await using var provider = services.BuildServiceProvider();
+
+        var model = provider.GetRequiredService<IMessagingCapabilityModel>();
+        model.Providers.Single().RoutingAffinityRoutes.Any().Should().Be(supported);
+        if (!supported)
+        {
+            var act = () => provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
+            await act.Should().ThrowAsync<MessagingConfigurationException>().WithMessage("*affinity*unsupported*");
+        }
+
+        effects.Should().Be(0);
+    }
+
     [Fact]
     public async Task should_reject_bus_route_before_storage_or_broker_side_effects()
     {

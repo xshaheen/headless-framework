@@ -1025,6 +1025,152 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
             );
     }
 
+    [Theory]
+    [InlineData("legacy", true)]
+    [InlineData("legacy-custom-prefix", true)]
+    [InlineData("legacy-version-prefix", true)]
+    [InlineData("bag", true)]
+    [InlineData("invalid-json", false)]
+    [InlineData("mixed", false)]
+    [InlineData("unknown-envelope-missing-identity", false)]
+    [InlineData("array", false)]
+    [InlineData("numeric-value", false)]
+    [InlineData("duplicate", false)]
+    [InlineData("reserved", false)]
+    [InlineData("missing-key", false)]
+    [InlineData("missing-identity", false)]
+    [InlineData("wrong-type", false)]
+    public async Task should_decode_or_terminally_settle_queue_header_bags(string encoding, bool valid)
+    {
+        const string sourceQueue = "http://test/actual-source.fifo";
+        var logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();
+        await using var consumer = new AmazonSqsConsumerClient("group", 0, _CreateOptions(), logger, MessageLane.Queue);
+        var sqs = Substitute.For<IAmazonSQS>();
+        _SetPrivateFields(consumer, sqs, "http://test/unrelated-default");
+        await consumer.SubscribeAsync([sourceQueue], AbortToken);
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [Headers.MessageId] = "message-1",
+            [Headers.MessageName] = "orders.fifo",
+            [Headers.RoutingAffinityKey] = "order-42",
+            ["business"] = "preserved",
+            ["nullable"] = null,
+        };
+        var legacyHeader = encoding switch
+        {
+            "legacy-custom-prefix" => "headless-aws-headers-custom",
+            "legacy-version-prefix" => "headless-aws-headers-v2",
+            _ => null,
+        };
+        if (legacyHeader is not null)
+        {
+            headers.Remove(Headers.RoutingAffinityKey);
+            headers[legacyHeader] = "application-value";
+        }
+        var json = encoding switch
+        {
+            "invalid-json" => "{",
+            "array" => "[]",
+            "numeric-value" => "{\"number\":42}",
+            "duplicate" => "{\"same\":\"a\",\"same\":\"b\"}",
+            "reserved" => "{\"headless-aws-headers-v1\":null}",
+            "missing-key" => "{}",
+            "missing-identity" => JsonSerializer.Serialize(
+                new Dictionary<string, string?> { [Headers.RoutingAffinityKey] = "order-42" }
+            ),
+            _ => JsonSerializer.Serialize(headers),
+        };
+        var attributes = new Dictionary<string, Amazon.SQS.Model.MessageAttributeValue>(StringComparer.Ordinal)
+        {
+            [encoding == "unknown-envelope-missing-identity" ? "headless-aws-headers-v2" : "headless-aws-headers-v1"] =
+                new() { DataType = encoding == "wrong-type" ? "Number" : "String", StringValue = json },
+        };
+        if (encoding == "legacy" || legacyHeader is not null)
+        {
+            attributes = headers
+                .Where(pair => pair.Value is not null)
+                .ToDictionary(
+                    pair => pair.Key,
+                    pair => new Amazon.SQS.Model.MessageAttributeValue
+                    {
+                        DataType = "String",
+                        StringValue = pair.Value,
+                    },
+                    StringComparer.Ordinal
+                );
+        }
+        if (encoding == "mixed")
+        {
+            attributes[Headers.MessageId] = new() { DataType = "String", StringValue = "other" };
+        }
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        stop.CancelAfter(TimeSpan.FromSeconds(5));
+        TransportMessage? observed = null;
+        consumer.OnMessageCallback = async (message, settlement) =>
+        {
+            observed = message;
+            await consumer.CommitAsync(settlement, AbortToken);
+        };
+        sqs.DeleteMessageAsync(sourceQueue, "receipt-bag", Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                stop.Cancel();
+                return new DeleteMessageResponse();
+            });
+        sqs.ReceiveMessageAsync(Arg.Any<ReceiveMessageRequest>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                call.ArgAt<CancellationToken>(1).ThrowIfCancellationRequested();
+                return new ReceiveMessageResponse
+                {
+                    Messages =
+                    [
+                        new SqsMessage
+                        {
+                            Body = "payload",
+                            ReceiptHandle = "receipt-bag",
+                            MessageAttributes = attributes,
+                        },
+                    ],
+                };
+            });
+
+        try
+        {
+            await consumer.ListeningAsync(TimeSpan.FromMilliseconds(10), stop.Token);
+        }
+        catch (OperationCanceledException) when (stop.IsCancellationRequested) { }
+
+        await sqs.Received(1).DeleteMessageAsync(sourceQueue, "receipt-bag", Arg.Any<CancellationToken>());
+        await sqs.DidNotReceive()
+            .ChangeMessageVisibilityAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            );
+        if (valid)
+        {
+            observed.Should().NotBeNull();
+            var delivered = observed!.Value;
+            delivered.RoutingAffinityKey.Should().Be(legacyHeader is null ? "order-42" : null);
+            Encoding.UTF8.GetString(delivered.Body.Span).Should().Be("payload");
+            delivered.Headers["business"].Should().Be("preserved");
+            if (legacyHeader is not null)
+            {
+                delivered.Headers[legacyHeader].Should().Be("application-value");
+            }
+            if (encoding == "bag")
+            {
+                delivered.Headers.Should().ContainKey("nullable").WhoseValue.Should().BeNull();
+            }
+        }
+        else
+        {
+            observed.Should().BeNull();
+        }
+    }
+
     [Fact]
     public async Task should_delete_missing_required_headers_without_redelivery()
     {

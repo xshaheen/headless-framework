@@ -45,13 +45,15 @@ internal sealed class MessagePublishRequestFactory(
     IConsumerRegistry consumerRegistry,
     ICurrentTenant currentTenant,
     IMessageMetadataRegistry? metadataRegistry = null,
-    IConsumeContextAccessor? consumeContextAccessor = null
+    IConsumeContextAccessor? consumeContextAccessor = null,
+    IMessageCapabilityGate? capabilityGate = null
 ) : IMessagePublishRequestFactory
 {
     private static readonly HashSet<string> _ReservedHeaders = new(StringComparer.Ordinal)
     {
         Headers.MessageId,
         Headers.ContractVersion,
+        Headers.RoutingAffinityKey,
         Headers.CorrelationId,
         Headers.CausationId,
         Headers.CorrelationSequence,
@@ -139,7 +141,24 @@ internal sealed class MessagePublishRequestFactory(
             consumeContextAccessor?.Current?.CorrelationId,
             consumeContextAccessor?.Current?.MessageId
         );
+        if (options?.RoutingAffinityKey is { } affinityKey)
+        {
+            if (metadata is null || capabilityGate is null)
+            {
+                throw new MessagingConfigurationException(
+                    $"Routing affinity requires a registered, verified destination: '{messageName}' ({lane})."
+                );
+            }
+
+            capabilityGate.EnsureRoutingAffinitySupported(messageName, lane, affinityKey, headers);
+            headers[Headers.RoutingAffinityKey] = affinityKey;
+        }
+
         _ApplyProviderHeaderContributions(headers, metadata, contentObj, declaredMessageType);
+        if (options?.RoutingAffinityKey is { } contributedAffinityKey)
+        {
+            capabilityGate!.EnsureRoutingAffinitySupported(messageName, lane, contributedAffinityKey, headers);
+        }
 
         headers[Headers.SentTime] = publishAt.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
         headers[Headers.Intent] = MessageLaneCompatibility.ToWireValue(lane);

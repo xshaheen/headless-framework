@@ -53,6 +53,8 @@ builder.Services.AddHeadlessMessaging(options =>
 
 ## Configuration
 
+The in-memory transport declares no native routing-affinity mapping. `RequireRoutingAffinity()` fails during startup; a supplied `RoutingAffinityKey` is rejected before persistence or transport effects. This is separate from in-memory storage, which preserves the key when paired with a supported transport.
+
 No configuration required. Just call `UseInMemory()`.
 
 ## Dependencies
