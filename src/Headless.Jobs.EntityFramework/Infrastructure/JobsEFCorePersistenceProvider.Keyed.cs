@@ -19,6 +19,8 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         CancellationToken cancellationToken = default
     )
     {
+        ArgumentNullException.ThrowIfNull(job);
+        JobAtomicity.RejectDirect([job]);
         await using var context = await DbContextFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await context
             .Database.BeginTransactionAsync(cancellationToken)

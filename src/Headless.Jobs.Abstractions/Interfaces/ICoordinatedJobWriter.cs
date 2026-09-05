@@ -25,6 +25,27 @@ internal interface ICoordinatedJobWriter<in TTimeJob, in TCronJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {
+    /// <summary>Validates actual configured database compatibility and exact live caller handles before middleware.</summary>
+    void ValidateContext(IRelationalCommitContext relationalContext, bool requireSavepoints = false);
+
+    /// <summary>Executes keyed scheduling inside the caller transaction. The result remains provisional until outer commit.</summary>
+    Task<JobScheduleResult> WriteKeyedTimeJobAsync(
+        JobKey key,
+        TTimeJob job,
+        long? expectedGeneration,
+        IRelationalCommitContext relationalContext,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>Executes generation-fenced cancellation inside the caller transaction.</summary>
+    Task<JobScheduleResult> CancelKeyedTimeJobAsync(
+        JobKeyScope scope,
+        JobKey key,
+        long expectedGeneration,
+        IRelationalCommitContext relationalContext,
+        CancellationToken cancellationToken = default
+    );
+
     /// <summary>
     /// Writes the time-job rows inside the transaction surfaced by <paramref name="relationalContext" />, preserving
     /// insertion order. Does not dispatch, restart the scheduler, or notify — the manager defers those to commit.

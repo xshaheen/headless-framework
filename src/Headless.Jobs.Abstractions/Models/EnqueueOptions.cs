@@ -11,6 +11,9 @@ namespace Headless.Jobs.Models;
 [PublicAPI]
 public sealed record EnqueueOptions
 {
+    /// <summary>Fails before scheduling effects unless a compatible live relational transaction can enlist the job write.</summary>
+    public bool RequireAtomicEnlistment { get; init; }
+
     /// <summary>Root business correlation; defaults to the executing parent's correlation or the new row ID.</summary>
     public string? CorrelationId { get; init; }
 
