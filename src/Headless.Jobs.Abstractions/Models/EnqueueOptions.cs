@@ -11,6 +11,12 @@ namespace Headless.Jobs.Models;
 [PublicAPI]
 public sealed record EnqueueOptions
 {
+    /// <summary>Root business correlation; defaults to the executing parent's correlation or the new row ID.</summary>
+    public string? CorrelationId { get; init; }
+
+    /// <summary>Immediate business cause; defaults to the currently executing parent row ID.</summary>
+    public string? CausationId { get; init; }
+
     /// <summary>Optional human-readable description displayed by operational tooling.</summary>
     public string? Description { get; init; }
 

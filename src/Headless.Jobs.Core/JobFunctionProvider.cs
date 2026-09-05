@@ -455,6 +455,17 @@ internal static class JobFunctionRegistryBuilder
         IConfiguration? configuration = null
     )
     {
+        var mismatchedNames = descriptors
+            .Where(entry => !string.Equals(entry.Key, entry.Value.FunctionName, StringComparison.Ordinal))
+            .Select(entry => $"'{entry.Key}' maps descriptor '{entry.Value.FunctionName}'")
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        if (mismatchedNames.Length != 0)
+        {
+            throw new InvalidOperationException(
+                $"Ambiguous Jobs contract registrations: {string.Join(", ", mismatchedNames)}."
+            );
+        }
         var generatedDescriptorNames = descriptors.Select(entry => entry.Key).ToHashSet(StringComparer.Ordinal);
         var effectiveDescriptors = descriptors
             .Concat(
@@ -588,7 +599,8 @@ internal static class JobFunctionRegistryBuilder
                 descriptor.RequestType,
                 cronExpression,
                 descriptor.Priority,
-                descriptor.MaxConcurrency
+                descriptor.MaxConcurrency,
+                descriptor.ContractVersion
             );
     }
 

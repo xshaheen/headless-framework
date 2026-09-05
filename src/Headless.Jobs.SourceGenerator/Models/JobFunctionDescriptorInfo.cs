@@ -7,10 +7,13 @@ internal sealed class JobFunctionDescriptorInfo(
     string? requestTypeName,
     string cronExpression,
     int priority,
-    int maxConcurrency
+    int maxConcurrency,
+    string contractVersion
 )
 {
     public string FunctionName { get; } = functionName;
+
+    public string ContractVersion { get; } = contractVersion;
 
     public string? RequestTypeName { get; } = requestTypeName;
 

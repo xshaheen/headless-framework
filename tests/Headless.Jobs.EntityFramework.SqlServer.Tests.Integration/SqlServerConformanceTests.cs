@@ -212,6 +212,20 @@ public sealed class SqlServerClaimConformanceTests(SqlServerJobsCoordinationFixt
     : JobsClaimConformanceTests<SqlServerJobsCoordinationFixture>(fixture)
 {
     [Fact]
+    public override Task cron_materialization_ignores_stale_caller_tuple_and_restart_claims_its_snapshot() =>
+        base.cron_materialization_ignores_stale_caller_tuple_and_restart_claims_its_snapshot();
+
+    [Fact]
+    public override Task contract_columns_preserve_ordinal_case_and_reject_invalid_new_writes() =>
+        base.contract_columns_preserve_ordinal_case_and_reject_invalid_new_writes();
+
+    [Fact]
+    public override Task materialized_cron_request_survives_parent_payload_edit_and_provider_restart()
+    {
+        return base.materialized_cron_request_survives_parent_payload_edit_and_provider_restart();
+    }
+
+    [Fact]
     public override Task synchronized_workers_claim_disjoint_time_job_roots_and_complete_descendant_stamps()
     {
         return base.synchronized_workers_claim_disjoint_time_job_roots_and_complete_descendant_stamps();

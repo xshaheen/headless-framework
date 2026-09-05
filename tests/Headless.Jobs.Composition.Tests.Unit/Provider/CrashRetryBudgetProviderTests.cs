@@ -48,6 +48,17 @@ public sealed class CrashRetryBudgetProviderTests : TestBase
         var (provider, _) = _Create();
         var occurrence = _Occurrence(JobStatus.InProgress, _NodeA, lockedUntil: _Now.UtcDateTime.AddMinutes(-1));
         occurrence.RetryCount = 1;
+        await provider.InsertCronJobsAsync(
+            [
+                new FakeCronJob
+                {
+                    Id = occurrence.CronJobId,
+                    Function = "fn",
+                    Expression = "* * * * *",
+                },
+            ],
+            AbortToken
+        );
         await provider.InsertCronJobOccurrencesAsync([occurrence], AbortToken);
 
         var reclaimed = await provider.ReclaimStalledCronJobOccurrencesAsync(AbortToken);

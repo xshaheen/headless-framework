@@ -231,7 +231,8 @@ internal sealed class JobsInitializationHostedService(
                     x.Value.MissedRunGraceSeconds,
                     schedulerOptions.DefaultMissedRunGraceSeconds
                 ),
-                serviceProvider.GetRequiredService<CronScheduleCache>().ComputeEvaluationFingerprint(timeZoneId: null)
+                serviceProvider.GetRequiredService<CronScheduleCache>().ComputeEvaluationFingerprint(timeZoneId: null),
+                functionRegistry.Descriptors[x.Key].ContractVersion
             ))
             .ToArray();
 

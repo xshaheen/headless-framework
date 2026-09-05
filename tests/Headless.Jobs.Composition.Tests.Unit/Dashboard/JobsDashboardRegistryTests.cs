@@ -92,7 +92,11 @@ public sealed class JobsDashboardRegistryTests : TestBase
             {
                 Id = Guid.NewGuid(),
                 CronJobId = cronJobId,
-                CronJob = new CronJobEntity { Id = cronJobId, Function = _FunctionName },
+                Function = _FunctionName,
+                ContractVersion = "1",
+                CorrelationId = "business-root",
+                CausationId = "direct-cause",
+                CronJob = new CronJobEntity { Id = cronJobId, Function = "edited-parent" },
             };
             persistence.AcquireImmediateCronOccurrencesAsync(Arg.Any<Guid[]>(), AbortToken).Returns([occurrence]);
 
@@ -112,11 +116,61 @@ public sealed class JobsDashboardRegistryTests : TestBase
                 .DispatchAsync(
                     Arg.Is<JobExecutionState[]>(jobs =>
                         jobs.Length == 1
+                        && jobs[0].FunctionName == _FunctionName
+                        && jobs[0].ContractVersion == "1"
+                        && jobs[0].CorrelationId == "business-root"
+                        && jobs[0].CausationId == "direct-cause"
                         && ReferenceEquals(jobs[0].CachedDelegate, registration.Delegate)
                         && jobs[0].CachedPriority == registration.Priority
                     ),
                     AbortToken
                 );
+        }
+    }
+
+    [Fact]
+    public async Task unsupported_stored_version_is_displayed_before_malformed_request_deserialization()
+    {
+        var descriptor = new JobFunctionDescriptor(
+            _FunctionName,
+            typeof(DashboardRequest),
+            "",
+            JobPriority.Normal,
+            0,
+            "v2"
+        );
+        var registry = JobFunctionRegistryBuilder.Build(
+            [],
+            [],
+            [new KeyValuePair<string, JobFunctionDescriptor>(_FunctionName, descriptor)]
+        );
+        var (repository, persistence, _, serviceProvider) = _CreateRepository(registry);
+        using (serviceProvider)
+        {
+            var jobId = Guid.NewGuid();
+            persistence
+                .GetTimeJobByIdAsync(jobId, AbortToken)
+                .Returns(
+                    new TimeJobEntity
+                    {
+                        Id = jobId,
+                        Function = _FunctionName,
+                        ContractVersion = "v1",
+                        Request = [255, 254],
+                        CorrelationId = "business-root",
+                        CausationId = "direct-cause",
+                        RetryCount = 7,
+                    }
+                );
+
+            var (diagnostic, validationState) = await repository.GetJobRequestByIdAsync(
+                jobId,
+                JobType.TimeJob,
+                AbortToken
+            );
+
+            validationState.Should().Be(2);
+            diagnostic.Should().Contain("version 'v1'").And.Contain("registers 'v2'").And.Contain("not deserialized");
         }
     }
 

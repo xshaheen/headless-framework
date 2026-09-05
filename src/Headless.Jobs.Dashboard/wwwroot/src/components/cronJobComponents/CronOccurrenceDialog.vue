@@ -31,6 +31,11 @@ const totalCount = ref(0)
 // Define headers manually for paginated response
 const headers = ref([
   { title: 'Status', key: 'status', sortable: true, visibility: true },
+    { title: 'Function', key: 'function', sortable: false, visibility: true },
+    { title: 'Contract version', key: 'contractVersion', sortable: false, visibility: true },
+    { title: 'Correlation', key: 'correlationId', sortable: false, visibility: true },
+    { title: 'Causation', key: 'causationId', sortable: false, visibility: true },
+    { title: 'Tenant', key: 'tenantId', sortable: false, visibility: true },
   { title: 'Executed At (Elapsed Time)', key: 'executedAt', sortable: false, visibility: true },
   { title: 'Execution Time', key: 'executionTimeFormatted', sortable: true, visibility: true },
   { title: 'Locked At', key: 'lockedAt', sortable: false, visibility: true },

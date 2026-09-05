@@ -972,6 +972,10 @@ const headersWithoutReadable = computed(() => {
   // Define headers manually for paginated response
   return [
     { title: 'Function', key: 'function', sortable: true, visibility: true },
+    { title: 'Contract version', key: 'contractVersion', sortable: false, visibility: true },
+    { title: 'Correlation', key: 'correlationId', sortable: false, visibility: true },
+    { title: 'Causation', key: 'causationId', sortable: false, visibility: true },
+    { title: 'Tenant', key: 'tenantId', sortable: false, visibility: true },
     { title: 'Expression', key: 'expression', sortable: true, visibility: true },
     { title: 'Request Type', key: 'requestType', sortable: false, visibility: true },
     { title: 'Description', key: 'description', sortable: true, visibility: true },

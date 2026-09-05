@@ -532,9 +532,9 @@ public static class JobsCoordinationFixtureExtensions
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText =
-            $"INSERT INTO {fixture.QualifiedTimeJobsTable} ({_InsertColumns}) "
+            $"INSERT INTO {fixture.QualifiedTimeJobsTable} ({_InsertColumns}, \"ContractVersion\") "
             + "VALUES (@id, @function, @function, @status, @ownerId, "
-            + $"{fixture.UtcNowSqlExpression}, {fixture.UtcNowSqlExpression}, 0, 0, 0, @onNodeDeath, @lockedUntil);";
+            + $"{fixture.UtcNowSqlExpression}, {fixture.UtcNowSqlExpression}, 0, 0, 0, @onNodeDeath, @lockedUntil, '1');";
 
         // Status and OnNodeDeath persist as enum names (HasConversion<string>), so seed the names, not ordinals.
         AddParameter(command, "@id", id);
@@ -588,12 +588,12 @@ public static class JobsCoordinationFixtureExtensions
         await using var command = connection.CreateCommand();
 
         command.CommandText =
-            $"INSERT INTO {fixture.QualifiedCronJobsTable} ({_CronInsertColumns}) "
+            $"INSERT INTO {fixture.QualifiedCronJobsTable} ({_CronInsertColumns}, \"ContractVersion\") "
             + $"VALUES (@id, @function, @function, @expression, @timeZoneId, @isPaused, @scheduleRevision, 0, "
             + $"{fixture.UtcNowSqlExpression}, {fixture.UtcNowSqlExpression}, @onNodeDeath, "
             + $"{fixture.UtcNowOffsetSqlExpression(reconciledThroughOffsetSeconds)}, "
             + $"{fixture.UtcNowOffsetSqlExpression(nextDueOffsetSeconds)}, "
-            + $"@missedRunGraceSeconds, @onMissedRun);";
+            + $"@missedRunGraceSeconds, @onMissedRun, '1');";
 
         AddParameter(command, "@id", id);
         AddParameter(command, "@function", function);
@@ -681,10 +681,10 @@ public static class JobsCoordinationFixtureExtensions
         // distinct execution times when several occurrences of the same cron are seeded together.
         command.CommandText =
             $"INSERT INTO {fixture.QualifiedCronJobOccurrencesTable} ({_CronOccurrenceInsertColumns}, "
-            + "\"SkippedReason\", \"Disposition\") "
-            + "VALUES (@id, @cronJobId, @status, @ownerId, @executionTime, "
+            + "\"SkippedReason\", \"Disposition\", \"Function\", \"ContractVersion\", \"Request\") "
+            + "SELECT @id, @cronJobId, @status, @ownerId, @executionTime, "
             + $"{createdAtSql}, {createdAtSql}, 0, 0, @onNodeDeath, @lockedUntil, "
-            + "@skippedReason, @disposition);";
+            + $"@skippedReason, @disposition, \"Function\", \"ContractVersion\", \"Request\" FROM {fixture.QualifiedCronJobsTable} WHERE \"Id\" = @cronJobId;";
 
         AddParameter(command, "@id", id);
         AddParameter(command, "@cronJobId", cronJobId);

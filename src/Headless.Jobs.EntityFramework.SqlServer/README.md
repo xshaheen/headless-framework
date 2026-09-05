@@ -8,6 +8,7 @@ This is an optimization extension for `Headless.Jobs.EntityFramework`, not an in
 
 ## Key Features
 
+- **Ordinal contract storage**: Jobs function/version columns use `Latin1_General_100_BIN2` and `nvarchar(200)`/`nvarchar(100)`, matching the shared UTF-16 bounds without case normalization. Runtime and migration validation reject surrounding whitespace so SQL padding does not introduce alternate identities. Native creation snapshots name, version, and request together under the definition lock; existing claims hydrate the stored occurrence tuple.
 - Selects claim candidates with `UPDLOCK`, `READPAST`, and `ROWLOCK`, then returns winners from the same update through `OUTPUT inserted...`.
 - Bounds set-based root and fallback-occurrence selection to 100 winners per transaction to limit lock footprint and escalation risk; skipped or excess work remains eligible for the next scheduler pass.
 - Adds `READCOMMITTEDLOCK` when `READ_COMMITTED_SNAPSHOT` is enabled, as required for `READPAST` under read-committed snapshot isolation.

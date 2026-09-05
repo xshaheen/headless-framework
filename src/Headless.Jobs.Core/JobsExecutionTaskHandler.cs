@@ -262,6 +262,10 @@ internal sealed class JobsExecutionTaskHandler
         var jobFunctionContext = new JobFunctionContext
         {
             FunctionName = context.FunctionName,
+            ContractVersion = context.ContractVersion,
+            CorrelationId = context.CorrelationId,
+            CausationId = context.CausationId,
+            TenantId = context.TenantId,
             Id = context.JobId,
             Type = context.Type,
             IsDue = isDue,
@@ -440,6 +444,40 @@ internal sealed class JobsExecutionTaskHandler
             // previously reached a null delegate and retried the NullReferenceException through the whole budget
             // while holding a worker slot. Release the row instead of failing it: a node that HAS the
             // registration can claim and run it — a local registry gap must not poison the job.
+            if (
+                _functionRegistry.Descriptors.TryGetValue(context.FunctionName, out var registeredContract)
+                && !string.Equals(context.ContractVersion, registeredContract.ContractVersion, StringComparison.Ordinal)
+            )
+            {
+                context.ContractVersionError =
+                    $"Unsupported stored Jobs contract '{context.FunctionName}' version '{context.ContractVersion}'; this node registers '{registeredContract.ContractVersion}'. Request was not deserialized.";
+                context.CachedDelegate = null!;
+            }
+
+            if (context.ContractVersionError is not null)
+            {
+                if (!await beginCompletionAsync().ConfigureAwait(false))
+                {
+                    return;
+                }
+
+                context
+                    .SetProperty(x => x.Status, JobStatus.Failed)
+                    .SetProperty(x => x.ExceptionDetails, context.ContractVersionError)
+                    .SetProperty(x => x.ExecutedAt, _timeProvider.GetUtcNow())
+                    .SetProperty(x => x.ReleaseLock, value: true);
+                jobActivity?.SetTag("headless.job.contract_version_error", context.ContractVersionError);
+                var versionFailureAffected = await _internalJobsManager
+                    .UpdateTickerAsync(context, CancellationToken.None)
+                    .ConfigureAwait(false);
+                if (versionFailureAffected == 0)
+                {
+                    context.LeaseLost = true;
+                }
+                context.ResetUpdateProps();
+                return;
+            }
+
             if (context.CachedDelegate is null)
             {
                 if (!await beginCompletionAsync().ConfigureAwait(false))
@@ -533,6 +571,7 @@ internal sealed class JobsExecutionTaskHandler
                             stopWatch.Start();
                             await using var scope = _serviceProvider.CreateAsyncScope();
                             jobFunctionContext.SetServiceScope(scope);
+                            using var causalScope = JobCausalContext.Enter(jobFunctionContext);
                             if (_functionRegistry.Descriptors.TryGetValue(context.FunctionName, out var descriptor))
                             {
                                 Task terminal(CancellationToken token) =>

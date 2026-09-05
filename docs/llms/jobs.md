@@ -137,6 +137,7 @@ Mark job methods with `[JobFunction("name")]` (or `[JobFunction("name", cronExpr
 
 ## Agent Instructions
 
+- Treat `(Function, ContractVersion, Request bytes)` as a durable executable contract. A schema change needs an explicit version; do not infer it from CLR names or trace IDs. Apply the [consumer migration and rollback procedure](../migrations/jobs-versioned-contracts.md) before upgraded writers/workers start, with both quiesced and no mixed binaries.
 - Do NOT use Hangfire or Quartz — use `Headless.Jobs` for all background jobs in this framework.
 - The registration attribute is `[JobFunction]` (`JobFunctionAttribute` in `Headless.Jobs.Base`). The first positional argument is the function name; `cronExpression` is a named parameter. Add `Headless.Jobs.SourceGenerator` to the project for compile-time registration.
 - Call `AddHeadlessJobs()` on `IServiceCollection`. There is no `app.UseJobs()` call — the scheduler starts automatically through `IHostedService` registered by `AddHeadlessJobs`.
@@ -630,6 +631,9 @@ Provides the shared contracts — `IJobScheduler`, `ITimeJobManager<TTimeJob>`, 
 
 ### Key Features
 
+- **Durable contract identity**: `[JobFunction("invoice.create", ContractVersion = "schema-v2")]` and immutable `JobFunctionDescriptor.ContractVersion` declare the stored request schema. The optional descriptor-constructor version defaults to `JobContract.LegacyVersion` (`"1"`). `JobContract` defines a 200 UTF-16-unit function-name bound and a 100-unit version bound; names and versions are nonblank, ordinal, and reject surrounding whitespace, controls, and invalid Unicode without normalization or truncation.
+- **Jobs lineage**: `EnqueueOptions` and `RecurringJobOptions` accept `CorrelationId` and `CausationId`. Persisted entities, `JobExecutionState`, and both execution-context forms carry contract version and Jobs-owned correlation, causation, and tenant metadata. `CronSeedDefinition` includes a trailing version (default `"1"`); consumers that deconstruct it must include that sixth member.
+- **Occurrence snapshots**: every new cron occurrence owns `Function`, `ContractVersion`, and a copy of serialized `Request` bytes. Provider implementations must read the current persisted definition under their materialization transaction or lock, including `InsertCronJobOccurrencesAsync` with an already-populated caller tuple. Existing-row pickup, retry, and recovery retain the stored tuple.
 - **Routine scheduling facade**: `IJobScheduler` resolves generated `[JobFunction]` metadata, serializes typed requests, schedules immediate, delayed, and recurring jobs without copied function strings or entity construction, and durably pauses or resumes cron definitions by ID.
 - **Generated descriptors**: immutable `JobFunctionDescriptor` values expose function identity, nullable request type, cron metadata, priority, and maximum concurrency without exposing execution delegates.
 - **Scheduling options**: `EnqueueOptions` and `RecurringJobOptions` map description, durable retry count/intervals, and node-death policy; recurring options also accept a nullable IANA `TimeZoneId`. Priority remains generated function metadata.
@@ -759,6 +763,8 @@ Provides reliable background job scheduling with cron expressions, delayed execu
 
 ### Key Features
 
+- **Version-checked execution**: the frozen registry remains ordinal and uniquely keyed by function name. A stored version must exactly equal the registered descriptor version before request deserialization or cached delegate invocation. A mismatch persists a `Failed` diagnostic; a missing function retains the existing release-for-another-node behavior. Descendants are processed only after the terminal write wins its ownership fence.
+- **Stable causal metadata**: a root time job uses its allocated row ID as correlation unless explicitly supplied. Jobs scheduled from an executing job inherit its correlation and use that parent execution row ID as causation; chain steps use their direct parent row ID. Root cron occurrences allocate correlation from their occurrence ID unless the definition carries explicit or inherited metadata. A legacy parent with null correlation contributes its execution row ID as the earliest available Jobs cause; this does not reconstruct an unknown historical root. Retries preserve lineage independently of `Activity` traces, and existing tenant checks still apply.
 - **`AddHeadlessJobs()`**: single DI entry point; registers managers, background services, and the in-memory persistence provider.
 - **`IJobScheduler` facade**: schedules typed or requestless `[JobFunction]` methods through generated descriptor indexes, maps supported options, controls cron pause/resume, and returns persisted entity IDs or locked-transition results.
 - **Injected identity and app time**: managers assign persisted IDs through `IGuidGenerator` and stamp audit/scheduling time through `TimeProvider`, including every descendant in a persisted job chain.
@@ -972,6 +978,7 @@ Provides operational visibility into the Jobs scheduler — job queues, executio
 
 ### Key Features
 
+- **Contract and lineage visibility**: function descriptors expose `ContractVersion`; time-job, cron-definition, and occurrence views show version, correlation, causation, and tenant fields. Occurrences show their own snapshotted function. Add/update forms submit the selected descriptor version, and request inspection reports an unsupported stored version before attempting deserialization. Live occurrence updates retain the same metadata.
 - **Embedded SPA**: served from the host process, no separate deployment.
 - **Authentication options**: `WithBasicAuth(username, password)`, `WithApiKey(apiKey)`, `WithHostAuthentication(policy?)` (delegates to host app's auth), or explicit no-auth mode for isolated development dashboards.
 - **Safe host-auth handoff**: fragment-delivered access tokens are removed from the URL, then validated only after the SPA initializes the host authentication configuration.
@@ -1069,6 +1076,7 @@ Without the source generator, every job class or method must be manually registe
 
 ### Key Features
 
+- **Versioned descriptors**: `JobFunctionAttribute.ContractVersion` (default `"1"`) is emitted into assembly metadata and immutable runtime descriptors. Explicit function name and version remain stable through CLR class/method renames and source/reference reordering. Duplicate function names remain invalid even when their versions differ; versioning does not create a second dispatch registry.
 - **Zero reflection**: all dispatch delegates are generated as strongly-typed lambdas.
 - **Auto-registration**: a `[ModuleInitializer]` in the generated file (`JobsInstanceFactory.g.cs`) registers job delegates before any host startup code runs.
 - **Descriptor indexes**: generates delegate-free descriptors for every typed and requestless function; the provider exposes frozen indexes by name and by typed request `Type`.
@@ -1170,6 +1178,8 @@ builder
 
 ### Configuration
 
+Execution spans include `headless.job.contract_version`, `headless.job.correlation_id`, `headless.job.causation_id`, and `headless.job.tenant_id` when present. These fields preserve business lineage independently of trace ancestry and are not metric dimensions.
+
 No activation switch exists — the default instrumentation starts activities only when a listener is subscribed (`ActivitySource` short-circuits to null otherwise), so an unobserved host pays effectively nothing and keeps identical log output. The `ActivitySource` name is `JobsDiagnostics.SourceName` (`"Headless.Jobs"`, a `public const` so dashboards and wiring reference the symbol). Subscribe with `AddJobsInstrumentation()` or `AddSource(JobsDiagnostics.SourceName)`. Custom instrumentation remains possible by registering your own `IJobsInstrumentation` after `AddHeadlessJobs()`. (Breaking vs earlier previews: `AddOpenTelemetryInstrumentation()` was removed — delete the call; spans now flow from the subscription alone.)
 
 Span names: the per-execution root activity (display name = the job function name), plus `job.enqueue`, `job.complete`, `job.fail`, `job.cancel`, `job.skip`, `job.deserialize.fail`, `seeding.start`, `seeding.complete`.
@@ -1213,6 +1223,8 @@ Provides persistence of time jobs and cron occurrences across restarts and acros
 
 ### Key Features
 
+- **Durable contract tuples**: time jobs and cron definitions map required bounded `Function`/`ContractVersion` columns; occurrences additionally persist their own function, version, request bytes, correlation, causation, and nullable tenant. Newly materialized occurrences copy the current definition tuple while holding its write lock; retries and restart reads use the occurrence row. Runtime write converters reject invalid identities.
+- **Consumer-owned contract migration**: apply the versioned-contract schema before starting upgraded workers or definition writers. Backfill legacy versions to `"1"` and occurrence tuples from available parent rows while both are quiesced; previously overwritten historical payloads cannot be recovered. Abort oversized/invalid legacy values instead of truncating, remove temporary defaults, disallow mixed old/new binaries, and reject downgrade after incompatible versions are written. Library mappings never mutate the schema automatically.
 - **Durable storage**: persists `TimeJobEntity`, `CronJobEntity`, and `CronJobOccurrenceEntity` in EF Core-mapped tables (default schema: `jobs`).
 - **`UseEntityFramework(ef => …)`**: the EF registration extension on `JobsOptionsBuilder`.
 - **`UseJobsDbContext<TDbContext>(dbOptions, schema?)`**: registers a dedicated `JobsDbContext` with configurable schema.
@@ -1562,6 +1574,7 @@ This is an optimization extension for `Headless.Jobs.EntityFramework`, not an in
 
 ### Key Features
 
+- **Ordinal contract storage**: Jobs function/version columns use PostgreSQL `C` collation. Physical `varchar(200)`/`varchar(100)` limits count Unicode code points; the shared runtime contract counts UTF-16 units, so supplementary characters require the stricter migration preflight. Native creation snapshots name, version, and request together under the definition lock; existing claims hydrate the stored occurrence tuple.
 - Claims existing time jobs and cron occurrences with `UPDATE ... RETURNING` over a `FOR UPDATE SKIP LOCKED` candidate query.
 - Bounds set-based root and fallback-occurrence selection to 100 winners per transaction; skipped or excess work remains eligible for the next scheduler pass.
 - Creates cron occurrences with `INSERT ... WHERE NOT EXISTS ... ON CONFLICT DO NOTHING ... RETURNING` to deduplicate each execution-time and cron-job pair. The `NOT EXISTS` guard is the shared occupied-instant rule: any row that **accounts for** the instant — live, terminal, or a status this binary does not recognize — suppresses the insert, and the only row that does not account is one a startup seeding migration retired without a replacement (`CronOccurrenceDisposition.ReplacementOwed`). `ON CONFLICT` remains, arbitrating the concurrent-live race the unlocked read cannot see. The predicate and its literals are derived from `CronOccurrenceAccounting`, so this SQL cannot drift from the SQL Server sibling or the portable EF path.
@@ -1624,6 +1637,7 @@ This is an optimization extension for `Headless.Jobs.EntityFramework`, not an in
 
 ### Key Features
 
+- **Ordinal contract storage**: Jobs function/version columns use `Latin1_General_100_BIN2` and `nvarchar(200)`/`nvarchar(100)`, matching the shared UTF-16 bounds without case normalization. Runtime and migration validation reject surrounding whitespace so SQL padding does not introduce alternate identities. Native creation snapshots name, version, and request together under the definition lock; existing claims hydrate the stored occurrence tuple.
 - Selects claim candidates with `UPDLOCK`, `READPAST`, and `ROWLOCK`, then returns winners from the same update through `OUTPUT inserted...`.
 - Bounds set-based root and fallback-occurrence selection to 100 winners per transaction to limit lock footprint and escalation risk; skipped or excess work remains eligible for the next scheduler pass.
 - Adds `READCOMMITTEDLOCK` when `READ_COMMITTED_SNAPSHOT` is enabled, as required for `READPAST` under read-committed snapshot isolation.

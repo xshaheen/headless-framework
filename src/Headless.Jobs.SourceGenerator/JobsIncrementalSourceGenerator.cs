@@ -235,6 +235,14 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
                 attributeValues.cronExpression,
                 attributeValues.onMissedRun,
                 attributeValues.missedRunGraceSeconds,
+                jobFunctionAttributeData.NamedArguments.Any(x =>
+                    string.Equals(x.Key, "ContractVersion", StringComparison.Ordinal)
+                )
+                    ? jobFunctionAttributeData
+                        .NamedArguments.First(x => string.Equals(x.Key, "ContractVersion", StringComparison.Ordinal))
+                        .Value.Value as string
+                        ?? string.Empty
+                    : "1",
                 assemblyName ?? compilation.Assembly.Name,
                 typeNameConflicts
             );
@@ -254,6 +262,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
         string? cronExpression,
         int? onMissedRun,
         int? missedRunGraceSeconds,
+        string contractVersion,
         string assemblyName,
         HashSet<string>? typeNameConflicts = null
     )
@@ -288,7 +297,8 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
                 requestType?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
                 cronExpression ?? string.Empty,
                 functionPriority,
-                maxConcurrency
+                maxConcurrency,
+                contractVersion
             )
         );
     }
@@ -339,7 +349,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
         foreach (var descriptor in descriptors.OrderBy(x => x.FunctionName, StringComparer.Ordinal))
         {
             sb.AppendLine(
-                $"[assembly: global::Headless.Jobs.JobFunctionDescriptorMetadataAttribute(\"{descriptor.FunctionName}\")]"
+                $"[assembly: global::Headless.Jobs.JobFunctionDescriptorMetadataAttribute({SymbolDisplay.FormatLiteral(descriptor.FunctionName, quote: true)}, {SymbolDisplay.FormatLiteral(descriptor.ContractVersion, quote: true)})]"
             );
         }
 
@@ -621,13 +631,13 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
                 $"            var descriptors = new Dictionary<string, JobFunctionDescriptor>({descriptors.Count});"
             );
 
-            foreach (var descriptor in descriptors)
+            foreach (var descriptor in descriptors.OrderBy(x => x.FunctionName, StringComparer.Ordinal))
             {
                 var functionName = SymbolDisplay.FormatLiteral(descriptor.FunctionName, quote: true);
                 var requestType = descriptor.RequestTypeName == null ? "null" : $"typeof({descriptor.RequestTypeName})";
                 var cronExpression = SymbolDisplay.FormatLiteral(descriptor.CronExpression, quote: true);
                 sb.AppendLine(
-                    $"            descriptors.Add({functionName}, new JobFunctionDescriptor({functionName}, {requestType}, {cronExpression}, (JobPriority){descriptor.Priority}, {descriptor.MaxConcurrency}));"
+                    $"            descriptors.Add({functionName}, new JobFunctionDescriptor({functionName}, {requestType}, {cronExpression}, (JobPriority){descriptor.Priority}, {descriptor.MaxConcurrency}, {SymbolDisplay.FormatLiteral(descriptor.ContractVersion, quote: true)}));"
                 );
             }
 

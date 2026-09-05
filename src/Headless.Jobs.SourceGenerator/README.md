@@ -8,6 +8,7 @@ Without the source generator, every job class or method must be manually registe
 
 ## Key Features
 
+- **Versioned descriptors**: `JobFunctionAttribute.ContractVersion` (default `"1"`) is emitted into assembly metadata and immutable runtime descriptors. Explicit function name and version remain stable through CLR class/method renames and source/reference reordering. Duplicate function names remain invalid even when their versions differ; versioning does not create a second dispatch registry.
 - **Zero reflection**: all dispatch delegates are generated as strongly-typed lambdas.
 - **Auto-registration**: a `[ModuleInitializer]` in the generated file (`JobsInstanceFactory.g.cs`) registers job delegates before any host startup code runs.
 - **Descriptor indexes**: generates delegate-free `JobFunctionDescriptor` values for every typed and requestless function; `JobFunctionProvider` exposes frozen indexes by durable name and, for typed functions, request `Type`.

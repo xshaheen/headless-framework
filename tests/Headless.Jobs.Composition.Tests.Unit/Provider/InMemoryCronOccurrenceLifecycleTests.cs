@@ -4,6 +4,7 @@ using Headless.Abstractions;
 using Headless.Jobs;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
+using Headless.Jobs.Models;
 using Headless.Jobs.Provider;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -17,6 +18,62 @@ public sealed class InMemoryCronOccurrenceLifecycleTests : TestBase
     private const string _NodeB = "node-b";
     private static readonly DateTimeOffset _Now = new(2026, 8, 8, 12, 0, 0, TimeSpan.Zero);
     private static readonly TimeSpan _Lease = TimeSpan.FromMinutes(5);
+
+    [Fact]
+    public async Task materialization_owns_bytes_and_ignores_a_stale_caller_tuple()
+    {
+        using var fixture = new Fixture();
+        var definition = fixture.CronJob(isPaused: false);
+        definition.Request = [1, 2, 3];
+        await fixture.Provider.InsertCronJobsAsync([definition], AbortToken);
+        var occurrence = fixture.Occurrence(definition, JobStatus.Idle);
+        occurrence.Function = "stale";
+        occurrence.ContractVersion = "old";
+        occurrence.Request = [9];
+        await fixture.Provider.InsertCronJobOccurrencesAsync([occurrence], AbortToken);
+        occurrence.Function.Should().Be(definition.Function);
+        occurrence.ContractVersion.Should().Be("1");
+        occurrence.Request.Should().Equal(1, 2, 3);
+
+        definition.Request[0] = 8;
+        occurrence.Request![1] = 8;
+        var loaded = (
+            await fixture.Provider.GetAllCronJobOccurrencesAsync(x => x.Id == occurrence.Id, AbortToken)
+        ).Single();
+        loaded.Request![2] = 8;
+        var request = await fixture.Provider.GetCronJobOccurrenceRequestAsync(occurrence.Id, AbortToken);
+        request.Should().Equal(1, 2, 3);
+        request[0] = 9;
+        (await fixture.Provider.GetCronJobOccurrenceRequestAsync(occurrence.Id, AbortToken)).Should().Equal(1, 2, 3);
+
+        definition.ContractVersion = "2";
+        await fixture.Provider.UpdateCronJobsAsync([definition], AbortToken);
+        var pending = (
+            await fixture.Provider.AcquireImmediateCronOccurrencesAsync([occurrence.Id], AbortToken)
+        ).Single();
+        var registry = JobFunctionRegistryBuilder.Build(
+            [],
+            [],
+            [
+                new KeyValuePair<string, JobFunctionDescriptor>(
+                    definition.Function,
+                    new(definition.Function, null, "", JobPriority.Normal, 0, "2")
+                ),
+            ]
+        );
+        var execution = new JobExecutionState
+        {
+            FunctionName = pending.Function,
+            ContractVersion = pending.ContractVersion,
+        };
+        JobsExecutionContext.CacheFunctionReferences(execution, registry);
+        execution.CachedDelegate.Should().BeNull();
+        execution
+            .ContractVersionError.Should()
+            .Contain("version '1'")
+            .And.Contain("registers '2'")
+            .And.Contain("not deserialized");
+    }
 
     [Fact]
     public async Task should_claim_only_eligible_occurrences_and_honor_cancellation_when_acquiring_immediately()

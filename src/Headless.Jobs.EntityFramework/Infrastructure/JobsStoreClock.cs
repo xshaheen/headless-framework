@@ -48,7 +48,7 @@ internal static class JobsStoreClock
             _NpgsqlProvider => _NpgsqlStatementClockSql,
             _SqlServerProvider => _SqlServerStatementClockSql,
             _ => throw new NotSupportedException(
-                $"Seeding a cron definition's schedule position needs the store's current-statement clock, and EF "
+                "Seeding a cron definition's schedule position needs the store's current-statement clock, and EF "
                     + $"provider '{providerName}' has none registered. Supported backends: "
                     + $"'{_NpgsqlProvider}' (clock_timestamp()) and '{_SqlServerProvider}' (SYSUTCDATETIME())."
             ),

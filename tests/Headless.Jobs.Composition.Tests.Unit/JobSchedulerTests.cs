@@ -1,7 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics;
 using System.Reflection;
 using Headless.Jobs;
+using Headless.Jobs.Base;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Exceptions;
@@ -17,6 +19,65 @@ namespace Tests;
 [Collection<JobsHelperCollection>]
 public sealed class JobSchedulerTests : TestBase
 {
+    [Theory]
+    [InlineData(false, null)]
+    [InlineData(true, "business-root")]
+    [InlineData(true, null)]
+    public async Task persisted_lineage_uses_business_parent_or_new_row_and_never_trace(
+        bool hasParent,
+        string? parentCorrelation
+    )
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessJobs(options => options.DisableBackgroundServices());
+        var descriptor = new JobFunctionDescriptor("lineage", typeof(SampleRequest), "", JobPriority.Normal, 0, "v2");
+        services.AddSingleton(
+            JobFunctionRegistryBuilder.Build(
+                [
+                    new KeyValuePair<string, JobFunctionRegistration>(
+                        "lineage",
+                        new()
+                        {
+                            CronExpression = "",
+                            Priority = JobPriority.Normal,
+                            MaxConcurrency = 0,
+                            Delegate = (_, _, _) => Task.CompletedTask,
+                        }
+                    ),
+                ],
+                [
+                    new KeyValuePair<string, (string, Type)>(
+                        "lineage",
+                        (typeof(SampleRequest).FullName!, typeof(SampleRequest))
+                    ),
+                ],
+                [new KeyValuePair<string, JobFunctionDescriptor>("lineage", descriptor)]
+            )
+        );
+        await using var provider = services.BuildServiceProvider();
+        var scheduler = provider.GetRequiredService<IJobScheduler>();
+        var persistence = provider.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+        var parent = new JobFunctionContext
+        {
+            Id = Guid.NewGuid(),
+            FunctionName = "parent",
+            CorrelationId = parentCorrelation,
+            CronOccurrenceOperations = new CronOccurrenceOperations(() => { }),
+        };
+        using var trace = new Activity("unrelated-diagnostic-trace").Start();
+        using var causalScope = hasParent ? JobCausalContext.Enter(parent) : null;
+
+        var id = await scheduler.EnqueueAsync(new SampleRequest("invoice"), cancellationToken: AbortToken);
+        var stored = await persistence.GetTimeJobByIdAsync(id, AbortToken);
+
+        stored.Should().NotBeNull();
+        stored.ContractVersion.Should().Be("v2");
+        stored.CorrelationId.Should().Be(hasParent ? parentCorrelation ?? parent.Id.ToString("D") : id.ToString("D"));
+        stored.CausationId.Should().Be(hasParent ? parent.Id.ToString("D") : null);
+        stored.CorrelationId.Should().NotBe(trace.TraceId.ToString());
+    }
+
     private static readonly JobFunctionDescriptor _TypedDescriptor = new(
         "typed",
         typeof(SampleRequest),
@@ -511,6 +572,8 @@ public sealed class JobSchedulerTests : TestBase
             .Select(property => property.Name)
             .Should()
             .BeEquivalentTo(
+                nameof(EnqueueOptions.CorrelationId),
+                nameof(EnqueueOptions.CausationId),
                 nameof(EnqueueOptions.Description),
                 nameof(EnqueueOptions.Retries),
                 nameof(EnqueueOptions.RetryIntervals),
@@ -523,6 +586,8 @@ public sealed class JobSchedulerTests : TestBase
             .Select(property => property.Name)
             .Should()
             .BeEquivalentTo(
+                nameof(RecurringJobOptions.CorrelationId),
+                nameof(RecurringJobOptions.CausationId),
                 nameof(RecurringJobOptions.TimeZoneId),
                 nameof(RecurringJobOptions.Description),
                 nameof(RecurringJobOptions.Retries),

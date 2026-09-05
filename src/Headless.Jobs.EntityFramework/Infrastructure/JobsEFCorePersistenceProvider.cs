@@ -482,6 +482,12 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
             )
             .ConfigureAwait(false);
 
+        var contractDefinition = await dbContext
+            .Set<TCronJob>()
+            .AsNoTracking()
+            .SingleAsync(x => x.Id == cronJobId, cancellationToken)
+            .ConfigureAwait(false);
+        nextOccurrence.SnapshotContract(contractDefinition);
         nextOccurrence.CronJob = null!;
         await dbContext.Set<CronJobOccurrenceEntity<TCronJob>>().AddAsync(nextOccurrence, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
@@ -563,6 +569,9 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
                     setter =>
                         setter
                             .SetProperty(x => x.Function, update.Definition.Function)
+                            .SetProperty(x => x.ContractVersion, update.Definition.ContractVersion)
+                            .SetProperty(x => x.CorrelationId, update.Definition.CorrelationId)
+                            .SetProperty(x => x.CausationId, update.Definition.CausationId)
                             .SetProperty(x => x.Description, update.Definition.Description)
                             .SetProperty(x => x.Expression, update.Definition.Expression)
                             .SetProperty(x => x.TimeZoneId, update.Definition.TimeZoneId)
@@ -666,6 +675,12 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
                 if (!current.IsPaused)
                 {
                     replacement!.CronJobId = current.Id;
+                    var contractDefinition = await dbContext
+                        .Set<TCronJob>()
+                        .AsNoTracking()
+                        .SingleAsync(x => x.Id == current.Id, cancellationToken)
+                        .ConfigureAwait(false);
+                    replacement.SnapshotContract(contractDefinition);
                     replacement.CronJob = null!;
                     await dbContext
                         .Set<CronJobOccurrenceEntity<TCronJob>>()
@@ -960,13 +975,46 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
-
+        await using var transaction = await dbContext
+            .Database.BeginTransactionAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var definitions = new Dictionary<Guid, TCronJob>();
+        foreach (var definitionId in cronJobOccurrences.Select(x => x.CronJobId).Distinct().Order())
+        {
+            // Serialize every materialization with definition edits, including payload-only changes.
+            var affected = await dbContext
+                .Set<TCronJob>()
+                .Where(x => x.Id == definitionId)
+                .ExecuteUpdateAsync(
+                    setters => setters.SetProperty(x => x.ScheduleRevision, x => x.ScheduleRevision),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+            if (affected == 0)
+            {
+                throw new InvalidOperationException("A cron occurrence requires an existing definition.");
+            }
+            definitions.Add(
+                definitionId,
+                await dbContext
+                    .Set<TCronJob>()
+                    .AsNoTracking()
+                    .SingleAsync(x => x.Id == definitionId, cancellationToken)
+                    .ConfigureAwait(false)
+            );
+        }
+        foreach (var occurrence in cronJobOccurrences)
+        {
+            occurrence.SnapshotContract(definitions[occurrence.CronJobId]);
+            occurrence.CronJob = null!;
+        }
         await dbContext
             .Set<CronJobOccurrenceEntity<TCronJob>>()
             .AddRangeAsync(cronJobOccurrences, cancellationToken)
             .ConfigureAwait(false);
-
-        return await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        var inserted = await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        return inserted;
     }
 
     public async Task<int> RemoveCronJobOccurrencesAsync(

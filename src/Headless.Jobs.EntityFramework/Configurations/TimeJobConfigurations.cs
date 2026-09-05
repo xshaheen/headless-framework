@@ -7,12 +7,30 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Headless.Jobs.Configurations;
 
-public class TimeJobConfigurations<TTimeJob>(string schema = JobDbConstants.DefaultSchema)
-    : IEntityTypeConfiguration<TTimeJob>
+public class TimeJobConfigurations<TTimeJob>(
+    string schema = JobDbConstants.DefaultSchema,
+    string? contractCollation = null
+) : IEntityTypeConfiguration<TTimeJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
 {
     public void Configure(EntityTypeBuilder<TTimeJob> builder)
     {
+        builder
+            .Property(x => x.Function)
+            .IsRequired()
+            .HasMaxLength(JobContract.NameMaxLength)
+            .HasConversion(value => JobContract.ValidateName(value), value => value);
+        builder
+            .Property(x => x.ContractVersion)
+            .IsRequired()
+            .HasMaxLength(JobContract.VersionMaxLength)
+            .HasConversion(value => JobContract.ValidateVersion(value), value => value);
+        if (contractCollation is not null)
+        {
+            builder.Property(x => x.Function).UseCollation(contractCollation);
+            builder.Property(x => x.ContractVersion).UseCollation(contractCollation);
+        }
+
         builder.HasKey(x => x.Id);
 
         builder.Property(x => x.OwnerId).IsRequired(false);

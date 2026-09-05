@@ -32,6 +32,18 @@ public class JobExecutionState
     /// <summary>Registered function name that identifies the job handler this state belongs to.</summary>
     public required string FunctionName { get; set; }
 
+    /// <summary>Persisted payload schema version, checked before cached delegate dispatch.</summary>
+    public string ContractVersion { get; set; } = JobContract.LegacyVersion;
+
+    /// <summary>Root business correlation, independent of tracing.</summary>
+    public string? CorrelationId { get; set; }
+
+    /// <summary>Immediate business cause.</summary>
+    public string? CausationId { get; set; }
+
+    /// <summary>Local registration version mismatch detected before deserialization.</summary>
+    public string? ContractVersionError { get; internal set; }
+
     /// <summary>Identifier of the job row (time job or cron occurrence) this state describes.</summary>
     public Guid JobId { get; set; }
 

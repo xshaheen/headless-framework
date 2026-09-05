@@ -8,6 +8,8 @@ Provides persistence of time jobs and cron occurrences across restarts and acros
 
 ## Key Features
 
+- **Durable contract tuples**: time jobs and cron definitions map required bounded `Function`/`ContractVersion` columns; occurrences additionally persist their own function, version, request bytes, correlation, causation, and nullable tenant. Newly materialized occurrences copy the current definition tuple while holding its write lock; retries and restart reads use the occurrence row. Runtime write converters reject invalid identities.
+- **Consumer-owned contract migration**: apply the versioned-contract schema before starting upgraded workers or definition writers. Backfill legacy versions to `"1"` and occurrence tuples from available parent rows while both are quiesced; previously overwritten historical payloads cannot be recovered. Abort oversized/invalid legacy values instead of truncating, remove temporary defaults, disallow mixed old/new binaries, and reject downgrade after incompatible versions are written. Library mappings never mutate the schema automatically.
 - **Durable storage**: persists `TimeJobEntity`, `CronJobEntity`, and `CronJobOccurrenceEntity` in EF Core-mapped tables (default schema: `jobs`).
 - **`UseEntityFramework(ef => …)`**: the EF registration extension on `JobsOptionsBuilder`.
 - **`UseJobsDbContext<TDbContext>(dbOptions, schema?)`**: registers a dedicated `JobsDbContext` with configurable schema.

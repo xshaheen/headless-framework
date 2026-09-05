@@ -73,6 +73,9 @@ public sealed class JobFunctionAttribute : Attribute
     /// <summary>Unique name that identifies this function in the scheduler.</summary>
     public string FunctionName { get; }
 
+    /// <summary>Durable payload schema version, compared ordinally. Defaults to the legacy version.</summary>
+    public string ContractVersion { get; set; } = JobContract.LegacyVersion;
+
     /// <summary>
     /// Optional six-field (seconds-inclusive) NCrontab expression, or <see langword="null"/> for a time job.
     /// A value starting with <c>%</c> is resolved from <c>IConfiguration</c> at startup.
