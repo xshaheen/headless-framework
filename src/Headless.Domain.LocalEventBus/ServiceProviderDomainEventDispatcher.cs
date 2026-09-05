@@ -27,12 +27,13 @@ internal sealed class ServiceProviderDomainEventDispatcher(IServiceProvider serv
         where TPayload : class
     {
         Argument.IsNotNull(context);
-        if (context.Payload.GetType() == typeof(TPayload))
+        var payloadType = context.Payload.GetType();
+        if (payloadType == typeof(TPayload))
         {
             return _DispatchAsync(context, cancellationToken);
         }
 
-        var invoker = _AsyncInvokers.GetOrAdd(context.Payload.GetType(), _CreateAsyncInvoker);
+        var invoker = _AsyncInvokers.GetOrAdd(payloadType, _CreateAsyncInvoker);
         var untyped =
             context as EventContext<object>
             ?? new(context.Payload, context.EventId, context.CorrelationId, context.CausationId, context.TenantId);

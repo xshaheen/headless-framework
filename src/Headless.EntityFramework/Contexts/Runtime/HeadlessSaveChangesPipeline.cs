@@ -277,7 +277,7 @@ internal sealed class HeadlessSaveChangesPipeline(
     }
 
     // Intentional sync/async twin of _SaveWithinTransaction below: identical save policy (completed-drain
-    // domain-event loop, integration flatten+dispatch, audit capture, missing-bus/dispatcher guards). The two
+    // domain-event loop, integration flatten+dispatch, audit capture, missing-dispatcher guards). The two
     // are kept in lockstep by hand rather than extracted — any change here must be mirrored in the sync twin.
     private async Task<int> _SaveWithinTransactionAsync(
         AsyncSaveState state,
@@ -300,10 +300,10 @@ internal sealed class HeadlessSaveChangesPipeline(
                 while (_TryTakeDomainOccurrence(state.Context, state.SaveContext) is { } occurrence)
                 {
                     state.CancellationToken.ThrowIfCancellationRequested();
-                    var bus =
+                    var dispatcher =
                         domainEventDispatcher
                         ?? throw new InvalidOperationException(_MissingDomainEventDispatcherMessage);
-                    await bus.DispatchAsync(occurrence, state.CancellationToken).ConfigureAwait(false);
+                    await dispatcher.DispatchAsync(occurrence, state.CancellationToken).ConfigureAwait(false);
                     state.SaveContext.DomainEventCursor++;
                 }
 
@@ -374,7 +374,7 @@ internal sealed class HeadlessSaveChangesPipeline(
     }
 
     // Intentional sync/async twin of _SaveWithinTransactionAsync above: identical save policy (completed-drain
-    // domain-event loop, integration flatten+dispatch, audit capture, missing-bus/dispatcher guards). The two
+    // domain-event loop, integration flatten+dispatch, audit capture, missing-dispatcher guards). The two
     // are kept in lockstep by hand rather than extracted — any change here must be mirrored in the async twin.
     private int _SaveWithinTransaction(SaveState state, IDbContextTransaction transaction, bool commitTransaction)
     {
@@ -392,10 +392,10 @@ internal sealed class HeadlessSaveChangesPipeline(
             {
                 while (_TryTakeDomainOccurrence(state.Context, state.SaveContext) is { } occurrence)
                 {
-                    var bus =
+                    var dispatcher =
                         domainEventDispatcher
                         ?? throw new InvalidOperationException(_MissingDomainEventDispatcherMessage);
-                    _PublishDomainEventBlocking(bus, occurrence);
+                    _DispatchDomainEventBlocking(dispatcher, occurrence);
                     state.SaveContext.DomainEventCursor++;
                 }
 
@@ -497,15 +497,18 @@ internal sealed class HeadlessSaveChangesPipeline(
         return saveContext.PendingDomainEvents[saveContext.DomainEventCursor];
     }
 
-    // IDomainEventDispatcher is async-only by contract: exposing a public sync Publish invited sync-over-async
+    // IDomainEventDispatcher is async-only by contract: a public synchronous dispatch method would invite sync-over-async
     // dispatch (and its synchronization-context deadlocks) in application code. The synchronous
     // SaveChanges path still has to dispatch domain events inline, so the bridge lives HERE, contained
     // in infrastructure. Blocking is acceptable in this frame: EF's own sync SaveChanges is already
     // blocking database I/O on a thread without a synchronization context to deadlock against.
-    private static void _PublishDomainEventBlocking(IDomainEventDispatcher bus, EventContext<object> domainEvent)
+    private static void _DispatchDomainEventBlocking(
+        IDomainEventDispatcher dispatcher,
+        EventContext<object> domainEvent
+    )
     {
 #pragma warning disable MA0045 // Sync SaveChanges path intentionally blocks; see comment above.
-        var pending = bus.DispatchAsync(domainEvent);
+        var pending = dispatcher.DispatchAsync(domainEvent);
 
         if (pending.IsCompletedSuccessfully)
         {
@@ -515,7 +518,7 @@ internal sealed class HeadlessSaveChangesPipeline(
         }
 
         // GetResult() rethrows the original exception (no AggregateException wrapping by Task.Wait),
-        // preserving the bus's single-exception / AggregateException contract for the catch below.
+        // preserving the dispatcher's single-exception / AggregateException contract for the catch below.
         pending.AsTask().GetAwaiter().GetResult();
 #pragma warning restore MA0045
     }
