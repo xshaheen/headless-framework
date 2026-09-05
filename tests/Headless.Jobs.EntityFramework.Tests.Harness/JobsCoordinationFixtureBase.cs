@@ -958,10 +958,27 @@ internal static class CoordinatedEnqueueJobs
 #pragma warning restore IDE0060
 }
 
+internal sealed class JobsScheduleMiddlewareProbe
+{
+    public int Calls { get; private set; }
+
+    public void Record() => Calls++;
+}
+
 internal static class CoordinatedEnqueueJobsRegistration
 {
     internal static void Initialize()
     {
+        JobMiddlewareRegistry.RegisterSchedule(
+            "Tests:CoordinatedScheduleProbe",
+            JobsCoordinationFixtureExtensions.CoordinatedFunctionName,
+            JobMiddlewarePriority.Default,
+            static (context, next, cancellationToken) =>
+            {
+                context.Services.GetService<JobsScheduleMiddlewareProbe>()?.Record();
+                return next(cancellationToken);
+            }
+        );
         JobFunctionProvider.RegisterFunctions(
             new Dictionary<string, JobFunctionRegistration>(StringComparer.Ordinal)
             {

@@ -2,12 +2,14 @@
 
 using Headless.Jobs;
 using Headless.Jobs.Base;
+using Headless.Jobs.Configurations;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Models;
 using Headless.Testing.Tests;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
@@ -21,6 +23,28 @@ public sealed class KeyedJobSchedulingTests : TestBase
         await using var provider = _Services().BuildServiceProvider();
         var store = provider.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
         await JobsKeyedSchedulingScenarios.RunAsync(store, AbortToken);
+        await using var model = new ParentMappingContext(
+            new DbContextOptionsBuilder<ParentMappingContext>().UseSqlite("Data Source=:memory:").Options
+        );
+        await JobsKeyedSchedulingScenarios.RunParentAttachmentRejectionsAsync(
+            store,
+            provider.GetRequiredService<ITimeJobManager<TimeJobEntity>>(),
+            (job, parentId) => model.Entry(job).Property(row => row.ParentId).CurrentValue = parentId,
+            AbortToken
+        );
+        var futureParent = JobsKeyedSchedulingScenarios.Candidate();
+        var orphan = JobsKeyedSchedulingScenarios.Candidate();
+        model.Entry(orphan).Property(row => row.ParentId).CurrentValue = futureParent.Id;
+        await store.AddTimeJobsAsync([orphan], AbortToken);
+        var adoptChildren = async () =>
+            await store.ScheduleKeyedTimeJobAsync(
+                new JobKey("future-parent"),
+                futureParent,
+                cancellationToken: AbortToken
+            );
+        await adoptChildren.Should().ThrowAsync<NotSupportedException>().WithMessage("*JobChain*");
+        (await store.GetTimeJobByIdAsync(futureParent.Id, AbortToken)).Should().BeNull();
+        (await store.GetTimeJobByIdAsync(orphan.Id, AbortToken)).Should().NotBeNull();
         await JobsKeyedSchedulingScenarios.RunClaimRacesAsync(
             store,
             async candidate =>
@@ -28,6 +52,12 @@ public sealed class KeyedJobSchedulingTests : TestBase
             AbortToken
         );
         await JobsKeyedSchedulingScenarios.RunLegacyMutationRacesAsync(store, AbortToken);
+    }
+
+    private sealed class ParentMappingContext(DbContextOptions<ParentMappingContext> options) : DbContext(options)
+    {
+        protected override void OnModelCreating(ModelBuilder modelBuilder) =>
+            modelBuilder.ApplyConfiguration(new TimeJobConfigurations<TimeJobEntity>());
     }
 
     [Theory]

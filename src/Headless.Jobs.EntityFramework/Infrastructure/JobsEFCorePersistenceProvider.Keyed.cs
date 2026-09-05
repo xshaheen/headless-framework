@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Jobs.Configurations;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Models;
@@ -45,6 +46,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(expectedGeneration ?? 1, nameof(expectedGeneration));
         JobIntentFingerprint.RejectOrdinaryMutation(job);
         JobIntentFingerprint.Normalize(job);
+        JobsKeyedModelConfiguration.ValidateOrdinalScope<TTimeJob>(context);
         var scope = new JobKeyScope(job.Function, job.TenantId);
         await JobsKeyLock.AcquireAsync(context, scope, key, cancellationToken).ConfigureAwait(false);
         var current = await _CurrentKey(context, scope, key)
@@ -160,6 +162,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         ArgumentNullException.ThrowIfNull(scope);
         ArgumentNullException.ThrowIfNull(key);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(expectedGeneration);
+        JobsKeyedModelConfiguration.ValidateOrdinalScope<TTimeJob>(context);
         await JobsKeyLock.AcquireAsync(context, scope, key, cancellationToken).ConfigureAwait(false);
         var current = await _CurrentKey(context, scope, key)
             .SingleOrDefaultAsync(cancellationToken)

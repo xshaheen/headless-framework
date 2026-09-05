@@ -35,11 +35,27 @@ Install four unique filtered/partial indexes:
 
 Use the actual mapped table, schema, column, and index names from the consumer's generated migration. The separate system indexes make null tenant scope explicit on both PostgreSQL and SQL Server. Scope comparisons must match the runtime's ordinal identity: PostgreSQL `C` collation and SQL Server `Latin1_General_100_BIN2`, with runtime validation rejecting padded or malformed values. Preserve the logical UTF-16 bounds even though PostgreSQL `varchar(n)` counts Unicode characters differently.
 
+When using `UseApplicationDbContext<TContext>(ConfigurationType.IgnoreModelCustomizer)`, configure those collations explicitly in the consumer model. For example, in `OnModelCreating`:
+
+```csharp
+var collation = Database.ProviderName switch
+{
+    "Npgsql.EntityFrameworkCore.PostgreSQL" => "C",
+    "Microsoft.EntityFrameworkCore.SqlServer" => "Latin1_General_100_BIN2",
+    _ => throw new NotSupportedException("This store does not support keyed Jobs."),
+};
+modelBuilder.ApplyConfiguration(new TimeJobConfigurations<TimeJobEntity>("jobs", collation));
+modelBuilder.ApplyConfiguration(new CronJobConfigurations<CronJobEntity>("jobs", collation));
+modelBuilder.ApplyConfiguration(new CronJobOccurrenceConfigurations<CronJobEntity>("jobs", collation));
+```
+
+A matching explicit model-default collation is also supported. Keyed scheduling and cancellation validate the finalized model's function, tenant, and business-key column collations before accessing a key. Missing or different collations reject with a diagnostic; the provider does not alter consumer mappings or infer the database default. This validates model configuration, not deployed schema, so applying and rehearsing the consumer migration remains required. Ordinary unkeyed operations remain available with the existing model configuration.
+
 The indexes and conditional writes enforce storage ownership; process-local locks alone are insufficient. Raw SQL or custom persistence writers must honor the entire keyed protocol, including validation, exact payload bytes, UTC microsecond due-time normalization, and the recorded fingerprint algorithm. Do not populate metadata by hand or recompute stored fingerprints with a newer serializer.
 
 ## Retention and rollout checks
 
-Current and historical keyed rows remain indefinitely after success, failure, cancellation, or replacement. Ordinary update/reset/delete APIs reject keyed records; a mixed deletion containing any keyed row rejects before deleting any member. Include these rows in operational storage sizing and backups. There is no key expiration, forget-key operation, terminal rearm, or compact replacement ledger.
+Current and historical keyed rows remain indefinitely after success, failure, cancellation, or replacement. Ordinary update/reset/delete APIs reject keyed records; a mixed deletion containing any keyed row rejects before deleting any member. Ordinary add/update operations, including coordinated writes and detached entities populated through consumer EF APIs, also reject attachment to a retained keyed parent before batch effects. Keyed rows remain standalone. Include these rows in operational storage sizing and backups. There is no key expiration, forget-key operation, terminal rearm, or compact replacement ledger.
 
 After migration, verify that legacy rows remain wholly unkeyed, each scoped key has one current row, historical generations are unique, and partial metadata cannot be written. Run concurrent identical and conflicting schedules, pending replacement, stale cancellation, and restart observation through the actual application/provider combination. Reuse the same absolute due instant on retries; equal semantic JSON is not equal durable byte intent.
 

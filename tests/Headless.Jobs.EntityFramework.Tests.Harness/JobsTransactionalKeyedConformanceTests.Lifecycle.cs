@@ -191,7 +191,8 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>
             {
                 JobScheduleResult? future = null;
                 JobScheduleResult? eligible = null;
-                var before = DateTimeOffset.UtcNow;
+                var before = await _ReadStoreUtcNowAsync();
+                ((FastNodeClock)host.Services.GetRequiredService<TimeProvider>()).UtcNow = before.AddHours(1);
                 await fixture.RunCoordinatedTransactionAsync(
                     host.Services,
                     async (_, _, ct) =>
@@ -215,24 +216,41 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>
                 );
                 var store = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
                 var stored = await store.GetTimeJobByIdAsync(future!.RunId!.Value, AbortToken);
-                stored!
-                    .CreatedAt.Should()
-                    .BeOnOrAfter(before.AddSeconds(-2))
-                    .And.BeBefore(DateTimeOffset.UtcNow.AddSeconds(2));
+                var beforeClaim = await _ReadStoreUtcNowAsync();
+                // SQL Server's EF-translated GETUTCDATE rounds to milliseconds; allow precision, not node/store skew.
+                var precision = TimeSpan.FromMilliseconds(10);
+                stored!.CreatedAt.Should().BeOnOrAfter(before - precision).And.BeOnOrBefore(beforeClaim + precision);
                 var claimed = await store.QueueTimedOutTimeJobsAsync(AbortToken).ToArrayAsync(AbortToken);
+                var afterClaim = await _ReadStoreUtcNowAsync();
                 var due = claimed.Should().ContainSingle().Which;
                 due.Id.Should().Be(eligible!.RunId!.Value);
                 // Pickup projections contain execution inputs; the persisted row owns claim and key metadata.
                 var leased = await store.GetTimeJobByIdAsync(due.Id, AbortToken);
                 leased!.BusinessKey.Should().Be("store-due");
                 leased.LockedUntil.Should().NotBeNull();
+                var leaseDuration = host.Services.GetRequiredService<SchedulerOptionsBuilder>().LeaseDuration;
                 leased
                     .LockedUntil!.Value.Should()
-                    .BeAfter(before.UtcDateTime)
-                    .And.BeBefore(DateTime.UtcNow.AddMinutes(5));
+                    .BeOnOrAfter((beforeClaim + leaseDuration - precision).UtcDateTime)
+                    .And.BeOnOrBefore((afterClaim + leaseDuration + precision).UtcDateTime);
             },
             clock: new FastNodeClock()
         );
+
+    private async Task<DateTimeOffset> _ReadStoreUtcNowAsync()
+    {
+        await using var connection = fixture.CreateConnection();
+        await connection.OpenAsync(AbortToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT {fixture.UtcNowSqlExpression};";
+        var value = await command.ExecuteScalarAsync(AbortToken);
+        return value switch
+        {
+            DateTimeOffset instant => instant,
+            DateTime instant => new DateTimeOffset(DateTime.SpecifyKind(instant, DateTimeKind.Utc)),
+            _ => throw new InvalidOperationException("The fixture's server UTC expression did not return an instant."),
+        };
+    }
 
     private sealed class OverrideJobsDbContext(DbContextOptions<OverrideJobsDbContext> options)
         : JobsDbContext<TimeJobEntity, CronJobEntity>(options)
@@ -272,7 +290,9 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>
 
     private sealed class FastNodeClock : TimeProvider
     {
-        public override DateTimeOffset GetUtcNow() => DateTimeOffset.UtcNow.AddHours(1);
+        public DateTimeOffset UtcNow { get; set; } = DateTimeOffset.UtcNow.AddHours(1);
+
+        public override DateTimeOffset GetUtcNow() => UtcNow;
     }
 
     private sealed class ThrowingRestartScheduler : IJobsHostScheduler
@@ -292,7 +312,7 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>
             if (Armed)
             {
                 Failures++;
-                throw new InjectedFailure();
+                throw new InjectedFailureException();
             }
         }
     }

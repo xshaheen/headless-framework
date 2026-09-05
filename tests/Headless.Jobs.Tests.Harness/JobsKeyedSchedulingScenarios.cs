@@ -3,6 +3,7 @@
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
+using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Models;
 
 namespace Tests;
@@ -117,7 +118,7 @@ public static class JobsKeyedSchedulingScenarios
         (await store.GetTimeJobByIdAsync(currentId, cancellationToken))!.Request.Should().Equal(4);
         (await store.RemoveTimeJobsAsync([unkeyed.Id], cancellationToken)).Should().Be(1);
 
-        foreach (var tenant in new[] { "tenant-a", "tenant-b" })
+        foreach (var tenant in new[] { "tenant-a", "tenant-b", "Tenant-A" })
         {
             var tenanted = Candidate();
             tenanted.TenantId = tenant;
@@ -149,6 +150,39 @@ public static class JobsKeyedSchedulingScenarios
         var chainSchedule = async () =>
             await store.ScheduleKeyedTimeJobAsync(new JobKey("chain"), chain, cancellationToken: cancellationToken);
         await chainSchedule.Should().ThrowAsync<NotSupportedException>().WithMessage("*JobChain*");
+    }
+
+    public static async Task RunParentAttachmentRejectionsAsync(
+        IJobPersistenceProvider<TimeJobEntity, CronJobEntity> store,
+        ITimeJobManager<TimeJobEntity> manager,
+        Action<TimeJobEntity, Guid> setMappedParent,
+        CancellationToken cancellationToken
+    )
+    {
+        var key = new JobKey("retained-parent");
+        var first = await store.ScheduleKeyedTimeJobAsync(key, Candidate(), cancellationToken: cancellationToken);
+        var second = await store.ScheduleKeyedTimeJobAsync(key, Candidate([4]), 1, cancellationToken);
+        foreach (var parentId in new[] { first.RunId!.Value, second.RunId!.Value })
+        {
+            var child = Candidate();
+            setMappedParent(child, parentId);
+            var unrelated = Candidate();
+            var add = async () => await store.AddTimeJobsAsync([unrelated, child], cancellationToken);
+            await add.Should().ThrowAsync<InvalidOperationException>().WithMessage("*keyed*parent*");
+            (await store.GetTimeJobByIdAsync(child.Id, cancellationToken)).Should().BeNull();
+            (await store.GetTimeJobByIdAsync(unrelated.Id, cancellationToken)).Should().BeNull();
+
+            var ordinary = Candidate();
+            await store.AddTimeJobsAsync([ordinary], cancellationToken);
+            var reparented = Candidate();
+            reparented.Id = ordinary.Id;
+            setMappedParent(reparented, parentId);
+            var result = await manager.UpdateAsync(reparented, cancellationToken);
+            result.IsSucceeded.Should().BeFalse();
+            result.Exception.Should().BeOfType<InvalidOperationException>();
+            (await store.GetTimeJobByIdAsync(ordinary.Id, cancellationToken))!.ParentId.Should().BeNull();
+            (await store.GetTimeJobByIdAsync(parentId, cancellationToken))!.Children.Should().BeEmpty();
+        }
     }
 
     public static async Task RunClaimRacesAsync(
