@@ -22,7 +22,7 @@ using Microsoft.Extensions.Hosting;
 
 namespace Tests;
 
-public abstract class JobsKeyedSchedulingConformanceTests<TFixture>(TFixture fixture) : TestBase
+public abstract partial class JobsKeyedSchedulingConformanceTests<TFixture>(TFixture fixture) : TestBase
     where TFixture : class, IJobsCoordinationFixture
 {
     protected TFixture Fixture => fixture;

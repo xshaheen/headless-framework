@@ -25,6 +25,15 @@ public class TimeJobEntity : TimeJobEntity<TimeJobEntity>;
 public class TimeJobEntity<TTicker> : BaseJobEntity
     where TTicker : TimeJobEntity<TTicker>
 {
+    internal TTicker Clone()
+    {
+        var clone = (TTicker)MemberwiseClone();
+        clone.Request = Request?.ToArray();
+        clone.RetryIntervals = RetryIntervals?.ToArray();
+        clone.Children = [.. Children];
+        return clone;
+    }
+
     /// <summary>Requires this scheduling call to enlist in a compatible live application transaction. Never persisted.</summary>
     [JsonIgnore]
     public bool RequireAtomicEnlistment { get; set; }

@@ -117,6 +117,8 @@ builder
 
 Ordinary adds and updates also reject a child whose persisted parent reference targets any retained keyed generation, including inputs materialized or rebound through consumer EF APIs and coordinated writes. The row and parent checks share transaction-owned run locks with keyed insertion and replacement.
 
+Standalone keyed schedule, replacement, and cancellation run their entire transaction through the configured EF execution strategy. Failures before commit can retry with a fresh context and scheduling candidate. Once commit starts, a failure propagates without automatic replay because the commit outcome may be unknown; inspect the retained key and generation before deciding how to recover. Coordinated operations remain under the caller's transaction and retry ownership.
+
 ## Dependencies
 
 - `Headless.Jobs.Abstractions`
