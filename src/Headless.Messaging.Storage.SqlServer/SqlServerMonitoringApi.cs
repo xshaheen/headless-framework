@@ -535,7 +535,7 @@ internal sealed class SqlServerMonitoringApi(
         };
 
         var sql =
-            $"SELECT Id, Content, IntentType, Added, ExpiresAt, Retries, {exceptionInfoSql}, NextRetryAt, LockedUntil FROM {tableName} WITH (READPAST) WHERE Id IN (SELECT Id FROM @Ids) AND IntentType IN (0, 1)";
+            $"SELECT Id, Content, IntentType, Added, ExpiresAt, Retries, {exceptionInfoSql}, NextRetryAt, LockedUntil FROM {tableName} WITH (READPAST, READCOMMITTEDLOCK) WHERE Id IN (SELECT Id FROM @Ids) AND IntentType IN (0, 1)";
 
         await using var connection = new SqlConnection(_options.ConnectionString);
 
@@ -592,7 +592,7 @@ internal sealed class SqlServerMonitoringApi(
             ? "ExceptionInfo"
             : "CAST(NULL AS nvarchar(max)) AS ExceptionInfo";
         var sql =
-            $"SELECT TOP(1) Id, Content, IntentType, Added, ExpiresAt, Retries, {exceptionInfoSql}, NextRetryAt, LockedUntil FROM {tableName} WITH (READPAST) WHERE Id=@Id AND IntentType IN (0, 1)";
+            $"SELECT TOP(1) Id, Content, IntentType, Added, ExpiresAt, Retries, {exceptionInfoSql}, NextRetryAt, LockedUntil FROM {tableName} WITH (READPAST, READCOMMITTEDLOCK) WHERE Id=@Id AND IntentType IN (0, 1)";
 
         await using var connection = new SqlConnection(_options.ConnectionString);
 

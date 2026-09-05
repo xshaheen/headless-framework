@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Transactions;
 using Dapper;
 using Headless.Abstractions;
 using Headless.Coordination;
@@ -226,6 +227,41 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
     }
 
     #endregion
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task should_read_message_details_under_serializable_isolation(bool received, bool batch)
+    {
+        var stored = received
+            ? await _CreateReceivedMessage(StatusName.Scheduled)
+            : await _CreatePublishedMessage(StatusName.Scheduled);
+        using var transaction = new TransactionScope(
+            TransactionScopeOption.Required,
+            new TransactionOptions { IsolationLevel = IsolationLevel.Serializable },
+            TransactionScopeAsyncFlowOption.Enabled
+        );
+
+        if (batch)
+        {
+            var messages = received
+                ? await _monitoringApi.GetReceivedMessagesAsync([stored.StorageId], AbortToken)
+                : await _monitoringApi.GetPublishedMessagesAsync([stored.StorageId], AbortToken);
+            messages.Should().ContainSingle().Which.StorageId.Should().Be(stored.StorageId);
+        }
+        else
+        {
+            var message = received
+                ? await _monitoringApi.GetReceivedMessageAsync(stored.StorageId, AbortToken)
+                : await _monitoringApi.GetPublishedMessageAsync(stored.StorageId, AbortToken);
+            message.Should().NotBeNull();
+            message!.StorageId.Should().Be(stored.StorageId);
+        }
+
+        transaction.Complete();
+    }
 
     #region Get Messages By Ids Tests
 
