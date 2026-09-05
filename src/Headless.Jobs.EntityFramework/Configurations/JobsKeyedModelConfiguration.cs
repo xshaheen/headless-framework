@@ -11,6 +11,42 @@ namespace Headless.Jobs.Configurations;
 
 internal static class JobsKeyedModelConfiguration
 {
+    internal static void ValidateOrdinalScope<TTimeJob>(DbContext context)
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+    {
+        var requiredCollation = context.Database.ProviderName switch
+        {
+            "Npgsql.EntityFrameworkCore.PostgreSQL" => "C",
+            "Microsoft.EntityFrameworkCore.SqlServer" => "Latin1_General_100_BIN2",
+            _ => throw new NotSupportedException(
+                "Keyed Jobs require PostgreSQL, SQL Server, or the in-memory provider."
+            ),
+        };
+
+        // Collations are omitted from EF's runtime model; inspect the finalized model used to generate the schema.
+        var model = context.GetService<IDesignTimeModel>().Model;
+        var entity = model.FindEntityType(typeof(TTimeJob))!;
+        var table = StoreObjectIdentifier.Table(entity.GetTableName()!, entity.GetSchema());
+        foreach (
+            var name in new[]
+            {
+                nameof(TimeJobEntity.Function),
+                nameof(TimeJobEntity.TenantId),
+                nameof(TimeJobEntity.BusinessKey),
+            }
+        )
+        {
+            var collation = entity.FindProperty(name)!.GetCollation(table) ?? model.GetCollation();
+            if (!string.Equals(collation, requiredCollation, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"Keyed Jobs require explicit collation '{requiredCollation}' for {typeof(TTimeJob).Name}.{name}. "
+                        + "Configure TimeJobConfigurations with contractCollation (or the matching model default) and apply the consumer migration before using keyed operations."
+                );
+            }
+        }
+    }
+
     internal static void Configure<TTimeJob>(ModelBuilder builder, DbContext context)
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
     {

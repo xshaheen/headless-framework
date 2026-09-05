@@ -74,6 +74,12 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             {
                 throw new InvalidOperationException("The candidate run ID already exists.");
             }
+            if (_childrenIndex.TryGetValue(row.Id, out var children) && !children.IsEmpty)
+            {
+                throw new NotSupportedException(
+                    "A keyed run cannot adopt existing children. Keyed JobChain scheduling is unsupported."
+                );
+            }
 
             row.BusinessKey = key.Value;
             row.IntentFingerprint = JobIntentFingerprint.Compute(row, JobIntentFingerprint.Algorithm);
@@ -196,9 +202,20 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             && string.Equals(job.TenantId, scope.TenantId, StringComparison.Ordinal)
         );
 
-    private void _RejectKeyedTreeUpdate(TTimeJob candidate)
+    private void _RejectKeyedParent(Guid? parentId)
+    {
+        if (parentId is { } id && _timeJobs.TryGetValue(id, out var parent) && parent.BusinessKey is not null)
+        {
+            throw new InvalidOperationException(
+                "An ordinary job cannot attach to a retained keyed parent. Keyed JobChain scheduling is unsupported."
+            );
+        }
+    }
+
+    private void _RejectKeyedTreeUpdate(TTimeJob candidate, Guid? parentId = null)
     {
         JobIntentFingerprint.RejectOrdinaryMutation(candidate);
+        _RejectKeyedParent(parentId ?? candidate.ParentId);
         if (_timeJobs.TryGetValue(candidate.Id, out var stored))
         {
             JobIntentFingerprint.RejectOrdinaryMutation(stored);
@@ -206,7 +223,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
         foreach (var child in candidate.Children)
         {
-            _RejectKeyedTreeUpdate(child);
+            _RejectKeyedTreeUpdate(child, candidate.Id);
         }
     }
 }

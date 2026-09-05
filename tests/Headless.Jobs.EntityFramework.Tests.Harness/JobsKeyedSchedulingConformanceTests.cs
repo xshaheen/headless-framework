@@ -2,24 +2,31 @@
 
 using System.Data.Common;
 using Headless.Abstractions;
+using Headless.CommitCoordination;
+using Headless.Coordination;
 using Headless.Jobs;
 using Headless.Jobs.Configurations;
+using Headless.Jobs.Customizer;
 using Headless.Jobs.DbContextFactory;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Infrastructure;
 using Headless.Jobs.Interfaces;
+using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Models;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace Tests;
 
 public abstract class JobsKeyedSchedulingConformanceTests<TFixture>(TFixture fixture) : TestBase
     where TFixture : class, IJobsCoordinationFixture
 {
+    protected TFixture Fixture => fixture;
+
     public virtual async Task keyed_provider_operation_matrix_survives_restart()
     {
         await fixture.ResetDatabaseAsync(AbortToken);
@@ -28,6 +35,15 @@ public abstract class JobsKeyedSchedulingConformanceTests<TFixture>(TFixture fix
             await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, AbortToken);
             var store = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
             await JobsKeyedSchedulingScenarios.RunAsync(store, AbortToken);
+            await using var parentMapping = await host
+                .Services.GetRequiredService<IDbContextFactory<JobsDbContext>>()
+                .CreateDbContextAsync(AbortToken);
+            await JobsKeyedSchedulingScenarios.RunParentAttachmentRejectionsAsync(
+                store,
+                host.Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>(),
+                (job, parentId) => parentMapping.Entry(job).Property(row => row.ParentId).CurrentValue = parentId,
+                AbortToken
+            );
             var claim = new EfCoreCasJobsClaimStrategy<JobsDbContext, TimeJobEntity, CronJobEntity>(
                 host.Services.GetRequiredService<IDbContextFactory<JobsDbContext>>(),
                 host.Services.GetRequiredService<TimeProvider>(),
@@ -106,14 +122,121 @@ public abstract class JobsKeyedSchedulingConformanceTests<TFixture>(TFixture fix
         await clearFingerprint.Should().ThrowAsync<DbException>();
     }
 
-    public virtual async Task public_job_configurations_create_valid_keyed_schema_without_customizer()
+    public virtual async Task manual_job_configuration_requires_explicit_ordinal_scope()
     {
         await fixture.ResetDatabaseAsync(AbortToken);
-        var options = new DbContextOptionsBuilder<DirectJobsDbContext>();
-        fixture.ConfigureStore(options);
-        await using var context = new DirectJobsDbContext(options.Options);
+        using var host = _BuildManualHost<DirectJobsDbContext>();
+        await using var context = await host
+            .Services.GetRequiredService<IDbContextFactory<DirectJobsDbContext>>()
+            .CreateDbContextAsync(AbortToken);
         var creator = (RelationalDatabaseCreator)context.GetService<IDatabaseCreator>();
         await creator.CreateTablesAsync(AbortToken);
+        var store = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+        await store.AddTimeJobsAsync([JobsKeyedSchedulingScenarios.Candidate()], AbortToken);
+        var schedule = async () =>
+            await store.ScheduleKeyedTimeJobAsync(
+                new JobKey("manual"),
+                JobsKeyedSchedulingScenarios.Candidate(),
+                cancellationToken: AbortToken
+            );
+        await schedule.Should().ThrowAsync<InvalidOperationException>().WithMessage("*collation*");
+        var cancel = async () =>
+            await store.CancelKeyedTimeJobAsync(new JobKeyScope("deadline"), new JobKey("manual"), 1, AbortToken);
+        await cancel.Should().ThrowAsync<InvalidOperationException>().WithMessage("*collation*");
+        (await context.Set<TimeJobEntity>().CountAsync(AbortToken)).Should().Be(1);
+    }
+
+    public virtual async Task manual_ordinal_job_configuration_preserves_key_scopes()
+    {
+        await fixture.ResetDatabaseAsync(AbortToken);
+        using var host = _BuildManualHost<OrdinalJobsDbContext>();
+        await using var context = await host
+            .Services.GetRequiredService<IDbContextFactory<OrdinalJobsDbContext>>()
+            .CreateDbContextAsync(AbortToken);
+        var creator = (RelationalDatabaseCreator)context.GetService<IDatabaseCreator>();
+        await creator.CreateTablesAsync(AbortToken);
+        var store = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+        await JobsKeyedSchedulingScenarios.RunAsync(store, AbortToken);
+    }
+
+    public virtual async Task coordinated_add_rejects_retained_keyed_parent_before_batch_effects()
+    {
+        await fixture.ResetDatabaseAsync(AbortToken);
+        using var host = fixture.BuildCoordinatedEnqueueHost("keyed-parent-guard");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, AbortToken);
+        var store = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+        var key = new JobKey("coordinated-parent");
+        var first = await store.ScheduleKeyedTimeJobAsync(
+            key,
+            JobsKeyedSchedulingScenarios.Candidate(),
+            cancellationToken: AbortToken
+        );
+        var second = await store.ScheduleKeyedTimeJobAsync(
+            key,
+            JobsKeyedSchedulingScenarios.Candidate([4]),
+            1,
+            AbortToken
+        );
+        await using var parentMapping = await host
+            .Services.GetRequiredService<IDbContextFactory<JobsDbContext>>()
+            .CreateDbContextAsync(AbortToken);
+        foreach (var parentId in new[] { first.RunId!.Value, second.RunId!.Value })
+        {
+            var child = JobsKeyedSchedulingScenarios.Candidate();
+            parentMapping.Entry(child).Property(row => row.ParentId).CurrentValue = parentId;
+            var unrelated = JobsKeyedSchedulingScenarios.Candidate();
+            await fixture.RunCoordinatedTransactionAsync(
+                host.Services,
+                async (_, _, ct) =>
+                {
+                    var coordinator = host.Services.GetRequiredService<ICurrentCommitCoordinator>().Current!;
+                    coordinator.TryGetCapability<IRelationalCommitContext>(out var relational).Should().BeTrue();
+                    var write = async () =>
+                        await ((ICoordinatedJobWriter<TimeJobEntity, CronJobEntity>)store).WriteTimeJobsAsync(
+                            [unrelated, child],
+                            relational!,
+                            ct
+                        );
+                    await write.Should().ThrowAsync<InvalidOperationException>().WithMessage("*keyed*parent*");
+                },
+                AbortToken
+            );
+            (await store.GetTimeJobByIdAsync(child.Id, AbortToken)).Should().BeNull();
+            (await store.GetTimeJobByIdAsync(unrelated.Id, AbortToken)).Should().BeNull();
+        }
+    }
+
+    private IHost _BuildManualHost<TContext>()
+        where TContext : DbContext
+    {
+        var builder = Host.CreateApplicationBuilder();
+        builder.Services.AddHeadlessCoordination(fixture.ConfigureCoordination);
+        builder.Services.AddDbContext<TContext>(fixture.ConfigureStore);
+        builder.Services.AddHeadlessJobs(options =>
+        {
+            options.DisableBackgroundServices();
+            options.UseEntityFramework(ef =>
+                ef.UseApplicationDbContext<TContext>(ConfigurationType.IgnoreModelCustomizer)
+            );
+        });
+        return builder.Build();
+    }
+
+    private sealed class OrdinalJobsDbContext(DbContextOptions<OrdinalJobsDbContext> options) : DbContext(options)
+    {
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            var collation = string.Equals(
+                Database.ProviderName,
+                "Microsoft.EntityFrameworkCore.SqlServer",
+                StringComparison.Ordinal
+            )
+                ? "Latin1_General_100_BIN2"
+                : "C";
+            modelBuilder.ApplyConfiguration(new TimeJobConfigurations<TimeJobEntity>("jobs", collation));
+            modelBuilder.ApplyConfiguration(new CronJobConfigurations<CronJobEntity>("jobs", collation));
+            modelBuilder.ApplyConfiguration(new CronJobOccurrenceConfigurations<CronJobEntity>("jobs", collation));
+        }
     }
 
     private sealed class DirectJobsDbContext(DbContextOptions<DirectJobsDbContext> options) : DbContext(options)

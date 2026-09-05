@@ -1040,6 +1040,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             {
                 JobContract.ValidateName(node.Function);
                 JobContract.ValidateVersion(node.ContractVersion);
+                _RejectKeyedParent(node.ParentId);
                 if (!seen.Add(node.Id) || _timeJobs.ContainsKey(node.Id))
                 {
                     // Duplicate id within the call, or a collision with an existing row — reject the whole call.
@@ -1065,6 +1066,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         {
             JobContract.ValidateName(node.Function);
             JobContract.ValidateVersion(node.ContractVersion);
+            _RejectKeyedParent(node.ParentId);
             if (!seen.Add(node.Id) || _timeJobs.ContainsKey(node.Id))
             {
                 // Duplicate id within the subtree, or a collision with an existing row — reject the whole tree.

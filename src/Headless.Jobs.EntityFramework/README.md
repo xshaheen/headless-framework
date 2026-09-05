@@ -111,6 +111,12 @@ builder
     });
 ```
 
+### Consumer-managed Jobs models
+
+`UseApplicationDbContext<TContext>(ConfigurationType.IgnoreModelCustomizer)` preserves the application's model ownership. Keyed operations require explicit ordinal collations on the time-job `Function`, `TenantId`, and `BusinessKey` columns: PostgreSQL `C` or SQL Server `Latin1_General_100_BIN2`. Pass that value as `contractCollation` to `TimeJobConfigurations<TTimeJob>` in `OnModelCreating`, or configure the matching model-default collation. Missing or different configuration rejects keyed scheduling and cancellation; ordinary unkeyed operations remain available. The provider never changes the consumer schema. See the [keyed scheduling migration guide](../../docs/migrations/jobs-keyed-scheduling.md) for the complete configuration example and rollout requirements.
+
+Ordinary adds and updates also reject a child whose persisted parent reference targets any retained keyed generation, including inputs materialized or rebound through consumer EF APIs and coordinated writes. The row and parent checks share transaction-owned run locks with keyed insertion and replacement.
+
 ## Dependencies
 
 - `Headless.Jobs.Abstractions`

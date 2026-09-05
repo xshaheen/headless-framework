@@ -1,5 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data.Common;
+using Headless.Jobs.DbContextFactory;
+using Headless.Jobs.Entities;
+using Headless.Jobs.Interfaces;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.DependencyInjection;
+
 namespace Tests;
 
 [Collection<SqlServerJobsCoordinationFixture>]
@@ -15,6 +23,68 @@ public sealed class SqlServerKeyedSchedulingTests(SqlServerJobsCoordinationFixtu
         base.keyed_constraints_follow_custom_column_mappings();
 
     [Fact]
-    public override Task public_job_configurations_create_valid_keyed_schema_without_customizer() =>
-        base.public_job_configurations_create_valid_keyed_schema_without_customizer();
+    public override Task manual_job_configuration_requires_explicit_ordinal_scope() =>
+        base.manual_job_configuration_requires_explicit_ordinal_scope();
+
+    [Fact]
+    public override Task manual_ordinal_job_configuration_preserves_key_scopes() =>
+        base.manual_ordinal_job_configuration_preserves_key_scopes();
+
+    [Fact]
+    public override Task coordinated_add_rejects_retained_keyed_parent_before_batch_effects() =>
+        base.coordinated_add_rejects_retained_keyed_parent_before_batch_effects();
+
+    [Fact]
+    public async Task ordinary_chain_add_retries_known_rollback_without_accepting_the_graph()
+    {
+        await Fixture.ResetDatabaseAsync(AbortToken);
+        var commits = new FailFirstCommit();
+        using var host = Fixture.BuildCoordinatedEnqueueHost<JobsDbContext>(
+            "ordinary-chain-retry",
+            db =>
+                db.UseSqlServer(
+                        Fixture.ConnectionString,
+                        sql => sql.EnableRetryOnFailure(1, TimeSpan.Zero, errorNumbersToAdd: null)
+                    )
+                    .AddInterceptors(commits)
+        );
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, AbortToken);
+        var store = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+        var parent = JobsKeyedSchedulingScenarios.Candidate();
+        var child = JobsKeyedSchedulingScenarios.Candidate();
+        parent.Children.Add(child);
+        commits.Armed = true;
+
+        (await store.AddTimeJobsAsync([parent], AbortToken)).Should().Be(2);
+        commits.Attempts.Should().Be(2);
+        await using var context = await host
+            .Services.GetRequiredService<IDbContextFactory<JobsDbContext>>()
+            .CreateDbContextAsync(AbortToken);
+        (await context.Set<TimeJobEntity>().CountAsync(AbortToken)).Should().Be(2);
+        (await context.Set<TimeJobEntity>().SingleAsync(row => row.Id == child.Id, AbortToken))
+            .ParentId.Should()
+            .Be(parent.Id);
+    }
+
+    private sealed class FailFirstCommit : DbTransactionInterceptor
+    {
+        public bool Armed { get; set; }
+
+        public int Attempts { get; private set; }
+
+        public override ValueTask<InterceptionResult> TransactionCommittingAsync(
+            DbTransaction transaction,
+            TransactionEventData eventData,
+            InterceptionResult result,
+            CancellationToken cancellationToken = default
+        )
+        {
+            if (Armed && ++Attempts == 1)
+            {
+                throw new TimeoutException("Injected before commit; disposal rolls back this attempt.");
+            }
+
+            return ValueTask.FromResult(result);
+        }
+    }
 }

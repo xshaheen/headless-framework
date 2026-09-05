@@ -15,6 +15,14 @@ public sealed class PostgreSqlKeyedSchedulingTests(PostgreSqlJobsCoordinationFix
         base.keyed_constraints_follow_custom_column_mappings();
 
     [Fact]
-    public override Task public_job_configurations_create_valid_keyed_schema_without_customizer() =>
-        base.public_job_configurations_create_valid_keyed_schema_without_customizer();
+    public override Task manual_job_configuration_requires_explicit_ordinal_scope() =>
+        base.manual_job_configuration_requires_explicit_ordinal_scope();
+
+    [Fact]
+    public override Task manual_ordinal_job_configuration_preserves_key_scopes() =>
+        base.manual_ordinal_job_configuration_preserves_key_scopes();
+
+    [Fact]
+    public override Task coordinated_add_rejects_retained_keyed_parent_before_batch_effects() =>
+        base.coordinated_add_rejects_retained_keyed_parent_before_batch_effects();
 }

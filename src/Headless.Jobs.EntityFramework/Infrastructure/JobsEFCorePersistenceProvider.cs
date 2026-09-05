@@ -84,6 +84,12 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
 
         await using var dbContext = _CreateCoordinatedContext(relationalContext);
         await dbContext.Set<TTimeJob>().AddRangeAsync(jobs, cancellationToken).ConfigureAwait(false);
+        await _GuardTimeJobParentReferencesAsync(
+                dbContext,
+                dbContext.ChangeTracker.Entries<TTimeJob>().Select(entry => entry.Entity.Id),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -263,8 +269,36 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             .ConfigureAwait(false);
 
         await dbContext.Set<TTimeJob>().AddRangeAsync(jobs, cancellationToken).ConfigureAwait(false);
+        if (dbContext.ChangeTracker.Entries<TTimeJob>().All(entry => entry.Entity.ParentId is null))
+        {
+            return await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
 
-        return await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return await dbContext
+            .Database.CreateExecutionStrategy()
+            .ExecuteAsync(
+                async ct =>
+                {
+                    await using var transaction = await dbContext
+                        .Database.BeginTransactionAsync(ct)
+                        .ConfigureAwait(false);
+                    await _GuardTimeJobParentReferencesAsync(
+                            dbContext,
+                            dbContext.ChangeTracker.Entries<TTimeJob>().Select(entry => entry.Entity.Id),
+                            ct
+                        )
+                        .ConfigureAwait(false);
+                    // A failed commit must leave the graph Added so the configured strategy can retry after rollback.
+                    var affected = await dbContext
+                        .SaveChangesAsync(acceptAllChangesOnSuccess: false, ct)
+                        .ConfigureAwait(false);
+                    await transaction.CommitAsync(ct).ConfigureAwait(false);
+                    dbContext.ChangeTracker.AcceptAllChanges();
+                    return affected;
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     public async Task<int> UpdateTimeJobsAsync(TTimeJob[] timeJobs, CancellationToken cancellationToken = default)
@@ -284,7 +318,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         await using var transaction = await dbContext
             .Database.BeginTransactionAsync(cancellationToken)
             .ConfigureAwait(false);
-        await JobsKeyLock.AcquireRunsAsync(dbContext, updatedIds, cancellationToken).ConfigureAwait(false);
+        await _GuardTimeJobParentReferencesAsync(dbContext, updatedIds, cancellationToken).ConfigureAwait(false);
         if (
             await dbContext
                 .Set<TTimeJob>()
@@ -308,6 +342,36 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         var affected = await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         return affected;
+    }
+
+    private static async Task _GuardTimeJobParentReferencesAsync(
+        TDbContext context,
+        IEnumerable<Guid> writtenIds,
+        CancellationToken cancellationToken
+    )
+    {
+        // Consumer EF code can populate internal FK setters. Fence the stored parent, not just the input metadata.
+        var parentIds = context
+            .ChangeTracker.Entries<TTimeJob>()
+            .Where(entry => entry.Entity.ParentId.HasValue)
+            .Select(entry => entry.Entity.ParentId!.Value)
+            .Distinct()
+            .ToArray();
+        await JobsKeyLock
+            .AcquireRunsAsync(context, writtenIds.Concat(parentIds), cancellationToken)
+            .ConfigureAwait(false);
+        if (
+            parentIds.Length > 0
+            && await context
+                .Set<TTimeJob>()
+                .AnyAsync(row => parentIds.Contains(row.Id) && row.BusinessKey != null, cancellationToken)
+                .ConfigureAwait(false)
+        )
+        {
+            throw new InvalidOperationException(
+                "An ordinary job cannot attach to a retained keyed parent. Keyed JobChain scheduling is unsupported."
+            );
+        }
     }
 
     public async Task<int> RemoveTimeJobsAsync(Guid[] timeJobIds, CancellationToken cancellationToken = default)
