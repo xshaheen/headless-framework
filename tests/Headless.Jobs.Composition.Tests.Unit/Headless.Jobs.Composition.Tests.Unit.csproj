@@ -6,12 +6,15 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Dapper" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
     <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
     <PackageReference Include="xunit.v3.mtp-v2" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Jobs.Core\Headless.Jobs.Core.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Messaging.Bus.Abstractions\Headless.Messaging.Bus.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Messaging.Queue.Abstractions\Headless.Messaging.Queue.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Headless.Jobs.Dashboard\Headless.Jobs.Dashboard.csproj" />
     <ProjectReference Include="..\..\src\Headless.Jobs.EntityFramework\Headless.Jobs.EntityFramework.csproj" />
     <ProjectReference Include="..\..\src\Headless.DistributedLocks.Core\Headless.DistributedLocks.Core.csproj" />
@@ -25,6 +28,17 @@
     <ProjectReference
       Include="..\..\test-assets\Headless.Jobs.GeneratedDiscoveryFixture\Headless.Jobs.GeneratedDiscoveryFixture.csproj"
       ReferenceOutputAssembly="false"
+    />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\src\Headless.Jobs.Abstractions\README.md" LogicalName="FluentOptions.Jobs" />
+    <EmbeddedResource
+      Include="..\..\src\Headless.Messaging.Bus.Abstractions\README.md"
+      LogicalName="FluentOptions.Bus"
+    />
+    <EmbeddedResource
+      Include="..\..\src\Headless.Messaging.Queue.Abstractions\README.md"
+      LogicalName="FluentOptions.Queue"
     />
   </ItemGroup>
   <Target Name="CopyJobsDiscoveryFixture" AfterTargets="Build">

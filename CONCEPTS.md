@@ -103,8 +103,9 @@ remains the request's origin metadata; the declared callback contract selects ty
 the concrete response type remains payload metadata.
 
 ### Delivery mode
-The per-call durability choice on publish/enqueue: `Auto`, `Durable`, `TransportDirect`. Auto, the
-default, follows the framework transaction accessor (the only source of ambient durability —
+The per-call durability choice on publish/enqueue: `Auto`, `Durable`, `TransportDirect`. Durable is
+the default, including when options are omitted or null, and persists before delivery. Explicit
+Auto follows the framework transaction accessor (the only source of ambient durability —
 `Transaction.Current` alone does not count): recognized compatible transaction present → outbox
 (row persisted in that transaction, dispatched post-commit); no coordination → direct to transport;
 an active incompatible boundary → reject before side effects. Durable forces

@@ -183,9 +183,31 @@ await timeJobManager.AddAsync(
 
 Routine calls accept a positional cancellation token: `EnqueueAsync(request, ct)`, `ScheduleAsync(request, dueAt, ct)`, `ScheduleAfterAsync(request, delay, ct)`, and `ScheduleRecurringAsync(request, cron, ct)`. Options overloads require the options argument; nullable retry and node-death fields inherit configured defaults, while `Retries = 0` explicitly disables retries. Absolute facade schedules use `DateTimeOffset` and persist the same instant in UTC. Relative ordinary schedules use the injected `TimeProvider`, accept zero delay, and reject negative or overflowing delays before persistence. Keyed schedules remain absolute: capture the due instant once and reuse it when retrying the same intent.
 
-Omit an unused cancellation token, or pass a literal default token as `cancellationToken: default`. A bare positional `default` is ambiguous between the token and options overloads; typed token variables and explicit options remain valid.
+Omit an unused cancellation token, or pass `default` or `cancellationToken: default` to select the existing token overload. Supplying `default` followed by a cancellation token selects the options overload. Use `options:` and `configure:` to make record and callback intent explicit.
 
 Requestless jobs have generated `AppJobs` handles in the consuming assembly's namespace: `await jobs.EnqueueAsync(AppJobs.Cleanup, ct)` for `[JobFunction("Cleanup")]`. Import that namespace or qualify the catalog when several assemblies supply jobs. Handles reference the same immutable canonical descriptors used for registration; applications do not need a string dictionary lookup.
+
+Fluent callbacks are available on the typed and requestless `EnqueueAsync`, `ScheduleAsync`, and `ScheduleAfterAsync` calls. Import `Headless.Jobs` for `JobOptionsBuilder` and `JobSchedulerExtensions`, and `Headless.Jobs.Interfaces` for `IJobScheduler`. The singular `JobOptionsBuilder` authors one options snapshot; the plural generic `JobsOptionsBuilder<TTimeJob, TCronJob>` configures the subsystem in Core.
+
+```csharp
+using Headless.Jobs;
+using Headless.Jobs.Interfaces;
+
+public sealed class JobCaller(IJobScheduler scheduler)
+{
+    public Task<Guid> EnqueueAsync<TRequest>(TRequest request, CancellationToken ct) =>
+        scheduler.EnqueueAsync(request, options => options.WithRetries(0).WithCorrelationId("checkout"), ct);
+
+    public Task<Guid> ScheduleCleanupAsync(JobFunctionDescriptor cleanup, CancellationToken ct) =>
+        scheduler.ScheduleAfterAsync(cleanup, TimeSpan.FromMinutes(5), options => options.WithRetryIntervals(2, 5), ct);
+}
+```
+
+Each callback runs synchronously once on a fresh builder, immediately before the existing options overload. Async-void callbacks are unsupported. A null receiver or `configure: null!` throws before submission; a throwing callback submits nothing. Bare `null` still selects the existing nullable options overload. Cancellation tokens and the scheduler's returned task pass through unchanged, including pre-canceled tokens; configuration still runs before delegation.
+
+`Build()` returns the canonical `Headless.Jobs.Models.JobOptions` without validation or resolved defaults. Nullable setters accept `null` to restore inheritance; `WithRetries(0)` disables retries, `WithRetryIntervals()` replaces inherited intervals with an empty array, and `WithRetryIntervals(null)` inherits them. `RequireAtomicEnlistment()` and `AsSystemJob()` assert true and remain set across reuse; use a fresh builder to reset them. An unset per-call atomic flag cannot weaken an inherited requirement. Existing scheduling validators still check retry values, node-death policies, and tenant/system conflicts.
+
+Builders support sequential reuse and copy retry arrays when supplied and on every build. Mutating an input, retained builder, or one result cannot change another snapshot. Returned arrays remain caller-owned and mutable; concurrent builder mutation is unsupported. Use direct records or `builder.Build() with { ... }` for advanced options; keyed, recurring, and chain conveniences are outside this fluent surface.
 
 ## Configuration
 
@@ -198,6 +220,7 @@ have `IsRangeBoundary = true`, a zero count, and a status value that callers mus
 
 ## Dependencies
 
+- `Headless.Checks`
 - `Headless.CommitCoordination.Abstractions`
 - `Microsoft.Extensions.DependencyInjection.Abstractions`
 

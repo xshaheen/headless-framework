@@ -30,21 +30,45 @@ public sealed class JobSchedulingDefaultsTests : TestBase
         0
     );
 
-    [Fact]
-    public async Task relative_and_absolute_schedules_preserve_the_instant_using_the_injected_clock()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task relative_and_absolute_schedules_preserve_the_instant_using_the_injected_clock(bool fluent)
     {
         var now = new DateTimeOffset(2026, 9, 5, 12, 0, 0, TimeSpan.Zero);
         var clock = new FakeTimeProvider(now);
         var (scheduler, time, _) = _CreateScheduler(clock);
-        await scheduler.ScheduleAfterAsync(new Request(), TimeSpan.FromHours(2), AbortToken);
+        await (
+            fluent
+                ? scheduler.ScheduleAfterAsync(
+                    new Request(),
+                    TimeSpan.FromHours(2),
+                    options => options.WithRetries(0),
+                    AbortToken
+                )
+                : scheduler.ScheduleAfterAsync(new Request(), TimeSpan.FromHours(2), AbortToken)
+        );
         await time.Received(1)
             .AddAsync(Arg.Is<TimeJobEntity>(job => job.ExecutionTime == now.AddHours(2).UtcDateTime), AbortToken);
         clock.Advance(TimeSpan.FromMinutes(30));
-        await scheduler.ScheduleAfterAsync(_Requestless, TimeSpan.Zero, AbortToken);
+        await (
+            fluent
+                ? scheduler.ScheduleAfterAsync(
+                    _Requestless,
+                    TimeSpan.Zero,
+                    options => options.WithRetries(0),
+                    AbortToken
+                )
+                : scheduler.ScheduleAfterAsync(_Requestless, TimeSpan.Zero, AbortToken)
+        );
         await time.Received(1)
             .AddAsync(Arg.Is<TimeJobEntity>(job => job.ExecutionTime == now.AddMinutes(30).UtcDateTime), AbortToken);
         var offset = new DateTimeOffset(2026, 9, 5, 18, 0, 0, TimeSpan.FromHours(3));
-        await scheduler.ScheduleAsync(new Request(), offset, AbortToken);
+        await (
+            fluent
+                ? scheduler.ScheduleAsync(new Request(), offset, options => options.WithRetries(0), AbortToken)
+                : scheduler.ScheduleAsync(new Request(), offset, AbortToken)
+        );
         await time.Received(1)
             .AddAsync(
                 Arg.Is<TimeJobEntity>(job =>
@@ -54,19 +78,31 @@ public sealed class JobSchedulingDefaultsTests : TestBase
             );
     }
 
-    [Fact]
-    public async Task invalid_relative_delays_fail_before_persistence()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task invalid_relative_delays_fail_before_persistence(bool fluent)
     {
         var (scheduler, time, _) = _CreateScheduler(new FakeTimeProvider(DateTimeOffset.MaxValue.AddSeconds(-1)));
-        var negative = () => scheduler.ScheduleAfterAsync(new Request(), TimeSpan.FromTicks(-1), AbortToken);
-        var overflow = () => scheduler.ScheduleAfterAsync(_Requestless, TimeSpan.FromSeconds(2), AbortToken);
+        var negative = () =>
+            fluent
+                ? scheduler.ScheduleAfterAsync(new Request(), TimeSpan.FromTicks(-1), _ => { }, AbortToken)
+                : scheduler.ScheduleAfterAsync(new Request(), TimeSpan.FromTicks(-1), AbortToken);
+        var overflow = () =>
+            fluent
+                ? scheduler.ScheduleAfterAsync(_Requestless, TimeSpan.FromSeconds(2), _ => { }, AbortToken)
+                : scheduler.ScheduleAfterAsync(_Requestless, TimeSpan.FromSeconds(2), AbortToken);
         await negative.Should().ThrowAsync<ArgumentOutOfRangeException>();
         await overflow.Should().ThrowAsync<ArgumentOutOfRangeException>();
         await time.DidNotReceive().AddAsync(Arg.Any<TimeJobEntity>(), Arg.Any<CancellationToken>());
     }
 
-    [Fact]
-    public async Task field_defaults_apply_to_ordinary_keyed_and_chain_nodes_and_cannot_weaken_atomic_policy()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task field_defaults_apply_to_ordinary_keyed_and_chain_nodes_and_cannot_weaken_atomic_policy(
+        bool fluent
+    )
     {
         var intervals = new[] { 2, 5 };
         var policies = new JobSchedulingPolicies(
@@ -89,7 +125,15 @@ public sealed class JobSchedulingDefaultsTests : TestBase
         };
         TimeJobEntity? ordinary = null;
         time.AddAsync(Arg.Any<TimeJobEntity>(), AbortToken).Returns(info => ordinary = info.Arg<TimeJobEntity>());
-        await scheduler.EnqueueAsync(new Request(), call, AbortToken);
+        await (
+            fluent
+                ? scheduler.EnqueueAsync(
+                    new Request(),
+                    options => options.WithRetries(0).WithDescription("invocation"),
+                    AbortToken
+                )
+                : scheduler.EnqueueAsync(new Request(), call, AbortToken)
+        );
         ordinary.Should().NotBeNull();
         ordinary.Retries.Should().Be(0);
         ordinary.RetryIntervals.Should().Equal(2, 5);
@@ -113,6 +157,26 @@ public sealed class JobSchedulingDefaultsTests : TestBase
         await scheduler.EnqueueAsync(chain.Build(), AbortToken);
         ordinary!.RequireAtomicEnlistment.Should().BeTrue();
         ordinary.Children.Single().RequireAtomicEnlistment.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task invalid_fluent_retry_and_node_death_settings_fail_before_persistence()
+    {
+        var (scheduler, time, _) = _CreateScheduler(new FakeTimeProvider());
+        var invalidRetries = () =>
+            scheduler.EnqueueAsync(new Request(), options => options.WithRetries(-1), AbortToken);
+        var invalidIntervals = () =>
+            scheduler.EnqueueAsync(_Requestless, options => options.WithRetryIntervals(-1), AbortToken);
+        var invalidPolicy = () =>
+            scheduler.EnqueueAsync(
+                new Request(),
+                options => options.WithNodeDeathPolicy((NodeDeathPolicy)999),
+                AbortToken
+            );
+        await invalidRetries.Should().ThrowAsync<ArgumentException>();
+        await invalidIntervals.Should().ThrowAsync<ArgumentException>();
+        await invalidPolicy.Should().ThrowAsync<ArgumentException>();
+        await time.DidNotReceive().AddAsync(Arg.Any<TimeJobEntity>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -152,6 +216,209 @@ public sealed class JobSchedulingDefaultsTests : TestBase
         var schedule = () => atomicScheduler.ScheduleRecurringAsync(_Requestless, "0 * * * * *", AbortToken);
         await schedule.Should().ThrowAsync<NotSupportedException>();
         await atomicCron.DidNotReceive().AddAsync(Arg.Any<CronJobEntity>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public void fluent_configuration_supports_typed_and_requestless_chaining()
+    {
+        var services = new ServiceCollection();
+        services.AddHeadlessJobs(options =>
+        {
+            options
+                .ConfigureDefaults(job => job.WithRetries(3))
+                .ConfigureJob<Request>(job => job.WithRetries(5))
+                .ConfigureJob(_Requestless, job => job.WithRetries(8))
+                .Should()
+                .BeSameAs(options);
+        });
+    }
+
+    [Fact]
+    public async Task fluent_configuration_snapshots_replacement_policies_and_isolates_hosts()
+    {
+        JobOptionsBuilder? retained = null;
+        JobsOptionsBuilder<TimeJobEntity, CronJobEntity>? captured = null;
+        var intervals = new[] { 2, 5 };
+        var callbackCount = 0;
+        await using var provider = _CreateHost(options =>
+        {
+            captured = options;
+            options.ConfigureDefaults(job => job.WithRetries(99).WithNodeDeathPolicy(NodeDeathPolicy.Skip));
+            options.ConfigureDefaults(job => job.WithRetries(3).WithRetryIntervals(intervals));
+            options.ConfigureJob<Request>(job => job.WithRetries(99).WithNodeDeathPolicy(NodeDeathPolicy.Skip));
+            options.ConfigureJob<Request>(job =>
+            {
+                ++callbackCount;
+                retained = job;
+                job.WithRetries(5);
+            });
+            options.ConfigureJob(_Requestless, job => job.WithRetries(99));
+            options.ConfigureJob(_Requestless, job => job.WithRetries(8));
+            retained!.WithRetries(100);
+            intervals[0] = 100;
+        });
+        callbackCount.Should().Be(1);
+        captured!.ConfigureDefaults(job => job.WithRetries(100).WithRetryIntervals(100));
+        captured.ConfigureJob<Request>(job => job.WithRetries(100));
+        captured.ConfigureJob(_Requestless, job => job.WithRetries(100));
+        retained!.WithRetryIntervals(100);
+
+        var scheduler = provider.GetRequiredService<IJobScheduler>();
+        var persistence = provider.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+        var typedId = await scheduler.EnqueueAsync(new Request(), AbortToken);
+        var typed = await persistence.GetTimeJobByIdAsync(typedId, AbortToken);
+        typed!.Retries.Should().Be(5);
+        typed.RetryIntervals.Should().Equal(2, 5);
+        typed.OnNodeDeath.Should().Be(NodeDeathPolicy.Retry);
+        var requestlessId = await scheduler.EnqueueAsync(_Requestless, AbortToken);
+        var requestless = await persistence.GetTimeJobByIdAsync(requestlessId, AbortToken);
+        requestless!.Retries.Should().Be(8);
+        requestless.RetryIntervals.Should().Equal(2, 5);
+        var callId = await scheduler.EnqueueAsync(new Request(), job => job.WithRetries(0), AbortToken);
+        var call = await persistence.GetTimeJobByIdAsync(callId, AbortToken);
+        call!.Retries.Should().Be(0);
+
+        await using var otherProvider = _CreateHost(options => options.ConfigureDefaults(job => job.WithRetries(1)));
+        var otherId = await otherProvider.GetRequiredService<IJobScheduler>().EnqueueAsync(new Request(), AbortToken);
+        var other = await otherProvider
+            .GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>()
+            .GetTimeJobByIdAsync(otherId, AbortToken);
+        other!.Retries.Should().Be(1);
+        other.RetryIntervals.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task fluent_configuration_cannot_weaken_host_or_function_atomic_requirements(bool functionAtomic)
+    {
+        await using var provider = _CreateHost(options =>
+        {
+            options.ConfigureDefaults(job =>
+            {
+                job.WithRetries(3);
+                if (!functionAtomic)
+                {
+                    job.RequireAtomicEnlistment();
+                }
+            });
+            options.ConfigureJob<Request>(job =>
+            {
+                job.WithRetries(5);
+                if (functionAtomic)
+                {
+                    job.RequireAtomicEnlistment();
+                }
+            });
+        });
+        var (scheduler, time, _) = _CreateScheduler(
+            new FakeTimeProvider(),
+            provider.GetRequiredService<JobSchedulingPolicies>()
+        );
+        await scheduler.EnqueueAsync(new Request(), job => job.WithRetries(0), AbortToken);
+        await time.Received(1)
+            .AddAsync(Arg.Is<TimeJobEntity>(job => job.Retries == 0 && job.RequireAtomicEnlistment), AbortToken);
+    }
+
+    [Theory]
+    [InlineData("defaults")]
+    [InlineData("request")]
+    [InlineData("descriptor")]
+    public async Task fluent_configuration_failures_leave_previous_policy_intact(string target)
+    {
+        await using var provider = _CreateHost(options =>
+        {
+            Action<Action<JobOptionsBuilder>> configure = target switch
+            {
+                "defaults" => callback => options.ConfigureDefaults(callback),
+                "request" => callback => options.ConfigureJob<Request>(callback),
+                _ => callback => options.ConfigureJob(_Requestless, callback),
+            };
+            configure(job => job.WithRetries(7));
+            Action<JobOptionsBuilder>[] invalid =
+            [
+                job => job.WithRetries(-1),
+                job => job.WithRetryIntervals(-1),
+                job => job.WithNodeDeathPolicy((NodeDeathPolicy)999),
+                job => job.WithCorrelationId("correlation"),
+                job => job.WithCausationId("causation"),
+                job => job.WithDescription("invocation"),
+                job => job.WithTenantId("tenant"),
+                job => job.AsSystemJob(),
+            ];
+            foreach (var callback in invalid)
+            {
+                var act = () => configure(callback);
+                act.Should().Throw<ArgumentException>();
+            }
+            var failure = new InvalidOperationException("callback failed");
+            var throwing = () =>
+                configure(job =>
+                {
+                    job.WithRetries(99);
+                    throw failure;
+                });
+            throwing.Should().Throw<InvalidOperationException>().Which.Should().BeSameAs(failure);
+            var nullCallback = () => configure((Action<JobOptionsBuilder>)null!);
+            nullCallback.Should().Throw<ArgumentNullException>();
+            Action nullOptions = target switch
+            {
+                "defaults" => () => options.ConfigureDefaults((JobOptions)null!),
+                "request" => () => options.ConfigureJob<Request>((JobOptions)null!),
+                _ => () => options.ConfigureJob(_Requestless, (JobOptions)null!),
+            };
+            nullOptions.Should().Throw<ArgumentNullException>();
+        });
+        var scheduler = provider.GetRequiredService<IJobScheduler>();
+        var id = target is "descriptor"
+            ? await scheduler.EnqueueAsync(_Requestless, AbortToken)
+            : await scheduler.EnqueueAsync(new Request(), AbortToken);
+        var stored = await provider
+            .GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>()
+            .GetTimeJobByIdAsync(id, AbortToken);
+        stored!.Retries.Should().Be(7);
+    }
+
+    [Theory]
+    [InlineData("unknown-request")]
+    [InlineData("unknown-descriptor")]
+    [InlineData("duplicate-identity")]
+    public async Task fluent_configuration_preserves_identity_validation_at_resolution(string target)
+    {
+        await using var provider = _CreateHost(options =>
+        {
+            switch (target)
+            {
+                case "unknown-request":
+                    options.ConfigureJob<string>(job => job.WithRetries(1));
+                    break;
+                case "unknown-descriptor":
+                    options.ConfigureJob(
+                        new JobFunctionDescriptor("unknown", null, "", JobPriority.Normal, 0),
+                        job => job.WithRetries(1)
+                    );
+                    break;
+                default:
+                    options.ConfigureJob<Request>(job => job.WithRetries(1));
+                    options.ConfigureJob(_Typed, job => job.WithRetries(2));
+                    break;
+            }
+        });
+        var resolve = () => provider.GetRequiredService<IJobScheduler>();
+        resolve.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void fluent_descriptor_configuration_rejects_null_before_invoking_callback()
+    {
+        var services = new ServiceCollection();
+        services.AddHeadlessJobs(options =>
+        {
+            var called = false;
+            var configure = () => options.ConfigureJob(null!, _ => called = true);
+            configure.Should().Throw<ArgumentNullException>();
+            called.Should().BeFalse();
+        });
     }
 
     [Fact]
@@ -247,6 +514,42 @@ public sealed class JobSchedulingDefaultsTests : TestBase
             var configure = () => JobSchedulingPolicies.Snapshot(options);
             configure.Should().Throw<ArgumentException>();
         }
+    }
+
+    private static ServiceProvider _CreateHost(Action<JobsOptionsBuilder<TimeJobEntity, CronJobEntity>> configure)
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessJobs(options =>
+        {
+            options.DisableBackgroundServices();
+            configure(options);
+        });
+        var descriptors = new[] { _Typed, _Requestless };
+        services.AddSingleton(
+            JobFunctionRegistryBuilder.Build(
+                descriptors
+                    .Select(descriptor => new KeyValuePair<string, JobFunctionRegistration>(
+                        descriptor.FunctionName,
+                        new()
+                        {
+                            CronExpression = "",
+                            Priority = JobPriority.Normal,
+                            MaxConcurrency = 0,
+                            Delegate = (_, _, _) => Task.CompletedTask,
+                        }
+                    ))
+                    .ToArray(),
+                [],
+                descriptors
+                    .Select(descriptor => new KeyValuePair<string, JobFunctionDescriptor>(
+                        descriptor.FunctionName,
+                        descriptor
+                    ))
+                    .ToArray()
+            )
+        );
+        return services.BuildServiceProvider();
     }
 
     private static (
