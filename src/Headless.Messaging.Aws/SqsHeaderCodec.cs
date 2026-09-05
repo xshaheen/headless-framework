@@ -4,7 +4,7 @@ using Amazon.SQS.Model;
 
 namespace Headless.Messaging.Aws;
 
-/// <summary>Keeps keyed envelopes lossless within SQS's ten-attribute limit.</summary>
+/// <summary>Keeps message envelopes lossless within SQS's ten-attribute limit.</summary>
 internal static class SqsHeaderCodec
 {
     internal const string AttributeName = "headless-aws-headers-v1";
@@ -18,42 +18,17 @@ internal static class SqsHeaderCodec
             );
         }
 
-        if (message.RoutingAffinityKey is not null)
+        return new(StringComparer.Ordinal)
         {
-            return new(StringComparer.Ordinal)
-            {
-                [AttributeName] = new()
-                {
-                    DataType = "String",
-                    StringValue = JsonSerializer.Serialize(message.Headers),
-                },
-            };
-        }
-
-        return message
-            .Headers.Where(pair => pair.Value is not null)
-            .ToDictionary(
-                pair => pair.Key,
-                pair => new MessageAttributeValue { DataType = "String", StringValue = pair.Value },
-                StringComparer.Ordinal
-            );
+            [AttributeName] = new() { DataType = "String", StringValue = JsonSerializer.Serialize(message.Headers) },
+        };
     }
 
     internal static Dictionary<string, string?> Decode(IDictionary<string, MessageAttributeValue>? attributes)
     {
-        if (attributes is null)
+        if (attributes is null || !attributes.TryGetValue(AttributeName, out var bag))
         {
-            return new(StringComparer.Ordinal);
-        }
-
-        // Earlier publishers allowed arbitrary prefix headers, so only the exact bag attribute selects the new format.
-        if (!attributes.TryGetValue(AttributeName, out var bag))
-        {
-            return attributes.ToDictionary(
-                pair => pair.Key,
-                pair => (string?)pair.Value.StringValue,
-                StringComparer.Ordinal
-            );
+            throw new JsonException("The SQS envelope is missing its header bag.");
         }
 
         if (
@@ -84,9 +59,13 @@ internal static class SqsHeaderCodec
             }
         }
 
-        if (!headers.TryGetValue(Headers.RoutingAffinityKey, out var key) || string.IsNullOrWhiteSpace(key))
+        if (
+            headers.TryGetValue(Headers.RoutingAffinityKey, out var key)
+            && key is not null
+            && string.IsNullOrWhiteSpace(key)
+        )
         {
-            throw new JsonException("The SQS keyed envelope is missing its affinity key.");
+            throw new JsonException("The SQS envelope has an invalid affinity key.");
         }
 
         return headers;

@@ -215,7 +215,7 @@ services.AddHeadlessMessaging(setup =>
 - **Choose durability separately**: Set `DeliveryMode` on immutable publish/enqueue options: `Auto` captures under compatible coordination, sends directly with no coordination, and rejects an active incompatible boundary; `Durable` persists first; `TransportDirect` bypasses storage and coordination.
 - **Provider behavior is capability-gated**: immutable transport, storage, and coordination descriptors declare lanes, delayed scheduling, and physical lane-topology support. Bootstrap freezes and validates them before readiness or resolving provider implementations; direct and outbox calls reject unsupported combinations before middleware, storage writes, client creation, or transport I/O. Raw transport DI registration is not capability evidence.
 - **Durable inbox guarantees fail closed**: durable consumers require `MessagingOptions.RequiredInboxCapability`, which defaults to `Transactional`. Selecting `DurableDedupeOnly` is an explicit opt-down when duplicate suppression may commit separately from application state; selecting `ProcessLocal` is reserved for process-local development storage. Bootstrap validates the declared storage tier before subscription creation or retry pickup.
-- **The lane discriminator remains wire-compatible**: public/runtime APIs use `MessageLane`, while storage columns retain the legacy `IntentType` name and the `headless-intent` header retains its stable literal and `0`/`1` values. Retry drainers dispatch Bus rows through `IBusTransport` and Queue rows through `IQueueTransport`. A persisted row whose value has no matching capability fails terminally; undefined values never default to Bus.
+- **The lane discriminator remains wire-compatible**: public/runtime APIs use `MessageLane`, while storage columns use the `IntentType` name and the `headless-intent` header retains its stable literal and `0`/`1` values. Retry drainers dispatch Bus rows through `IBusTransport` and Queue rows through `IQueueTransport`. A persisted row whose value has no matching capability fails terminally; undefined values never default to Bus.
 - **Do NOT use raw transport client libraries** (e.g., `RabbitMQ.Client`, `Confluent.Kafka`) directly -- always use the `Headless.Messaging` abstraction layer.
 - **Ordering depends on transport**: Kafka orders by partition key. Azure Service Bus orders by session. RabbitMQ has no ordering with multiple consumers. Set `ConsumerThreadCount = 1` for strict ordering.
 - **RabbitMQ credentials**: The framework rejects default `guest`/`guest` credentials. Always configure explicit username/password.
@@ -236,7 +236,7 @@ services.AddHeadlessMessaging(setup =>
 - **Retry behavior is configured via `MessagingOptions.RetryPolicy`**. `RetryStrategy` is a public Polly `RetryStrategyOptions` contract; `MaxPersistedRetries`, durable scheduling, leases, and terminal callbacks remain Messaging-owned. Configure `ShouldHandle` explicitly. `OnExhausted` fires only after a matched failure consumes the complete budget and the owned terminal write succeeds.
 - **Retry pressure is quadrant-isolated**: Published-Bus, Published-Queue, Received-Bus, and Received-Queue own independent atomic claims, workers, lock resources, counters, failure state, cadence, and adaptive interval. `IRetryProcessorMonitor` remains an aggregate compatibility projection (maximum interval, backed off when any quadrant is backed off, reset all four); that aggregate never drives runtime scheduling or lock TTL.
 - **Distributed lock**: see [Distributed Lock Integration](#distributed-lock-integration) for when to enable, when to skip, and the two-layer model (per-row `LockedUntil` lease + coarse-grained distributed lock).
-- **Never write framework metadata through provider hatches**. For publish options, use typed properties; raw `Headers.TenantId` is accepted only by the legacy tenant-integrity path and should not be authored directly.
+- **Never write framework metadata through provider hatches**. For publish options, use typed properties; raw `Headers.TenantId` is accepted only by the tenant-integrity path and should not be authored directly.
 - **Treat provider hatches as physical broker routing/configuration**. Producer-side hatches live on `IBusMessageBuilder<TMessage>` and/or `IQueueMessageBuilder<TMessage>` according to the selected provider capability; consumer-side hatches live on the matching lane consumer builder only when that provider exposes consumer settings.
 - **Kafka, RabbitMQ, and NATS currently expose consumer-side hatches**. AWS and Azure Service Bus currently expose producer-side hatches only.
 - **Keep `docs/llms/messaging.md` and package READMEs aligned** when public messaging behavior changes.
@@ -272,7 +272,7 @@ services.AddHeadlessMessaging(setup =>
 | Azure Service Bus | Azure-hosted topics/queues, sessions, managed operations | Non-Azure deployments | PartitionKey is limited to 128 chars and must match SessionId when sessions are enabled |
 | AWS SNS/SQS | AWS-native pub-sub and queue workloads | Non-AWS deployments | FIFO entities use MessageGroupId and deduplication ids |
 | NATS | Subject-based routing, lightweight broker, JetStream | Complex per-consumer storage-specific routing | Subject shards must be a single safe token |
-| Pulsar | Pulsar-native durable transport with shared subscriptions | Projects not already on Pulsar | Lane-qualified topics require a fenced legacy-topic cutover |
+| Pulsar | Pulsar-native durable transport with shared subscriptions | Projects not already on Pulsar | Requires Pulsar topic and subscription provisioning |
 | Redis | Redis Streams transport with consumer groups | Workloads requiring a broker-native dead-letter queue | Durable streams, pending-entry reclaim, and application-owned retention |
 
 ## Provider Capabilities
@@ -319,23 +319,23 @@ await queue.EnqueueAsync(order, new EnqueueOptions
 
 The example uses process-local outbox storage for development; choose PostgreSQL or SQL Server for persistence across process restarts.
 
-Stored keyed outbox rows are revalidated against the current frozen destination mapping before attempt reservation or native client resolution. Normal retry pickup may already hold a storage lease at this point. A deployment that removes or invalidates their mapping rejects dispatch until the operator restores a supported configuration. Unkeyed legacy rows keep their existing behavior.
+Stored keyed outbox rows are revalidated against the current frozen destination mapping before attempt reservation or native client resolution. Normal retry pickup may already hold a storage lease at this point. A deployment that removes or invalidates their mapping rejects dispatch until the operator restores a supported configuration. Unkeyed messages have no routing affinity requirement.
 
-**Affinity migration:** the neutral envelope field is additive; existing unkeyed envelopes read as null. There is no new affinity column or relational migration. Move portable routing intent from raw provider headers/selectors to the typed option, or keep adapters with exactly matching values. Do not enable keyed production while older publishers, outbox dispatchers, or retry workers can handle these envelopes: older binaries can ignore the neutral key and lose affinity. Quiesce publication, drain or fence the old workers, upgrade the complete Messaging family, verify the remote session/FIFO/partition configuration, then enable the key. A rollback requires draining or fencing keyed backlog first. Keep native partition topology and hashing stable; Headless does not migrate broker topology or promise placement across a change. Third-party providers declare immutable `MessagingRoutingAffinityRoute` mappings in their existing capability contribution and validate native adapters before client I/O.
+**Affinity configuration:** use the typed `RoutingAffinityKey` option for portable routing intent. Native provider adapters must have exactly matching values when both are supplied. Verify the destination session/FIFO/partition configuration before using a key. Keep partition topology and hashing stable when placement matters; Headless does not promise placement across a topology change. Third-party providers declare immutable `MessagingRoutingAffinityRoute` mappings in their capability contribution and validate native adapters before client I/O.
 
 
-### Provider cutover and recovery matrix
+### Provider topology and operational requirements
 
-| Provider | Topology change in this release | Executable evidence | Production handoff |
+| Provider | Topology | Conformance boundary | Operational requirement |
 | --- | --- | --- | --- |
-| AWS | Bus subscriber groups own distinct SQS queues subscribed to SNS | LocalStack fan-out, competition, isolation, IAM-policy shape, malformed deletion, and legacy drain/roll-forward | Apply the least-privilege handoff below; drain legacy queues; deploy consumers before publishers; recover by roll-forward reconciliation after first new publish |
-| Azure Service Bus | None | Credential-gated real namespace conformance | Existing topic/queue topology; no migration claim from local skips |
-| InMemory | None | Shared in-process conformance | Restart loses all state; never a production migration target |
-| Kafka | None; remains Queue-only | Testcontainers ownership, startup rejection, and bounded poison-offset advancement | No topology cutover; Bus configuration remains invalid |
-| NATS | Lane-qualified subjects, streams, retention, and durables | Testcontainers group/replica/isolation, malformed terminal ACK, legacy drain, and roll-forward | Drain legacy durables to zero pending/ack-pending; verify stream provisioning; deploy consumers before publishers; retain legacy streams until reconciliation |
-| Pulsar | Lane-qualified topics and Bus subscriptions | Testcontainers group/replica/isolation, malformed terminal ACK, legacy drain, and roll-forward | Drain legacy subscriptions; verify topic creation; deploy consumers before publishers; retain legacy topics until reconciliation |
-| RabbitMQ | Lane-qualified exchanges, routing keys, and owned queues | Testcontainers group/replica/isolation, malformed terminal reject, legacy drain, and roll-forward | Drain legacy queues to zero ready/unacknowledged; deploy consumers before publishers; retain legacy entities until reconciliation |
-| Redis | Pub/Sub surface removed; both lanes use lane-qualified Streams | Testcontainers routing, ownership, settlement, poison handling, and legacy cutover | Fence old Pub/Sub/stream users, drain or reconcile legacy traffic, deploy the package family in lockstep, and retain legacy resources through the abort window |
+| AWS | Bus subscriber groups own distinct SQS queues subscribed to SNS; Queue sends directly to SQS | LocalStack fan-out, competition, isolation, policy shape, and malformed deletion | Grant the scoped runtime and provisioning actions below |
+| Azure Service Bus | Native topics/subscriptions for Bus and queues for Queue | Credential-gated real namespace conformance | Supply a namespace with the required permissions and session configuration |
+| InMemory | Process-local channels | Shared in-process conformance | Restart loses all state |
+| Kafka | Queue-only topics and consumer groups | Ownership, startup rejection, and bounded poison-offset advancement | Bus configuration is invalid; configure partitions for the workload |
+| NATS | Lane-qualified subjects, streams, retention, and durables | Group/replica isolation and malformed terminal ACK | Grant stream and consumer provisioning permissions |
+| Pulsar | Lane-qualified topics and Bus subscriptions | Group/replica isolation and malformed terminal ACK | Grant topic and subscription creation permissions |
+| RabbitMQ | Lane-qualified exchanges, routing keys, and owned queues | Group/replica isolation and malformed terminal reject | Grant exchange and queue provisioning permissions |
+| Redis | Lane-qualified Streams for both lanes | Routing, ownership, settlement, and poison handling | Configure retained stream storage and consumer groups |
 
 #### AWS least-privilege handoff
 
@@ -349,25 +349,19 @@ Stored keyed outbox rows are revalidated against the current frozen destination 
 | Queue consumer workload role | `sqs:ReceiveMessage`, `sqs:DeleteMessage`, `sqs:ChangeMessageVisibility` | `sqs:CreateQueue` on startup | Scope all actions to the consumer-owned `arn:${Partition}:sqs:${Region}:${Account}:queue-*` destinations |
 | SNS service principal; queue resource-policy owner is the Bus consumer deployment | `sqs:SendMessage` | None | The provider writes the Bus queue policy for principal `sns.amazonaws.com`, resource = that group queue ARN, and `aws:SourceArn` = the subscribing `bus-*` topic ARN |
 
-The deployment owner owns the workload-role policies, the provider-created queue resource policy, the version fence, and retention of legacy entities. Consumer topology failures from AWS surface as `AWS_MESSAGING_PROVISIONING_DENIED` with the lane, logical group, AWS error code, and the aggregate action set for that stage; use the denied AWS API operation to identify the exact missing action. Publisher denials return a failed `OperateResult` with the AWS exception message and retain the service exception as the inner exception, while receive denials are logged and retried with backoff. Do not grant delete, wildcard SNS/SQS administration, or unrelated IAM actions: the current transport does not call them.
+The deployment owner owns the workload-role policies and the provider-created queue resource policy. Consumer topology failures from AWS surface as `AWS_MESSAGING_PROVISIONING_DENIED` with the lane, logical group, AWS error code, and the aggregate action set for that stage; use the denied AWS API operation to identify the exact missing action. Publisher denials return a failed `OperateResult` with the AWS exception message and retain the service exception as the inner exception, while receive denials are logged and retried with backoff. Do not grant delete, wildcard SNS/SQS administration, or unrelated IAM actions: the current transport does not call them.
 
-Operational evidence above is executable broker evidence, not proof of a production deployment. The deployment owner must record producer/consumer versions, restart and auto-provision permissions, the version fence, measurable drain signal, abort criteria, and the chosen roll-forward reconciliation before rollout.
+Conformance tests exercise the provider behavior; a deployment must still configure its own credentials, resource permissions, retention, and restart policy.
 
-### Provider-conformance release and lockstep upgrade
+### Messaging package composition
 
-This release completes the verb-conveyed Bus/Queue model and the built-in provider conformance boundary. It contains source and operational breaks and must be treated as one Messaging package-family upgrade:
+Use matching versions of the `Headless.Messaging.*` packages. The package-family probe verifies the complete current package graph and its public API:
 
-- Replace removed `IOutboxBus` / `IOutboxQueue` publishing surfaces with `IBus.PublishAsync(...)` / `IQueue.EnqueueAsync(...)`. Select durability through `DeliveryMode.Auto`, `Durable`, or `TransportDirect` rather than a publisher type.
-- Replace lane-free consumer scanning and the removed `OnBus` / `OnQueue` switches with `setup.Bus` or `setup.Queue` registration roots. Replace public/runtime `IntentType` use with `MessageLane`.
-- Dashboard and monitoring JSON use `lane`, `requestedDeliveryMode`, and `resolvedDeliveryMode`. Consumers of the old `intentType` projection must update. The persisted `IntentType` database column, stable `headless-intent` header literal, and `Bus = 0` / `Queue = 1` values do not change.
-- `Delay` is a one-shot durable scheduling request: `Auto` resolves to durable capture, `Durable` remains durable, and `TransportDirect` is rejected before side effects. The delay controls the initial outbox eligibility time and is removed from the transport dispatch so broker recovery does not schedule it again.
-- Redis removes `UseRedisPubSub(...)` and uses lane-qualified Streams for both lanes. AWS Bus subscriber groups, RabbitMQ, NATS JetStream, and Pulsar use the physical topologies in the cutover matrix above. These resources are not auto-migrated or deleted.
-
-Supported package-family boundaries are the complete previous all-old family and the complete new all-new family. A graph mixing pre-cutover and post-cutover `Headless.Messaging.*` packages is unsupported even where NuGet can resolve it; only explicitly exercised mixed probes may be described as restore or compile failures. Upgrade every Messaging package reference and lockfile entry together.
-
-Before deployment, the named owner must inventory producer and consumer versions, verify restart and auto-provision permissions, enforce the deployment/version fence, measure the provider-specific drain signal, record abort criteria, and choose the recovery path from the matrix. Testcontainers evidence validates the executable procedure but does not prove a production environment has completed those steps.
-
-Publication remains fenced until merge. From the exact merged commit: verify `main` CI and GitHub Packages publication, publish the GitHub release, verify the complete Messaging family on NuGet.org, reconcile the remaining Messaging backlog, and only then close tracker #217.
+- Publish through `IBus.PublishAsync(...)` and enqueue through `IQueue.EnqueueAsync(...)`. Select durability with `DeliveryMode.Auto`, `Durable`, or `TransportDirect`.
+- Register consumers through `setup.Bus` or `setup.Queue`; public APIs use `MessageLane`.
+- Dashboard and monitoring JSON expose `lane`, `requestedDeliveryMode`, and `resolvedDeliveryMode`. Storage uses the `IntentType` column and the `headless-intent` header with `Bus = 0` and `Queue = 1`.
+- `Delay` is a one-shot durable scheduling request: `Auto` resolves to durable capture, `Durable` remains durable, and `TransportDirect` is rejected before side effects. The delay controls initial outbox eligibility and is removed from transport dispatch so broker recovery does not schedule it again.
+- Redis uses Streams for both lanes. AWS Bus subscriber groups, RabbitMQ, NATS JetStream, and Pulsar use the physical topologies above.
 
 ### Registration Overloads
 
@@ -1099,7 +1093,7 @@ Provides real-time visibility into message processing, failures, retries, and sy
 
 ### Design Notes
 
-The dashboard exposes operational endpoints for inspecting, retrying, re-executing, and deleting message records. Its protected `/api/meta` response also projects sanitized registered-provider descriptors; deployment cutover state remains operator-owned and is never inferred by the dashboard. Treat `WithNoAuth()` as development-only unless the dashboard is isolated behind trusted network controls. Production deployments should use `WithHostAuthentication(...)`, `WithBasicAuth(...)`, `WithApiKey(...)`, or `WithCustomAuth(...)`, and should set an explicit CORS policy before exposing the dashboard cross-origin.
+The dashboard exposes operational endpoints for inspecting, retrying, re-executing, and deleting message records. Its protected `/api/meta` response also projects sanitized registered-provider descriptors; deployment state remains operator-owned and is never inferred by the dashboard. Treat `WithNoAuth()` as development-only unless the dashboard is isolated behind trusted network controls. Production deployments should use `WithHostAuthentication(...)`, `WithBasicAuth(...)`, `WithApiKey(...)`, or `WithCustomAuth(...)`, and should set an explicit CORS policy before exposing the dashboard cross-origin.
 
 ### Installation
 
@@ -1304,15 +1298,13 @@ setup.Queue.ForMessage<OrderPlaced>(message =>
 );
 ```
 
-AWS declares immutable Bus and Queue capabilities with independent SNS/SQS topology. Bus uses `bus-{logical-name}` SNS topics and one `bus-{subscriber-group}` SQS queue per logical group; Queue sends directly to `queue-{logical-name}`. Before cutover, fence old producers and consumers, verify SNS/SQS provisioning permissions, drain legacy queues to zero visible/in-flight messages, then deploy consumers before publishers. After the first lane-qualified publish, recovery is roll-forward reconciliation rather than rollback.
+AWS declares immutable Bus and Queue capabilities with independent SNS/SQS topology. Bus uses `bus-{logical-name}` SNS topics and one `bus-{subscriber-group}` SQS queue per logical group; Queue sends directly to `queue-{logical-name}`.
 
 ### Configuration
 
 `RoutingAffinityKey` maps to native `MessageGroupId` only for registered `.fifo` SNS topics or SQS queues. Keys are 1–128 printable ASCII characters (`!` through `~`), without spaces. `AwsMessagingHeaders.MessageGroupId` and `MessageGroupId(...)` remain raw adapters and must agree with a supplied typed key. Standard SQS message-group fairness is not an affinity guarantee; typed keys on standard routes are rejected. Shared groups do not imply whole-pipeline FIFO or handler exclusivity. No application headers are discarded.
 
-Keyed SQS Queue sends encode the complete header dictionary, including null, delivery, trace, and business metadata, as one String attribute named `headless-aws-headers-v1`; the payload body and native `MessageGroupId` remain unchanged. Only the exact `headless-aws-headers-v1` attribute is reserved. Consumers recognize that exact attribute as the bag and otherwise accept legacy individual attributes, including other names with the same prefix. A recognized bag mixed with other attributes, or a malformed bag, is terminally deleted from its source queue without a handler callback. Unkeyed Queue sends retain the existing ten-attribute limit. SNS Bus retains its existing envelope format.
-
-Deploy the new consumers before enabling typed keys, and fence or drain all old consumers plus old publishers/outbox/retry workers. Older consumers cannot decode the keyed SQS bag and may terminally delete it. Rollback after keyed publication requires draining or fencing that backlog; a database rollback alone does not restore wire compatibility.
+All SQS Queue sends encode the complete header dictionary, including null, delivery, trace, and business metadata, as one String attribute named `headless-aws-headers-v1`. The payload body and native `MessageGroupId` remain unchanged. Consumers require that exact attribute; other names with the same prefix are ordinary application headers inside the bag. Missing bags, mixed attributes, malformed JSON, duplicate or reserved header names, and invalid value types are terminally deleted from the source queue without a handler callback. Affinity is optional, so unkeyed messages use the same format. SNS Bus uses its separate SNS envelope format.
 
 Configure AWS region, service URLs, and credentials through `AmazonSqsMessagingOptions`.
 
@@ -1540,8 +1532,6 @@ Commit uses JetStream double acknowledgement and waits for the broker's settleme
 
 Bus publishes to `headless.bus.{logical-name}` with interest-retained streams and `bus-{subscriber-group}-{logical-name}` durables. Queue publishes to `headless.queue.{logical-name}` with work-queue-retained streams and the shared `queue-{logical-name}` durable. `StreamOptions` may tune storage, replicas, and limits but cannot replace provider-owned stream names, subjects, or retention.
 
-This topology replaces legacy unqualified subjects and streams. Fence old producers and consumers, verify stream auto-provision permissions, drain legacy durables to zero pending/ack-pending, and deploy consumers before publishers. After the first lane-qualified publish, recover by rolling forward and reconciling both topologies; retain legacy streams until owner sign-off.
-
 ### Installation
 
 ```bash
@@ -1594,8 +1584,6 @@ Provides Apache Pulsar transport support.
 
 Bus topics insert `headless-bus-` before the local topic name and use one lane-qualified subscription per logical subscriber group. Queue topics insert `headless-queue-` and use one owned `headless-queue` subscription per physical topic. Replicas within a subscription compete; distinct Bus groups each receive one copy. Malformed transport envelopes are terminally acknowledged so they cannot create negative-ack redelivery storms.
 
-This topology replaces legacy unqualified topics and subscriptions. Fence old producers and consumers, verify topic-creation permissions, drain legacy subscriptions to a measured zero backlog, and deploy consumers before publishers. After the first lane-qualified publish, recovery is roll-forward reconciliation; retain legacy topics until owner sign-off.
-
 ### Installation
 
 ```bash
@@ -1646,8 +1634,6 @@ Provides RabbitMQ exchange and queue transport support.
 ### Design Notes
 
 RabbitMQ exposes consumer-side QoS through `PrefetchCount(...)`. For base exchange `myapp.events`, Bus uses the `myapp.events.bus` topic exchange, `bus.{logical-name}` routing keys, and `bus.{subscriber-group}` queues; Queue uses the `myapp.events.queue` direct exchange, `queue.{logical-name}` routing keys, and `queue.{logical-name}` queues. When `PublishConfirms` is enabled, publish completion awaits the broker acknowledgement or negative acknowledgement. Malformed transport envelopes are terminally rejected without requeue while ordinary handler rejection remains retryable.
-
-This topology replaces the legacy shared topic exchange. Fence old producers and consumers, verify exchange/queue auto-provision permissions, drain legacy queues to zero ready/unacknowledged, and deploy consumers before publishers. After the first lane-qualified publish, recovery is roll-forward reconciliation; retain legacy entities until owner sign-off.
 
 ### Installation
 
@@ -1713,7 +1699,7 @@ dotnet add package Headless.Messaging.Redis
 setup.UseRedis(options => options.Configuration = "localhost:6379");
 ```
 
-Redis physical keys are `headless:messaging:bus:{logical-name}` and `headless:messaging:queue:{logical-name}`. The removed `UseRedisPubSub(...)` surface and legacy channel/stream topology cannot be mixed with this package family. Fence old producers and consumers, drain or explicitly reconcile legacy traffic, deploy all Messaging packages in lockstep, and retain legacy resources until the abort window closes.
+Redis physical keys are `headless:messaging:bus:{logical-name}` and `headless:messaging:queue:{logical-name}`. Both lanes use retained Streams with explicit consumer-group ownership.
 
 ### Configuration
 

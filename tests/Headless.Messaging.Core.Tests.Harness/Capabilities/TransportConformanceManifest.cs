@@ -27,7 +27,6 @@ public enum TransportConformanceScenario
     SameNameLaneIsolation,
     StartupRejectionBeforeSideEffects,
     MalformedEnvelopeTerminalSettlement,
-    LegacyCutoverRecovery,
 }
 
 /// <summary>
@@ -248,7 +247,6 @@ public static class TransportConformanceManifest
                     TransportConformanceScenario.MalformedEnvelopeTerminalSettlement,
                     ConformanceSupport.Supported
                 )
-                .WithScenario(TransportConformanceScenario.LegacyCutoverRecovery, ConformanceSupport.Supported)
                 .EnableRealBrokerLeaf(),
             ["RabbitMQ"] = TransportConformanceProfile
                 .CreateDisabled("RabbitMQ")
@@ -279,7 +277,6 @@ public static class TransportConformanceManifest
                     TransportConformanceScenario.MalformedEnvelopeTerminalSettlement,
                     ConformanceSupport.Supported
                 )
-                .WithScenario(TransportConformanceScenario.LegacyCutoverRecovery, ConformanceSupport.Supported)
                 .EnableRealBrokerLeaf(),
             ["AWS/LocalStack"] = TransportConformanceProfile
                 .CreateDisabled("AWS/LocalStack")
@@ -362,10 +359,6 @@ public static class TransportConformanceManifest
                     TransportConformanceScenario.MalformedEnvelopeTerminalSettlement,
                     ConformanceSupport.Supported
                 )
-                .WithScenario(
-                    TransportConformanceScenario.LegacyCutoverRecovery,
-                    ConformanceSupport.NotApplicable("Kafka physical topology does not change in this release.")
-                )
                 .WithScenario(TransportConformanceScenario.HeaderRoundTrip, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.CommitSettlement, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.RejectRedelivery, ConformanceSupport.Supported)
@@ -400,7 +393,6 @@ public static class TransportConformanceManifest
                     TransportConformanceScenario.MalformedEnvelopeTerminalSettlement,
                     ConformanceSupport.Supported
                 )
-                .WithScenario(TransportConformanceScenario.LegacyCutoverRecovery, ConformanceSupport.Supported)
                 .EnableRealBrokerLeaf(),
             ["Azure Service Bus"] = TransportConformanceProfile
                 .CreateDisabled("Azure Service Bus")
@@ -415,12 +407,6 @@ public static class TransportConformanceManifest
                     supportsIndependentLaneTopology: true
                 )
                 .WithMalformedEnvelopeBound("Service Bus dead-letter settlement", 1, TimeSpan.FromSeconds(10))
-                .WithScenario(
-                    TransportConformanceScenario.LegacyCutoverRecovery,
-                    ConformanceSupport.NotApplicable(
-                        "Azure Service Bus physical topology does not change in this release."
-                    )
-                )
                 .WithScenario(TransportConformanceScenario.QueueRoundTrip, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BusRoundTrip, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.HeaderRoundTrip, ConformanceSupport.Supported)
@@ -462,10 +448,6 @@ public static class TransportConformanceManifest
                     ConformanceSupport.NotApplicable(
                         "InMemory transports TransportMessage instances directly and has no transport envelope to parse."
                     )
-                )
-                .WithScenario(
-                    TransportConformanceScenario.LegacyCutoverRecovery,
-                    ConformanceSupport.NotApplicable("InMemory has no durable broker topology to migrate.")
                 ),
             ["Redis"] = TransportConformanceProfile
                 .CreateDisabled("Redis")
@@ -495,7 +477,6 @@ public static class TransportConformanceManifest
                     TransportConformanceScenario.MalformedEnvelopeTerminalSettlement,
                     ConformanceSupport.Supported
                 )
-                .WithScenario(TransportConformanceScenario.LegacyCutoverRecovery, ConformanceSupport.Supported)
                 .EnableRealBrokerLeaf(),
         }.ToFrozenDictionary(StringComparer.Ordinal);
 

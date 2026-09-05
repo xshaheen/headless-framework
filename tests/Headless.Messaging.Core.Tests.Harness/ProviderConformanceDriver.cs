@@ -23,8 +23,7 @@ public sealed record TransportConformanceDriverCapabilities(
     bool SupportsRawEnvelopeInjection,
     bool SupportsTerminalStateObservation,
     bool SupportsTopologyInspection,
-    bool SupportsStartupSideEffectObservation,
-    bool SupportsLegacyMigration
+    bool SupportsStartupSideEffectObservation
 );
 
 /// <summary>Observed provider-native terminal handling for one malformed transport delivery.</summary>
@@ -77,8 +76,7 @@ public abstract class TransportProviderConformanceDriver
 
     public virtual string? GetNativeRoutingPlacement(TransportConformanceDelivery delivery) => null;
 
-    public virtual TransportConformanceDriverCapabilities Capabilities { get; } =
-        new(false, false, false, false, false);
+    public virtual TransportConformanceDriverCapabilities Capabilities { get; } = new(false, false, false, false);
 
     public abstract TransportMalformedEnvelopeBound MalformedEnvelopeBound { get; }
 
@@ -108,12 +106,6 @@ public abstract class TransportProviderConformanceDriver
     public virtual ValueTask<TransportStartupObservation> ObserveRejectedStartupAsync(
         CancellationToken cancellationToken
     ) => ValueTask.FromException<TransportStartupObservation>(_Unsupported(nameof(ObserveRejectedStartupAsync)));
-
-    public virtual ValueTask SeedLegacyTopologyAsync(CancellationToken cancellationToken) =>
-        ValueTask.FromException(_Unsupported(nameof(SeedLegacyTopologyAsync)));
-
-    public virtual ValueTask ReconcileLegacyTopologyAsync(CancellationToken cancellationToken) =>
-        ValueTask.FromException(_Unsupported(nameof(ReconcileLegacyTopologyAsync)));
 
     private NotSupportedException _Unsupported(string operation)
     {

@@ -71,12 +71,6 @@ public sealed class ProviderConformanceEvidenceTests(RedisMessagingFixture fixtu
                 TransportConformanceScenario.MalformedEnvelopeTerminalSettlement,
                 nameof(RedisConsumerConformanceTests.should_terminally_ack_malformed_entry_across_consumer_restart)
             ),
-            _Bind(
-                TransportConformanceScenario.LegacyCutoverRecovery,
-                nameof(
-                    RedisConsumerConformanceTests.should_roll_forward_legacy_stream_without_deleting_operator_owned_source
-                )
-            ),
         ];
 
         await TransportConformanceTestBindings.ExecuteSupportedScenariosAsync(

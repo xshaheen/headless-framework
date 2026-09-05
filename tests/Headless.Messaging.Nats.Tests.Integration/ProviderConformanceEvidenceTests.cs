@@ -76,10 +76,6 @@ public sealed class ProviderConformanceEvidenceTests(NatsFixture fixture) : Test
                 TransportConformanceScenario.MalformedEnvelopeTerminalSettlement,
                 nameof(NatsConsumerClientTests.should_terminally_acknowledge_malformed_envelope_across_consumer_restart)
             ),
-            _Bind(
-                TransportConformanceScenario.LegacyCutoverRecovery,
-                nameof(NatsConsumerClientTests.should_drain_legacy_stream_before_lane_cutover_and_reconcile_forward)
-            ),
         ];
 
         await TransportConformanceTestBindings.ExecuteSupportedScenariosAsync(profile, bindings, _CreateTestClass);

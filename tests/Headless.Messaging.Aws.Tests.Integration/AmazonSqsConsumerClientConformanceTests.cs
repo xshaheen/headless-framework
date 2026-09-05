@@ -37,6 +37,39 @@ public sealed class AmazonSqsConsumerClientConformanceTests(LocalStackTestFixtur
     }
 
     [Fact]
+    public async Task should_round_trip_unkeyed_queue_headers_beyond_the_native_attribute_limit()
+    {
+        await using var session = await fixture.CreateConformanceSessionAsync(AbortToken);
+        await session.StartAsync(cancellationToken: AbortToken);
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [Headers.MessageId] = Guid.NewGuid().ToString("N"),
+            [Headers.MessageName] = session.Destination,
+            [Headers.Intent] = nameof(MessageLane.Queue),
+            ["optional-metadata"] = null,
+            ["headless-aws-headers-custom"] = "application-value",
+        };
+        for (var index = 0; index < 12; index++)
+        {
+            headers[$"business-{index}"] = $"value-{index}";
+        }
+
+        var body = "unkeyed-queue-body"u8.ToArray();
+        var result = await session.PublishAsync(new TransportMessage(headers, body), AbortToken);
+        result.Succeeded.Should().BeTrue();
+
+        var delivery = await session.ReceiveAsync(TimeSpan.FromSeconds(10), AbortToken);
+        delivery.Message.Body.ToArray().Should().Equal(body);
+        foreach (var header in headers)
+        {
+            delivery.Message.Headers.Should().Contain(header.Key, header.Value);
+        }
+
+        delivery.Message.Headers.Should().NotContainKey(Headers.RoutingAffinityKey);
+        await session.Consumer.CommitAsync(delivery.SettlementValue, AbortToken);
+    }
+
+    [Fact]
     public override Task should_match_production_runtime_capabilities()
     {
         return base.should_match_production_runtime_capabilities();

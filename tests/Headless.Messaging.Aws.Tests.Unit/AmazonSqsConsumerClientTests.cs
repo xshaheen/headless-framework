@@ -1026,9 +1026,10 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
     }
 
     [Theory]
-    [InlineData("legacy", true)]
-    [InlineData("legacy-custom-prefix", true)]
-    [InlineData("legacy-version-prefix", true)]
+    [InlineData("flat-attributes", false)]
+    [InlineData("unkeyed-bag", true)]
+    [InlineData("custom-prefix", true)]
+    [InlineData("version-prefix", true)]
     [InlineData("bag", true)]
     [InlineData("invalid-json", false)]
     [InlineData("mixed", false)]
@@ -1037,7 +1038,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
     [InlineData("numeric-value", false)]
     [InlineData("duplicate", false)]
     [InlineData("reserved", false)]
-    [InlineData("missing-key", false)]
+    [InlineData("blank-key", false)]
     [InlineData("missing-identity", false)]
     [InlineData("wrong-type", false)]
     public async Task should_decode_or_terminally_settle_queue_header_bags(string encoding, bool valid)
@@ -1056,16 +1057,19 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
             ["business"] = "preserved",
             ["nullable"] = null,
         };
-        var legacyHeader = encoding switch
+        var applicationHeader = encoding switch
         {
-            "legacy-custom-prefix" => "headless-aws-headers-custom",
-            "legacy-version-prefix" => "headless-aws-headers-v2",
+            "custom-prefix" => "headless-aws-headers-custom",
+            "version-prefix" => "headless-aws-headers-v2",
             _ => null,
         };
-        if (legacyHeader is not null)
+        if (encoding is "unkeyed-bag" or "custom-prefix" or "version-prefix")
         {
             headers.Remove(Headers.RoutingAffinityKey);
-            headers[legacyHeader] = "application-value";
+        }
+        if (applicationHeader is not null)
+        {
+            headers[applicationHeader] = "application-value";
         }
         var json = encoding switch
         {
@@ -1074,7 +1078,9 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
             "numeric-value" => "{\"number\":42}",
             "duplicate" => "{\"same\":\"a\",\"same\":\"b\"}",
             "reserved" => "{\"headless-aws-headers-v1\":null}",
-            "missing-key" => "{}",
+            "blank-key" => JsonSerializer.Serialize(
+                new Dictionary<string, string?>(headers, StringComparer.Ordinal) { [Headers.RoutingAffinityKey] = " " }
+            ),
             "missing-identity" => JsonSerializer.Serialize(
                 new Dictionary<string, string?> { [Headers.RoutingAffinityKey] = "order-42" }
             ),
@@ -1085,7 +1091,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
             [encoding == "unknown-envelope-missing-identity" ? "headless-aws-headers-v2" : "headless-aws-headers-v1"] =
                 new() { DataType = encoding == "wrong-type" ? "Number" : "String", StringValue = json },
         };
-        if (encoding == "legacy" || legacyHeader is not null)
+        if (encoding == "flat-attributes")
         {
             attributes = headers
                 .Where(pair => pair.Value is not null)
@@ -1153,17 +1159,14 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         {
             observed.Should().NotBeNull();
             var delivered = observed!.Value;
-            delivered.RoutingAffinityKey.Should().Be(legacyHeader is null ? "order-42" : null);
+            delivered.RoutingAffinityKey.Should().Be(headers.GetValueOrDefault(Headers.RoutingAffinityKey));
             Encoding.UTF8.GetString(delivered.Body.Span).Should().Be("payload");
             delivered.Headers["business"].Should().Be("preserved");
-            if (legacyHeader is not null)
+            if (applicationHeader is not null)
             {
-                delivered.Headers[legacyHeader].Should().Be("application-value");
+                delivered.Headers[applicationHeader].Should().Be("application-value");
             }
-            if (encoding == "bag")
-            {
-                delivered.Headers.Should().ContainKey("nullable").WhoseValue.Should().BeNull();
-            }
+            delivered.Headers.Should().ContainKey("nullable").WhoseValue.Should().BeNull();
         }
         else
         {

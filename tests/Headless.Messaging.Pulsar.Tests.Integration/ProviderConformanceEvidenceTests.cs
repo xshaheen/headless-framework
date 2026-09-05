@@ -75,12 +75,6 @@ public sealed class ProviderConformanceEvidenceTests(PulsarFixture fixture) : Te
                     PulsarConsumerClientHarnessTests.should_terminally_acknowledge_malformed_envelope_across_consumer_restart
                 )
             ),
-            _Bind(
-                TransportConformanceScenario.LegacyCutoverRecovery,
-                nameof(
-                    PulsarConsumerClientHarnessTests.should_drain_legacy_topic_before_lane_cutover_and_reconcile_forward
-                )
-            ),
         ];
 
         await TransportConformanceTestBindings.ExecuteSupportedScenariosAsync(profile, bindings, _CreateTestClass);

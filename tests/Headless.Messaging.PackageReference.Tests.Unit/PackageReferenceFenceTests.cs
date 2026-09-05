@@ -9,16 +9,6 @@ namespace Tests;
 public sealed class PackageReferenceFenceTests : TestBase
 {
     [Fact]
-    public void should_pin_complete_previous_messaging_family()
-    {
-        var references = _ReadPackageReferences("PreviousAllOld", "PreviousAllOld.csproj");
-
-        references.Should().HaveCount(19);
-        references.Select(reference => reference.Version).Should().AllBeEquivalentTo("0.11.0");
-        references.Should().OnlyHaveUniqueItems(reference => reference.Id);
-    }
-
-    [Fact]
     public void should_cover_complete_current_messaging_family()
     {
         var root = _FindRepositoryRoot();
@@ -30,19 +20,6 @@ public sealed class PackageReferenceFenceTests : TestBase
 
         references.Select(reference => reference.Id).Order(StringComparer.Ordinal).Should().Equal(expected);
         references.Select(reference => reference.Version).Should().AllBeEquivalentTo("$(MessagingPackageVersion)");
-    }
-
-    [Fact]
-    public void should_keep_selected_mixed_probe_narrow()
-    {
-        var references = _ReadPackageReferences("SelectedMixed", "SelectedMixed.csproj");
-
-        references
-            .Should()
-            .BeEquivalentTo([
-                new PackageReference("Headless.Messaging.Core", "0.11.0"),
-                new PackageReference("Headless.Messaging.Redis", "$(MessagingPackageVersion)"),
-            ]);
     }
 
     [Theory]

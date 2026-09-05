@@ -90,8 +90,6 @@ options.Bus.ForMessage<OrderEvent>(message =>
 
 RabbitMQ supports the same contract and logical name on both lanes without cross-delivery. For a configured base exchange such as `myapp.events`, the provider creates `myapp.events.bus` (topic) and `myapp.events.queue` (direct), publishes with `bus.{logical-name}` / `queue.{logical-name}` routing keys, and owns `bus.{subscriber-group}` / `queue.{logical-name}` queues.
 
-This topology replaces the pre-cutover shared topic exchange. Before deployment, stop old and new publishers, inventory producer/consumer versions and auto-provision permissions, drain every legacy exchange-bound queue to a measured zero-ready/zero-unacknowledged signal, then deploy consumers before publishers. Aborting is safe only before the first lane-qualified publication. After that point recovery is roll-forward-only: restore the new consumers, reconcile legacy and lane-qualified queue counts, and do not delete legacy entities until the deployment owner signs off.
-
 ### Security Best Practices
 
 - **Never hardcode credentials** - use environment variables, configuration files, or secret management services

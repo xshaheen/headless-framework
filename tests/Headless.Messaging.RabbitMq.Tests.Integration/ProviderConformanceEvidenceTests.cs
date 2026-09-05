@@ -82,12 +82,6 @@ public sealed class ProviderConformanceEvidenceTests(RabbitMqFixture fixture) : 
                     RabbitMqConsumerClientConformanceTests.should_terminally_reject_malformed_envelope_across_consumer_restart
                 )
             ),
-            _Bind(
-                TransportConformanceScenario.LegacyCutoverRecovery,
-                nameof(
-                    RabbitMqConsumerClientConformanceTests.should_drain_legacy_exchange_before_lane_cutover_and_reconcile_forward
-                )
-            ),
         ];
 
         await TransportConformanceTestBindings.ExecuteSupportedScenariosAsync(profile, bindings, _CreateTestClass);

@@ -20,8 +20,6 @@ Provides durable Bus and Queue delivery over Redis Streams with lane isolation a
 
 `UseRedis(...)` registers both lanes. Physical stream keys use `headless:messaging:bus:{logical-name}` and `headless:messaging:queue:{logical-name}`. Bus subscriber groups each receive one retained copy; replicas in a group share its Redis consumer group. Queue replicas share the destination group.
 
-The former `UseRedisPubSub(...)` API and volatile Pub/Sub runtime are removed. Existing deployments must fence old producers and consumers, drain or explicitly reconcile legacy stream/channel traffic, deploy the Streams-only package family in lockstep, and retain legacy resources until the abort window closes. The provider does not delete legacy resources automatically.
-
 ## Installation
 
 ```bash

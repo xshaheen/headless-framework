@@ -1689,14 +1689,7 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
 
-        await connection.ExecuteAsync(
-            $"""
-            DROP INDEX IF EXISTS messaging."{indexName}";
-            CREATE INDEX "{indexName}" ON messaging."{(
-                indexName.StartsWith("idx_received", StringComparison.Ordinal) ? "received" : "published"
-            )}" ("Version","NextRetryAt") INCLUDE ("Retries","LockedUntil") WHERE "NextRetryAt" IS NOT NULL;
-            """
-        );
+        await connection.ExecuteAsync($"DROP INDEX IF EXISTS messaging.\"{indexName}\";");
         await _CreateInitializer(fixture.ConnectionString).InitializeAsync(AbortToken);
 
         var columns = (
@@ -1732,6 +1725,52 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
             new { IndexName = indexName }
         );
         predicate.Should().NotBeNull().And.Contain("NextRetryAt").And.Contain("IS NOT NULL");
+    }
+
+    [Fact]
+    public async Task should_recover_failed_concurrent_retry_index_build()
+    {
+        const string indexName = "idx_received_Version_NextRetryAt";
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        await connection.ExecuteAsync(
+            """
+            INSERT INTO messaging.received ("Id","Version","Name","IntentType","Retries","Added","StatusName","MessageId")
+            SELECT gen_random_uuid(), 'v1', 'retry-index-recovery', 0, 0, NOW(), 'Failed', gen_random_uuid()::text
+            FROM generate_series(1, 2);
+            DROP INDEX IF EXISTS messaging."idx_received_Version_NextRetryAt";
+            """
+        );
+
+        // A failed concurrent build leaves a real invalid catalog entry that IF NOT EXISTS alone cannot repair.
+        var createInvalidIndex = async () =>
+            await connection.ExecuteAsync(
+                """
+                CREATE UNIQUE INDEX CONCURRENTLY "idx_received_Version_NextRetryAt" ON messaging.received ((true));
+                """
+            );
+        (await createInvalidIndex.Should().ThrowAsync<PostgresException>())
+            .Which.SqlState.Should()
+            .Be(PostgresErrorCodes.UniqueViolation);
+        const string validitySql = """
+            SELECT i.indisvalid
+            FROM pg_index i
+            JOIN pg_class c ON c.oid = i.indexrelid
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'messaging' AND c.relname = @IndexName;
+            """;
+        (await connection.QuerySingleAsync<bool>(validitySql, new { IndexName = indexName })).Should().BeFalse();
+
+        await _CreateInitializer(fixture.ConnectionString).InitializeAsync(AbortToken);
+
+        (await connection.QuerySingleAsync<bool>(validitySql, new { IndexName = indexName })).Should().BeTrue();
+        (
+            await connection.QuerySingleAsync<int>(
+                "SELECT COUNT(*) FROM messaging.received WHERE \"Name\" = 'retry-index-recovery';"
+            )
+        )
+            .Should()
+            .Be(2);
     }
 
     [Theory]
@@ -1864,11 +1903,37 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
             );
     }
 
-    private PostgreSqlStorageInitializer _CreateInitializer(string connectionString)
+    [Fact]
+    public async Task should_create_inbox_constraints_for_each_application_schema()
+    {
+        await _CreateInitializer(fixture.ConnectionString).InitializeAsync(AbortToken);
+        var schema = $"inbox_{Guid.NewGuid():N}";
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        try
+        {
+            await _CreateInitializer(fixture.ConnectionString, schema).InitializeAsync(AbortToken);
+            var constraints = await connection.QueryAsync<string>(
+                """
+                SELECT conname FROM pg_constraint
+                WHERE conrelid = format('%I.received', @Schema)::regclass
+                  AND conname IN ('ck_received_inbox_identity', 'ck_received_inbox_retention_v3');
+                """,
+                new { Schema = schema }
+            );
+            constraints.Should().BeEquivalentTo("ck_received_inbox_identity", "ck_received_inbox_retention_v3");
+        }
+        finally
+        {
+            await connection.ExecuteAsync($"DROP SCHEMA IF EXISTS \"{schema}\" CASCADE;");
+        }
+    }
+
+    private PostgreSqlStorageInitializer _CreateInitializer(string connectionString, string schema = "messaging")
     {
         return new PostgreSqlStorageInitializer(
             NullLogger<PostgreSqlStorageInitializer>.Instance,
-            Options.Create(new PostgreSqlOptions { ConnectionString = connectionString }),
+            Options.Create(new PostgreSqlOptions { ConnectionString = connectionString, Schema = schema }),
             Options.Create(new MessagingOptions())
         );
     }

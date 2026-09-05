@@ -98,7 +98,6 @@ Kafka is queue/consumer-group only in the current provider contract. Pulsar's Te
 | `SameNameLaneIsolation` | S | S | S | N/A | S | S† | S | S |
 | `StartupRejectionBeforeSideEffects` | U | U | U | S | U | U | U | U |
 | `MalformedEnvelopeTerminalSettlement` | S | S | S | S | S | U | N/A | S |
-| `LegacyCutoverRecovery` | S | S | U | N/A | S | N/A | N/A | S |
 
 Evidence anchors:
 

@@ -13,7 +13,6 @@ internal sealed class AmazonSqsQueueTransport(
     IOptions<AmazonSqsMessagingOptions> sqsOptionsAccessor
 ) : IQueueTransport
 {
-    private const int _MaxMessageAttributes = 10;
     private readonly ConcurrentDictionary<string, string> _queueUrlMaps = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _semaphore = new(1, 1);
     private IAmazonSQS? _sqsClient;
@@ -33,18 +32,6 @@ internal sealed class AmazonSqsQueueTransport(
             var queueName = AwsPhysicalAddress.QueueDestination(message.Name);
             var body = message.Body.Length > 0 ? Encoding.UTF8.GetString(message.Body.Span) : string.Empty;
             var attributes = SqsHeaderCodec.Encode(message);
-
-            if (attributes.Count > _MaxMessageAttributes)
-            {
-                return OperateResult.Failed(
-                    new InvalidOperationException("AWS SQS supports at most 10 message attributes."),
-                    new OperateError
-                    {
-                        Code = "AWS_SQS_MESSAGE_ATTRIBUTES_LIMIT",
-                        Description = "AWS SQS supports at most 10 message attributes.",
-                    }
-                );
-            }
 
             var queueUrl = await _GetOrCreateQueueUrlAsync(queueName, cancellationToken).ConfigureAwait(false);
             var request = new SendMessageRequest

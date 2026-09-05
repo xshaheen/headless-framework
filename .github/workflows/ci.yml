@@ -109,7 +109,7 @@ jobs:
         env:
           BuildDashboardSpa: "false"
           GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: make rebuild build-messaging-previous-version-probe
+        run: make rebuild
 
       - name: "Unit tests with coverage"
         run: make ci-test
