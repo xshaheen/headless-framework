@@ -27,8 +27,12 @@ public sealed class PostgreSqlKeyedSchedulingTests(PostgreSqlJobsCoordinationFix
         base.coordinated_manual_nonordinal_model_rejects_keyed_operations_before_middleware();
 
     [Fact]
-    public override Task manual_ordinal_job_configuration_preserves_key_scopes() =>
-        base.manual_ordinal_job_configuration_preserves_key_scopes();
+    public override Task manual_keyed_constraints_follow_custom_column_mappings() =>
+        base.manual_keyed_constraints_follow_custom_column_mappings();
+
+    [Fact]
+    public override Task manual_keyed_configuration_requires_finalization() =>
+        base.manual_keyed_configuration_requires_finalization();
 
     [Fact]
     public override Task coordinated_add_rejects_retained_keyed_parent_before_batch_effects() =>

@@ -43,7 +43,13 @@ var collation = Database.ProviderName switch
 modelBuilder.ApplyConfiguration(new TimeJobConfigurations<TimeJobEntity>("jobs", collation));
 modelBuilder.ApplyConfiguration(new CronJobConfigurations<CronJobEntity>("jobs", collation));
 modelBuilder.ApplyConfiguration(new CronJobOccurrenceConfigurations<CronJobEntity>("jobs", collation));
+
+modelBuilder.Entity<TimeJobEntity>().ToTable("scheduled_jobs", "application");
+modelBuilder.Entity<TimeJobEntity>().Property(job => job.BusinessKey).HasColumnName("business_key");
+modelBuilder.FinalizeJobsModel<TimeJobEntity>(this);
 ```
+
+Call `FinalizeJobsModel<TTimeJob>(this)` at the end of `OnModelCreating`, after all consumer table and column overrides. It builds the four keyed indexes and metadata check constraint from the final mapped names with the provider's identifier quoting and Boolean literal. The built-in Jobs model customizer finalizes automatically. An unfinalized consumer model rejects keyed scheduling and cancellation with a diagnostic; ordinary unkeyed operations remain available. Finalization configures the EF model only and does not create or alter the database.
 
 A matching explicit model-default collation is also supported. Keyed scheduling and cancellation validate the finalized model's function, tenant, and business-key column collations before accessing a key. Missing or different collations reject with a diagnostic; the provider does not alter consumer mappings or infer the database default. This validates model configuration; the database must be initialized from that same model. Ordinary unkeyed operations remain available.
 

@@ -129,6 +129,15 @@ public abstract class JobsKeyedSchedulingConformanceTests<TFixture>(TFixture fix
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, AbortToken);
         var store = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
         var factory = host.Services.GetRequiredService<IDbContextFactory<JobsDbContext>>();
+        await _AssertKeyedSchemaConstraintsAsync(store, factory);
+    }
+
+    private static async Task _AssertKeyedSchemaConstraintsAsync<TContext>(
+        IJobPersistenceProvider<TimeJobEntity, CronJobEntity> store,
+        IDbContextFactory<TContext> factory
+    )
+        where TContext : DbContext
+    {
         var parent = JobsKeyedSchedulingScenarios.Candidate();
         await store.AddTimeJobsAsync([parent], AbortToken);
 
@@ -286,7 +295,7 @@ public abstract class JobsKeyedSchedulingConformanceTests<TFixture>(TFixture fix
         (await context.Set<TimeJobEntity>().AnyAsync(row => row.BusinessKey != null, AbortToken)).Should().BeFalse();
     }
 
-    public virtual async Task manual_ordinal_job_configuration_preserves_key_scopes()
+    public virtual async Task manual_keyed_constraints_follow_custom_column_mappings()
     {
         await fixture.ResetDatabaseAsync(AbortToken);
         using var host = _BuildManualHost<OrdinalJobsDbContext>();
@@ -297,6 +306,34 @@ public abstract class JobsKeyedSchedulingConformanceTests<TFixture>(TFixture fix
         await creator.CreateTablesAsync(AbortToken);
         var store = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
         await JobsKeyedSchedulingScenarios.RunAsync(store, AbortToken);
+        await _AssertKeyedSchemaConstraintsAsync(
+            store,
+            host.Services.GetRequiredService<IDbContextFactory<OrdinalJobsDbContext>>()
+        );
+    }
+
+    public virtual async Task manual_keyed_configuration_requires_finalization()
+    {
+        await fixture.ResetDatabaseAsync(AbortToken);
+        using var host = _BuildManualHost<UnfinalizedJobsDbContext>();
+        await using var context = await host
+            .Services.GetRequiredService<IDbContextFactory<UnfinalizedJobsDbContext>>()
+            .CreateDbContextAsync(AbortToken);
+        var creator = (RelationalDatabaseCreator)context.GetService<IDatabaseCreator>();
+        await creator.CreateTablesAsync(AbortToken);
+        var store = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+        await store.AddTimeJobsAsync([JobsKeyedSchedulingScenarios.Candidate()], AbortToken);
+        var schedule = () =>
+            store.ScheduleKeyedTimeJobAsync(
+                new JobKey("unfinalized"),
+                JobsKeyedSchedulingScenarios.Candidate(),
+                cancellationToken: AbortToken
+            );
+        await schedule.Should().ThrowAsync<InvalidOperationException>().WithMessage("*FinalizeJobsModel*");
+        var cancel = () =>
+            store.CancelKeyedTimeJobAsync(new JobKeyScope("deadline"), new JobKey("unfinalized"), 1, AbortToken);
+        await cancel.Should().ThrowAsync<InvalidOperationException>().WithMessage("*FinalizeJobsModel*");
+        (await context.Set<TimeJobEntity>().CountAsync(AbortToken)).Should().Be(1);
     }
 
     public virtual async Task coordinated_add_rejects_retained_keyed_parent_before_batch_effects()
@@ -381,6 +418,38 @@ public abstract class JobsKeyedSchedulingConformanceTests<TFixture>(TFixture fix
             modelBuilder.ApplyConfiguration(new TimeJobConfigurations<TimeJobEntity>("jobs", collation));
             modelBuilder.ApplyConfiguration(new CronJobConfigurations<CronJobEntity>("jobs", collation));
             modelBuilder.ApplyConfiguration(new CronJobOccurrenceConfigurations<CronJobEntity>("jobs", collation));
+            var row = modelBuilder.Entity<TimeJobEntity>();
+            row.ToTable("consumer_time_jobs", "consumer_jobs");
+            row.Property(job => job.BusinessKey).HasColumnName("business_key");
+            row.Property(job => job.IntentFingerprint).HasColumnName("intent_hash");
+            row.Property(job => job.FingerprintAlgorithm).HasColumnName("hash_algorithm");
+            row.Property(job => job.Generation).HasColumnName("key_generation");
+            row.Property(job => job.IsCurrentGeneration).HasColumnName("is_current");
+            row.Property(job => job.TenantId).HasColumnName("tenant_key");
+            row.Property(job => job.Function).HasColumnName("function_key");
+            row.Property(job => job.ParentId).HasColumnName("parent_key");
+            row.Property(job => job.RunCondition).HasColumnName("run_condition");
+            modelBuilder.FinalizeJobsModel<TimeJobEntity>(this);
+        }
+    }
+
+    private sealed class UnfinalizedJobsDbContext(DbContextOptions<UnfinalizedJobsDbContext> options)
+        : DbContext(options)
+    {
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            modelBuilder.UseCollation(
+                string.Equals(
+                    Database.ProviderName,
+                    "Microsoft.EntityFrameworkCore.SqlServer",
+                    StringComparison.Ordinal
+                )
+                    ? "Latin1_General_100_BIN2"
+                    : "C"
+            );
+            modelBuilder.ApplyConfiguration(new TimeJobConfigurations<TimeJobEntity>("jobs"));
+            modelBuilder.ApplyConfiguration(new CronJobConfigurations<CronJobEntity>("jobs"));
+            modelBuilder.ApplyConfiguration(new CronJobOccurrenceConfigurations<CronJobEntity>("jobs"));
         }
     }
 
@@ -391,6 +460,7 @@ public abstract class JobsKeyedSchedulingConformanceTests<TFixture>(TFixture fix
             modelBuilder.ApplyConfiguration(new TimeJobConfigurations<TimeJobEntity>("jobs"));
             modelBuilder.ApplyConfiguration(new CronJobConfigurations<CronJobEntity>("jobs"));
             modelBuilder.ApplyConfiguration(new CronJobOccurrenceConfigurations<CronJobEntity>("jobs"));
+            modelBuilder.FinalizeJobsModel<TimeJobEntity>(this);
         }
     }
 

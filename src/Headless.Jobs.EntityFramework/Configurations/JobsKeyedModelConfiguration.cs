@@ -26,6 +26,23 @@ internal static class JobsKeyedModelConfiguration
         // Collations are omitted from EF's runtime model; inspect the finalized model used to generate the schema.
         var model = context.GetService<IDesignTimeModel>().Model;
         var entity = model.FindEntityType(typeof(TTimeJob))!;
+        if (
+            entity.FindCheckConstraint("CK_TimeJobs_KeyedMetadata") is null
+            || new[]
+            {
+                "UX_TimeJobs_KeyGeneration_Tenant",
+                "UX_TimeJobs_KeyGeneration_System",
+                "UX_TimeJobs_CurrentKey_Tenant",
+                "UX_TimeJobs_CurrentKey_System",
+            }.Any(name => entity.FindIndex(name) is not { IsUnique: true } index || index.GetFilter() is null)
+        )
+        {
+            throw new InvalidOperationException(
+                "Keyed Jobs require finalized indexes and check constraints. Call modelBuilder.FinalizeJobsModel<TTimeJob>(this) "
+                    + "at the end of OnModelCreating after all consumer mappings, then initialize the database from that model."
+            );
+        }
+
         var table = StoreObjectIdentifier.Table(entity.GetTableName()!, entity.GetSchema());
         foreach (
             var name in new[]
