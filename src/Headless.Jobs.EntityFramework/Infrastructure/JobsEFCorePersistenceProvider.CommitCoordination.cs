@@ -2,6 +2,7 @@
 
 using System.Data;
 using Headless.CommitCoordination;
+using Headless.Jobs.Configurations;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Models;
@@ -26,6 +27,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         if (requireSavepoints)
         {
             _RequireKeyedSavepoints(context);
+            JobsKeyedModelConfiguration.ValidateOrdinalScope<TTimeJob>(context);
         }
     }
 

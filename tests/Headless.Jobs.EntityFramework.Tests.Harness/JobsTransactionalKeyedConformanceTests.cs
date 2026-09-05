@@ -67,7 +67,7 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
                         await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, ct);
                         if (!commit)
                         {
-                            throw new InjectedFailure();
+                            throw new InjectedFailureException();
                         }
                     },
                     AbortToken
@@ -78,7 +78,7 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
             }
             else
             {
-                await operation.Should().ThrowAsync<InjectedFailure>();
+                await operation.Should().ThrowAsync<InjectedFailureException>();
             }
             (await fixture.CountProbeRowsAsync(AbortToken)).Should().Be(commit ? 2 : 0);
             (await fixture.CountTimeJobsAsync(AbortToken)).Should().Be(commit ? 3 : 0);
@@ -125,7 +125,7 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
                     {
                         fault.FailNextKeyedSave = true;
                         var replace = () => _ScheduleAsync(host, key, "next", ct, generation: 1);
-                        await replace.Should().ThrowAsync<InjectedFailure>();
+                        await replace.Should().ThrowAsync<InjectedFailureException>();
                         (await _ScheduleAsync(host, key, "first", ct)).RunId.Should().Be(first.RunId);
                         // The failed insert must not leave generation 1 historical inside a still-usable caller transaction.
                         await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, ct);
@@ -169,7 +169,7 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
                         host.Services,
                         cancellationToken: AbortToken
                     );
-                await operation.Should().ThrowAsync<InjectedFailure>();
+                await operation.Should().ThrowAsync<InjectedFailureException>();
                 fault.Enabled = false;
                 calls.Should().Be(1);
                 (await fixture.CountTimeJobsAsync(AbortToken)).Should().Be(afterCommit ? 1 : 0);
@@ -208,7 +208,7 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
                         await _ScheduleAsync(host, new JobKey("known-retry"), "first", ct);
                         if (attempts == 1)
                         {
-                            throw new InjectedFailure();
+                            throw new InjectedFailureException();
                         }
                     },
                     host.Services,
@@ -241,7 +241,7 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
                         },
                         AbortToken
                     );
-                await operation.Should().ThrowAsync<InjectedFailure>();
+                await operation.Should().ThrowAsync<InjectedFailureException>();
                 fault.Failures.Should().Be(1);
                 (await fixture.CountTimeJobsAsync(AbortToken)).Should().Be(0);
                 (await fixture.CountProbeRowsAsync(AbortToken)).Should().Be(0);
@@ -357,7 +357,7 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
             : scheduler.ScheduleKeyedAsync(key, request, due ?? _Due, options, ct);
     }
 
-    public sealed class InjectedFailure : Exception;
+    public sealed class InjectedFailureException : Exception;
 
     private sealed class InsertFailureInterceptor : SaveChangesInterceptor
     {
@@ -377,7 +377,7 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
             {
                 FailNextKeyedSave = false;
                 Failures++;
-                throw new InjectedFailure();
+                throw new InjectedFailureException();
             }
             return ValueTask.FromResult(result);
         }
@@ -396,7 +396,7 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
         {
             if (Enabled && !afterCommit)
             {
-                throw new InjectedFailure();
+                throw new InjectedFailureException();
             }
             return ValueTask.FromResult(result);
         }
@@ -405,7 +405,7 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
             DbTransaction transaction,
             TransactionEndEventData eventData,
             CancellationToken cancellationToken = default
-        ) => Enabled && afterCommit ? throw new InjectedFailure() : Task.CompletedTask;
+        ) => Enabled && afterCommit ? throw new InjectedFailureException() : Task.CompletedTask;
     }
 
     private sealed class SavepointFailureInterceptor : DbTransactionInterceptor
@@ -425,7 +425,7 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
             {
                 FailCreation = false;
                 Failures++;
-                throw new InjectedFailure();
+                throw new InjectedFailureException();
             }
             return ValueTask.FromResult(result);
         }
@@ -441,7 +441,7 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
             {
                 FailRestoration = false;
                 Failures++;
-                throw new InjectedFailure();
+                throw new InjectedFailureException();
             }
             return ValueTask.FromResult(result);
         }
@@ -450,6 +450,6 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
     private sealed class KnownRollbackStrategy(DbContext context)
         : ExecutionStrategy(context, maxRetryCount: 1, maxRetryDelay: TimeSpan.Zero)
     {
-        protected override bool ShouldRetryOn(Exception exception) => exception is InjectedFailure;
+        protected override bool ShouldRetryOn(Exception exception) => exception is InjectedFailureException;
     }
 }

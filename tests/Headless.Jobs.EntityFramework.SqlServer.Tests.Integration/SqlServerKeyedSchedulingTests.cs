@@ -27,6 +27,10 @@ public sealed class SqlServerKeyedSchedulingTests(SqlServerJobsCoordinationFixtu
         base.manual_job_configuration_requires_explicit_ordinal_scope();
 
     [Fact]
+    public override Task coordinated_manual_nonordinal_model_rejects_keyed_operations_before_middleware() =>
+        base.coordinated_manual_nonordinal_model_rejects_keyed_operations_before_middleware();
+
+    [Fact]
     public override Task manual_ordinal_job_configuration_preserves_key_scopes() =>
         base.manual_ordinal_job_configuration_preserves_key_scopes();
 

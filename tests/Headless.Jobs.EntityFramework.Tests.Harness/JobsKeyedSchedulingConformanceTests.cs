@@ -146,6 +146,63 @@ public abstract class JobsKeyedSchedulingConformanceTests<TFixture>(TFixture fix
         (await context.Set<TimeJobEntity>().CountAsync(AbortToken)).Should().Be(1);
     }
 
+    public virtual async Task coordinated_manual_nonordinal_model_rejects_keyed_operations_before_middleware()
+    {
+        await fixture.ResetDatabaseAsync(AbortToken);
+        var probe = new JobsScheduleMiddlewareProbe();
+        using var host = _BuildManualHost<DirectJobsDbContext>(probe);
+        await using var context = await host
+            .Services.GetRequiredService<IDbContextFactory<DirectJobsDbContext>>()
+            .CreateDbContextAsync(AbortToken);
+        var creator = (RelationalDatabaseCreator)context.GetService<IDatabaseCreator>();
+        await creator.CreateTablesAsync(AbortToken);
+        await fixture.CreateProbeTableAsync(AbortToken);
+        var manager = host.Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
+        var ordinary = JobsKeyedSchedulingScenarios.Candidate();
+        ordinary.Function = JobsCoordinationFixtureExtensions.CoordinatedFunctionName;
+        await manager.AddAsync(ordinary, AbortToken);
+        probe.Calls.Should().Be(1);
+
+        await fixture.RunCoordinatedTransactionAsync(
+            host.Services,
+            async (connection, transaction, ct) =>
+            {
+                var keyed = JobsKeyedSchedulingScenarios.Candidate();
+                keyed.Function = ordinary.Function;
+                keyed.RequireAtomicEnlistment = true;
+                var key = new JobKey("nonordinal-preflight");
+                var schedule = () => manager.ScheduleKeyedAsync(key, keyed, cancellationToken: ct);
+                await schedule.Should().ThrowAsync<InvalidOperationException>().WithMessage("*collation*");
+                probe
+                    .Calls.Should()
+                    .Be(
+                        1,
+                        "the ordinary call proves middleware is live, but invalid keyed models must reject before it"
+                    );
+                await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, ct);
+
+                var cancel = () =>
+                    manager.CancelKeyedAsync(
+                        new JobKeyScope(ordinary.Function),
+                        key,
+                        1,
+                        requireAtomicEnlistment: true,
+                        cancellationToken: ct
+                    );
+                await cancel.Should().ThrowAsync<InvalidOperationException>().WithMessage("*collation*");
+                probe.Calls.Should().Be(1);
+                connection.State.Should().Be(System.Data.ConnectionState.Open);
+                transaction.Connection.Should().BeSameAs(connection);
+                await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, ct);
+            },
+            AbortToken
+        );
+
+        (await fixture.CountProbeRowsAsync(AbortToken)).Should().Be(2);
+        (await context.Set<TimeJobEntity>().CountAsync(AbortToken)).Should().Be(1);
+        (await context.Set<TimeJobEntity>().AnyAsync(row => row.BusinessKey != null, AbortToken)).Should().BeFalse();
+    }
+
     public virtual async Task manual_ordinal_job_configuration_preserves_key_scopes()
     {
         await fixture.ResetDatabaseAsync(AbortToken);
@@ -206,7 +263,7 @@ public abstract class JobsKeyedSchedulingConformanceTests<TFixture>(TFixture fix
         }
     }
 
-    private IHost _BuildManualHost<TContext>()
+    private IHost _BuildManualHost<TContext>(JobsScheduleMiddlewareProbe? scheduleProbe = null)
         where TContext : DbContext
     {
         var builder = Host.CreateApplicationBuilder();
@@ -219,6 +276,11 @@ public abstract class JobsKeyedSchedulingConformanceTests<TFixture>(TFixture fix
                 ef.UseApplicationDbContext<TContext>(ConfigurationType.IgnoreModelCustomizer)
             );
         });
+        if (scheduleProbe is not null)
+        {
+            builder.Services.AddSingleton(scheduleProbe);
+            fixture.ConfigureCommitCoordination(builder.Services);
+        }
         return builder.Build();
     }
 
