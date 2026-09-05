@@ -20,6 +20,152 @@ namespace Tests.Internal;
 public sealed class MessagePublisherDeliveryTests : TestBase
 {
     [Theory]
+    [InlineData(MessageLane.Bus, Headers.MessageName, "forbidden", null)]
+    [InlineData(MessageLane.Queue, Headers.MessageName, "forbidden", null)]
+    [InlineData(MessageLane.Bus, "bad\r\nname", "value", null)]
+    [InlineData(MessageLane.Queue, "bad\r\nname", "value", null)]
+    [InlineData(MessageLane.Bus, "custom", "bad\nvalue", null)]
+    [InlineData(MessageLane.Queue, "custom", "bad\nvalue", null)]
+    [InlineData(MessageLane.Bus, Headers.TenantId, "raw", null)]
+    [InlineData(MessageLane.Queue, Headers.TenantId, "raw", null)]
+    [InlineData(MessageLane.Bus, Headers.TenantId, "raw", "different")]
+    [InlineData(MessageLane.Queue, Headers.TenantId, "raw", "different")]
+    public async Task should_reject_invalid_fluent_headers_through_the_existing_publisher(
+        MessageLane lane,
+        string name,
+        string value,
+        string? tenantId
+    )
+    {
+        await using var harness = _CreateHarness();
+        IBus bus = new Bus(harness.Publisher);
+        IQueue queue = new Queue(harness.Publisher);
+        var message = new DeliveryMessage("invalid");
+
+        Func<Task> publish = () =>
+            lane == MessageLane.Bus
+                ? bus.PublishAsync(
+                    message,
+                    options => options.WithHeader(name, value).WithTenantId(tenantId),
+                    AbortToken
+                )
+                : queue.EnqueueAsync(
+                    message,
+                    options => options.WithHeader(name, value).WithTenantId(tenantId),
+                    AbortToken
+                );
+
+        await publish.Should().ThrowAsync<InvalidOperationException>();
+        harness.Storage.ReceivedCalls().Should().BeEmpty();
+        harness.TransportMessages.Should().BeEmpty();
+        harness.Dispatcher.CommittedMessages.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(MessageLane.Bus, -1)]
+    [InlineData(MessageLane.Queue, -1)]
+    [InlineData(MessageLane.Bus, 0)]
+    [InlineData(MessageLane.Queue, 0)]
+    [InlineData(MessageLane.Bus, 5)]
+    [InlineData(MessageLane.Queue, 5)]
+    public async Task should_preserve_fluent_durable_defaults_metadata_and_delay_validation(
+        MessageLane lane,
+        int delayMinutes
+    )
+    {
+        var now = new DateTimeOffset(2026, 7, 26, 12, 0, 0, TimeSpan.Zero);
+        await using var harness = _CreateHarness(new FakeTimeProvider(now));
+        using var caller = new CancellationTokenSource();
+        TimeSpan? delay = delayMinutes < 0 ? null : TimeSpan.FromMinutes(delayMinutes);
+        harness
+            .Storage.StoreMessageAsync(
+                Arg.Any<string>(),
+                Arg.Any<MediumMessage>(),
+                Arg.Any<System.Data.Common.DbTransaction?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(call =>
+            {
+                call.ArgAt<CancellationToken>(3).Should().Be(caller.Token);
+                var stored = call.ArgAt<MediumMessage>(1);
+                stored.StorageId = Guid.NewGuid();
+                return ValueTask.FromResult(stored);
+            });
+        harness
+            .Storage.StoreScheduledMessageAsync(
+                Arg.Any<string>(),
+                Arg.Any<MediumMessage>(),
+                Arg.Any<DateTimeOffset>(),
+                Arg.Any<System.Data.Common.DbTransaction?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(call =>
+            {
+                call.ArgAt<DateTimeOffset>(2).Should().Be(now.AddMinutes(delayMinutes));
+                call.ArgAt<CancellationToken>(4).Should().Be(caller.Token);
+                var stored = call.ArgAt<MediumMessage>(1);
+                stored.StorageId = Guid.NewGuid();
+                return ValueTask.FromResult(stored);
+            });
+        IBus bus = new Bus(harness.Publisher);
+        IQueue queue = new Queue(harness.Publisher);
+        var message = new DeliveryMessage("fluent");
+        Func<Task> publish = () =>
+            lane == MessageLane.Bus
+                ? bus.PublishAsync(
+                    message,
+                    options =>
+                        options
+                            .WithDelay(delay)
+                            .WithHeader("source", "checkout")
+                            .WithCorrelationId("corr")
+                            .WithCausationId("cause")
+                            .WithTenantId("tenant")
+                            .WithMessageId("id"),
+                    caller.Token
+                )
+                : queue.EnqueueAsync(
+                    message,
+                    options =>
+                        options
+                            .WithDelay(delay)
+                            .WithHeader("source", "checkout")
+                            .WithCorrelationId("corr")
+                            .WithCausationId("cause")
+                            .WithTenantId("tenant")
+                            .WithMessageId("id"),
+                    caller.Token
+                );
+
+        if (delayMinutes == 0)
+        {
+            await publish.Should().ThrowAsync<ArgumentOutOfRangeException>().WithParameterName("delay");
+            harness.Storage.ReceivedCalls().Should().BeEmpty();
+            harness.Dispatcher.CommittedMessages.Should().BeEmpty();
+            harness.Dispatcher.CommittedDelayedMessages.Should().BeEmpty();
+        }
+        else
+        {
+            await publish();
+            var stored = (
+                delay is null ? harness.Dispatcher.CommittedMessages : harness.Dispatcher.CommittedDelayedMessages
+            )
+                .Should()
+                .ContainSingle()
+                .Subject;
+            stored.Lane.Should().Be(lane);
+            stored.Origin.Headers[Headers.RequestedDeliveryMode].Should().Be(nameof(DeliveryMode.Durable));
+            stored.Origin.Headers[Headers.ResolvedDeliveryMode].Should().Be(nameof(DeliveryMode.Durable));
+            stored.Origin.Headers["source"].Should().Be("checkout");
+            stored.Origin.Headers[Headers.CorrelationId].Should().Be("corr");
+            stored.Origin.Headers[Headers.CausationId].Should().Be("cause");
+            stored.Origin.Headers[Headers.TenantId].Should().Be("tenant");
+            stored.Origin.Headers[Headers.MessageId].Should().Be("id");
+        }
+        harness.TransportMessages.Should().BeEmpty();
+    }
+
+    [Theory]
     [InlineData(MessageLane.Bus)]
     [InlineData(MessageLane.Queue)]
     public async Task should_preserve_same_affinity_in_direct_transport_and_committed_outbox(MessageLane lane)

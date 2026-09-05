@@ -20,6 +20,21 @@ public sealed class BusTests : TestBase
     private sealed record UnmappedMessage(int Id);
 
     [Fact]
+    public async Task should_require_storage_for_empty_fluent_publish_without_sending_directly()
+    {
+        await using var transport = new TestTransport();
+        var bus = _CreateBus(transport, new MessagingOptions());
+
+        var publish = () => bus.PublishAsync(new TestMessage("test"), _ => { }, AbortToken);
+
+        await publish
+            .Should()
+            .ThrowAsync<MessagingConfigurationException>()
+            .WithMessage("*requires a matching storage capability*");
+        transport.SentMessages.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task should_resolve_topic_from_mapping()
     {
         // given
