@@ -21,8 +21,8 @@ public sealed class JobChainNodeBuilder
         JobFunctionDescriptor? descriptor,
         object? payload,
         Type? payloadType,
-        EnqueueOptions? options,
-        DateTime? executionTime
+        JobOptions? options,
+        DateTimeOffset? executionTime
     )
     {
         _owner = owner;
@@ -40,7 +40,7 @@ public sealed class JobChainNodeBuilder
     /// <typeparam name="TRequest">The request payload type used to resolve the generated descriptor.</typeparam>
     /// <param name="payload">The request payload to run when this node succeeds.</param>
     /// <param name="options">Optional per-step options.</param>
-    /// <param name="executionTime">Optional explicit UTC execution time for the child step.</param>
+    /// <param name="executionTime">Optional explicit execution instant for the child step.</param>
     /// <returns>The new child handle so the success branch can be extended.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="payload"/> is <see langword="null"/>.</exception>
     /// <exception cref="InvalidOperationException">
@@ -48,8 +48,8 @@ public sealed class JobChainNodeBuilder
     /// </exception>
     public JobChainNodeBuilder Then<TRequest>(
         TRequest payload,
-        EnqueueOptions? options = null,
-        DateTime? executionTime = null
+        JobOptions? options = null,
+        DateTimeOffset? executionTime = null
     )
         where TRequest : notnull
     {
@@ -61,7 +61,7 @@ public sealed class JobChainNodeBuilder
     /// <summary>Attaches the on-success continuation for this node using an explicit generated descriptor.</summary>
     /// <param name="descriptor">The generated descriptor of the requestless step to run when this node succeeds.</param>
     /// <param name="options">Optional per-step options.</param>
-    /// <param name="executionTime">Optional explicit UTC execution time for the child step.</param>
+    /// <param name="executionTime">Optional explicit execution instant for the child step.</param>
     /// <returns>The new child handle so the success branch can be extended.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="descriptor"/> is <see langword="null"/>.</exception>
     /// <exception cref="InvalidOperationException">
@@ -69,8 +69,8 @@ public sealed class JobChainNodeBuilder
     /// </exception>
     public JobChainNodeBuilder Then(
         JobFunctionDescriptor descriptor,
-        EnqueueOptions? options = null,
-        DateTime? executionTime = null
+        JobOptions? options = null,
+        DateTimeOffset? executionTime = null
     )
     {
         ArgumentNullException.ThrowIfNull(descriptor);
@@ -85,7 +85,7 @@ public sealed class JobChainNodeBuilder
     /// <typeparam name="TRequest">The request payload type used to resolve the generated descriptor.</typeparam>
     /// <param name="payload">The request payload to run when this node fails.</param>
     /// <param name="options">Optional per-step options.</param>
-    /// <param name="executionTime">Optional explicit UTC execution time for the child step.</param>
+    /// <param name="executionTime">Optional explicit execution instant for the child step.</param>
     /// <returns>The new child handle so the failure branch can be extended.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="payload"/> is <see langword="null"/>.</exception>
     /// <exception cref="InvalidOperationException">
@@ -93,8 +93,8 @@ public sealed class JobChainNodeBuilder
     /// </exception>
     public JobChainNodeBuilder Catch<TRequest>(
         TRequest payload,
-        EnqueueOptions? options = null,
-        DateTime? executionTime = null
+        JobOptions? options = null,
+        DateTimeOffset? executionTime = null
     )
         where TRequest : notnull
     {
@@ -106,7 +106,7 @@ public sealed class JobChainNodeBuilder
     /// <summary>Attaches the on-failure continuation for this node using an explicit generated descriptor.</summary>
     /// <param name="descriptor">The generated descriptor of the requestless step to run when this node fails.</param>
     /// <param name="options">Optional per-step options.</param>
-    /// <param name="executionTime">Optional explicit UTC execution time for the child step.</param>
+    /// <param name="executionTime">Optional explicit execution instant for the child step.</param>
     /// <returns>The new child handle so the failure branch can be extended.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="descriptor"/> is <see langword="null"/>.</exception>
     /// <exception cref="InvalidOperationException">
@@ -114,8 +114,8 @@ public sealed class JobChainNodeBuilder
     /// </exception>
     public JobChainNodeBuilder Catch(
         JobFunctionDescriptor descriptor,
-        EnqueueOptions? options = null,
-        DateTime? executionTime = null
+        JobOptions? options = null,
+        DateTimeOffset? executionTime = null
     )
     {
         ArgumentNullException.ThrowIfNull(descriptor);
@@ -129,9 +129,9 @@ public sealed class JobChainNodeBuilder
 
     internal Type? PayloadType { get; }
 
-    internal EnqueueOptions? Options { get; }
+    internal JobOptions? Options { get; }
 
-    internal DateTime? ExecutionTime { get; }
+    internal DateTimeOffset? ExecutionTime { get; }
 
     internal JobChainNodeBuilder? OnSuccessNode { get; private set; }
 
@@ -141,8 +141,8 @@ public sealed class JobChainNodeBuilder
         JobFunctionDescriptor? descriptor,
         object? payload,
         Type? payloadType,
-        EnqueueOptions? options,
-        DateTime? executionTime
+        JobOptions? options,
+        DateTimeOffset? executionTime
     )
     {
         _owner.EnsureNotBuilt();
@@ -164,8 +164,8 @@ public sealed class JobChainNodeBuilder
         JobFunctionDescriptor? descriptor,
         object? payload,
         Type? payloadType,
-        EnqueueOptions? options,
-        DateTime? executionTime
+        JobOptions? options,
+        DateTimeOffset? executionTime
     )
     {
         _owner.EnsureNotBuilt();

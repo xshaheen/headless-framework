@@ -8,6 +8,64 @@ namespace Tests;
 public sealed class JobsIncrementalSourceGeneratorTests
 {
     [Fact]
+    public void explicit_contract_metadata_is_stable_across_source_reference_order_and_clr_rename()
+    {
+        const string first =
+            "using Headless.Jobs.Base; public sealed class OldName { [JobFunction(\"stable.contract\", ContractVersion = \"schema-v2\")] public void OldMethod() { } }";
+        const string renamed =
+            "using Headless.Jobs.Base; public sealed class NewName { [JobFunction(\"stable.contract\", ContractVersion = \"schema-v2\")] public void NewMethod() { } }";
+        const string other =
+            "using Headless.Jobs.Base; public sealed class Other { [JobFunction(\"other.contract\", ContractVersion = \"v3\")] public void Run() { } }";
+        var referenceA = GeneratorTestHelper.EmitReference(
+            "ContractReferenceA",
+            "public sealed class ReferenceA { }",
+            out var diagnosticsA
+        );
+        var referenceB = GeneratorTestHelper.EmitReference(
+            "ContractReferenceB",
+            "public sealed class ReferenceB { }",
+            out var diagnosticsB
+        );
+        diagnosticsA.Concat(diagnosticsB).Should().NotContain(x => x.Severity == DiagnosticSeverity.Error);
+        var forward = GeneratorTestHelper.Run(
+            [("first.cs", first), ("other.cs", other)],
+            out var forwardDiagnostics,
+            referenceA,
+            referenceB
+        );
+        var reverse = GeneratorTestHelper.Run(
+            [("other.cs", other), ("first.cs", first)],
+            out var reverseDiagnostics,
+            referenceB,
+            referenceA
+        );
+        var rename = GeneratorTestHelper.Run(
+            [("first.cs", renamed), ("other.cs", other)],
+            out var renameDiagnostics,
+            referenceA,
+            referenceB
+        );
+        forwardDiagnostics
+            .Concat(reverseDiagnostics)
+            .Concat(renameDiagnostics)
+            .Should()
+            .NotContain(x => x.Severity == DiagnosticSeverity.Error);
+
+        static string[] Contracts(GeneratorDriver driver) =>
+            driver
+                .GetRunResult()
+                .GeneratedTrees.SelectMany(tree => tree.ToString().Split('\n'))
+                .Where(line =>
+                    line.Contains("descriptors.Add(", StringComparison.Ordinal)
+                    || line.Contains("JobFunctionDescriptorMetadataAttribute(", StringComparison.Ordinal)
+                )
+                .ToArray();
+        Contracts(forward).Should().Equal(Contracts(reverse));
+        Contracts(forward).Should().Equal(Contracts(rename));
+        Contracts(forward).Should().Contain(line => line.Contains("\"schema-v2\"", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void should_use_the_headless_framework_diagnostic_prefix_for_every_descriptor()
     {
         var descriptorsType = typeof(Headless.Jobs.SourceGenerator.JobsIncrementalSourceGenerator).Assembly.GetType(
@@ -40,7 +98,7 @@ public sealed class JobsIncrementalSourceGeneratorTests
 
             public sealed class InvoiceJobs
             {
-                [JobFunction("invoice.create", "0 */5 * * * *", JobPriority.High, 3)]
+                [JobFunction("invoice.create", "0 */5 * * * *", JobPriority.High, 3, ContractVersion = "schema-v2")]
                 public Task CreateAsync(JobFunctionContext<CreateInvoice> context, CancellationToken cancellationToken)
                     => Task.CompletedTask;
 

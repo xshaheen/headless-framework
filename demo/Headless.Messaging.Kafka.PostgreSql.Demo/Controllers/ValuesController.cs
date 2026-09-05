@@ -33,7 +33,7 @@ public class ValuesController(IQueue producer, IServiceProvider services) : Cont
     {
         await producer.EnqueueAsync(
             new KafkaMessage(DateTime.UtcNow),
-            new EnqueueOptions { MessageName = _MessageName, DeliveryMode = DeliveryMode.Durable }
+            new QueueOptions { MessageName = _MessageName, DeliveryMode = DeliveryMode.Durable }
         );
 
         return Ok();
@@ -44,7 +44,7 @@ public class ValuesController(IQueue producer, IServiceProvider services) : Cont
     {
         await producer.EnqueueAsync(
             new KafkaMessage(DateTime.UtcNow),
-            new EnqueueOptions
+            new QueueOptions
             {
                 MessageName = _MessageName,
                 Delay = TimeSpan.FromSeconds(delaySeconds),
@@ -89,7 +89,7 @@ public class ValuesController(IQueue producer, IServiceProvider services) : Cont
 
             await producer.EnqueueAsync(
                 new KafkaMessage(DateTime.UtcNow),
-                new EnqueueOptions { MessageName = _MessageName, DeliveryMode = DeliveryMode.Durable },
+                new QueueOptions { MessageName = _MessageName, DeliveryMode = DeliveryMode.Durable },
                 ct
             );
 
@@ -121,7 +121,7 @@ public class ValuesController(IQueue producer, IServiceProvider services) : Cont
 
                 await producer.EnqueueAsync(
                     new KafkaMessage(DateTime.UtcNow),
-                    new EnqueueOptions { MessageName = _MessageName, DeliveryMode = DeliveryMode.Durable },
+                    new QueueOptions { MessageName = _MessageName, DeliveryMode = DeliveryMode.Durable },
                     ct
                 );
             },
@@ -154,7 +154,7 @@ public class ValuesController(IQueue producer, IServiceProvider services) : Cont
 
                     await producer.EnqueueAsync(
                         new KafkaMessage(DateTime.UtcNow),
-                        new EnqueueOptions { MessageName = _MessageName, DeliveryMode = DeliveryMode.Durable },
+                        new QueueOptions { MessageName = _MessageName, DeliveryMode = DeliveryMode.Durable },
                         ct
                     );
 
@@ -191,7 +191,7 @@ public class ValuesController(IQueue producer, IServiceProvider services) : Cont
 
                 await producer.EnqueueAsync(
                     new KafkaMessage(DateTime.UtcNow),
-                    new EnqueueOptions
+                    new QueueOptions
                     {
                         MessageName = _MessageName,
                         Delay = TimeSpan.FromSeconds(delaySeconds),

@@ -27,7 +27,8 @@ public sealed record JobFunctionDescriptor
     /// <param name="maxConcurrency">
     /// The maximum concurrent executions on one node; <c>0</c> means the global scheduler limit applies.
     /// </param>
-    /// <exception cref="ArgumentException"><paramref name="functionName"/> is empty or whitespace.</exception>
+    /// <param name="contractVersion">The ordinal payload schema version, bounded by <see cref="JobContract.VersionMaxLength"/>.</param>
+    /// <exception cref="ArgumentException">The function name or contract version violates <see cref="JobContract"/> identity rules.</exception>
     /// <exception cref="ArgumentNullException"><paramref name="cronExpression"/> is <see langword="null"/>.</exception>
     /// <exception cref="System.ComponentModel.InvalidEnumArgumentException">
     /// <paramref name="priority"/> is not a defined <see cref="JobPriority"/> value.
@@ -38,7 +39,8 @@ public sealed record JobFunctionDescriptor
         Type? requestType,
         string cronExpression,
         JobPriority priority,
-        int maxConcurrency
+        int maxConcurrency,
+        string contractVersion = JobContract.InitialVersion
     )
     {
         if (string.IsNullOrWhiteSpace(functionName))
@@ -61,7 +63,8 @@ public sealed record JobFunctionDescriptor
             throw new ArgumentOutOfRangeException(nameof(maxConcurrency), "Maximum concurrency cannot be negative.");
         }
 
-        FunctionName = functionName;
+        FunctionName = JobContract.ValidateName(functionName);
+        ContractVersion = JobContract.ValidateVersion(contractVersion);
         RequestType = requestType;
         CronExpression = cronExpression;
         Priority = priority;
@@ -70,6 +73,9 @@ public sealed record JobFunctionDescriptor
 
     /// <summary>The unique durable name persisted with scheduled jobs.</summary>
     public string FunctionName { get; }
+
+    /// <summary>The frozen durable payload schema version; independent of run and retry identities.</summary>
+    public string ContractVersion { get; }
 
     /// <summary>The request payload type, or <see langword="null"/> when the function is requestless.</summary>
     public Type? RequestType { get; }

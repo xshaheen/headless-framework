@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data;
 using System.Data.Common;
 using System.Linq.Expressions;
 using Headless.Abstractions;
@@ -25,7 +26,7 @@ namespace Tests.Transactions;
 /// discarding with the caller's transaction) is integration-only — see the EF harness conformance suite.
 /// </summary>
 [Collection<JobsHelperCollection>]
-public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
+public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
 {
     private const string _FunctionName = "routing-test-fn";
 
@@ -47,6 +48,32 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
         await sut.Persistence.Received(1).AddTimeJobsAsync(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
         sut.Scheduler.Received(1).RestartIfNeeded(Arg.Any<DateTime>());
         await sut.Notification.Received(1).AddTimeJobNotifyAsync(Arg.Any<Guid>());
+    }
+
+    [Fact]
+    public async Task required_atomic_time_job_rejects_missing_capability_before_schedule_effects()
+    {
+        var middlewareCalls = 0;
+        using var dispatch = _ReplaceScheduleDispatch(
+            (_, next, cancellationToken) =>
+            {
+                middlewareCalls++;
+                return next(cancellationToken);
+            }
+        );
+        var sut = _CreateSut(CoordinatorMode.None, withWriter: false);
+        var candidate = _FutureTimeJob();
+        candidate.RequireAtomicEnlistment = true;
+
+        var schedule = () => sut.Time.AddAsync(candidate, AbortToken);
+
+        await schedule.Should().ThrowAsync<InvalidOperationException>().WithMessage("*atomic*");
+        middlewareCalls.Should().Be(0);
+        await sut
+            .Persistence.DidNotReceive()
+            .AddTimeJobsAsync(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
+        sut.Scheduler.DidNotReceiveWithAnyArgs().RestartIfNeeded(default);
+        await sut.Notification.DidNotReceiveWithAnyArgs().AddTimeJobNotifyAsync(default(Guid));
     }
 
     [Fact]
@@ -1044,7 +1071,7 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
             CoordinatorMode.None => null,
             CoordinatorMode.NonRelational => new FakeCommitCoordinator(relational: null),
             CoordinatorMode.LiveRelational => new FakeCommitCoordinator(
-                new FakeRelationalCommitContext(Substitute.For<DbTransaction>())
+                new FakeRelationalCommitContext(_LiveTransaction())
             ),
             CoordinatorMode.DeadRelational => new FakeCommitCoordinator(
                 new FakeRelationalCommitContext(transaction: null)
@@ -1170,6 +1197,15 @@ public sealed class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
     private sealed class FakeCurrentCommitCoordinator(ICommitCoordinator? current) : ICurrentCommitCoordinator
     {
         public ICommitCoordinator? Current { get; } = current;
+    }
+
+    private static DbTransaction _LiveTransaction()
+    {
+        var connection = Substitute.For<DbConnection>();
+        connection.State.Returns(ConnectionState.Open);
+        var transaction = Substitute.For<DbTransaction>();
+        transaction.Connection.Returns(connection);
+        return transaction;
     }
 
     private sealed class FakeRelationalCommitContext(DbTransaction? transaction) : IRelationalCommitContext

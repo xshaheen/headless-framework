@@ -25,7 +25,7 @@ namespace Tests;
 public sealed class PostgreSqlJobsCoordinationFixture
     : HeadlessPostgreSqlFixture,
         ICollectionFixture<PostgreSqlJobsCoordinationFixture>,
-        IJobsCoordinationFixture
+        IJobsApplicationConfigurationFixture
 {
     public string ConnectionString => Container.GetConnectionString();
 
@@ -75,6 +75,15 @@ public sealed class PostgreSqlJobsCoordinationFixture
     public void ConfigureClaims(JobsEfCoreOptionBuilder<TimeJobEntity, CronJobEntity> builder)
     {
         builder.UsePostgreSqlClaims();
+    }
+
+    public void ConfigureApplicationJobs<TContext>(
+        JobsOptionsBuilder<TimeJobEntity, CronJobEntity> builder,
+        Action<CoordinationOptions> configureCoordination
+    )
+        where TContext : DbContext
+    {
+        builder.UsePostgreSql<TContext>(configureCoordination);
     }
 
     public DbConnection CreateConnection()

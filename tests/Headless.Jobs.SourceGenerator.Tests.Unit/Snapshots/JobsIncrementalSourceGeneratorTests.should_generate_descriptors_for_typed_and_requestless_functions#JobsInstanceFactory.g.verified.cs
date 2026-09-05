@@ -12,8 +12,8 @@ using Headless.Jobs.Enums;
 using Headless.Jobs.Base;
 using Jobs.SourceGenerator.Tests;
 
-[assembly: global::Headless.Jobs.JobFunctionDescriptorMetadataAttribute("invoice.cleanup")]
-[assembly: global::Headless.Jobs.JobFunctionDescriptorMetadataAttribute("invoice.create")]
+[assembly: global::Headless.Jobs.JobFunctionDescriptorMetadataAttribute("invoice.cleanup", "1")]
+[assembly: global::Headless.Jobs.JobFunctionDescriptorMetadataAttribute("invoice.create", "schema-v2")]
 namespace Jobs.SourceGenerator.Tests
 {
     internal static class JobsInstanceFactoryExtensions
@@ -40,8 +40,8 @@ namespace Jobs.SourceGenerator.Tests
         private static void RegisterDescriptors()
         {
             var descriptors = new Dictionary<string, JobFunctionDescriptor>(2);
-            descriptors.Add("invoice.create", new JobFunctionDescriptor("invoice.create", typeof(global::Demo.CreateInvoice), "0 */5 * * * *", (JobPriority)1, 3));
-            descriptors.Add("invoice.cleanup", new JobFunctionDescriptor("invoice.cleanup", null, "", (JobPriority)0, 0));
+            descriptors.Add("invoice.cleanup", AppJobs.invoice_u002E_cleanup);
+            descriptors.Add("invoice.create", new JobFunctionDescriptor("invoice.create", typeof(global::Demo.CreateInvoice), "0 */5 * * * *", (JobPriority)1, 3, "schema-v2"));
             JobFunctionProvider.RegisterDescriptors(descriptors, 2);
         }
 
@@ -62,5 +62,15 @@ namespace Jobs.SourceGenerator.Tests
             requestTypes.Add("invoice.create", (typeof(Demo.CreateInvoice).FullName, typeof(Demo.CreateInvoice)));
             JobFunctionProvider.RegisterRequestType(requestTypes, 1);
         }
+    }
+}
+
+namespace Jobs.SourceGenerator.Tests
+{
+    /// <summary>Canonical generated handles for this assembly's requestless jobs.</summary>
+    public static class AppJobs
+    {
+        /// <summary>A canonical requestless job descriptor.</summary>
+        public static JobFunctionDescriptor invoice_u002E_cleanup { get; } = new JobFunctionDescriptor("invoice.cleanup", null, "", (JobPriority)0, 0, "1");
     }
 }

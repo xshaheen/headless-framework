@@ -600,6 +600,56 @@ public abstract class DataStorageTestsBase : TestBase
         );
     }
 
+    [Theory]
+    [InlineData(false, null)]
+    [InlineData(false, "order-42")]
+    [InlineData(true, null)]
+    [InlineData(true, "order-42")]
+    public async Task should_round_trip_routing_affinity_through_storage_and_retry(bool received, string? key)
+    {
+        var storage = GetStorage();
+        var origin = CreateMessage();
+        if (key is not null)
+        {
+            origin.Headers[MessagingHeaders.RoutingAffinityKey] = key;
+        }
+
+        var stored = received
+            ? await storage.StoreReceivedMessageAsync("affinity", "affinity-group", origin, AbortToken)
+            : await storage.StoreMessageAsync("affinity", origin, cancellationToken: AbortToken);
+        stored.Origin.Headers["retry-probe"] = "preserved";
+        if (received)
+        {
+            await storage.ChangeReceiveStateAsync(
+                stored,
+                StatusName.Failed,
+                MessageContentWrite.Refresh,
+                nextRetryAt: DateTimeOffset.UtcNow,
+                cancellationToken: AbortToken
+            );
+        }
+        else
+        {
+            await storage.ChangePublishStateAsync(
+                stored,
+                StatusName.Failed,
+                MessageContentWrite.Refresh,
+                nextRetryAt: DateTimeOffset.UtcNow,
+                cancellationToken: AbortToken
+            );
+        }
+
+        var reloaded = received
+            ? await storage.GetMonitoringApi().GetReceivedMessageAsync(stored.StorageId, AbortToken)
+            : await storage.GetMonitoringApi().GetPublishedMessageAsync(stored.StorageId, AbortToken);
+        reloaded.Should().NotBeNull();
+        reloaded!.RoutingAffinityKey.Should().Be(key);
+        var fromContent = GetSerializer().Deserialize(reloaded.Content)!;
+        fromContent.Headers.TryGetValue(MessagingHeaders.RoutingAffinityKey, out var restoredKey);
+        restoredKey.Should().Be(key);
+        fromContent.Headers["retry-probe"].Should().Be("preserved");
+    }
+
     public virtual async Task should_store_published_message()
     {
         // given

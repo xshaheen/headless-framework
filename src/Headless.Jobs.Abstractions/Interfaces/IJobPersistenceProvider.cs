@@ -75,6 +75,22 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
 {
     #region Time_Ticker_Core_Methods
 
+    /// <summary>Atomically inserts or observes a standalone scoped key; an observed generation requests pending-only replacement.</summary>
+    Task<JobScheduleResult> ScheduleKeyedTimeJobAsync(
+        JobKey key,
+        TTimeJob job,
+        long? expectedGeneration = null,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>Conditionally cancels only the observed current generation, retaining every generation indefinitely.</summary>
+    Task<JobScheduleResult> CancelKeyedTimeJobAsync(
+        JobKeyScope scope,
+        JobKey key,
+        long expectedGeneration,
+        CancellationToken cancellationToken = default
+    );
+
     /// <summary>
     /// Claims the supplied due time jobs for this node on the main scheduler path: each row that is still
     /// acquirable and unchanged since <paramref name="timeJobs"/> was read is stamped with this node's owner id,
@@ -900,7 +916,8 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// <param name="cancellationToken">Token that aborts the write.</param>
     /// <returns>The number of rows written, counting updated children as well as roots.</returns>
     /// <remarks>
-    /// This is a full-row write with <b>no ownership or completion fence</b> — it is the management/dashboard edit
+    /// Stored tenant, correlation, and causation are preserved regardless of the supplied values.
+    /// This is otherwise a full-row write with <b>no ownership or completion fence</b> — it is the management/dashboard edit
     /// path, not the execution path. Writing a running job through it can clobber the executing node's state; the
     /// scheduler must use <see cref="UpdateTimeJobAsync"/> or
     /// <see cref="UpdateTimeJobsWithUnifiedContextAsync"/> instead.
@@ -973,6 +990,7 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// <summary>
     /// Atomically applies a definition batch. Schedule-changing edits retire pending occurrences and insert their
     /// replacement occurrence while metadata-only edits preserve both the schedule revision and pending work.
+    /// Stored correlation and causation are preserved regardless of the supplied values.
     /// </summary>
     /// <param name="updates">
     /// The definitions, expected revisions, and optional factories that derive active schedule replacements from the
@@ -1053,6 +1071,7 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// </para>
     /// <para>
     /// Implementations that cache <see cref="GetAllCronJobExpressionsAsync"/> must invalidate that entry here.
+    /// Stored correlation and causation are preserved regardless of the supplied values.
     /// </para>
     /// </remarks>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>

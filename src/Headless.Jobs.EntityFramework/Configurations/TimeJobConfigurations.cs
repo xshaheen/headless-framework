@@ -7,12 +7,30 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Headless.Jobs.Configurations;
 
-public class TimeJobConfigurations<TTimeJob>(string schema = JobDbConstants.DefaultSchema)
-    : IEntityTypeConfiguration<TTimeJob>
+public class TimeJobConfigurations<TTimeJob>(
+    string schema = JobDbConstants.DefaultSchema,
+    string? contractCollation = null
+) : IEntityTypeConfiguration<TTimeJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
 {
     public void Configure(EntityTypeBuilder<TTimeJob> builder)
     {
+        builder
+            .Property(x => x.Function)
+            .IsRequired()
+            .HasMaxLength(JobContract.NameMaxLength)
+            .HasConversion(value => JobContract.ValidateName(value), value => value);
+        builder
+            .Property(x => x.ContractVersion)
+            .IsRequired()
+            .HasMaxLength(JobContract.VersionMaxLength)
+            .HasConversion(value => JobContract.ValidateVersion(value), value => value);
+        if (contractCollation is not null)
+        {
+            builder.Property(x => x.Function).UseCollation(contractCollation);
+            builder.Property(x => x.ContractVersion).UseCollation(contractCollation);
+        }
+
         builder.HasKey(x => x.Id);
 
         builder.Property(x => x.OwnerId).IsRequired(false);
@@ -21,8 +39,18 @@ public class TimeJobConfigurations<TTimeJob>(string schema = JobDbConstants.Defa
 
         builder.Property(x => x.TenantId).IsRequired(false).HasMaxLength(JobsTenancyOptions.TenantIdMaxLength);
 
+        builder.Property(x => x.BusinessKey).HasMaxLength(JobKey.MaxLength);
+        builder.Property(x => x.IntentFingerprint).HasMaxLength(64);
+        builder.Property(x => x.FingerprintAlgorithm).HasMaxLength(16);
+        if (contractCollation is not null)
+        {
+            builder.Property(x => x.BusinessKey).UseCollation(contractCollation);
+            builder.Property(x => x.TenantId).UseCollation(contractCollation);
+        }
+
         // Transient schedule-time authorization flag (KTD2): never a column.
         builder.Ignore(x => x.IsSystemJob);
+        builder.Ignore(x => x.RequireAtomicEnlistment);
 
         builder.Property(x => x.CancelRequested).IsRequired().HasDefaultValue(value: false);
 
@@ -56,5 +84,11 @@ public class TimeJobConfigurations<TTimeJob>(string schema = JobDbConstants.Defa
         builder.HasIndex("OwnerId", "Status").HasDatabaseName("IX_TimeJob_OwnerId_Status");
 
         builder.ToTable("TimeJobs", schema);
+        // Both supported providers convert the quoted constant to the column's Boolean type.
+        JobsKeyedModelConfiguration.Configure(
+            builder,
+            static name => "\"" + name.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"",
+            "'1'"
+        );
     }
 }

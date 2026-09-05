@@ -56,6 +56,10 @@ public readonly struct TransportMessage(IDictionary<string, string?> headers, Re
     /// <exception cref="KeyNotFoundException">Thrown if the MessageName header is not present.</exception>
     public string Name => Headers[Messaging.Headers.MessageName]!;
 
+    /// <summary>The optional provider-neutral routing affinity key carried in the envelope.</summary>
+    public string? RoutingAffinityKey =>
+        Headers.TryGetValue(Messaging.Headers.RoutingAffinityKey, out var key) ? key : null;
+
     /// <summary>
     /// Attempts to retrieve the consumer group name from the message headers.
     /// </summary>

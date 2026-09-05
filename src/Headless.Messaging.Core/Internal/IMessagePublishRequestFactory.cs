@@ -45,13 +45,15 @@ internal sealed class MessagePublishRequestFactory(
     IConsumerRegistry consumerRegistry,
     ICurrentTenant currentTenant,
     IMessageMetadataRegistry? metadataRegistry = null,
-    IConsumeContextAccessor? consumeContextAccessor = null
+    IConsumeContextAccessor? consumeContextAccessor = null,
+    IMessageCapabilityGate? capabilityGate = null
 ) : IMessagePublishRequestFactory
 {
     private static readonly HashSet<string> _ReservedHeaders = new(StringComparer.Ordinal)
     {
         Headers.MessageId,
         Headers.ContractVersion,
+        Headers.RoutingAffinityKey,
         Headers.CorrelationId,
         Headers.CausationId,
         Headers.CorrelationSequence,
@@ -136,10 +138,27 @@ internal sealed class MessagePublishRequestFactory(
             delayTime,
             options?.ContractVersion ?? metadata?.ContractVersion ?? MessageOptions.InitialContractVersion,
             _ResolveCorrelationFromSelector(metadata, contentObj, declaredMessageType),
-            consumeContextAccessor?.Current?.CorrelationId,
-            consumeContextAccessor?.Current?.MessageId
+            options?.SuppressAmbientBusinessContext == true ? null : consumeContextAccessor?.Current?.CorrelationId,
+            options?.SuppressAmbientBusinessContext == true ? null : consumeContextAccessor?.Current?.MessageId
         );
+        if (options?.RoutingAffinityKey is { } affinityKey)
+        {
+            if (metadata is null || capabilityGate is null)
+            {
+                throw new MessagingConfigurationException(
+                    $"Routing affinity requires a registered, verified destination: '{messageName}' ({lane})."
+                );
+            }
+
+            capabilityGate.EnsureRoutingAffinitySupported(messageName, lane, affinityKey, headers);
+            headers[Headers.RoutingAffinityKey] = affinityKey;
+        }
+
         _ApplyProviderHeaderContributions(headers, metadata, contentObj, declaredMessageType);
+        if (options?.RoutingAffinityKey is { } contributedAffinityKey)
+        {
+            capabilityGate!.EnsureRoutingAffinitySupported(messageName, lane, contributedAffinityKey, headers);
+        }
 
         headers[Headers.SentTime] = publishAt.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
         headers[Headers.Intent] = MessageLaneCompatibility.ToWireValue(lane);
@@ -450,14 +469,17 @@ internal sealed class MessagePublishRequestFactory(
         // tenant when strict tenancy is required.
         if (typed is null && _options.TenantContextRequired)
         {
-            typed = currentTenant.Id;
+            typed = options?.SuppressAmbientBusinessContext == true ? null : currentTenant.Id;
             if (string.IsNullOrWhiteSpace(typed))
             {
                 var ex = new MissingTenantContextException(
-                    "Publish requires an ambient tenant context but none was set. "
-                        + "Set TenantId on your publish options explicitly, or wrap the publish in "
-                        + "ICurrentTenant.Change(tenantId) to scope the AsyncLocal accessor "
-                        + "(common pattern for background workers and IHostedService callers)."
+                    options?.SuppressAmbientBusinessContext == true
+                        ? "Publish requires an explicit TenantId when SuppressAmbientBusinessContext is enabled. "
+                            + "Set TenantId on your publish options; a captured system scope cannot satisfy required tenancy."
+                        : "Publish requires an ambient tenant context but none was set. "
+                            + "Set TenantId on your publish options explicitly, or wrap the publish in "
+                            + "ICurrentTenant.Change(tenantId) to scope the AsyncLocal accessor "
+                            + "(common pattern for background workers and IHostedService callers)."
                 );
                 throw ex;
             }

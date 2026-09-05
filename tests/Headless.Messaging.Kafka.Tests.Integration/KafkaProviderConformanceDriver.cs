@@ -11,6 +11,26 @@ internal sealed class KafkaProviderConformanceDriver(KafkaFixture fixture) : Tra
 
     public override string ProviderName => _Profile.Provider;
 
+    public override bool SupportsRoutingAffinity => true;
+
+    public override void ConfigureRoutingAffinityTransport(
+        Headless.Messaging.Configuration.MessagingSetupBuilder setup
+    ) => setup.UseKafka(fixture.ConnectionString);
+
+    public override void AssertNativeRoutingAffinity(TransportConformanceDelivery delivery, string expectedKey)
+    {
+        var native = delivery
+            .SettlementValue.Should()
+            .BeOfType<Headless.Messaging.Kafka.KafkaConsumerClient.KafkaDelivery>()
+            .Subject;
+        native.ConsumerResult.Message.Key.Should().Be(expectedKey);
+    }
+
+    public override string GetNativeRoutingPlacement(TransportConformanceDelivery delivery) =>
+        (
+            (Headless.Messaging.Kafka.KafkaConsumerClient.KafkaDelivery)delivery.SettlementValue!
+        ).ConsumerResult.Partition.Value.ToString(CultureInfo.InvariantCulture);
+
     public override TransportMalformedEnvelopeBound MalformedEnvelopeBound => _Profile.MalformedEnvelopeBound!;
 
     public override ValueTask<TransportConsumerConformanceSession> CreateSessionAsync(

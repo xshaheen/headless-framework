@@ -9,7 +9,7 @@ using Headless.Jobs.Models;
 
 namespace Headless.Jobs;
 
-internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
+internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {
@@ -22,6 +22,8 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
     private readonly Func<string, JobFunctionDescriptor?> _canonicalDescriptorByName;
     private readonly JobsRequestSerializationOptions _serializationOptions;
     private readonly int _maxChainDepth;
+    private readonly TimeProvider? _timeProvider;
+    private readonly JobSchedulingPolicies _policies;
 
     public JobScheduler(
         ITimeJobManager<TTimeJob> timeJobManager,
@@ -30,6 +32,8 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
         IInternalJobManager internalJobManager,
         IJobsHostScheduler jobsHostScheduler,
         JobsRequestSerializationOptions serializationOptions,
+        TimeProvider timeProvider,
+        JobSchedulingPolicies policies,
         SchedulerOptionsBuilder? schedulerOptions = null
     )
         : this(
@@ -41,7 +45,9 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
             jobsHostScheduler,
             functionRegistry.CanonicalDescriptors.GetValueOrDefault,
             serializationOptions,
-            schedulerOptions?.MaxChainDepth ?? SchedulerOptionsBuilder.DefaultMaxChainDepth
+            schedulerOptions?.MaxChainDepth ?? SchedulerOptionsBuilder.DefaultMaxChainDepth,
+            timeProvider,
+            policies
         ) { }
 
     internal JobScheduler(
@@ -53,7 +59,9 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
         IJobsHostScheduler jobsHostScheduler,
         Func<string, JobFunctionDescriptor?>? canonicalDescriptorByName = null,
         JobsRequestSerializationOptions? serializationOptions = null,
-        int maxChainDepth = SchedulerOptionsBuilder.DefaultMaxChainDepth
+        int maxChainDepth = SchedulerOptionsBuilder.DefaultMaxChainDepth,
+        TimeProvider? timeProvider = null,
+        JobSchedulingPolicies? policies = null
     )
     {
         _timeJobManager = Argument.IsNotNull(timeJobManager);
@@ -65,6 +73,8 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
         _canonicalDescriptorByName = canonicalDescriptorByName ?? descriptorByName;
         _serializationOptions = serializationOptions ?? JobsRequestSerializationOptions.Default;
         _maxChainDepth = Argument.IsPositive(maxChainDepth);
+        _timeProvider = timeProvider;
+        _policies = policies ?? JobSchedulingPolicies.Empty;
     }
 
     public async Task<bool> CancelAsync(Guid jobId, CancellationToken cancellationToken = default)
@@ -102,18 +112,24 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
         return accepted;
     }
 
+    public Task<Guid> EnqueueAsync<TArgs>(TArgs request, CancellationToken cancellationToken = default) =>
+        EnqueueAsync(request, options: null, cancellationToken);
+
     public Task<Guid> EnqueueAsync<TArgs>(
         TArgs request,
-        EnqueueOptions? options = null,
+        JobOptions? options,
         CancellationToken cancellationToken = default
     )
     {
         return _ScheduleTimeAsync(_GetDescriptor<TArgs>(), request, executionTime: null, options, cancellationToken);
     }
 
+    public Task<Guid> EnqueueAsync(JobFunctionDescriptor descriptor, CancellationToken cancellationToken = default) =>
+        EnqueueAsync(descriptor, options: null, cancellationToken);
+
     public Task<Guid> EnqueueAsync(
         JobFunctionDescriptor descriptor,
-        EnqueueOptions? options = null,
+        JobOptions? options,
         CancellationToken cancellationToken = default
     )
     {
@@ -154,34 +170,96 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
 
     public Task<Guid> ScheduleAsync<TArgs>(
         TArgs request,
-        DateTime executionTime,
-        EnqueueOptions? options = null,
+        DateTimeOffset executionTime,
+        CancellationToken cancellationToken = default
+    ) => ScheduleAsync(request, executionTime, options: null, cancellationToken);
+
+    public Task<Guid> ScheduleAsync<TArgs>(
+        TArgs request,
+        DateTimeOffset executionTime,
+        JobOptions? options,
         CancellationToken cancellationToken = default
     )
     {
-        return _ScheduleTimeAsync(_GetDescriptor<TArgs>(), request, executionTime, options, cancellationToken);
+        return _ScheduleTimeAsync(
+            _GetDescriptor<TArgs>(),
+            request,
+            executionTime.UtcDateTime,
+            options,
+            cancellationToken
+        );
     }
 
     public Task<Guid> ScheduleAsync(
         JobFunctionDescriptor descriptor,
-        DateTime executionTime,
-        EnqueueOptions? options = null,
+        DateTimeOffset executionTime,
+        CancellationToken cancellationToken = default
+    ) => ScheduleAsync(descriptor, executionTime, options: null, cancellationToken);
+
+    public Task<Guid> ScheduleAsync(
+        JobFunctionDescriptor descriptor,
+        DateTimeOffset executionTime,
+        JobOptions? options,
         CancellationToken cancellationToken = default
     )
     {
         return _ScheduleTimeAsync<object?>(
             _GetRequestlessDescriptor(descriptor),
             request: null,
-            executionTime,
+            executionTime.UtcDateTime,
             options,
             cancellationToken
         );
     }
 
+    /// <summary>Schedules an ordinary one-shot job relative to the configured application clock; delay must be non-negative.</summary>
+    public Task<Guid> ScheduleAfterAsync<TArgs>(
+        TArgs request,
+        TimeSpan delay,
+        CancellationToken cancellationToken = default
+    ) => ScheduleAfterAsync(request, delay, options: null, cancellationToken);
+
+    /// <summary>Schedules an ordinary one-shot job relative to the configured application clock; delay must be non-negative.</summary>
+    public Task<Guid> ScheduleAfterAsync<TArgs>(
+        TArgs request,
+        TimeSpan delay,
+        JobOptions? options,
+        CancellationToken cancellationToken = default
+    ) => ScheduleAsync(request, _GetExecutionTime(delay), options, cancellationToken);
+
+    /// <summary>Schedules an ordinary one-shot job relative to the configured application clock; delay must be non-negative.</summary>
+    public Task<Guid> ScheduleAfterAsync(
+        JobFunctionDescriptor descriptor,
+        TimeSpan delay,
+        CancellationToken cancellationToken = default
+    ) => ScheduleAfterAsync(descriptor, delay, options: null, cancellationToken);
+
+    /// <summary>Schedules an ordinary one-shot job relative to the configured application clock; delay must be non-negative.</summary>
+    public Task<Guid> ScheduleAfterAsync(
+        JobFunctionDescriptor descriptor,
+        TimeSpan delay,
+        JobOptions? options,
+        CancellationToken cancellationToken = default
+    ) => ScheduleAsync(descriptor, _GetExecutionTime(delay), options, cancellationToken);
+
+    private DateTimeOffset _GetExecutionTime(TimeSpan delay)
+    {
+        Argument.IsGreaterThanOrEqualTo(delay, TimeSpan.Zero);
+        var clock =
+            _timeProvider ?? throw new InvalidOperationException("Job scheduling requires an injected TimeProvider.");
+        return clock.GetUtcNow().Add(delay);
+    }
+
     public Task<Guid> ScheduleRecurringAsync<TArgs>(
         TArgs request,
         string cronExpression,
-        RecurringJobOptions? options = null,
+        CancellationToken cancellationToken = default
+    ) => ScheduleRecurringAsync(request, cronExpression, options: null, cancellationToken);
+
+    public Task<Guid> ScheduleRecurringAsync<TArgs>(
+        TArgs request,
+        string cronExpression,
+        RecurringJobOptions? options,
         CancellationToken cancellationToken = default
     )
     {
@@ -197,7 +275,13 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
     public Task<Guid> ScheduleRecurringAsync(
         JobFunctionDescriptor descriptor,
         string cronExpression,
-        RecurringJobOptions? options = null,
+        CancellationToken cancellationToken = default
+    ) => ScheduleRecurringAsync(descriptor, cronExpression, options: null, cancellationToken);
+
+    public Task<Guid> ScheduleRecurringAsync(
+        JobFunctionDescriptor descriptor,
+        string cronExpression,
+        RecurringJobOptions? options,
         CancellationToken cancellationToken = default
     )
     {
@@ -214,22 +298,27 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
         JobFunctionDescriptor descriptor,
         TArgs request,
         DateTime? executionTime,
-        EnqueueOptions? options,
+        JobOptions? options,
         CancellationToken cancellationToken
     )
     {
+        options = _policies.Resolve(descriptor, options);
         var entity = new TTimeJob
         {
             Function = descriptor.FunctionName,
+            ContractVersion = descriptor.ContractVersion,
+            CorrelationId = options?.CorrelationId,
+            CausationId = options?.CausationId,
             Request =
                 descriptor.RequestType == null ? null : JobsHelper.CreateJobRequest(request, _serializationOptions),
             ExecutionTime = executionTime,
             Description = options?.Description,
             Retries = options?.Retries ?? 0,
-            RetryIntervals = options?.RetryIntervals is { } intervals ? [.. intervals] : null,
+            RetryIntervals = options?.RetryIntervals,
             OnNodeDeath = options?.OnNodeDeath ?? Enums.NodeDeathPolicy.Retry,
             TenantId = options?.TenantId,
             IsSystemJob = options?.IsSystemJob ?? false,
+            RequireAtomicEnlistment = options?.RequireAtomicEnlistment ?? false,
         };
 
         var persisted = await _timeJobManager.AddAsync(entity, cancellationToken).ConfigureAwait(false);
@@ -244,17 +333,35 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
         CancellationToken cancellationToken
     )
     {
+        var policy = _policies.Resolve(
+            descriptor,
+            new JobOptions
+            {
+                Retries = options?.Retries,
+                RetryIntervals = options?.RetryIntervals,
+                OnNodeDeath = options?.OnNodeDeath,
+            }
+        );
+        if (policy.RequireAtomicEnlistment)
+        {
+            throw new NotSupportedException(
+                "Required atomic enlistment is not supported for recurring definitions. Configure required atomic policy only for one-shot functions."
+            );
+        }
         var entity = new TCronJob
         {
             Function = descriptor.FunctionName,
+            ContractVersion = descriptor.ContractVersion,
+            CorrelationId = options?.CorrelationId,
+            CausationId = options?.CausationId,
             Request =
                 descriptor.RequestType == null ? null : JobsHelper.CreateJobRequest(request, _serializationOptions),
             Expression = cronExpression,
             Description = options?.Description,
             TimeZoneId = options?.TimeZoneId,
-            Retries = options?.Retries ?? 0,
-            RetryIntervals = options?.RetryIntervals is { } intervals ? [.. intervals] : null,
-            OnNodeDeath = options?.OnNodeDeath ?? Enums.NodeDeathPolicy.Retry,
+            Retries = policy.Retries ?? 0,
+            RetryIntervals = policy.RetryIntervals,
+            OnNodeDeath = policy.OnNodeDeath ?? Enums.NodeDeathPolicy.Retry,
         };
 
         var persisted = await _cronJobManager.AddAsync(entity, cancellationToken).ConfigureAwait(false);
@@ -264,18 +371,25 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
     private TTimeJob _BuildChainEntity(JobChainNode node, Enums.RunCondition? runCondition)
     {
         var descriptor = _ResolveNodeDescriptor(node);
+        var options = _policies.Resolve(descriptor, node.Options);
 
         var entity = new TTimeJob
         {
             Function = descriptor.FunctionName,
+            ContractVersion = descriptor.ContractVersion,
+            CorrelationId = options.CorrelationId,
+            CausationId = options.CausationId,
             Request = descriptor.RequestType is null
                 ? null
                 : JobsHelper.CreateJobRequest(node.Payload!, descriptor.RequestType, _serializationOptions),
-            ExecutionTime = node.ExecutionTime,
-            Description = node.Options?.Description,
-            Retries = node.Options?.Retries ?? 0,
-            RetryIntervals = node.Options?.RetryIntervals is { } intervals ? [.. intervals] : null,
-            OnNodeDeath = node.Options?.OnNodeDeath ?? Enums.NodeDeathPolicy.Retry,
+            ExecutionTime = node.ExecutionTime?.UtcDateTime,
+            Description = options.Description,
+            Retries = options.Retries ?? 0,
+            RetryIntervals = options.RetryIntervals,
+            OnNodeDeath = options.OnNodeDeath ?? Enums.NodeDeathPolicy.Retry,
+            RequireAtomicEnlistment = options.RequireAtomicEnlistment,
+            TenantId = options.TenantId,
+            IsSystemJob = options.IsSystemJob,
             RunCondition = runCondition,
         };
 

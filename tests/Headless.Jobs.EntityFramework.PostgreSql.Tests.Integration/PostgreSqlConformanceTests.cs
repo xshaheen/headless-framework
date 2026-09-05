@@ -211,6 +211,32 @@ public sealed class PostgreSqlConformanceTests(PostgreSqlJobsCoordinationFixture
 public sealed class PostgreSqlClaimConformanceTests(PostgreSqlJobsCoordinationFixture fixture)
     : JobsClaimConformanceTests<PostgreSqlJobsCoordinationFixture>(fixture)
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public override Task reseeding_after_restart_preserves_the_stored_payload_contract(bool changeExpression) =>
+        base.reseeding_after_restart_preserves_the_stored_payload_contract(changeExpression);
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("replacement-lineage")]
+    public override Task ordinary_job_edits_preserve_captured_lineage(string? incomingLineage) =>
+        base.ordinary_job_edits_preserve_captured_lineage(incomingLineage);
+
+    [Fact]
+    public override Task cron_materialization_ignores_stale_caller_tuple_and_restart_claims_its_snapshot() =>
+        base.cron_materialization_ignores_stale_caller_tuple_and_restart_claims_its_snapshot();
+
+    [Fact]
+    public override Task contract_columns_preserve_ordinal_case_and_reject_invalid_new_writes() =>
+        base.contract_columns_preserve_ordinal_case_and_reject_invalid_new_writes();
+
+    [Fact]
+    public override Task materialized_cron_request_survives_parent_payload_edit_and_provider_restart()
+    {
+        return base.materialized_cron_request_survives_parent_payload_edit_and_provider_restart();
+    }
+
     [Fact]
     public override Task synchronized_workers_claim_disjoint_time_job_roots_and_complete_descendant_stamps()
     {

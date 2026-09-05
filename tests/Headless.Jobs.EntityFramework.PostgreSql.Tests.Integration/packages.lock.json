@@ -812,6 +812,18 @@
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.9, )"
         }
       },
+      "headless.commitcoordination.entityframework": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.CommitCoordination.Core": "[1.0.0, )",
+          "Microsoft.EntityFrameworkCore.Relational": "[10.0.9, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.9, )",
+          "Microsoft.Extensions.Hosting.Abstractions": "[10.0.9, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.9, )",
+          "Microsoft.Extensions.Options": "[10.0.9, )"
+        }
+      },
       "headless.commitcoordination.postgresql": {
         "type": "Project",
         "dependencies": {
@@ -877,7 +889,10 @@
         }
       },
       "headless.domain": {
-        "type": "Project"
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )"
+        }
       },
       "headless.entityframework.core": {
         "type": "Project",
@@ -968,6 +983,8 @@
       "headless.jobs.entityframework.postgresql": {
         "type": "Project",
         "dependencies": {
+          "Headless.CommitCoordination.EntityFramework": "[1.0.0, )",
+          "Headless.Coordination.PostgreSql": "[1.0.0, )",
           "Headless.Jobs.EntityFramework": "[1.0.0, )",
           "Npgsql.EntityFrameworkCore.PostgreSQL": "[10.0.2, )"
         }
@@ -979,6 +996,7 @@
           "AwesomeAssertions.Json": "[9.0.0, )",
           "Bogus": "[35.6.5, )",
           "DeepCloner": "[0.10.4, )",
+          "Headless.CommitCoordination.EntityFramework": "[1.0.0, )",
           "Headless.Coordination.Core": "[1.0.0, )",
           "Headless.Jobs.Core": "[1.0.0, )",
           "Headless.Jobs.EntityFramework": "[1.0.0, )",

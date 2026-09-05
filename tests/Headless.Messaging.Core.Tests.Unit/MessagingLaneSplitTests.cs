@@ -272,7 +272,12 @@ public sealed class MessagingLaneSplitTests : TestBase
         var bus = _CreateBus(transport);
 
         // when
-        var act = () => bus.PublishAsync(new TestMessage(), cancellationToken: AbortToken);
+        var act = () =>
+            bus.PublishAsync(
+                new TestMessage(),
+                new PublishOptions { DeliveryMode = DeliveryMode.TransportDirect },
+                cancellationToken: AbortToken
+            );
 
         // then
         await act.Should().ThrowAsync<PublisherSentFailedException>();
@@ -299,7 +304,11 @@ public sealed class MessagingLaneSplitTests : TestBase
         var bus = _CreateBus(transport, publishRequestFactory);
 
         // when
-        await bus.PublishAsync(new TestMessage(), cancellationToken: AbortToken);
+        await bus.PublishAsync(
+            new TestMessage(),
+            new PublishOptions { DeliveryMode = DeliveryMode.TransportDirect },
+            cancellationToken: AbortToken
+        );
 
         // then
         _ = publishRequestFactory
@@ -329,7 +338,12 @@ public sealed class MessagingLaneSplitTests : TestBase
         var queue = _CreateQueue(transport);
 
         // when
-        var act = () => queue.EnqueueAsync(new TestMessage(), cancellationToken: AbortToken);
+        var act = () =>
+            queue.EnqueueAsync(
+                new TestMessage(),
+                new QueueOptions { DeliveryMode = DeliveryMode.TransportDirect },
+                cancellationToken: AbortToken
+            );
 
         // then
         await act.Should().ThrowAsync<PublisherSentFailedException>();
@@ -344,7 +358,7 @@ public sealed class MessagingLaneSplitTests : TestBase
             .Create(
                 Arg.Any<object?>(),
                 typeof(TestMessage),
-                Arg.Any<PublishOptions?>(),
+                Arg.Any<QueueOptions?>(),
                 Arg.Any<TimeSpan?>(),
                 MessageLane.Queue
             )
@@ -356,7 +370,11 @@ public sealed class MessagingLaneSplitTests : TestBase
         var queue = _CreateQueue(transport, publishRequestFactory);
 
         // when
-        await queue.EnqueueAsync(new TestMessage(), cancellationToken: AbortToken);
+        await queue.EnqueueAsync(
+            new TestMessage(),
+            new QueueOptions { DeliveryMode = DeliveryMode.TransportDirect },
+            cancellationToken: AbortToken
+        );
 
         // then
         _ = publishRequestFactory
@@ -364,7 +382,7 @@ public sealed class MessagingLaneSplitTests : TestBase
             .Create(
                 Arg.Any<object?>(),
                 typeof(TestMessage),
-                Arg.Any<PublishOptions?>(),
+                Arg.Any<QueueOptions?>(),
                 Arg.Is<TimeSpan?>(delay => delay == null),
                 MessageLane.Queue
             );
@@ -550,6 +568,8 @@ public sealed class MessagingLaneSplitTests : TestBase
     )
     {
         var model = MessagingCapabilityModel.Compose(capabilities);
+        services.AddSingleton(model);
+        services.AddSingleton<IMessageMetadataRegistry>(new MessageMetadataRegistry([]));
         services.AddSingleton<IMessagingCapabilityModel>(model);
         services.AddSingleton<IMessageCapabilityGate>(model);
         services.AddSingleton<IStorageInitializer, NoOpStorageInitializer>();

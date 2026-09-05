@@ -24,7 +24,7 @@ namespace Tests;
 public sealed class SqlServerJobsCoordinationFixture
     : HeadlessSqlServerFixture,
         ICollectionFixture<SqlServerJobsCoordinationFixture>,
-        IJobsCoordinationFixture
+        IJobsApplicationConfigurationFixture
 {
     public string QualifiedTimeJobsTable => "[jobs].[TimeJobs]";
 
@@ -48,11 +48,11 @@ public sealed class SqlServerJobsCoordinationFixture
         "DROP TABLE IF EXISTS [jobs].[CronJobOccurrences];"
         + "DROP TABLE IF EXISTS [jobs].[TimeJobs];"
         + "DROP TABLE IF EXISTS [jobs].[CronJobs];"
-        + "DROP TABLE IF EXISTS [jobs].[__CancellationMigrationsHistory];"
-        + "DROP TABLE IF EXISTS [jobs].[__CronControlMigrationsHistory];"
+        + "DROP TABLE IF EXISTS [jobs].[ApplicationProbe];"
         + "IF EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'jobs') DROP SCHEMA [jobs];"
-        + "DROP TABLE IF EXISTS [dbo].[__CancellationMigrationsHistory];"
-        + "DROP TABLE IF EXISTS [dbo].[__CronControlMigrationsHistory];"
+        + "DROP TABLE IF EXISTS [messaging].[InboxAudit];"
+        + "DROP TABLE IF EXISTS [messaging].[InboxOperationReceipts];"
+        + "DROP TABLE IF EXISTS [messaging].[SchemaState];"
         + "DROP TABLE IF EXISTS [messaging].[Published];"
         + "DROP TABLE IF EXISTS [messaging].[Received];"
         + "IF TYPE_ID(N'messaging.HeadlessMessagingIdList') IS NOT NULL DROP TYPE [messaging].[HeadlessMessagingIdList];"
@@ -79,6 +79,15 @@ public sealed class SqlServerJobsCoordinationFixture
     public void ConfigureClaims(JobsEfCoreOptionBuilder<TimeJobEntity, CronJobEntity> builder)
     {
         builder.UseSqlServerClaims();
+    }
+
+    public void ConfigureApplicationJobs<TContext>(
+        JobsOptionsBuilder<TimeJobEntity, CronJobEntity> builder,
+        Action<CoordinationOptions> configureCoordination
+    )
+        where TContext : DbContext
+    {
+        builder.UseSqlServer<TContext>(configureCoordination);
     }
 
     public DbConnection CreateConnection()

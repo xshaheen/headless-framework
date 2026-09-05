@@ -46,6 +46,37 @@ public sealed class ServiceBusTransportTests : TestBase
     }
 
     [Fact]
+    public async Task should_map_affinity_using_custom_producer_sessions_when_global_sessions_are_disabled()
+    {
+        var options = new AzureServiceBusMessagingOptions { EnableSessions = false };
+        options.CustomProducers.Add(
+            new Headless.Messaging.AzureServiceBus.Producer.ServiceBusProducerDescriptor(
+                "custom.orders",
+                "custom-topic",
+                createSubscription: false,
+                enableSessions: true
+            )
+        );
+        var pool = Substitute.For<IAzureServiceBusClientPool>();
+        var sender = Substitute.For<ServiceBusSender>();
+        pool.GetSender("custom-topic").Returns(sender);
+        await using var transport = _CreateTransport(Options.Create(options), pool);
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [Headers.MessageId] = "message-1",
+            [Headers.MessageName] = "custom.orders",
+            [Headers.RoutingAffinityKey] = "order-42",
+        };
+
+        var result = await transport.SendAsync(new TransportMessage(headers, "payload"u8.ToArray()), AbortToken);
+
+        result.Succeeded.Should().BeTrue();
+        await sender
+            .Received(1)
+            .SendMessageAsync(Arg.Is<ServiceBusMessage>(message => message.SessionId == "order-42"), AbortToken);
+    }
+
+    [Fact]
     public async Task should_have_correct_broker_address()
     {
         // given, when

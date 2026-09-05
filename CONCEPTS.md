@@ -220,12 +220,33 @@ expression and timezone would now resolve to a different instant.
 
 ### Job chain
 
-A conditional sequential tree of one-shot time jobs persisted on the existing parent/child columns —
+A static conditional continuation tree of one-shot time jobs persisted on the existing parent/child columns —
 each edge is a child row carrying a run condition, never a separate workflow schema. A node has at
 most one success child and one failure child, so a chain branches on outcome but never fans out in
 parallel. Chain depth (nodes along a path from the root, catch branches included) is capped by a
 configurable global limit enforced at enqueue, before persistence; building additionally applies a
 fixed structural bound.
+
+This foundation has no keyed chain identity/control, signals, joins, waits, compensation, mutable
+definitions, process state, or event-stream coordinates. Those need a separate process manager design.
+
+### Keyed one-shot intent
+
+A business key reserves one current standalone job generation in a tenant/system and logical-function
+scope. Contract version belongs to the intent fingerprint, not the key scope. The fingerprint records
+exact durable payload bytes plus version, normalized absolute due instant, retries, and node-death
+policy after scheduling middleware. Scheduling the same intent observes its retained current run,
+including terminal runs. Replacing a pending unclaimed generation creates a new run ID and advances
+the observed generation once. Claimed cancellation is cooperative. Current and historical keyed rows
+remain indefinitely; ordinary edits, resets, retries, and hard deletion cannot remove this memory.
+
+### Transactional deadline capability
+
+`RequireAtomicEnlistment` requires a one-shot Jobs write to use the exact live relational transaction
+that owns the application update. The requirement is transient; it is not job payload or persisted
+intent. A keyed result returned inside that transaction is provisional until the caller commits, and
+rollback removes the write. Scheduler wake-up is post-commit acceleration; polling recovers a missed
+wake-up. Messaging delivery delay, distributed locks, and membership do not provide this capability.
 
 ### Catch step
 

@@ -9,11 +9,20 @@ namespace Tests;
 public sealed class ProviderConformanceEvidenceTests(NatsFixture fixture) : TestBase
 {
     [Fact]
+    public Task should_prove_routing_affinity_mapping_or_rejection() =>
+        TransportRoutingAffinityConformance.AssertAsync(new NatsProviderConformanceDriver(fixture), AbortToken);
+
+    [Fact]
     public async Task should_execute_every_supported_manifest_scenario()
     {
         var profile = TransportConformanceManifest.Providers["NATS"];
         TransportConformanceTestBinding[] bindings =
         [
+            new(
+                TransportConformanceScenario.RoutingAffinityMappingOrRejection,
+                typeof(ProviderConformanceEvidenceTests),
+                nameof(should_prove_routing_affinity_mapping_or_rejection)
+            ),
             _Bind(
                 TransportConformanceScenario.QueueRoundTrip,
                 nameof(NatsConsumerClientTests.should_round_trip_queue_message_body_and_headers)
@@ -67,10 +76,6 @@ public sealed class ProviderConformanceEvidenceTests(NatsFixture fixture) : Test
                 TransportConformanceScenario.MalformedEnvelopeTerminalSettlement,
                 nameof(NatsConsumerClientTests.should_terminally_acknowledge_malformed_envelope_across_consumer_restart)
             ),
-            _Bind(
-                TransportConformanceScenario.LegacyCutoverRecovery,
-                nameof(NatsConsumerClientTests.should_drain_legacy_stream_before_lane_cutover_and_reconcile_forward)
-            ),
         ];
 
         await TransportConformanceTestBindings.ExecuteSupportedScenariosAsync(profile, bindings, _CreateTestClass);
@@ -81,6 +86,11 @@ public sealed class ProviderConformanceEvidenceTests(NatsFixture fixture) : Test
 
     private object _CreateTestClass(Type testClass)
     {
+        if (testClass == typeof(ProviderConformanceEvidenceTests))
+        {
+            return new ProviderConformanceEvidenceTests(fixture);
+        }
+
         if (testClass == typeof(NatsConsumerClientTests))
         {
             return new NatsConsumerClientTests(fixture);

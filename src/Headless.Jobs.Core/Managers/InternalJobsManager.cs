@@ -254,6 +254,9 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         var context = new JobExecutionState
         {
             FunctionName = timeJob.Function,
+            ContractVersion = timeJob.ContractVersion,
+            CorrelationId = timeJob.CorrelationId,
+            CausationId = timeJob.CausationId,
             JobId = timeJob.Id,
             Type = JobType.TimeJob,
             Retries = timeJob.Retries,
@@ -280,6 +283,9 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         var childContext = new JobExecutionState
         {
             FunctionName = child.Function,
+            ContractVersion = child.ContractVersion,
+            CorrelationId = child.CorrelationId,
+            CausationId = child.CausationId,
             JobId = child.Id,
             Type = JobType.TimeJob,
             Retries = child.Retries,
@@ -1270,6 +1276,42 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
 
     public async Task<T?> GetRequestAsync<T>(Guid jobId, JobType type, CancellationToken cancellationToken = default)
     {
+        string? function;
+        string? version;
+        if (type == JobType.CronJobOccurrence)
+        {
+            var occurrence = (
+                await persistenceProvider
+                    .GetAllCronJobOccurrencesAsync(x => x.Id == jobId, cancellationToken)
+                    .ConfigureAwait(false)
+            ).SingleOrDefault();
+            function = occurrence?.Function;
+            version = occurrence?.ContractVersion;
+        }
+        else
+        {
+            var job = await persistenceProvider.GetTimeJobByIdAsync(jobId, cancellationToken).ConfigureAwait(false);
+            function = job?.Function;
+            version = job?.ContractVersion;
+        }
+
+        if (function is not null && serviceProvider.GetService<JobFunctionRegistry>() is { } registry)
+        {
+            if (!registry.Descriptors.TryGetValue(function, out var descriptor))
+            {
+                throw new InvalidOperationException(
+                    $"Jobs function '{function}' is not registered on this node. Request was not deserialized."
+                );
+            }
+
+            if (!string.Equals(version, descriptor.ContractVersion, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"Unsupported stored Jobs contract '{function}' version '{version}'; this node registers '{descriptor.ContractVersion}'. Request was not deserialized."
+                );
+            }
+        }
+
         var request =
             type == JobType.CronJobOccurrence
                 ? await persistenceProvider

@@ -80,5 +80,17 @@ public sealed class MessagePublishOptionsBaseEqualityTests
         baseline.GetHashCode().Should().NotBe(changed.GetHashCode());
     }
 
+    [Fact]
+    public void should_include_ambient_business_context_policy_in_options_value_semantics()
+    {
+        var inherited = new PublishOptions();
+        var captured = inherited with { SuppressAmbientBusinessContext = true };
+
+        captured.Should().NotBe(inherited);
+        captured.GetHashCode().Should().NotBe(inherited.GetHashCode());
+        (captured with { }).Should().Be(captured);
+        (captured with { }).GetHashCode().Should().Be(captured.GetHashCode());
+    }
+
     private sealed record SampleResponse(string Status);
 }

@@ -27,6 +27,19 @@ using Microsoft.Extensions.Logging;
 namespace Tests;
 
 /// <summary>
+/// Adds the application-context setup path to the provider-neutral Jobs fixture.
+/// </summary>
+public interface IJobsApplicationConfigurationFixture : IJobsCoordinationFixture
+{
+    /// <summary>Configures jobs through the application DbContext convenience API.</summary>
+    void ConfigureApplicationJobs<TContext>(
+        JobsOptionsBuilder<TimeJobEntity, CronJobEntity> builder,
+        Action<CoordinationOptions> configureCoordination
+    )
+        where TContext : DbContext;
+}
+
+/// <summary>
 /// Provider-neutral contract for a Jobs+Coordination integration fixture. Each leaf fixture owns its own
 /// Testcontainers instance (Postgres or SQL Server) and implements these members; all shared host wiring,
 /// schema creation, reset, and raw-SQL seeding live in <see cref="JobsCoordinationFixtureExtensions" />.
@@ -287,7 +300,8 @@ public static class JobsCoordinationFixtureExtensions
         string nodeId,
         Action<DbContextOptionsBuilder>? configureOptions = null,
         bool includeMessaging = false,
-        TimeProvider? timeProvider = null
+        TimeProvider? timeProvider = null,
+        Action<IServiceCollection>? configureServices = null
     )
         where TDbContext : JobsDbContext<TimeJobEntity, CronJobEntity>
     {
@@ -296,7 +310,8 @@ public static class JobsCoordinationFixtureExtensions
             nodeId,
             configureOptions,
             includeMessaging,
-            timeProvider: timeProvider
+            timeProvider: timeProvider,
+            configureServices: configureServices
         );
     }
 
@@ -318,7 +333,8 @@ public static class JobsCoordinationFixtureExtensions
         bool includeMessaging = false,
         JobsSideEffectsProbe? sideEffectsProbe = null,
         bool enableTenantPropagation = false,
-        TimeProvider? timeProvider = null
+        TimeProvider? timeProvider = null,
+        Action<IServiceCollection>? configureServices = null
     )
         where TDbContext : JobsDbContext<TimeJobEntity, CronJobEntity>
     {
@@ -389,6 +405,7 @@ public static class JobsCoordinationFixtureExtensions
             builder.AddHeadlessTenancy(tenancy => tenancy.Jobs(jobs => jobs.PropagateTenant()));
         }
 
+        configureServices?.Invoke(builder.Services);
         return builder.Build();
     }
 
@@ -532,9 +549,9 @@ public static class JobsCoordinationFixtureExtensions
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText =
-            $"INSERT INTO {fixture.QualifiedTimeJobsTable} ({_InsertColumns}) "
+            $"INSERT INTO {fixture.QualifiedTimeJobsTable} ({_InsertColumns}, \"ContractVersion\") "
             + "VALUES (@id, @function, @function, @status, @ownerId, "
-            + $"{fixture.UtcNowSqlExpression}, {fixture.UtcNowSqlExpression}, 0, 0, 0, @onNodeDeath, @lockedUntil);";
+            + $"{fixture.UtcNowSqlExpression}, {fixture.UtcNowSqlExpression}, 0, 0, 0, @onNodeDeath, @lockedUntil, '1');";
 
         // Status and OnNodeDeath persist as enum names (HasConversion<string>), so seed the names, not ordinals.
         AddParameter(command, "@id", id);
@@ -561,8 +578,7 @@ public static class JobsCoordinationFixtureExtensions
     /// </param>
     /// <remarks>
     /// The position, grace, and policy columns are non-nullable and the harness builds its schema from the EF model
-    /// (<c>CreateTablesAsync</c>) rather than from migrations — so unlike the migrated path there is no column default
-    /// to fall back on and this explicit column list must carry them. Grace and policy are seeded at the entity's own
+    /// (<c>CreateTablesAsync</c>). There is no column default to fall back on, so this explicit column list must carry them. Grace and policy are seeded at the entity's own
     /// CLR defaults so a seeded row matches what inserting a fresh entity would persist.
     /// <para>
     /// The position is expressed as an offset evaluated by the STORE rather than as a bound instant: that keeps the
@@ -588,12 +604,12 @@ public static class JobsCoordinationFixtureExtensions
         await using var command = connection.CreateCommand();
 
         command.CommandText =
-            $"INSERT INTO {fixture.QualifiedCronJobsTable} ({_CronInsertColumns}) "
+            $"INSERT INTO {fixture.QualifiedCronJobsTable} ({_CronInsertColumns}, \"ContractVersion\") "
             + $"VALUES (@id, @function, @function, @expression, @timeZoneId, @isPaused, @scheduleRevision, 0, "
             + $"{fixture.UtcNowSqlExpression}, {fixture.UtcNowSqlExpression}, @onNodeDeath, "
             + $"{fixture.UtcNowOffsetSqlExpression(reconciledThroughOffsetSeconds)}, "
             + $"{fixture.UtcNowOffsetSqlExpression(nextDueOffsetSeconds)}, "
-            + $"@missedRunGraceSeconds, @onMissedRun);";
+            + $"@missedRunGraceSeconds, @onMissedRun, '1');";
 
         AddParameter(command, "@id", id);
         AddParameter(command, "@function", function);
@@ -681,10 +697,10 @@ public static class JobsCoordinationFixtureExtensions
         // distinct execution times when several occurrences of the same cron are seeded together.
         command.CommandText =
             $"INSERT INTO {fixture.QualifiedCronJobOccurrencesTable} ({_CronOccurrenceInsertColumns}, "
-            + "\"SkippedReason\", \"Disposition\") "
-            + "VALUES (@id, @cronJobId, @status, @ownerId, @executionTime, "
+            + "\"SkippedReason\", \"Disposition\", \"Function\", \"ContractVersion\", \"Request\") "
+            + "SELECT @id, @cronJobId, @status, @ownerId, @executionTime, "
             + $"{createdAtSql}, {createdAtSql}, 0, 0, @onNodeDeath, @lockedUntil, "
-            + "@skippedReason, @disposition);";
+            + $"@skippedReason, @disposition, \"Function\", \"ContractVersion\", \"Request\" FROM {fixture.QualifiedCronJobsTable} WHERE \"Id\" = @cronJobId;";
 
         AddParameter(command, "@id", id);
         AddParameter(command, "@cronJobId", cronJobId);
@@ -954,10 +970,27 @@ internal static class CoordinatedEnqueueJobs
 #pragma warning restore IDE0060
 }
 
+internal sealed class JobsScheduleMiddlewareProbe
+{
+    public int Calls { get; private set; }
+
+    public void Record() => Calls++;
+}
+
 internal static class CoordinatedEnqueueJobsRegistration
 {
     internal static void Initialize()
     {
+        JobMiddlewareRegistry.RegisterSchedule(
+            "Tests:CoordinatedScheduleProbe",
+            JobsCoordinationFixtureExtensions.CoordinatedFunctionName,
+            JobMiddlewarePriority.Default,
+            static (context, next, cancellationToken) =>
+            {
+                context.Services.GetService<JobsScheduleMiddlewareProbe>()?.Record();
+                return next(cancellationToken);
+            }
+        );
         JobFunctionProvider.RegisterFunctions(
             new Dictionary<string, JobFunctionRegistration>(StringComparer.Ordinal)
             {

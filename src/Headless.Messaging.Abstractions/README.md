@@ -13,6 +13,7 @@ Defines the stable message envelope, consume context, consumer contract, publish
 - `Message`, `TransportMessage`, headers, and publish option base types.
 - `IRuntimeSubscriber` for scoped runtime delegate subscriptions.
 - Verb-specific publisher contracts: `IBus` and `IQueue`, with immutable delivery-mode options.
+- `MessageOptions.SuppressAmbientBusinessContext` preserves captured business metadata by disabling ambient correlation, causation, and tenant defaults. It defaults to `false`; explicit options, registered contract/selector resolution, and diagnostic trace propagation remain unchanged. Required tenancy still rejects a null explicit tenant when suppression is enabled.
 
 ## Installation
 
@@ -41,11 +42,11 @@ public sealed class OrderPlacedHandler(ILogger<OrderPlacedHandler> logger) : ICo
 
 Use `Headless.Messaging.Bus.Abstractions` for broadcast publisher contracts and `Headless.Messaging.Queue.Abstractions` for point-to-point publisher contracts.
 
-`DeliveryMode.Auto` captures inside a compatible coordination boundary and sends directly when no boundary is active; an active incompatible boundary is rejected. `Durable` always persists first. `TransportDirect` bypasses storage and any ambient coordination boundary, and cannot be combined with `Delay`.
+`DeliveryMode.Auto` captures inside a compatible coordination boundary and sends directly when no boundary is active; an active incompatible boundary is rejected. `Durable` is the default, including when options are omitted or null, and always persists first. `TransportDirect` bypasses storage and any ambient coordination boundary, and cannot be combined with `Delay`.
 
 ## Callbacks
 
-Callbacks are fire-and-forget async chaining, not request/reply. The publisher sets `PublishOptions.CallbackName` (or `EnqueueOptions.CallbackName`) on the request; the consumer shapes the response through two `ConsumeContext` methods:
+Callbacks are fire-and-forget async chaining, not request/reply. The publisher sets `PublishOptions.CallbackName` (or `QueueOptions.CallbackName`) on the request; the consumer shapes the response through two `ConsumeContext` methods:
 
 - `context.SetResponse<TResponse>(value)` — capture a typed response body to publish to the request's callback message name through the durable bus path. `TResponse` must be a reference type (`where TResponse : class`); wrap value types in a record if needed. No `SetResponse` keeps the callback headers-only; `SetResponse` without a `CallbackName` is dropped.
 - `context.SetResponseCallbackName(callbackName)` — stamp the response callback name the published response will carry, enabling explicit multi-hop chaining (typed alternative to writing the reserved `CallbackName` key through `AddResponseHeader`).
@@ -53,6 +54,8 @@ Callbacks are fire-and-forget async chaining, not request/reply. The publisher s
 Callback delivery is at-least-once — make response consumers idempotent (dedupe on `(CorrelationId, CorrelationSequence)`; `CorrelationId` alone is ambiguous across hops because it is set to the immediate parent message id per hop, not the chain root).
 
 ## Configuration
+
+`MessageOptions.RoutingAffinityKey` is an optional provider-neutral string. `TransportMessage.RoutingAffinityKey` reads its reserved `headless-routing-affinity-key` envelope header. Use the typed option; custom writes to that neutral header are rejected. Null preserves unkeyed behavior. Nonempty keys must satisfy the configured provider bounds and raw provider adapters must agree with the typed value.
 
 None. This package only defines contracts.
 

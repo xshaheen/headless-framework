@@ -235,6 +235,14 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
                 attributeValues.cronExpression,
                 attributeValues.onMissedRun,
                 attributeValues.missedRunGraceSeconds,
+                jobFunctionAttributeData.NamedArguments.Any(x =>
+                    string.Equals(x.Key, "ContractVersion", StringComparison.Ordinal)
+                )
+                    ? jobFunctionAttributeData
+                        .NamedArguments.First(x => string.Equals(x.Key, "ContractVersion", StringComparison.Ordinal))
+                        .Value.Value as string
+                        ?? string.Empty
+                    : "1",
                 assemblyName ?? compilation.Assembly.Name,
                 typeNameConflicts
             );
@@ -254,6 +262,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
         string? cronExpression,
         int? onMissedRun,
         int? missedRunGraceSeconds,
+        string contractVersion,
         string assemblyName,
         HashSet<string>? typeNameConflicts = null
     )
@@ -288,7 +297,8 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
                 requestType?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
                 cronExpression ?? string.Empty,
                 functionPriority,
-                maxConcurrency
+                maxConcurrency,
+                contractVersion
             )
         );
     }
@@ -327,8 +337,86 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
 
         _GenerateRequestTypeRegistrationWithFullNamespaces(sb, requestTypes, typeNameConflicts);
         _GenerateClassFooter(sb);
+        _GenerateAppJobs(sb, descriptors, assemblyName);
 
         return sb.ToString();
+    }
+
+    private static void _GenerateAppJobs(
+        StringBuilder sb,
+        IReadOnlyList<JobFunctionDescriptorInfo> descriptors,
+        string assemblyName
+    )
+    {
+        var requestless = descriptors
+            .Where(descriptor => descriptor.RequestTypeName is null)
+            .OrderBy(descriptor => descriptor.FunctionName, StringComparer.Ordinal)
+            .ToArray();
+        if (requestless.Length == 0)
+        {
+            return;
+        }
+        sb.AppendLine($"namespace {assemblyName}");
+        sb.AppendLine("{");
+        sb.AppendLine("    /// <summary>Canonical generated handles for this assembly's requestless jobs.</summary>");
+        sb.AppendLine("    public static class AppJobs");
+        sb.AppendLine("    {");
+        foreach (var descriptor in requestless)
+        {
+            var name = SymbolDisplay.FormatLiteral(descriptor.FunctionName, quote: true);
+            var cron = SymbolDisplay.FormatLiteral(descriptor.CronExpression, quote: true);
+            var version = SymbolDisplay.FormatLiteral(descriptor.ContractVersion, quote: true);
+            sb.AppendLine("        /// <summary>A canonical requestless job descriptor.</summary>");
+            sb.AppendLine(
+                $"        public static JobFunctionDescriptor {_GetHandleName(descriptor.FunctionName)} {{ get; }} = new JobFunctionDescriptor({name}, null, {cron}, (JobPriority){descriptor.Priority}, {descriptor.MaxConcurrency}, {version});"
+            );
+        }
+        sb.AppendLine("    }");
+        sb.AppendLine("}");
+    }
+
+    private static string _GetHandleName(string contract)
+    {
+        // Encode underscores too, so literal escape-looking contracts cannot collide with encoded punctuation.
+        // Reserved members encode their first character, which cannot collide with a valid unescaped identifier.
+        var reserved =
+            contract
+            is "AppJobs"
+                or "Equals"
+                or "ReferenceEquals"
+                or "GetHashCode"
+                or "GetType"
+                or "ToString"
+                or "MemberwiseClone"
+                or "Finalize";
+        var result = new StringBuilder();
+        for (var index = 0; index < contract.Length; index++)
+        {
+            var character = contract[index];
+            if (
+                (
+                    (character >= 'A' && character <= 'Z')
+                    || (character >= 'a' && character <= 'z')
+                    || (index > 0 && character >= '0' && character <= '9')
+                ) && !(reserved && index == 0)
+            )
+            {
+                result.Append(character);
+            }
+            else
+            {
+                result
+                    .Append("_u")
+                    .Append(((int)character).ToString("X4", System.Globalization.CultureInfo.InvariantCulture))
+                    .Append('_');
+            }
+        }
+        var identifier = result.ToString();
+        return
+            SyntaxFacts.GetKeywordKind(identifier) != SyntaxKind.None
+            || SyntaxFacts.GetContextualKeywordKind(identifier) != SyntaxKind.None
+            ? "@" + identifier
+            : identifier;
     }
 
     private static void _GenerateDescriptorMetadata(
@@ -339,7 +427,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
         foreach (var descriptor in descriptors.OrderBy(x => x.FunctionName, StringComparer.Ordinal))
         {
             sb.AppendLine(
-                $"[assembly: global::Headless.Jobs.JobFunctionDescriptorMetadataAttribute(\"{descriptor.FunctionName}\")]"
+                $"[assembly: global::Headless.Jobs.JobFunctionDescriptorMetadataAttribute({SymbolDisplay.FormatLiteral(descriptor.FunctionName, quote: true)}, {SymbolDisplay.FormatLiteral(descriptor.ContractVersion, quote: true)})]"
             );
         }
 
@@ -621,14 +709,15 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
                 $"            var descriptors = new Dictionary<string, JobFunctionDescriptor>({descriptors.Count});"
             );
 
-            foreach (var descriptor in descriptors)
+            foreach (var descriptor in descriptors.OrderBy(x => x.FunctionName, StringComparer.Ordinal))
             {
                 var functionName = SymbolDisplay.FormatLiteral(descriptor.FunctionName, quote: true);
                 var requestType = descriptor.RequestTypeName == null ? "null" : $"typeof({descriptor.RequestTypeName})";
                 var cronExpression = SymbolDisplay.FormatLiteral(descriptor.CronExpression, quote: true);
-                sb.AppendLine(
-                    $"            descriptors.Add({functionName}, new JobFunctionDescriptor({functionName}, {requestType}, {cronExpression}, (JobPriority){descriptor.Priority}, {descriptor.MaxConcurrency}));"
-                );
+                var value = descriptor.RequestTypeName is null
+                    ? $"AppJobs.{_GetHandleName(descriptor.FunctionName)}"
+                    : $"new JobFunctionDescriptor({functionName}, {requestType}, {cronExpression}, (JobPriority){descriptor.Priority}, {descriptor.MaxConcurrency}, {SymbolDisplay.FormatLiteral(descriptor.ContractVersion, quote: true)})";
+                sb.AppendLine($"            descriptors.Add({functionName}, {value});");
             }
 
             sb.AppendLine($"            JobFunctionProvider.RegisterDescriptors(descriptors, {descriptors.Count});");

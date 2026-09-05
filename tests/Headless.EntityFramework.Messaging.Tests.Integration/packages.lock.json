@@ -749,6 +749,12 @@
           "Headless.Extensions": "[1.0.0, )"
         }
       },
+      "headless.caching.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Extensions": "[1.0.0, )"
+        }
+      },
       "headless.checks": {
         "type": "Project"
       },
@@ -797,6 +803,21 @@
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.9, )"
         }
       },
+      "headless.coordination.core.database": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Coordination.Core": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )"
+        }
+      },
+      "headless.coordination.postgresql": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Coordination.Core.Database": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
+          "Npgsql": "[10.0.3, )"
+        }
+      },
       "headless.core": {
         "type": "Project",
         "dependencies": {
@@ -817,7 +838,10 @@
         }
       },
       "headless.domain": {
-        "type": "Project"
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )"
+        }
       },
       "headless.domain.localeventbus": {
         "type": "Project",
@@ -912,6 +936,37 @@
           "Microsoft.Extensions.Hosting": "[10.0.9, )",
           "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.9, )",
           "Microsoft.Extensions.Options.DataAnnotations": "[10.0.9, )"
+        }
+      },
+      "headless.jobs.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.CommitCoordination.Abstractions": "[1.0.0, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.9, )"
+        }
+      },
+      "headless.jobs.core": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Coordination.Abstractions": "[1.0.0, )",
+          "Headless.Coordination.Core": "[1.0.0, )",
+          "Headless.DistributedLocks.Abstractions": "[1.0.0, )",
+          "Headless.Jobs.Abstractions": "[1.0.0, )",
+          "Headless.MultiTenancy": "[1.0.0, )",
+          "NCrontab.Signed": "[3.4.0, )",
+          "OpenTelemetry.Api": "[1.16.0, )",
+          "Polly.Core": "[8.7.0, )"
+        }
+      },
+      "headless.jobs.entityframework": {
+        "type": "Project",
+        "dependencies": {
+          "FlexLabs.EntityFrameworkCore.Upsert": "[10.0.0, )",
+          "Headless.Caching.Abstractions": "[1.0.0, )",
+          "Headless.EntityFramework.Core": "[1.0.0, )",
+          "Headless.Jobs.Abstractions": "[1.0.0, )",
+          "Headless.Jobs.Core": "[1.0.0, )",
+          "Microsoft.EntityFrameworkCore.Relational": "[10.0.9, )"
         }
       },
       "headless.messaging.abstractions": {
@@ -1053,6 +1108,15 @@
         "requested": "[5.4.1, )",
         "resolved": "5.4.1",
         "contentHash": "nqMykMspK5cQd35Y8ulQzAujxCcCwZVUne32pC5xNpXqrbPCuKOPMWkKHJ3LveAZPm6dsVvump0TJ1SZ9RzfTQ=="
+      },
+      "FlexLabs.EntityFrameworkCore.Upsert": {
+        "type": "CentralTransitive",
+        "requested": "[10.0.0, )",
+        "resolved": "10.0.0",
+        "contentHash": "qFVp1j1yZFApE4uXplTodeSybz/pfjGM/zBfwgtnkZqw7ZV1YFmF0AEebQmmNsndANQmv+aNi7aXdOhOVFfs7Q==",
+        "dependencies": {
+          "Microsoft.EntityFrameworkCore.Relational": "[10.0.0, 11.0.0)"
+        }
       },
       "FluentValidation": {
         "type": "CentralTransitive",
@@ -1305,6 +1369,12 @@
         "requested": "[4.4.0, )",
         "resolved": "4.4.0",
         "contentHash": "QX3bsK9oFeUXk8tFsc9NkI6NnCr8Ar/ex027p+ZZ/jdLCdX2RlryDtxUqZW5j45NVwn4E4Z4hzupsoMQd6Yxtg=="
+      },
+      "NCrontab.Signed": {
+        "type": "CentralTransitive",
+        "requested": "[3.4.0, )",
+        "resolved": "3.4.0",
+        "contentHash": "wmlQgd8QVU74L68wiMtiKKex4dr+YoowsJndS2xJcMEJ5265twZqJPawMghXaLdTxwfc6RvWAewMaX/Q8vdduw=="
       },
       "Newtonsoft.Json": {
         "type": "CentralTransitive",

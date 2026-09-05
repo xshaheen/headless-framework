@@ -8,6 +8,8 @@ Provides persistence of time jobs and cron occurrences across restarts and acros
 
 ## Key Features
 
+- **Durable contract tuples**: time jobs and cron definitions map required bounded `Function`/`ContractVersion` columns; occurrences additionally persist their own function, version, request bytes, correlation, causation, and nullable tenant. Newly materialized occurrences copy the current definition tuple while holding its write lock; retries and restart reads use the occurrence row. Runtime write converters reject invalid identities.
+- **Application-owned schema**: initialize the Jobs database from the current EF model before starting workers or definition writers. Required bounded contract columns, occurrence-owned tuples, constraints, and indexes are part of that initial schema. Library mappings never mutate the schema automatically.
 - **Durable storage**: persists `TimeJobEntity`, `CronJobEntity`, and `CronJobOccurrenceEntity` in EF Core-mapped tables (default schema: `jobs`).
 - **`UseEntityFramework(ef => …)`**: the EF registration extension on `JobsOptionsBuilder`.
 - **`UseJobsDbContext<TDbContext>(dbOptions, schema?)`**: registers a dedicated `JobsDbContext` with configurable schema.
@@ -36,9 +38,9 @@ Seeding a cron definition's schedule position is the one write that cannot use t
 
 The scheduler's due-work peek (`GetEarliestTimeJobsAsync`) runs both of its reads through the context's execution strategy, so a SQL Server deadlock victim (1205) on the candidate read is retried when the application configured `EnableRetryOnFailure`. This deliberately honors whatever strategy the consumer configured instead of adding an always-on retry: it is a pass-through under EF's default non-retrying strategy, which is the right trade for a pure read whose failure costs one delayed poll. The claim path keeps its own deadlock pipeline, because a deadlock there is correctness-relevant rather than a missed poll.
 
-The occurrence table carries the persisted `Disposition` column that `CronOccurrenceAccounting` reads as the sole input to the occupied-instant rule. Its migration backfills existing rows to `Accounted`, and its `Down` refuses while any non-`Accounted` value exists — dropping the column would collapse an owed replacement fire into a permanently suppressed one.
+The occurrence table carries the persisted `Disposition` column that `CronOccurrenceAccounting` reads as the sole input to the occupied-instant rule. Fresh occurrence rows default to `Accounted`; definition reconciliation explicitly marks a retired occurrence `ReplacementOwed` when its fire is still owed.
 
-Cron materialization uses a read-committed transaction whose first statement is the fenced definition update. That write lock is the per-definition mutex held through occurrence-key arbitration and commit, so concurrent nodes converge on one occurrence without serializable-transaction aborts. Quiesce old scheduler binaries before migration because only providers implementing the new SPI participate in this mutex.
+Cron materialization uses a read-committed transaction whose first statement is the fenced definition update. That write lock is the per-definition mutex held through occurrence-key arbitration and commit, so concurrent nodes converge on one occurrence without serializable-transaction aborts. Every materialization writer must participate in this mutex.
 
 The `JobsDbContext<TTimeJob, TCronJob>` constructor must be `public` for the EF pool to resolve it at startup. Validation fails fast at DI build time.
 
@@ -108,6 +110,12 @@ builder
         ef.SetSchema("background"); // default: "jobs"
     });
 ```
+
+### Consumer-managed Jobs models
+
+`UseApplicationDbContext<TContext>(ConfigurationType.IgnoreModelCustomizer)` preserves the application's model ownership. Keyed operations require explicit ordinal collations on the time-job `Function`, `TenantId`, and `BusinessKey` columns: PostgreSQL `C` or SQL Server `Latin1_General_100_BIN2`. Pass that value as `contractCollation` to `TimeJobConfigurations<TTimeJob>` in `OnModelCreating`, or configure the matching model-default collation. Missing or different configuration rejects keyed scheduling and cancellation; ordinary unkeyed operations remain available. The provider never changes the consumer schema. See the [keyed scheduling storage guide](../../docs/solutions/guides/jobs-keyed-scheduling.md) for the complete configuration example and storage requirements.
+
+Ordinary adds and updates also reject a child whose persisted parent reference targets any retained keyed generation, including inputs materialized or rebound through consumer EF APIs and coordinated writes. The row and parent checks share transaction-owned run locks with keyed insertion and replacement.
 
 ## Dependencies
 

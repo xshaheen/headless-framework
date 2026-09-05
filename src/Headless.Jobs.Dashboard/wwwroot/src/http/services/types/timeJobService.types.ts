@@ -1,5 +1,9 @@
 
 export class GetTimeJobResponse {
+    contractVersion!: string;
+    correlationId?: string;
+    causationId?: string;
+    tenantId?: string;
     id!:string;
     function!:string;
     status!:string|number;
@@ -35,6 +39,7 @@ export class GetTimeJobGraphDataResponse{
 }
 
 export class AddTimeJobRequest {
+    contractVersion?: string;
     function!:string;
     request!:string;
     retries!:number;
@@ -44,6 +49,7 @@ export class AddTimeJobRequest {
 }
 
 export class UpdateTimeJobRequest {
+    contractVersion?: string;
     function!:string;
     request!:string;
     retries!:number;
@@ -53,6 +59,7 @@ export class UpdateTimeJobRequest {
 }
 
 export class AddChainJobsRequest {
+    contractVersion?: string;
   function!: string;
   description!: string;
   executionTime?: string | null;

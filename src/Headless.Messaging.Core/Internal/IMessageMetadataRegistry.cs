@@ -8,6 +8,8 @@ namespace Headless.Messaging.Internal;
 
 internal interface IMessageMetadataRegistry
 {
+    IReadOnlyCollection<MessageMetadata> GetAll();
+
     bool TryGet(MessageRouteKey route, [NotNullWhen(true)] out MessageMetadata? metadata);
 }
 
@@ -16,7 +18,8 @@ internal sealed record MessageMetadata(
     Type MessageType,
     string ContractVersion,
     Func<object, string?>? CorrelationSelector,
-    IReadOnlyDictionary<Type, object> ProviderConfigs
+    IReadOnlyDictionary<Type, object> ProviderConfigs,
+    bool RequiresRoutingAffinity = false
 );
 
 internal sealed class MessageMetadataRegistry(
@@ -30,6 +33,8 @@ internal sealed class MessageMetadataRegistry(
         consumerRegistry,
         optionsAccessor?.Value
     );
+
+    public IReadOnlyCollection<MessageMetadata> GetAll() => _metadataByRoute.Values;
 
     public bool TryGet(MessageRouteKey route, [NotNullWhen(true)] out MessageMetadata? metadata)
     {
@@ -69,7 +74,8 @@ internal sealed class MessageMetadataRegistry(
                 group.Key.MessageType,
                 contractVersion,
                 correlationSelector,
-                providerConfigs
+                providerConfigs,
+                group.Any(static registration => registration.RequiresRoutingAffinity)
             );
         }
 

@@ -10,6 +10,9 @@ using Headless.Jobs.Models;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
@@ -20,6 +23,492 @@ namespace Tests;
 public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : TestBase
     where TFixture : class, IJobsCoordinationFixture
 {
+    public virtual async Task reseeding_after_restart_preserves_the_stored_payload_contract(bool changeExpression)
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        var seed = new CronSeedDefinition(
+            "seeded.contract",
+            "* * * * *",
+            MissedRunPolicy.Skip,
+            60,
+            ContractVersion: "1"
+        );
+        Guid definitionId;
+        using (var host = fixture.BuildHost("seed-v1"))
+        {
+            await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+            var provider = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            await provider.MigrateDefinedCronJobsAsync([seed], ct);
+            definitionId = (await provider.GetAllCronJobExpressionsAsync(ct)).Single().Id;
+            var definition = (await provider.GetCronJobByIdAsync(definitionId, ct))!;
+            definition.Request = [1, 2, 3];
+            await provider.UpdateCronJobsAsync([definition], ct);
+        }
+
+        using var restarted = fixture.BuildHost("seed-v2");
+        var restartedProvider = restarted.Services.GetRequiredService<
+            IJobPersistenceProvider<TimeJobEntity, CronJobEntity>
+        >();
+        var upgradedSeed = seed with
+        {
+            ContractVersion = "2",
+            Expression = changeExpression ? "*/2 * * * *" : seed.Expression,
+        };
+        await restartedProvider.MigrateDefinedCronJobsAsync(
+            [upgradedSeed, upgradedSeed with { Function = "new.contract" }],
+            ct
+        );
+
+        var stored = (await restartedProvider.GetCronJobByIdAsync(definitionId, ct))!;
+        stored.Function.Should().Be(seed.Function);
+        stored.ContractVersion.Should().Be("1");
+        stored.Request.Should().Equal(1, 2, 3);
+        stored.Expression.Should().Be(upgradedSeed.Expression);
+        (await restartedProvider.GetAllCronJobExpressionsAsync(ct))
+            .Single(x => x.Function == "new.contract")
+            .ContractVersion.Should()
+            .Be("2");
+
+        var occurrence = new CronJobOccurrenceEntity<CronJobEntity>
+        {
+            Id = Guid.NewGuid(),
+            CronJobId = definitionId,
+            ExecutionTime = DateTime.UtcNow.AddHours(1),
+        };
+        await restartedProvider.InsertCronJobOccurrencesAsync([occurrence], ct);
+        var storedOccurrence = (
+            await restartedProvider.GetAllCronJobOccurrencesAsync(x => x.Id == occurrence.Id, ct)
+        ).Single();
+        storedOccurrence.Function.Should().Be(seed.Function);
+        storedOccurrence.ContractVersion.Should().Be("1");
+        (await restartedProvider.GetCronJobOccurrenceRequestAsync(occurrence.Id, ct)).Should().Equal(1, 2, 3);
+    }
+
+    public virtual async Task ordinary_job_edits_preserve_captured_lineage(string? incomingLineage)
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("lineage-edits");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        var provider = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+        var timeJob = new TimeJobEntity
+        {
+            Id = Guid.NewGuid(),
+            Function = "causal.time",
+            CorrelationId = "root",
+            CausationId = "parent",
+            TenantId = "tenant",
+        };
+        await provider.AddTimeJobsAsync([timeJob], ct);
+        await provider.UpdateTimeJobsAsync(
+            [
+                new TimeJobEntity
+                {
+                    Id = timeJob.Id,
+                    Function = timeJob.Function,
+                    Description = "Edited in dashboard",
+                    Retries = 4,
+                    CorrelationId = incomingLineage,
+                    CausationId = incomingLineage,
+                },
+            ],
+            ct
+        );
+        var storedTime = (await provider.GetTimeJobByIdAsync(timeJob.Id, ct))!;
+        storedTime.Description.Should().Be("Edited in dashboard");
+        storedTime.Retries.Should().Be(4);
+        storedTime.CorrelationId.Should().Be("root");
+        storedTime.CausationId.Should().Be("parent");
+        storedTime.TenantId.Should().Be("tenant");
+
+        var definition = new CronJobEntity
+        {
+            Id = Guid.NewGuid(),
+            Function = "causal.cron",
+            Expression = "* * * * *",
+            CorrelationId = "root",
+            CausationId = "parent",
+        };
+        await provider.InsertCronJobsAsync([definition], ct);
+        foreach (var atomic in new[] { false, true })
+        {
+            var edit = new CronJobEntity
+            {
+                Id = definition.Id,
+                Function = definition.Function,
+                Expression = definition.Expression,
+                Description = atomic ? "Atomic dashboard edit" : "Generic dashboard edit",
+                Retries = atomic ? 5 : 4,
+                CorrelationId = incomingLineage,
+                CausationId = incomingLineage,
+            };
+            if (atomic)
+            {
+                var result = await provider.UpdateCronJobsAtomicallyAsync(
+                    [new(edit, definition.ScheduleRevision, null)],
+                    DateTimeOffset.UtcNow,
+                    ct
+                );
+                result.Should().ContainSingle();
+                result![0].CorrelationId.Should().Be("root");
+                result[0].CausationId.Should().Be("parent");
+            }
+            else
+            {
+                (await provider.UpdateCronJobsAsync([edit], ct)).Should().Be(1);
+            }
+
+            var storedCron = (await provider.GetCronJobByIdAsync(definition.Id, ct))!;
+            storedCron.Description.Should().Be(edit.Description);
+            storedCron.Retries.Should().Be(edit.Retries);
+            storedCron.CorrelationId.Should().Be("root");
+            storedCron.CausationId.Should().Be("parent");
+            var occurrence = new CronJobOccurrenceEntity<CronJobEntity>
+            {
+                Id = Guid.NewGuid(),
+                CronJobId = definition.Id,
+                ExecutionTime = DateTime.UtcNow.AddHours(atomic ? 2 : 1),
+            };
+            await provider.InsertCronJobOccurrencesAsync([occurrence], ct);
+            var storedOccurrence = (
+                await provider.GetAllCronJobOccurrencesAsync(x => x.Id == occurrence.Id, ct)
+            ).Single();
+            storedOccurrence.CorrelationId.Should().Be("root");
+            storedOccurrence.CausationId.Should().Be("parent");
+        }
+    }
+
+    public virtual async Task cron_materialization_ignores_stale_caller_tuple_and_restart_claims_its_snapshot()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        var definition = new CronJobEntity
+        {
+            Id = Guid.NewGuid(),
+            Function = "snapshot.v1",
+            ContractVersion = "1",
+            Expression = "* * * * *",
+            Request = [1, 2, 3],
+            CorrelationId = "business-root",
+            CausationId = "business-cause",
+        };
+        var occurrence = new CronJobOccurrenceEntity<CronJobEntity>
+        {
+            Id = Guid.NewGuid(),
+            CronJobId = definition.Id,
+            Function = "stale.caller",
+            ContractVersion = "obsolete",
+            Request = [9],
+            ExecutionTime = DateTime.UtcNow.AddMinutes(30),
+        };
+        using (var host = fixture.BuildHost("tuple-before-restart"))
+        {
+            await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+            await host.StartAsync(ct);
+            try
+            {
+                var provider = host.Services.GetRequiredService<
+                    IJobPersistenceProvider<TimeJobEntity, CronJobEntity>
+                >();
+                await provider.InsertCronJobsAsync([definition], ct);
+                await provider.InsertCronJobOccurrencesAsync([occurrence], ct);
+                occurrence.Function.Should().Be("snapshot.v1");
+                occurrence.ContractVersion.Should().Be("1");
+                occurrence.Request.Should().Equal(1, 2, 3);
+
+                definition.Function = "snapshot.v2";
+                definition.ContractVersion = "2";
+                definition.Request = [4, 5, 6];
+                definition.CorrelationId = "later-root";
+                await provider.UpdateCronJobsAsync([definition], ct);
+            }
+            finally
+            {
+                await host.StopAsync(ct);
+            }
+        }
+
+        using var restarted = fixture.BuildHost("tuple-after-restart");
+        await restarted.StartAsync(ct);
+        try
+        {
+            var provider = restarted.Services.GetRequiredService<
+                IJobPersistenceProvider<TimeJobEntity, CronJobEntity>
+            >();
+            var dispatch = new JobManagerDispatchContext(definition.Id)
+            {
+                FunctionName = definition.Function,
+                Expression = definition.Expression,
+                ScheduleRevision = definition.ScheduleRevision,
+                NextCronOccurrence = new NextCronOccurrence(occurrence.Id, occurrence.CreatedAt),
+            };
+            var queued = (
+                await provider.QueueCronJobOccurrencesAsync((occurrence.ExecutionTime, [dispatch]), ct).ToArrayAsync(ct)
+            )
+                .Should()
+                .ContainSingle()
+                .Subject;
+            queued.Function.Should().Be("snapshot.v1");
+            queued.ContractVersion.Should().Be("1");
+            queued.Request.Should().Equal(1, 2, 3);
+            var acquired = (await provider.AcquireImmediateCronOccurrencesAsync([occurrence.Id], ct))
+                .Should()
+                .ContainSingle()
+                .Subject;
+            acquired.Function.Should().Be("snapshot.v1");
+            acquired.ContractVersion.Should().Be("1");
+            acquired.Request.Should().Equal(1, 2, 3);
+            acquired.CorrelationId.Should().Be("business-root");
+            acquired.CausationId.Should().Be("business-cause");
+            acquired.TenantId.Should().BeNull();
+            acquired.CronJob.Function.Should().Be("snapshot.v2");
+            (await provider.GetCronJobOccurrenceRequestAsync(occurrence.Id, ct)).Should().Equal(1, 2, 3);
+
+            // Simulate a started attempt lost with the prior host. The recovered row must keep its original
+            // executable tuple while the independently persisted retry budget advances.
+            await using (
+                var context = await restarted
+                    .Services.GetRequiredService<IDbContextFactory<JobsDbContext>>()
+                    .CreateDbContextAsync(ct)
+            )
+            {
+                await context
+                    .Set<CronJobOccurrenceEntity<CronJobEntity>>()
+                    .Where(x => x.Id == occurrence.Id)
+                    .ExecuteUpdateAsync(
+                        setters =>
+                            setters
+                                .SetProperty(x => x.LockedUntil, DateTime.UtcNow.AddMinutes(-5))
+                                .SetProperty(x => x.ExecutionTime, DateTime.UtcNow.AddMinutes(-10))
+                                .SetProperty(x => x.RetryCount, 2),
+                        ct
+                    );
+            }
+            (await provider.ReclaimStalledCronJobOccurrencesAsync(ct)).Should().Be(1);
+            var retry = (await provider.QueueTimedOutCronJobOccurrencesAsync(ct).ToArrayAsync(ct))
+                .Should()
+                .ContainSingle()
+                .Subject;
+            retry.Function.Should().Be("snapshot.v1");
+            retry.ContractVersion.Should().Be("1");
+            retry.Request.Should().Equal(1, 2, 3);
+            retry.RetryCount.Should().Be(3);
+            retry.CorrelationId.Should().Be("business-root");
+            retry.CausationId.Should().Be("business-cause");
+        }
+        finally
+        {
+            await restarted.StopAsync(ct);
+        }
+    }
+
+    public virtual async Task contract_columns_preserve_ordinal_case_and_reject_invalid_new_writes()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("contract-columns");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+        try
+        {
+            var provider = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            var lower = new TimeJobEntity
+            {
+                Id = Guid.NewGuid(),
+                Function = "case.name",
+                ContractVersion = "vOne",
+            };
+            var upper = new TimeJobEntity
+            {
+                Id = Guid.NewGuid(),
+                Function = "Case.Name",
+                ContractVersion = "VOne",
+            };
+            var supplementary = new TimeJobEntity
+            {
+                Id = Guid.NewGuid(),
+                Function = string.Concat(Enumerable.Repeat("🚀", Headless.Jobs.JobContract.NameMaxLength / 2)),
+                ContractVersion = Headless.Jobs.JobContract.InitialVersion,
+            };
+            await provider.AddTimeJobsAsync([lower, upper, supplementary], ct);
+            var roundTrip = await provider.GetTimeJobByIdAsync(supplementary.Id, ct);
+            roundTrip.Should().NotBeNull();
+            roundTrip!.Function.Should().Be(supplementary.Function);
+            roundTrip.Request.Should().BeNull();
+            (await provider.GetTimeJobsAsync(x => x.Function == "case.name", ct))
+                .Should()
+                .ContainSingle()
+                .Which.Id.Should()
+                .Be(lower.Id);
+            (await provider.GetTimeJobsAsync(x => x.ContractVersion == "VOne", ct))
+                .Should()
+                .ContainSingle()
+                .Which.Id.Should()
+                .Be(upper.Id);
+            await using var context = await host
+                .Services.GetRequiredService<IDbContextFactory<JobsDbContext>>()
+                .CreateDbContextAsync(ct);
+            foreach (
+                var type in new[]
+                {
+                    typeof(TimeJobEntity),
+                    typeof(CronJobEntity),
+                    typeof(CronJobOccurrenceEntity<CronJobEntity>),
+                }
+            )
+            {
+                var entity = context.Model.FindEntityType(type)!;
+                entity.FindProperty("Function")!.GetMaxLength().Should().Be(Headless.Jobs.JobContract.NameMaxLength);
+                entity
+                    .FindProperty("ContractVersion")!
+                    .GetMaxLength()
+                    .Should()
+                    .Be(Headless.Jobs.JobContract.VersionMaxLength);
+                var version = entity.FindProperty("ContractVersion")!;
+                version.IsNullable.Should().BeFalse();
+                version.GetDefaultValue().Should().BeNull();
+                version.GetDefaultValueSql().Should().BeNull();
+            }
+
+            // Inspect and exercise the real EF-created table without the writer's value converter.
+            var timeJob = context.Model.FindEntityType(typeof(TimeJobEntity))!;
+            var table = StoreObjectIdentifier.Table(timeJob.GetTableName()!, timeJob.GetSchema());
+            var sql = context.GetService<ISqlGenerationHelper>();
+            var copiedColumns = timeJob
+                .GetProperties()
+                .Where(property =>
+                    property.Name is not (nameof(TimeJobEntity.Id) or nameof(TimeJobEntity.ContractVersion))
+                )
+                .Select(property => sql.DelimitIdentifier(property.GetColumnName(table)!))
+                .ToArray();
+            await using var connection = fixture.CreateConnection();
+            await connection.OpenAsync(ct);
+            await using var command = connection.CreateCommand();
+            var sourceId = command.CreateParameter();
+            sourceId.ParameterName = "@sourceId";
+            sourceId.Value = lower.Id;
+            command.Parameters.Add(sourceId);
+            var targetId = command.CreateParameter();
+            targetId.ParameterName = "@targetId";
+            targetId.Value = Guid.NewGuid();
+            command.Parameters.Add(targetId);
+            var idColumn = sql.DelimitIdentifier(nameof(TimeJobEntity.Id));
+            command.CommandText =
+                $"INSERT INTO {fixture.QualifiedTimeJobsTable} ({idColumn}, {string.Join(", ", copiedColumns)}) "
+                + $"SELECT @targetId, {string.Join(", ", copiedColumns)} FROM {fixture.QualifiedTimeJobsTable} WHERE {idColumn} = @sourceId";
+            var omittedVersion = () => command.ExecuteNonQueryAsync(ct);
+            await omittedVersion.Should().ThrowAsync<DbException>();
+            command.CommandText =
+                $"UPDATE {fixture.QualifiedTimeJobsTable} SET {sql.DelimitIdentifier(nameof(TimeJobEntity.ContractVersion))} = NULL WHERE {idColumn} = @sourceId";
+            var nullVersion = () => command.ExecuteNonQueryAsync(ct);
+            await nullVersion.Should().ThrowAsync<DbException>();
+
+            foreach (
+                var invalid in new[] { "", " ", "v1 ", new string('x', Headless.Jobs.JobContract.VersionMaxLength + 1) }
+            )
+            {
+                var rejectedId = Guid.NewGuid();
+                var write = () =>
+                    provider.AddTimeJobsAsync(
+                        [
+                            new TimeJobEntity
+                            {
+                                Id = rejectedId,
+                                Function = "invalid",
+                                ContractVersion = invalid,
+                            },
+                        ],
+                        ct
+                    );
+                var failure = await write.Should().ThrowAsync<DbUpdateException>();
+                failure
+                    .Which.InnerException.Should()
+                    .BeOfType<ArgumentException>()
+                    .Which.Message.Should()
+                    .Contain("Job contract identities");
+                (await provider.GetTimeJobByIdAsync(rejectedId, ct)).Should().BeNull();
+            }
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    public virtual async Task materialized_cron_request_survives_parent_payload_edit_and_provider_restart()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        var cronId = Guid.NewGuid();
+        byte[] originalRequest = [123, 34, 118, 34, 58, 49, 125];
+        byte[] replacementRequest = [123, 34, 118, 34, 58, 50, 125];
+        Guid occurrenceId;
+
+        using (var host = fixture.BuildHost("snapshot-before-restart"))
+        {
+            await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+            await host.StartAsync(ct);
+            try
+            {
+                await fixture.SeedCronJobAsync(cronId, "snapshot", "* * * * *", NodeDeathPolicy.Retry, ct);
+                await SetParentRequestAsync(originalRequest);
+                var persistence = host.Services.GetRequiredService<
+                    IJobPersistenceProvider<TimeJobEntity, CronJobEntity>
+                >();
+                var context = new JobManagerDispatchContext(cronId)
+                {
+                    FunctionName = "snapshot",
+                    Expression = "* * * * *",
+                };
+                var occurrences = await persistence
+                    .QueueCronJobOccurrencesAsync((DateTime.UtcNow.AddMinutes(30), [context]), ct)
+                    .ToArrayAsync(ct);
+                occurrenceId = occurrences.Should().ContainSingle().Subject.Id;
+                (await persistence.GetCronJobOccurrenceRequestAsync(occurrenceId, ct)).Should().Equal(originalRequest);
+            }
+            finally
+            {
+                await host.StopAsync(ct);
+            }
+        }
+
+        // Change only the persisted parent payload after materialization; no identity or version edit can
+        // explain a different pending execution request, and a fresh host cannot hide it in an identity map.
+        await SetParentRequestAsync(replacementRequest);
+        using var restartedHost = fixture.BuildHost("snapshot-after-restart");
+        await restartedHost.StartAsync(ct);
+        try
+        {
+            var restarted = restartedHost.Services.GetRequiredService<
+                IJobPersistenceProvider<TimeJobEntity, CronJobEntity>
+            >();
+            (await restarted.GetCronJobOccurrenceRequestAsync(occurrenceId, ct)).Should().Equal(originalRequest);
+        }
+        finally
+        {
+            await restartedHost.StopAsync(ct);
+        }
+
+        async Task SetParentRequestAsync(byte[] request)
+        {
+            await using var connection = fixture.CreateConnection();
+            await connection.OpenAsync(ct);
+            await using var command = connection.CreateCommand();
+            command.CommandText =
+                $"UPDATE {fixture.QualifiedCronJobsTable} SET \"Request\" = @request WHERE \"Id\" = @id";
+            var payload = command.CreateParameter();
+            payload.ParameterName = "request";
+            payload.Value = request;
+            command.Parameters.Add(payload);
+            var id = command.CreateParameter();
+            id.ParameterName = "id";
+            id.Value = cronId;
+            command.Parameters.Add(id);
+            (await command.ExecuteNonQueryAsync(ct)).Should().Be(1);
+        }
+    }
+
     public virtual async Task synchronized_workers_claim_disjoint_time_job_roots_and_complete_descendant_stamps()
     {
         var ct = AbortToken;

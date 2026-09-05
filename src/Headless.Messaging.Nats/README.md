@@ -50,6 +50,8 @@ builder.Services.AddHeadlessMessaging(options =>
 
 ## Configuration
 
+The current NATS subjects and stream topology do not provide the provider-neutral routing-affinity contract. `RequireRoutingAffinity()` fails during startup; a supplied `RoutingAffinityKey` is rejected before persistence or transport effects. Existing raw subject-shard hooks remain provider-specific configuration and do not establish a neutral key mapping. No transparent sharding topology is introduced.
+
 ```csharp
 options.UseNats(nats =>
 {
@@ -82,8 +84,6 @@ options.Bus.ForMessage<OrderEvent>(message =>
 ```
 
 NATS supports the same contract and logical name on both lanes without cross-delivery. Bus publishes to `headless.bus.{logical-name}` and Queue publishes to `headless.queue.{logical-name}`. Auto-provisioned Bus streams use interest retention and `bus-{subscriber-group}-{logical-name}` durable consumers, while Queue streams use work-queue retention and the shared `queue-{logical-name}` durable. `StreamOptions` can tune storage, replicas, and limits, but stream name, subjects, and retention are provider-owned lane identity.
-
-This topology replaces legacy unqualified subjects and streams. Before deployment, stop old and new publishers, inventory producer/consumer versions and stream auto-provision permissions, and drain every legacy durable to a measured zero-pending/zero-ack-pending signal. Deploy consumers before publishers behind a version fence. Abort before the first lane-qualified publication if the legacy drain or permissions check fails. After lane-qualified publication begins, recovery is roll-forward-only: restore the new consumers, reconcile legacy and lane-qualified stream counts, and retain legacy streams until the deployment owner signs off.
 
 `SubjectShard(...)` stamps `NatsMessagingHeaders.SubjectShard` (`headless-nats-subject-shard`) during publish. The provider appends it as one safe subject token, producing subjects such as `orders.events.42`; `.`/`*`/`>`/whitespace/control characters are rejected. The selector output is broker-visible metadata, so do not put secrets or raw PII in it.
 

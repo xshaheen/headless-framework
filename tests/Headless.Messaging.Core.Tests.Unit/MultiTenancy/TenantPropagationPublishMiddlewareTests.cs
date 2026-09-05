@@ -9,6 +9,35 @@ namespace Tests.MultiTenancy;
 
 public sealed class TenantPropagationPublishMiddlewareTests : TestBase
 {
+    [Theory]
+    [InlineData(MessageLane.Bus)]
+    [InlineData(MessageLane.Queue)]
+    public async Task should_preserve_captured_system_scope_without_replacing_it_with_ambient_tenant(MessageLane lane)
+    {
+        var tenant = new TestCurrentTenant { Id = "unrelated-tenant" };
+        var middleware = new TenantPropagationPublishMiddleware(tenant);
+        MessageOptions options =
+            lane == MessageLane.Bus
+                ? new PublishOptions { SuppressAmbientBusinessContext = true }
+                : new QueueOptions { SuppressAmbientBusinessContext = true };
+        var context = new PublishContext<Payload>(new Payload("captured"), lane, options, delayTime: null);
+        var nextCalled = false;
+
+        await middleware.InvokeAsync(
+            context,
+            () =>
+            {
+                nextCalled = true;
+                context.Options!.TenantId.Should().BeNull();
+                return ValueTask.CompletedTask;
+            }
+        );
+
+        nextCalled.Should().BeTrue();
+        context.Options.Should().BeSameAs(options);
+        tenant.Id.Should().Be("unrelated-tenant");
+    }
+
     [Fact]
     public async Task should_stamp_tenant_id_from_ambient_before_next()
     {

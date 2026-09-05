@@ -5,6 +5,7 @@ using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
+using Headless.Jobs.Models;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Jobs;
@@ -21,6 +22,34 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     where TCronJob : CronJobEntity, new()
 {
     private readonly JobsExecutionContext _tickerExecutionContext;
+    private JobOptions _jobDefaults = new();
+    private readonly Dictionary<Type, JobOptions> _jobOptionsByRequest = [];
+    private readonly Dictionary<JobFunctionDescriptor, JobOptions> _jobOptionsByDescriptor = [];
+
+    /// <summary>Sets retry, node-death, and atomic-enlistment defaults for this host. Invocation metadata is not accepted.</summary>
+    public JobsOptionsBuilder<TTimeJob, TCronJob> ConfigureDefaults(JobOptions options)
+    {
+        _jobDefaults = JobSchedulingPolicies.Snapshot(options);
+        return this;
+    }
+
+    /// <summary>Overrides host defaults for the generated handler accepting this request type.</summary>
+    public JobsOptionsBuilder<TTimeJob, TCronJob> ConfigureJob<TRequest>(JobOptions options)
+    {
+        _jobOptionsByRequest[typeof(TRequest)] = JobSchedulingPolicies.Snapshot(options);
+        return this;
+    }
+
+    /// <summary>Overrides host defaults for one canonical generated job descriptor.</summary>
+    public JobsOptionsBuilder<TTimeJob, TCronJob> ConfigureJob(JobFunctionDescriptor descriptor, JobOptions options)
+    {
+        Argument.IsNotNull(descriptor);
+        _jobOptionsByDescriptor[descriptor] = JobSchedulingPolicies.Snapshot(options);
+        return this;
+    }
+
+    internal JobSchedulingPolicies FreezeSchedulingPolicies() =>
+        new(_jobDefaults, _jobOptionsByRequest, _jobOptionsByDescriptor);
 
     /// <summary>Scheduler options instance, exposed so Core-layer extensions can toggle internal flags.</summary>
     internal SchedulerOptionsBuilder SchedulerOptions { get; }

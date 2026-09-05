@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Text.Json.Serialization;
 using Headless.Jobs.Entities.BaseEntity;
 using Headless.Jobs.Enums;
 
@@ -24,6 +25,25 @@ public class TimeJobEntity : TimeJobEntity<TimeJobEntity>;
 public class TimeJobEntity<TTicker> : BaseJobEntity
     where TTicker : TimeJobEntity<TTicker>
 {
+    /// <summary>Requires this scheduling call to enlist in a compatible live application transaction. Never persisted.</summary>
+    [JsonIgnore]
+    public bool RequireAtomicEnlistment { get; set; }
+
+    /// <summary>Reserved business identity. All keyed metadata is null on ordinary jobs.</summary>
+    public virtual string? BusinessKey { get; internal set; }
+
+    /// <summary>SHA-256 of the canonical, final persisted scheduling intent.</summary>
+    public virtual string? IntentFingerprint { get; internal set; }
+
+    /// <summary>Algorithm interpreting this generation's fingerprint; currently <c>v1</c>.</summary>
+    public virtual string? FingerprintAlgorithm { get; internal set; }
+
+    /// <summary>Positive, monotonically increasing generation within the scoped business key.</summary>
+    public virtual long? Generation { get; internal set; }
+
+    /// <summary>Current identity remains true after execution ends; historical rows remain retained.</summary>
+    public virtual bool? IsCurrentGeneration { get; internal set; }
+
     /// <summary>Current lifecycle state of this job row.</summary>
     public virtual JobStatus Status { get; internal set; }
 

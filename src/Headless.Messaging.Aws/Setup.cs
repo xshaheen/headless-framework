@@ -4,9 +4,11 @@ using Amazon;
 using Headless.Checks;
 using Headless.Messaging.Aws;
 using Headless.Messaging.Configuration;
+using Headless.Messaging.Internal;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Messaging;
@@ -101,14 +103,27 @@ public static class SetupAwsMessaging
     private sealed class AmazonSqsMessagingOptionsExtension(Action<IServiceCollection> configureOptions)
         : IMessagesOptionsExtension
     {
+        private static IEnumerable<MessageMetadata> _GetAffinityRoutes(IServiceProvider sp)
+        {
+            var routes = sp.GetRequiredService<IMessageMetadataRegistry>().GetAll();
+            return routes.Where(static route => route.Route.MessageName.IsAwsFifoName());
+        }
+
         public void AddServices(IServiceCollection services)
         {
             services.AddSingleton(new MessageQueueMarkerService("Amazon SQS"));
-            services.AddMessagingProviderCapabilities(
+            services.AddMessagingProviderCapabilities(sp =>
                 MessagingProviderCapabilities.Transport(
                     "Amazon SQS",
                     [MessageLane.Bus, MessageLane.Queue],
-                    supportsIndependentLaneTopology: true
+                    supportsIndependentLaneTopology: true,
+                    routingAffinityRoutes: _GetAffinityRoutes(sp)
+                        .Select(static metadata => new MessagingRoutingAffinityRoute(
+                            metadata.Route.Lane,
+                            metadata.Route.MessageName,
+                            AwsRoutingAffinity.Mapping
+                        ))
+                        .ToArray()
                 )
             );
 

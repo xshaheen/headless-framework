@@ -340,6 +340,9 @@ internal sealed class Bootstrapper(
 
         _DrainPendingMessageRegistrations();
         _CheckMessageNameCollisions();
+        serviceProvider
+            .GetRequiredService<MessagingCapabilityModel>()
+            .ValidateRoutingAffinityStartup(serviceProvider.GetRequiredService<IMessageMetadataRegistry>().GetAll());
         var hasDurableConsumers = serviceProvider.GetRequiredService<ConsumerRegistry>().GetAll().Count > 0;
         serviceProvider
             .GetRequiredService<IMessageCapabilityGate>()

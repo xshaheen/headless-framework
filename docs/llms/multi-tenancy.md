@@ -416,27 +416,27 @@ Register a real `ICurrentTenant` source (HTTP claim resolution, `AddHeadlessDbCo
 
 `PropagateTenant()` records a `Propagating` posture and enables two behaviors:
 
-- **Schedule-side capture** — when an enqueue supplies no explicit `EnqueueOptions.TenantId` (or entity `TenantId`), the schedule middleware captures the ambient `ICurrentTenant.Id` onto the job row in the same atomic write that persists it. Nothing recaptures after commit.
+- **Schedule-side capture** — when an enqueue supplies no explicit `JobOptions.TenantId` (or entity `TenantId`), the schedule middleware captures the ambient `ICurrentTenant.Id` onto the job row in the same atomic write that persists it. Nothing recaptures after commit.
 - **Execute-side restoration** — the execute middleware wraps every handler attempt in `ICurrentTenant.Change(job.TenantId)` and disposes the scope on success, fault, or cancellation. Because Polly re-dispatches the execute pipeline per attempt, each retry is freshly scoped and no scope leaks between attempts.
 
-An explicit `EnqueueOptions.TenantId` always wins over ambient capture — even when it differs from the ambient tenant (the mismatch logs a warning). In-process code already holds `ICurrentTenant.Change`, so an explicit value adds no new escalation vector; this matches the Messaging publish middleware. Hosts that want hard lateral isolation opt in with `RejectCrossTenantEnqueue()`, which rejects an explicit tenant differing from a present ambient tenant while still honoring explicit values from system scope (cron fan-out keeps working).
+An explicit `JobOptions.TenantId` always wins over ambient capture — even when it differs from the ambient tenant (the mismatch logs a warning). In-process code already holds `ICurrentTenant.Change`, so an explicit value adds no new escalation vector; this matches the Messaging publish middleware. Hosts that want hard lateral isolation opt in with `RejectCrossTenantEnqueue()`, which rejects an explicit tenant differing from a present ambient tenant while still honoring explicit values from system scope (cron fan-out keeps working).
 
 #### Strict Enqueue (`RequireTenantOnEnqueue`)
 
 `RequireTenantOnEnqueue()` records an `Enforcing` posture. A time-job enqueue that resolves no explicit or ambient tenant is rejected with `Headless.Abstractions.MissingTenantContextException` — the Jobs sibling of the EF write guard and the HTTP authorization requirement — unless the job opts out as a system job.
 
-Set `IsSystemJob = true` (on `EnqueueOptions` or the entity) to schedule a deliberate tenantless job that bypasses the strict check. To keep tenant code from escalating into system scope, `IsSystemJob = true` is **rejected** with `JobValidatorException` when an ambient tenant is present, or when an explicit `TenantId` is also supplied; the system-job decision is logged at schedule time. `IsSystemJob` is transient — a schedule-time authorization concept with no execution-time meaning — and is never persisted.
+Set `IsSystemJob = true` (on `JobOptions` or the entity) to schedule a deliberate tenantless job that bypasses the strict check. To keep tenant code from escalating into system scope, `IsSystemJob = true` is **rejected** with `JobValidatorException` when an ambient tenant is present, or when an explicit `TenantId` is also supplied; the system-job decision is logged at schedule time. `IsSystemJob` is transient — a schedule-time authorization concept with no execution-time meaning — and is never persisted.
 
 Structural validation — cron-scope rejection, the system-job contradictions, and blank/over-length bounds on explicitly supplied tenant values — runs whenever the middleware dispatches, independent of the options. Only ambient capture (`PropagateTenant`) and missing-tenant rejection (`RequireTenantOnEnqueue`) are gated by the seam flags, so tenant-to-system escalation and tenant-scoped cron are always rejected.
 
 #### Manual Propagation
 
-If you opt out of `PropagateTenant()`, pass the tenant explicitly on every enqueue. An explicit `EnqueueOptions.TenantId` is persisted regardless of the flag and **is still restored around the job handler at execute time** — the handler, and each retry, runs under that tenant, so you do not restore it inside the handler. Manual restoration is only needed for work that runs *outside* the Jobs execute pipeline (inline code, other background paths):
+If you opt out of `PropagateTenant()`, pass the tenant explicitly on every enqueue. An explicit `JobOptions.TenantId` is persisted regardless of the flag and **is still restored around the job handler at execute time** — the handler, and each retry, runs under that tenant, so you do not restore it inside the handler. Manual restoration is only needed for work that runs *outside* the Jobs execute pipeline (inline code, other background paths):
 
 ```csharp
 // Explicit capture at schedule time — no ambient dependency. The handler runs under `tenantId`
 // even with PropagateTenant() off, because a persisted tenant is always restored at execute time.
-await scheduler.EnqueueAsync(request, new EnqueueOptions { TenantId = tenantId }, ct);
+await scheduler.EnqueueAsync(request, new JobOptions { TenantId = tenantId }, ct);
 
 // Inline work OUTSIDE the Jobs execute pipeline still needs an explicit scope.
 using (currentTenant.Change(tenantId))
@@ -447,7 +447,7 @@ using (currentTenant.Change(tenantId))
 
 #### Cron Fan-Out
 
-Cron definitions and occurrences are always system-scope; scheduling a cron definition whose `TenantId` is non-null throws `JobValidatorException`. To run tenant-scoped recurring work, enumerate tenants in application code inside a system-scope cron handler and schedule one tenant-scoped time job per tenant with an **explicit** `EnqueueOptions.TenantId`:
+Cron definitions and occurrences are always system-scope; scheduling a cron definition whose `TenantId` is non-null throws `JobValidatorException`. To run tenant-scoped recurring work, enumerate tenants in application code inside a system-scope cron handler and schedule one tenant-scoped time job per tenant with an **explicit** `JobOptions.TenantId`:
 
 ```csharp
 using Headless.Jobs.Base;
@@ -480,7 +480,7 @@ public static async Task FanOutAsync(IServiceProvider sp, CancellationToken ct)
         // inside a cron handler would silently persist tenantless jobs.
         await scheduler.EnqueueAsync(
             new TenantReportRequest("nightly"),
-            new EnqueueOptions { TenantId = tenantId, Description = $"nightly-report-{tenantId}" },
+            new JobOptions { TenantId = tenantId, Description = $"nightly-report-{tenantId}" },
             ct
         );
     }

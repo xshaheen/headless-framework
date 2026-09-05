@@ -9,11 +9,20 @@ namespace Tests;
 public sealed class ProviderConformanceEvidenceTests(RedisMessagingFixture fixture) : TestBase
 {
     [Fact]
+    public Task should_prove_routing_affinity_mapping_or_rejection() =>
+        TransportRoutingAffinityConformance.AssertAsync(new RedisProviderConformanceDriver(fixture), AbortToken);
+
+    [Fact]
     public async Task should_execute_every_supported_manifest_scenario()
     {
         var profile = TransportConformanceManifest.Providers["Redis"];
         TransportConformanceTestBinding[] bindings =
         [
+            new(
+                TransportConformanceScenario.RoutingAffinityMappingOrRejection,
+                typeof(ProviderConformanceEvidenceTests),
+                nameof(should_prove_routing_affinity_mapping_or_rejection)
+            ),
             _Bind(
                 TransportConformanceScenario.QueueRoundTrip,
                 nameof(RedisConsumerConformanceTests.should_round_trip_queue_message_body_and_headers)
@@ -62,23 +71,17 @@ public sealed class ProviderConformanceEvidenceTests(RedisMessagingFixture fixtu
                 TransportConformanceScenario.MalformedEnvelopeTerminalSettlement,
                 nameof(RedisConsumerConformanceTests.should_terminally_ack_malformed_entry_across_consumer_restart)
             ),
-            _Bind(
-                TransportConformanceScenario.LegacyCutoverRecovery,
-                nameof(
-                    RedisConsumerConformanceTests.should_roll_forward_legacy_stream_without_deleting_operator_owned_source
-                )
-            ),
         ];
 
         await TransportConformanceTestBindings.ExecuteSupportedScenariosAsync(
             profile,
             bindings,
             testClass =>
-                testClass == typeof(RedisConsumerConformanceTests)
-                    ? new RedisConsumerConformanceTests(fixture)
-                    : throw new InvalidOperationException(
-                        $"No Redis conformance test factory is registered for {testClass}."
-                    )
+                testClass == typeof(RedisConsumerConformanceTests) ? new RedisConsumerConformanceTests(fixture)
+                : testClass == typeof(ProviderConformanceEvidenceTests) ? new ProviderConformanceEvidenceTests(fixture)
+                : throw new InvalidOperationException(
+                    $"No Redis conformance test factory is registered for {testClass}."
+                )
         );
     }
 

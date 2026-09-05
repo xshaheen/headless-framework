@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Jobs.Hubs;
 
-public partial class JobsNotificationHub(
+public class JobsNotificationHub(
     ILogger<JobsNotificationHub> logger,
     IAuthService authService,
     TimeProvider timeProvider

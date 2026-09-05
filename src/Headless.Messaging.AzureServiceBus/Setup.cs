@@ -3,9 +3,11 @@
 using Headless.Checks;
 using Headless.Messaging.AzureServiceBus;
 using Headless.Messaging.Configuration;
+using Headless.Messaging.Internal;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Messaging;
@@ -118,14 +120,37 @@ public static class SetupAzureServiceBusMessaging
     private sealed class AzureServiceBusMessagingOptionsExtension(Action<IServiceCollection> configureOptions)
         : IMessagesOptionsExtension
     {
+        private static IEnumerable<MessageMetadata> _GetAffinityRoutes(IServiceProvider sp)
+        {
+            var routes = sp.GetRequiredService<IMessageMetadataRegistry>().GetAll();
+            var options = sp.GetRequiredService<IOptions<AzureServiceBusMessagingOptions>>().Value;
+            return routes.Where(route =>
+                options.EnableSessions
+                || (
+                    route.Route.Lane == MessageLane.Bus
+                    && options.CustomProducers.Any(producer =>
+                        producer.EnableSessions
+                        && string.Equals(producer.MessageTypeName, route.Route.MessageName, StringComparison.Ordinal)
+                    )
+                )
+            );
+        }
+
         public void AddServices(IServiceCollection services)
         {
             services.AddSingleton(new MessageQueueMarkerService("Azure Service Bus"));
-            services.AddMessagingProviderCapabilities(
+            services.AddMessagingProviderCapabilities(sp =>
                 MessagingProviderCapabilities.Transport(
                     "Azure Service Bus",
                     [MessageLane.Bus, MessageLane.Queue],
-                    supportsIndependentLaneTopology: true
+                    supportsIndependentLaneTopology: true,
+                    routingAffinityRoutes: _GetAffinityRoutes(sp)
+                        .Select(static metadata => new MessagingRoutingAffinityRoute(
+                            metadata.Route.Lane,
+                            metadata.Route.MessageName,
+                            AzureServiceBusRoutingAffinity.Mapping
+                        ))
+                        .ToArray()
                 )
             );
 

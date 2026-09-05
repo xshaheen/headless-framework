@@ -23,8 +23,8 @@ public sealed class JobChainNode
         JobFunctionDescriptor? descriptor,
         object? payload,
         Type? payloadType,
-        EnqueueOptions? options,
-        DateTime? executionTime,
+        JobOptions? options,
+        DateTimeOffset? executionTime,
         JobChainNode? onSuccess,
         JobChainNode? onFailure
     )
@@ -57,10 +57,10 @@ public sealed class JobChainNode
     public Type? PayloadType { get; }
 
     /// <summary>The per-step options captured verbatim, or <see langword="null"/> when none were supplied.</summary>
-    public EnqueueOptions? Options { get; }
+    public JobOptions? Options { get; }
 
-    /// <summary>The explicit UTC execution time for this step, or <see langword="null"/> to run as soon as eligible.</summary>
-    public DateTime? ExecutionTime { get; }
+    /// <summary>The explicit execution instant for this step, or <see langword="null"/> to run as soon as eligible.</summary>
+    public DateTimeOffset? ExecutionTime { get; }
 
     /// <summary>The child that becomes eligible when this node reaches a success terminal state, or <see langword="null"/>.</summary>
     public JobChainNode? OnSuccess { get; }

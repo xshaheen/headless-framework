@@ -11,6 +11,10 @@ namespace Tests;
 public sealed class InMemoryProviderConformanceTests : TestBase
 {
     [Fact]
+    public Task should_prove_routing_affinity_mapping_or_rejection() =>
+        TransportRoutingAffinityConformance.AssertAsync(_CreateDriver(), AbortToken);
+
+    [Fact]
     public Task should_deliver_one_bus_copy_per_group_while_replicas_compete()
     {
         return TransportProviderConformance.AssertBusSubscriberGroupsAsync(_CreateDriver(), AbortToken);

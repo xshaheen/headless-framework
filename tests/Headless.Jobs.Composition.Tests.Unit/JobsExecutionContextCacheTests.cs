@@ -16,6 +16,34 @@ namespace Tests;
 public sealed class JobsExecutionContextCacheTests : TestBase
 {
     [Fact]
+    public void unsupported_version_cannot_reach_a_previously_cached_delegate()
+    {
+        var registration = _Fn("stable", JobPriority.Normal, 0);
+        var registry = JobFunctionRegistryBuilder.Build(
+            [registration],
+            [],
+            [
+                new KeyValuePair<string, JobFunctionDescriptor>(
+                    "stable",
+                    new("stable", null, "", JobPriority.Normal, 0, "2")
+                ),
+            ]
+        );
+        var context = _Node("stable");
+        context.ContractVersion = "1";
+        context.CachedDelegate = registration.Value.Delegate;
+
+        JobsExecutionContext.CacheFunctionReferences(context, registry);
+
+        context.CachedDelegate.Should().BeNull();
+        context
+            .ContractVersionError.Should()
+            .Contain("version '1'")
+            .And.Contain("registers '2'")
+            .And.Contain("not deserialized");
+    }
+
+    [Fact]
     public void caches_function_references_across_a_deep_branching_tree()
     {
         var registry = JobFunctionRegistryBuilder.Build(

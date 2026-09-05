@@ -8,7 +8,7 @@ Gives application code a compile-time bus surface for publish/subscribe delivery
 
 ## Key Features
 
-- `IBus` is the only bus publisher; `PublishOptions.DeliveryMode` selects Auto, Durable, or TransportDirect.
+- `IBus` is the only bus publisher; `PublishOptions.DeliveryMode` defaults to Durable; Auto and TransportDirect are explicit overrides.
 - Durable delivery persists messages first, then drains them through the configured bus transport.
 - `PublishOptions.Delay` schedules durable bus delivery.
 - Every bus publish carries `MessageLane.Bus` through storage, tracing, dashboard projections, and consume context.
@@ -26,16 +26,14 @@ public sealed class OrderEvents(IBus bus)
 {
     public Task PublishAsync(OrderPlaced message, CancellationToken cancellationToken)
     {
-        return bus.PublishAsync(
-            message,
-            new PublishOptions { MessageName = "orders.placed", DeliveryMode = DeliveryMode.Durable },
-            cancellationToken
-        );
+        return bus.PublishAsync(message, cancellationToken);
     }
 }
 ```
 
-Use `DeliveryMode.Durable` when the publish must survive process crashes, `TransportDirect` to bypass storage and any ambient coordination boundary, or the default `Auto` to capture in a compatible boundary and send directly with no boundary. `Auto` rejects an active incompatible boundary, and `TransportDirect` cannot be combined with `Delay`.
+The short overload uses the registered message contract and captures durably by default, including outside a transaction. Pass `PublishOptions` before the cancellation token for metadata or delivery overrides. Durable acceptance waits for storage, not consumer completion; restart survival requires persistent storage. Inside a compatible coordination boundary the capture commits with application state, while an incompatible boundary is rejected. Explicit `Auto` captures in a compatible boundary and sends directly with no boundary. `TransportDirect` bypasses storage and coordination and cannot be combined with `Delay`.
+
+Omit an unused cancellation token, or pass a literal default token as `cancellationToken: default`. A bare positional `default` is ambiguous between the token and options overloads; typed token variables and explicit options remain valid.
 
 ## Configuration
 

@@ -72,7 +72,7 @@ public abstract class PublishContext
 
     /// <summary>
     /// Gets the current publish options for this operation.
-    /// Cast to <see cref="PublishOptions"/> for bus operations or <see cref="EnqueueOptions"/> for queue operations.
+    /// Cast to <see cref="PublishOptions"/> for bus operations or <see cref="QueueOptions"/> for queue operations.
     /// </summary>
     public MessageOptions? Options => OptionsCore;
 
@@ -111,7 +111,7 @@ public abstract class PublishContext
     public void WithOptions(MessageOptions? options)
     {
         ThrowIfCompleted();
-        if (DeliveryFrozen && (options?.DeliveryMode ?? DeliveryMode.Auto) != RequestedDeliveryMode)
+        if (DeliveryFrozen && (options?.DeliveryMode ?? DeliveryMode.Durable) != RequestedDeliveryMode)
         {
             throw new InvalidOperationException("Publish middleware cannot change the resolved delivery mode.");
         }
@@ -196,7 +196,7 @@ public sealed class PublishContext<TMessage> : PublishContext, ICompletablePubli
         bool isTransactional
     )
     {
-        var requestedMode = options?.DeliveryMode ?? DeliveryMode.Auto;
+        var requestedMode = options?.DeliveryMode ?? DeliveryMode.Durable;
         var resolvedMode = requestedMode switch
         {
             DeliveryMode.Durable => DeliveryMode.Durable,
@@ -264,7 +264,7 @@ public sealed class PublishContext<TMessage> : PublishContext, ICompletablePubli
 
     /// <summary>
     /// Gets or sets the current publish options before the inner publisher runs.
-    /// Cast to <see cref="PublishOptions"/> for bus operations or <see cref="EnqueueOptions"/> for queue operations.
+    /// Cast to <see cref="PublishOptions"/> for bus operations or <see cref="QueueOptions"/> for queue operations.
     /// </summary>
     public new MessageOptions? Options
     {

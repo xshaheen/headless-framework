@@ -9,7 +9,6 @@ SOLUTION ?= headless-framework.slnx
 JOBS_DASHBOARD_DIR ?= src/Headless.Jobs.Dashboard/wwwroot
 MESSAGING_DASHBOARD_DIR ?= src/Headless.Messaging.Dashboard/wwwroot
 MESSAGING_COMPATIBILITY_DIR ?= tests/Headless.Messaging.PackageReference.Tests.Unit/Probes/Compatibility
-MESSAGING_PREVIOUS_VERSION_PROBE ?= tests/Headless.Messaging.PreviousVersionProbe/Headless.Messaging.PreviousVersionProbe.csproj
 CONFIGURATION ?= Release
 ARTIFACTS_DIR ?= artifacts
 PACKAGES_DIR ?= $(ARTIFACTS_DIR)/packages-results
@@ -233,15 +232,6 @@ ci-messaging-conformance-evidence: ## Execute every supported local-broker messa
 		$(DOTNET) test --test-modules "$$module" --root-directory "$(CURDIR)" --results-directory "$(TEST_RESULTS_DIR)/messaging-conformance-evidence" --max-parallel-test-modules 1 $(TEST_ARGS) --filter-class '*ProviderConformanceEvidenceTests'; \
 	done
 
-.PHONY: build-messaging-previous-version-probe
-build-messaging-previous-version-probe: ## Restore and build the isolated Messaging 0.11.0 cutover producer/consumer probe.
-	$(DOTNET) restore "$(MESSAGING_PREVIOUS_VERSION_PROBE)" \
-		--configfile "$(dir $(MESSAGING_PREVIOUS_VERSION_PROBE))NuGet.config" --locked-mode
-	$(DOTNET) build "$(MESSAGING_PREVIOUS_VERSION_PROBE)" \
-		--configuration "$(CONFIGURATION)" --no-restore --no-incremental -v:minimal -nologo
-	$(DOTNET) "$(dir $(MESSAGING_PREVIOUS_VERSION_PROBE))bin/$(CONFIGURATION)/net10.0/Headless.Messaging.PreviousVersionProbe.dll" verify nats
-	$(DOTNET) "$(dir $(MESSAGING_PREVIOUS_VERSION_PROBE))bin/$(CONFIGURATION)/net10.0/Headless.Messaging.PreviousVersionProbe.dll" verify redis
-
 .PHONY: test-modules
 test-modules: build ## Run prebuilt test DLLs via MTP --test-modules. Override TEST_MODULES if needed.
 	@mkdir -p "$(TEST_RESULTS_DIR)"
@@ -366,35 +356,19 @@ nuget-publish-preflight: ## Fail when an expected package ID/version already exi
 		--repository-commit "$(EXPECTED_REPOSITORY_COMMIT)"
 
 .PHONY: verify-messaging-package-compatibility
-verify-messaging-package-compatibility: pack ## Compile old/new Messaging package families and prove the selected mixed graph fails.
-	@test -n "$${GITHUB_PACKAGES_TOKEN:-}" || (echo "GITHUB_PACKAGES_TOKEN is required for the previous-family and selected-mixed probes." && exit 2)
+verify-messaging-package-compatibility: pack ## Verify current Messaging package family composition and public API usability.
 	@set -e; \
 	version=$$(sed -n '1p' "$(PACKAGES_DIR)/package-version.txt"); \
-	$(DOTNET) restore "$(MESSAGING_COMPATIBILITY_DIR)/PreviousAllOld/PreviousAllOld.csproj" \
-		--configfile "$(MESSAGING_COMPATIBILITY_DIR)/PreviousAllOld/NuGet.config" --locked-mode; \
-	$(DOTNET) build "$(MESSAGING_COMPATIBILITY_DIR)/PreviousAllOld/PreviousAllOld.csproj" \
-		--configuration "$(CONFIGURATION)" --no-restore; \
 	$(DOTNET) restore "$(MESSAGING_COMPATIBILITY_DIR)/NewAllNew/NewAllNew.csproj" \
 		--configfile "$(MESSAGING_COMPATIBILITY_DIR)/NewAllNew/NuGet.config" \
 		-p:MessagingPackageVersion="$$version"; \
 	$(DOTNET) build "$(MESSAGING_COMPATIBILITY_DIR)/NewAllNew/NewAllNew.csproj" \
 		--configuration "$(CONFIGURATION)" --no-restore \
-		-p:MessagingPackageVersion="$$version"; \
-	log=$$(mktemp); trap 'rm -f "$$log"' EXIT; \
-	if $(DOTNET) restore "$(MESSAGING_COMPATIBILITY_DIR)/SelectedMixed/SelectedMixed.csproj" \
-		--configfile "$(MESSAGING_COMPATIBILITY_DIR)/SelectedMixed/NuGet.config" \
-		-p:MessagingPackageVersion="$$version" >"$$log" 2>&1; then \
-		sed -n '1,240p' "$$log"; \
-		echo "SelectedMixed unexpectedly restored successfully."; \
-		exit 1; \
-	fi; \
-	sed -n '1,240p' "$$log"; \
-	./scripts/verify-messaging-mixed-downgrade.sh "$$log" "0.11.0" "$$version"
+		-p:MessagingPackageVersion="$$version"
 
 .PHONY: test-package-verifier
 test-package-verifier: ## Run isolated positive and negative package-verifier fixtures.
 	./tests/scripts/verify-packages-tests.sh
-	./tests/scripts/verify-messaging-mixed-downgrade-tests.sh
 
 .PHONY: outdated
 outdated: tools ## Check outdated NuGet dependencies.

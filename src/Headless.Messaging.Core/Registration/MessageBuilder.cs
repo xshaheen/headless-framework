@@ -19,6 +19,9 @@ public interface IBusMessageBuilder<TMessage>
     /// <summary>Derives a correlation identifier from the outgoing payload.</summary>
     IBusMessageBuilder<TMessage> CorrelationFrom(Func<TMessage, string?> selector);
 
+    /// <summary>Requires a locally supported native affinity mapping for this route at startup.</summary>
+    IBusMessageBuilder<TMessage> RequireRoutingAffinity();
+
     /// <summary>Registers and configures a Bus consumer.</summary>
     IBusMessageBuilder<TMessage> Consumer<TConsumer>(Action<IBusConsumerBuilder<TConsumer>> configure)
         where TConsumer : class, IConsume<TMessage>;
@@ -36,6 +39,9 @@ public interface IQueueMessageBuilder<TMessage>
     /// <summary>Derives a correlation identifier from the outgoing payload.</summary>
     IQueueMessageBuilder<TMessage> CorrelationFrom(Func<TMessage, string?> selector);
 
+    /// <summary>Requires a locally supported native affinity mapping for this route at startup.</summary>
+    IQueueMessageBuilder<TMessage> RequireRoutingAffinity();
+
     /// <summary>Registers and configures a Queue consumer.</summary>
     IQueueMessageBuilder<TMessage> Consumer<TConsumer>(Action<IQueueConsumerBuilder<TConsumer>> configure)
         where TConsumer : class, IConsume<TMessage>;
@@ -50,6 +56,9 @@ internal abstract class MessageBuilder<TMessage>(IServiceCollection services, Me
     private string? _messageName;
     private string _contractVersion = MessageOptions.InitialContractVersion;
     private Func<object, string?>? _correlationSelector;
+    private bool _requiresRoutingAffinity;
+
+    protected void SetRoutingAffinityRequired() => _requiresRoutingAffinity = true;
 
     protected MessageRegistration BuildRegistration()
     {
@@ -62,7 +71,8 @@ internal abstract class MessageBuilder<TMessage>(IServiceCollection services, Me
             _correlationSelector,
             providerConfigs,
             _consumers.ConvertAll(x => x.Build(providerConfigs)),
-            _contractVersion
+            _contractVersion,
+            _requiresRoutingAffinity
         );
     }
 
@@ -106,6 +116,12 @@ internal sealed class BusMessageBuilder<TMessage>(IServiceCollection services)
         return this;
     }
 
+    public IBusMessageBuilder<TMessage> RequireRoutingAffinity()
+    {
+        SetRoutingAffinityRequired();
+        return this;
+    }
+
     public IBusMessageBuilder<TMessage> CorrelationFrom(Func<TMessage, string?> selector)
     {
         SetCorrelationFrom(selector);
@@ -131,6 +147,12 @@ internal sealed class QueueMessageBuilder<TMessage>(IServiceCollection services)
     public IQueueMessageBuilder<TMessage> Contract(string name, string version = MessageOptions.InitialContractVersion)
     {
         SetContract(name, version);
+        return this;
+    }
+
+    public IQueueMessageBuilder<TMessage> RequireRoutingAffinity()
+    {
+        SetRoutingAffinityRequired();
         return this;
     }
 

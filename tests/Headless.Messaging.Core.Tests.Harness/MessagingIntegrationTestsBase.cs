@@ -659,7 +659,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         // when
         await QueuePublisher.EnqueueAsync(
             request,
-            new EnqueueOptions
+            new QueueOptions
             {
                 MessageId = requestMessageId,
                 MessageName = "callback-queue-request",
@@ -703,7 +703,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         // when
         await QueuePublisher.EnqueueAsync(
             request,
-            new EnqueueOptions
+            new QueueOptions
             {
                 MessageId = requestMessageId,
                 MessageName = "callback-queue-request",

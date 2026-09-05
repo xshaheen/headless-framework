@@ -57,7 +57,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
             var scheduler = host.Services.GetRequiredService<IJobScheduler>();
 
             // charge.Then(receipt); charge.Catch(refund); refund.Then(notify) — both edge kinds, depth 3 on the catch arm.
-            var builder = JobChain.Start(_Payload("charge"), executionTime: DateTime.UtcNow.AddHours(1));
+            var builder = JobChain.Start(_Payload("charge"), executionTime: DateTimeOffset.UtcNow.AddHours(1));
             builder.Root.Then(_Payload("receipt"));
             var refund = builder.Root.Catch(_Payload("refund"));
             refund.Then(_Payload("notify"));
@@ -109,7 +109,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
             var scheduler = host.Services.GetRequiredService<IJobScheduler>();
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
-            var builder = JobChain.Start(_Payload("n1"), executionTime: DateTime.UtcNow.AddHours(1));
+            var builder = JobChain.Start(_Payload("n1"), executionTime: DateTimeOffset.UtcNow.AddHours(1));
             var n2 = builder.Root.Then(_Payload("n2"));
             var n3 = n2.Then(_Payload("n3"));
             n3.Then(_Payload("n4"));
@@ -145,7 +145,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
             var scheduler = host.Services.GetRequiredService<IJobScheduler>();
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
-            var builder = JobChain.Start(_Payload("n1"), executionTime: DateTime.UtcNow.AddSeconds(1));
+            var builder = JobChain.Start(_Payload("n1"), executionTime: DateTimeOffset.UtcNow.AddSeconds(1));
             var n2 = builder.Root.Then(_Payload("n2"));
             var n3 = n2.Then(_Payload("n3"));
             var n4 = n3.Then(_Payload("n4"));
@@ -193,7 +193,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         try
         {
             var scheduler = host.Services.GetRequiredService<IJobScheduler>();
-            var builder = JobChain.Start(_Payload("root"), executionTime: DateTime.UtcNow.AddHours(1));
+            var builder = JobChain.Start(_Payload("root"), executionTime: DateTimeOffset.UtcNow.AddHours(1));
             var child = builder.Root.Then(_Payload("child"));
             child.Then(_Payload("grandchild"));
             builder.Root.Catch(_Payload("catch"));
@@ -238,8 +238,8 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
             var scheduler = host.Services.GetRequiredService<IJobScheduler>();
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
-            var builder = JobChain.Start(_Payload("root"), executionTime: DateTime.UtcNow.AddSeconds(1));
-            builder.Root.Then(_Payload("timed"), executionTime: DateTime.UtcNow.AddMinutes(-2)); // due (past) timed child
+            var builder = JobChain.Start(_Payload("root"), executionTime: DateTimeOffset.UtcNow.AddSeconds(1));
+            builder.Root.Then(_Payload("timed"), executionTime: DateTimeOffset.UtcNow.AddMinutes(-2)); // due (past) timed child
             var rootId = await scheduler.EnqueueAsync(builder.Build(), ct);
             var timedId = (await _ChildrenAsync(rootId, ct)).Single().Id;
 
@@ -273,6 +273,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         using var host = fixture.BuildHost("chain-success");
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
         await host.StartAsync(ct);
+        await _StopBackgroundRecoveryAsync(host, ct);
 
         try
         {
@@ -280,9 +281,9 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
             var pastDue = DateTime.UtcNow.AddMinutes(-2);
-            var builder = JobChain.Start(_Payload("root"), executionTime: DateTime.UtcNow.AddSeconds(1));
-            builder.Root.Then(_Payload("on-success"), executionTime: pastDue);
-            builder.Root.Catch(_Payload("on-failure"), executionTime: pastDue);
+            var builder = JobChain.Start(_Payload("root"), executionTime: DateTimeOffset.UtcNow.AddSeconds(1));
+            builder.Root.Then(_Payload("on-success"), executionTime: new DateTimeOffset(pastDue));
+            builder.Root.Catch(_Payload("on-failure"), executionTime: new DateTimeOffset(pastDue));
             var rootId = await scheduler.EnqueueAsync(builder.Build(), ct);
             var children = await _ChildrenAsync(rootId, ct);
             var successId = children.Single(c => c.Condition == RunCondition.OnSuccess).Id;
@@ -336,8 +337,8 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
             var future = DateTime.UtcNow.AddSeconds(3);
-            var builder = JobChain.Start(_Payload("root"), executionTime: DateTime.UtcNow.AddSeconds(1));
-            builder.Root.Then(_Payload("future-child"), executionTime: future);
+            var builder = JobChain.Start(_Payload("root"), executionTime: DateTimeOffset.UtcNow.AddSeconds(1));
+            builder.Root.Then(_Payload("future-child"), executionTime: new DateTimeOffset(future));
             var rootId = await scheduler.EnqueueAsync(builder.Build(), ct);
             var childId = (await _ChildrenAsync(rootId, ct)).Single().Id;
 
@@ -388,10 +389,10 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
             var pastDue = DateTime.UtcNow.AddMinutes(-2);
-            var builder = JobChain.Start(_Payload("root"), executionTime: DateTime.UtcNow.AddSeconds(1));
-            var onSuccess = builder.Root.Then(_Payload("on-success"), executionTime: pastDue);
+            var builder = JobChain.Start(_Payload("root"), executionTime: DateTimeOffset.UtcNow.AddSeconds(1));
+            var onSuccess = builder.Root.Then(_Payload("on-success"), executionTime: new DateTimeOffset(pastDue));
             onSuccess.Then(_Payload("grandchild")); // non-timed descendant of the timed child, proves subtree cascade
-            builder.Root.Catch(_Payload("on-failure"), executionTime: pastDue);
+            builder.Root.Catch(_Payload("on-failure"), executionTime: new DateTimeOffset(pastDue));
             var rootId = await scheduler.EnqueueAsync(builder.Build(), ct);
 
             var rootChildren = await _ChildrenAsync(rootId, ct);
@@ -448,7 +449,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
             var scheduler = host.Services.GetRequiredService<IJobScheduler>();
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
-            var builder = JobChain.Start(_Payload("root"), executionTime: DateTime.UtcNow.AddSeconds(1));
+            var builder = JobChain.Start(_Payload("root"), executionTime: DateTimeOffset.UtcNow.AddSeconds(1));
             var child = builder.Root.Then(_Payload("child"));
             child.Then(_Payload("grandchild"));
             var rootId = await scheduler.EnqueueAsync(builder.Build(), ct);
@@ -1034,6 +1035,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         using var host = fixture.BuildHost("gate-grid");
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
         await host.StartAsync(ct);
+        await _StopBackgroundRecoveryAsync(host, ct);
 
         try
         {
@@ -1093,7 +1095,24 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
 
             foreach (var (childId, expected) in expectedClaimed)
             {
-                claimedIds.Contains(childId).Should().Be(expected, "native-SQL gate parity for child {0}", childId);
+                var child = seed.Single(x => x.Id == childId);
+                var parent = seed.Single(x => x.Id == child.ParentId);
+                var storedChild = claimedIds.Contains(childId) == expected ? null : await _ReadNodeAsync(childId, ct);
+                var storedParent = storedChild is null ? null : await _ReadNodeAsync(parent.Id, ct);
+                claimedIds
+                    .Contains(childId)
+                    .Should()
+                    .Be(
+                        expected,
+                        "native-SQL gate parity for child {0}, condition {1}, parent status {2}; claimed {3} of {4} expected rows; stored child {5}, stored parent {6}",
+                        childId,
+                        child.RunCondition,
+                        parent.Status,
+                        claimedIds.Count,
+                        expectedClaimed.Count(x => x.Value),
+                        storedChild,
+                        storedParent
+                    );
             }
         }
         finally
@@ -1189,6 +1208,21 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         finally
         {
             await host.StopAsync(ct);
+        }
+    }
+
+    private static async Task _StopBackgroundRecoveryAsync(
+        Microsoft.Extensions.Hosting.IHost host,
+        CancellationToken cancellationToken
+    )
+    {
+        // These scenarios arbitrate claims directly; an unrelated dead-node sweep can re-stamp their timed children.
+        foreach (var service in host.Services.GetServices<Microsoft.Extensions.Hosting.IHostedService>())
+        {
+            if (service is Headless.Coordination.IDeadOwnerRecoveryBridge)
+            {
+                await service.StopAsync(cancellationToken);
+            }
         }
     }
 

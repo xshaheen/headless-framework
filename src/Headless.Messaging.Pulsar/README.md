@@ -44,6 +44,8 @@ builder.Services.AddHeadlessMessaging(options =>
 
 ## Configuration
 
+`RoutingAffinityKey` on publish/enqueue options maps to the native Pulsar message key on registered Bus and Queue routes. The optional `PulsarMessagingHeaders.PulsarKey` adapter must agree. The configured client uses its built-in key hashing; Headless adds no key-length limit beyond broker message limits. Keep routing configuration and partition topology fixed while relying on placement. This does not select a `Key_Shared` subscription, guarantee FIFO, or prevent concurrent handling.
+
 ```csharp
 options.UsePulsar(pulsar =>
 {
@@ -69,8 +71,6 @@ options.UsePulsar(pulsar =>
 - Topic names, property sizes, and payload limits follow Pulsar broker limits.
 
 Bus subscriptions are lane-qualified by logical subscriber group, so replicas in one group compete while independent groups each receive one copy. Queue uses one `headless-queue` subscription per lane-qualified topic. The same logical name can therefore be declared on Bus and Queue without cross-delivery.
-
-This topology replaces legacy unqualified topics and subscriptions. Before deployment, stop old and new publishers, inventory producer/consumer versions and topic-creation permissions, and drain each legacy subscription to a measured zero-backlog signal. Deploy consumers before publishers behind a version fence. Abort before the first lane-qualified publication if drain or provisioning fails. After lane-qualified publication begins, recovery is roll-forward-only: restore new consumers, reconcile legacy and lane-qualified backlog counts, and retain legacy topics until the deployment owner signs off.
 
 **Registration overloads:** `UsePulsar(...)` accepts the standard trio — an `IConfiguration` section, an `Action<PulsarMessagingOptions>` delegate, or an `Action<PulsarMessagingOptions, IServiceProvider>` delegate — plus the service-URL convenience form.
 

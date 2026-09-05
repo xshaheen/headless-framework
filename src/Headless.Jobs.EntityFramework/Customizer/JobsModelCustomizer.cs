@@ -14,10 +14,19 @@ internal sealed class JobsModelCustomizer<TTimeJob, TCronJob>(ModelCustomizerDep
 {
     public override void Customize(ModelBuilder builder, DbContext context)
     {
-        builder.ApplyConfiguration(new TimeJobConfigurations<TTimeJob>());
-        builder.ApplyConfiguration(new CronJobConfigurations<TCronJob>());
-        builder.ApplyConfiguration(new CronJobOccurrenceConfigurations<TCronJob>());
+        var contractCollation = context.Database.ProviderName switch
+        {
+            "Microsoft.EntityFrameworkCore.SqlServer" => "Latin1_General_100_BIN2",
+            "Npgsql.EntityFrameworkCore.PostgreSQL" => "C",
+            _ => (string?)null,
+        };
+
+        builder.ApplyConfiguration(new TimeJobConfigurations<TTimeJob>(contractCollation: contractCollation));
+        builder.ApplyConfiguration(new CronJobConfigurations<TCronJob>(contractCollation: contractCollation));
+        builder.ApplyConfiguration(new CronJobOccurrenceConfigurations<TCronJob>(contractCollation: contractCollation));
 
         base.Customize(builder, context);
+        // Consumer OnModelCreating may rename any column. Build owned SQL only after those mappings have settled.
+        JobsKeyedModelConfiguration.Configure<TTimeJob>(builder, context);
     }
 }

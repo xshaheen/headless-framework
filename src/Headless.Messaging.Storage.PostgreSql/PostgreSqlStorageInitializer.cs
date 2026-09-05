@@ -260,11 +260,8 @@ internal sealed class PostgreSqlStorageInitializer(
         CancellationToken cancellationToken
     )
     {
-        // Repair both interrupted builds and the pre-lane index shape. `IF NOT EXISTS` matches only
-        // by name, so a valid legacy (Version, NextRetryAt) index would otherwise survive forever
-        // and make IntentType a residual predicate during every lane-specific retry claim.
-        await _DropInvalidOrObsoleteRetryIndexConcurrentlyAsync(connection, indexName, cancellationToken)
-            .ConfigureAwait(false);
+        // A failed concurrent build can leave an unusable index under the intended name.
+        await _DropInvalidIndexConcurrentlyAsync(connection, indexName, cancellationToken).ConfigureAwait(false);
 
         var createIndex = $"""
             CREATE INDEX CONCURRENTLY IF NOT EXISTS "{indexName}" ON {qualifiedTable} ("Version","IntentType","NextRetryAt") INCLUDE ("Retries","LockedUntil") WHERE "NextRetryAt" IS NOT NULL;
@@ -273,49 +270,6 @@ internal sealed class PostgreSqlStorageInitializer(
         await connection
             .ExecuteNonQueryAsync(
                 createIndex,
-                commandTimeout: _GetDdlCommandTimeout(),
-                cancellationToken: cancellationToken
-            )
-            .ConfigureAwait(false);
-    }
-
-    private async Task _DropInvalidOrObsoleteRetryIndexConcurrentlyAsync(
-        NpgsqlConnection connection,
-        string indexName,
-        CancellationToken cancellationToken
-    )
-    {
-        const string probeSql = """
-            SELECT i.indisvalid
-                AND (
-                    SELECT array_agg(a.attname::text ORDER BY k.ord)
-                    FROM unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord)
-                    JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.attnum
-                    WHERE k.ord <= i.indnkeyatts
-                ) = ARRAY['Version','IntentType','NextRetryAt']::text[]
-            FROM pg_class c
-            JOIN pg_namespace n ON n.oid = c.relnamespace
-            JOIN pg_index i ON i.indexrelid = c.oid
-            WHERE c.relname = @IndexName AND n.nspname = @Schema
-            LIMIT 1;
-            """;
-
-        await using var probeCommand = new NpgsqlCommand(probeSql, connection);
-        probeCommand.CommandTimeout = (int)
-            Math.Min(Math.Ceiling(messagingOptions.Value.CommandTimeout.TotalSeconds), int.MaxValue);
-        probeCommand.Parameters.Add(new NpgsqlParameter("@IndexName", indexName));
-        probeCommand.Parameters.Add(new NpgsqlParameter("@Schema", postgreSqlOptions.Value.Schema));
-
-        var probeResult = await probeCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        if (probeResult is not false)
-        {
-            return;
-        }
-
-        var dropSql = $"""DROP INDEX CONCURRENTLY IF EXISTS "{postgreSqlOptions.Value.Schema}"."{indexName}";""";
-        await connection
-            .ExecuteNonQueryAsync(
-                dropSql,
                 commandTimeout: _GetDdlCommandTimeout(),
                 cancellationToken: cancellationToken
             )
@@ -444,7 +398,11 @@ internal sealed class PostgreSqlStorageInitializer(
             .ExecuteScalarAsync(
                 """
                 SELECT (
-                    EXISTS (SELECT 1 FROM pg_constraint WHERE conname='ck_received_inbox_retention_v3')
+                    EXISTS (
+                        SELECT 1 FROM pg_constraint
+                        WHERE conname='ck_received_inbox_retention_v3'
+                          AND conrelid=format('%I.received', @Schema)::regclass
+                    )
                     AND EXISTS (
                         SELECT 1 FROM information_schema.columns
                         WHERE table_schema=@Schema AND table_name='inbox_operation_receipts' AND column_name='ExpectedStatus'
@@ -545,57 +503,12 @@ internal sealed class PostgreSqlStorageInitializer(
                 "InboxRetentionSeconds" BIGINT NOT NULL DEFAULT 2592000
             );
 
-            -- A nonempty legacy received table has no trustworthy stable consumer or contract identity.
-            -- Fail closed instead of inventing one. Empty or interrupted schemas are repaired in place.
-            DO $headless$
-            DECLARE missing_inbox_shape BOOLEAN;
-            BEGIN
-                SELECT NOT EXISTS (
-                    SELECT 1 FROM information_schema.columns
-                    WHERE table_schema = '{schema}' AND table_name = 'received' AND column_name = 'GenerationIncarnationId'
-                ) INTO missing_inbox_shape;
-
-                IF missing_inbox_shape AND EXISTS (SELECT 1 FROM {GetReceivedTableName()} LIMIT 1) THEN
-                    RAISE EXCEPTION 'Headless.Messaging cannot upgrade a nonempty legacy received table without stable inbox identity. Export or reset {schema}.received, then restart.';
-                END IF;
-
-                ALTER TABLE {GetReceivedTableName()}
-                    ADD COLUMN IF NOT EXISTS "IsInboxRecord" BOOLEAN NOT NULL DEFAULT FALSE,
-                    ADD COLUMN IF NOT EXISTS "TenantPresent" BOOLEAN NOT NULL DEFAULT FALSE,
-                    ADD COLUMN IF NOT EXISTS "TenantId" VARCHAR(200) COLLATE "C" NOT NULL DEFAULT '',
-                    ADD COLUMN IF NOT EXISTS "ContractIdentity" VARCHAR(200) COLLATE "C" NOT NULL DEFAULT '',
-                    ADD COLUMN IF NOT EXISTS "ContractVersion" VARCHAR(100) COLLATE "C" NOT NULL DEFAULT '',
-                    ADD COLUMN IF NOT EXISTS "ConsumerIdentity" VARCHAR(200) COLLATE "C" NOT NULL DEFAULT '',
-                    ADD COLUMN IF NOT EXISTS "Generation" BIGINT NOT NULL DEFAULT 0,
-                    ADD COLUMN IF NOT EXISTS "GenerationIncarnationId" UUID NULL,
-                    ADD COLUMN IF NOT EXISTS "AttemptId" UUID NULL,
-                    ADD COLUMN IF NOT EXISTS "IsInboxOrphaned" BOOLEAN NOT NULL DEFAULT FALSE,
-                    ADD COLUMN IF NOT EXISTS "IsCurrentGeneration" BOOLEAN NOT NULL DEFAULT TRUE,
-                    ADD COLUMN IF NOT EXISTS "ReplayParentIncarnationId" UUID NULL,
-                    ADD COLUMN IF NOT EXISTS "ReplayOperationId" UUID NULL,
-                    ADD COLUMN IF NOT EXISTS "TerminalAt" TIMESTAMPTZ NULL,
-                    ADD COLUMN IF NOT EXISTS "EffectiveExpiresAt" TIMESTAMPTZ NULL,
-                    ADD COLUMN IF NOT EXISTS "IsHeld" BOOLEAN NOT NULL DEFAULT FALSE,
-                    ADD COLUMN IF NOT EXISTS "HeldAt" TIMESTAMPTZ NULL,
-                    ADD COLUMN IF NOT EXISTS "HeldBy" VARCHAR(200) COLLATE "C" NULL,
-                    ADD COLUMN IF NOT EXISTS "HoldReason" VARCHAR(1000) NULL,
-                    ADD COLUMN IF NOT EXISTS "HoldOperationId" UUID NULL,
-                    ADD COLUMN IF NOT EXISTS "InboxRetentionSeconds" BIGINT NOT NULL DEFAULT 2592000;
-
-                ALTER TABLE {GetReceivedTableName()}
-                    ALTER COLUMN "MessageId" TYPE VARCHAR(200) COLLATE "C",
-                    ALTER COLUMN "TenantId" TYPE VARCHAR(200) COLLATE "C",
-                    ALTER COLUMN "ContractIdentity" TYPE VARCHAR(200) COLLATE "C",
-                    ALTER COLUMN "ContractVersion" TYPE VARCHAR(100) COLLATE "C",
-                    ALTER COLUMN "ConsumerIdentity" TYPE VARCHAR(200) COLLATE "C";
-            END
-            $headless$;
-
-            DROP INDEX IF EXISTS "{schema}"."uq_received_Version_MessageId_GroupCoalesced_IntentType";
-
             DO $headless$
             BEGIN
-                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_received_inbox_identity') THEN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint WHERE conname = 'ck_received_inbox_identity'
+                    AND conrelid = '{GetReceivedTableName()}'::regclass
+                ) THEN
                     ALTER TABLE {GetReceivedTableName()} ADD CONSTRAINT "ck_received_inbox_identity" CHECK (
                         NOT "IsInboxRecord" OR (
                             "Generation" >= 0
@@ -614,7 +527,10 @@ internal sealed class PostgreSqlStorageInitializer(
 
             DO $headless$
             BEGIN
-                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_received_inbox_retention_v3') THEN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint WHERE conname = 'ck_received_inbox_retention_v3'
+                    AND conrelid = '{GetReceivedTableName()}'::regclass
+                ) THEN
                     ALTER TABLE {GetReceivedTableName()} ADD CONSTRAINT "ck_received_inbox_retention_v3" CHECK (
                         NOT "IsInboxRecord" OR "InboxRetentionSeconds" BETWEEN 1 AND 2147483647
                     );
@@ -657,14 +573,6 @@ internal sealed class PostgreSqlStorageInitializer(
                 "ChildIncarnationId" UUID NULL,
                 "CreatedAt" TIMESTAMPTZ NOT NULL
             );
-
-            ALTER TABLE "{schema}"."inbox_operation_receipts"
-                ADD COLUMN IF NOT EXISTS "Outcome" VARCHAR(50) COLLATE "C" NOT NULL DEFAULT 'StateConflict',
-                ADD COLUMN IF NOT EXISTS "ExpectedStatus" VARCHAR(50) COLLATE "C" NOT NULL DEFAULT 'Failed',
-                ADD COLUMN IF NOT EXISTS "StorageId" UUID NULL,
-                ADD COLUMN IF NOT EXISTS "ChildStorageId" UUID NULL,
-                ADD COLUMN IF NOT EXISTS "ChildGeneration" BIGINT NULL,
-                ADD COLUMN IF NOT EXISTS "ChildIncarnationId" UUID NULL;
 
             CREATE TABLE IF NOT EXISTS "{schema}"."inbox_audit"(
                 "AuditId" UUID PRIMARY KEY NOT NULL,

@@ -756,6 +756,7 @@ internal static class DashboardEndpoints
 
     private static IResult _GetJobFunctions<TTimeJob, TCronJob>(
         IJobsDashboardRepository<TTimeJob, TCronJob> repository,
+        JobFunctionRegistry functionRegistry,
         DashboardOptionsBuilder dashboardOptions
     )
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
@@ -766,6 +767,7 @@ internal static class DashboardEndpoints
             .Select(x => new
             {
                 FunctionName = x.Item1,
+                functionRegistry.Descriptors[x.Item1].ContractVersion,
                 FunctionRequestNamespace = x.Item2.Item1,
                 FunctionRequestType = x.Item2.Item2,
                 Priority = (int)x.Item2.Item3,

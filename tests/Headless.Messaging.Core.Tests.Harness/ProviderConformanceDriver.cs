@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using Headless.Messaging;
+using Headless.Messaging.Configuration;
 using Tests.Capabilities;
 using MessagingHeaders = Headless.Messaging.Headers;
 
@@ -22,8 +23,7 @@ public sealed record TransportConformanceDriverCapabilities(
     bool SupportsRawEnvelopeInjection,
     bool SupportsTerminalStateObservation,
     bool SupportsTopologyInspection,
-    bool SupportsStartupSideEffectObservation,
-    bool SupportsLegacyMigration
+    bool SupportsStartupSideEffectObservation
 );
 
 /// <summary>Observed provider-native terminal handling for one malformed transport delivery.</summary>
@@ -60,8 +60,23 @@ public abstract class TransportProviderConformanceDriver
 {
     public abstract string ProviderName { get; }
 
-    public virtual TransportConformanceDriverCapabilities Capabilities { get; } =
-        new(false, false, false, false, false);
+    public virtual bool SupportsRoutingAffinity => false;
+
+    public virtual void ConfigureRoutingAffinityTransport(MessagingSetupBuilder setup) =>
+        throw new NotSupportedException($"{ProviderName} does not support affinity.");
+
+    public virtual Task AssertNativePublisherPathsAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public virtual ValueTask<TransportConsumerConformanceSession> CreateRoutingAffinitySessionAsync(
+        TransportConformanceEndpoint endpoint,
+        CancellationToken cancellationToken
+    ) => CreateSessionAsync(endpoint, cancellationToken);
+
+    public virtual void AssertNativeRoutingAffinity(TransportConformanceDelivery delivery, string expectedKey) { }
+
+    public virtual string? GetNativeRoutingPlacement(TransportConformanceDelivery delivery) => null;
+
+    public virtual TransportConformanceDriverCapabilities Capabilities { get; } = new(false, false, false, false);
 
     public abstract TransportMalformedEnvelopeBound MalformedEnvelopeBound { get; }
 
@@ -91,12 +106,6 @@ public abstract class TransportProviderConformanceDriver
     public virtual ValueTask<TransportStartupObservation> ObserveRejectedStartupAsync(
         CancellationToken cancellationToken
     ) => ValueTask.FromException<TransportStartupObservation>(_Unsupported(nameof(ObserveRejectedStartupAsync)));
-
-    public virtual ValueTask SeedLegacyTopologyAsync(CancellationToken cancellationToken) =>
-        ValueTask.FromException(_Unsupported(nameof(SeedLegacyTopologyAsync)));
-
-    public virtual ValueTask ReconcileLegacyTopologyAsync(CancellationToken cancellationToken) =>
-        ValueTask.FromException(_Unsupported(nameof(ReconcileLegacyTopologyAsync)));
 
     private NotSupportedException _Unsupported(string operation)
     {

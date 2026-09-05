@@ -18,8 +18,8 @@ public sealed class JobChainBuilder
         JobFunctionDescriptor? descriptor,
         object? payload,
         Type? payloadType,
-        EnqueueOptions? options,
-        DateTime? executionTime
+        JobOptions? options,
+        DateTimeOffset? executionTime
     )
     {
         Root = new JobChainNodeBuilder(this, descriptor, payload, payloadType, options, executionTime);

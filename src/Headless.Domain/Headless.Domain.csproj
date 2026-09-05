@@ -4,4 +4,7 @@
     <Description>Domain modeling primitives and local event abstractions for Headless Framework packages.</Description>
     <PackageTags>headless;domain;dotnet</PackageTags>
   </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
+  </ItemGroup>
 </Project>

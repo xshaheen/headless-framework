@@ -373,6 +373,27 @@
       "headless.commitcoordination.abstractions": {
         "type": "Project"
       },
+      "headless.commitcoordination.core": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.CommitCoordination.Abstractions": "[1.0.0, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.9, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.9, )"
+        }
+      },
+      "headless.commitcoordination.entityframework": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.CommitCoordination.Core": "[1.0.0, )",
+          "Microsoft.EntityFrameworkCore.Relational": "[10.0.9, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.9, )",
+          "Microsoft.Extensions.Hosting.Abstractions": "[10.0.9, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.9, )",
+          "Microsoft.Extensions.Options": "[10.0.9, )"
+        }
+      },
       "headless.coordination.abstractions": {
         "type": "Project",
         "dependencies": {
@@ -392,6 +413,21 @@
           "Microsoft.Extensions.Configuration.Abstractions": "[10.0.9, )",
           "Microsoft.Extensions.Hosting.Abstractions": "[10.0.9, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.9, )"
+        }
+      },
+      "headless.coordination.core.database": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Coordination.Core": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )"
+        }
+      },
+      "headless.coordination.postgresql": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Coordination.Core.Database": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
+          "Npgsql": "[10.0.3, )"
         }
       },
       "headless.core": {
@@ -414,7 +450,10 @@
         }
       },
       "headless.domain": {
-        "type": "Project"
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )"
+        }
       },
       "headless.entityframework.core": {
         "type": "Project",

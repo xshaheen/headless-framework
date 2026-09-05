@@ -27,6 +27,152 @@ public sealed class AmazonSqsQueueTransportTests : TestBase
         );
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("order-42")]
+    public async Task should_map_affinity_to_fifo_message_group(string? raw)
+    {
+        await using var transport = new AmazonSqsQueueTransport(
+            Substitute.For<ILogger<AmazonSqsQueueTransport>>(),
+            _CreateOptions()
+        );
+        var client = Substitute.For<IAmazonSQS>();
+        _SetSqsClient(transport, client);
+        _SetQueueUrl(transport, "queue-orders.fifo", "https://sqs.local/orders.fifo");
+        client
+            .SendMessageAsync(Arg.Any<SendMessageRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new SendMessageResponse());
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [Headers.MessageId] = "message-1",
+            [Headers.MessageName] = "orders.fifo",
+            [Headers.RoutingAffinityKey] = "order-42",
+        };
+        if (raw is not null)
+        {
+            headers[AwsMessagingHeaders.MessageGroupId] = raw;
+        }
+
+        var result = await transport.SendAsync(new TransportMessage(headers, "payload"u8.ToArray()), AbortToken);
+
+        result.Succeeded.Should().BeTrue();
+        await client
+            .Received(1)
+            .SendMessageAsync(Arg.Is<SendMessageRequest>(request => request.MessageGroupId == "order-42"), AbortToken);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("order-42")]
+    public async Task should_pack_all_headers_losslessly_beyond_sqs_attribute_limit(string? key)
+    {
+        await using var transport = new AmazonSqsQueueTransport(
+            Substitute.For<ILogger<AmazonSqsQueueTransport>>(),
+            _CreateOptions()
+        );
+        var client = Substitute.For<IAmazonSQS>();
+        _SetSqsClient(transport, client);
+        _SetQueueUrl(transport, key is null ? "queue-orders" : "queue-orders.fifo", "https://sqs.local/orders");
+        SendMessageRequest? sent = null;
+        client
+            .SendMessageAsync(Arg.Any<SendMessageRequest>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                sent = call.Arg<SendMessageRequest>();
+                return new SendMessageResponse();
+            });
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [Headers.MessageId] = "message-1",
+            [Headers.MessageName] = key is null ? "orders" : "orders.fifo",
+            [Headers.Intent] = nameof(MessageLane.Queue),
+            [Headers.ContractVersion] = "1",
+            [Headers.Type] = "Order",
+            [Headers.CorrelationId] = "correlation-1",
+            [Headers.CorrelationSequence] = "0",
+            [Headers.SentTime] = "2026-09-05T00:00:00Z",
+            [Headers.RequestedDeliveryMode] = nameof(DeliveryMode.TransportDirect),
+            [Headers.ResolvedDeliveryMode] = nameof(DeliveryMode.TransportDirect),
+            [Headers.TraceParent] = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+            ["business-metadata"] = "preserved",
+            ["optional-metadata"] = null,
+        };
+
+        if (key is not null)
+        {
+            headers[Headers.RoutingAffinityKey] = key;
+        }
+
+        var result = await transport.SendAsync(new TransportMessage(headers, "payload"u8.ToArray()), AbortToken);
+
+        result.Succeeded.Should().BeTrue();
+        sent.Should().NotBeNull();
+        sent!.MessageBody.Should().Be("payload");
+        sent.MessageGroupId.Should().Be(key);
+        sent.MessageAttributes.Should().ContainSingle();
+        var restored = JsonSerializer.Deserialize<Dictionary<string, string?>>(
+            sent.MessageAttributes["headless-aws-headers-v1"].StringValue
+        );
+        restored.Should().BeEquivalentTo(headers);
+    }
+
+    [Theory]
+    [InlineData("orders", "order-42", null)]
+    [InlineData("orders.fifo", "order 42", null)]
+    [InlineData("orders.fifo", "order-42", "other")]
+    public async Task should_reject_invalid_affinity_before_aws_effects(string destination, string key, string? raw)
+    {
+        await using var transport = new AmazonSqsQueueTransport(
+            Substitute.For<ILogger<AmazonSqsQueueTransport>>(),
+            _CreateOptions()
+        );
+        var client = Substitute.For<IAmazonSQS>();
+        _SetSqsClient(transport, client);
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [Headers.MessageId] = "message-1",
+            [Headers.MessageName] = destination,
+            [Headers.RoutingAffinityKey] = key,
+        };
+        if (raw is not null)
+        {
+            headers[AwsMessagingHeaders.MessageGroupId] = raw;
+        }
+
+        var result = await transport.SendAsync(new TransportMessage(headers, "payload"u8.ToArray()), AbortToken);
+
+        result.Succeeded.Should().BeFalse();
+        client.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(null, "headless-aws-headers-v1")]
+    [InlineData("order-42", "headless-aws-headers-v1")]
+    public async Task should_reject_reserved_header_bag_collision_before_clients(string? key, string reserved)
+    {
+        await using var transport = new AmazonSqsQueueTransport(
+            Substitute.For<ILogger<AmazonSqsQueueTransport>>(),
+            _CreateOptions()
+        );
+        var client = Substitute.For<IAmazonSQS>();
+        _SetSqsClient(transport, client);
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [Headers.MessageId] = "message-1",
+            [Headers.MessageName] = "orders.fifo",
+            [reserved] = "{}",
+        };
+        if (key is not null)
+        {
+            headers[Headers.RoutingAffinityKey] = key;
+        }
+
+        var result = await transport.SendAsync(new TransportMessage(headers, "payload"u8.ToArray()), AbortToken);
+
+        result.Succeeded.Should().BeFalse();
+        client.ReceivedCalls().Should().BeEmpty();
+    }
+
     [Fact]
     public async Task should_return_correct_broker_address()
     {
@@ -79,8 +225,8 @@ public sealed class AmazonSqsQueueTransportTests : TestBase
                 Arg.Is<SendMessageRequest>(r =>
                     r.QueueUrl == "https://sqs.local/queue-OrderCreated"
                     && r.MessageBody == """{"id":42}"""
-                    && r.MessageAttributes[Headers.MessageId].StringValue == "message-1"
-                    && r.MessageAttributes["custom-header"].StringValue == "custom-value"
+                    && SqsHeaderCodec.Decode(r.MessageAttributes)[Headers.MessageId] == "message-1"
+                    && SqsHeaderCodec.Decode(r.MessageAttributes)["custom-header"] == "custom-value"
                 ),
                 Arg.Any<CancellationToken>()
             );
@@ -218,33 +364,6 @@ public sealed class AmazonSqsQueueTransportTests : TestBase
                 Arg.Is<SendMessageRequest>(r => r.MessageGroupId == "tenant-b"),
                 Arg.Any<CancellationToken>()
             );
-    }
-
-    [Fact]
-    public async Task should_return_failed_when_headers_exceed_sqs_attribute_limit()
-    {
-        // given
-        var logger = Substitute.For<ILogger<AmazonSqsQueueTransport>>();
-        await using var transport = new AmazonSqsQueueTransport(logger, _CreateOptions());
-
-        var sqsClient = Substitute.For<IAmazonSQS>();
-        _SetSqsClient(transport, sqsClient);
-        _SetQueueUrl(transport, "queue-OrderCreated", "https://sqs.local/queue-OrderCreated");
-
-        var headers = Enumerable
-            .Range(0, 11)
-            .ToDictionary(index => $"header-{index}", index => (string?)$"value-{index}", StringComparer.Ordinal);
-        headers[Headers.MessageName] = "OrderCreated";
-
-        var message = new TransportMessage(headers, "test"u8.ToArray());
-
-        // when
-        var result = await transport.SendAsync(message, AbortToken);
-
-        // then
-        result.Succeeded.Should().BeFalse();
-        result.ToString().Should().Contain("AWS_SQS_MESSAGE_ATTRIBUTES_LIMIT");
-        await sqsClient.DidNotReceive().SendMessageAsync(Arg.Any<SendMessageRequest>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]

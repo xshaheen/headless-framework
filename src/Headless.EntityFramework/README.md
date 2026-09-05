@@ -18,7 +18,7 @@ Provides a framework-aware base `DbContext` with conventions for audit fields, E
 - Composable save pipeline driven by `HeadlessDbContextOptions` and an ordered chain of `IHeadlessSaveEntryProcessor` instances
 - `AddSaveEntryProcessor<TProcessor>(ServiceLifetime)` / `RemoveSaveEntryProcessor<TProcessor>()` for custom pipeline extension
 - Optional tenant write guard for `IMultiTenant` save protection (`CrossTenantWriteException`, `MissingTenantContextException`)
-- Two-tier event dispatch: domain events via `ILocalEventBus` before commit (`.AddDomainEvents()`), integration events via `IHeadlessOutboxDispatcher` in-transaction before commit (`.AddIntegrationEventOutbox()`, from `Headless.EntityFramework.Messaging`)
+- Two-tier event dispatch: domain events via `IDomainEventDispatcher` before commit (`.AddDomainEvents()`), integration events via `IHeadlessOutboxDispatcher` in-transaction before commit (`.AddIntegrationEventOutbox()`, from `Headless.EntityFramework.Messaging`)
 - `IHeadlessDbContextBuilder` returned by `AddHeadlessDbContextServices(...)` for chaining event tiers
 - Runtime guard that fails the save with a remediation message when an entity emits events but the matching tier is not registered
 - Resilient transaction helpers: `ExecuteTransactionAsync(...)` (EF execution strategy), `ExecuteCoordinatedTransactionAsync(...)` (also enlists commit coordination)
@@ -30,8 +30,10 @@ Provides a framework-aware base `DbContext` with conventions for audit fields, E
 - **Not poolable by design.** `HeadlessDbContext` holds a private `HeadlessDbContextRuntime` that captures the request-scoped outbox dispatcher (`IHeadlessOutboxDispatcher`) and audit persistence (`IHeadlessAuditPersistence`). Pooling reuses a prior request's unit of work — a captive-dependency correctness bug. The two-argument constructor also violates EF's single-`DbContextOptions` pooling contract. For read-heavy hot paths that don't need the write pipeline, use a plain `DbContext` with `AddDbContextPool` alongside the write-side `HeadlessDbContext`.
 - **Client-side Guid generation is intentional.** The key is available before `SaveChanges`, usable for foreign keys, outbox rows, and domain events in the same unit of work. `Version7` (time-ordered) and `SqlServer` comb strategies ensure monotonic insertion order per provider, limiting index fragmentation.
 - **Optional synchronous commit enlistment.** The core package uses a no-op transaction coordinator. `Headless.EntityFramework.CommitCoordination` replaces it so the save pipeline synchronously enlists the EF transaction and the ambient coordinator carries the live transaction.
-- **Unknown commit outcomes are not replayed.** `ExecuteCoordinatedTransactionAsync` lets the EF execution strategy retry failures before commit starts. Once `CommitAsync` begins, an exception is surfaced without replay because the database may already have committed; reconcile with a client-generated key or another durable idempotency key before retrying the business operation.
-- **Domain-event at-most-once guard.** A guard inside the execution-strategy retry ensures domain-event handlers are invoked only on the first attempt and are not re-invoked on a replay. Because publication precedes commit, a handler can run on an attempt that ultimately fails to commit — keep domain-event side effects idempotent.
+- **Unknown commit outcomes are not replayed.** Both owned `SaveChanges` and `ExecuteCoordinatedTransactionAsync` retry eligible failures before commit starts. Once commit begins, an exception is surfaced without replay because the database may already have committed; reconcile using durable application idempotency before repeating the operation.
+- **Completed local drains survive persistence retry.** The pipeline retains captured occurrence IDs and skips a completed local drain on subsequent persistence retries. Handler failures have no per-handler checkpoint and can repeat handler entry. Local handlers must remain replay-safe and keep external effects out of the transaction. The transactional outbox can commit atomically with application state; delivery and external effects remain at-least-once and require idempotency.
+- **Finite nested drain and exact batches.** Before business save, ordered drain passes recollect newly populated buffers and newly tracked emitters. Each tracked entity runs lifecycle synthesis once per save. A hard limit of 1,024 Domain occurrences per save, including lifecycle occurrences, rejects recursive emission before business persistence. Final audit capture includes handler mutations and newly tracked entities. Successful save clears only captured batches; occurrences appended after the drain remain pending.
+- **Save completion is distinct from commit.** Owned saves defer EF acceptance until physical commit succeeds. Within a caller-owned transaction, each successful save clears its own batch before the caller commits; subsequent saves capture new occurrences only. A known outer rollback requires disposing the context and abandoning its aggregate graph, then recovering through a fresh unit of work and application-owned idempotency. Replaying a command can create new occurrence IDs. Unknown commit outcomes require durable outcome verification and never imply known rollback.
 - **Negative index pagination is page-from-end.** `ToIndexPageAsync(index: -1, size: N)` returns the final page, not just the last `N` rows, and normalizes the returned `IndexPage.Index` to the actual zero-based page index. EF queries use `Skip`/`Take` so providers can translate the slice to SQL.
 - **The EF model is the automatic audit policy source.** The fluent policy stays in this ORM package because built-in change capture is EF-specific, while audit storage remains provider-independent. Domain entities carry no audit marker or attributes, and there is no duplicate provider-neutral policy registry.
 
@@ -68,7 +70,7 @@ builder.Services.AddHeadlessDbContext<AppDbContext>(options =>
 
 // Opt in to event tiers — chain off IHeadlessDbContextBuilder:
 builder.Services.AddHeadlessDbContextServices()
-    .AddDomainEvents()             // ILocalEventBus for in-process domain events
+    .AddDomainEvents()             // IDomainEventDispatcher for in-process domain events
     .AddIntegrationEventOutbox();  // IHeadlessOutboxDispatcher (from Headless.EntityFramework.Messaging)
 ```
 
@@ -168,9 +170,11 @@ builder.Services.AddHeadlessDbContextServices(options =>
 
 ### Event Dispatch
 
-Within a pipeline-owned transaction, the order is: domain events via `ILocalEventBus` → business `SaveChanges` → audit persistence → integration events via `IHeadlessOutboxDispatcher` → commit.
+Within a pipeline-owned transaction, the order is: domain events via `IDomainEventDispatcher` → business `SaveChanges` → audit persistence → integration events via `IHeadlessOutboxDispatcher` → commit.
 
-Domain-event handlers are **at-most-once**; integration events are **exactly-once** via the transactional outbox.
+Custom `IHeadlessOutboxDispatcher` implementations receive `IReadOnlyList<EventContext<object>>` in both dispatch methods. Preserve the snapshot through retries: the Messaging bridge uses `EventId` as `MessageId` and publishes `Payload` with the captured correlation, causation, and tenant.
+
+A completed local drain is not repeated by persistence retry; a failed local handler can run again. Atomic outbox persistence does not promise exactly-once delivery or external effects. Each successful save clears only its saved batch, including when a caller-owned transaction has not yet committed.
 
 ### Module Model Mapping
 
@@ -201,7 +205,7 @@ protected override void OnModelCreating(ModelBuilder modelBuilder)
 - Registers `IDbContextFactory<TDbContext>` as singleton (`HeadlessDbContextFactory<TDbContext>`)
 - Registers `IDbContextOptionsConfiguration<TDbContext>` that auto-attaches DI-registered `IInterceptor` instances to EF's option pipeline
 - Registers a no-op transaction-coordination seam; install `Headless.EntityFramework.CommitCoordination` and call `.AddCommitCoordination()` when the save pipeline must enlist in commit coordination
-- `.AddDomainEvents()` registers `ILocalEventBus`; `.AddIntegrationEventOutbox()` (from `Headless.EntityFramework.Messaging`) registers `IHeadlessOutboxDispatcher`; neither is registered by default
+- `.AddDomainEvents()` registers `IDomainEventDispatcher`; `.AddIntegrationEventOutbox()` (from `Headless.EntityFramework.Messaging`) registers `IHeadlessOutboxDispatcher`; neither is registered by default
 - Registers `TenantWriteGuardOptions` and `ITenantWriteGuardBypass` (always; guard is disabled by default)
 - Registers via `TryAddSingleton`: `TimeProvider.System`, keyed `IGuidGenerator` strategies (`Version7` and `SqlServer`) plus unkeyed `Version7` default, `ICurrentTenantAccessor`, `ICurrentUser` (`NullCurrentUser`), `ICorrelationIdProvider`
 - Registers `ICurrentTenant` (`CurrentTenant`), replacing only the framework-fallback `NullCurrentTenant`

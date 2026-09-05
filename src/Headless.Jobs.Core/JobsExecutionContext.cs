@@ -67,7 +67,21 @@ internal sealed class JobsExecutionContext
     // Shared with the fallback background service so both pickup paths hydrate the whole tree identically.
     internal static void CacheFunctionReferences(JobExecutionState context, JobFunctionRegistry functionRegistry)
     {
-        if (functionRegistry.Functions.TryGetValue(context.FunctionName, out var tickerItem))
+        context.CachedDelegate = null!;
+        context.ContractVersionError = null;
+        if (
+            functionRegistry.Descriptors.TryGetValue(context.FunctionName, out var descriptor)
+            && !string.Equals(context.ContractVersion, descriptor.ContractVersion, StringComparison.Ordinal)
+        )
+        {
+            context.ContractVersionError =
+                $"Unsupported stored Jobs contract '{context.FunctionName}' version '{context.ContractVersion}'; this node registers '{descriptor.ContractVersion}'. Request was not deserialized.";
+        }
+
+        if (
+            context.ContractVersionError is null
+            && functionRegistry.Functions.TryGetValue(context.FunctionName, out var tickerItem)
+        )
         {
             context.CachedDelegate = tickerItem.Delegate;
             context.CachedPriority = tickerItem.Priority;

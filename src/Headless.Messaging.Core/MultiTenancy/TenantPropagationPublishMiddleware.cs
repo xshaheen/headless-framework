@@ -25,7 +25,11 @@ public sealed class TenantPropagationPublishMiddleware(
         Argument.IsNotNull(context);
         Argument.IsNotNull(next);
 
-        if (context.Options?.TenantId is null && _currentTenant.Id is { } ambientTenantId)
+        if (
+            context.Options?.SuppressAmbientBusinessContext != true
+            && context.Options?.TenantId is null
+            && _currentTenant.Id is { } ambientTenantId
+        )
         {
             if (string.IsNullOrWhiteSpace(ambientTenantId))
             {
@@ -44,7 +48,7 @@ public sealed class TenantPropagationPublishMiddleware(
             // downstream middleware and the factory receive the correct derived type.
             MessageOptions stamped = context.Lane switch
             {
-                MessageLane.Queue => (context.Options as EnqueueOptions ?? new EnqueueOptions()) with
+                MessageLane.Queue => (context.Options as QueueOptions ?? new QueueOptions()) with
                 {
                     TenantId = ambientTenantId,
                 },

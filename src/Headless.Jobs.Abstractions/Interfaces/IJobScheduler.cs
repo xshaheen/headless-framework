@@ -11,6 +11,91 @@ namespace Headless.Jobs.Interfaces;
 [PublicAPI]
 public interface IJobScheduler
 {
+    /// <summary>Schedules one durable keyed intent at an absolute instant. Repeating the same intent observes its current run, including terminal runs.</summary>
+    Task<JobScheduleResult> ScheduleKeyedAsync<TArgs>(
+        JobKey key,
+        TArgs request,
+        DateTimeOffset executionTime,
+        CancellationToken cancellationToken = default
+    );
+
+    Task<JobScheduleResult> ScheduleKeyedAsync<TArgs>(
+        JobKey key,
+        TArgs request,
+        DateTimeOffset executionTime,
+        JobOptions? options,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>Schedules a requestless durable keyed intent at an absolute instant.</summary>
+    Task<JobScheduleResult> ScheduleKeyedAsync(
+        JobKey key,
+        JobFunctionDescriptor descriptor,
+        DateTimeOffset executionTime,
+        CancellationToken cancellationToken = default
+    );
+
+    Task<JobScheduleResult> ScheduleKeyedAsync(
+        JobKey key,
+        JobFunctionDescriptor descriptor,
+        DateTimeOffset executionTime,
+        JobOptions? options,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>Replaces or reschedules only a pending, unclaimed observed generation. A replay cannot advance another generation.</summary>
+    Task<JobScheduleResult> ReplaceKeyedAsync<TArgs>(
+        JobKey key,
+        long expectedGeneration,
+        TArgs request,
+        DateTimeOffset executionTime,
+        CancellationToken cancellationToken = default
+    );
+
+    Task<JobScheduleResult> ReplaceKeyedAsync<TArgs>(
+        JobKey key,
+        long expectedGeneration,
+        TArgs request,
+        DateTimeOffset executionTime,
+        JobOptions? options,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>Replaces or reschedules a requestless pending, unclaimed observed generation.</summary>
+    Task<JobScheduleResult> ReplaceKeyedAsync(
+        JobKey key,
+        long expectedGeneration,
+        JobFunctionDescriptor descriptor,
+        DateTimeOffset executionTime,
+        CancellationToken cancellationToken = default
+    );
+
+    Task<JobScheduleResult> ReplaceKeyedAsync(
+        JobKey key,
+        long expectedGeneration,
+        JobFunctionDescriptor descriptor,
+        DateTimeOffset executionTime,
+        JobOptions? options,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>Cancels the observed current generation. Claimed cancellation is cooperative.</summary>
+    Task<JobScheduleResult> CancelKeyedAsync(
+        JobKeyScope scope,
+        JobKey key,
+        long expectedGeneration,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>Requests cancellation with an explicit required-atomic assertion.</summary>
+    Task<JobScheduleResult> CancelKeyedAsync(
+        JobKeyScope scope,
+        JobKey key,
+        long expectedGeneration,
+        bool requireAtomicEnlistment,
+        CancellationToken cancellationToken = default
+    );
+
     /// <summary>
     /// Durably requests cooperative cancellation of the one-shot job identified by <paramref name="jobId"/>.
     /// </summary>
@@ -35,16 +120,16 @@ public interface IJobScheduler
     Task<bool> ResumeCronAsync(Guid cronJobId, CancellationToken cancellationToken = default);
 
     /// <summary>Enqueues a typed job for immediate execution and returns its persisted entity identifier.</summary>
-    Task<Guid> EnqueueAsync<TArgs>(
-        TArgs request,
-        EnqueueOptions? options = null,
-        CancellationToken cancellationToken = default
-    );
+    Task<Guid> EnqueueAsync<TArgs>(TArgs request, CancellationToken cancellationToken = default);
+
+    Task<Guid> EnqueueAsync<TArgs>(TArgs request, JobOptions? options, CancellationToken cancellationToken = default);
 
     /// <summary>Enqueues a requestless job for immediate execution and returns its persisted entity identifier.</summary>
+    Task<Guid> EnqueueAsync(JobFunctionDescriptor descriptor, CancellationToken cancellationToken = default);
+
     Task<Guid> EnqueueAsync(
         JobFunctionDescriptor descriptor,
-        EnqueueOptions? options = null,
+        JobOptions? options,
         CancellationToken cancellationToken = default
     );
 
@@ -68,16 +153,54 @@ public interface IJobScheduler
     /// <summary>Schedules a typed one-shot job and returns its persisted entity identifier.</summary>
     Task<Guid> ScheduleAsync<TArgs>(
         TArgs request,
-        DateTime executionTime,
-        EnqueueOptions? options = null,
+        DateTimeOffset executionTime,
+        CancellationToken cancellationToken = default
+    );
+
+    Task<Guid> ScheduleAsync<TArgs>(
+        TArgs request,
+        DateTimeOffset executionTime,
+        JobOptions? options,
         CancellationToken cancellationToken = default
     );
 
     /// <summary>Schedules a requestless one-shot job and returns its persisted entity identifier.</summary>
     Task<Guid> ScheduleAsync(
         JobFunctionDescriptor descriptor,
-        DateTime executionTime,
-        EnqueueOptions? options = null,
+        DateTimeOffset executionTime,
+        CancellationToken cancellationToken = default
+    );
+
+    Task<Guid> ScheduleAsync(
+        JobFunctionDescriptor descriptor,
+        DateTimeOffset executionTime,
+        JobOptions? options,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>Schedules an ordinary one-shot job relative to the configured application clock; delay must be non-negative.</summary>
+    Task<Guid> ScheduleAfterAsync<TArgs>(TArgs request, TimeSpan delay, CancellationToken cancellationToken = default);
+
+    /// <summary>Schedules an ordinary one-shot job relative to the configured application clock; delay must be non-negative.</summary>
+    Task<Guid> ScheduleAfterAsync<TArgs>(
+        TArgs request,
+        TimeSpan delay,
+        JobOptions? options,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>Schedules an ordinary one-shot job relative to the configured application clock; delay must be non-negative.</summary>
+    Task<Guid> ScheduleAfterAsync(
+        JobFunctionDescriptor descriptor,
+        TimeSpan delay,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>Schedules an ordinary one-shot job relative to the configured application clock; delay must be non-negative.</summary>
+    Task<Guid> ScheduleAfterAsync(
+        JobFunctionDescriptor descriptor,
+        TimeSpan delay,
+        JobOptions? options,
         CancellationToken cancellationToken = default
     );
 
@@ -85,7 +208,13 @@ public interface IJobScheduler
     Task<Guid> ScheduleRecurringAsync<TArgs>(
         TArgs request,
         string cronExpression,
-        RecurringJobOptions? options = null,
+        CancellationToken cancellationToken = default
+    );
+
+    Task<Guid> ScheduleRecurringAsync<TArgs>(
+        TArgs request,
+        string cronExpression,
+        RecurringJobOptions? options,
         CancellationToken cancellationToken = default
     );
 
@@ -93,7 +222,13 @@ public interface IJobScheduler
     Task<Guid> ScheduleRecurringAsync(
         JobFunctionDescriptor descriptor,
         string cronExpression,
-        RecurringJobOptions? options = null,
+        CancellationToken cancellationToken = default
+    );
+
+    Task<Guid> ScheduleRecurringAsync(
+        JobFunctionDescriptor descriptor,
+        string cronExpression,
+        RecurringJobOptions? options,
         CancellationToken cancellationToken = default
     );
 }

@@ -28,6 +28,66 @@ public abstract class HeadlessDbContextSaveChangesTestBase<TFixture, TContext> :
         scope.ServiceProvider.EnsureDbRecreated<TContext>();
     }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public virtual async Task caller_transaction_should_complete_each_batch_and_recover_through_fresh_context(
+        bool synchronous,
+        bool rollback
+    )
+    {
+        await using (var scope = Fixture.ServiceProvider.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TContext>();
+            await using var transaction = await db.Database.BeginTransactionAsync(AbortToken);
+            var first = new HarnessTestEntity { Name = "first-batch" };
+            first.EmitDomainEvent(new HarnessLocalMessage("first"));
+            db.TestEntities.Add(first);
+            if (synchronous)
+            {
+#pragma warning disable MA0045 // Synchronous provider conformance case.
+                db.SaveChanges();
+#pragma warning restore MA0045
+            }
+            else
+            {
+                await db.SaveChangesAsync(AbortToken);
+            }
+
+            first.GetDomainEvents().Should().BeEmpty();
+            var firstCount = db.EmittedLocalMessages.Count;
+            var second = new HarnessTestEntity { Name = "second-batch" };
+            db.TestEntities.Add(second);
+            if (synchronous)
+            {
+#pragma warning disable MA0045 // Synchronous provider conformance case.
+                db.SaveChanges();
+#pragma warning restore MA0045
+            }
+            else
+            {
+                await db.SaveChangesAsync(AbortToken);
+            }
+
+            second.GetDomainEvents().Should().BeEmpty();
+            db.EmittedLocalMessages.Count.Should().Be(firstCount + 2);
+            if (rollback)
+            {
+                await transaction.RollbackAsync(AbortToken);
+            }
+            else
+            {
+                await transaction.CommitAsync(AbortToken);
+            }
+        }
+
+        await using var freshScope = Fixture.ServiceProvider.CreateAsyncScope();
+        var fresh = freshScope.ServiceProvider.GetRequiredService<TContext>();
+        (await fresh.TestEntities.CountAsync(AbortToken)).Should().Be(rollback ? 0 : 2);
+    }
+
     #region Basic SaveChanges (no emitters)
 
     [Fact]

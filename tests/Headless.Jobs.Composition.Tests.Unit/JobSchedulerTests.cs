@@ -1,7 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics;
 using System.Reflection;
 using Headless.Jobs;
+using Headless.Jobs.Base;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Exceptions;
@@ -11,12 +13,72 @@ using Headless.Jobs.Models;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
 
 [Collection<JobsHelperCollection>]
 public sealed class JobSchedulerTests : TestBase
 {
+    [Theory]
+    [InlineData(false, null)]
+    [InlineData(true, "business-root")]
+    [InlineData(true, null)]
+    public async Task persisted_lineage_uses_business_parent_or_new_row_and_never_trace(
+        bool hasParent,
+        string? parentCorrelation
+    )
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessJobs(options => options.DisableBackgroundServices());
+        var descriptor = new JobFunctionDescriptor("lineage", typeof(SampleRequest), "", JobPriority.Normal, 0, "v2");
+        services.AddSingleton(
+            JobFunctionRegistryBuilder.Build(
+                [
+                    new KeyValuePair<string, JobFunctionRegistration>(
+                        "lineage",
+                        new()
+                        {
+                            CronExpression = "",
+                            Priority = JobPriority.Normal,
+                            MaxConcurrency = 0,
+                            Delegate = (_, _, _) => Task.CompletedTask,
+                        }
+                    ),
+                ],
+                [
+                    new KeyValuePair<string, (string, Type)>(
+                        "lineage",
+                        (typeof(SampleRequest).FullName!, typeof(SampleRequest))
+                    ),
+                ],
+                [new KeyValuePair<string, JobFunctionDescriptor>("lineage", descriptor)]
+            )
+        );
+        await using var provider = services.BuildServiceProvider();
+        var scheduler = provider.GetRequiredService<IJobScheduler>();
+        var persistence = provider.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+        var parent = new JobFunctionContext
+        {
+            Id = Guid.NewGuid(),
+            FunctionName = "parent",
+            CorrelationId = parentCorrelation,
+            CronOccurrenceOperations = new CronOccurrenceOperations(() => { }),
+        };
+        using var trace = new Activity("unrelated-diagnostic-trace").Start();
+        using var causalScope = hasParent ? JobCausalContext.Enter(parent) : null;
+
+        var id = await scheduler.EnqueueAsync(new SampleRequest("invoice"), cancellationToken: AbortToken);
+        var stored = await persistence.GetTimeJobByIdAsync(id, AbortToken);
+
+        stored.Should().NotBeNull();
+        stored.ContractVersion.Should().Be("v2");
+        stored.CorrelationId.Should().Be(hasParent ? parentCorrelation ?? parent.Id.ToString("D") : id.ToString("D"));
+        stored.CausationId.Should().Be(hasParent ? parent.Id.ToString("D") : null);
+        stored.CorrelationId.Should().NotBe(trace.TraceId.ToString());
+    }
+
     private static readonly JobFunctionDescriptor _TypedDescriptor = new(
         "typed",
         typeof(SampleRequest),
@@ -50,7 +112,7 @@ public sealed class JobSchedulerTests : TestBase
 
         var id = await scheduler.EnqueueAsync(
             request,
-            new EnqueueOptions
+            new JobOptions
             {
                 Description = "Create invoice",
                 Retries = 3,
@@ -100,7 +162,9 @@ public sealed class JobSchedulerTests : TestBase
             registry,
             Substitute.For<IInternalJobManager>(),
             Substitute.For<IJobsHostScheduler>(),
-            JobsRequestSerializationOptions.Default
+            JobsRequestSerializationOptions.Default,
+            new FakeTimeProvider(),
+            JobSchedulingPolicies.Empty
         );
 
         var id = await scheduler.EnqueueAsync(new SampleRequest("host-registry"), cancellationToken: AbortToken);
@@ -141,7 +205,9 @@ public sealed class JobSchedulerTests : TestBase
             registry,
             Substitute.For<IInternalJobManager>(),
             Substitute.For<IJobsHostScheduler>(),
-            JobsRequestSerializationOptions.Default
+            JobsRequestSerializationOptions.Default,
+            new FakeTimeProvider(),
+            JobSchedulingPolicies.Empty
         );
 
         await scheduler.EnqueueAsync(canonicalDescriptor, cancellationToken: AbortToken);
@@ -156,7 +222,7 @@ public sealed class JobSchedulerTests : TestBase
     public async Task should_schedule_requestless_delayed_job_without_payload()
     {
         var (scheduler, timeManager, _) = _CreateScheduler();
-        var executionTime = new DateTime(2026, 7, 14, 3, 0, 0, DateTimeKind.Utc);
+        var executionTime = new DateTimeOffset(2026, 7, 14, 3, 0, 0, TimeSpan.Zero);
         var persistedId = Guid.NewGuid();
         TimeJobEntity? captured = null;
         timeManager
@@ -174,14 +240,14 @@ public sealed class JobSchedulerTests : TestBase
         captured.Should().NotBeNull();
         captured.Function.Should().Be("requestless");
         captured.Request.Should().BeNull();
-        captured.ExecutionTime.Should().Be(executionTime);
+        captured.ExecutionTime.Should().Be(executionTime.UtcDateTime);
     }
 
     [Fact]
     public async Task should_schedule_typed_delayed_job_with_default_options()
     {
         var (scheduler, timeManager, _) = _CreateScheduler();
-        var executionTime = new DateTime(2026, 7, 15, 3, 0, 0, DateTimeKind.Utc);
+        var executionTime = new DateTimeOffset(2026, 7, 15, 3, 0, 0, TimeSpan.Zero);
         TimeJobEntity? captured = null;
         timeManager
             .AddAsync(Arg.Any<TimeJobEntity>(), AbortToken)
@@ -194,7 +260,7 @@ public sealed class JobSchedulerTests : TestBase
         await scheduler.ScheduleAsync(new SampleRequest("delayed"), executionTime, cancellationToken: AbortToken);
 
         captured.Should().NotBeNull();
-        captured!.ExecutionTime.Should().Be(executionTime);
+        captured!.ExecutionTime.Should().Be(executionTime.UtcDateTime);
         captured.Description.Should().BeNull();
         captured.Retries.Should().Be(0);
         captured.RetryIntervals.Should().BeNull();
@@ -389,7 +455,9 @@ public sealed class JobSchedulerTests : TestBase
             JobFunctionRegistryBuilder.Build([], [], []),
             internalManager,
             hostScheduler,
-            JobsRequestSerializationOptions.Default
+            JobsRequestSerializationOptions.Default,
+            new FakeTimeProvider(),
+            JobSchedulingPolicies.Empty
         );
 
         (await scheduler.CancelAsync(jobId, AbortToken)).Should().BeTrue();
@@ -413,7 +481,9 @@ public sealed class JobSchedulerTests : TestBase
             JobFunctionRegistryBuilder.Build([], [], []),
             internalManager,
             hostScheduler,
-            JobsRequestSerializationOptions.Default
+            JobsRequestSerializationOptions.Default,
+            new FakeTimeProvider(),
+            JobSchedulingPolicies.Empty
         );
 
         (await scheduler.CancelAsync(jobId, AbortToken)).Should().BeFalse();
@@ -437,7 +507,9 @@ public sealed class JobSchedulerTests : TestBase
             JobFunctionRegistryBuilder.Build([], [], []),
             internalManager,
             hostScheduler,
-            JobsRequestSerializationOptions.Default
+            JobsRequestSerializationOptions.Default,
+            new FakeTimeProvider(),
+            JobSchedulingPolicies.Empty
         );
 
         (await scheduler.PauseCronAsync(cronJobId, AbortToken)).Should().Be(accepted);
@@ -449,12 +521,22 @@ public sealed class JobSchedulerTests : TestBase
     }
 
     [Fact]
-    public void should_expose_only_the_job_id_cancellation_method_and_seven_scheduling_overloads()
+    public void should_expose_ordinary_scheduling_and_generation_fenced_keyed_control()
     {
         var methods = typeof(IJobScheduler).GetMethods(BindingFlags.Instance | BindingFlags.Public);
 
-        methods.Should().HaveCount(10);
-        methods.Count(method => method.ReturnType == typeof(Task<Guid>)).Should().Be(7);
+        methods.Should().HaveCount(30);
+        methods.Count(method => method.ReturnType == typeof(Task<JobScheduleResult>)).Should().Be(10);
+        var keyedSchedules = methods.Where(method =>
+            method.Name is nameof(IJobScheduler.ScheduleKeyedAsync) or nameof(IJobScheduler.ReplaceKeyedAsync)
+        );
+        keyedSchedules.Should().HaveCount(8);
+        keyedSchedules
+            .Should()
+            .OnlyContain(method =>
+                method.GetParameters().Any(parameter => parameter.ParameterType == typeof(DateTimeOffset))
+            );
+        methods.Count(method => method.ReturnType == typeof(Task<Guid>)).Should().Be(17);
         var cancellation = methods.Single(method =>
             string.Equals(method.Name, nameof(IJobScheduler.CancelAsync), StringComparison.Ordinal)
         );
@@ -476,12 +558,12 @@ public sealed class JobSchedulerTests : TestBase
                 .Equal(typeof(Guid), typeof(CancellationToken));
             control.GetParameters()[^1].HasDefaultValue.Should().BeTrue();
         }
-        _AssertOverload(methods, nameof(IJobScheduler.EnqueueAsync), true, typeof(EnqueueOptions));
-        _AssertOverload(methods, nameof(IJobScheduler.EnqueueAsync), false, typeof(EnqueueOptions));
+        _AssertOverload(methods, nameof(IJobScheduler.EnqueueAsync), true, typeof(JobOptions));
+        _AssertOverload(methods, nameof(IJobScheduler.EnqueueAsync), false, typeof(JobOptions));
         var chainEnqueue = methods.Single(method =>
             string.Equals(method.Name, nameof(IJobScheduler.EnqueueAsync), StringComparison.Ordinal)
             && !method.IsGenericMethodDefinition
-            && method.GetParameters().Length == 2
+            && method.GetParameters()[0].ParameterType == typeof(JobChain)
         );
         chainEnqueue.ReturnType.Should().Be<Task<Guid>>();
         chainEnqueue
@@ -490,8 +572,14 @@ public sealed class JobSchedulerTests : TestBase
             .Should()
             .Equal(typeof(JobChain), typeof(CancellationToken));
         chainEnqueue.GetParameters()[^1].HasDefaultValue.Should().BeTrue();
-        _AssertOverload(methods, nameof(IJobScheduler.ScheduleAsync), true, typeof(DateTime), typeof(EnqueueOptions));
-        _AssertOverload(methods, nameof(IJobScheduler.ScheduleAsync), false, typeof(DateTime), typeof(EnqueueOptions));
+        _AssertOverload(methods, nameof(IJobScheduler.ScheduleAsync), true, typeof(DateTimeOffset), typeof(JobOptions));
+        _AssertOverload(
+            methods,
+            nameof(IJobScheduler.ScheduleAsync),
+            false,
+            typeof(DateTimeOffset),
+            typeof(JobOptions)
+        );
         _AssertOverload(
             methods,
             nameof(IJobScheduler.ScheduleRecurringAsync),
@@ -506,23 +594,28 @@ public sealed class JobSchedulerTests : TestBase
             typeof(string),
             typeof(RecurringJobOptions)
         );
-        typeof(EnqueueOptions)
+        typeof(JobOptions)
             .GetProperties(BindingFlags.Instance | BindingFlags.Public)
             .Select(property => property.Name)
             .Should()
             .BeEquivalentTo(
-                nameof(EnqueueOptions.Description),
-                nameof(EnqueueOptions.Retries),
-                nameof(EnqueueOptions.RetryIntervals),
-                nameof(EnqueueOptions.OnNodeDeath),
-                nameof(EnqueueOptions.TenantId),
-                nameof(EnqueueOptions.IsSystemJob)
+                nameof(JobOptions.CorrelationId),
+                nameof(JobOptions.CausationId),
+                nameof(JobOptions.Description),
+                nameof(JobOptions.Retries),
+                nameof(JobOptions.RetryIntervals),
+                nameof(JobOptions.OnNodeDeath),
+                nameof(JobOptions.TenantId),
+                nameof(JobOptions.IsSystemJob),
+                nameof(JobOptions.RequireAtomicEnlistment)
             );
         typeof(RecurringJobOptions)
             .GetProperties(BindingFlags.Instance | BindingFlags.Public)
             .Select(property => property.Name)
             .Should()
             .BeEquivalentTo(
+                nameof(RecurringJobOptions.CorrelationId),
+                nameof(RecurringJobOptions.CausationId),
                 nameof(RecurringJobOptions.TimeZoneId),
                 nameof(RecurringJobOptions.Description),
                 nameof(RecurringJobOptions.Retries),
@@ -602,7 +695,7 @@ public sealed class JobSchedulerTests : TestBase
         }
 
         parameters[1..^1].Select(parameter => parameter.ParameterType).Should().Equal(middleParameterTypes);
-        parameters[^2].HasDefaultValue.Should().BeTrue();
+        parameters[^2].HasDefaultValue.Should().BeFalse();
         parameters[^1].ParameterType.Should().Be<CancellationToken>();
         parameters[^1].HasDefaultValue.Should().BeTrue();
     }

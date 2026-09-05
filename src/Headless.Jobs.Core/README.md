@@ -10,6 +10,8 @@ Stored requests may use GZip compression through `UseGZipCompression()`. Decompr
 
 ## Key Features
 
+- **Version-checked execution**: the frozen registry remains ordinal and uniquely keyed by function name. A stored version must exactly equal the registered descriptor version before request deserialization or cached delegate invocation. A mismatch persists a `Failed` diagnostic; a missing function retains the existing release-for-another-node behavior. Descendants are processed only after the terminal write wins its ownership fence.
+- **Stable causal metadata**: a root time job uses its allocated row ID as correlation unless explicitly supplied. Jobs scheduled from an executing job inherit its correlation and use that parent execution row ID as causation; chain steps use their direct parent row ID. Root cron occurrences allocate correlation from their occurrence ID unless the definition carries explicit or inherited metadata. A parent with no explicit correlation contributes its execution row ID as the causal root. Retries preserve lineage independently of `Activity` traces, and existing tenant checks still apply.
 - **`AddHeadlessJobs()`**: single DI entry point; registers managers, background services, and the in-memory persistence provider.
 - **`IJobScheduler` facade**: schedules typed or requestless `[JobFunction]` methods through generated descriptor indexes, maps supported options, controls cron pause/resume, and returns persisted entity IDs or locked-transition results.
 - **Typed chain enqueue**: `IJobScheduler.EnqueueAsync(JobChain, …)` resolves every node's descriptor, enforces `SchedulerOptionsBuilder.MaxChainDepth` (default 10) before persistence naming the configured limit, and persists the root plus its whole descendant tree atomically through the manager add path.
@@ -28,6 +30,12 @@ Stored requests may use GZip compression through `UseGZipCompression()`. Decompr
 - **Tenancy seam**: `HeadlessTenancyBuilder.Jobs(...)` exposes `PropagateTenant()`, `RequireTenantOnEnqueue()`, and `RejectCrossTenantEnqueue()`; time jobs capture the ambient tenant at schedule time and restore it around every execution attempt. See [Tenancy](#tenancy).
 
 ## Design Notes
+
+Keyed one-shot scheduling uses `JobKey` and `ScheduleKeyedAsync` / `ReplaceKeyedAsync` / `CancelKeyedAsync`. The scope is tenant/system plus logical function name plus business key, excluding schema version. Return values separate `Created`, `Existing`, `Conflict`, `Replaced`, `StaleGeneration`, `NotFound`, and cancellation dispositions from the observed generation, run ID, and execution state. A terminal current key remains reserved; observing it never reruns work. Replacement/rescheduling requires the observed generation to remain pending and unclaimed. Claimed cancellation is cooperative. A `JobChain` is a static conditional continuation tree and has no keyed scheduling/control support, signals, joins, waits, compensation, mutable definitions, process state, or stream coordinates.
+
+Schedule middleware runs before the `v1` intent fingerprint is computed. The fingerprint uses exact durable serialized bytes, contract version, UTC due time truncated to provider-common microseconds, retry count/intervals, and node-death policy. Null and empty payloads differ; empty retry intervals equal absent intervals. Presentation/lineage/traces do not participate. Use the new `DateTimeOffset` surface and reuse the same absolute instant and stable serialization on retries. Unknown stored algorithms fail explicitly instead of being silently rehashed. All keyed generations remain indefinitely; ordinary edits, reset/retry, and deletion reject them, and mixed deletion rejects atomically. No automatic cleanup worker or forget-key operation exists. Keyed create/observe/replace/cancel enlist in compatible ambient relational transactions. Their returned results are provisional until the outer commit; only scheduler acceleration is deferred. See the [storage guide](../../docs/solutions/guides/jobs-keyed-scheduling.md).
+
+`JobOptions.RequireAtomicEnlistment` (or the transient entity flag for manager callers) fails before middleware unless a compatible live relational transaction can enlist the deadline. The default keeps automatic routing. The required-atomic keyed cancellation overload uses the same capability validation. Preflight resolves actual configured database identity after `OnConfiguring`, validates exact captured handles and savepoint support, then revalidates before writing. Owned external connections are rejected without borrowing or disposing them. Keyed replacement uses one operation savepoint around both retirement and insertion; failed restoration requires outer rollback. Ordinary conflict dispositions remain usable under read committed; provider isolation failures remain exceptions. Retry known rollbacks using fresh units of work and reconcile unknown commits using the retained key. See [the public capability contract](../Headless.Jobs.Abstractions/README.md#commit-coordination-atomic-enqueue).
 
 The in-memory provider uses the injected `TimeProvider` for pickup leases. The EF operational store translates `DateTime.UtcNow` inside each claim statement, so both lease-expiry comparison and `LockedUntil` stamping use the **database clock** without a separate clock query. EF renewal and reclaim use the same authority, preventing application/database clock skew from shortening or extending the initial lease.
 
@@ -65,7 +73,7 @@ Ordinary cron dispatch first commits the expected schedule position and its occu
 
 Each host owns an independent execution-cancellation registry. Durable cancellation, host shutdown, and lease loss are distinct causes tied to one opaque execution handle. Only a cooperative exit with that execution's exact token after durable observation writes terminal `Cancelled`. Lease loss and cooperative host shutdown leave the row `InProgress` for recovery; an uncooperative handler keeps its natural success/failure result while `CancelRequested` remains audit data. An unrelated `OperationCanceledException` remains a failure and follows retry policy.
 
-Before deploying this version with a relational Jobs store, apply the Jobs migrations for cancellation, cron control, the live-occurrence index, the cron watermark/recovery fields (`ReconciledThroughUtc`, `NextDueUtc`, `MissedRunGraceSeconds`, `OnMissedRun`, `EvaluationFingerprint`, `FingerprintFailureCount`, `FingerprintRetryAfterUtc`, and occurrence `RecoveredFromUtc`), and the occurrence `Disposition` column (string-backed, 32 chars, non-null, existing rows backfilling to `Accounted`). Quiesce every scheduler node for the migration and start only new binaries afterward; mixed versions do not share the atomic materialization contract. Legacy positions backfill to the uninitialized sentinel and are anchored at store time on first wake, avoiding synthetic backlog. The PostgreSQL demos and SQL Server conformance project contain reference migrations; custom schemas require equivalent DDL plus the fingerprint retry/keyset index. Once watermark, recovery, or fingerprint-defer state is written, downgrade is state-losing and must be blocked unless operators intentionally export or discard that state; the disposition migration's `Down` enforces its own version of that rule, refusing while any non-`Accounted` value exists rather than collapsing an owed fire into a permanently suppressed one.
+Initialize the relational Jobs database from the current EF model before starting workers or writers. Include cancellation, cron control, schedule watermarks, recovery and fingerprint-defer fields, the fingerprint retry/keyset index, and the required occurrence `Disposition` column. Custom persistence providers must supply equivalent mappings, constraints, and indexes.
 
 Cron expressions use `RecurringJobOptions.TimeZoneId` when present and otherwise fall back to `SchedulerTimeZone`. Only validated IANA identifiers are accepted. Occurrences remain UTC; a spring-forward occurrence inside an invalid local-time gap is shifted forward by the gap, and an ambiguous fall-back occurrence runs once at the later UTC instant (the standard-time offset).
 
@@ -129,8 +137,8 @@ opposite answers.
 
 | Disposition | Written by | Effect at the instant |
 |---|---|---|
-| `Accounted` (default) | every newly created row, and every ordinary retirement — pause, recovery, dead-node sweep, lapsed lease, user-code skip | Suppresses. Rows predating the column backfill here, preserving their prior behaviour. |
-| `ReplacementOwed` | the startup seeding migration, which retires an old-expression row **without** creating a replacement | Allows re-materialization: the fire is still owed. |
+| `Accounted` (default) | every newly created row, and every ordinary retirement — pause, recovery, dead-node sweep, lapsed lease, user-code skip | Suppresses. |
+| `ReplacementOwed` | the startup definition reconciliation, which retires an old-expression row **without** creating a replacement | Allows re-materialization: the fire is still owed. |
 | `Superseded` | a runtime schedule edit through `ICronJobManager`, which creates its own replacement | Suppresses. Re-firing would double-run every expression edit. |
 
 A dead owner's `Skipped` row is `Accounted` deliberately. It never executed, but getting it re-run belongs to the
@@ -139,8 +147,7 @@ reclaim and recovery path; re-materializing at claim time would race that path a
 Several rows may share an instant — legal, because the unique index is filtered to live rows. Any single accounting
 row takes the instant, and reads report the live row first so an older terminal one cannot mask it.
 
-Because dropping the column would collapse every value to the implicit `Accounted` and turn an owed fire into a
-permanently suppressed one, the migration's `Down` refuses while any non-ordinary disposition exists.
+The disposition is persisted explicitly so an owed replacement remains distinguishable from an accounted instant.
 
 ### Applying a recovery pass
 
@@ -316,7 +323,7 @@ public sealed class OrderService(IJobScheduler scheduler)
     public Task<Guid> ScheduleAsync(OrderRequest request, CancellationToken ct) =>
         scheduler.EnqueueAsync(
             request,
-            new EnqueueOptions
+            new JobOptions
             {
                 Description = "process-order",
                 Retries = 3,
@@ -329,10 +336,10 @@ public sealed class OrderService(IJobScheduler scheduler)
 // The scheduler starts via IHostedService — no app.UseJobs() call needed.
 ```
 
-`IJobScheduler` is the safe routine path: typed calls resolve `typeof(TArgs)`, use the configured Jobs serializer and optional GZip compression, and persist through the configured managers. Requestless calls accept a generated `JobFunctionDescriptor` from `JobFunctionProvider.JobFunctionDescriptors`. Immediate, delayed, and recurring methods return the persisted time-job or cron-definition `Guid`. Unknown or stale identities fail before serialization or persistence.
+`IJobScheduler` is the safe routine path: typed calls resolve `typeof(TArgs)`, use the configured Jobs serializer and optional GZip compression, and persist through the configured managers. Requestless calls accept a generated `JobFunctionDescriptor` from the generated `AppJobs` catalog. Immediate, delayed, and recurring methods return the persisted time-job or cron-definition `Guid`. Unknown or stale identities fail before serialization or persistence.
 
 ```csharp
-var delayedId = await scheduler.ScheduleAsync(request, DateTime.UtcNow.AddHours(1), cancellationToken: ct);
+var delayedId = await scheduler.ScheduleAfterAsync(request, TimeSpan.FromHours(1), ct);
 var recurringId = await scheduler.ScheduleRecurringAsync(
     request,
     "0 0 * * *",
@@ -342,12 +349,16 @@ var recurringId = await scheduler.ScheduleRecurringAsync(
 var pauseAccepted = await scheduler.PauseCronAsync(recurringId, ct);
 var resumeAccepted = await scheduler.ResumeCronAsync(recurringId, ct);
 
-var cleanup = JobFunctionProvider.JobFunctionDescriptors["Cleanup"];
+var cleanup = AppJobs.Cleanup;
 var cleanupId = await scheduler.EnqueueAsync(cleanup, cancellationToken: ct);
 var cancellationAccepted = await scheduler.CancelAsync(delayedId, ct);
 ```
 
-`EnqueueOptions` and `RecurringJobOptions` expose description, durable retries/intervals, and node-death policy; recurring options also expose nullable IANA `TimeZoneId`. Execution time and cron expression are explicit method arguments. Priority remains immutable `[JobFunction]` / descriptor metadata.
+`JobOptions` and `RecurringJobOptions` expose description, durable retries/intervals, and node-death policy; recurring options also expose nullable IANA `TimeZoneId`. Execution time and cron expression are explicit method arguments. Priority remains immutable `[JobFunction]` / descriptor metadata.
+
+Routine calls accept a positional cancellation token: `EnqueueAsync(request, ct)`, `ScheduleAsync(request, dueAt, ct)`, `ScheduleAfterAsync(request, delay, ct)`, and `ScheduleRecurringAsync(request, cron, ct)`. Options overloads require the options argument; nullable retry and node-death fields inherit configured defaults, while `Retries = 0` explicitly disables retries. Absolute facade schedules use `DateTimeOffset` and persist the same instant in UTC. Relative ordinary schedules use the injected `TimeProvider`, accept zero delay, and reject negative or overflowing delays before persistence. Keyed schedules remain absolute: capture the due instant once and reuse it when retrying the same intent.
+
+Requestless jobs have generated `AppJobs` handles in the consuming assembly's namespace: `await jobs.EnqueueAsync(AppJobs.Cleanup, ct)` for `[JobFunction("Cleanup")]`. Import that namespace or qualify the catalog when several assemblies supply jobs. Handles reference the same immutable canonical descriptors used for registration; applications do not need a string dictionary lookup.
 
 Low-level managers are not deprecated. Continue using `ITimeJobManager<TTimeJob>` and `ICronJobManager<TCronJob>` for CRUD, batching, seeding, custom entities, chains, and advanced persistence workflows.
 
@@ -391,9 +402,9 @@ builder.AddHeadlessTenancy(tenancy =>
 );
 ```
 
-`PropagateTenant()` captures the ambient `ICurrentTenant.Id` onto a time job at schedule time (an explicit `EnqueueOptions.TenantId` wins — even when it differs from the ambient tenant, in which case the mismatch logs a warning; opt in to `RejectCrossTenantEnqueue()` to reject that lateral path instead, while explicit values from system scope stay honored for cron fan-out). A persisted `TenantId` is restored around every execution attempt — and around the failure callbacks (`IJobExceptionHandler`, cancellation handler, `OnExhausted`) — including retries, which Polly re-dispatches per attempt. Restoration happens whenever the row carries a tenant, **even on a host with `PropagateTenant()` off**: an explicit `EnqueueOptions.TenantId` is persisted regardless of the flag, so such a job always runs under its tenant rather than silently system-scope; manual restoration is only needed for work that runs outside the Jobs execute pipeline. `RequireTenantOnEnqueue()` rejects a tenantless, non-system enqueue with `Headless.Abstractions.MissingTenantContextException`. Set `EnqueueOptions.IsSystemJob = true` for a deliberate tenantless job; it is rejected when an ambient tenant is present so tenant code cannot escalate to system scope, and it is never persisted. Structural validation (cron-scope rejection, system-job contradictions, blank / over-length bounds) always runs; only ambient capture and strict enforcement are gated by the seam flags. Register a real `ICurrentTenant` source (HTTP claim resolution, `AddHeadlessDbContextServices()`, or a custom implementation) before `AddHeadlessJobs` so propagation resolves a live tenant instead of the `NullCurrentTenant` fallback.
+`PropagateTenant()` captures the ambient `ICurrentTenant.Id` onto a time job at schedule time (an explicit `JobOptions.TenantId` wins — even when it differs from the ambient tenant, in which case the mismatch logs a warning; opt in to `RejectCrossTenantEnqueue()` to reject that lateral path instead, while explicit values from system scope stay honored for cron fan-out). A persisted `TenantId` is restored around every execution attempt — and around the failure callbacks (`IJobExceptionHandler`, cancellation handler, `OnExhausted`) — including retries, which Polly re-dispatches per attempt. Restoration happens whenever the row carries a tenant, **even on a host with `PropagateTenant()` off**: an explicit `JobOptions.TenantId` is persisted regardless of the flag, so such a job always runs under its tenant rather than silently system-scope; manual restoration is only needed for work that runs outside the Jobs execute pipeline. `RequireTenantOnEnqueue()` rejects a tenantless, non-system enqueue with `Headless.Abstractions.MissingTenantContextException`. Set `JobOptions.IsSystemJob = true` for a deliberate tenantless job; it is rejected when an ambient tenant is present so tenant code cannot escalate to system scope, and it is never persisted. Structural validation (cron-scope rejection, system-job contradictions, blank / over-length bounds) always runs; only ambient capture and strict enforcement are gated by the seam flags. Register a real `ICurrentTenant` source (HTTP claim resolution, `AddHeadlessDbContextServices()`, or a custom implementation) before `AddHeadlessJobs` so propagation resolves a live tenant instead of the `NullCurrentTenant` fallback.
 
-Cron is always system-scope — a cron definition carrying a tenant is rejected with `JobValidatorException`. Run tenant-scoped recurring work by fanning out one tenant-scoped time job per tenant from a system-scope cron handler, passing an explicit `EnqueueOptions.TenantId`:
+Cron is always system-scope — a cron definition carrying a tenant is rejected with `JobValidatorException`. Run tenant-scoped recurring work by fanning out one tenant-scoped time job per tenant from a system-scope cron handler, passing an explicit `JobOptions.TenantId`:
 
 ```csharp
 using Headless.Jobs.Base;
@@ -426,7 +437,7 @@ public static async Task FanOutAsync(IServiceProvider sp, CancellationToken ct)
         // inside a cron handler would silently persist tenantless jobs.
         await scheduler.EnqueueAsync(
             new TenantReportRequest("nightly"),
-            new EnqueueOptions { TenantId = tenantId, Description = $"nightly-report-{tenantId}" },
+            new JobOptions { TenantId = tenantId, Description = $"nightly-report-{tenantId}" },
             ct
         );
     }
@@ -436,6 +447,12 @@ public static async Task FanOutAsync(IServiceProvider sp, CancellationToken ct)
 The framework owns no tenant enumeration — fan-out is application code by design (`IReportService` and `IAppTenantDirectory` above are application-owned). The full resolution rules, chain-propagation semantics, and startup diagnostics are documented in `Headless.MultiTenancy`'s domain docs.
 
 ## Configuration
+
+Configure facade policies once with `ConfigureDefaults(new JobOptions { Retries = 3, RetryIntervals = [5, 30] })`, then override individual fields with `ConfigureJob<MyRequest>(new JobOptions { OnNodeDeath = NodeDeathPolicy.MarkFailed })` or `ConfigureJob(AppJobs.Cleanup, options)`. The order of precedence is call, function, then application defaults; null fields inherit and an empty interval array explicitly replaces inherited intervals. Required atomic enlistment is cumulative: `false` at a narrower level cannot disable a requirement. Configuration snapshots retry arrays and freezes per host after the registration callback; unknown generated identities and invalid retry settings fail before use/startup. Configure each function by either request type or canonical descriptor, not both.
+
+Startup policies accept only retries, retry intervals, node-death policy, and required atomic enlistment. Tenant, system scope, description, correlation, and causation remain per-invocation metadata; supplying them in startup policies throws. Concurrency and priority remain generated function/scheduler metadata.
+
+Policies apply to facade one-shot scheduling, keyed scheduling/replacement, every chain node, and required atomic assertions on keyed cancellation using its scope function. Facade recurring definitions inherit retries and node-death policy, but reject a required-atomic policy because that operation has no such guarantee. Attribute-seeded cron definitions and low-level manager calls retain their own settings. Ordinary ID-only cancellation and cron pause/resume retain their existing control semantics.
 
 ```csharp
 builder.Services.AddHeadlessJobs(options =>

@@ -48,7 +48,7 @@ public abstract class PermissionsTestBase(PermissionsTestFixture fixture) : Test
         services.AddSingleton(Substitute.For<IApplicationInformationAccessor>());
         services.AddSingleton(Substitute.For<ICurrentPrincipalAccessor>());
         services.AddSingleton(Substitute.For<IBus>());
-        services.AddHeadlessLocalEventBus();
+        services.AddHeadlessDomainEventDispatcher();
 
         // Cache
         services.AddHeadlessCaching(setup =>

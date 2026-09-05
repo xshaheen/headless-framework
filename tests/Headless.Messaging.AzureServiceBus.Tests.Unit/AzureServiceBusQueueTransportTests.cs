@@ -25,6 +25,69 @@ public sealed class AzureServiceBusQueueTransportTests : TestBase
         return new AzureServiceBusQueueTransport(NullLogger<AzureServiceBusQueueTransport>.Instance, _Options, pool);
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("order-42")]
+    public async Task should_map_affinity_to_native_session(string? raw)
+    {
+        var pool = Substitute.For<IAzureServiceBusClientPool>();
+        var sender = Substitute.For<ServiceBusSender>();
+        pool.GetSender("orders").Returns(sender);
+        var options = Options.Create(new AzureServiceBusMessagingOptions { EnableSessions = true });
+        await using var transport = new AzureServiceBusQueueTransport(
+            NullLogger<AzureServiceBusQueueTransport>.Instance,
+            options,
+            pool
+        );
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [Headers.MessageId] = "message-1",
+            [Headers.MessageName] = "orders",
+            [Headers.RoutingAffinityKey] = "order-42",
+        };
+        if (raw is not null)
+        {
+            headers[AzureServiceBusMessagingHeaders.SessionId] = raw;
+            headers[AzureServiceBusMessagingHeaders.PartitionKey] = raw;
+        }
+
+        var result = await transport.SendAsync(new TransportMessage(headers, default), AbortToken);
+
+        result.Succeeded.Should().BeTrue();
+        await sender
+            .Received(1)
+            .SendMessageAsync(Arg.Is<ServiceBusMessage>(message => message.SessionId == "order-42"), AbortToken);
+    }
+
+    [Theory]
+    [InlineData(false, null)]
+    [InlineData(true, "other")]
+    public async Task should_reject_invalid_affinity_before_creating_sender(bool sessions, string? raw)
+    {
+        var pool = Substitute.For<IAzureServiceBusClientPool>();
+        var options = Options.Create(new AzureServiceBusMessagingOptions { EnableSessions = sessions });
+        await using var transport = new AzureServiceBusQueueTransport(
+            NullLogger<AzureServiceBusQueueTransport>.Instance,
+            options,
+            pool
+        );
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [Headers.MessageId] = "message-1",
+            [Headers.MessageName] = "orders",
+            [Headers.RoutingAffinityKey] = "order-42",
+        };
+        if (raw is not null)
+        {
+            headers[AzureServiceBusMessagingHeaders.PartitionKey] = raw;
+        }
+
+        var result = await transport.SendAsync(new TransportMessage(headers, default), AbortToken);
+
+        result.Succeeded.Should().BeFalse();
+        pool.DidNotReceive().GetSender(Arg.Any<string>());
+    }
+
     [Fact]
     public async Task should_return_correct_broker_address()
     {

@@ -11,7 +11,8 @@ internal sealed record MessageRegistration(
     Func<object, string?>? CorrelationSelector,
     IReadOnlyDictionary<Type, object> ProviderConfigs,
     IReadOnlyList<MessageConsumerRegistration> Consumers,
-    string ContractVersion = MessageOptions.InitialContractVersion
+    string ContractVersion = MessageOptions.InitialContractVersion,
+    bool RequiresRoutingAffinity = false
 );
 
 internal sealed record MessageConsumerRegistration(

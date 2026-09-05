@@ -102,7 +102,6 @@ public abstract class PostgreSqlDbContextTestFixture<TContext> : IDbContextTestF
             .WithDatabase("framework_test")
             .WithUsername("postgres")
             .WithPassword("postgres")
-            .WithReuse(true)
             .Build();
     }
 }

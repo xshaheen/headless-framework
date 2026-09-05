@@ -3,7 +3,12 @@ export class GetCronJobOccurrenceRequest {
 }
 
 export class GetCronJobOccurrenceResponse {
+    contractVersion!: string;
+    correlationId?: string;
+    causationId?: string;
+    tenantId?: string;
     id!: string;
+    function!: string;
     status!:number|string;
     exceptionMessage?:string;
     skippedReason?:string;

@@ -55,9 +55,13 @@ public sealed class IsTransactionalPropagationTests : TestBase
         var publisher = new Bus(serializer, transport, publishRequestFactory, pipeline, TimeProvider.System);
 
         // when
-        await publisher.PublishAsync(new TestMessage("hi"), options: null, cancellationToken: AbortToken);
+        await publisher.PublishAsync(
+            new TestMessage("hi"),
+            new PublishOptions { DeliveryMode = DeliveryMode.TransportDirect },
+            cancellationToken: AbortToken
+        );
 
-        // then — Bus always commits to the wire; rollback has no semantic
+        // then — explicit direct delivery bypasses durable commit coordination
         observed.Captured.Should().BeFalse();
     }
 

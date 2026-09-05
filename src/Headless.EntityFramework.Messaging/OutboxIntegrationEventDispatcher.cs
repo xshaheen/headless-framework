@@ -26,7 +26,7 @@ internal sealed class OutboxIntegrationEventDispatcher(
 ) : IHeadlessOutboxDispatcher
 {
     public async Task DispatchAsync(
-        IReadOnlyList<IIntegrationEvent> integrationEvents,
+        IReadOnlyList<EventContext<object>> integrationEvents,
         CancellationToken cancellationToken = default
     )
     {
@@ -44,14 +44,24 @@ internal sealed class OutboxIntegrationEventDispatcher(
         foreach (var integrationEvent in integrationEvents)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var publish = invokerCache.GetPublishInvoker(integrationEvent.GetType());
-            await publish(bus, integrationEvent, cancellationToken).ConfigureAwait(false);
+            var context = integrationEvent;
+            var options = new PublishOptions
+            {
+                DeliveryMode = DeliveryMode.Durable,
+                MessageId = context.EventId,
+                CorrelationId = context.CorrelationId,
+                CausationId = context.CausationId,
+                TenantId = context.TenantId,
+                SuppressAmbientBusinessContext = true,
+            };
+            var publish = invokerCache.GetPublishInvoker(integrationEvent.Payload.GetType());
+            await publish(bus, integrationEvent.Payload, options, cancellationToken).ConfigureAwait(false);
         }
     }
 
     // Single contained sync-over-async: IBus only exposes an async publish, and the EF sync save path
     // calls this. No synchronization context is present on the EF save path, so blocking here cannot deadlock.
-    public void Dispatch(IReadOnlyList<IIntegrationEvent> integrationEvents)
+    public void Dispatch(IReadOnlyList<EventContext<object>> integrationEvents)
     {
         DispatchAsync(integrationEvents, CancellationToken.None).GetAwaiter().GetResult();
     }
