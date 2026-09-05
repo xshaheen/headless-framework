@@ -286,6 +286,7 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
             Retries = node.Options?.Retries ?? 0,
             RetryIntervals = node.Options?.RetryIntervals is { } intervals ? [.. intervals] : null,
             OnNodeDeath = node.Options?.OnNodeDeath ?? Enums.NodeDeathPolicy.Retry,
+            RequireAtomicEnlistment = node.Options?.RequireAtomicEnlistment ?? false,
             RunCondition = runCondition,
         };
 
