@@ -13,8 +13,8 @@ public static class JobContract
     /// <summary>Maximum schema-version length in UTF-16 code units.</summary>
     public const int VersionMaxLength = 100;
 
-    /// <summary>The schema version assigned to legacy jobs by the consumer's migration.</summary>
-    public const string LegacyVersion = "1";
+    /// <summary>The initial payload schema version used when a contract does not declare another version.</summary>
+    public const string InitialVersion = "1";
 
     internal static string ValidateName(string value) => _Validate(value, NameMaxLength, nameof(value));
 

@@ -21,7 +21,7 @@ public class CronJobOccurrenceEntity<TCronJob>
     public virtual string Function { get; set; } = null!;
 
     /// <summary>Payload schema version snapshotted at materialization.</summary>
-    public virtual string ContractVersion { get; set; } = JobContract.LegacyVersion;
+    public virtual string ContractVersion { get; set; } = JobContract.InitialVersion;
 
     /// <summary>Exact serialized payload bytes owned by this occurrence.</summary>
     public virtual byte[]? Request { get; set; }

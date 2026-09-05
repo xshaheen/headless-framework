@@ -23,6 +23,10 @@ public sealed class SqlServerKeyedSchedulingTests(SqlServerJobsCoordinationFixtu
         base.keyed_constraints_follow_custom_column_mappings();
 
     [Fact]
+    public override Task fresh_schema_enforces_keyed_metadata_and_scoped_uniqueness() =>
+        base.fresh_schema_enforces_keyed_metadata_and_scoped_uniqueness();
+
+    [Fact]
     public override Task manual_job_configuration_requires_explicit_ordinal_scope() =>
         base.manual_job_configuration_requires_explicit_ordinal_scope();
 

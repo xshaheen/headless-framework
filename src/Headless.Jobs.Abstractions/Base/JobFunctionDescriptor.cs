@@ -40,7 +40,7 @@ public sealed record JobFunctionDescriptor
         string cronExpression,
         JobPriority priority,
         int maxConcurrency,
-        string contractVersion = JobContract.LegacyVersion
+        string contractVersion = JobContract.InitialVersion
     )
     {
         if (string.IsNullOrWhiteSpace(functionName))

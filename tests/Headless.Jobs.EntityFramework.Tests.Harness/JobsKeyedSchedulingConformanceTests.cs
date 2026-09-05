@@ -122,6 +122,89 @@ public abstract class JobsKeyedSchedulingConformanceTests<TFixture>(TFixture fix
         await clearFingerprint.Should().ThrowAsync<DbException>();
     }
 
+    public virtual async Task fresh_schema_enforces_keyed_metadata_and_scoped_uniqueness()
+    {
+        await fixture.ResetDatabaseAsync(AbortToken);
+        using var host = fixture.BuildHost("keyed-schema");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, AbortToken);
+        var store = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+        var factory = host.Services.GetRequiredService<IDbContextFactory<JobsDbContext>>();
+        var parent = JobsKeyedSchedulingScenarios.Candidate();
+        await store.AddTimeJobsAsync([parent], AbortToken);
+
+        foreach (var tenant in new string?[] { null, "tenant-a" })
+        {
+            var candidate = JobsKeyedSchedulingScenarios.Candidate();
+            candidate.TenantId = tenant;
+            var key = new JobKey("schema-deadline");
+            var first = await store.ScheduleKeyedTimeJobAsync(key, candidate, cancellationToken: AbortToken);
+            var replacement = JobsKeyedSchedulingScenarios.Candidate([4]);
+            replacement.TenantId = tenant;
+            var current = await store.ScheduleKeyedTimeJobAsync(key, replacement, 1, AbortToken);
+            first.Disposition.Should().Be(JobScheduleDisposition.Created);
+            current.Disposition.Should().Be(JobScheduleDisposition.Replaced);
+            var currentId = current.RunId!.Value;
+
+            // Direct EF writes bypass the Jobs API, proving the actual database constraints independently.
+            foreach (
+                var property in new[]
+                {
+                    nameof(TimeJobEntity.BusinessKey),
+                    nameof(TimeJobEntity.IntentFingerprint),
+                    nameof(TimeJobEntity.FingerprintAlgorithm),
+                    nameof(TimeJobEntity.Generation),
+                    nameof(TimeJobEntity.IsCurrentGeneration),
+                }
+            )
+            {
+                await assertRejectedUpdate(currentId, property, null);
+            }
+
+            await assertRejectedUpdate(currentId, nameof(TimeJobEntity.Generation), 0L);
+            await assertRejectedUpdate(currentId, nameof(TimeJobEntity.Generation), -1L);
+            await assertRejectedUpdate(currentId, nameof(TimeJobEntity.ParentId), parent.Id);
+            await assertRejectedUpdate(
+                currentId,
+                nameof(TimeJobEntity.RunCondition),
+                Headless.Jobs.Enums.RunCondition.OnSuccess
+            );
+
+            // A different generation isolates the current-key index from the generation-history index.
+            await assertRejectedDuplicate(currentId, 3L);
+            await assertRejectedDuplicate(first.RunId!.Value, 1L);
+            await using var observed = await factory.CreateDbContextAsync(AbortToken);
+            var rows = await observed
+                .Set<TimeJobEntity>()
+                .Where(row => row.BusinessKey == key.Value && row.TenantId == tenant)
+                .OrderBy(row => row.Generation)
+                .ToListAsync(AbortToken);
+            rows.Select(row => row.Generation).Should().Equal(1L, 2L);
+            rows.Count(row => row.IsCurrentGeneration == true).Should().Be(1);
+        }
+
+        async Task assertRejectedUpdate(Guid id, string property, object? value)
+        {
+            await using var context = await factory.CreateDbContextAsync(AbortToken);
+            var row = await context.Set<TimeJobEntity>().SingleAsync(row => row.Id == id, AbortToken);
+            context.Entry(row).Property(property).CurrentValue = value;
+            var write = () => context.SaveChangesAsync(AbortToken);
+            var failure = await write.Should().ThrowAsync<DbUpdateException>();
+            failure.Which.InnerException.Should().BeAssignableTo<DbException>();
+        }
+
+        async Task assertRejectedDuplicate(Guid id, long generation)
+        {
+            await using var context = await factory.CreateDbContextAsync(AbortToken);
+            var row = await context.Set<TimeJobEntity>().AsNoTracking().SingleAsync(row => row.Id == id, AbortToken);
+            row.Id = Guid.NewGuid();
+            context.Add(row);
+            context.Entry(row).Property(nameof(TimeJobEntity.Generation)).CurrentValue = generation;
+            var write = () => context.SaveChangesAsync(AbortToken);
+            var failure = await write.Should().ThrowAsync<DbUpdateException>();
+            failure.Which.InnerException.Should().BeAssignableTo<DbException>();
+        }
+    }
+
     public virtual async Task manual_job_configuration_requires_explicit_ordinal_scope()
     {
         await fixture.ResetDatabaseAsync(AbortToken);

@@ -36,5 +36,5 @@ public readonly record struct CronSeedDefinition(
     MissedRunPolicy OnMissedRun,
     int MissedRunGraceSeconds,
     string? EvaluationFingerprint = null,
-    string ContractVersion = JobContract.LegacyVersion
+    string ContractVersion = JobContract.InitialVersion
 );

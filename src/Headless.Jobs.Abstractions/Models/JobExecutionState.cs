@@ -33,7 +33,7 @@ public class JobExecutionState
     public required string FunctionName { get; set; }
 
     /// <summary>Persisted payload schema version, checked before cached delegate dispatch.</summary>
-    public string ContractVersion { get; set; } = JobContract.LegacyVersion;
+    public string ContractVersion { get; set; } = JobContract.InitialVersion;
 
     /// <summary>Root business correlation, independent of tracing.</summary>
     public string? CorrelationId { get; set; }

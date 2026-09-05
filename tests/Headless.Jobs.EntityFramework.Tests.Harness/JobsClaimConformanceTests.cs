@@ -10,6 +10,9 @@ using Headless.Jobs.Models;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
@@ -322,7 +325,17 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
                 Function = "Case.Name",
                 ContractVersion = "VOne",
             };
-            await provider.AddTimeJobsAsync([lower, upper], ct);
+            var supplementary = new TimeJobEntity
+            {
+                Id = Guid.NewGuid(),
+                Function = string.Concat(Enumerable.Repeat("🚀", Headless.Jobs.JobContract.NameMaxLength / 2)),
+                ContractVersion = Headless.Jobs.JobContract.InitialVersion,
+            };
+            await provider.AddTimeJobsAsync([lower, upper, supplementary], ct);
+            var roundTrip = await provider.GetTimeJobByIdAsync(supplementary.Id, ct);
+            roundTrip.Should().NotBeNull();
+            roundTrip!.Function.Should().Be(supplementary.Function);
+            roundTrip.Request.Should().BeNull();
             (await provider.GetTimeJobsAsync(x => x.Function == "case.name", ct))
                 .Should()
                 .ContainSingle()
@@ -352,7 +365,45 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
                     .GetMaxLength()
                     .Should()
                     .Be(Headless.Jobs.JobContract.VersionMaxLength);
+                var version = entity.FindProperty("ContractVersion")!;
+                version.IsNullable.Should().BeFalse();
+                version.GetDefaultValue().Should().BeNull();
+                version.GetDefaultValueSql().Should().BeNull();
             }
+
+            // Inspect and exercise the real EF-created table without the writer's value converter.
+            var timeJob = context.Model.FindEntityType(typeof(TimeJobEntity))!;
+            var table = StoreObjectIdentifier.Table(timeJob.GetTableName()!, timeJob.GetSchema());
+            var sql = context.GetService<ISqlGenerationHelper>();
+            var copiedColumns = timeJob
+                .GetProperties()
+                .Where(property =>
+                    property.Name is not (nameof(TimeJobEntity.Id) or nameof(TimeJobEntity.ContractVersion))
+                )
+                .Select(property => sql.DelimitIdentifier(property.GetColumnName(table)!))
+                .ToArray();
+            await using var connection = fixture.CreateConnection();
+            await connection.OpenAsync(ct);
+            await using var command = connection.CreateCommand();
+            var sourceId = command.CreateParameter();
+            sourceId.ParameterName = "@sourceId";
+            sourceId.Value = lower.Id;
+            command.Parameters.Add(sourceId);
+            var targetId = command.CreateParameter();
+            targetId.ParameterName = "@targetId";
+            targetId.Value = Guid.NewGuid();
+            command.Parameters.Add(targetId);
+            var idColumn = sql.DelimitIdentifier(nameof(TimeJobEntity.Id));
+            command.CommandText =
+                $"INSERT INTO {fixture.QualifiedTimeJobsTable} ({idColumn}, {string.Join(", ", copiedColumns)}) "
+                + $"SELECT @targetId, {string.Join(", ", copiedColumns)} FROM {fixture.QualifiedTimeJobsTable} WHERE {idColumn} = @sourceId";
+            var omittedVersion = () => command.ExecuteNonQueryAsync(ct);
+            await omittedVersion.Should().ThrowAsync<DbException>();
+            command.CommandText =
+                $"UPDATE {fixture.QualifiedTimeJobsTable} SET {sql.DelimitIdentifier(nameof(TimeJobEntity.ContractVersion))} = NULL WHERE {idColumn} = @sourceId";
+            var nullVersion = () => command.ExecuteNonQueryAsync(ct);
+            await nullVersion.Should().ThrowAsync<DbException>();
+
             foreach (
                 var invalid in new[] { "", " ", "v1 ", new string('x', Headless.Jobs.JobContract.VersionMaxLength + 1) }
             )

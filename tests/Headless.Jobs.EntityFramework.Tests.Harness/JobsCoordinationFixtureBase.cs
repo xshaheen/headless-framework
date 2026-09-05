@@ -565,8 +565,7 @@ public static class JobsCoordinationFixtureExtensions
     /// </param>
     /// <remarks>
     /// The position, grace, and policy columns are non-nullable and the harness builds its schema from the EF model
-    /// (<c>CreateTablesAsync</c>) rather than from migrations — so unlike the migrated path there is no column default
-    /// to fall back on and this explicit column list must carry them. Grace and policy are seeded at the entity's own
+    /// (<c>CreateTablesAsync</c>). There is no column default to fall back on, so this explicit column list must carry them. Grace and policy are seeded at the entity's own
     /// CLR defaults so a seeded row matches what inserting a fresh entity would persist.
     /// <para>
     /// The position is expressed as an offset evaluated by the STORE rather than as a bound instant: that keeps the

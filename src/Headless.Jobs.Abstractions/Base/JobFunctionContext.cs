@@ -65,7 +65,7 @@ public class JobFunctionContext
     internal AsyncServiceScope ServiceScope { get; set; }
 
     /// <summary>Payload schema version selected before deserialization.</summary>
-    public string ContractVersion { get; internal set; } = JobContract.LegacyVersion;
+    public string ContractVersion { get; internal set; } = JobContract.InitialVersion;
 
     /// <summary>Root business correlation, independent of trace and attempt identities.</summary>
     public string? CorrelationId { get; internal set; }

@@ -137,7 +137,7 @@ internal sealed class JobsInitializationHostedService(
         }
 
         // Drain one stable store snapshot here, before the caller opens the activation barrier and therefore before any
-        // loop can pick up a legacy/null or stale-fingerprint row. The BARRIER is the ordering guarantee, not hosted-
+        // loop can pick up a uninitialized or stale-fingerprint row. The BARRIER is the ordering guarantee, not hosted-
         // service registration order: a host that sets HostOptions.ServicesStartConcurrently starts the scheduler at
         // the same time as this initializer. Deterministically invalid definitions are durably deferred by the manager;
         // storage/infrastructure failures propagate, leave the barrier closed-with-failure, and fail closed instead of

@@ -21,7 +21,7 @@ namespace Tests;
 /// The cron fingerprint activation gate must hold whatever order the host starts its hosted services in. Hosted-service
 /// registration order is not a guarantee: <c>HostOptions.ServicesStartConcurrently</c> is a supported Generic Host
 /// setting a consuming application can enable, and under it the scheduler can reach its first dispatch selection while
-/// the activation drain is still running — dispatching a legacy/null- or stale-fingerprint definition under an
+/// the activation drain is still running — dispatching a uninitialized or stale-fingerprint definition under an
 /// unverified schedule interpretation, which is exactly what the gate exists to prevent.
 /// </summary>
 [Collection<JobsHelperCollection>]

@@ -64,7 +64,7 @@ public sealed class JobExecuteMiddlewareAttribute<TMiddleware> : Attribute
 [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
 public sealed class JobFunctionDescriptorMetadataAttribute(
     string functionName,
-    string contractVersion = JobContract.LegacyVersion
+    string contractVersion = JobContract.InitialVersion
 ) : Attribute
 {
     /// <summary>Payload schema version of the generated durable contract.</summary>

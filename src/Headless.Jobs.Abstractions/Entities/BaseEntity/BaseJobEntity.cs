@@ -21,7 +21,7 @@ public class BaseJobEntity
     public virtual string Function { get; set; } = null!;
 
     /// <summary>Payload schema version captured when the job is scheduled.</summary>
-    public virtual string ContractVersion { get; set; } = JobContract.LegacyVersion;
+    public virtual string ContractVersion { get; set; } = JobContract.InitialVersion;
 
     /// <summary>Root business correlation; independent of W3C trace context.</summary>
     public virtual string? CorrelationId { get; set; }
