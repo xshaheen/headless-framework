@@ -30,21 +30,45 @@ public sealed class JobSchedulingDefaultsTests : TestBase
         0
     );
 
-    [Fact]
-    public async Task relative_and_absolute_schedules_preserve_the_instant_using_the_injected_clock()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task relative_and_absolute_schedules_preserve_the_instant_using_the_injected_clock(bool fluent)
     {
         var now = new DateTimeOffset(2026, 9, 5, 12, 0, 0, TimeSpan.Zero);
         var clock = new FakeTimeProvider(now);
         var (scheduler, time, _) = _CreateScheduler(clock);
-        await scheduler.ScheduleAfterAsync(new Request(), TimeSpan.FromHours(2), AbortToken);
+        await (
+            fluent
+                ? scheduler.ScheduleAfterAsync(
+                    new Request(),
+                    TimeSpan.FromHours(2),
+                    options => options.WithRetries(0),
+                    AbortToken
+                )
+                : scheduler.ScheduleAfterAsync(new Request(), TimeSpan.FromHours(2), AbortToken)
+        );
         await time.Received(1)
             .AddAsync(Arg.Is<TimeJobEntity>(job => job.ExecutionTime == now.AddHours(2).UtcDateTime), AbortToken);
         clock.Advance(TimeSpan.FromMinutes(30));
-        await scheduler.ScheduleAfterAsync(_Requestless, TimeSpan.Zero, AbortToken);
+        await (
+            fluent
+                ? scheduler.ScheduleAfterAsync(
+                    _Requestless,
+                    TimeSpan.Zero,
+                    options => options.WithRetries(0),
+                    AbortToken
+                )
+                : scheduler.ScheduleAfterAsync(_Requestless, TimeSpan.Zero, AbortToken)
+        );
         await time.Received(1)
             .AddAsync(Arg.Is<TimeJobEntity>(job => job.ExecutionTime == now.AddMinutes(30).UtcDateTime), AbortToken);
         var offset = new DateTimeOffset(2026, 9, 5, 18, 0, 0, TimeSpan.FromHours(3));
-        await scheduler.ScheduleAsync(new Request(), offset, AbortToken);
+        await (
+            fluent
+                ? scheduler.ScheduleAsync(new Request(), offset, options => options.WithRetries(0), AbortToken)
+                : scheduler.ScheduleAsync(new Request(), offset, AbortToken)
+        );
         await time.Received(1)
             .AddAsync(
                 Arg.Is<TimeJobEntity>(job =>
@@ -54,19 +78,31 @@ public sealed class JobSchedulingDefaultsTests : TestBase
             );
     }
 
-    [Fact]
-    public async Task invalid_relative_delays_fail_before_persistence()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task invalid_relative_delays_fail_before_persistence(bool fluent)
     {
         var (scheduler, time, _) = _CreateScheduler(new FakeTimeProvider(DateTimeOffset.MaxValue.AddSeconds(-1)));
-        var negative = () => scheduler.ScheduleAfterAsync(new Request(), TimeSpan.FromTicks(-1), AbortToken);
-        var overflow = () => scheduler.ScheduleAfterAsync(_Requestless, TimeSpan.FromSeconds(2), AbortToken);
+        var negative = () =>
+            fluent
+                ? scheduler.ScheduleAfterAsync(new Request(), TimeSpan.FromTicks(-1), _ => { }, AbortToken)
+                : scheduler.ScheduleAfterAsync(new Request(), TimeSpan.FromTicks(-1), AbortToken);
+        var overflow = () =>
+            fluent
+                ? scheduler.ScheduleAfterAsync(_Requestless, TimeSpan.FromSeconds(2), _ => { }, AbortToken)
+                : scheduler.ScheduleAfterAsync(_Requestless, TimeSpan.FromSeconds(2), AbortToken);
         await negative.Should().ThrowAsync<ArgumentOutOfRangeException>();
         await overflow.Should().ThrowAsync<ArgumentOutOfRangeException>();
         await time.DidNotReceive().AddAsync(Arg.Any<TimeJobEntity>(), Arg.Any<CancellationToken>());
     }
 
-    [Fact]
-    public async Task field_defaults_apply_to_ordinary_keyed_and_chain_nodes_and_cannot_weaken_atomic_policy()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task field_defaults_apply_to_ordinary_keyed_and_chain_nodes_and_cannot_weaken_atomic_policy(
+        bool fluent
+    )
     {
         var intervals = new[] { 2, 5 };
         var policies = new JobSchedulingPolicies(
@@ -89,7 +125,15 @@ public sealed class JobSchedulingDefaultsTests : TestBase
         };
         TimeJobEntity? ordinary = null;
         time.AddAsync(Arg.Any<TimeJobEntity>(), AbortToken).Returns(info => ordinary = info.Arg<TimeJobEntity>());
-        await scheduler.EnqueueAsync(new Request(), call, AbortToken);
+        await (
+            fluent
+                ? scheduler.EnqueueAsync(
+                    new Request(),
+                    options => options.WithRetries(0).WithDescription("invocation"),
+                    AbortToken
+                )
+                : scheduler.EnqueueAsync(new Request(), call, AbortToken)
+        );
         ordinary.Should().NotBeNull();
         ordinary.Retries.Should().Be(0);
         ordinary.RetryIntervals.Should().Equal(2, 5);
@@ -113,6 +157,26 @@ public sealed class JobSchedulingDefaultsTests : TestBase
         await scheduler.EnqueueAsync(chain.Build(), AbortToken);
         ordinary!.RequireAtomicEnlistment.Should().BeTrue();
         ordinary.Children.Single().RequireAtomicEnlistment.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task invalid_fluent_retry_and_node_death_settings_fail_before_persistence()
+    {
+        var (scheduler, time, _) = _CreateScheduler(new FakeTimeProvider());
+        var invalidRetries = () =>
+            scheduler.EnqueueAsync(new Request(), options => options.WithRetries(-1), AbortToken);
+        var invalidIntervals = () =>
+            scheduler.EnqueueAsync(_Requestless, options => options.WithRetryIntervals(-1), AbortToken);
+        var invalidPolicy = () =>
+            scheduler.EnqueueAsync(
+                new Request(),
+                options => options.WithNodeDeathPolicy((NodeDeathPolicy)999),
+                AbortToken
+            );
+        await invalidRetries.Should().ThrowAsync<ArgumentException>();
+        await invalidIntervals.Should().ThrowAsync<ArgumentException>();
+        await invalidPolicy.Should().ThrowAsync<ArgumentException>();
+        await time.DidNotReceive().AddAsync(Arg.Any<TimeJobEntity>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]

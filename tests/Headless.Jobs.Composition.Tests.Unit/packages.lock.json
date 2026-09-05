@@ -779,6 +779,7 @@
       "headless.jobs.abstractions": {
         "type": "Project",
         "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
           "Headless.CommitCoordination.Abstractions": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.9, )"
         }

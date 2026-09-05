@@ -158,6 +158,7 @@ Mark job methods with `[JobFunction("name")]` (or `[JobFunction("name", cronExpr
 - Use `IJobScheduler` for routine immediate, delayed, and recurring scheduling. Typed overloads resolve generated metadata from `typeof(TArgs)`; requestless overloads require a generated `JobFunctionDescriptor` from the generated `AppJobs` catalog.
 - `JobOptions` / `RecurringJobOptions` support description, durable retry count/intervals, and node-death policy; recurring options additionally accept nullable IANA `TimeZoneId`. Execution time and cron expression are method arguments. Do not add priority to scheduling options; priority remains immutable `[JobFunction]` / descriptor metadata.
 - Author static conditional continuation trees with the typed `JobChain` model (it replaces the removed fluent chain builder): `JobChain.Start(payload | descriptor)`, extend node handles with `Then` (on-success) / `Catch` (on-failure), then `await scheduler.EnqueueAsync(chain.Build(), ct)`. Each node allows one `Then` and one `Catch`; chains are capped at `SchedulerOptionsBuilder.MaxChainDepth` nodes deep (default 10); `Catch` is on-failure sugar and never recovers the parent. Setting `RequireAtomicEnlistment` in any root, `Then`, or `Catch` node's existing `JobOptions` requires the whole tree to enlist in the caller transaction before middleware; default options preserve automatic routing. See [Typed Job Chains](#typed-job-chains).
+- Import `Headless.Jobs` for ordinary scheduling callbacks with the singular `JobOptionsBuilder`; the plural generic `JobsOptionsBuilder<TTimeJob, TCronJob>` configures Core. Callbacks must finish synchronously. Builders support sequential reuse with copied retry arrays; `Build()` alone does not validate or accept work. Nullable setters restore inheritance, and an unset atomic assertion cannot weaken an inherited requirement.
 - For multi-tenant hosts, enable Jobs tenancy through the root tenancy seam: `AddHeadlessTenancy(t => t.Jobs(jobs => jobs.PropagateTenant().RequireTenantOnEnqueue()))`. Time jobs then capture the ambient tenant at schedule time and restore it around every execution attempt. Pass `JobOptions.TenantId` to override capture, or `JobOptions.IsSystemJob = true` for a deliberate tenantless job. Cron is always system-scope — never give a cron definition a tenant; fan out explicit-tenant time jobs from application code. See [Tenant Propagation](#tenant-propagation).
 - `PauseCronAsync` / `ResumeCronAsync` control one durable cron definition by ID. Pause skips pending work but preserves `InProgress`; resume schedules one strictly-future occurrence and rebases the watermark to the resume instant, so the paused interval is never replayed as missed.
 - For testing, call `options.DisableBackgroundServices()` to suppress background scheduler execution.
@@ -726,12 +727,35 @@ Omit an unused cancellation token, or pass a literal default token as `cancellat
 
 Requestless jobs have generated `AppJobs` handles in the consuming assembly's namespace: `await jobs.EnqueueAsync(AppJobs.Cleanup, ct)` for `[JobFunction("Cleanup")]`. Import that namespace or qualify the catalog when several assemblies supply jobs. Handles reference the same immutable canonical descriptors used for registration; applications do not need a string dictionary lookup.
 
+Fluent callbacks are available on the typed and requestless `EnqueueAsync`, `ScheduleAsync`, and `ScheduleAfterAsync` calls. Import `Headless.Jobs` for `JobOptionsBuilder` and `JobSchedulerExtensions`, and `Headless.Jobs.Interfaces` for `IJobScheduler`. The singular `JobOptionsBuilder` authors one options snapshot; the plural generic `JobsOptionsBuilder<TTimeJob, TCronJob>` configures the subsystem in Core.
+
+```csharp
+using Headless.Jobs;
+using Headless.Jobs.Interfaces;
+
+public sealed class JobCaller(IJobScheduler scheduler)
+{
+    public Task<Guid> EnqueueAsync<TRequest>(TRequest request, CancellationToken ct) =>
+        scheduler.EnqueueAsync(request, options => options.WithRetries(0).WithCorrelationId("checkout"), ct);
+
+    public Task<Guid> ScheduleCleanupAsync(JobFunctionDescriptor cleanup, CancellationToken ct) =>
+        scheduler.ScheduleAfterAsync(cleanup, TimeSpan.FromMinutes(5), options => options.WithRetryIntervals(2, 5), ct);
+}
+```
+
+Each callback runs synchronously once on a fresh builder, immediately before the existing options overload. Async-void callbacks are unsupported. A null receiver or `configure: null!` throws before submission; a throwing callback submits nothing. Bare `null` still selects the existing nullable options overload. Cancellation tokens and the scheduler's returned task pass through unchanged, including pre-canceled tokens; configuration still runs before delegation.
+
+`Build()` returns the canonical `Headless.Jobs.Models.JobOptions` without validation or resolved defaults. Nullable setters accept `null` to restore inheritance; `WithRetries(0)` disables retries, `WithRetryIntervals()` replaces inherited intervals with an empty array, and `WithRetryIntervals(null)` inherits them. `RequireAtomicEnlistment()` and `AsSystemJob()` assert true and remain set across reuse; use a fresh builder to reset them. An unset per-call atomic flag cannot weaken an inherited requirement. Existing scheduling validators still check retry values, node-death policies, and tenant/system conflicts.
+
+Builders support sequential reuse and copy retry arrays when supplied and on every build. Mutating an input, retained builder, or one result cannot change another snapshot. Returned arrays remain caller-owned and mutable; concurrent builder mutation is unsupported. Use direct records or `builder.Build() with { ... }` for advanced options; keyed, recurring, and chain conveniences are outside this fluent surface.
+
 ### Configuration
 
 None at the abstractions layer. All configuration is done in `Headless.Jobs.Core` via `AddHeadlessJobs(options => ...)`.
 
 ### Dependencies
 
+- `Headless.Checks`
 - `Headless.CommitCoordination.Abstractions`
 - `Microsoft.Extensions.DependencyInjection.Abstractions`
 
