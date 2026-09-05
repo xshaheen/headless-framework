@@ -370,10 +370,9 @@ public sealed class JobSchedulingDefaultsTests : TestBase
             nullOptions.Should().Throw<ArgumentNullException>();
         });
         var scheduler = provider.GetRequiredService<IJobScheduler>();
-        var id =
-            target == "descriptor"
-                ? await scheduler.EnqueueAsync(_Requestless, AbortToken)
-                : await scheduler.EnqueueAsync(new Request(), AbortToken);
+        var id = target is "descriptor"
+            ? await scheduler.EnqueueAsync(_Requestless, AbortToken)
+            : await scheduler.EnqueueAsync(new Request(), AbortToken);
         var stored = await provider
             .GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>()
             .GetTimeJobByIdAsync(id, AbortToken);

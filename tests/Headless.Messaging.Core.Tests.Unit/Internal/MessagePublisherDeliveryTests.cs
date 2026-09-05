@@ -77,6 +77,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         await using var harness = _CreateHarness(new FakeTimeProvider(now));
         using var caller = new CancellationTokenSource();
         TimeSpan? delay = delayMinutes < 0 ? null : TimeSpan.FromMinutes(delayMinutes);
+#pragma warning disable AsyncFixer04 // Substitute setup is synchronous; the publish operation is awaited before disposing the harness.
         harness
             .Storage.StoreMessageAsync(
                 Arg.Any<string>(),
@@ -107,6 +108,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
                 stored.StorageId = Guid.NewGuid();
                 return ValueTask.FromResult(stored);
             });
+#pragma warning restore AsyncFixer04
         IBus bus = new Bus(harness.Publisher);
         IQueue queue = new Queue(harness.Publisher);
         var message = new DeliveryMessage("fluent");

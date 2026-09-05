@@ -4,13 +4,14 @@ using Headless.Jobs;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Interfaces;
 using Headless.Messaging;
+using Headless.Testing.Tests;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace Tests;
 
-public sealed class FluentOptionsConsumerCompilationTests
+public sealed class FluentOptionsConsumerCompilationTests : TestBase
 {
     private const string _Imports = """
         using System;
@@ -27,7 +28,13 @@ public sealed class FluentOptionsConsumerCompilationTests
         [
             .. ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!)
                 .Split(Path.PathSeparator)
-                .Where(file => Path.GetDirectoryName(file) == Path.GetDirectoryName(typeof(object).Assembly.Location))
+                .Where(file =>
+                    string.Equals(
+                        Path.GetDirectoryName(file),
+                        Path.GetDirectoryName(typeof(object).Assembly.Location),
+                        StringComparison.Ordinal
+                    )
+                )
                 .Select(file => MetadataReference.CreateFromFile(file)),
             MetadataReference.CreateFromFile(typeof(IJobScheduler).Assembly.Location),
             MetadataReference.CreateFromFile(typeof(MessageOptions).Assembly.Location),
@@ -51,10 +58,12 @@ public sealed class FluentOptionsConsumerCompilationTests
         bool requestless
     )
     {
-        var options =
-            receiver == "scheduler" ? "JobOptions"
-            : receiver == "bus" ? "PublishOptions"
-            : "QueueOptions";
+        var options = receiver switch
+        {
+            "scheduler" => "JobOptions",
+            "bus" => "PublishOptions",
+            _ => "QueueOptions",
+        };
         var prefix = _Arguments(receiver, verb, requestless);
         var call = $"{receiver}.{verb}";
         var namedPrefix = _Arguments(receiver, verb, requestless, named: true);
@@ -95,7 +104,7 @@ public sealed class FluentOptionsConsumerCompilationTests
         for (var index = 0; index < forms.Length; index++)
         {
             var method = _BoundMethod(model, invocations[index]);
-            var callback = forms[index].Parameter == "configure";
+            var callback = forms[index].Parameter is "configure";
             var holder = receiver switch
             {
                 "bus" => callback ? "BusExtensions" : "IBus",
@@ -105,10 +114,10 @@ public sealed class FluentOptionsConsumerCompilationTests
             _AssertMember(method, holder, _Assembly(receiver), verb, generic: !requestless);
             method.Parameters.Select(parameter => parameter.Name).Should().Contain(forms[index].Parameter);
             method
-                .Parameters.Any(parameter => parameter.Name == "options")
+                .Parameters.Any(parameter => parameter.Name is "options")
                 .Should()
-                .Be(forms[index].Parameter == "options");
-            method.Parameters.Any(parameter => parameter.Name == "configure").Should().Be(callback);
+                .Be(forms[index].Parameter is "options");
+            method.Parameters.Any(parameter => parameter.Name is "configure").Should().Be(callback);
         }
     }
 
@@ -140,7 +149,7 @@ public sealed class FluentOptionsConsumerCompilationTests
             _ => "IJobScheduler",
         };
         _AssertMember(method, holder, _Assembly(receiver), verb, generic: !requestless);
-        method.Parameters.Last().Type.ToDisplayString().Should().Be("System.Threading.CancellationToken");
+        method.Parameters[^1].Type.ToDisplayString().Should().Be("System.Threading.CancellationToken");
         method
             .Parameters.Should()
             .NotContain(parameter => parameter.Name == "options" || parameter.Name == "configure");
@@ -181,17 +190,24 @@ public sealed class FluentOptionsConsumerCompilationTests
             .GetDeclaredSymbol(
                 compilation
                     .SyntaxTrees.Single()
-                    .GetRoot()
+                    .GetRoot(AbortToken)
                     .DescendantNodes()
                     .OfType<ParameterSyntax>()
-                    .First(parameter => parameter.Identifier.ValueText == "jobs")
+                    .First(parameter => parameter.Identifier.ValueText is "jobs"),
+                AbortToken
             )!
             .Type;
         for (var index = 0; index < forms.Length; index++)
         {
             var method = _BoundMethod(model, invocations[index]);
-            _AssertMember(method, "JobsOptionsBuilder", "Headless.Jobs.Core", verb.Split('<')[0], verb.Contains('<'));
-            method.Parameters.Last().Name.Should().Be(forms[index].Parameter);
+            _AssertMember(
+                method,
+                "JobsOptionsBuilder",
+                "Headless.Jobs.Core",
+                verb.Split('<')[0],
+                verb.Contains('<', StringComparison.Ordinal)
+            );
+            method.Parameters[^1].Name.Should().Be(forms[index].Parameter);
             SymbolEqualityComparer.Default.Equals(method.ReturnType, builderType).Should().BeTrue();
         }
     }
@@ -210,10 +226,10 @@ public sealed class FluentOptionsConsumerCompilationTests
             var compilation = _Compile(_ConfigurationSource($"_ = jobs.{verb}({prefix}{argument});"), core: true);
             _Errors(compilation).Select(diagnostic => diagnostic.Id).Should().Equal("CS0121");
             var model = compilation.GetSemanticModel(compilation.SyntaxTrees.Single());
-            var info = model.GetSymbolInfo(_AssignedInvocations(compilation).Single());
+            var info = model.GetSymbolInfo(_AssignedInvocations(compilation).Single(), AbortToken);
             info.CandidateReason.Should().Be(CandidateReason.OverloadResolutionFailure);
             info.CandidateSymbols.Cast<IMethodSymbol>()
-                .Select(method => method.Parameters.Last().Name)
+                .Select(method => method.Parameters[^1].Name)
                 .Distinct(StringComparer.Ordinal)
                 .Should()
                 .BeEquivalentTo("options", "configure");
@@ -296,14 +312,14 @@ public sealed class FluentOptionsConsumerCompilationTests
         var compilation = _Compile("using System; using System.Threading; using System.Threading.Tasks;\n" + example);
         _Errors(compilation).Should().BeEmpty();
         using var image = new MemoryStream();
-        var result = compilation.Emit(image);
+        var result = compilation.Emit(image, cancellationToken: AbortToken);
         result.Success.Should().BeTrue(string.Join(Environment.NewLine, result.Diagnostics));
     }
 
     private static string _Arguments(string receiver, string verb, bool requestless, bool named = false)
     {
         var payload = requestless ? "descriptor" : "request";
-        var name = receiver == "scheduler" ? payload : "contentObj";
+        var name = receiver is "scheduler" ? payload : "contentObj";
         var arguments = named ? $"{name}: {payload}" : payload;
         return verb switch
         {
@@ -380,23 +396,30 @@ public sealed class FluentOptionsConsumerCompilationTests
     }
 
     private static Diagnostic[] _Errors(CSharpCompilation compilation) =>
-        compilation.GetDiagnostics().Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error).ToArray();
+        [
+            .. compilation
+                .GetDiagnostics(AbortToken)
+                .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error),
+        ];
 
+#pragma warning disable MA0045 // These syntax trees are parsed from in-memory strings; synchronous traversal performs no I/O.
     private static InvocationExpressionSyntax[] _AssignedInvocations(CSharpCompilation compilation) =>
-        compilation
-            .SyntaxTrees.Single()
-            .GetRoot()
-            .DescendantNodes()
-            .OfType<ExpressionStatementSyntax>()
-            .Select(statement => statement.Expression)
-            .OfType<AssignmentExpressionSyntax>()
-            .Select(assignment => assignment.Right)
-            .OfType<InvocationExpressionSyntax>()
-            .ToArray();
+        [
+            .. compilation
+                .SyntaxTrees.Single()
+                .GetRoot(AbortToken)
+                .DescendantNodes()
+                .OfType<ExpressionStatementSyntax>()
+                .Select(statement => statement.Expression)
+                .OfType<AssignmentExpressionSyntax>()
+                .Select(assignment => assignment.Right)
+                .OfType<InvocationExpressionSyntax>(),
+        ];
+#pragma warning restore MA0045
 
     private static IMethodSymbol _BoundMethod(SemanticModel model, InvocationExpressionSyntax invocation)
     {
-        var info = model.GetSymbolInfo(invocation);
+        var info = model.GetSymbolInfo(invocation, AbortToken);
         info.CandidateReason.Should().Be(CandidateReason.None, invocation.ToString());
         return info.Symbol.Should().BeAssignableTo<IMethodSymbol>().Which;
     }

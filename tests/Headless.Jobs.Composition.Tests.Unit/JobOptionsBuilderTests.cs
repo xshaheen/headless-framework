@@ -3,10 +3,11 @@
 using Headless.Jobs;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Models;
+using Headless.Testing.Tests;
 
 namespace Tests;
 
-public sealed class JobOptionsBuilderTests
+public sealed class JobOptionsBuilderTests : TestBase
 {
     [Fact]
     public void empty_builder_preserves_canonical_defaults()

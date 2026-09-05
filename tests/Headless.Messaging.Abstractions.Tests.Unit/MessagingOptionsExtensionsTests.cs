@@ -63,8 +63,8 @@ public sealed class MessagingOptionsExtensionsTests : TestBase
             .Should()
             .ContainSingle()
             .Subject.GetArguments();
-        arguments[0].Should().Be("message");
-        arguments[2].Should().Be(caller.Token);
+        arguments.Should().HaveElementAt(0, "message");
+        arguments.Should().HaveElementAt(2, caller.Token);
         var optionsSnapshot = arguments[1].Should().BeAssignableTo<MessageOptions>().Subject;
         optionsSnapshot.CorrelationId.Should().Be("corr");
         optionsSnapshot.CausationId.Should().Be("cause");
@@ -88,12 +88,11 @@ public sealed class MessagingOptionsExtensionsTests : TestBase
     {
         var bus = Substitute.For<IBus>();
         var queue = Substitute.For<IQueue>();
-        using var caller = new CancellationTokenSource();
-        await caller.CancelAsync();
+        var callerToken = new CancellationToken(canceled: true);
         var failure = new InvalidOperationException("publisher failed");
-        var original = cancel ? Task.FromCanceled(caller.Token) : Task.FromException(failure);
-        bus.PublishAsync("message", Arg.Any<PublishOptions>(), caller.Token).Returns(original);
-        queue.EnqueueAsync("message", Arg.Any<QueueOptions>(), caller.Token).Returns(original);
+        var original = cancel ? Task.FromCanceled(callerToken) : Task.FromException(failure);
+        bus.PublishAsync("message", Arg.Any<PublishOptions>(), callerToken).Returns(original);
+        queue.EnqueueAsync("message", Arg.Any<QueueOptions>(), callerToken).Returns(original);
         var calls = 0;
 
         var result = publish
@@ -103,7 +102,7 @@ public sealed class MessagingOptionsExtensionsTests : TestBase
                 {
                     ++calls;
                 },
-                caller.Token
+                callerToken
             )
             : queue.EnqueueAsync(
                 "message",
@@ -111,7 +110,7 @@ public sealed class MessagingOptionsExtensionsTests : TestBase
                 {
                     ++calls;
                 },
-                caller.Token
+                callerToken
             );
 
         calls.Should().Be(1);
@@ -136,7 +135,7 @@ public sealed class MessagingOptionsExtensionsTests : TestBase
         IQueue nullQueue = null!;
         var callbacks = 0;
         Action missingBus = () =>
-            nullBus.PublishAsync(
+            _ = nullBus.PublishAsync(
                 "message",
                 _ =>
                 {
@@ -145,7 +144,7 @@ public sealed class MessagingOptionsExtensionsTests : TestBase
                 AbortToken
             );
         Action missingQueue = () =>
-            nullQueue.EnqueueAsync(
+            _ = nullQueue.EnqueueAsync(
                 "message",
                 _ =>
                 {
@@ -153,8 +152,8 @@ public sealed class MessagingOptionsExtensionsTests : TestBase
                 },
                 AbortToken
             );
-        Action missingPublishCallback = () => bus.PublishAsync("message", configure: null!, AbortToken);
-        Action missingQueueCallback = () => queue.EnqueueAsync("message", configure: null!, AbortToken);
+        Action missingPublishCallback = () => _ = bus.PublishAsync("message", configure: null!, AbortToken);
+        Action missingQueueCallback = () => _ = queue.EnqueueAsync("message", configure: null!, AbortToken);
 
         missingBus.Should().Throw<ArgumentNullException>().WithParameterName("bus");
         missingQueue.Should().Throw<ArgumentNullException>().WithParameterName("queue");
@@ -179,7 +178,7 @@ public sealed class MessagingOptionsExtensionsTests : TestBase
             throw failure;
         }
         Action publish = () =>
-            bus.PublishAsync(
+            _ = bus.PublishAsync(
                 "message",
                 options =>
                 {
@@ -192,7 +191,7 @@ public sealed class MessagingOptionsExtensionsTests : TestBase
                 AbortToken
             );
         Action enqueue = () =>
-            queue.EnqueueAsync(
+            _ = queue.EnqueueAsync(
                 "message",
                 options =>
                 {

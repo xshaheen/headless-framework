@@ -63,7 +63,7 @@ public sealed class JobSchedulerExtensionsTests : TestBase
         call.GetMethodInfo().IsGenericMethod.Should().Be(typed);
         var arguments = call.GetArguments();
         arguments[0].Should().BeSameAs(typed ? _Request : (object)_Descriptor);
-        arguments[^1].Should().Be(AbortToken);
+        arguments.Should().HaveElementAt(arguments.Length - 1, AbortToken);
         var options = arguments[^2].Should().BeOfType<JobOptions>().Which;
         options
             .Should()
@@ -81,13 +81,13 @@ public sealed class JobSchedulerExtensionsTests : TestBase
                     IsSystemJob = true,
                 }
             );
-        if (methodName == nameof(IJobScheduler.ScheduleAsync))
+        if (methodName is nameof(IJobScheduler.ScheduleAsync))
         {
-            arguments[1].Should().Be(_ExecutionTime);
+            arguments.Should().HaveElementAt(1, _ExecutionTime);
         }
-        else if (methodName == nameof(IJobScheduler.ScheduleAfterAsync))
+        else if (methodName is nameof(IJobScheduler.ScheduleAfterAsync))
         {
-            arguments[1].Should().Be(_Delay);
+            arguments.Should().HaveElementAt(1, _Delay);
         }
     }
 
@@ -128,22 +128,22 @@ public sealed class JobSchedulerExtensionsTests : TestBase
         var scheduler = _CreateScheduler(faulted);
         var actual = _Invoke(operation, scheduler, _ => { }, AbortToken);
         actual.Should().BeSameAs(faulted);
-        Func<Task> failed = () => actual;
+        Func<Task<Guid>> failed = () => actual;
         (await failed.Should().ThrowAsync<InvalidOperationException>()).Which.Should().BeSameAs(failure);
 
-        using var cancellation = new CancellationTokenSource();
-        await cancellation.CancelAsync();
-        var canceled = Task.FromCanceled<Guid>(cancellation.Token);
+        var cancellationToken = new CancellationToken(canceled: true);
+        var canceled = Task.FromCanceled<Guid>(cancellationToken);
         scheduler = _CreateScheduler(canceled);
         var callbackCount = 0;
-        actual = _Invoke(operation, scheduler, _ => callbackCount++, cancellation.Token);
+        actual = _Invoke(operation, scheduler, _ => callbackCount++, cancellationToken);
         actual.Should().BeSameAs(canceled);
         callbackCount.Should().Be(1);
-        scheduler.ReceivedCalls().Should().ContainSingle().Which.GetArguments()[^1].Should().Be(cancellation.Token);
-        Func<Task> canceledCall = () => actual;
+        var arguments = scheduler.ReceivedCalls().Should().ContainSingle().Which.GetArguments();
+        arguments.Should().HaveElementAt(arguments.Length - 1, cancellationToken);
+        Func<Task<Guid>> canceledCall = () => actual;
         (await canceledCall.Should().ThrowAsync<OperationCanceledException>())
             .Which.CancellationToken.Should()
-            .Be(cancellation.Token);
+            .Be(cancellationToken);
     }
 
     [Fact]
@@ -164,7 +164,7 @@ public sealed class JobSchedulerExtensionsTests : TestBase
         );
         first.Should().NotBeSameAs(second);
         await scheduler.EnqueueAsync(_Request, AbortToken);
-        await scheduler.EnqueueAsync(_Descriptor, cancellationToken: default);
+        await scheduler.EnqueueAsync(_Descriptor, cancellationToken: AbortToken);
         await scheduler.EnqueueAsync(_Request, options: null, AbortToken);
         await scheduler.EnqueueAsync(_Descriptor, null, AbortToken);
         await scheduler.EnqueueAsync(_Request, default, AbortToken);
