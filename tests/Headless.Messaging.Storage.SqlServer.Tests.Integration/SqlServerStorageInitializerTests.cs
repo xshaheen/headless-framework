@@ -384,7 +384,8 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         await connection.ExecuteAsync(
             new CommandDefinition(
                 $"""
-                DROP INDEX IF EXISTS [UX_{schema}_Received_InboxKey] ON [{schema}].[Received];
+                DROP INDEX IF EXISTS [UX_{schema}_Received_InboxRootKey] ON [{schema}].[Received];
+                DROP INDEX IF EXISTS [UX_{schema}_Received_InboxLifecycleGeneration] ON [{schema}].[Received];
                 DROP INDEX IF EXISTS [IX_{schema}_Received_Version_ExpiresAt_StatusName] ON [{schema}].[Received];
                 DROP INDEX IF EXISTS [IX_{schema}_Received_ExpiresAt_StatusName] ON [{schema}].[Received];
                 DROP INDEX IF EXISTS [IX_{schema}_Received_Version_NextRetryAt] ON [{schema}].[Received];
@@ -410,6 +411,7 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
                 WHERE s.name = @Schema
                   AND i.name IN (
                     @ReceivedUnique,
+                    @ReceivedLifecycle,
                     @ReceivedVersionExpires,
                     @ReceivedExpires,
                     @ReceivedRetry,
@@ -421,7 +423,8 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
                 new
                 {
                     Schema = schema,
-                    ReceivedUnique = $"UX_{schema}_Received_InboxKey",
+                    ReceivedUnique = $"UX_{schema}_Received_InboxRootKey",
+                    ReceivedLifecycle = $"UX_{schema}_Received_InboxLifecycleGeneration",
                     ReceivedVersionExpires = $"IX_{schema}_Received_Version_ExpiresAt_StatusName",
                     ReceivedExpires = $"IX_{schema}_Received_ExpiresAt_StatusName",
                     ReceivedRetry = $"IX_{schema}_Received_Version_NextRetryAt",
@@ -433,7 +436,7 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
             )
         );
 
-        indexCount.Should().Be(7);
+        indexCount.Should().Be(8);
 
         // cleanup
         await connection.ExecuteAsync(
@@ -442,6 +445,53 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
                 cancellationToken: AbortToken
             )
         );
+    }
+
+    [Fact]
+    public async Task should_reject_retained_inbox_rows_without_lifecycle_identity()
+    {
+        const string schema = "inbox_lifecycle_upgrade";
+        await using var connection = new SqlConnection(fixture.ConnectionString);
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                $"""
+                CREATE SCHEMA [{schema}];
+                """,
+                cancellationToken: AbortToken
+            )
+        );
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                $"""
+                CREATE TABLE [{schema}].[Received] ([Id] uniqueidentifier, [GenerationIncarnationId] uniqueidentifier, [IsInboxRecord] bit, [NextRetryAt] datetimeoffset NULL, [Owner] nvarchar(100) NULL);
+                INSERT INTO [{schema}].[Received] ([Id],[GenerationIncarnationId],[IsInboxRecord]) VALUES (@Id,@Incarnation,1);
+                """,
+                new { Id = Guid.NewGuid(), Incarnation = Guid.NewGuid() },
+                cancellationToken: AbortToken
+            )
+        );
+        try
+        {
+            var initializer = _CreateInitializer(schema, useStorageLock: false);
+            var act = async () => await initializer.InitializeAsync(AbortToken);
+            await act.Should().ThrowAsync<SqlException>().WithMessage("*without lifecycle identity*");
+            (
+                await connection.ExecuteScalarAsync<int>(
+                    new CommandDefinition($"SELECT COUNT(*) FROM [{schema}].[Received]", cancellationToken: AbortToken)
+                )
+            )
+                .Should()
+                .Be(1);
+        }
+        finally
+        {
+            await connection.ExecuteAsync(
+                new CommandDefinition(
+                    $"DROP TABLE IF EXISTS [{schema}].InboxAudit; DROP TABLE IF EXISTS [{schema}].InboxOperationReceipts; DROP TABLE IF EXISTS [{schema}].SchemaState; DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingIdList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingOwnerList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingPoisonMessageList]; DROP SCHEMA IF EXISTS [{schema}]",
+                    cancellationToken: AbortToken
+                )
+            );
+        }
     }
 
     [Fact]

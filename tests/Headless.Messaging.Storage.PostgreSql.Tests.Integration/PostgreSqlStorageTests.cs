@@ -25,6 +25,63 @@ namespace Tests;
 [Collection<PostgreSqlTestFixture>]
 public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : DataStorageTestsBase
 {
+    [Theory]
+    [InlineData(MessageLane.Bus, 0L)]
+    [InlineData(MessageLane.Queue, 7L)]
+    public override Task should_isolate_replay_lifecycles_after_root_purge(MessageLane lane, long rootGeneration) =>
+        base.should_isolate_replay_lifecycles_after_root_purge(lane, rootGeneration);
+
+    [Theory]
+    [InlineData(MessageLane.Bus)]
+    [InlineData(MessageLane.Queue)]
+    public override Task should_expire_terminal_poison_inbox_and_allow_readmission(MessageLane lane) =>
+        base.should_expire_terminal_poison_inbox_and_allow_readmission(lane);
+
+    protected override async Task PreparePoisonInboxRecoveryAsync(Guid storageId, CancellationToken cancellationToken)
+    {
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                """
+                UPDATE messaging.received SET "Content"='not-json',"NextRetryAt"=statement_timestamp()-INTERVAL '1 minute',"LockedUntil"=statement_timestamp()-INTERVAL '1 minute' WHERE "Id"=@Id;
+                """,
+                new { Id = storageId },
+                cancellationToken: cancellationToken
+            )
+        );
+    }
+
+    protected override async Task<PersistedInboxPoisonState> ReadInboxPoisonStateAsync(
+        Guid storageId,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        return await connection.QuerySingleAsync<PersistedInboxPoisonState>(
+            new CommandDefinition(
+                """
+                SELECT statement_timestamp() AS "DatabaseNow","StatusName","TerminalAt","EffectiveExpiresAt","AttemptId","NextRetryAt","LockedUntil","Owner","Content" FROM messaging.received WHERE "Id"=@Id;
+                """,
+                new { Id = storageId },
+                cancellationToken: cancellationToken
+            )
+        );
+    }
+
+    protected override async Task ExpirePoisonInboxAsync(Guid storageId, CancellationToken cancellationToken)
+    {
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                """
+                UPDATE messaging.received SET "EffectiveExpiresAt"=statement_timestamp()-INTERVAL '1 minute' WHERE "Id"=@Id;
+                """,
+                new { Id = storageId },
+                cancellationToken: cancellationToken
+            )
+        );
+    }
+
     private IStorageInitializer? _initializer;
     private IDataStorage? _storage;
     private ISerializer? _serializer;
@@ -348,7 +405,7 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     public async Task should_publish_final_inbox_schema_marker_and_key_index()
     {
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        var state = await connection.QuerySingleAsync<(
+        var (schemaVersion, indexCount, constraintCount, receiptColumnCount) = await connection.QuerySingleAsync<(
             int SchemaVersion,
             long IndexCount,
             long ConstraintCount,
@@ -357,9 +414,10 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
             """
             SELECT state."SchemaVersion", (
                 SELECT COUNT(*) FROM pg_indexes
-                WHERE schemaname='messaging' AND indexname='uq_received_inbox_key'
+                WHERE schemaname='messaging' AND indexname IN ('uq_received_inbox_root_key','uq_received_inbox_lifecycle_generation')
             ) AS "IndexCount", (
-                SELECT COUNT(*) FROM pg_constraint WHERE conname='ck_received_inbox_retention_v3'
+                SELECT COUNT(*) FROM pg_constraint WHERE conname IN ('ck_received_inbox_retention_v3','ck_received_inbox_lifecycle_v4')
+                  AND conrelid='messaging.received'::regclass
             ) AS "ConstraintCount", (
                 SELECT COUNT(*) FROM information_schema.columns
                 WHERE table_schema='messaging' AND table_name='inbox_operation_receipts'
@@ -370,10 +428,10 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
             """
         );
 
-        state.SchemaVersion.Should().Be(3);
-        state.IndexCount.Should().Be(1);
-        state.ConstraintCount.Should().Be(1);
-        state.ReceiptColumnCount.Should().Be(3);
+        schemaVersion.Should().Be(4);
+        indexCount.Should().Be(2);
+        constraintCount.Should().Be(2);
+        receiptColumnCount.Should().Be(3);
     }
 
     [Fact]
@@ -425,30 +483,71 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     }
 
     [Fact]
+    public async Task should_reject_retained_inbox_rows_without_lifecycle_identity()
+    {
+        const string schema = "inbox_lifecycle_upgrade";
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                $"""
+                CREATE SCHEMA {schema};
+                CREATE TABLE {schema}.received ("Id" UUID, "GenerationIncarnationId" UUID, "IsInboxRecord" BOOLEAN);
+                INSERT INTO {schema}.received VALUES (@Id,@Incarnation,TRUE);
+                """,
+                new { Id = Guid.NewGuid(), Incarnation = Guid.NewGuid() },
+                cancellationToken: AbortToken
+            )
+        );
+        try
+        {
+            var initializer = new PostgreSqlStorageInitializer(
+                NullLogger<PostgreSqlStorageInitializer>.Instance,
+                Options.Create(new PostgreSqlOptions { ConnectionString = fixture.ConnectionString, Schema = schema }),
+                Options.Create(new MessagingOptions())
+            );
+            var act = async () => await initializer.InitializeAsync(AbortToken);
+            await act.Should().ThrowAsync<PostgresException>().WithMessage("*without lifecycle identity*");
+            (
+                await connection.ExecuteScalarAsync<int>(
+                    new CommandDefinition($"SELECT COUNT(*) FROM {schema}.received", cancellationToken: AbortToken)
+                )
+            )
+                .Should()
+                .Be(1);
+        }
+        finally
+        {
+            await connection.ExecuteAsync(
+                new CommandDefinition($"DROP SCHEMA {schema} CASCADE", cancellationToken: AbortToken)
+            );
+        }
+    }
+
+    [Fact]
     public async Task should_fail_closed_when_inbox_schema_is_newer_than_supported()
     {
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.ExecuteAsync(
-            "UPDATE messaging.schema_state SET \"SchemaVersion\"=4 WHERE \"Component\"='inbox';"
+            "UPDATE messaging.schema_state SET \"SchemaVersion\"=5 WHERE \"Component\"='inbox';"
         );
 
         try
         {
             var act = async () => await GetInitializer().InitializeAsync(AbortToken);
 
-            await act.Should().ThrowAsync<PostgresException>().WithMessage("*newer than supported version 3*");
+            await act.Should().ThrowAsync<PostgresException>().WithMessage("*newer than supported version 4*");
             (
                 await connection.ExecuteScalarAsync<int>(
                     "SELECT \"SchemaVersion\" FROM messaging.schema_state WHERE \"Component\"='inbox';"
                 )
             )
                 .Should()
-                .Be(4, "a rejected older binary must not rewrite the newer readiness marker");
+                .Be(5, "a rejected older binary must not rewrite the newer readiness marker");
         }
         finally
         {
             await connection.ExecuteAsync(
-                "UPDATE messaging.schema_state SET \"SchemaVersion\"=3 WHERE \"Component\"='inbox';"
+                "UPDATE messaging.schema_state SET \"SchemaVersion\"=4 WHERE \"Component\"='inbox';"
             );
         }
     }

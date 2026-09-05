@@ -11,11 +11,13 @@ namespace Tests;
 public sealed class PostgreSqlTransactionalInboxRetryTests(PostgreSqlTestFixture fixture)
     : TransactionalInboxRetryConformanceTests
 {
+    private static readonly string _Schema = $"inbox_retry_{Guid.NewGuid():N}";
+
     protected override void ConfigureContext(DbContextOptionsBuilder options) =>
         options.UseNpgsql(fixture.ConnectionString);
 
     protected override void ConfigureStorage(MessagingSetupBuilder setup) =>
-        setup.UseEntityFramework<InboxScopeDbContext>(options => options.Schema = "inbox_retry_tests");
+        setup.UseEntityFramework<InboxScopeDbContext>(options => options.Schema = _Schema);
 
     protected override string CreateEffectsTableSql =>
         "CREATE TABLE IF NOT EXISTS \"InboxScopeEffects\" (\"Id\" uuid PRIMARY KEY);";

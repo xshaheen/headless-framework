@@ -107,8 +107,8 @@ internal sealed class SqlServerStorageInitializer(
 
             IF OBJECT_ID(N'{schema}.SchemaState',N'U') IS NOT NULL
                 EXEC(N'
-                    IF EXISTS (SELECT 1 FROM [{schema}].[SchemaState] WHERE [Component]=N''inbox'' AND [SchemaVersion] > 3)
-                        THROW 50003, N''Headless.Messaging inbox schema is newer than supported version 3. Upgrade the application before starting this binary.'', 1;
+                    IF EXISTS (SELECT 1 FROM [{schema}].[SchemaState] WHERE [Component]=N''inbox'' AND [SchemaVersion] > 4)
+                        THROW 50003, N''Headless.Messaging inbox schema is newer than supported version 4. Upgrade the application before starting this binary.'', 1;
                     DELETE FROM [{schema}].[SchemaState] WHERE [Component]=N''inbox'';
                 ');
 
@@ -171,6 +171,7 @@ internal sealed class SqlServerStorageInitializer(
                         [ConsumerIdentity] [nvarchar](200) COLLATE Latin1_General_100_BIN2 NOT NULL CONSTRAINT [DF_{receivedPrefix}_ConsumerIdentity] DEFAULT N'',
                         [Generation] [bigint] NOT NULL CONSTRAINT [DF_{receivedPrefix}_Generation] DEFAULT 0,
                         [GenerationIncarnationId] [uniqueidentifier] NULL,
+                        [LifecycleId] [uniqueidentifier] NULL,
                         [AttemptId] [uniqueidentifier] NULL,
                         [IsInboxOrphaned] [bit] NOT NULL CONSTRAINT [DF_{receivedPrefix}_IsInboxOrphaned] DEFAULT 0,
                         [IsCurrentGeneration] [bit] NOT NULL CONSTRAINT [DF_{receivedPrefix}_IsCurrentGeneration] DEFAULT 1,
@@ -221,6 +222,12 @@ internal sealed class SqlServerStorageInitializer(
                 ALTER TABLE {GetReceivedTableName()} ADD [Generation] [bigint] NOT NULL CONSTRAINT [DF_{receivedPrefix}_Generation] DEFAULT 0;
             IF COL_LENGTH(N'{GetReceivedTableName()}', N'GenerationIncarnationId') IS NULL
                 ALTER TABLE {GetReceivedTableName()} ADD [GenerationIncarnationId] [uniqueidentifier] NULL;
+            IF COL_LENGTH(N'{GetReceivedTableName()}', N'LifecycleId') IS NULL
+            BEGIN
+                EXEC(N'IF EXISTS (SELECT 1 FROM {GetReceivedTableName()} WHERE [IsInboxRecord]=1)
+                    THROW 50005, N''Headless.Messaging cannot upgrade retained inbox rows without lifecycle identity. Export or reset Received, then restart.'', 1;');
+                ALTER TABLE {GetReceivedTableName()} ADD [LifecycleId] [uniqueidentifier] NULL;
+            END;
             IF COL_LENGTH(N'{GetReceivedTableName()}', N'AttemptId') IS NULL
                 ALTER TABLE {GetReceivedTableName()} ADD [AttemptId] [uniqueidentifier] NULL;
             IF COL_LENGTH(N'{GetReceivedTableName()}', N'IsInboxOrphaned') IS NULL
@@ -280,9 +287,23 @@ internal sealed class SqlServerStorageInitializer(
                     [IsInboxRecord]=0 OR [InboxRetentionSeconds] BETWEEN 1 AND 2147483647
                 )');
 
+            IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_{receivedPrefix}_InboxLifecycleV4'
+                AND parent_object_id = OBJECT_ID(N'{GetReceivedTableName()}'))
+                EXEC(N'ALTER TABLE {GetReceivedTableName()} ADD CONSTRAINT [CK_{receivedPrefix}_InboxLifecycleV4] CHECK (
+                    [IsInboxRecord]=0 OR ([LifecycleId] IS NOT NULL
+                        AND ([ReplayParentIncarnationId] IS NOT NULL OR [LifecycleId]=[GenerationIncarnationId]))
+                )');
+
+            IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UX_{receivedPrefix}_InboxKey' AND object_id = OBJECT_ID(N'{GetReceivedTableName()}'))
+                DROP INDEX [UX_{receivedPrefix}_InboxKey] ON {GetReceivedTableName()};
+
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UX_{receivedPrefix}_InboxLifecycleGeneration' AND object_id = OBJECT_ID(N'{GetReceivedTableName()}'))
+                EXEC(N'CREATE UNIQUE NONCLUSTERED INDEX [UX_{receivedPrefix}_InboxLifecycleGeneration]
+                    ON {GetReceivedTableName()} ([LifecycleId],[Generation]) WHERE [IsInboxRecord]=1');
+
             BEGIN TRY
-                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UX_{receivedPrefix}_InboxKey' AND object_id = OBJECT_ID(N'{GetReceivedTableName()}'))
-                    EXEC(N'CREATE UNIQUE NONCLUSTERED INDEX [UX_{receivedPrefix}_InboxKey] ON {GetReceivedTableName()} ([InboxKeyHash] ASC) WHERE [IsInboxRecord]=1');
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UX_{receivedPrefix}_InboxRootKey' AND object_id = OBJECT_ID(N'{GetReceivedTableName()}'))
+                    EXEC(N'CREATE UNIQUE NONCLUSTERED INDEX [UX_{receivedPrefix}_InboxRootKey] ON {GetReceivedTableName()} ([InboxKeyHash] ASC) WHERE [IsInboxRecord]=1 AND [ReplayParentIncarnationId] IS NULL');
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
@@ -480,16 +501,19 @@ internal sealed class SqlServerStorageInitializer(
                 );
             END;
 
-            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'UX_{receivedPrefix}_InboxKey' AND object_id=OBJECT_ID(N'{GetReceivedTableName()}'))
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'UX_{receivedPrefix}_InboxRootKey' AND object_id=OBJECT_ID(N'{GetReceivedTableName()}'))
+               OR NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'UX_{receivedPrefix}_InboxLifecycleGeneration' AND object_id=OBJECT_ID(N'{GetReceivedTableName()}'))
                 THROW 50002, N'Headless.Messaging inbox schema is incomplete: the final inbox key index is missing.', 1;
 
             IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name=N'CK_{receivedPrefix}_InboxRetentionV3')
+               OR COL_LENGTH(N'{GetReceivedTableName()}',N'LifecycleId') IS NULL
+               OR NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name=N'CK_{receivedPrefix}_InboxLifecycleV4' AND parent_object_id=OBJECT_ID(N'{GetReceivedTableName()}'))
                OR COL_LENGTH(N'{schema}.InboxOperationReceipts',N'ExpectedStatus') IS NULL
                OR COL_LENGTH(N'{schema}.InboxOperationReceipts',N'Outcome') IS NULL
-                THROW 50004, N'Headless.Messaging inbox schema is incomplete: the v3 retention or operation receipt contract is missing.', 1;
+                THROW 50004, N'Headless.Messaging inbox schema is incomplete: the lifecycle, retention or operation receipt contract is missing.', 1;
 
             MERGE [{schema}].[SchemaState] WITH (HOLDLOCK) AS target
-            USING (SELECT N'inbox' AS [Component], 3 AS [SchemaVersion], SYSDATETIMEOFFSET() AS [ReadyAt]) AS source
+            USING (SELECT N'inbox' AS [Component], 4 AS [SchemaVersion], SYSDATETIMEOFFSET() AS [ReadyAt]) AS source
             ON target.[Component]=source.[Component]
             WHEN MATCHED THEN UPDATE SET [SchemaVersion]=source.[SchemaVersion],[ReadyAt]=source.[ReadyAt]
             WHEN NOT MATCHED THEN INSERT ([Component],[SchemaVersion],[ReadyAt]) VALUES (source.[Component],source.[SchemaVersion],source.[ReadyAt]);

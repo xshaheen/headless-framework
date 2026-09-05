@@ -43,9 +43,9 @@ internal sealed partial class InMemoryDataStorage(
         Guid
     > _receivedIdentityIndex = new();
 
-    private readonly Dictionary<InboxKey, Guid> _inboxIdentityIndex = new();
+    private readonly Dictionary<InboxKey, Guid> _inboxIdentityIndex = [];
 
-    private readonly Dictionary<Guid, InboxOperationResult> _inboxOperationReceipts = new();
+    private readonly Dictionary<Guid, InboxOperationResult> _inboxOperationReceipts = [];
 
     private readonly List<InMemoryInboxAudit> _inboxAudit = [];
 
@@ -537,6 +537,7 @@ internal sealed partial class InMemoryDataStorage(
             _inboxIdentityIndex.Remove(key);
 
             var now = timeProvider.GetUtcNow();
+            var incarnationId = guidGenerator.Create();
             var stored = new MemoryMessage
             {
                 StorageId = guidGenerator.Create(),
@@ -550,7 +551,8 @@ internal sealed partial class InMemoryDataStorage(
                 NextRetryAt = now.Add(messagingOptions.Value.RetryPolicy.InitialDispatchGrace),
                 StatusName = StatusName.Scheduled,
                 InboxKey = key,
-                InboxGeneration = new InboxGeneration(key.Generation, guidGenerator.Create()),
+                InboxGeneration = new InboxGeneration(key.Generation, incarnationId),
+                LifecycleId = incarnationId,
                 InboxRetention = retention,
             };
 
@@ -1047,8 +1049,8 @@ internal sealed partial class InMemoryDataStorage(
                     if (row.InboxGeneration is { } generation)
                     {
                         var operationId = guidGenerator.Create();
-                        var actor = "headless.messaging.collector";
-                        var reason = "retention_expired";
+                        const string actor = "headless.messaging.collector";
+                        const string reason = "retention_expired";
                         var result = new InboxOperationResult(
                             operationId,
                             InboxOperationType.Cleanup,
@@ -1056,9 +1058,9 @@ internal sealed partial class InMemoryDataStorage(
                             generation.IncarnationId,
                             row.StatusName,
                             row.StorageId,
-                            null,
-                            null,
-                            null,
+                            ChildStorageId: null,
+                            ChildGeneration: null,
+                            ChildIncarnationId: null,
                             actor,
                             reason,
                             now

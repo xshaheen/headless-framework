@@ -10,11 +10,13 @@ namespace Tests;
 public sealed class SqlServerTransactionalInboxScopeTests(SqlServerTestFixture fixture)
     : TransactionalInboxScopeConformanceTests
 {
+    private static readonly string _Schema = $"inbox_scope_{Guid.NewGuid():N}";
+
     protected override void ConfigureContext(DbContextOptionsBuilder options) =>
         options.UseSqlServer(fixture.ConnectionString);
 
     protected override void ConfigureStorage(MessagingSetupBuilder setup) =>
-        setup.UseEntityFramework<InboxScopeDbContext>(options => options.Schema = "inbox_scope_tests");
+        setup.UseEntityFramework<InboxScopeDbContext>(options => options.Schema = _Schema);
 
     protected override string CreateEffectsTableSql =>
         "IF OBJECT_ID(N'InboxScopeEffects', N'U') IS NULL CREATE TABLE [InboxScopeEffects] ([Id] uniqueidentifier PRIMARY KEY);";

@@ -31,6 +31,12 @@ namespace Tests;
 /// </remarks>
 public sealed class InMemoryDataStorageTests : DataStorageTestsBase
 {
+    [Theory]
+    [InlineData(MessageLane.Bus, 0L)]
+    [InlineData(MessageLane.Queue, 7L)]
+    public override Task should_isolate_replay_lifecycles_after_root_purge(MessageLane lane, long rootGeneration) =>
+        base.should_isolate_replay_lifecycles_after_root_purge(lane, rootGeneration);
+
     private InMemoryStorageInitializer? _initializer;
     private InMemoryDataStorage? _storage;
     private ISerializer? _serializer;

@@ -105,12 +105,12 @@ internal sealed partial class SqlServerDataStorage
                 [Id],[Version],[Name],[Group],[Content],[IntentType],[Retries],[InlineAttempts],
                 [Added],[ExpiresAt],[NextRetryAt],[LockedUntil],[Owner],[StatusName],[MessageId],[ExceptionInfo],
                 [TenantPresent],[TenantId],[ContractIdentity],[ContractVersion],[ConsumerIdentity],[Generation],
-                [GenerationIncarnationId],[AttemptId],[IsInboxOrphaned],[IsCurrentGeneration],[IsInboxRecord],[InboxKeyHash],[InboxRetentionSeconds]
+                [GenerationIncarnationId],[LifecycleId],[AttemptId],[IsInboxOrphaned],[IsCurrentGeneration],[IsInboxRecord],[InboxKeyHash],[InboxRetentionSeconds]
             )
             SELECT @Id,@Version,@Name,@Group,@Content,@IntentType,0,0,
                 @AdmissionNow,NULL,DATEADD(nanosecond,@GraceNanoseconds,DATEADD(second,@GraceWholeSeconds,@AdmissionNow)),
                 NULL,NULL,@StatusName,@MessageId,NULL,@TenantPresent,@TenantId,@ContractIdentity,@ContractVersion,
-                @ConsumerIdentity,@Generation,@GenerationIncarnationId,NULL,0,1,1,@InboxKeyHash,@InboxRetentionSeconds
+                @ConsumerIdentity,@Generation,@GenerationIncarnationId,@GenerationIncarnationId,NULL,0,1,1,@InboxKeyHash,@InboxRetentionSeconds
             WHERE NOT EXISTS (
                 SELECT 1 FROM {_receivedTable} WITH (UPDLOCK,HOLDLOCK)
                 WHERE [InboxKeyHash]=@InboxKeyHash
@@ -122,6 +122,7 @@ internal sealed partial class SqlServerDataStorage
                   AND [ContractVersionOrdinal]=CONVERT(varbinary(200),@ContractVersion)
                   AND [ConsumerIdentityOrdinal]=CONVERT(varbinary(400),@ConsumerIdentity)
                   AND [Generation]=@Generation
+                  AND [IsInboxRecord]=1 AND [ReplayParentIncarnationId] IS NULL
             );
 
             SELECT CAST(@@ROWCOUNT AS int);
@@ -173,6 +174,7 @@ internal sealed partial class SqlServerDataStorage
                 contractVersion,
                 consumerIdentity,
                 generation,
+                message.Origin,
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -275,7 +277,7 @@ internal sealed partial class SqlServerDataStorage
     )
     {
         _ValidateInboxIdentity(name, _InboxIdentityMaxLength, nameof(name));
-        _ValidateInboxIdentity(consumerIdentity, _InboxIdentityMaxLength, nameof(consumerIdentity));
+        _ValidateInboxIdentity(consumerIdentity, ConsumerMetadata.ConsumerIdentityMaxLength, nameof(consumerIdentity));
         _ValidateInboxIdentity(contractVersion, _InboxContractVersionMaxLength, nameof(contractVersion));
         _ValidateInboxIdentity(message.Origin.Id, MessageOptions.MessageIdMaxLength, "message.Origin.Id");
         if (generation < 0)
@@ -317,7 +319,10 @@ internal sealed partial class SqlServerDataStorage
         if (value.Length > maximumLength)
         {
             throw new ArgumentException(
-                $"Inbox identity value must be {maximumLength} characters or fewer.",
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Inbox identity value must be {maximumLength} characters or fewer."
+                ),
                 parameterName
             );
         }
@@ -331,13 +336,19 @@ internal sealed partial class SqlServerDataStorage
         string contractIdentity,
         string contractVersion,
         string consumerIdentity,
-        long generation
+        long generation,
+        Guid? lifecycleId = null
     )
     {
         var canonical = string.Create(
             CultureInfo.InvariantCulture,
             $"{(tenantPresent ? 1 : 0)}:{tenantId.Length}:{tenantId}{messageId.Length}:{messageId}{intentType}:{contractIdentity.Length}:{contractIdentity}{contractVersion.Length}:{contractVersion}{consumerIdentity.Length}:{consumerIdentity}{generation}"
         );
+        if (lifecycleId is { } lifecycle)
+        {
+            canonical = $"replay:{lifecycle:N}:{canonical}";
+        }
+
         return SHA256.HashData(Encoding.UTF8.GetBytes(canonical));
     }
 
@@ -352,6 +363,7 @@ internal sealed partial class SqlServerDataStorage
         string contractVersion,
         string consumerIdentity,
         long generation,
+        Message redelivery,
         CancellationToken cancellationToken
     )
     {
@@ -368,7 +380,8 @@ internal sealed partial class SqlServerDataStorage
               AND [ContractIdentityOrdinal]=CONVERT(varbinary(400),@ContractIdentity)
               AND [ContractVersionOrdinal]=CONVERT(varbinary(200),@ContractVersion)
               AND [ConsumerIdentityOrdinal]=CONVERT(varbinary(400),@ConsumerIdentity)
-              AND [Generation]=@Generation;
+              AND [Generation]=@Generation
+              AND [IsInboxRecord]=1 AND [ReplayParentIncarnationId] IS NULL;
             """;
         object[] parameters =
         [
@@ -404,10 +417,14 @@ internal sealed partial class SqlServerDataStorage
                         : reader.GetFieldValue<DateTimeOffset>(8);
                     var owner = reader.IsDBNull(9) ? null : reader.GetString(9);
                     var attemptId = reader.IsDBNull(20) ? (Guid?)null : reader.GetGuid(20);
+                    var status = Enum.Parse<StatusName>(reader.GetString(10), ignoreCase: false);
+                    var isTerminal = status is StatusName.Succeeded or StatusName.Failed && reader.IsDBNull(7);
+                    // Terminal duplicates never execute. Their retained payload may be the poison that
+                    // ended the generation; use this delivery's envelope without rewriting stored evidence.
                     var medium = new MediumMessage
                     {
                         StorageId = reader.GetGuid(0),
-                        Origin = serializer.Deserialize(reader.GetString(1))!,
+                        Origin = isTerminal ? redelivery : serializer.Deserialize(reader.GetString(1))!,
                         Content = reader.GetString(1),
                         Lane = lane,
                         Retries = reader.GetInt32(3),
@@ -443,7 +460,7 @@ internal sealed partial class SqlServerDataStorage
                         );
                     }
 
-                    return (medium, Enum.Parse<StatusName>(reader.GetString(10), ignoreCase: false));
+                    return (medium, status);
                 },
                 transaction: transaction,
                 commandTimeout: messagingOptions.Value.CommandTimeout,

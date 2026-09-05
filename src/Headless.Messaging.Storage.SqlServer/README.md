@@ -20,6 +20,12 @@ Fresh dispatch, retry pickup, and delayed scheduling atomically compare and stam
 
 The raw provider declares `DurableDedupeOnly`: inbox state survives restart but does not commit with application state. Terminal generations retain identity for 30 days by default, with `InboxRetention(...)` per consumer. Expiry or authorized purge resets identity; force reprocessing records linked replay provenance.
 
+Direct admission suppresses duplicates while its root is retained. After that root expires or is purged, a new admission starts a fresh lifecycle, even when older replay descendants remain held. Replay generations increment within their own lifecycle and retain their parent incarnation; they cannot collide with a new lifecycle or an explicitly admitted generation. Holds and operation receipts continue to identify exact incarnations.
+
+Inbox schema version 4 requires lifecycle identity and separate root/replay uniqueness. Startup rejects retained inbox rows from an older schema that lacks lifecycle identity; export or reset those unreleased-schema rows before retrying initialization. Empty schemas are initialized automatically.
+
+Recovery of an unreadable inbox envelope records a terminal failure and clears the attempt fence in the claim transaction. Terminal retention starts from the database clock using the row’s persisted retention duration. Terminal redeliveries are suppressed without deserializing or replacing the retained payload; expiry then allows fresh admission.
+
 ## Installation
 
 ```bash
@@ -74,6 +80,8 @@ The transactional-outbox auto-wiring applies only to the `UseEntityFramework<TCo
 ## SQL Server Compatibility
 
 Dead-owner retry recovery binds live Coordination owners as ordinary SQL parameters and does not require `OPENJSON` or SQL Server compatibility level 130. Older SQL Server-compatible engines still recover through the per-row `LockedUntil` floor if reclaim fails.
+
+Monitoring, expiry cleanup, and delayed scheduling preserve skip-locked behavior with `READ_COMMITTED_SNAPSHOT` enabled or disabled, including when pooled connections retain Serializable isolation after inbox admission. Delayed scheduling explicitly opens ReadCommitted transactions; inbox admission retains its Serializable boundary.
 
 ## Side Effects
 

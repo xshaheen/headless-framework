@@ -19,6 +19,8 @@ InMemoryStorage uses its injected `TimeProvider` for both application-scheduled 
 
 Its inbox tier is `ProcessLocal`: duplicate suppression, 30-day default terminal retention, per-consumer `InboxRetention(...)`, replay provenance, holds, and recovery state disappear on process restart. Expiry or purge resets the deduplication identity.
 
+Direct admission suppresses duplicates while its root is retained. After that root expires or is purged, a new admission starts a fresh lifecycle, even when older replay descendants remain held. Replay generations increment within their own lifecycle and retain their parent incarnation; they cannot collide with a new lifecycle or an explicitly admitted generation. Holds and operation receipts continue to identify exact incarnations.
+
 ## Installation
 
 ```bash

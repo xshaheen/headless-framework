@@ -10,11 +10,13 @@ namespace Tests;
 public sealed class PostgreSqlTransactionalInboxScopeTests(PostgreSqlTestFixture fixture)
     : TransactionalInboxScopeConformanceTests
 {
+    private static readonly string _Schema = $"inbox_scope_{Guid.NewGuid():N}";
+
     protected override void ConfigureContext(DbContextOptionsBuilder options) =>
         options.UseNpgsql(fixture.ConnectionString);
 
     protected override void ConfigureStorage(MessagingSetupBuilder setup) =>
-        setup.UseEntityFramework<InboxScopeDbContext>(options => options.Schema = "inbox_scope_tests");
+        setup.UseEntityFramework<InboxScopeDbContext>(options => options.Schema = _Schema);
 
     protected override string CreateEffectsTableSql =>
         "CREATE TABLE IF NOT EXISTS \"InboxScopeEffects\" (\"Id\" uuid PRIMARY KEY);";
