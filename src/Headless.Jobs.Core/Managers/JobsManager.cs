@@ -182,7 +182,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
             if (coordinated is { } context)
             {
-                _RevalidateCoordinatedContext(context);
+                _PrepareCoordinatedWrite(context);
                 // Write the row inside the caller's transaction; defer dispatch/scheduler/notify to commit (KTD-4). A
                 // returned entity means the row was enlisted into the transaction (it commits with it), not that the
                 // deferred dispatch ran — a post-commit dispatch failure is recovered by the scheduler's polling sweep.
@@ -286,7 +286,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
         if (coordinated is { } context)
         {
-            _RevalidateCoordinatedContext(context);
+            _PrepareCoordinatedWrite(context);
             var coordinatedSeed = await context
                 .Writer.WriteCronJobsAsync([entity], _SeedCronSchedulePosition, context.Relational, cancellationToken)
                 .ConfigureAwait(false);
@@ -880,7 +880,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
             if (coordinated is { } context)
             {
-                _RevalidateCoordinatedContext(context);
+                _PrepareCoordinatedWrite(context);
                 // Route every entity through the seam in insertion order; defer the batch side effects once (KTD-4/R5).
                 await context
                     .Writer.WriteTimeJobsAsync([.. entities], context.Relational, cancellationToken)
@@ -1023,7 +1023,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
         if (coordinated is { } context)
         {
-            _RevalidateCoordinatedContext(context);
+            _PrepareCoordinatedWrite(context);
             var coordinatedSeed = await context
                 .Writer.WriteCronJobsAsync(
                     [.. validEntities],
