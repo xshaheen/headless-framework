@@ -185,7 +185,7 @@ public sealed class DocumentService(
         // Hand processing (virus scan, thumbnailing, ...) to a background job.
         await jobs.EnqueueAsync(
             new ProcessDocumentRequest(id),
-            new Headless.Jobs.Models.EnqueueOptions
+            new Headless.Jobs.Models.JobOptions
             {
                 Description = $"process-{id}",
                 Retries = 3,

@@ -60,7 +60,7 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
                             .Be(JobScheduleDisposition.Cancelled);
                         await scheduler.EnqueueAsync(
                             new CoordinatedFacadeRequest(Guid.Empty, "ordinary"),
-                            new EnqueueOptions { RequireAtomicEnlistment = true },
+                            new JobOptions { RequireAtomicEnlistment = true },
                             ct
                         );
                         // Conflict is an ordinary disposition: subsequent caller SQL must still succeed.
@@ -351,7 +351,7 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
     {
         var scheduler = host.Services.GetRequiredService<IJobScheduler>();
         var request = new CoordinatedFacadeRequest(Guid.Empty, payload);
-        var options = new EnqueueOptions { RequireAtomicEnlistment = required };
+        var options = new JobOptions { RequireAtomicEnlistment = required };
         return generation is { } observed
             ? scheduler.ReplaceKeyedAsync(key, observed, request, due ?? _Due, options, ct)
             : scheduler.ScheduleKeyedAsync(key, request, due ?? _Due, options, ct);

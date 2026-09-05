@@ -13,6 +13,7 @@ using Headless.Jobs.Models;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
 
@@ -111,7 +112,7 @@ public sealed class JobSchedulerTests : TestBase
 
         var id = await scheduler.EnqueueAsync(
             request,
-            new EnqueueOptions
+            new JobOptions
             {
                 Description = "Create invoice",
                 Retries = 3,
@@ -161,7 +162,9 @@ public sealed class JobSchedulerTests : TestBase
             registry,
             Substitute.For<IInternalJobManager>(),
             Substitute.For<IJobsHostScheduler>(),
-            JobsRequestSerializationOptions.Default
+            JobsRequestSerializationOptions.Default,
+            new FakeTimeProvider(),
+            JobSchedulingPolicies.Empty
         );
 
         var id = await scheduler.EnqueueAsync(new SampleRequest("host-registry"), cancellationToken: AbortToken);
@@ -202,7 +205,9 @@ public sealed class JobSchedulerTests : TestBase
             registry,
             Substitute.For<IInternalJobManager>(),
             Substitute.For<IJobsHostScheduler>(),
-            JobsRequestSerializationOptions.Default
+            JobsRequestSerializationOptions.Default,
+            new FakeTimeProvider(),
+            JobSchedulingPolicies.Empty
         );
 
         await scheduler.EnqueueAsync(canonicalDescriptor, cancellationToken: AbortToken);
@@ -450,7 +455,9 @@ public sealed class JobSchedulerTests : TestBase
             JobFunctionRegistryBuilder.Build([], [], []),
             internalManager,
             hostScheduler,
-            JobsRequestSerializationOptions.Default
+            JobsRequestSerializationOptions.Default,
+            new FakeTimeProvider(),
+            JobSchedulingPolicies.Empty
         );
 
         (await scheduler.CancelAsync(jobId, AbortToken)).Should().BeTrue();
@@ -474,7 +481,9 @@ public sealed class JobSchedulerTests : TestBase
             JobFunctionRegistryBuilder.Build([], [], []),
             internalManager,
             hostScheduler,
-            JobsRequestSerializationOptions.Default
+            JobsRequestSerializationOptions.Default,
+            new FakeTimeProvider(),
+            JobSchedulingPolicies.Empty
         );
 
         (await scheduler.CancelAsync(jobId, AbortToken)).Should().BeFalse();
@@ -498,7 +507,9 @@ public sealed class JobSchedulerTests : TestBase
             JobFunctionRegistryBuilder.Build([], [], []),
             internalManager,
             hostScheduler,
-            JobsRequestSerializationOptions.Default
+            JobsRequestSerializationOptions.Default,
+            new FakeTimeProvider(),
+            JobSchedulingPolicies.Empty
         );
 
         (await scheduler.PauseCronAsync(cronJobId, AbortToken)).Should().Be(accepted);
@@ -514,18 +525,18 @@ public sealed class JobSchedulerTests : TestBase
     {
         var methods = typeof(IJobScheduler).GetMethods(BindingFlags.Instance | BindingFlags.Public);
 
-        methods.Should().HaveCount(16);
-        methods.Count(method => method.ReturnType == typeof(Task<JobScheduleResult>)).Should().Be(6);
+        methods.Should().HaveCount(30);
+        methods.Count(method => method.ReturnType == typeof(Task<JobScheduleResult>)).Should().Be(10);
         var keyedSchedules = methods.Where(method =>
             method.Name is nameof(IJobScheduler.ScheduleKeyedAsync) or nameof(IJobScheduler.ReplaceKeyedAsync)
         );
-        keyedSchedules.Should().HaveCount(4);
+        keyedSchedules.Should().HaveCount(8);
         keyedSchedules
             .Should()
             .OnlyContain(method =>
                 method.GetParameters().Any(parameter => parameter.ParameterType == typeof(DateTimeOffset))
             );
-        methods.Count(method => method.ReturnType == typeof(Task<Guid>)).Should().Be(7);
+        methods.Count(method => method.ReturnType == typeof(Task<Guid>)).Should().Be(17);
         var cancellation = methods.Single(method =>
             string.Equals(method.Name, nameof(IJobScheduler.CancelAsync), StringComparison.Ordinal)
         );
@@ -547,12 +558,12 @@ public sealed class JobSchedulerTests : TestBase
                 .Equal(typeof(Guid), typeof(CancellationToken));
             control.GetParameters()[^1].HasDefaultValue.Should().BeTrue();
         }
-        _AssertOverload(methods, nameof(IJobScheduler.EnqueueAsync), true, typeof(EnqueueOptions));
-        _AssertOverload(methods, nameof(IJobScheduler.EnqueueAsync), false, typeof(EnqueueOptions));
+        _AssertOverload(methods, nameof(IJobScheduler.EnqueueAsync), true, typeof(JobOptions));
+        _AssertOverload(methods, nameof(IJobScheduler.EnqueueAsync), false, typeof(JobOptions));
         var chainEnqueue = methods.Single(method =>
             string.Equals(method.Name, nameof(IJobScheduler.EnqueueAsync), StringComparison.Ordinal)
             && !method.IsGenericMethodDefinition
-            && method.GetParameters().Length == 2
+            && method.GetParameters()[0].ParameterType == typeof(JobChain)
         );
         chainEnqueue.ReturnType.Should().Be<Task<Guid>>();
         chainEnqueue
@@ -561,8 +572,14 @@ public sealed class JobSchedulerTests : TestBase
             .Should()
             .Equal(typeof(JobChain), typeof(CancellationToken));
         chainEnqueue.GetParameters()[^1].HasDefaultValue.Should().BeTrue();
-        _AssertOverload(methods, nameof(IJobScheduler.ScheduleAsync), true, typeof(DateTime), typeof(EnqueueOptions));
-        _AssertOverload(methods, nameof(IJobScheduler.ScheduleAsync), false, typeof(DateTime), typeof(EnqueueOptions));
+        _AssertOverload(methods, nameof(IJobScheduler.ScheduleAsync), true, typeof(DateTimeOffset), typeof(JobOptions));
+        _AssertOverload(
+            methods,
+            nameof(IJobScheduler.ScheduleAsync),
+            false,
+            typeof(DateTimeOffset),
+            typeof(JobOptions)
+        );
         _AssertOverload(
             methods,
             nameof(IJobScheduler.ScheduleRecurringAsync),
@@ -577,20 +594,20 @@ public sealed class JobSchedulerTests : TestBase
             typeof(string),
             typeof(RecurringJobOptions)
         );
-        typeof(EnqueueOptions)
+        typeof(JobOptions)
             .GetProperties(BindingFlags.Instance | BindingFlags.Public)
             .Select(property => property.Name)
             .Should()
             .BeEquivalentTo(
-                nameof(EnqueueOptions.CorrelationId),
-                nameof(EnqueueOptions.CausationId),
-                nameof(EnqueueOptions.Description),
-                nameof(EnqueueOptions.Retries),
-                nameof(EnqueueOptions.RetryIntervals),
-                nameof(EnqueueOptions.OnNodeDeath),
-                nameof(EnqueueOptions.TenantId),
-                nameof(EnqueueOptions.IsSystemJob),
-                nameof(EnqueueOptions.RequireAtomicEnlistment)
+                nameof(JobOptions.CorrelationId),
+                nameof(JobOptions.CausationId),
+                nameof(JobOptions.Description),
+                nameof(JobOptions.Retries),
+                nameof(JobOptions.RetryIntervals),
+                nameof(JobOptions.OnNodeDeath),
+                nameof(JobOptions.TenantId),
+                nameof(JobOptions.IsSystemJob),
+                nameof(JobOptions.RequireAtomicEnlistment)
             );
         typeof(RecurringJobOptions)
             .GetProperties(BindingFlags.Instance | BindingFlags.Public)
@@ -678,7 +695,7 @@ public sealed class JobSchedulerTests : TestBase
         }
 
         parameters[1..^1].Select(parameter => parameter.ParameterType).Should().Equal(middleParameterTypes);
-        parameters[^2].HasDefaultValue.Should().BeTrue();
+        parameters[^2].HasDefaultValue.Should().BeFalse();
         parameters[^1].ParameterType.Should().Be<CancellationToken>();
         parameters[^1].HasDefaultValue.Should().BeTrue();
     }

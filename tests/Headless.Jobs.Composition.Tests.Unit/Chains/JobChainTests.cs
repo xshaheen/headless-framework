@@ -121,15 +121,15 @@ public sealed class JobChainTests
     [Fact]
     public void per_step_options_and_execution_time_are_captured_verbatim_on_each_node()
     {
-        var rootOptions = new EnqueueOptions { Description = "root", Retries = 1 };
-        var childOptions = new EnqueueOptions
+        var rootOptions = new JobOptions { Description = "root", Retries = 1 };
+        var childOptions = new JobOptions
         {
             Description = "child",
             Retries = 5,
             RetryIntervals = [1, 2, 3],
             OnNodeDeath = NodeDeathPolicy.Skip,
         };
-        var childTime = new DateTime(2030, 1, 2, 3, 4, 5, DateTimeKind.Utc);
+        var childTime = new DateTimeOffset(2030, 1, 2, 3, 4, 5, TimeSpan.FromHours(3));
 
         var builder = JobChain.Start(new OrderRequest(1), rootOptions);
         builder.Root.Then(new ChargeRequest(2), childOptions, childTime);

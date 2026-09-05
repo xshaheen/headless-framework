@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Models;
@@ -14,7 +15,14 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob>
         JobKey key,
         TArgs request,
         DateTimeOffset executionTime,
-        EnqueueOptions? options = null,
+        CancellationToken cancellationToken = default
+    ) => ScheduleKeyedAsync(key, request, executionTime, options: null, cancellationToken);
+
+    public Task<JobScheduleResult> ScheduleKeyedAsync<TArgs>(
+        JobKey key,
+        TArgs request,
+        DateTimeOffset executionTime,
+        JobOptions? options,
         CancellationToken cancellationToken = default
     ) =>
         _ScheduleKeyedAsync(
@@ -31,7 +39,14 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob>
         JobKey key,
         JobFunctionDescriptor descriptor,
         DateTimeOffset executionTime,
-        EnqueueOptions? options = null,
+        CancellationToken cancellationToken = default
+    ) => ScheduleKeyedAsync(key, descriptor, executionTime, options: null, cancellationToken);
+
+    public Task<JobScheduleResult> ScheduleKeyedAsync(
+        JobKey key,
+        JobFunctionDescriptor descriptor,
+        DateTimeOffset executionTime,
+        JobOptions? options,
         CancellationToken cancellationToken = default
     ) =>
         _ScheduleKeyedAsync<object?>(
@@ -49,7 +64,15 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob>
         long expectedGeneration,
         TArgs request,
         DateTimeOffset executionTime,
-        EnqueueOptions? options = null,
+        CancellationToken cancellationToken = default
+    ) => ReplaceKeyedAsync(key, expectedGeneration, request, executionTime, options: null, cancellationToken);
+
+    public Task<JobScheduleResult> ReplaceKeyedAsync<TArgs>(
+        JobKey key,
+        long expectedGeneration,
+        TArgs request,
+        DateTimeOffset executionTime,
+        JobOptions? options,
         CancellationToken cancellationToken = default
     ) =>
         _ScheduleKeyedAsync(
@@ -67,7 +90,15 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob>
         long expectedGeneration,
         JobFunctionDescriptor descriptor,
         DateTimeOffset executionTime,
-        EnqueueOptions? options = null,
+        CancellationToken cancellationToken = default
+    ) => ReplaceKeyedAsync(key, expectedGeneration, descriptor, executionTime, options: null, cancellationToken);
+
+    public Task<JobScheduleResult> ReplaceKeyedAsync(
+        JobKey key,
+        long expectedGeneration,
+        JobFunctionDescriptor descriptor,
+        DateTimeOffset executionTime,
+        JobOptions? options,
         CancellationToken cancellationToken = default
     ) =>
         _ScheduleKeyedAsync<object?>(
@@ -85,7 +116,7 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob>
         JobKey key,
         long expectedGeneration,
         CancellationToken cancellationToken = default
-    ) => _timeJobManager.CancelKeyedAsync(scope, key, expectedGeneration, cancellationToken);
+    ) => CancelKeyedAsync(scope, key, expectedGeneration, requireAtomicEnlistment: false, cancellationToken);
 
     public Task<JobScheduleResult> CancelKeyedAsync(
         JobKeyScope scope,
@@ -93,7 +124,20 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob>
         long expectedGeneration,
         bool requireAtomicEnlistment,
         CancellationToken cancellationToken = default
-    ) => _timeJobManager.CancelKeyedAsync(scope, key, expectedGeneration, requireAtomicEnlistment, cancellationToken);
+    )
+    {
+        Argument.IsNotNull(scope);
+        var descriptor =
+            _descriptorByName(scope.Function) ?? throw new Exceptions.JobFunctionNotFoundException(scope.Function);
+        var policy = _policies.Resolve(descriptor, null);
+        return _timeJobManager.CancelKeyedAsync(
+            scope,
+            key,
+            expectedGeneration,
+            requireAtomicEnlistment || policy.RequireAtomicEnlistment,
+            cancellationToken
+        );
+    }
 
     private JobFunctionDescriptor _GetKeyedDescriptor<TArgs>()
     {
@@ -112,11 +156,12 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob>
         JobFunctionDescriptor descriptor,
         TArgs request,
         DateTimeOffset executionTime,
-        EnqueueOptions? options,
+        JobOptions? options,
         long? expectedGeneration,
         CancellationToken cancellationToken
     )
     {
+        options = _policies.Resolve(descriptor, options);
         var entity = new TTimeJob
         {
             Function = descriptor.FunctionName,

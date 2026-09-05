@@ -48,7 +48,7 @@ app.MapPost(
         {
             var jobId = await scheduler.EnqueueAsync(
                 new WebApiHelloRequest("Hello from the API demo"),
-                new EnqueueOptions { Description = "Sample API demo job" },
+                new JobOptions { Description = "Sample API demo job" },
                 cancellationToken
             );
 

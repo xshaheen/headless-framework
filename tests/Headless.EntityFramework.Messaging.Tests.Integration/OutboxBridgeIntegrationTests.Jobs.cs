@@ -68,7 +68,7 @@ public sealed partial class OutboxBridgeIntegrationTests
                     new JobKey(marker),
                     DeadlineRegistration.Descriptor,
                     provider.GetRequiredService<DeadlineEvidence>().Due,
-                    new Headless.Jobs.Models.EnqueueOptions { RequireAtomicEnlistment = true },
+                    new Headless.Jobs.Models.JobOptions { RequireAtomicEnlistment = true },
                     AbortToken
                 );
         await schedule.Should().ThrowAsync<InvalidOperationException>().WithMessage("*active commit coordinator*");
@@ -280,7 +280,7 @@ public sealed partial class OutboxBridgeIntegrationTests
                             new JobKey(context.MessageId),
                             DeadlineRegistration.Descriptor,
                             evidence.Due,
-                            new Headless.Jobs.Models.EnqueueOptions
+                            new Headless.Jobs.Models.JobOptions
                             {
                                 RequireAtomicEnlistment = true,
                                 CorrelationId = context.CorrelationId,

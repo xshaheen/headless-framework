@@ -155,7 +155,7 @@ public sealed class KeyedJobSchedulingTests : TestBase
             key,
             descriptor,
             due.ToUniversalTime(),
-            new EnqueueOptions { Description = "new description" },
+            new JobOptions { Description = "new description" },
             AbortToken
         );
         observed.Disposition.Should().Be(JobScheduleDisposition.Existing);

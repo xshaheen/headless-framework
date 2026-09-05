@@ -143,7 +143,7 @@ public abstract class JobsTenancyConformanceTests<TFixture>(TFixture fixture) : 
         }
     }
 
-    // R9 via the IJobScheduler surface: EnqueueOptions.TenantId is copied onto the entity and persisted coordinated.
+    // R9 via the IJobScheduler surface: JobOptions.TenantId is copied onto the entity and persisted coordinated.
     public virtual async Task coordinated_scheduler_enqueue_persists_options_tenant()
     {
         var ct = AbortToken;
@@ -153,7 +153,7 @@ public abstract class JobsTenancyConformanceTests<TFixture>(TFixture fixture) : 
         {
             var scheduler = host.Services.GetRequiredService<IJobScheduler>();
             var request = new CoordinatedFacadeRequest(Guid.NewGuid(), "tenant scheduler");
-            var options = new EnqueueOptions { TenantId = "tenant-a" };
+            var options = new JobOptions { TenantId = "tenant-a" };
             var scheduledId = Guid.Empty;
 
             await fixture.RunCoordinatedTransactionAsync(

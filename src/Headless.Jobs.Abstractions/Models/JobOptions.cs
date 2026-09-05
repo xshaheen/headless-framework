@@ -9,7 +9,7 @@ namespace Headless.Jobs.Models;
 /// Priority is generated from <c>[JobFunction]</c> metadata and is intentionally not a per-enqueue option.
 /// </remarks>
 [PublicAPI]
-public sealed record EnqueueOptions
+public sealed record JobOptions
 {
     /// <summary>Fails before scheduling effects unless a compatible live relational transaction can enlist the job write.</summary>
     public bool RequireAtomicEnlistment { get; init; }
@@ -23,14 +23,14 @@ public sealed record EnqueueOptions
     /// <summary>Optional human-readable description displayed by operational tooling.</summary>
     public string? Description { get; init; }
 
-    /// <summary>Maximum number of durable retry attempts. <c>0</c> means no retries.</summary>
-    public int Retries { get; init; }
+    /// <summary>Maximum durable retries; null inherits configured defaults and zero disables retries.</summary>
+    public int? Retries { get; init; }
 
     /// <summary>Optional per-retry delay intervals in seconds.</summary>
     public int[]? RetryIntervals { get; init; }
 
-    /// <summary>Policy applied when the node executing the job dies.</summary>
-    public NodeDeathPolicy OnNodeDeath { get; init; } = NodeDeathPolicy.Retry;
+    /// <summary>Policy applied when the node executing the job dies; null inherits configured defaults.</summary>
+    public NodeDeathPolicy? OnNodeDeath { get; init; }
 
     /// <summary>
     /// Explicit tenant to stamp on the scheduled job; wins over ambient capture. <see langword="null"/> defers to

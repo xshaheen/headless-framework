@@ -12,7 +12,7 @@ public class HomeController(IQueue publisher) : ControllerBase
     {
         await publisher.EnqueueAsync(
             new Person { Age = 11, Name = "James" },
-            new EnqueueOptions { MessageName = message, DeliveryMode = DeliveryMode.Durable }
+            new QueueOptions { MessageName = message, DeliveryMode = DeliveryMode.Durable }
         );
     }
 }

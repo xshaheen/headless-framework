@@ -98,6 +98,12 @@ public static class SetupJobs
         }
 
         JobFunctionProvider.CompleteDiscovery(discoveryParticipant);
+        var schedulingPolicies = optionInstance.FreezeSchedulingPolicies();
+        services.AddSingleton(provider =>
+        {
+            schedulingPolicies.Validate(provider.GetRequiredService<JobFunctionRegistry>());
+            return schedulingPolicies;
+        });
 
         // The pickup lease is stamped as LockedUntil = now + LeaseDuration; a non-positive duration would write a
         // lease that is already expired, defeating duplicate-suppression entirely (KTD2).

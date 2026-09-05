@@ -50,6 +50,7 @@ internal sealed class JobsInitializationHostedService(
 
     private async Task _StartCoreAsync(CancellationToken cancellationToken)
     {
+        _ = serviceProvider.GetRequiredService<JobSchedulingPolicies>();
         var executionContext = serviceProvider.GetRequiredService<JobsExecutionContext>();
         var notificationHubSender = serviceProvider.GetRequiredService<IJobsNotificationHubSender>();
         var schedulerOptions = serviceProvider.GetRequiredService<SchedulerOptionsBuilder>();

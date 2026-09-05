@@ -106,18 +106,20 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
         var descriptor = registry.Descriptors[_FunctionName];
         var builder = JobChain.Start(
             descriptor,
-            new EnqueueOptions { RequireAtomicEnlistment = requiredNode == "root" },
+            new JobOptions { RequireAtomicEnlistment = requiredNode == "root" },
             executionTime: DateTime.UtcNow.AddHours(1)
         );
-        builder.Root.Then(descriptor, new EnqueueOptions { RequireAtomicEnlistment = requiredNode == "success" });
-        builder.Root.Catch(descriptor, new EnqueueOptions { RequireAtomicEnlistment = requiredNode == "failure" });
+        builder.Root.Then(descriptor, new JobOptions { RequireAtomicEnlistment = requiredNode == "success" });
+        builder.Root.Catch(descriptor, new JobOptions { RequireAtomicEnlistment = requiredNode == "failure" });
         var facade = new JobScheduler<TimeJobEntity, CronJobEntity>(
             sut.Time,
             sut.Cron,
             registry,
             Substitute.For<IInternalJobManager>(),
             sut.Scheduler,
-            new JobsRequestSerializationOptions()
+            new JobsRequestSerializationOptions(),
+            new Microsoft.Extensions.Time.Testing.FakeTimeProvider(),
+            JobSchedulingPolicies.Empty
         );
         return (facade, builder.Build());
     }

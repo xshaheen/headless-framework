@@ -274,15 +274,15 @@ public sealed class JobChainEnqueueTests : TestBase
     {
         var (scheduler, timeManager) = _CreateScheduler();
         var adds = _CaptureAdds(timeManager);
-        var rootOptions = new EnqueueOptions { Description = "place order", Retries = 1 };
-        var chargeOptions = new EnqueueOptions
+        var rootOptions = new JobOptions { Description = "place order", Retries = 1 };
+        var chargeOptions = new JobOptions
         {
             Description = "charge card",
             Retries = 4,
             RetryIntervals = [5, 10],
             OnNodeDeath = NodeDeathPolicy.MarkFailed,
         };
-        var chargeTime = new DateTime(2030, 3, 4, 5, 6, 7, DateTimeKind.Utc);
+        var chargeTime = new DateTimeOffset(2030, 3, 4, 5, 6, 7, TimeSpan.FromHours(3));
         var orderRequest = new OrderRequest(7);
         var builder = JobChain.Start(orderRequest, rootOptions);
         builder.Root.Then(new ChargeRequest(8), chargeOptions, chargeTime);
@@ -308,7 +308,7 @@ public sealed class JobChainEnqueueTests : TestBase
         charge.Retries.Should().Be(4);
         charge.RetryIntervals.Should().Equal(5, 10);
         charge.OnNodeDeath.Should().Be(NodeDeathPolicy.MarkFailed);
-        charge.ExecutionTime.Should().Be(chargeTime);
+        charge.ExecutionTime.Should().Be(chargeTime.UtcDateTime);
         charge.Request.Should().NotBeNull();
 
         var cleanup = root.Children.Single(child => child.RunCondition == RunCondition.OnFailure);
@@ -321,7 +321,7 @@ public sealed class JobChainEnqueueTests : TestBase
     [Fact]
     public void chain_step_options_expose_no_per_step_priority()
     {
-        typeof(EnqueueOptions)
+        typeof(JobOptions)
             .GetProperties(BindingFlags.Instance | BindingFlags.Public)
             .Select(property => property.Name)
             .Should()

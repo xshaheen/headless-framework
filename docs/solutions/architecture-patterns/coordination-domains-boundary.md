@@ -51,7 +51,7 @@ application transaction and accelerate its dispatch after commit.
 
 ### Jobs transactional deadlines
 
-`EnqueueOptions.RequireAtomicEnlistment` asserts that an ordinary or keyed one-shot deadline must
+`JobOptions.RequireAtomicEnlistment` asserts that an ordinary or keyed one-shot deadline must
 share the caller's live relational transaction. Jobs validates its actual configured database and
 captures the exact caller connection and transaction before scheduling middleware. The Jobs-owned
 writer enlists the durable row immediately; only restart/notification acceleration waits for commit.
