@@ -163,12 +163,12 @@ public sealed class SubscribeExecutorRetryTests : TestBase
     }
 
     [Fact]
-    public async Task transactional_inbox_should_resolve_runner_from_dispatch_scope_before_handler_entry()
+    public async Task transactional_inbox_should_share_attempt_scope_with_runner_and_invoker()
     {
         var storage = Substitute.For<IDataStorage>();
         var invoker = Substitute.For<ISubscribeInvoker>();
         invoker
-            .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
+            .InvokeInScopeAsync(Arg.Any<ConsumerContext>(), Arg.Any<IServiceProvider>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new ConsumerExecutedResult(null, null, null!, null, null)));
         var executor = _CreateExecutor(invoker, storage, new MessagingOptions());
         var message = _CreateMediumMessage();
@@ -189,7 +189,14 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<CancellationToken>()
             )
             .Returns(call => call.ArgAt<Func<CancellationToken, Task>>(1)(call.ArgAt<CancellationToken>(2)));
-        using var dispatchServices = new ServiceCollection().AddSingleton(runner).BuildServiceProvider();
+        IServiceProvider? runnerServices = null;
+        using var dispatchServices = new ServiceCollection()
+            .AddScoped<IInboxTransactionRunner>(services =>
+            {
+                runnerServices = services;
+                return runner;
+            })
+            .BuildServiceProvider();
 
         var result = await executor.ExecuteAsync(message, dispatchServices, _CreateDescriptor(), AbortToken);
 
@@ -197,7 +204,15 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         await runner
             .Received(1)
             .ExecuteAsync(message, Arg.Any<Func<CancellationToken, Task>>(), Arg.Any<CancellationToken>());
-        await invoker.Received(1).InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>());
+        await invoker
+            .Received(1)
+            .InvokeInScopeAsync(
+                Arg.Any<ConsumerContext>(),
+                Arg.Is<IServiceProvider>(services =>
+                    ReferenceEquals(services, runnerServices) && !ReferenceEquals(services, dispatchServices)
+                ),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]

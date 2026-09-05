@@ -6,6 +6,8 @@ This adapter promotes the inbox tier to `Transactional`: the current fenced inbo
 
 Install this adapter in addition to the raw SQL Server storage package when messaging should reuse a `DbContext` connection and enlist outbox writes in commit coordination.
 
+Each transactional consume attempt shares one DI scope and configured `TContext` across the EF runner, consume middleware, and handler. The runner saves tracked changes after the handler returns and keeps the scope alive through commit or rollback. Explicit handler saves and captured durable Bus/Queue rows roll back with application state when inbox completion rejects the attempt fence.
+
 ```csharp
 services.AddHeadlessMessaging(setup => setup.UseEntityFramework<AppDbContext>());
 ```

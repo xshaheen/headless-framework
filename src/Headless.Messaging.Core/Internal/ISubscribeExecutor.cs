@@ -30,8 +30,8 @@ internal interface ISubscribeExecutor
     /// <param name="dispatchServices">
     /// The live per-message DI scope's <see cref="IServiceProvider"/>. The caller (Dispatcher) creates
     /// this scope and disposes it after the call returns. Surfaces to <c>FailedInfo.ServiceProvider</c>
-    /// when the retry budget exhausts, so the user's exhausted callback resolves scoped services from the
-    /// SAME scope the consume attempt ran under.
+    /// when the retry budget exhausts. Transactional attempts own separate scopes that remain alive
+    /// through commit or rollback; their services are not exposed to the exhausted callback.
     /// </param>
     /// <param name="descriptor">Optional consumer descriptor; resolved from the message name when omitted.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
@@ -230,16 +230,24 @@ internal sealed class SubscribeExecutor(
             )
             {
                 message.ExpiresAt = timeProvider.GetUtcNow().AddSeconds(_options.SucceedMessageExpiredAfter);
-                var transactionRunner = dispatchServices.GetRequiredService<IInboxTransactionRunner>();
+                // The runner and consumer must share the same DbContext, alive until commit or rollback.
+                await using var attemptScope = dispatchServices.CreateAsyncScope();
+                var attemptServices = attemptScope.ServiceProvider;
+                var transactionRunner = attemptServices.GetRequiredService<IInboxTransactionRunner>();
                 await transactionRunner
-                    .ExecuteAsync(message, ct => _InvokeConsumerMethodAsync(message, descriptor, ct), cancellationToken)
+                    .ExecuteAsync(
+                        message,
+                        ct => _InvokeConsumerMethodAsync(message, descriptor, attemptServices, ct),
+                        cancellationToken
+                    )
                     .ConfigureAwait(false);
                 executionState?.RecordLeaseTransition(affected: true, lockedUntil: null);
                 await _ReportSuccessfulStateAsync(message).ConfigureAwait(false);
             }
             else
             {
-                await _InvokeConsumerMethodAsync(message, descriptor, cancellationToken).ConfigureAwait(false);
+                await _InvokeConsumerMethodAsync(message, descriptor, services: null, cancellationToken)
+                    .ConfigureAwait(false);
                 await _SetSuccessfulState(message, executionState).ConfigureAwait(false);
             }
 
@@ -679,6 +687,7 @@ internal sealed class SubscribeExecutor(
     private async Task _InvokeConsumerMethodAsync(
         MediumMessage message,
         ConsumerExecutorDescriptor descriptor,
+        IServiceProvider? services,
         CancellationToken cancellationToken
     )
     {
@@ -686,7 +695,9 @@ internal sealed class SubscribeExecutor(
         var traceHandle = _TracingBefore(message.Origin, message.Lane, descriptor.MethodInfo, message.Retries);
         try
         {
-            var ret = await invoker.InvokeAsync(consumerContext, cancellationToken).ConfigureAwait(false);
+            var ret = services is null
+                ? await invoker.InvokeAsync(consumerContext, cancellationToken).ConfigureAwait(false)
+                : await invoker.InvokeInScopeAsync(consumerContext, services, cancellationToken).ConfigureAwait(false);
 
             if (!string.IsNullOrEmpty(ret.CallbackName))
             {

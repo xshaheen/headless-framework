@@ -156,6 +156,8 @@ The transactional outbox is **on by default on the EF storage path**. When the h
 
 The write is atomic with the business data; delivery is still at-least-once, so consumers must be idempotent (see [Retry Policy](#retry-policy)). See `Headless.CommitCoordination.EntityFramework` for the interceptor attachment and probe details.
 
+Each transactional consume attempt owns one DI scope shared by the EF transaction runner, consume middleware, and handler. The configured scoped `TContext` stays alive through `SaveChangesAsync` and inbox commit or rollback. The runner saves tracked application changes after the handler returns; explicit handler saves remain inside the same transaction and roll back if inbox completion rejects the attempt fence. A subsequent Messaging attempt gets a fresh scope. `FailedInfo.ServiceProvider` refers to the outer dispatch scope and does not expose the completed attempt's services.
+
 ## Defaults And Telemetry
 
 Terminal inbox generations are retained for 30 days by default. Use `InboxRetention(...)` on a durable consumer for a deliberate override. Expiry or authorized purge removes that deduplication identity; force reprocessing instead creates a linked child generation with replay provenance.
