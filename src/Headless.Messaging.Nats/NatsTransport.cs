@@ -16,6 +16,7 @@ internal sealed class NatsTransport(
 
     public async Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
     {
+        Configuration.MessagingRoutingAffinityMapping.RejectUnsupported(message, "Nats");
         try
         {
             cancellationToken.ThrowIfCancellationRequested();

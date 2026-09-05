@@ -25,6 +25,7 @@ internal sealed class InMemoryQueueTransport(MemoryQueue queue, ILogger<InMemory
     /// <returns>A task that returns the operation result.</returns>
     public async Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
     {
+        Configuration.MessagingRoutingAffinityMapping.RejectUnsupported(message, "InMemory");
         var messageName = message.Name;
         var result = await InMemoryTransportCore
             .SendCoreAsync(message, queue.SendQueue, cancellationToken)

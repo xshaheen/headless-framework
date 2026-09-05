@@ -23,8 +23,8 @@ internal sealed class AzureServiceBusQueueTransport(
         try
         {
             var queueName = transportMessage.Name;
-            var sender = clientPool.GetSender(queueName);
             var message = AzureServiceBusMessageBuilder.Build(transportMessage, busOptions.Value.EnableSessions);
+            var sender = clientPool.GetSender(queueName);
 
             await sender.SendMessageAsync(message, cancellationToken).ConfigureAwait(false);
 

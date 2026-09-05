@@ -220,7 +220,7 @@ internal sealed class AmazonSqsConsumerClient(
         async Task consumeAsync(string queueUrl, Message sqsMessage)
         {
             var receiptHandle = sqsMessage.ReceiptHandle;
-            var (header, body) = await _ReadMessageAsync(sqsMessage, receiptHandle).ConfigureAwait(false);
+            var (header, body) = await _ReadMessageAsync(sqsMessage, queueUrl, receiptHandle).ConfigureAwait(false);
 
             if (header is null)
             {
@@ -446,18 +446,22 @@ internal sealed class AmazonSqsConsumerClient(
 
     private async Task<(Dictionary<string, string?>? Headers, string? Body)> _ReadMessageAsync(
         Message sqsMessage,
+        string queueUrl,
         string receiptHandle
     )
     {
         if (lane == MessageLane.Queue)
         {
-            var headers = sqsMessage.MessageAttributes.ToDictionary<
-                KeyValuePair<string, Amazon.SQS.Model.MessageAttributeValue>,
-                string,
-                string?
-            >(x => x.Key, x => x.Value.StringValue, StringComparer.Ordinal);
-
-            return (headers, sqsMessage.Body);
+            try
+            {
+                return (SqsHeaderCodec.Decode(sqsMessage.MessageAttributes), sqsMessage.Body);
+            }
+            catch (JsonException exception)
+            {
+                _logger.SqsMessageDeserializationFailed(exception);
+                await CommitAsync(new InflightSqsMessage(queueUrl, receiptHandle)).ConfigureAwait(false);
+                return (null, null);
+            }
         }
 
         SqsReceivedMessage? messageObj;
@@ -468,14 +472,14 @@ internal sealed class AmazonSqsConsumerClient(
         catch (JsonException ex)
         {
             _logger.SqsMessageDeserializationFailed(ex);
-            await CommitAsync(new InflightSqsMessage(_queueUrl, receiptHandle)).ConfigureAwait(false);
+            await CommitAsync(new InflightSqsMessage(queueUrl, receiptHandle)).ConfigureAwait(false);
             return (null, null);
         }
 
         if (messageObj?.MessageAttributes == null)
         {
             _logger.InvalidSqsMessageStructure();
-            await CommitAsync(new InflightSqsMessage(_queueUrl, receiptHandle)).ConfigureAwait(false);
+            await CommitAsync(new InflightSqsMessage(queueUrl, receiptHandle)).ConfigureAwait(false);
             return (null, null);
         }
 

@@ -24,6 +24,12 @@ internal sealed class AmazonSnsBusTransport(
     {
         try
         {
+            if (!message.Name.IsAwsFifoName())
+            {
+                Configuration.MessagingRoutingAffinityMapping.RejectUnsupported(message, "AWS standard destination");
+            }
+
+            var affinityKey = AwsRoutingAffinity.Mapping.ResolveKey(message);
             await _FetchExistingTopicArns(cancellationToken).ConfigureAwait(false);
 
             var normalizeForAws = AwsPhysicalAddress.BusTopic(message.Name);
@@ -52,7 +58,7 @@ internal sealed class AmazonSnsBusTransport(
 
                 if (normalizeForAws.IsAwsFifoName())
                 {
-                    request.MessageGroupId = _ResolveMessageGroupId(message);
+                    request.MessageGroupId = _ResolveMessageGroupId(message, affinityKey);
 
                     if (
                         message.Headers.TryGetValue(Headers.MessageId, out var messageId)
@@ -98,12 +104,9 @@ internal sealed class AmazonSnsBusTransport(
         }
     }
 
-    private static string _ResolveMessageGroupId(TransportMessage message)
+    private static string _ResolveMessageGroupId(TransportMessage message, string? messageGroupId)
     {
-        if (
-            message.Headers.TryGetValue(AwsMessagingHeaders.MessageGroupId, out var messageGroupId)
-            && !string.IsNullOrWhiteSpace(messageGroupId)
-        )
+        if (!string.IsNullOrWhiteSpace(messageGroupId))
         {
             return messageGroupId;
         }

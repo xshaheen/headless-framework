@@ -24,21 +24,15 @@ internal sealed class AmazonSqsQueueTransport(
     {
         try
         {
-            var queueName = AwsPhysicalAddress.QueueDestination(message.Name);
-            var queueUrl = await _GetOrCreateQueueUrlAsync(queueName, cancellationToken).ConfigureAwait(false);
-            var body = message.Body.Length > 0 ? Encoding.UTF8.GetString(message.Body.Span) : string.Empty;
-            var attributes = new Dictionary<string, MessageAttributeValue>(
-                message.Headers.Count,
-                StringComparer.Ordinal
-            );
-
-            foreach (var (key, value) in message.Headers)
+            if (!message.Name.IsAwsFifoName())
             {
-                if (value is not null)
-                {
-                    attributes[key] = new MessageAttributeValue { StringValue = value, DataType = "String" };
-                }
+                Configuration.MessagingRoutingAffinityMapping.RejectUnsupported(message, "AWS standard destination");
             }
+
+            var affinityKey = AwsRoutingAffinity.Mapping.ResolveKey(message);
+            var queueName = AwsPhysicalAddress.QueueDestination(message.Name);
+            var body = message.Body.Length > 0 ? Encoding.UTF8.GetString(message.Body.Span) : string.Empty;
+            var attributes = SqsHeaderCodec.Encode(message);
 
             if (attributes.Count > _MaxMessageAttributes)
             {
@@ -52,6 +46,7 @@ internal sealed class AmazonSqsQueueTransport(
                 );
             }
 
+            var queueUrl = await _GetOrCreateQueueUrlAsync(queueName, cancellationToken).ConfigureAwait(false);
             var request = new SendMessageRequest
             {
                 QueueUrl = queueUrl,
@@ -61,7 +56,7 @@ internal sealed class AmazonSqsQueueTransport(
 
             if (queueName.IsAwsFifoName())
             {
-                request.MessageGroupId = _ResolveMessageGroupId(message);
+                request.MessageGroupId = _ResolveMessageGroupId(message, affinityKey);
 
                 if (
                     message.Headers.TryGetValue(Headers.MessageId, out var messageId)
@@ -98,12 +93,9 @@ internal sealed class AmazonSqsQueueTransport(
         }
     }
 
-    private static string _ResolveMessageGroupId(TransportMessage message)
+    private static string _ResolveMessageGroupId(TransportMessage message, string? messageGroupId)
     {
-        if (
-            message.Headers.TryGetValue(AwsMessagingHeaders.MessageGroupId, out var messageGroupId)
-            && !string.IsNullOrWhiteSpace(messageGroupId)
-        )
+        if (!string.IsNullOrWhiteSpace(messageGroupId))
         {
             return messageGroupId;
         }

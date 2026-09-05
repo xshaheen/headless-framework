@@ -48,6 +48,8 @@ builder.Services.AddHeadlessMessaging(options =>
 
 ## Configuration
 
+The current Redis Streams topology does not provide the provider-neutral routing-affinity contract. `RequireRoutingAffinity()` fails during startup; a supplied `RoutingAffinityKey` is rejected before persistence or transport effects. A stream name identifies a route, not a per-message affinity partition. No transparent stream sharding is added.
+
 `UseRedis(string)` configures Redis Streams for both lanes. For richer options use `UseRedis(Action<RedisMessagingOptions>)`; `RedisMessagingOptions.Configuration` is a StackExchange.Redis `ConfigurationOptions` instance:
 
 ```csharp

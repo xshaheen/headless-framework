@@ -55,6 +55,10 @@ public abstract record MessageOptions
     /// <summary>Gets the explicit message contract schema version override.</summary>
     public string? ContractVersion { get; init; }
 
+    /// <summary>Optional logical affinity key mapped to the configured provider native routing mechanism.</summary>
+    /// <remarks>The destination must be registered and support affinity. This does not promise FIFO or exclusive handling.</remarks>
+    public string? RoutingAffinityKey { get; init; }
+
     /// <summary>
     /// Gets custom application headers. Reserved messaging headers are rejected, and header names/values
     /// cannot contain control characters.
@@ -146,6 +150,7 @@ public abstract record MessageOptions
             && Nullable.Equals(Delay, other.Delay)
             && string.Equals(MessageName, other.MessageName, StringComparison.Ordinal)
             && string.Equals(ContractVersion, other.ContractVersion, StringComparison.Ordinal)
+            && string.Equals(RoutingAffinityKey, other.RoutingAffinityKey, StringComparison.Ordinal)
             && string.Equals(MessageId, other.MessageId, StringComparison.Ordinal)
             && string.Equals(CorrelationId, other.CorrelationId, StringComparison.Ordinal)
             && string.Equals(CausationId, other.CausationId, StringComparison.Ordinal)
@@ -168,6 +173,7 @@ public abstract record MessageOptions
         hash.Add(Delay);
         hash.Add(MessageName, StringComparer.Ordinal);
         hash.Add(ContractVersion, StringComparer.Ordinal);
+        hash.Add(RoutingAffinityKey, StringComparer.Ordinal);
         hash.Add(MessageId, StringComparer.Ordinal);
         hash.Add(CorrelationId, StringComparer.Ordinal);
         hash.Add(CausationId, StringComparer.Ordinal);

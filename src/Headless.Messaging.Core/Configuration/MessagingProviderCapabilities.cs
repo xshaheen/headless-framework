@@ -43,7 +43,8 @@ public sealed record MessagingProviderCapabilities
         IEnumerable<MessageLane> lanes,
         bool supportsIndependentLaneTopology,
         bool supportsDelayedScheduling,
-        MessagingInboxCapabilityTier? inboxCapability
+        MessagingInboxCapabilityTier? inboxCapability,
+        IReadOnlyCollection<MessagingRoutingAffinityRoute>? routingAffinityRoutes = null
     )
     {
         Argument.IsNotNullOrWhiteSpace(provider);
@@ -53,6 +54,7 @@ public sealed record MessagingProviderCapabilities
         SupportsIndependentLaneTopology = supportsIndependentLaneTopology;
         SupportsDelayedScheduling = supportsDelayedScheduling;
         InboxCapability = inboxCapability;
+        RoutingAffinityRoutes = Array.AsReadOnly((routingAffinityRoutes ?? []).ToArray());
 
         if (Lanes.Count == 0 && role is not MessagingProviderRole.Coordination)
         {
@@ -97,11 +99,15 @@ public sealed record MessagingProviderCapabilities
     /// </summary>
     public MessagingInboxCapabilityTier? InboxCapability { get; }
 
+    /// <summary>Locally verified registered destinations with native affinity mappings; empty means unsupported.</summary>
+    public IReadOnlyList<MessagingRoutingAffinityRoute> RoutingAffinityRoutes { get; }
+
     /// <summary>Creates an immutable transport capability contribution.</summary>
     public static MessagingProviderCapabilities Transport(
         string provider,
         IReadOnlyCollection<MessageLane> lanes,
-        bool supportsIndependentLaneTopology
+        bool supportsIndependentLaneTopology,
+        IReadOnlyCollection<MessagingRoutingAffinityRoute>? routingAffinityRoutes = null
     )
     {
         Argument.IsNotNull(lanes);
@@ -111,7 +117,8 @@ public sealed record MessagingProviderCapabilities
             lanes,
             supportsIndependentLaneTopology,
             supportsDelayedScheduling: false,
-            inboxCapability: null
+            inboxCapability: null,
+            routingAffinityRoutes
         );
     }
 

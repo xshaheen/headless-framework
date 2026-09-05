@@ -22,6 +22,10 @@ public class MediumMessage
 
     public required string Content { get; set; }
 
+    /// <summary>The optional affinity key from the authoritative persisted envelope.</summary>
+    public string? RoutingAffinityKey =>
+        Origin.Headers.TryGetValue(Headers.RoutingAffinityKey, out var key) ? key : null;
+
     public required MessageLane Lane { get; set; }
 
     public DateTimeOffset Added { get; set; }

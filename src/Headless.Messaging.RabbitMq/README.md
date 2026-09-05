@@ -50,6 +50,8 @@ builder.Services.AddHeadlessMessaging(options =>
 
 ## Configuration
 
+The current RabbitMQ exchange and binding topology does not provide the provider-neutral routing-affinity contract. `RequireRoutingAffinity()` fails during startup; a supplied `RoutingAffinityKey` is rejected before persistence or transport effects. Hash-exchange topology is not inferred or provisioned. Unkeyed routing remains unchanged.
+
 ```csharp
 options.UseRabbitMq(rmq =>
 {

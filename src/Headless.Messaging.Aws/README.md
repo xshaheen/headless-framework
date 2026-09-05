@@ -23,7 +23,7 @@ The package registers immutable Bus and Queue transport capabilities with indepe
 
 Standard AWS entities remain the default. If a message name ends with `.fifo`, the provider preserves that suffix, creates FIFO SNS/SQS entities with content-based deduplication, and sends `MessageGroupId` from `AwsMessagingHeaders.MessageGroupId` when present, then `headless-msg-group` when present, otherwise `default`. When `headless-msg-id` is present, it is used as the AWS deduplication ID.
 
-SQS message attributes are limited by AWS to 10 entries. Queue sends fail before the AWS call when non-null headers exceed that limit so headers are not silently dropped.
+SQS supports at most ten native message attributes. Unkeyed Queue sends exceeding that limit fail before client effects. Typed keyed Queue sends use the lossless versioned header bag described below.
 
 Malformed SNS transport envelopes are terminally deleted after sanitized logging. Handler rejection remains a normal visibility-timeout retry and can use an external SQS redrive policy.
 
@@ -69,6 +69,12 @@ builder.Services.AddHeadlessMessaging(options =>
 ```
 
 ## Configuration
+
+`RoutingAffinityKey` maps to native `MessageGroupId` only for registered `.fifo` SNS topics or SQS queues. Keys are 1–128 printable ASCII characters (`!` through `~`), without spaces. `AwsMessagingHeaders.MessageGroupId` and `MessageGroupId(...)` remain raw adapters and must agree with a supplied typed key. Standard SQS message-group fairness is not an affinity guarantee; typed keys on standard routes are rejected. Shared groups do not imply whole-pipeline FIFO or handler exclusivity. No application headers are discarded.
+
+Keyed SQS Queue sends encode the complete header dictionary, including null, delivery, trace, and business metadata, as one String attribute named `headless-aws-headers-v1`; the payload body and native `MessageGroupId` remain unchanged. Only that exact attribute name is reserved. Consumers select bag decoding when it is present; other `headless-aws-headers-*` application headers remain ordinary headers, including on pre-upgrade unkeyed messages. Mixed attributes alongside the bag and malformed bags are terminally deleted from their source queue without a handler callback. An unsupported future envelope lacking the required legacy identity headers is rejected by the normal envelope validation. Unkeyed Queue sends retain the existing ten-attribute limit. SNS Bus retains its existing envelope format.
+
+Deploy the new consumers before enabling typed keys, and fence or drain all old consumers plus old publishers/outbox/retry workers. Older consumers cannot decode the keyed SQS bag and may terminally delete it. Rollback after keyed publication requires draining or fencing that backlog; a database rollback alone does not restore wire compatibility.
 
 ```csharp
 options.UseAws(sqs =>

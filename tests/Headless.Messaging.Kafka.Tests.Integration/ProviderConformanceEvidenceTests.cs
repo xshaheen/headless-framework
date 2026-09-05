@@ -13,11 +13,20 @@ namespace Tests;
 public sealed class ProviderConformanceEvidenceTests(KafkaFixture fixture) : TestBase
 {
     [Fact]
+    public Task should_prove_routing_affinity_mapping_or_rejection() =>
+        TransportRoutingAffinityConformance.AssertAsync(new KafkaProviderConformanceDriver(fixture), AbortToken);
+
+    [Fact]
     public async Task should_execute_every_supported_manifest_scenario()
     {
         var profile = TransportConformanceManifest.Providers["Kafka"];
         TransportConformanceTestBinding[] bindings =
         [
+            new(
+                TransportConformanceScenario.RoutingAffinityMappingOrRejection,
+                typeof(ProviderConformanceEvidenceTests),
+                nameof(should_prove_routing_affinity_mapping_or_rejection)
+            ),
             _Bind(
                 TransportConformanceScenario.QueueRoundTrip,
                 nameof(KafkaConsumerClientConformanceTests.should_round_trip_queue_message_body_and_headers)

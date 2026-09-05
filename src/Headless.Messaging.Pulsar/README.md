@@ -44,6 +44,8 @@ builder.Services.AddHeadlessMessaging(options =>
 
 ## Configuration
 
+`RoutingAffinityKey` on publish/enqueue options maps to the native Pulsar message key on registered Bus and Queue routes. The optional `PulsarMessagingHeaders.PulsarKey` adapter must agree. The configured client uses its built-in key hashing; Headless adds no key-length limit beyond broker message limits. Keep routing configuration and partition topology fixed while relying on placement. This does not select a `Key_Shared` subscription, guarantee FIFO, or prevent concurrent handling.
+
 ```csharp
 options.UsePulsar(pulsar =>
 {

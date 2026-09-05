@@ -30,6 +30,9 @@ public static class Headers
     /// </summary>
     public const string ContractVersion = "headless-contract-version";
 
+    /// <summary>Reserved provider-neutral routing key; use MessageOptions.RoutingAffinityKey when publishing.</summary>
+    public const string RoutingAffinityKey = "headless-routing-affinity-key";
+
     /// <summary>
     /// The consumer group that should receive this message.
     /// In Kafka, this maps to the consumer group; in RabbitMQ, it maps to the queue name.

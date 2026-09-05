@@ -39,13 +39,12 @@ internal sealed class AzureServiceBusTransport(
         try
         {
             var producer = CreateProducerForMessage(transportMessage);
-            var sender = clientPool.GetSender(producer.TopicPath);
-
             var message = AzureServiceBusMessageBuilder.Build(
                 transportMessage,
                 busOptions.Value.EnableSessions || producer.EnableSessions
             );
 
+            var sender = clientPool.GetSender(producer.TopicPath);
             await sender.SendMessageAsync(message, cancellationToken).ConfigureAwait(false);
 
             var messageName = transportMessage.Name;

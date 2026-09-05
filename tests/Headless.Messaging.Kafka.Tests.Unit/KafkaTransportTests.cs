@@ -25,6 +25,55 @@ public sealed class KafkaTransportTests : TestBase
         _pool.RentProducer().Returns(_producer);
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("order-42")]
+    public async Task should_map_typed_affinity_to_native_key(string? raw)
+    {
+        await using var transport = new KafkaTransport(_logger, _pool);
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [MessagingHeaders.MessageId] = "message-1",
+            [MessagingHeaders.MessageName] = "orders",
+            [MessagingHeaders.RoutingAffinityKey] = "order-42",
+        };
+        if (raw is not null)
+        {
+            headers[KafkaMessagingHeaders.KafkaKey] = raw;
+        }
+        _producer
+            .ProduceAsync(Arg.Any<string>(), Arg.Any<Message<string, byte[]>>(), Arg.Any<CancellationToken>())
+            .Returns(new DeliveryResult<string, byte[]> { Status = PersistenceStatus.Persisted });
+
+        var result = await transport.SendAsync(new TransportMessage(headers, "payload"u8.ToArray()), AbortToken);
+
+        result.Succeeded.Should().BeTrue();
+        await _producer
+            .Received(1)
+            .ProduceAsync("orders", Arg.Is<Message<string, byte[]>>(message => message.Key == "order-42"), AbortToken);
+    }
+
+    [Fact]
+    public async Task should_reject_conflicting_affinity_before_renting_producer()
+    {
+        await using var transport = new KafkaTransport(_logger, _pool);
+        var message = new TransportMessage(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [MessagingHeaders.MessageId] = "message-1",
+                [MessagingHeaders.MessageName] = "orders",
+                [MessagingHeaders.RoutingAffinityKey] = "order-42",
+                [KafkaMessagingHeaders.KafkaKey] = "other",
+            },
+            default
+        );
+
+        var act = () => transport.SendAsync(message, AbortToken);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*conflicts*");
+        _pool.DidNotReceive().RentProducer();
+    }
+
     [Fact]
     public async Task should_have_correct_broker_address()
     {

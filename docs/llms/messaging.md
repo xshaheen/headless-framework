@@ -211,6 +211,7 @@ services.AddHeadlessMessaging(setup =>
 - **The same contract can use both lanes**: an identical contract and logical name may have independent Bus and Queue registrations, metadata, middleware, circuits, retry/backpressure state, and transport selection. Every built-in dual-lane transport now declares and proves independent physical lane topology; Kafka remains Queue-only and rejects Bus registration before readiness or side effects.
 - **Runtime handlers are first-class**: Use `IRuntimeSubscriber` for ephemeral broker-attached delegates. They share scoped DI, middleware, diagnostics, retry, and correlation semantics with class handlers.
 - **The publisher verb selects the lane**: Use `IBus.PublishAsync` for broadcast Bus delivery and `IQueue.EnqueueAsync` for point-to-point Queue delivery.
+- **Use typed routing affinity**: set `RoutingAffinityKey`; reserve `headless-routing-affinity-key`. Validate registered route support from frozen capabilities before startup effects, and typed/native conflicts before durable writes. Provider session/FIFO topology still requires broker evidence.
 - **Choose durability separately**: Set `DeliveryMode` on immutable publish/enqueue options: `Auto` captures under compatible coordination, sends directly with no coordination, and rejects an active incompatible boundary; `Durable` persists first; `TransportDirect` bypasses storage and coordination.
 - **Provider behavior is capability-gated**: immutable transport, storage, and coordination descriptors declare lanes, delayed scheduling, and physical lane-topology support. Bootstrap freezes and validates them before readiness or resolving provider implementations; direct and outbox calls reject unsupported combinations before middleware, storage writes, client creation, or transport I/O. Raw transport DI registration is not capability evidence.
 - **Durable inbox guarantees fail closed**: durable consumers require `MessagingOptions.RequiredInboxCapability`, which defaults to `Transactional`. Selecting `DurableDedupeOnly` is an explicit opt-down when duplicate suppression may commit separately from application state; selecting `ProcessLocal` is reserved for process-local development storage. Bootstrap validates the declared storage tier before subscription creation or retry pickup.
@@ -288,6 +289,40 @@ services.AddHeadlessMessaging(setup =>
 | Redis | Lane Redis Stream + group | Lane Redis Stream + owned group | Yes | None | None |
 
 The shipped immutable descriptors are the runtime authority, not this table or raw DI shape. The dashboard `/api/meta` projection exposes those descriptors and their lanes. Executable provider conformance tests prove group fan-out, replica competition, Queue ownership, and same-name isolation at each provider's supported tier. Kafka is intentionally Queue-only and rejects Bus registration during bootstrap before provider or storage side effects.
+
+**Routing affinity:** register the logical destination, optionally require support with `RequireRoutingAffinity()`, and supply one `RoutingAffinityKey` on publish/enqueue options. Required-route checks run before startup clients/processors; per-call validation runs before persistence and transport effects. Inert option snapshots establish local support, not remote broker-topology proof. Unknown keyed overrides are rejected even if the provider could auto-create an unkeyed destination.
+
+| Provider | Supported configured destination | Native key | Key bounds / prerequisites |
+| --- | --- | --- | --- |
+| Kafka | Queue topic | UTF-8 string key | Nonempty, no controls; verified deterministic partitioner and fixed partition count |
+| Pulsar | Bus or Queue topic | Native message key | Nonempty, no controls; built-in key hashing and fixed topology |
+| Azure Service Bus | Session-enabled Bus subscription or Queue | `SessionId` | At most 128 UTF-16 code units; matching raw `SessionId` / `PartitionKey` |
+| AWS | FIFO SNS topic or SQS queue | `MessageGroupId` | `.fifo` destination; 1–128 ASCII characters `!`–`~`, without spaces |
+| NATS, RabbitMQ, Redis, InMemory | Unsupported in current topology | None | Required declarations and keyed requests reject deterministically |
+
+Affinity does not promise total FIFO, nonconcurrent same-key handling, independent partitions for different keys, or stable placement after topology changes. Redelivery remains at-least-once.
+
+```csharp
+services.AddHeadlessMessaging(setup =>
+{
+    setup.UseKafka("localhost:9092");
+    setup.UseInMemoryStorage();
+    setup.Queue.ForMessage<OrderChanged>(message => message.Contract("orders.changed").RequireRoutingAffinity());
+});
+
+await queue.EnqueueAsync(order, new EnqueueOptions
+{
+    RoutingAffinityKey = order.OrderId.ToString(),
+    DeliveryMode = DeliveryMode.Durable,
+}, cancellationToken);
+```
+
+The example uses process-local outbox storage for development; choose PostgreSQL or SQL Server for persistence across process restarts.
+
+Stored keyed outbox rows are revalidated against the current frozen destination mapping before attempt reservation or native client resolution. Normal retry pickup may already hold a storage lease at this point. A deployment that removes or invalidates their mapping rejects dispatch until the operator restores a supported configuration. Unkeyed legacy rows keep their existing behavior.
+
+**Affinity migration:** the neutral envelope field is additive; existing unkeyed envelopes read as null. There is no new affinity column or relational migration. Move portable routing intent from raw provider headers/selectors to the typed option, or keep adapters with exactly matching values. Do not enable keyed production while older publishers, outbox dispatchers, or retry workers can handle these envelopes: older binaries can ignore the neutral key and lose affinity. Quiesce publication, drain or fence the old workers, upgrade the complete Messaging family, verify the remote session/FIFO/partition configuration, then enable the key. A rollback requires draining or fencing keyed backlog first. Keep native partition topology and hashing stable; Headless does not migrate broker topology or promise placement across a change. Third-party providers declare immutable `MessagingRoutingAffinityRoute` mappings in their existing capability contribution and validate native adapters before client I/O.
+
 
 ### Provider cutover and recovery matrix
 
@@ -399,6 +434,8 @@ public sealed class OrderPlacedConsumer : IConsume<OrderPlaced>
 ```
 
 ### Configuration
+
+`MessageOptions.RoutingAffinityKey` is an optional provider-neutral string. `TransportMessage.RoutingAffinityKey` reads its reserved `headless-routing-affinity-key` envelope header. Use the typed option; custom writes to that neutral header are rejected. Null preserves unkeyed behavior. Nonempty keys must satisfy the configured provider bounds and raw provider adapters must agree with the typed value.
 
 None.
 
@@ -554,6 +591,8 @@ services.AddHeadlessMessaging(setup =>
 ```
 
 ### Configuration
+
+`RequireRoutingAffinity()` on a Bus or Queue message registration requires a locally supported native mapping at startup; it does not require every publication to supply a key. Set `PublishOptions.RoutingAffinityKey` or `EnqueueOptions.RoutingAffinityKey` per publication. The frozen capability model snapshots registered destinations from inert options before clients or processors start. Keyed unknown destination overrides, invalid keys, and typed/raw conflicts fail before outbox insertion or transport effects. `MediumMessage.RoutingAffinityKey` reads the authoritative serialized envelope; InMemory, PostgreSQL, and SQL Server preserve it without a new storage column.
 
 - `MessagingOptions.DefaultGroupName`, `GroupNamePrefix`, `MessageNamePrefix`, and `Version` control naming and isolation. `Version` is validated non-empty and at most 20 characters — the SQL storage providers persist it as a literal into a `VARCHAR(20)`/`nvarchar(20)` column, so an over-long value is rejected at startup instead of failing every outbox insert.
 - `MessagingOptions.RequiredInboxCapability` defaults to `MessagingInboxCapabilityTier.Transactional`. Set `DurableDedupeOnly` only when the application accepts that inbox outcome and business state cannot commit atomically, or `ProcessLocal` for the in-process development provider. The configured storage must declare the selected tier before durable consumers can start.
@@ -1269,6 +1308,12 @@ AWS declares immutable Bus and Queue capabilities with independent SNS/SQS topol
 
 ### Configuration
 
+`RoutingAffinityKey` maps to native `MessageGroupId` only for registered `.fifo` SNS topics or SQS queues. Keys are 1–128 printable ASCII characters (`!` through `~`), without spaces. `AwsMessagingHeaders.MessageGroupId` and `MessageGroupId(...)` remain raw adapters and must agree with a supplied typed key. Standard SQS message-group fairness is not an affinity guarantee; typed keys on standard routes are rejected. Shared groups do not imply whole-pipeline FIFO or handler exclusivity. No application headers are discarded.
+
+Keyed SQS Queue sends encode the complete header dictionary, including null, delivery, trace, and business metadata, as one String attribute named `headless-aws-headers-v1`; the payload body and native `MessageGroupId` remain unchanged. Only the exact `headless-aws-headers-v1` attribute is reserved. Consumers recognize that exact attribute as the bag and otherwise accept legacy individual attributes, including other names with the same prefix. A recognized bag mixed with other attributes, or a malformed bag, is terminally deleted from its source queue without a handler callback. Unkeyed Queue sends retain the existing ten-attribute limit. SNS Bus retains its existing envelope format.
+
+Deploy the new consumers before enabling typed keys, and fence or drain all old consumers plus old publishers/outbox/retry workers. Older consumers cannot decode the keyed SQS bag and may terminally delete it. Rollback after keyed publication requires draining or fencing that backlog; a database rollback alone does not restore wire compatibility.
+
 Configure AWS region, service URLs, and credentials through `AmazonSqsMessagingOptions`.
 
 ### Dependencies
@@ -1326,6 +1371,8 @@ Azure Service Bus declares immutable Bus and Queue capabilities with independent
 
 ### Configuration
 
+`RoutingAffinityKey` maps to native `SessionId` on registered session-enabled routes, with a 128 UTF-16-code-unit maximum. Queue routes require `EnableSessions`; Bus routes may use global sessions or a matching custom producer with sessions. Raw `SessionId` and `PartitionKey` must both agree with a supplied typed key. A non-session partition key alone is insufficient configuration evidence. Local startup validation does not query the broker: the actual queue/subscription must also require sessions. Affinity does not promise application-handler exclusivity or whole-pipeline FIFO.
+
 Configure connection string or namespace, retry/client settings, queue/topic behavior, session support, and SQL filters through `AzureServiceBusMessagingOptions`. Authentication is an either/or contract: supply either `ConnectionString` or both `Namespace` and `TokenCredential` — both are nullable (`string?`) and the validator enforces that exactly one mode is configured at start. Processor settlement is not configurable; Headless disables Azure SDK auto-complete and completes or abandons messages explicitly.
 
 ### Dependencies
@@ -1363,6 +1410,8 @@ setup.UseInMemory();
 ```
 
 ### Configuration
+
+The in-memory transport declares no native routing-affinity mapping. `RequireRoutingAffinity()` fails during startup; a supplied `RoutingAffinityKey` is rejected before persistence or transport effects. This is separate from in-memory storage, which preserves the key when paired with a supported transport.
 
 None.
 
@@ -1453,6 +1502,8 @@ setup.Queue.ForMessage<OrderPlaced>(message =>
 
 ### Configuration
 
+`EnqueueOptions.RoutingAffinityKey` maps to the native UTF-8 string key on registered Queue routes. The optional `KafkaMessagingHeaders.KafkaKey` adapter must match it. `RequireRoutingAffinity()` rejects configurations with a random or unrecognized `MainConfig["partitioner"]`; accepted partitioners are `consistent`, `consistent_random` (default), `murmur2`, `murmur2_random`, `fnv1a`, and `fnv1a_random`, all deterministic for a nonempty key. Headless adds no key-length limit beyond broker message limits. Keep partition count, encoding, and partitioner fixed while relying on placement. Different keys may share partitions; affinity promises neither FIFO nor exclusive handling.
+
 Configure bootstrap servers, main Kafka config, topic options, custom headers, and retriable error codes through `KafkaMessagingOptions`. `RetriableErrorCodes` / `DefaultRetriableErrorCodes` are `int` values of Confluent's `ErrorCode` enum (not the native enum type), so configuring retries needs no compile-time `Confluent.Kafka` reference; the framework casts back to `ErrorCode` internally.
 
 ### Dependencies
@@ -1513,6 +1564,8 @@ NATS declares independent Bus and Queue topology, so the same contract and logic
 
 ### Configuration
 
+The current NATS subjects and stream topology do not provide the provider-neutral routing-affinity contract. `RequireRoutingAffinity()` fails during startup; a supplied `RoutingAffinityKey` is rejected before persistence or transport effects. Existing raw subject-shard hooks remain provider-specific configuration and do not establish a neutral key mapping. No transparent sharding topology is introduced.
+
 Configure NATS servers, credentials, stream behavior, durable names, and connection settings through `NatsMessagingOptions`.
 
 ### Dependencies
@@ -1564,6 +1617,8 @@ setup.Bus.ForMessage<OrderPlaced>(message =>
 ```
 
 ### Configuration
+
+`RoutingAffinityKey` on publish/enqueue options maps to the native Pulsar message key on registered Bus and Queue routes. The optional `PulsarMessagingHeaders.PulsarKey` adapter must agree. The configured client uses its built-in key hashing; Headless adds no key-length limit beyond broker message limits. Keep routing configuration and partition topology fixed while relying on placement. This does not select a `Key_Shared` subscription, guarantee FIFO, or prevent concurrent handling.
 
 Configure service URL, authentication, TLS, and negative-ack redelivery through `PulsarMessagingOptions`. `NegativeAckRedeliveryDelay` defaults to one minute and must be at least 100 milliseconds; smaller values fail startup validation instead of being silently clamped by Pulsar.Client.
 
@@ -1620,6 +1675,8 @@ RabbitMQ declares independent Bus and Queue topology, so the same contract and l
 
 ### Configuration
 
+The current RabbitMQ exchange and binding topology does not provide the provider-neutral routing-affinity contract. `RequireRoutingAffinity()` fails during startup; a supplied `RoutingAffinityKey` is rejected before persistence or transport effects. Hash-exchange topology is not inferred or provisioned. Unkeyed routing remains unchanged.
+
 Configure host, credentials, exchange, queue arguments, QoS defaults, and custom headers through `RabbitMqMessagingOptions`. `UserName` and `Password` are `required` and must be set explicitly; the validator rejects the RabbitMQ default `guest`/`guest` credentials for production safety.
 
 ### Dependencies
@@ -1659,6 +1716,8 @@ setup.UseRedis(options => options.Configuration = "localhost:6379");
 Redis physical keys are `headless:messaging:bus:{logical-name}` and `headless:messaging:queue:{logical-name}`. The removed `UseRedisPubSub(...)` surface and legacy channel/stream topology cannot be mixed with this package family. Fence old producers and consumers, drain or explicitly reconcile legacy traffic, deploy all Messaging packages in lockstep, and retain legacy resources until the abort window closes.
 
 ### Configuration
+
+The current Redis Streams topology does not provide the provider-neutral routing-affinity contract. `RequireRoutingAffinity()` fails during startup; a supplied `RoutingAffinityKey` is rejected before persistence or transport effects. A stream name identifies a route, not a per-message affinity partition. No transparent stream sharding is added.
 
 Configure Redis connection and Stream behavior through `RedisMessagingOptions`.
 

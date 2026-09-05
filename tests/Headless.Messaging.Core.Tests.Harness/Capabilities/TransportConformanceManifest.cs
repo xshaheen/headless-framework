@@ -9,6 +9,7 @@ namespace Tests.Capabilities;
 [PublicAPI]
 public enum TransportConformanceScenario
 {
+    RoutingAffinityMappingOrRejection,
     QueueRoundTrip,
     BusRoundTrip,
     HeaderRoundTrip,
@@ -208,6 +209,7 @@ public static class TransportConformanceManifest
 {
     private static readonly TransportConformanceScenario[] _MandatoryBaselineScenarios =
     [
+        TransportConformanceScenario.RoutingAffinityMappingOrRejection,
         TransportConformanceScenario.QueueRoundTrip,
         TransportConformanceScenario.HeaderRoundTrip,
         TransportConformanceScenario.CommitSettlement,
@@ -219,6 +221,10 @@ public static class TransportConformanceManifest
         {
             ["NATS"] = TransportConformanceProfile
                 .CreateDisabled("NATS")
+                .WithScenario(
+                    TransportConformanceScenario.RoutingAffinityMappingOrRejection,
+                    ConformanceSupport.Supported
+                )
                 .WithRuntimeCapabilities(
                     "NATS JetStream",
                     supportsBus: true,
@@ -246,6 +252,10 @@ public static class TransportConformanceManifest
                 .EnableRealBrokerLeaf(),
             ["RabbitMQ"] = TransportConformanceProfile
                 .CreateDisabled("RabbitMQ")
+                .WithScenario(
+                    TransportConformanceScenario.RoutingAffinityMappingOrRejection,
+                    ConformanceSupport.Supported
+                )
                 .WithRuntimeCapabilities(
                     "RabbitMQ",
                     supportsBus: true,
@@ -273,6 +283,10 @@ public static class TransportConformanceManifest
                 .EnableRealBrokerLeaf(),
             ["AWS/LocalStack"] = TransportConformanceProfile
                 .CreateDisabled("AWS/LocalStack")
+                .WithScenario(
+                    TransportConformanceScenario.RoutingAffinityMappingOrRejection,
+                    ConformanceSupport.Supported
+                )
                 .WithRuntimeCapabilities(
                     "Amazon SQS",
                     supportsBus: true,
@@ -303,6 +317,10 @@ public static class TransportConformanceManifest
                 .EnableRealBrokerLeaf(),
             ["Kafka"] = TransportConformanceProfile
                 .CreateDisabled("Kafka")
+                .WithScenario(
+                    TransportConformanceScenario.RoutingAffinityMappingOrRejection,
+                    ConformanceSupport.Supported
+                )
                 .WithRuntimeCapabilities(
                     "Kafka",
                     supportsBus: false,
@@ -356,6 +374,10 @@ public static class TransportConformanceManifest
                 .EnableRealBrokerLeaf(),
             ["Pulsar"] = TransportConformanceProfile
                 .CreateDisabled("Pulsar")
+                .WithScenario(
+                    TransportConformanceScenario.RoutingAffinityMappingOrRejection,
+                    ConformanceSupport.Supported
+                )
                 .WithRuntimeCapabilities(
                     "Apache Pulsar",
                     supportsBus: true,
@@ -382,6 +404,10 @@ public static class TransportConformanceManifest
                 .EnableRealBrokerLeaf(),
             ["Azure Service Bus"] = TransportConformanceProfile
                 .CreateDisabled("Azure Service Bus")
+                .WithScenario(
+                    TransportConformanceScenario.RoutingAffinityMappingOrRejection,
+                    ConformanceSupport.Supported
+                )
                 .WithRuntimeCapabilities(
                     "Azure Service Bus",
                     supportsBus: true,
@@ -409,6 +435,10 @@ public static class TransportConformanceManifest
                 .EnableRealBrokerLeaf(),
             ["InMemory"] = TransportConformanceProfile
                 .CreateDisabled("InMemory")
+                .WithScenario(
+                    TransportConformanceScenario.RoutingAffinityMappingOrRejection,
+                    ConformanceSupport.Supported
+                )
                 .WithRuntimeCapabilities(
                     "InMemory",
                     supportsBus: true,
@@ -439,6 +469,10 @@ public static class TransportConformanceManifest
                 ),
             ["Redis"] = TransportConformanceProfile
                 .CreateDisabled("Redis")
+                .WithScenario(
+                    TransportConformanceScenario.RoutingAffinityMappingOrRejection,
+                    ConformanceSupport.Supported
+                )
                 .WithRuntimeCapabilities(
                     "Redis",
                     supportsBus: true,

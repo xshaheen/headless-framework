@@ -8,6 +8,15 @@ internal static class AzureServiceBusMessageBuilder
 {
     public static ServiceBusMessage Build(TransportMessage transportMessage, bool enableSessions)
     {
+        if (!enableSessions)
+        {
+            Configuration.MessagingRoutingAffinityMapping.RejectUnsupported(
+                transportMessage,
+                "Azure Service Bus without sessions"
+            );
+        }
+
+        var affinityKey = AzureServiceBusRoutingAffinity.Mapping.ResolveKey(transportMessage);
         // BinaryData.FromBytes wraps the ReadOnlyMemory without copying; ServiceBusMessage(byte[]) would force a
         // full payload copy via Body.ToArray() on every publish.
         var message = new ServiceBusMessage(BinaryData.FromBytes(transportMessage.Body))
@@ -19,7 +28,7 @@ internal static class AzureServiceBusMessageBuilder
 
         if (enableSessions)
         {
-            transportMessage.Headers.TryGetValue(AzureServiceBusMessagingHeaders.SessionId, out var sessionId);
+            var sessionId = affinityKey;
             if (string.IsNullOrEmpty(sessionId))
             {
                 transportMessage.Headers.TryGetValue(

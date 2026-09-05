@@ -212,6 +212,16 @@ setup.Bus.ForMessage<OrderPlaced>(message =>
 
 Core registers `IBus` and `IQueue` up front. Immutable provider descriptors then gate transport-direct, durable, and delayed behavior per lane. Bootstrap rejects invalid registered routes before readiness or provider resolution, and per-call gates reject unsupported delivery before middleware or side effects.
 
+### Routing affinity
+
+Use `message.Contract("orders.changed").RequireRoutingAffinity()` when registering a route and set `RoutingAffinityKey` on the outbound options. The key survives direct sends, outbox dispatch, and retries. Kafka Queue, Pulsar Bus/Queue, Azure session routes, and AWS FIFO destinations have native mappings; current NATS, RabbitMQ, Redis, and InMemory transports reject keyed requests.
+
+Affinity is scoped to the configured broker topology. It promises neither FIFO nor handler exclusivity, distinct-key partition uniqueness, or unchanged placement after topology changes. Raw provider keys remain adapters and must exactly match a supplied typed key.
+
+Stored keyed outbox rows are revalidated against the current frozen destination mapping before attempt reservation or native client resolution. Normal retry pickup may already hold a storage lease at this point. A deployment that removes or invalidates their mapping rejects dispatch until the operator restores a supported configuration. Unkeyed legacy rows keep their existing behavior.
+
+No affinity storage migration is required: the authoritative key lives in the serialized envelope. Upgrade all publishers and outbox/retry workers before enabling it; older workers can ignore the neutral key. Drain or fence old workers and verify broker sessions, FIFO destinations, and partition configuration before cutover. Drain or fence keyed backlog before rolling back.
+
 ### Bus Publishers
 
 Use bus publishers for broadcast publish/subscribe delivery:
@@ -271,6 +281,8 @@ public sealed class ProjectionSubscriptions(IRuntimeSubscriber subscriber)
 When runtime delegates are attached during application startup, the messaging runtime ensures they are either included in the initial consumer registration pass or trigger a refresh once the consumer register is live. You do not need to manually restart messaging after calling `SubscribeAsync(...)`.
 
 ## Configuration
+
+`RequireRoutingAffinity()` on a Bus or Queue message registration requires a locally supported native mapping at startup; it does not require every publication to supply a key. Set `PublishOptions.RoutingAffinityKey` or `EnqueueOptions.RoutingAffinityKey` per publication. The frozen capability model snapshots registered destinations from inert options before clients or processors start. Keyed unknown destination overrides, invalid keys, and typed/raw conflicts fail before outbox insertion or transport effects. `MediumMessage.RoutingAffinityKey` reads the authoritative serialized envelope; InMemory, PostgreSQL, and SQL Server preserve it without a new storage column.
 
 Register in `Program.cs`:
 

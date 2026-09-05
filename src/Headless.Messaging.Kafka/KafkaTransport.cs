@@ -15,6 +15,7 @@ internal sealed class KafkaTransport(ILogger<KafkaTransport> logger, IKafkaConne
 
     public async Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
     {
+        var affinityKey = KafkaRoutingAffinity.Mapping.ResolveKey(message);
         var producer = connectionPool.RentProducer();
 
         try
@@ -38,11 +39,7 @@ internal sealed class KafkaTransport(ILogger<KafkaTransport> logger, IKafkaConne
                     new Message<string, byte[]>
                     {
                         Headers = headers,
-                        Key =
-                            message.Headers.TryGetValue(KafkaMessagingHeaders.KafkaKey, out var kafkaMessageKey)
-                            && !string.IsNullOrEmpty(kafkaMessageKey)
-                                ? kafkaMessageKey
-                                : message.Id,
+                        Key = string.IsNullOrEmpty(affinityKey) ? message.Id : affinityKey,
                         Value = _GetMessageBodyArray(message.Body),
                     },
                     cancellationToken

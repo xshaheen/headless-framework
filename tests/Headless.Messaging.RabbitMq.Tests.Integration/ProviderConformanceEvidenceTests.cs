@@ -9,11 +9,20 @@ namespace Tests;
 public sealed class ProviderConformanceEvidenceTests(RabbitMqFixture fixture) : TestBase
 {
     [Fact]
+    public Task should_prove_routing_affinity_mapping_or_rejection() =>
+        TransportRoutingAffinityConformance.AssertAsync(new RabbitMqProviderConformanceDriver(fixture), AbortToken);
+
+    [Fact]
     public async Task should_execute_every_supported_manifest_scenario()
     {
         var profile = TransportConformanceManifest.Providers["RabbitMQ"];
         TransportConformanceTestBinding[] bindings =
         [
+            new(
+                TransportConformanceScenario.RoutingAffinityMappingOrRejection,
+                typeof(ProviderConformanceEvidenceTests),
+                nameof(should_prove_routing_affinity_mapping_or_rejection)
+            ),
             _Bind(
                 TransportConformanceScenario.QueueRoundTrip,
                 nameof(RabbitMqConsumerClientConformanceTests.should_round_trip_queue_message_body_and_headers)
@@ -89,6 +98,11 @@ public sealed class ProviderConformanceEvidenceTests(RabbitMqFixture fixture) : 
 
     private object _CreateTestClass(Type testClass)
     {
+        if (testClass == typeof(ProviderConformanceEvidenceTests))
+        {
+            return new ProviderConformanceEvidenceTests(fixture);
+        }
+
         if (testClass == typeof(RabbitMqConsumerClientConformanceTests))
         {
             return new RabbitMqConsumerClientConformanceTests(fixture);
