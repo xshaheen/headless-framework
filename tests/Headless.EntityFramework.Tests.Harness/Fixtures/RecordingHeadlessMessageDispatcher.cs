@@ -53,6 +53,19 @@ public sealed class RecordingHeadlessMessageDispatcher : ILocalEventBus, IHeadle
         return ValueTask.CompletedTask;
     }
 
+    public ValueTask PublishAsync<T>(EventOccurrence<T> occurrence, CancellationToken cancellationToken = default)
+        where T : class, IDomainEvent =>
+        PublishAsync(new EventOccurrence<IDomainEvent>(occurrence.Payload, occurrence.Context), cancellationToken);
+
+    public ValueTask PublishAsync(
+        EventOccurrence<IDomainEvent> occurrence,
+        CancellationToken cancellationToken = default
+    )
+    {
+        _RecordLocal(occurrence.Payload);
+        return ValueTask.CompletedTask;
+    }
+
     public Task DispatchAsync(
         IReadOnlyList<IIntegrationEvent> integrationEvents,
         CancellationToken cancellationToken = default

@@ -9,6 +9,18 @@ public sealed class EntityEventDataTests
     private sealed record TestEntity(int Id, string Name);
 
     [Fact]
+    public void should_keep_event_identity_out_of_business_payload_contracts()
+    {
+        typeof(IDomainEvent).GetProperties().Should().BeEmpty();
+        typeof(IIntegrationEvent).GetProperties().Should().BeEmpty();
+        typeof(EntityCreatedEventData<TestEntity>)
+            .GetProperties()
+            .Select(property => property.Name)
+            .Should()
+            .Equal("Entity");
+    }
+
+    [Fact]
     public void should_create_entity_created_event_data()
     {
         var entity = new TestEntity(1, "Test");

@@ -25,5 +25,11 @@ public interface IDomainEventEmitter
 
     /// <summary>Returns the current list of pending domain events.</summary>
     /// <returns>A read-only snapshot of enqueued domain events; empty when none have been added.</returns>
-    IReadOnlyList<IDomainEvent> GetDomainEvents();
+    IReadOnlyList<EventOccurrence<IDomainEvent>> GetDomainEvents();
+
+    /// <summary>Preserves an occurrence already captured by infrastructure.</summary>
+    void AddDomainEvent(EventOccurrence<IDomainEvent> occurrence);
+
+    /// <summary>Removes only the captured batch; occurrences appended later stay pending.</summary>
+    void ClearDomainEvents(IReadOnlyList<EventOccurrence<IDomainEvent>> occurrences);
 }

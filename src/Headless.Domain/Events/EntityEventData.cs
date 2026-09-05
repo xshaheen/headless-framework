@@ -10,9 +10,6 @@ namespace Headless.Domain;
 [PublicAPI]
 public abstract class EntityEventData<TEntity>(TEntity entity) : IDomainEvent
 {
-    /// <summary>Globally unique identifier for this event instance, generated as a UUID v7.</summary>
-    public string UniqueId { get; } = Guid.CreateVersion7().ToString();
-
     /// <summary>Related entity with this event.</summary>
     public TEntity Entity { get; } = entity;
 }

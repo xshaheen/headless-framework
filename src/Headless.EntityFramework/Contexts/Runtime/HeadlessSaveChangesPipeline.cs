@@ -25,11 +25,10 @@ namespace Headless.EntityFramework.Contexts.Runtime;
 /// the pipeline reuses it; otherwise it opens a transaction wrapped by the execution strategy so audit and
 /// message-emitter work commit atomically with the entity batch.
 /// <para>
-/// At-most-once domain-event delivery applies only to the pipeline-owned execution-strategy path (no explicit
-/// transaction on entry): the guard suppresses re-publication across the strategy's transient-fault replays.
-/// When the caller owns the transaction and drives its own retry loop, each <c>SaveChanges</c> is a fresh
-/// invocation with a fresh guard, so domain-event handlers can fire again and must stay idempotent /
-/// replay-safe. Integration events remain exactly-once via the transactional outbox regardless of path.
+/// A completed local drain is not repeated by subsequent persistence retries within an owned save.
+/// Handler failures can repeat handler entry; there are no per-handler checkpoints. Local handlers must
+/// remain replay-safe and avoid rollback-unsafe external effects. Caller-owned successful saves clear only
+/// their saved batches before physical commit; a known outer rollback requires a fresh context and graph. Outbox storage can enlist atomically; delivery and external effects remain at-least-once.
 /// </para>
 /// </remarks>
 [PublicAPI]
@@ -83,7 +82,7 @@ public interface IHeadlessSaveChangesPipeline
 /// pipeline owns the explicit transaction boundary that interceptors don't expose cleanly.
 /// </para>
 /// </remarks>
-internal sealed partial class HeadlessSaveChangesPipeline(
+internal sealed class HeadlessSaveChangesPipeline(
     IServiceProvider serviceProvider,
     HeadlessDbContextOptions options,
     IHeadlessAuditPersistence auditPersistence,
@@ -125,7 +124,7 @@ internal sealed partial class HeadlessSaveChangesPipeline(
         var state = new AsyncSaveState(
             context,
             saveContext,
-            auditEntries,
+            new StrongBox<IReadOnlyList<AuditLogEntryData>?>(auditEntries),
             acceptAllChangesOnSuccess,
             baseSaveChangesAsync,
             new StrongBox<bool>(),
@@ -145,10 +144,12 @@ internal sealed partial class HeadlessSaveChangesPipeline(
             return result;
         }
 
-        return await context
+        var saved = await context
             .Database.CreateExecutionStrategy()
             .ExecuteAsync(state, _ExecuteWithNewTransactionAsync)
             .ConfigureAwait(false);
+        saveContext.CommitFailure?.Throw();
+        return saved;
     }
 
     public int SaveChanges(DbContext context, Func<bool, int> baseSaveChanges, bool acceptAllChangesOnSuccess)
@@ -161,7 +162,7 @@ internal sealed partial class HeadlessSaveChangesPipeline(
         var state = new SaveState(
             context,
             saveContext,
-            auditEntries,
+            new StrongBox<IReadOnlyList<AuditLogEntryData>?>(auditEntries),
             acceptAllChangesOnSuccess,
             baseSaveChanges,
             new StrongBox<bool>()
@@ -180,7 +181,9 @@ internal sealed partial class HeadlessSaveChangesPipeline(
             return result;
         }
 
-        return context.Database.CreateExecutionStrategy().Execute(state, _ExecuteWithNewTransaction);
+        var saved = context.Database.CreateExecutionStrategy().Execute(state, _ExecuteWithNewTransaction);
+        saveContext.CommitFailure?.Throw();
+        return saved;
 #pragma warning restore MA0045
     }
 
@@ -198,6 +201,7 @@ internal sealed partial class HeadlessSaveChangesPipeline(
 
         foreach (var entry in entries)
         {
+            saveContext.ProcessedEntities.Add(entry.Entity);
             foreach (var processor in _entryProcessors)
             {
                 processor.Process(entry, saveContext);
@@ -223,40 +227,56 @@ internal sealed partial class HeadlessSaveChangesPipeline(
 
     private async Task<int> _ExecuteWithNewTransactionAsync(AsyncSaveState state)
     {
-        await using var transaction = await state
-            .Context.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, state.CancellationToken)
-            .ConfigureAwait(false);
-
-        // Give the selected transaction adapter the open transaction synchronously in this frame. The core adapter
-        // is a no-op; the commit-coordination package pushes its ambient coordinator here so it flows to work
-        // invoked inside the save. The push must not live behind an async helper because AsyncLocal state created
-        // there does not propagate back to this caller.
-        await using var coordination = transactionCoordinator.Enlist(
-            state.Context.Database,
-            transaction,
-            serviceProvider,
-            state.CancellationToken
-        );
-
-        return await _SaveWithinTransactionAsync(state, transaction, commitTransaction: true).ConfigureAwait(false);
+        try
+        {
+            await using var transaction = await state
+                .Context.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, state.CancellationToken)
+                .ConfigureAwait(false);
+            // Give the selected transaction adapter the open transaction synchronously in this frame. The core adapter
+            // is a no-op; the commit-coordination package pushes its ambient coordinator here so it flows to work
+            // invoked inside the save. The push must not live behind an async helper because AsyncLocal state created
+            // there does not propagate back to this caller.
+            await using var coordination = transactionCoordinator.Enlist(
+                state.Context.Database,
+                transaction,
+                serviceProvider,
+                state.CancellationToken
+            );
+            return await _SaveWithinTransactionAsync(state, transaction, commitTransaction: true).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (state.SaveContext.CommitStarted)
+        {
+            // A commit or post-commit notification failure does not prove rollback; do not replay the save.
+            state.SaveContext.CommitFailure = ExceptionDispatchInfo.Capture(exception);
+            return 0;
+        }
     }
 
     private int _ExecuteWithNewTransaction(SaveState state)
     {
+        try
+        {
 #pragma warning disable MA0045 // Sync intentionally
-        // Sync twin of _ExecuteWithNewTransactionAsync — same open-then-synchronously-enlist shape.
-        using var transaction = state.Context.Database.BeginTransaction(IsolationLevel.ReadCommitted);
-        using var coordination = transactionCoordinator.Enlist(
-            state.Context.Database,
-            transaction,
-            serviceProvider,
-            CancellationToken.None
-        );
-        return _SaveWithinTransaction(state, transaction, commitTransaction: true);
+            // Sync twin of _ExecuteWithNewTransactionAsync — same open-then-synchronously-enlist shape.
+            using var transaction = state.Context.Database.BeginTransaction(IsolationLevel.ReadCommitted);
+            using var coordination = transactionCoordinator.Enlist(
+                state.Context.Database,
+                transaction,
+                serviceProvider,
+                CancellationToken.None
+            );
+            return _SaveWithinTransaction(state, transaction, commitTransaction: true);
 #pragma warning restore MA0045
+        }
+        catch (Exception exception) when (state.SaveContext.CommitStarted)
+        {
+            // A commit or post-commit notification failure does not prove rollback; do not replay the save.
+            state.SaveContext.CommitFailure = ExceptionDispatchInfo.Capture(exception);
+            return 0;
+        }
     }
 
-    // Intentional sync/async twin of _SaveWithinTransaction below: identical save policy (at-most-once
+    // Intentional sync/async twin of _SaveWithinTransaction below: identical save policy (completed-drain
     // domain-event loop, integration flatten+dispatch, audit capture, missing-bus/dispatcher guards). The two
     // are kept in lockstep by hand rather than extracted — any change here must be mirrored in the sync twin.
     private async Task<int> _SaveWithinTransactionAsync(
@@ -274,30 +294,22 @@ internal sealed partial class HeadlessSaveChangesPipeline(
 
         try
         {
-            // Domain-event handlers are at-most-once. They run before baseSaveChanges so handlers can enlist
-            // changes into this same save, but this method is the execution strategy's retried operation: a
-            // transient fault during save/commit replays it. The DomainEventsPublished flag (shared across the
-            // by-value state copies) ensures handlers are NOT re-invoked on a replay. The contract trade-off:
-            // handlers may run even if a later attempt ultimately fails to commit, so domain-event side effects
-            // must tolerate a rolled-back save (keep them idempotent / replay-safe). For commit-coupled,
-            // exactly-once delivery use integration events (the transactional outbox), not domain events.
-            if (!state.DomainEventsPublished.Value && state.SaveContext.DomainEventEmitters.Count > 0)
+            // A completed drain is retained across persistence retries. Handler failure is not a per-handler checkpoint.
+            if (!state.DomainEventsPublished.Value)
             {
-                var bus = localEventBus ?? throw new InvalidOperationException(_MissingLocalEventBusMessage);
-
-                foreach (var emitter in state.SaveContext.DomainEventEmitters)
+                while (_TryTakeDomainOccurrence(state.Context, state.SaveContext) is { } occurrence)
                 {
-                    foreach (var domainEvent in emitter.Events)
-                    {
-                        state.CancellationToken.ThrowIfCancellationRequested();
-                        await bus.PublishAsync(domainEvent, state.CancellationToken).ConfigureAwait(false);
-                    }
+                    state.CancellationToken.ThrowIfCancellationRequested();
+                    var bus = localEventBus ?? throw new InvalidOperationException(_MissingLocalEventBusMessage);
+                    await bus.PublishAsync(occurrence, state.CancellationToken).ConfigureAwait(false);
+                    state.SaveContext.DomainEventCursor++;
                 }
 
+                state.AuditEntries.Value = auditPersistence.CaptureEntries(_SnapshotEntries(state.Context));
                 state.DomainEventsPublished.Value = true;
             }
 
-            var deferAcceptAllChanges = _HasAuditEntries(state.AuditEntries);
+            var deferAcceptAllChanges = commitTransaction || _HasAuditEntries(state.AuditEntries.Value);
             var result = await state
                 .BaseSaveChangesAsync(
                     !deferAcceptAllChanges && state.AcceptAllChangesOnSuccess,
@@ -308,7 +320,7 @@ internal sealed partial class HeadlessSaveChangesPipeline(
             auditSave = await auditPersistence
                 .ResolveAndPersistAsync(
                     state.Context,
-                    state.AuditEntries,
+                    state.AuditEntries.Value,
                     state.BaseSaveChangesAsync,
                     state.CancellationToken
                 )
@@ -321,6 +333,8 @@ internal sealed partial class HeadlessSaveChangesPipeline(
 
                 var integrationEvents = state
                     .SaveContext.IntegrationEventEmitters.SelectMany(static emitter => emitter.Events)
+                    .DistinctBy(static occurrence => occurrence.Context.EventId, StringComparer.Ordinal)
+                    .Select(static occurrence => occurrence.Payload)
                     .ToArray();
 
                 await dispatcher.DispatchAsync(integrationEvents, state.CancellationToken).ConfigureAwait(false);
@@ -328,7 +342,12 @@ internal sealed partial class HeadlessSaveChangesPipeline(
 
             if (commitTransaction)
             {
+                state.SaveContext.CommitStarted = true;
                 await transaction.CommitAsync(state.CancellationToken).ConfigureAwait(false);
+                if (state.AcceptAllChangesOnSuccess)
+                {
+                    state.Context.ChangeTracker.AcceptAllChanges();
+                }
             }
 
             _CompleteSuccessfulSave(state.Context, state.SaveContext, auditSave, state.AcceptAllChangesOnSuccess);
@@ -353,7 +372,7 @@ internal sealed partial class HeadlessSaveChangesPipeline(
         }
     }
 
-    // Intentional sync/async twin of _SaveWithinTransactionAsync above: identical save policy (at-most-once
+    // Intentional sync/async twin of _SaveWithinTransactionAsync above: identical save policy (completed-drain
     // domain-event loop, integration flatten+dispatch, audit capture, missing-bus/dispatcher guards). The two
     // are kept in lockstep by hand rather than extracted — any change here must be mirrored in the async twin.
     private int _SaveWithinTransaction(SaveState state, IDbContextTransaction transaction, bool commitTransaction)
@@ -368,27 +387,26 @@ internal sealed partial class HeadlessSaveChangesPipeline(
 
         try
         {
-            // At-most-once domain-event guard — see the async twin for the full rationale. The shared
-            // DomainEventsPublished flag prevents re-invoking handlers when the execution strategy replays
-            // this operation after a transient save/commit fault.
-            if (!state.DomainEventsPublished.Value && state.SaveContext.DomainEventEmitters.Count > 0)
+            if (!state.DomainEventsPublished.Value)
             {
-                var bus = localEventBus ?? throw new InvalidOperationException(_MissingLocalEventBusMessage);
-
-                foreach (var emitter in state.SaveContext.DomainEventEmitters)
+                while (_TryTakeDomainOccurrence(state.Context, state.SaveContext) is { } occurrence)
                 {
-                    foreach (var domainEvent in emitter.Events)
-                    {
-                        _PublishDomainEventBlocking(bus, domainEvent);
-                    }
+                    var bus = localEventBus ?? throw new InvalidOperationException(_MissingLocalEventBusMessage);
+                    _PublishDomainEventBlocking(bus, occurrence);
+                    state.SaveContext.DomainEventCursor++;
                 }
 
+                state.AuditEntries.Value = auditPersistence.CaptureEntries(_SnapshotEntries(state.Context));
                 state.DomainEventsPublished.Value = true;
             }
 
-            var deferAcceptAllChanges = _HasAuditEntries(state.AuditEntries);
+            var deferAcceptAllChanges = commitTransaction || _HasAuditEntries(state.AuditEntries.Value);
             var result = state.BaseSaveChanges(!deferAcceptAllChanges && state.AcceptAllChangesOnSuccess);
-            auditSave = auditPersistence.ResolveAndPersist(state.Context, state.AuditEntries, state.BaseSaveChanges);
+            auditSave = auditPersistence.ResolveAndPersist(
+                state.Context,
+                state.AuditEntries.Value,
+                state.BaseSaveChanges
+            );
 
             if (state.SaveContext.IntegrationEventEmitters.Count > 0)
             {
@@ -397,6 +415,8 @@ internal sealed partial class HeadlessSaveChangesPipeline(
 
                 var integrationEvents = state
                     .SaveContext.IntegrationEventEmitters.SelectMany(static emitter => emitter.Events)
+                    .DistinctBy(static occurrence => occurrence.Context.EventId, StringComparer.Ordinal)
+                    .Select(static occurrence => occurrence.Payload)
                     .ToArray();
 
                 dispatcher.Dispatch(integrationEvents);
@@ -404,7 +424,12 @@ internal sealed partial class HeadlessSaveChangesPipeline(
 
             if (commitTransaction)
             {
+                state.SaveContext.CommitStarted = true;
                 transaction.Commit();
+                if (state.AcceptAllChangesOnSuccess)
+                {
+                    state.Context.ChangeTracker.AcceptAllChanges();
+                }
             }
 
             _CompleteSuccessfulSave(state.Context, state.SaveContext, auditSave, state.AcceptAllChangesOnSuccess);
@@ -430,12 +455,55 @@ internal sealed partial class HeadlessSaveChangesPipeline(
 #pragma warning restore MA0045
     }
 
+    // The finite budget also covers lifecycle events and new emitters, so recursive handlers fail before saving.
+    private const int _MaximumDomainOccurrencesPerSave = 1024;
+
+    private EventOccurrence<IDomainEvent>? _TryTakeDomainOccurrence(
+        DbContext context,
+        HeadlessSaveEntryContext saveContext
+    )
+    {
+        // Recollect after each completed pass, without synthesizing lifecycle events again for existing entries.
+        if (saveContext.DomainEventCursor == saveContext.PendingDomainEvents.Count)
+        {
+            var collector = _entryProcessors.OfType<HeadlessMessageCollectorSaveEntryProcessor>().SingleOrDefault();
+            foreach (var entry in _SnapshotEntries(context))
+            {
+                if (saveContext.ProcessedEntities.Add(entry.Entity))
+                {
+                    foreach (var processor in _entryProcessors)
+                    {
+                        processor.Process(entry, saveContext);
+                    }
+                }
+                else
+                {
+                    collector?.Process(entry, saveContext);
+                }
+            }
+        }
+
+        if (saveContext.DomainEventCursor == saveContext.PendingDomainEvents.Count)
+        {
+            return null;
+        }
+
+        if (saveContext.DomainEventCursor >= _MaximumDomainOccurrencesPerSave)
+        {
+            throw new InvalidOperationException(
+                $"Domain event drain exceeded {_MaximumDomainOccurrencesPerSave} occurrences in one save; check for recursive emissions."
+            );
+        }
+
+        return saveContext.PendingDomainEvents[saveContext.DomainEventCursor];
+    }
+
     // ILocalEventBus is async-only by contract: exposing a public sync Publish invited sync-over-async
     // dispatch (and its synchronization-context deadlocks) in application code. The synchronous
     // SaveChanges path still has to dispatch domain events inline, so the bridge lives HERE, contained
     // in infrastructure. Blocking is acceptable in this frame: EF's own sync SaveChanges is already
     // blocking database I/O on a thread without a synchronization context to deadlock against.
-    private static void _PublishDomainEventBlocking(ILocalEventBus bus, IDomainEvent domainEvent)
+    private static void _PublishDomainEventBlocking(ILocalEventBus bus, EventOccurrence<IDomainEvent> domainEvent)
     {
 #pragma warning disable MA0045 // Sync SaveChanges path intentionally blocks; see comment above.
         var pending = bus.PublishAsync(domainEvent);
@@ -482,11 +550,11 @@ internal sealed partial class HeadlessSaveChangesPipeline(
     private readonly record struct AsyncSaveState(
         DbContext Context,
         HeadlessSaveEntryContext SaveContext,
-        IReadOnlyList<AuditLogEntryData>? AuditEntries,
+        StrongBox<IReadOnlyList<AuditLogEntryData>?> AuditEntries,
         bool AcceptAllChangesOnSuccess,
         Func<bool, CancellationToken, Task<int>> BaseSaveChangesAsync,
-        // Shared across the by-value state copies the execution strategy makes on retry, so the at-most-once
-        // domain-event guard in _SaveWithinTransactionAsync survives a replay. See the publish loop there.
+        // Shared across the by-value state copies the execution strategy makes on retry, so the
+        // completed-drain guard in _SaveWithinTransactionAsync survives a replay. See the publish loop there.
         StrongBox<bool> DomainEventsPublished,
         CancellationToken CancellationToken
     );
@@ -494,11 +562,11 @@ internal sealed partial class HeadlessSaveChangesPipeline(
     private readonly record struct SaveState(
         DbContext Context,
         HeadlessSaveEntryContext SaveContext,
-        IReadOnlyList<AuditLogEntryData>? AuditEntries,
+        StrongBox<IReadOnlyList<AuditLogEntryData>?> AuditEntries,
         bool AcceptAllChangesOnSuccess,
         Func<bool, int> BaseSaveChanges,
-        // Shared across the by-value state copies the execution strategy makes on retry, so the at-most-once
-        // domain-event guard in _SaveWithinTransaction survives a replay. See the publish loop there.
+        // Shared across the by-value state copies the execution strategy makes on retry, so the
+        // completed-drain guard in _SaveWithinTransaction survives a replay. See the publish loop there.
         StrongBox<bool> DomainEventsPublished
     );
 }

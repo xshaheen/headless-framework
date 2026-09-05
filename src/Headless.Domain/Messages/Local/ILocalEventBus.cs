@@ -28,4 +28,11 @@ public interface ILocalEventBus
     /// <param name="cancellationToken">Token to cancel the dispatch operation.</param>
     /// <returns>A <see cref="ValueTask"/> that completes when all handlers have finished.</returns>
     ValueTask PublishAsync(IDomainEvent domainEvent, CancellationToken cancellationToken = default);
+
+    /// <summary>Dispatches an existing occurrence without allocating a new identity or restamping its lineage.</summary>
+    ValueTask PublishAsync(EventOccurrence<IDomainEvent> occurrence, CancellationToken cancellationToken = default);
+
+    /// <summary>Preserves a concrete payload occurrence and dispatches its exact runtime payload type.</summary>
+    ValueTask PublishAsync<T>(EventOccurrence<T> occurrence, CancellationToken cancellationToken = default)
+        where T : class, IDomainEvent;
 }

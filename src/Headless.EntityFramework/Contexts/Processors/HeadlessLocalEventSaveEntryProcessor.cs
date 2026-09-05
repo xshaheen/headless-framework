@@ -17,8 +17,8 @@ namespace Headless.EntityFramework.Contexts.Processors;
 /// <remarks>
 /// This processor runs last (terminal stage) so all preceding processors can mutate entities before
 /// domain events are collected. Events are published by the save pipeline within the active
-/// transaction before the database write, with an at-most-once guard across execution-strategy
-/// retries. Entities that do not implement <c>IDomainEventEmitter</c> are silently skipped.
+/// transaction before the database write. A completed local drain is retained across persistence
+/// retries; failed handler entry has no per-handler checkpoint and must remain replay-safe. Entities that do not implement <c>IDomainEventEmitter</c> are silently skipped.
 /// <para>
 /// <c>EntityUpdatedEventData</c> is only emitted when at least one non-generated, non-foreign-key
 /// property changed to avoid spurious update events on concurrency-stamp-only saves.

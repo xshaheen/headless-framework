@@ -10,22 +10,78 @@ namespace Tests;
 
 public sealed class ServiceProviderLocalEventBusTests : TestBase
 {
+    [Fact]
+    public async Task should_preserve_occurrence_context_and_dispatch_exact_runtime_type_from_generic_publish()
+    {
+        var handler = new TrackingHandler();
+        var services = new ServiceCollection().AddSingleton<IDomainEventHandler<TestLocalMessage>>(handler);
+        var bus = _CreatePublisher(services);
+        IDomainEvent payload = new TestLocalMessage("fact");
+        EventOccurrence<IDomainEvent> occurrence;
+        using (EventEmissionScope.Begin(new EventEmissionContext("root", "parent", "tenant")))
+        {
+            occurrence = EventOccurrence.Capture<IDomainEvent>(payload);
+        }
+
+        await bus.PublishAsync(occurrence, AbortToken);
+        await bus.PublishAsync<IDomainEvent>(payload, AbortToken);
+
+        handler.ReceivedMessages.Should().Equal("fact", "fact");
+        handler.ReceivedContexts[0].Should().BeSameAs(occurrence.Context);
+        handler.ReceivedContexts[1].EventId.Should().NotBe(occurrence.Context.EventId);
+        handler.ReceivedContexts[1].CausationId.Should().BeNull();
+        EventEmissionScope.Current.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_make_handler_occurrence_the_parent_of_nested_emissions()
+    {
+        var child = new ChildCapturingHandler();
+        var bus = _CreatePublisher(new ServiceCollection().AddSingleton<IDomainEventHandler<TestLocalMessage>>(child));
+        var parent = EventOccurrence.Capture(new TestLocalMessage("parent"));
+
+        await bus.PublishAsync(parent, AbortToken);
+
+        child.Child!.Context.CorrelationId.Should().Be(parent.Context.CorrelationId);
+        child.Child.Context.CausationId.Should().Be(parent.Context.EventId);
+        child.Child.Context.EventId.Should().NotBe(parent.Context.EventId);
+        EventEmissionScope.Current.Should().BeNull();
+    }
+
+    private sealed class ChildCapturingHandler : IDomainEventHandler<TestLocalMessage>
+    {
+        public EventOccurrence<IDomainEvent>? Child { get; private set; }
+
+        public ValueTask HandleAsync(
+            TestLocalMessage domainEvent,
+            EventOccurrenceContext context,
+            CancellationToken cancellationToken = default
+        )
+        {
+            Child = EventOccurrence.Capture<IDomainEvent>(new TestLocalMessage("child"));
+            return ValueTask.CompletedTask;
+        }
+    }
+
     #region Test Infrastructure
 
-    private sealed record TestLocalMessage(string Value) : IDomainEvent
-    {
-        public string UniqueId => Value;
-    }
+    private sealed record TestLocalMessage(string Value) : IDomainEvent;
 
     private sealed class TrackingHandler : IDomainEventHandler<TestLocalMessage>
     {
         public List<string> ReceivedMessages { get; } = [];
         public List<CancellationToken> ReceivedTokens { get; } = [];
+        public List<EventOccurrenceContext> ReceivedContexts { get; } = [];
 
-        public ValueTask HandleAsync(TestLocalMessage message, CancellationToken cancellationToken = default)
+        public ValueTask HandleAsync(
+            TestLocalMessage message,
+            EventOccurrenceContext context,
+            CancellationToken cancellationToken = default
+        )
         {
             ReceivedMessages.Add(message.Value);
             ReceivedTokens.Add(cancellationToken);
+            ReceivedContexts.Add(context);
             return ValueTask.CompletedTask;
         }
     }
@@ -35,7 +91,11 @@ public sealed class ServiceProviderLocalEventBusTests : TestBase
     {
         public List<string> InvocationOrder { get; } = invocationOrder;
 
-        public ValueTask HandleAsync(TestLocalMessage message, CancellationToken cancellationToken = default)
+        public ValueTask HandleAsync(
+            TestLocalMessage message,
+            EventOccurrenceContext context,
+            CancellationToken cancellationToken = default
+        )
         {
             InvocationOrder.Add("Negative10");
             return ValueTask.CompletedTask;
@@ -46,7 +106,11 @@ public sealed class ServiceProviderLocalEventBusTests : TestBase
     {
         public List<string> InvocationOrder { get; } = invocationOrder;
 
-        public ValueTask HandleAsync(TestLocalMessage message, CancellationToken cancellationToken = default)
+        public ValueTask HandleAsync(
+            TestLocalMessage message,
+            EventOccurrenceContext context,
+            CancellationToken cancellationToken = default
+        )
         {
             InvocationOrder.Add("Default0");
             return ValueTask.CompletedTask;
@@ -58,7 +122,11 @@ public sealed class ServiceProviderLocalEventBusTests : TestBase
     {
         public List<string> InvocationOrder { get; } = invocationOrder;
 
-        public ValueTask HandleAsync(TestLocalMessage message, CancellationToken cancellationToken = default)
+        public ValueTask HandleAsync(
+            TestLocalMessage message,
+            EventOccurrenceContext context,
+            CancellationToken cancellationToken = default
+        )
         {
             InvocationOrder.Add("Positive10");
             return ValueTask.CompletedTask;
@@ -72,7 +140,11 @@ public sealed class ServiceProviderLocalEventBusTests : TestBase
 
         public string ExceptionMessage { get; } = exceptionMessage;
 
-        public ValueTask HandleAsync(TestLocalMessage message, CancellationToken cancellationToken = default)
+        public ValueTask HandleAsync(
+            TestLocalMessage message,
+            EventOccurrenceContext context,
+            CancellationToken cancellationToken = default
+        )
         {
             WasInvoked = true;
             throw new InvalidOperationException(ExceptionMessage);
@@ -84,7 +156,11 @@ public sealed class ServiceProviderLocalEventBusTests : TestBase
         string exceptionMessage = "Handler failed"
     ) : IDomainEventHandler<TestLocalMessage>
     {
-        public async ValueTask HandleAsync(TestLocalMessage message, CancellationToken cancellationToken = default)
+        public async ValueTask HandleAsync(
+            TestLocalMessage message,
+            EventOccurrenceContext context,
+            CancellationToken cancellationToken = default
+        )
         {
             await cts.CancelAsync().ConfigureAwait(false);
             throw new InvalidOperationException(exceptionMessage);
@@ -93,7 +169,11 @@ public sealed class ServiceProviderLocalEventBusTests : TestBase
 
     private sealed class TargetInvocationExceptionHandler : IDomainEventHandler<TestLocalMessage>
     {
-        public ValueTask HandleAsync(TestLocalMessage message, CancellationToken cancellationToken = default)
+        public ValueTask HandleAsync(
+            TestLocalMessage message,
+            EventOccurrenceContext context,
+            CancellationToken cancellationToken = default
+        )
         {
             throw new TargetInvocationException(new ArgumentException("Inner exception message"));
         }
@@ -103,7 +183,11 @@ public sealed class ServiceProviderLocalEventBusTests : TestBase
     {
         public bool WasInvoked { get; private set; }
 
-        public ValueTask HandleAsync(TestLocalMessage message, CancellationToken cancellationToken = default)
+        public ValueTask HandleAsync(
+            TestLocalMessage message,
+            EventOccurrenceContext context,
+            CancellationToken cancellationToken = default
+        )
         {
             WasInvoked = true;
             return ValueTask.CompletedTask;

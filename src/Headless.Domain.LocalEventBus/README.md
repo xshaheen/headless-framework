@@ -17,7 +17,7 @@ Provides in-memory domain event dispatch that resolves handlers from the DI cont
 ## Design Notes
 
 - **Async-only contract.** `ILocalEventBus` deliberately exposes no synchronous `Publish`: a public sync member would dispatch the async handlers sync-over-async, which can deadlock on threads that carry a synchronization context (classic ASP.NET, Blazor Server, WPF). Infrastructure that must publish from a synchronous code path (for example the EF sync `SaveChanges` pipeline) owns and contains that bridge internally.
-- **Non-generic runtime-typed dispatch.** `PublishAsync(IDomainEvent)` dispatches to handlers of the event's exact runtime type — there is no contravariant traversal to base types or implemented interfaces. The runtime type is mapped to a compiled invoker that is built once and cached, so repeated publishes of the same concrete type avoid reflection on the hot path. The generic overload (`PublishAsync<T>`) dispatches against the static type argument `T`.
+- **Exact-runtime dispatch.** Every payload and occurrence overload resolves handlers for the payload's exact runtime type, with no base/interface traversal. Cached compiled invokers avoid repeated reflection. Payload publication captures a new occurrence; `PublishAsync(EventOccurrence<T>)` preserves its existing context. Each handler receives payload plus immutable `EventOccurrenceContext`, and nested emissions use the current occurrence as their immediate cause.
 - **Scoped lifetime.** `AddHeadlessLocalEventBus()` registers `ILocalEventBus` as scoped (`TryAddScoped`). Handlers are resolved from the caller's scope, so they share the same scoped services — notably the `DbContext` — when published inside a unit of work.
 - **Exception aggregation and cancellation.** Handlers are resolved and invoked per publish. A single handler exception is rethrown as-is; multiple handler exceptions are wrapped in an `AggregateException`. Cancellation is observed between handlers; if the token is cancelled, already-accumulated handler exceptions are preserved rather than discarded.
 
@@ -58,9 +58,9 @@ public sealed class OrderService(ILocalEventBus eventBus)
 ```csharp
 public sealed class OrderCreatedHandler : IDomainEventHandler<OrderCreatedEvent>
 {
-    public ValueTask HandleAsync(OrderCreatedEvent domainEvent, CancellationToken ct = default)
+    public ValueTask HandleAsync(OrderCreatedEvent domainEvent, EventOccurrenceContext context, CancellationToken ct = default)
     {
-        // Send email, update read model, etc.
+        // Apply local transactional state changes; external effects belong in an outbox.
         return ValueTask.CompletedTask;
     }
 }
@@ -68,7 +68,7 @@ public sealed class OrderCreatedHandler : IDomainEventHandler<OrderCreatedEvent>
 [DomainEventHandlerOrder(1)] // Execute first
 public sealed class AuditHandler : IDomainEventHandler<OrderCreatedEvent>
 {
-    public ValueTask HandleAsync(OrderCreatedEvent domainEvent, CancellationToken ct = default)
+    public ValueTask HandleAsync(OrderCreatedEvent domainEvent, EventOccurrenceContext context, CancellationToken ct = default)
     {
         // Audit logging
         return ValueTask.CompletedTask;

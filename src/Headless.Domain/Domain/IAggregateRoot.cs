@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
+
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Domain;
 
@@ -20,15 +22,15 @@ public interface IAggregateRoot : IEntity;
 [PublicAPI]
 public abstract class AggregateRoot : Entity, IAggregateRoot, IIntegrationEventEmitter, IDomainEventEmitter
 {
-    private List<IDomainEvent>? _domainEvents;
-    private List<IIntegrationEvent>? _integrationEvents;
+    private List<EventOccurrence<IDomainEvent>>? _domainEvents;
+    private List<EventOccurrence<IIntegrationEvent>>? _integrationEvents;
 
     /// <summary>Appends an integration event to the pending outbox for this aggregate.</summary>
     /// <remarks>Call from the aggregate's own behavior methods to raise integration events.</remarks>
     /// <param name="integrationEvent">The integration event to enqueue.</param>
     protected void AddIntegrationEvent(IIntegrationEvent integrationEvent)
     {
-        (_integrationEvents ??= []).Add(integrationEvent);
+        AddIntegrationEvent(EventOccurrence.Capture<IIntegrationEvent>(integrationEvent));
     }
 
     /// <summary>Discards all pending integration events without dispatching them.</summary>
@@ -39,9 +41,9 @@ public abstract class AggregateRoot : Entity, IAggregateRoot, IIntegrationEventE
 
     /// <summary>Returns the current list of pending integration events.</summary>
     /// <returns>A read-only snapshot of enqueued integration events; empty when none have been added.</returns>
-    public IReadOnlyList<IIntegrationEvent> GetIntegrationEvents()
+    public IReadOnlyList<EventOccurrence<IIntegrationEvent>> GetIntegrationEvents()
     {
-        return _integrationEvents ?? [];
+        return _integrationEvents?.ToArray() ?? [];
     }
 
     /// <summary>Appends a domain event to be dispatched within the current unit of work.</summary>
@@ -49,14 +51,14 @@ public abstract class AggregateRoot : Entity, IAggregateRoot, IIntegrationEventE
     /// <param name="domainEvent">The domain event to enqueue.</param>
     protected void AddDomainEvent(IDomainEvent domainEvent)
     {
-        (_domainEvents ??= []).Add(domainEvent);
+        AddDomainEvent(EventOccurrence.Capture<IDomainEvent>(domainEvent));
     }
 
     /// <summary>Returns the current list of pending domain events.</summary>
     /// <returns>A read-only snapshot of enqueued domain events; empty when none have been added.</returns>
-    public IReadOnlyList<IDomainEvent> GetDomainEvents()
+    public IReadOnlyList<EventOccurrence<IDomainEvent>> GetDomainEvents()
     {
-        return _domainEvents ?? [];
+        return _domainEvents?.ToArray() ?? [];
     }
 
     /// <summary>Discards all pending domain events without dispatching them.</summary>
@@ -76,4 +78,41 @@ public abstract class AggregateRoot : Entity, IAggregateRoot, IIntegrationEventE
     {
         AddDomainEvent(domainEvent);
     }
+
+    /// <summary>Preserves an occurrence already captured at its emission boundary.</summary>
+    protected void AddDomainEvent(EventOccurrence<IDomainEvent> occurrence)
+    {
+        Argument.IsNotNull(occurrence);
+        (_domainEvents ??= []).Add(occurrence);
+    }
+
+    /// <summary>Removes only occurrences included in a successfully saved batch.</summary>
+    public void ClearDomainEvents(IReadOnlyList<EventOccurrence<IDomainEvent>> occurrences)
+    {
+        Argument.IsNotNull(occurrences);
+        var ids = occurrences.Select(occurrence => occurrence.Context.EventId).ToHashSet(StringComparer.Ordinal);
+        _domainEvents?.RemoveAll(occurrence => ids.Contains(occurrence.Context.EventId));
+    }
+
+    /// <inheritdoc/>
+    void IDomainEventEmitter.AddDomainEvent(EventOccurrence<IDomainEvent> occurrence) => AddDomainEvent(occurrence);
+
+    /// <summary>Preserves an occurrence already captured at its emission boundary.</summary>
+    protected void AddIntegrationEvent(EventOccurrence<IIntegrationEvent> occurrence)
+    {
+        Argument.IsNotNull(occurrence);
+        (_integrationEvents ??= []).Add(occurrence);
+    }
+
+    /// <summary>Removes only occurrences included in a successfully saved batch.</summary>
+    public void ClearIntegrationEvents(IReadOnlyList<EventOccurrence<IIntegrationEvent>> occurrences)
+    {
+        Argument.IsNotNull(occurrences);
+        var ids = occurrences.Select(occurrence => occurrence.Context.EventId).ToHashSet(StringComparer.Ordinal);
+        _integrationEvents?.RemoveAll(occurrence => ids.Contains(occurrence.Context.EventId));
+    }
+
+    /// <inheritdoc/>
+    void IIntegrationEventEmitter.AddIntegrationEvent(EventOccurrence<IIntegrationEvent> occurrence) =>
+        AddIntegrationEvent(occurrence);
 }

@@ -18,6 +18,11 @@ public interface IDomainEventHandler<in TEvent>
 {
     /// <summary>Handler handles the event by implementing this method.</summary>
     /// <param name="domainEvent">Event data</param>
+    /// <param name="context">Immutable occurrence identity and business lineage.</param>
     /// <param name="cancellationToken">Abort token</param>
-    ValueTask HandleAsync(TEvent domainEvent, CancellationToken cancellationToken = default);
+    ValueTask HandleAsync(
+        TEvent domainEvent,
+        EventOccurrenceContext context,
+        CancellationToken cancellationToken = default
+    );
 }

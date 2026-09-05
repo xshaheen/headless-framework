@@ -6,47 +6,18 @@ using Headless.Domain;
 namespace Headless.EntityFramework;
 
 /// <summary>
-/// Pairs an <see cref="IDomainEventEmitter"/> with the deduplicated snapshot of domain events collected
-/// from it during the current <c>SaveChanges</c>. Internal bookkeeping for collection and post-save
-/// clearing — not part of the public dispatch contract.
+/// Pairs an emitter with the unique array owned by the collector for this save. The collector snapshots
+/// the source buffer and records per-emitter membership before constructing this bookkeeping record.
 /// </summary>
-internal sealed record EmitterDomainEvents(IDomainEventEmitter Emitter, IReadOnlyList<IDomainEvent> Events)
-{
-    /// <summary>
-    /// Returns a snapshot of the constructor argument deduplicated by <see cref="IDomainEvent.UniqueId"/>,
-    /// isolating the dispatch from subsequent mutation of the emitter's source list.
-    /// </summary>
-    public IReadOnlyList<IDomainEvent> Events { get; } = EmitterEventsSnapshot.Snapshot(Events, static e => e.UniqueId);
-}
+internal sealed record EmitterDomainEvents(
+    IDomainEventEmitter Emitter,
+    IReadOnlyList<EventOccurrence<IDomainEvent>> Events
+);
 
 /// <summary>
-/// Pairs an <see cref="IIntegrationEventEmitter"/> with the deduplicated snapshot of integration events
-/// collected from it during the current <c>SaveChanges</c>. Internal bookkeeping — not public contract.
+/// Retains the collector-owned integration occurrence array for dispatch and exact saved-batch clearing.
 /// </summary>
 internal sealed record EmitterIntegrationEvents(
     IIntegrationEventEmitter Emitter,
-    IReadOnlyList<IIntegrationEvent> Events
-)
-{
-    /// <summary>
-    /// Returns a snapshot of the constructor argument deduplicated by
-    /// <see cref="IIntegrationEvent.UniqueId"/>, isolated from subsequent emitter mutation.
-    /// </summary>
-    public IReadOnlyList<IIntegrationEvent> Events { get; } =
-        EmitterEventsSnapshot.Snapshot(Events, static e => e.UniqueId);
-}
-
-internal static class EmitterEventsSnapshot
-{
-    // Snapshots the caller's list so subsequent mutation on the emitter doesn't leak into the pipeline,
-    // and deduplicates by the supplied UniqueId accessor.
-    public static IReadOnlyList<T> Snapshot<T>(IReadOnlyList<T> events, Func<T, string> uniqueId)
-    {
-        return events.Count switch
-        {
-            0 => [],
-            1 => [events[0]],
-            _ => events.DistinctBy(uniqueId, StringComparer.Ordinal).ToArray(),
-        };
-    }
-}
+    IReadOnlyList<EventOccurrence<IIntegrationEvent>> Events
+);

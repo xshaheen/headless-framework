@@ -25,5 +25,11 @@ public interface IIntegrationEventEmitter
 
     /// <summary>Returns the current list of pending integration events.</summary>
     /// <returns>A read-only snapshot of enqueued integration events; empty when none have been added.</returns>
-    IReadOnlyList<IIntegrationEvent> GetIntegrationEvents();
+    IReadOnlyList<EventOccurrence<IIntegrationEvent>> GetIntegrationEvents();
+
+    /// <summary>Preserves an occurrence already captured by infrastructure.</summary>
+    void AddIntegrationEvent(EventOccurrence<IIntegrationEvent> occurrence);
+
+    /// <summary>Removes only the captured batch; occurrences appended later stay pending.</summary>
+    void ClearIntegrationEvents(IReadOnlyList<EventOccurrence<IIntegrationEvent>> occurrences);
 }

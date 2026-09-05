@@ -10,7 +10,7 @@ namespace Tests.Fixture;
 /// </summary>
 public sealed class EmittingOrder : IIntegrationEventEmitter
 {
-    private readonly List<IIntegrationEvent> _messages = [];
+    private readonly List<EventOccurrence<IIntegrationEvent>> _messages = [];
 
     public Guid Id { get; set; }
 
@@ -18,7 +18,7 @@ public sealed class EmittingOrder : IIntegrationEventEmitter
 
     public void AddIntegrationEvent(IIntegrationEvent integrationEvent)
     {
-        _messages.Add(integrationEvent);
+        _messages.Add(EventOccurrence.Capture<IIntegrationEvent>(integrationEvent));
     }
 
     public void ClearIntegrationEvents()
@@ -26,14 +26,22 @@ public sealed class EmittingOrder : IIntegrationEventEmitter
         _messages.Clear();
     }
 
-    public IReadOnlyList<IIntegrationEvent> GetIntegrationEvents()
+    public IReadOnlyList<EventOccurrence<IIntegrationEvent>> GetIntegrationEvents()
     {
         return _messages;
     }
 
+    public void AddIntegrationEvent(EventOccurrence<IIntegrationEvent> occurrence) => _messages.Add(occurrence);
+
+    public void ClearIntegrationEvents(IReadOnlyList<EventOccurrence<IIntegrationEvent>> occurrences)
+    {
+        var ids = occurrences.Select(occurrence => occurrence.Context.EventId).ToHashSet(StringComparer.Ordinal);
+        _messages.RemoveAll(occurrence => ids.Contains(occurrence.Context.EventId));
+    }
+
     public void Emit(IIntegrationEvent message)
     {
-        _messages.Add(message);
+        AddIntegrationEvent(message);
     }
 }
 

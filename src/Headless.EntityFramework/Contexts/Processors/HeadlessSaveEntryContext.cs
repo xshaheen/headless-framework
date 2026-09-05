@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Runtime.ExceptionServices;
+using Headless.Domain;
 using Microsoft.EntityFrameworkCore;
 
 namespace Headless.EntityFramework.Contexts.Processors;
@@ -31,17 +33,35 @@ public sealed class HeadlessSaveEntryContext(DbContext dbContext, string? tenant
     /// </summary>
     internal List<EmitterIntegrationEvents> IntegrationEventEmitters { get; } = [];
 
+    internal bool CommitStarted { get; set; }
+
+    internal ExceptionDispatchInfo? CommitFailure { get; set; }
+
+    internal HashSet<object> ProcessedEntities { get; } = new(ReferenceEqualityComparer.Instance);
+
+    internal Dictionary<IDomainEventEmitter, HashSet<string>> CapturedDomainIdsByEmitter { get; } =
+        new(ReferenceEqualityComparer.Instance);
+
+    internal HashSet<string> QueuedDomainIds { get; } = new(StringComparer.Ordinal);
+
+    internal Dictionary<IIntegrationEventEmitter, HashSet<string>> CapturedIntegrationIdsByEmitter { get; } =
+        new(ReferenceEqualityComparer.Instance);
+
+    internal List<EventOccurrence<IDomainEvent>> PendingDomainEvents { get; } = [];
+
+    internal int DomainEventCursor { get; set; }
+
     /// <summary>Clears the event buffers on each captured emitter once they have been dispatched.</summary>
     internal void ClearEmitterMessages()
     {
         foreach (var emitter in IntegrationEventEmitters)
         {
-            emitter.Emitter.ClearIntegrationEvents();
+            emitter.Emitter.ClearIntegrationEvents(emitter.Events);
         }
 
         foreach (var emitter in DomainEventEmitters)
         {
-            emitter.Emitter.ClearDomainEvents();
+            emitter.Emitter.ClearDomainEvents(emitter.Events);
         }
     }
 }

@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data.Common;
 using Headless.Abstractions;
+using Headless.AuditLog;
 using Headless.Domain;
 using Headless.EntityFramework;
 using Headless.EntityFramework.Contexts.Processors;
@@ -317,8 +319,14 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
         await db.SaveChangesAsync(AbortToken);
 
         // then
-        dispatcher.LocalEmitters.Should().ContainSingle(x => x.UniqueId == "local-later");
-        dispatcher.DistributedEmitters.Should().ContainSingle(x => x.UniqueId == "distributed-later");
+        dispatcher
+            .LocalEmitters.OfType<RuntimeLocalMessage>()
+            .Should()
+            .ContainSingle(x => x.UniqueId == "local-later");
+        dispatcher
+            .DistributedEmitters.OfType<RuntimeDistributedMessage>()
+            .Should()
+            .ContainSingle(x => x.UniqueId == "distributed-later");
     }
 
     [Fact]
@@ -342,12 +350,22 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
         await db.SaveChangesAsync(AbortToken);
 
         // then
-        dispatcher.LocalEmitters.Should().ContainSingle(message => message.UniqueId == "custom-local");
-        dispatcher.DistributedEmitters.Should().ContainSingle(message => message.UniqueId == "custom-distributed");
+        dispatcher
+            .LocalEmitters.OfType<RuntimeLocalMessage>()
+            .Should()
+            .ContainSingle(message => message.UniqueId == "custom-local");
+        dispatcher
+            .DistributedEmitters.OfType<RuntimeDistributedMessage>()
+            .Should()
+            .ContainSingle(message => message.UniqueId == "custom-distributed");
     }
 
-    [Fact]
-    public async Task should_publish_domain_events_at_most_once_when_save_changes_execution_strategy_retries()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task should_publish_domain_events_at_most_once_when_save_changes_execution_strategy_retries(
+        bool synchronous
+    )
     {
         // given — SQLite has no built-in retrying strategy, so we wire a one-shot retrying execution strategy
         // (ReplaceService<IExecutionStrategyFactory>) plus a SaveChanges interceptor that throws a marker
@@ -374,7 +392,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
         db.Entities.Add(entity);
 
         // when
-        await db.SaveChangesAsync(AbortToken);
+        await _SaveAsync(db, synchronous);
 
         // then — the interceptor actually fired and the strategy replayed (guards against a silently-green
         // test where no retry happened at all).
@@ -382,12 +400,379 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
 
         // AggregateRoot.Add emits EntityCreated + EntityChanged = 2 domain events. Each handler must fire
         // exactly once across BOTH attempts — a re-fire on the replay would double the count to 4.
+        bus.Occurrences.Select(occurrence => occurrence.Context.EventId).Should().OnlyHaveUniqueItems();
+        entity.GetDomainEvents().Should().BeEmpty();
         bus.PublishCount.Should().Be(2, "each domain event must be published exactly once despite the retry");
 
         // and the row is persisted (the save ultimately succeeded on the replayed attempt).
         (await db.Entities.CountAsync(AbortToken))
             .Should()
             .Be(1);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task should_drain_nested_occurrences_and_new_emitters_before_saving(bool synchronous)
+    {
+        var capture = new RecordingAuditCapture();
+        var (provider, connection) = await _CreateProviderAsync(services =>
+        {
+            _AddRuntimeRecorder(services);
+            services.AddSingleton<IAuditChangeCapture>(capture);
+        });
+        await using var connectionLifetime = connection;
+        await using var providerLifetime = provider;
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<RuntimeTestDbContext>();
+        var dispatcher = scope.ServiceProvider.GetRequiredService<RuntimeRecordingMessageDispatcher>();
+        var entity = new RuntimeEntity { Name = "parent" };
+        entity.EmitDomainEvent(new RuntimeLocalMessage("root"));
+        var root = entity.GetDomainEvents().Single();
+        db.Entities.Add(entity);
+        RuntimeEntity? added = null;
+        dispatcher.OnLocal = payload =>
+        {
+            if (payload is RuntimeLocalMessage { UniqueId: "root" })
+            {
+                entity.EmitDomainEvent(new RuntimeLocalMessage("child"));
+                entity.EmitIntegrationEvent(new RuntimeDistributedMessage("integration-child"));
+                added = new RuntimeEntity { Name = "newly-tracked" };
+                added.EmitDomainEvent(new RuntimeLocalMessage("new-emitter"));
+                db.Entities.Add(added);
+            }
+        };
+
+        await _SaveAsync(db, synchronous);
+
+        dispatcher
+            .LocalEmitters.OfType<RuntimeLocalMessage>()
+            .Select(payload => payload.UniqueId)
+            .Should()
+            .Equal("root", "child", "new-emitter");
+        dispatcher.LocalEmitters.OfType<EntityCreatedEventData<RuntimeEntity>>().Should().HaveCount(2);
+        dispatcher.LocalEmitters.OfType<EntityChangedEventData<RuntimeEntity>>().Should().HaveCount(2);
+        dispatcher.DistributedEmitters.Should().ContainSingle();
+        var child = dispatcher.LocalOccurrences.Single(occurrence =>
+            occurrence.Payload is RuntimeLocalMessage { UniqueId: "child" }
+        );
+        child.Context.CausationId.Should().Be(root.Context.EventId);
+        child.Context.CorrelationId.Should().Be(root.Context.CorrelationId);
+        entity.GetDomainEvents().Should().BeEmpty();
+        entity.GetIntegrationEvents().Should().BeEmpty();
+        added!.GetDomainEvents().Should().BeEmpty();
+        (await db.Entities.CountAsync(AbortToken)).Should().Be(2);
+        capture.CapturedNames.Should().BeEquivalentTo("parent", "newly-tracked");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task should_bound_recursive_emission_before_business_save(bool synchronous)
+    {
+        var (provider, connection) = await _CreateProviderAsync(_AddRuntimeRecorder);
+        await using var connectionLifetime = connection;
+        await using var providerLifetime = provider;
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<RuntimeTestDbContext>();
+        var dispatcher = scope.ServiceProvider.GetRequiredService<RuntimeRecordingMessageDispatcher>();
+        var entity = new RuntimeEntity { Name = "recursive" };
+        entity.EmitDomainEvent(new RuntimeLocalMessage("recursive"));
+        db.Entities.Add(entity);
+        dispatcher.OnLocal = payload =>
+        {
+            if (payload is RuntimeLocalMessage)
+            {
+                entity.EmitDomainEvent(new RuntimeLocalMessage("recursive"));
+            }
+        };
+
+        Func<Task> save = () => _SaveAsync(db, synchronous);
+        (await save.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*1024*recursive*");
+        (await db.Entities.CountAsync(AbortToken)).Should().Be(0);
+        entity.GetDomainEvents().Should().NotBeEmpty();
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task should_complete_each_saved_batch_before_caller_transaction_outcome(
+        bool synchronous,
+        bool rollback
+    )
+    {
+        var (provider, connection) = await _CreateProviderAsync(_AddRuntimeRecorder);
+        await using var connectionLifetime = connection;
+        await using var providerLifetime = provider;
+        string firstId;
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<RuntimeTestDbContext>();
+            var dispatcher = scope.ServiceProvider.GetRequiredService<RuntimeRecordingMessageDispatcher>();
+            await using var transaction = await db.Database.BeginTransactionAsync(AbortToken);
+            var first = new RuntimeEntity { Name = "first" };
+            first.EmitDomainEvent(new RuntimeLocalMessage("application-command"));
+            firstId = first.GetDomainEvents().Single().Context.EventId;
+            db.Entities.Add(first);
+            await _SaveAsync(db, synchronous);
+            first.GetDomainEvents().Should().BeEmpty();
+            var countAfterFirstSave = dispatcher.LocalEmitters.Count;
+            db.Entities.Add(new RuntimeEntity { Name = "second" });
+            await _SaveAsync(db, synchronous);
+            dispatcher.LocalEmitters.Count.Should().Be(countAfterFirstSave + 2);
+            if (rollback)
+            {
+                await transaction.RollbackAsync(AbortToken);
+            }
+            else
+            {
+                await transaction.CommitAsync(AbortToken);
+            }
+        }
+
+        // Recovery observes durable state through a fresh context and abandons the prior aggregate graph.
+        await using var freshScope = provider.CreateAsyncScope();
+        var fresh = freshScope.ServiceProvider.GetRequiredService<RuntimeTestDbContext>();
+        (await fresh.Entities.CountAsync(AbortToken)).Should().Be(rollback ? 0 : 2);
+        var replay = new RuntimeEntity { Name = "replayed-command" };
+        replay.EmitDomainEvent(new RuntimeLocalMessage("application-command"));
+        replay.GetDomainEvents().Single().Context.EventId.Should().NotBe(firstId);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task should_leave_occurrences_added_after_drain_pending_for_next_save(bool synchronous)
+    {
+        var entity = new RuntimeEntity { Name = "late-occurrence" };
+        var interceptor = new LateOccurrenceInterceptor(entity);
+        var (provider, connection) = await _CreateProviderAsync(
+            _AddRuntimeRecorder,
+            configureDbContext: options => options.AddInterceptors(interceptor)
+        );
+        await using var connectionLifetime = connection;
+        await using var providerLifetime = provider;
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<RuntimeTestDbContext>();
+        var dispatcher = scope.ServiceProvider.GetRequiredService<RuntimeRecordingMessageDispatcher>();
+        db.Entities.Add(entity);
+
+        await _SaveAsync(db, synchronous);
+        var remaining = entity.GetDomainEvents().Should().ContainSingle().Subject;
+        remaining.Payload.Should().BeOfType<RuntimeLocalMessage>().Which.UniqueId.Should().Be("after-drain");
+        dispatcher.LocalEmitters.OfType<RuntimeLocalMessage>().Should().BeEmpty();
+        await _SaveAsync(db, synchronous);
+        entity.GetDomainEvents().Should().BeEmpty();
+        dispatcher
+            .LocalOccurrences.Should()
+            .Contain(occurrence => occurrence.Context.EventId == remaining.Context.EventId);
+    }
+
+    private sealed class LateOccurrenceInterceptor(RuntimeEntity entity) : ISaveChangesInterceptor
+    {
+        private bool _emitted;
+
+        private void _EmitOnce()
+        {
+            if (!_emitted)
+            {
+                _emitted = true;
+                entity.EmitDomainEvent(new RuntimeLocalMessage("after-drain"));
+            }
+        }
+
+        public InterceptionResult<int> SavingChanges(DbContextEventData eventData, InterceptionResult<int> result)
+        {
+            _EmitOnce();
+            return result;
+        }
+
+        public ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default
+        )
+        {
+            _EmitOnce();
+            return ValueTask.FromResult(result);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task should_honor_removed_collector_inside_caller_transaction(bool synchronous)
+    {
+        var (provider, connection) = await _CreateProviderAsync(
+            _AddRuntimeRecorder,
+            options => options.RemoveSaveEntryProcessor<HeadlessMessageCollectorSaveEntryProcessor>()
+        );
+        await using var connectionLifetime = connection;
+        await using var providerLifetime = provider;
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<RuntimeTestDbContext>();
+        var dispatcher = scope.ServiceProvider.GetRequiredService<RuntimeRecordingMessageDispatcher>();
+        await using var transaction = await db.Database.BeginTransactionAsync(AbortToken);
+        var entity = new RuntimeEntity { Name = "collector-disabled" };
+        db.Entities.Add(entity);
+        await _SaveAsync(db, synchronous);
+        dispatcher.LocalEmitters.Should().BeEmpty();
+        entity.GetDomainEvents().Should().NotBeEmpty();
+        await transaction.CommitAsync(AbortToken);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task should_retry_business_write_after_transient_outbox_failure_without_repeating_local_drain(
+        bool synchronous
+    )
+    {
+        var (provider, connection) = await _CreateProviderAsync(
+            _AddRuntimeRecorder,
+            configureDbContext: options =>
+                options.ReplaceService<IExecutionStrategyFactory, OneShotRetryExecutionStrategyFactory>()
+        );
+        await using var connectionLifetime = connection;
+        await using var providerLifetime = provider;
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<RuntimeTestDbContext>();
+        var dispatcher = scope.ServiceProvider.GetRequiredService<RuntimeRecordingMessageDispatcher>();
+        var entity = new RuntimeEntity { Name = "post-save-retry" };
+        entity.EmitIntegrationEvent(new RuntimeDistributedMessage("outbox"));
+        db.Entities.Add(entity);
+        var attempts = 0;
+        dispatcher.OnDistributed = () =>
+        {
+            if (++attempts == 1)
+            {
+                throw new TransientMarkerException();
+            }
+        };
+
+        await _SaveAsync(db, synchronous);
+        attempts.Should().Be(2);
+        dispatcher.LocalEmitters.Should().HaveCount(2);
+        (await db.Entities.CountAsync(AbortToken)).Should().Be(1);
+        entity.GetIntegrationEvents().Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task should_surface_unknown_commit_outcome_without_retrying(bool synchronous)
+    {
+        var interceptor = new UnknownCommitInterceptor();
+        var (provider, connection) = await _CreateProviderAsync(
+            _AddRuntimeRecorder,
+            configureDbContext: options =>
+                options
+                    .ReplaceService<IExecutionStrategyFactory, OneShotRetryExecutionStrategyFactory>()
+                    .AddInterceptors(interceptor)
+        );
+        await using var connectionLifetime = connection;
+        await using var providerLifetime = provider;
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<RuntimeTestDbContext>();
+        var dispatcher = scope.ServiceProvider.GetRequiredService<RuntimeRecordingMessageDispatcher>();
+        db.Entities.Add(new RuntimeEntity { Name = "commit-result-lost" });
+        interceptor.Enabled = true;
+
+        Func<Task> save = () => _SaveAsync(db, synchronous);
+        await save.Should().ThrowAsync<TransientMarkerException>();
+        interceptor.CommitCalls.Should().Be(1);
+        dispatcher.LocalEmitters.Should().HaveCount(2);
+        (await db.Entities.CountAsync(AbortToken))
+            .Should()
+            .Be(1, "the database committed even though the application did not receive success");
+    }
+
+    private sealed class UnknownCommitInterceptor : DbTransactionInterceptor
+    {
+        public bool Enabled { get; set; }
+        public int CommitCalls { get; private set; }
+
+        public override void TransactionCommitted(DbTransaction transaction, TransactionEndEventData eventData)
+        {
+            if (Enabled)
+            {
+                CommitCalls++;
+                throw new TransientMarkerException();
+            }
+        }
+
+        public override Task TransactionCommittedAsync(
+            DbTransaction transaction,
+            TransactionEndEventData eventData,
+            CancellationToken cancellationToken = default
+        )
+        {
+            TransactionCommitted(transaction, eventData);
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class RecordingAuditCapture : IAuditChangeCapture
+    {
+        public string[] CapturedNames { get; private set; } = [];
+
+        public IReadOnlyList<AuditLogEntryData> CaptureChanges(
+            IEnumerable<object> entries,
+            string? userId,
+            string? accountId,
+            string? tenantId,
+            string? correlationId,
+            DateTimeOffset timestamp
+        )
+        {
+            CapturedNames = entries
+                .OfType<EntityEntry>()
+                .Select(entry => entry.Entity)
+                .OfType<RuntimeEntity>()
+                .Select(entity => entity.Name)
+                .ToArray();
+            return [];
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task should_dispatch_shared_occurrence_once_and_clear_every_captured_emitter(bool synchronous)
+    {
+        var (provider, connection) = await _CreateProviderAsync(_AddRuntimeRecorder);
+        await using var connectionLifetime = connection;
+        await using var providerLifetime = provider;
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<RuntimeTestDbContext>();
+        var dispatcher = scope.ServiceProvider.GetRequiredService<RuntimeRecordingMessageDispatcher>();
+        var first = new RuntimeEntity { Name = "first-emitter" };
+        var second = new RuntimeEntity { Name = "second-emitter" };
+        var domain = EventOccurrence.Capture<IDomainEvent>(new RuntimeLocalMessage("shared"));
+        var integration = EventOccurrence.Capture<IIntegrationEvent>(new RuntimeDistributedMessage("shared"));
+        ((IDomainEventEmitter)first).AddDomainEvent(domain);
+        ((IDomainEventEmitter)second).AddDomainEvent(domain);
+        ((IIntegrationEventEmitter)first).AddIntegrationEvent(integration);
+        ((IIntegrationEventEmitter)second).AddIntegrationEvent(integration);
+        db.Entities.AddRange(first, second);
+
+        await _SaveAsync(db, synchronous);
+
+        dispatcher.LocalEmitters.OfType<RuntimeLocalMessage>().Should().ContainSingle();
+        dispatcher.DistributedEmitters.Should().ContainSingle();
+        first.GetDomainEvents().Should().BeEmpty();
+        second.GetDomainEvents().Should().BeEmpty();
+        first.GetIntegrationEvents().Should().BeEmpty();
+        second.GetIntegrationEvents().Should().BeEmpty();
+    }
+
+    private static Task<int> _SaveAsync(RuntimeTestDbContext db, bool synchronous)
+    {
+#pragma warning disable MA0045 // Explicit synchronous SaveChanges conformance case.
+        return synchronous ? Task.FromResult(db.SaveChanges()) : db.SaveChangesAsync(AbortToken);
+#pragma warning restore MA0045
     }
 
     private static async Task<(ServiceProvider Provider, SqliteConnection Connection)> _CreateProviderAsync(
@@ -468,6 +853,9 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
     private sealed class RuntimeRecordingMessageDispatcher : ILocalEventBus, IHeadlessOutboxDispatcher
     {
         public List<IDomainEvent> LocalEmitters { get; } = [];
+        public List<EventOccurrence<IDomainEvent>> LocalOccurrences { get; } = [];
+        public Action<IDomainEvent>? OnLocal { get; set; }
+        public Action? OnDistributed { get; set; }
 
         public List<IIntegrationEvent> DistributedEmitters { get; } = [];
 
@@ -476,6 +864,21 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
         {
             LocalEmitters.Add(domainEvent);
             return ValueTask.CompletedTask;
+        }
+
+        public ValueTask PublishAsync<T>(EventOccurrence<T> occurrence, CancellationToken cancellationToken = default)
+            where T : class, IDomainEvent =>
+            PublishAsync(new EventOccurrence<IDomainEvent>(occurrence.Payload, occurrence.Context), cancellationToken);
+
+        public ValueTask PublishAsync(
+            EventOccurrence<IDomainEvent> occurrence,
+            CancellationToken cancellationToken = default
+        )
+        {
+            using var emission = EventEmissionScope.Begin(occurrence.Context);
+            LocalOccurrences.Add(occurrence);
+            OnLocal?.Invoke(occurrence.Payload);
+            return PublishAsync(occurrence.Payload, cancellationToken);
         }
 
         public ValueTask PublishAsync(IDomainEvent domainEvent, CancellationToken cancellationToken = default)
@@ -489,12 +892,14 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
             CancellationToken cancellationToken = default
         )
         {
+            OnDistributed?.Invoke();
             DistributedEmitters.AddRange(integrationEvents);
             return Task.CompletedTask;
         }
 
         public void Dispatch(IReadOnlyList<IIntegrationEvent> integrationEvents)
         {
+            OnDistributed?.Invoke();
             DistributedEmitters.AddRange(integrationEvents);
         }
     }
@@ -512,12 +917,26 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
         private int _publishCount;
 
         public int PublishCount => _publishCount;
+        public List<EventOccurrence<IDomainEvent>> Occurrences { get; } = [];
 
         public ValueTask PublishAsync<T>(T domainEvent, CancellationToken cancellationToken = default)
             where T : class, IDomainEvent
         {
             Interlocked.Increment(ref _publishCount);
             return ValueTask.CompletedTask;
+        }
+
+        public ValueTask PublishAsync<T>(EventOccurrence<T> occurrence, CancellationToken cancellationToken = default)
+            where T : class, IDomainEvent =>
+            PublishAsync(new EventOccurrence<IDomainEvent>(occurrence.Payload, occurrence.Context), cancellationToken);
+
+        public ValueTask PublishAsync(
+            EventOccurrence<IDomainEvent> occurrence,
+            CancellationToken cancellationToken = default
+        )
+        {
+            Occurrences.Add(occurrence);
+            return PublishAsync(occurrence.Payload, cancellationToken);
         }
 
         public ValueTask PublishAsync(IDomainEvent domainEvent, CancellationToken cancellationToken = default)
