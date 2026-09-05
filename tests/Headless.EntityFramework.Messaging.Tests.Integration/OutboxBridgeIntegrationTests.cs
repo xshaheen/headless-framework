@@ -77,13 +77,13 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
             .Should()
             .Be(1);
         var row = (await _ReadPublishedAsync(provider, marker)).Single();
-        row.Id.Should().Be(occurrence.Context.EventId);
+        row.Id.Should().Be(occurrence.EventId);
         var message = row.Message;
         message.Should().NotBeNull();
-        message.Headers[Headers.MessageId].Should().Be(occurrence.Context.EventId);
-        message.Headers[Headers.CorrelationId].Should().Be(occurrence.Context.CorrelationId);
-        message.Headers[Headers.CausationId].Should().Be(occurrence.Context.CausationId);
-        message.Headers[Headers.TenantId].Should().Be(occurrence.Context.TenantId);
+        message.Headers[Headers.MessageId].Should().Be(occurrence.EventId);
+        message.Headers[Headers.CorrelationId].Should().Be(occurrence.CorrelationId);
+        message.Headers[Headers.CausationId].Should().Be(occurrence.CausationId);
+        message.Headers[Headers.TenantId].Should().Be(occurrence.TenantId);
     }
 
     [Fact]
@@ -294,7 +294,7 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
     )
     {
         await using var provider = await _BuildProviderAsync();
-        var saved = new List<EventOccurrence<IIntegrationEvent>>();
+        var saved = new List<EventContext<object>>();
         await using (var scope = provider.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<BridgeTestDbContext>();
@@ -329,7 +329,7 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         }
 
         var rows = await _ReadPublishedAsync(provider, "evt-two-saves");
-        rows.Select(row => row.Id).Should().BeEquivalentTo(commit ? saved.Select(item => item.Context.EventId) : []);
+        rows.Select(row => row.Id).Should().BeEquivalentTo(commit ? saved.Select(item => item.EventId) : []);
         (await _CountOrdersAsync()).Should().Be(commit ? 2 : 0);
         if (!commit)
         {
@@ -338,7 +338,7 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
             var fresh = new OrderEntity { Name = "two-saves" };
             fresh.EmitIntegrationEvent(new OrderShipped("evt-two-saves-recovery"));
             var replay = fresh.GetIntegrationEvents().Single();
-            saved.Select(item => item.Context.EventId).Should().NotContain(replay.Context.EventId);
+            saved.Select(item => item.EventId).Should().NotContain(replay.EventId);
             db.Orders.Add(fresh);
             await _SaveAsync(db, synchronous);
             rows = await _ReadPublishedAsync(provider, "evt-two-saves");
@@ -350,7 +350,7 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         {
             foreach (var occurrence in saved)
             {
-                _AssertOccurrence(rows.Single(row => row.Id == occurrence.Context.EventId), occurrence);
+                _AssertOccurrence(rows.Single(row => row.Id == occurrence.EventId), occurrence);
             }
         }
     }
@@ -384,7 +384,7 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         rows.Should().HaveCount(2);
         foreach (var occurrence in evidence.Children)
         {
-            _AssertOccurrence(rows.Single(row => row.Id == occurrence.Context.EventId), occurrence);
+            _AssertOccurrence(rows.Single(row => row.Id == occurrence.EventId), occurrence);
         }
         (await _CountOrdersAsync()).Should().Be(1);
         order.GetIntegrationEvents().Should().BeEmpty();
@@ -436,7 +436,7 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
     {
         await using var provider = await _BuildProviderAsync();
         var evidence = provider.GetRequiredService<EmissionEvidence>();
-        evidence.Forwarded = EventOccurrence.Capture<IIntegrationEvent>(new OrderShipped("evt-forwarded-root"));
+        evidence.Forwarded = EventContext.Capture<object>(new OrderShipped("evt-forwarded-root"));
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             [Headers.MessageId] = "incoming-message",
@@ -487,14 +487,14 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         evidence.SaveTrace.Should().NotBe(trace.TraceId);
         var rows = await _ReadPublishedAsync(provider, "evt-derived");
         rows.Should().HaveCount(2);
-        evidence.Children.Select(child => child.Context.EventId).Should().OnlyHaveUniqueItems();
+        evidence.Children.Select(child => child.EventId).Should().OnlyHaveUniqueItems();
         foreach (var child in evidence.Children)
         {
-            child.Context.EventId.Should().NotBe(evidence.Parent.EventId);
-            child.Context.CorrelationId.Should().Be("business-root");
-            child.Context.CausationId.Should().Be(evidence.Parent.EventId);
-            child.Context.TenantId.Should().Be("tenant-source");
-            _AssertOccurrence(rows.Single(row => row.Id == child.Context.EventId), child);
+            child.EventId.Should().NotBe(evidence.Parent.EventId);
+            child.CorrelationId.Should().Be("business-root");
+            child.CausationId.Should().Be(evidence.Parent.EventId);
+            child.TenantId.Should().Be("tenant-source");
+            _AssertOccurrence(rows.Single(row => row.Id == child.EventId), child);
         }
         var forwarded = (await _ReadPublishedAsync(provider, "evt-forwarded-root")).Single();
         _AssertOccurrence(forwarded, evidence.Forwarded);
@@ -610,22 +610,16 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         return rows;
     }
 
-    private static void _AssertOccurrence(
-        (string Id, Message Message) row,
-        EventOccurrence<IIntegrationEvent> occurrence
-    )
+    private static void _AssertOccurrence((string Id, Message Message) row, EventContext<object> occurrence)
     {
-        row.Id.Should().Be(occurrence.Context.EventId);
+        row.Id.Should().Be(occurrence.EventId);
         var headers = row.Message.Headers;
-        headers[Headers.MessageId].Should().Be(occurrence.Context.EventId);
-        headers[Headers.CorrelationId].Should().Be(occurrence.Context.CorrelationId);
-        headers
-            .TryGetValue(Headers.CausationId, out var causation)
-            .Should()
-            .Be(occurrence.Context.CausationId is not null);
-        causation.Should().Be(occurrence.Context.CausationId);
-        headers.TryGetValue(Headers.TenantId, out var tenant).Should().Be(occurrence.Context.TenantId is not null);
-        tenant.Should().Be(occurrence.Context.TenantId);
+        headers[Headers.MessageId].Should().Be(occurrence.EventId);
+        headers[Headers.CorrelationId].Should().Be(occurrence.CorrelationId);
+        headers.TryGetValue(Headers.CausationId, out var causation).Should().Be(occurrence.CausationId is not null);
+        causation.Should().Be(occurrence.CausationId);
+        headers.TryGetValue(Headers.TenantId, out var tenant).Should().Be(occurrence.TenantId is not null);
+        tenant.Should().Be(occurrence.TenantId);
         headers[Headers.MessageName]
             .Should()
             .Be(occurrence.Payload is OrderShipped ? "orders.shipped" : "orders.invoiced");
@@ -681,7 +675,7 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         : IHeadlessOutboxDispatcher
     {
         public async Task DispatchAsync(
-            IReadOnlyList<EventOccurrence<IIntegrationEvent>> integrationEvents,
+            IReadOnlyList<EventContext<object>> integrationEvents,
             CancellationToken cancellationToken = default
         )
         {
@@ -689,15 +683,15 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
             _FailAfterWrite(integrationEvents);
         }
 
-        public void Dispatch(IReadOnlyList<EventOccurrence<IIntegrationEvent>> integrationEvents)
+        public void Dispatch(IReadOnlyList<EventContext<object>> integrationEvents)
         {
             inner.Dispatch(integrationEvents);
             _FailAfterWrite(integrationEvents);
         }
 
-        private void _FailAfterWrite(IReadOnlyList<EventOccurrence<IIntegrationEvent>> occurrences)
+        private void _FailAfterWrite(IReadOnlyList<EventContext<object>> occurrences)
         {
-            fault.Attempts.Add(occurrences.Select(occurrence => occurrence.Context.EventId).ToArray());
+            fault.Attempts.Add(occurrences.Select(occurrence => occurrence.EventId).ToArray());
             if (fault.FailuresRemaining-- > 0)
             {
                 throw new TransientOutboxException();
@@ -721,13 +715,13 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
 
     private sealed record ShipOrder(string Name);
 
-    private sealed record OrderShipping(OrderEntity Order) : IDomainEvent;
+    private sealed record OrderShipping(OrderEntity Order);
 
     private sealed class EmissionEvidence
     {
-        public EventOccurrenceContext? Parent { get; set; }
-        public List<EventOccurrence<IIntegrationEvent>> Children { get; } = [];
-        public EventOccurrence<IIntegrationEvent>? Forwarded { get; set; }
+        public EventContext<OrderShipping>? Parent { get; set; }
+        public List<EventContext<object>> Children { get; } = [];
+        public EventContext<object>? Forwarded { get; set; }
         public ActivityTraceId SaveTrace { get; set; }
         public int LocalHandlerCalls { get; set; }
     }
@@ -760,28 +754,24 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
 
     private sealed class DeriveShippingFacts(EmissionEvidence evidence) : IDomainEventHandler<OrderShipping>
     {
-        public ValueTask HandleAsync(
-            OrderShipping domainEvent,
-            EventOccurrenceContext context,
-            CancellationToken cancellationToken = default
-        )
+        public ValueTask HandleAsync(EventContext<OrderShipping> context, CancellationToken cancellationToken = default)
         {
             evidence.LocalHandlerCalls++;
             evidence.Parent = context;
-            domainEvent.Order.EmitIntegrationEvent(new OrderShipped("evt-derived-shipped"));
-            domainEvent.Order.EmitIntegrationEvent(new OrderInvoiced("evt-derived-invoiced"));
+            context.Payload.Order.EmitIntegrationEvent(new OrderShipped("evt-derived-shipped"));
+            context.Payload.Order.EmitIntegrationEvent(new OrderInvoiced("evt-derived-invoiced"));
             evidence.Children.AddRange(
-                domainEvent
-                    .Order.GetIntegrationEvents()
+                context
+                    .Payload.Order.GetIntegrationEvents()
                     .Where(occurrence => !ReferenceEquals(occurrence, evidence.Forwarded))
             );
             return ValueTask.CompletedTask;
         }
     }
 
-    private sealed record OrderShipped(string UniqueId) : IIntegrationEvent;
+    private sealed record OrderShipped(string UniqueId);
 
-    private sealed record OrderInvoiced(string UniqueId) : IIntegrationEvent;
+    private sealed record OrderInvoiced(string UniqueId);
 
     private sealed class OrderEntity : AggregateRoot, IEntity<Guid>
     {
@@ -790,7 +780,7 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         public required string Name { get; init; }
 
         // Domain behavior that raises events through the encapsulated (protected) aggregate mutator.
-        public void EmitIntegrationEvent(IIntegrationEvent integrationEvent)
+        public void EmitIntegrationEvent(object integrationEvent)
         {
             AddIntegrationEvent(integrationEvent);
         }

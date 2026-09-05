@@ -18,18 +18,19 @@ public interface IDomainEventEmitter
     /// save pipeline injecting lifecycle events — can enqueue across assemblies.
     /// </remarks>
     /// <param name="domainEvent">The domain event to enqueue.</param>
-    void AddDomainEvent(IDomainEvent domainEvent);
+    void AddDomainEvent(object domainEvent);
 
     /// <summary>Discards all pending domain events without dispatching them.</summary>
     void ClearDomainEvents();
 
     /// <summary>Returns the current list of pending domain events.</summary>
     /// <returns>A read-only snapshot of enqueued domain events; empty when none have been added.</returns>
-    IReadOnlyList<EventOccurrence<IDomainEvent>> GetDomainEvents();
+    IReadOnlyList<EventContext<object>> GetDomainEvents();
 
     /// <summary>Preserves an occurrence already captured by infrastructure.</summary>
-    void AddDomainEvent(EventOccurrence<IDomainEvent> occurrence);
+    void AddDomainEvent<TPayload>(EventContext<TPayload> context)
+        where TPayload : class;
 
     /// <summary>Removes only the captured batch; occurrences appended later stay pending.</summary>
-    void ClearDomainEvents(IReadOnlyList<EventOccurrence<IDomainEvent>> occurrences);
+    void ClearDomainEvents(IReadOnlyList<EventContext<object>> occurrences);
 }

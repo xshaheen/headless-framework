@@ -62,7 +62,7 @@ Choose by storage model:
 - `Headless.EntityFramework.Core` — provider-neutral EF Core primitives. Use it from storage feature packages that need shared converters, primitive mappings, or query helpers without taking a dependency on `HeadlessDbContext` or its application-level save pipeline.
 - `Headless.EntityFramework` — relational databases via EF Core. Provides `HeadlessDbContext` with conventions for audit fields, EF model-driven audit-log capture, soft-delete, multi-tenancy filters, DDD event dispatch (domain + integration), and transaction-aware save behavior. The default choice for any relational store (PostgreSQL, SQL Server, SQLite).
 - `Headless.EntityFramework.CommitCoordination` — optional adapter that enlists transactions opened by the Headless save pipeline in commit coordination. Add it only when buffered work must drain on commit.
-- `Headless.EntityFramework.Messaging` — add-on bridge. Supplies the real `IHeadlessOutboxDispatcher` so integration events emitted by EF entities are written to the messaging outbox atomically with the business data. Add it when entities emit `IIntegrationEvent`. It is not an alternative provider — it is always used alongside `Headless.EntityFramework`.
+- `Headless.EntityFramework.Messaging` — add-on bridge. Supplies the real `IHeadlessOutboxDispatcher` so integration events emitted by EF entities are written to the messaging outbox atomically with the business data. Add it when entities emit integration payloads. It is not an alternative provider — it is always used alongside `Headless.EntityFramework`.
 - `Headless.Couchbase` — document database via Couchbase. Provides `CouchbaseBucketContext`, `IBucketContextProvider`, `ICouchbaseClustersProvider`, `DocumentSetExtensions`, and `ICouchbaseManager`. Adds no relational conventions — no EF, no global filters, no auditing pipeline.
 
 Use these packages for ORM-level persistence primitives. For raw SQL connection factories and Dapper-style access, use the SQL packages instead.
@@ -71,12 +71,12 @@ Use these packages for ORM-level persistence primitives. For raw SQL connection 
 
 `HeadlessDbContext` collects two kinds of events during `SaveChanges` and dispatches each through its own seam:
 
-- **Domain events** (`IDomainEvent`, emitted by `IDomainEventEmitter` entities) — in-process and in-transaction, published through `ILocalEventBus` before commit. Opt in with `.AddDomainEvents()` (in `Headless.EntityFramework`).
-- **Integration events** (`IIntegrationEvent`, emitted by `IIntegrationEventEmitter` entities) — distributed, enqueued to the transactional outbox through `IHeadlessOutboxDispatcher` and delivered to the broker after commit by the messaging relay. Opt in with `.AddIntegrationEventOutbox()` (in `Headless.EntityFramework.Messaging`).
+- **Domain events** (plain payloads emitted by `IDomainEventEmitter` entities) — in-process and in-transaction, published through `IDomainEventDispatcher` before commit. Opt in with `.AddDomainEvents()` (in `Headless.EntityFramework`).
+- **Integration events** (plain payloads emitted by `IIntegrationEventEmitter` entities) — distributed, enqueued to the transactional outbox through `IHeadlessOutboxDispatcher` and delivered to the broker after commit by the messaging relay. Opt in with `.AddIntegrationEventOutbox()` (in `Headless.EntityFramework.Messaging`).
 
 ## Agent Instructions
 
-- The outbox dispatcher accepts captured `EventOccurrence<IIntegrationEvent>` values. Preserve their IDs and business context, including null root causation/system tenant, across save and persistence retry; do not recapture at dispatch.
+- The outbox dispatcher accepts captured `EventContext<object>` values. Preserve their IDs and business context, including null root causation/system tenant, across save and persistence retry; do not recapture at dispatch.
 - Treat `Headless.EntityFramework.Core` as the provider-neutral primitives package and `Headless.EntityFramework` as the application-facing relational package; commit coordination and messaging are opt-in adapters, while `Headless.Couchbase` is the document provider. Do not invent an ORM umbrella package.
 - Use `Headless.EntityFramework.Core` for provider-neutral EF converters, primitive mappings, and query helpers; do not reference the full `Headless.EntityFramework` package solely for those APIs.
 - **Use `AddHeadlessDbContext<TDbContext>(...)` not raw `AddDbContext`.** The raw registration misses the save pipeline, EF interceptors wiring (commit coordination), the `IDbContextFactory<TDbContext>` singleton, and the compiled-query cache key replacement. `AddHeadlessDbContext` registers all of these.
@@ -137,7 +137,7 @@ Custom processors registered via `options.AddSaveEntryProcessor<TProcessor>(Serv
 
 The full save-transaction order within a `HeadlessDbContext` pipeline-owned transaction is:
 
-1. Captured Domain occurrences drained via `ILocalEventBus` to quiescence, followed by final audit capture (before business save)
+1. Captured Domain occurrences drained via `IDomainEventDispatcher` to quiescence, followed by final audit capture (before business save)
 2. Business `SaveChanges` to the database
 3. Audit persistence
 4. Integration events enqueued to the outbox via `IHeadlessOutboxDispatcher` (before commit)
@@ -147,9 +147,9 @@ The full save-transaction order within a `HeadlessDbContext` pipeline-owned tran
 
 `HeadlessDbContext` supports domain-driven design aggregate patterns:
 
-- Entities implementing `IDomainEventEmitter` can emit `IDomainEvent` objects that are collected and published via `ILocalEventBus` inside the save transaction. Handlers that enlist further changes into the same `SaveChanges` are supported because publication precedes the business save.
-- Entities implementing `IIntegrationEventEmitter` can emit `IIntegrationEvent` objects that are enqueued to the transactional outbox via `IHeadlessOutboxDispatcher`. Each event is routed through durable `IBus.PublishAsync<TConcrete>` using a cached compiled delegate (one per runtime event type) for allocation efficiency.
-- Both tiers are opt-in: neither `ILocalEventBus` nor `IHeadlessOutboxDispatcher` is registered by default. The runtime guard fires only when events are actually emitted against a missing tier — zero false positives at startup.
+- Entities implementing `IDomainEventEmitter` can emit plain payloads that are collected and published via `IDomainEventDispatcher` inside the save transaction. Handlers that enlist further changes into the same `SaveChanges` are supported because publication precedes the business save.
+- Entities implementing `IIntegrationEventEmitter` can emit integration payloads objects that are enqueued to the transactional outbox via `IHeadlessOutboxDispatcher`. Each event is routed through durable `IBus.PublishAsync<TConcrete>` using a cached compiled delegate (one per runtime event type) for allocation efficiency.
+- Both tiers are opt-in: neither `IDomainEventDispatcher` nor `IHeadlessOutboxDispatcher` is registered by default. The runtime guard fires only when events are actually emitted against a missing tier — zero false positives at startup.
 
 ### Outbox-within-save-transaction bridge
 
@@ -262,7 +262,7 @@ Provides a framework-aware base `DbContext` with conventions for audit fields, E
 - Composable save pipeline driven by `HeadlessDbContextOptions` and an ordered chain of `IHeadlessSaveEntryProcessor` instances
 - `AddSaveEntryProcessor<TProcessor>(ServiceLifetime)` / `RemoveSaveEntryProcessor<TProcessor>()` for custom pipeline extension
 - Optional tenant write guard for `IMultiTenant` save protection (`CrossTenantWriteException`, `MissingTenantContextException`)
-- Two-tier event dispatch collected inside `SaveChanges`: domain events via `ILocalEventBus` before commit (`.AddDomainEvents()`), integration events via `IHeadlessOutboxDispatcher` in-transaction before commit (`.AddIntegrationEventOutbox()`, from `Headless.EntityFramework.Messaging`)
+- Two-tier event dispatch collected inside `SaveChanges`: domain events via `IDomainEventDispatcher` before commit (`.AddDomainEvents()`), integration events via `IHeadlessOutboxDispatcher` in-transaction before commit (`.AddIntegrationEventOutbox()`, from `Headless.EntityFramework.Messaging`)
 - `IHeadlessDbContextBuilder` returned by `AddHeadlessDbContextServices(...)` for chaining event tiers
 - Runtime guard that fails the save with a remediation message when an entity emits events but the matching tier is not registered
 - Resilient transaction helpers: `ExecuteTransactionAsync(...)` (wraps in EF execution strategy), `ExecuteCoordinatedTransactionAsync(...)` (also enlists commit coordination for outbox/jobs drain)
@@ -314,7 +314,7 @@ builder.Services.AddHeadlessDbContext<AppDbContext>(options =>
 
 // Opt in to event tiers — AddHeadlessDbContextServices(...) returns IHeadlessDbContextBuilder:
 builder.Services.AddHeadlessDbContextServices()
-    .AddDomainEvents()             // ILocalEventBus for in-process domain events
+    .AddDomainEvents()             // IDomainEventDispatcher for in-process domain events
     .AddIntegrationEventOutbox();  // IHeadlessOutboxDispatcher from the bridge package
 ```
 
@@ -486,7 +486,7 @@ configurationBuilder.Properties<MoneyAmount>().HaveConversion<MoneyAmountValueCo
 - Registers `IDbContextFactory<TDbContext>` as singleton (`HeadlessDbContextFactory<TDbContext>`); creates a fresh service scope per factory call
 - Registers `IDbContextOptionsConfiguration<TDbContext>` that auto-attaches DI-registered `IInterceptor` instances to EF's option pipeline (covers both `AddHeadlessDbContext` and consumer's own `AddDbContext`)
 - Registers a no-op transaction-coordination seam; `Headless.EntityFramework.CommitCoordination` replaces it when selected
-- `.AddDomainEvents()` registers `ILocalEventBus` (via `services.AddHeadlessLocalEventBus()`); `.AddIntegrationEventOutbox()` (from `Headless.EntityFramework.Messaging`) registers `IHeadlessOutboxDispatcher`; neither is registered by default
+- `.AddDomainEvents()` registers `IDomainEventDispatcher` (via `services.AddHeadlessDomainEventDispatcher()`); `.AddIntegrationEventOutbox()` (from `Headless.EntityFramework.Messaging`) registers `IHeadlessOutboxDispatcher`; neither is registered by default
 - Registers `TenantWriteGuardOptions` and `ITenantWriteGuardBypass` (always; guard is disabled by default)
 - Registers via `TryAddSingleton`: `TimeProvider.System`, keyed `IGuidGenerator` strategies (`Version7` and `SqlServer`) plus an unkeyed `Version7` default, `ICurrentTenantAccessor`, `ICurrentUser` (`NullCurrentUser`), `ICorrelationIdProvider`
 - Registers `ICurrentTenant` (`CurrentTenant`), replacing only the framework-fallback `NullCurrentTenant` while preserving consumer-provided tenant implementations
@@ -506,8 +506,8 @@ Bridge package that supplies the real `IHeadlessOutboxDispatcher` for EF integra
 ### Key Features
 
 - Transactional outbox enlistment in the EF save transaction, so outbox rows commit atomically with the business data
-- Preserves each `EventOccurrence<IIntegrationEvent>` snapshot: `Context.EventId` becomes Messaging `MessageId`; correlation, immediate causation, and tenant remain the values captured at emission
-- Routes each concrete `IIntegrationEvent` to durable `IBus.PublishAsync<TConcrete>` through a cached compiled invoker (`IntegrationEventPublishInvokerCache`) — one compiled delegate per runtime event type for allocation efficiency
+- Preserves each `EventContext<object>` snapshot: `EventId` becomes Messaging `MessageId`; correlation, immediate causation, and tenant remain the values captured at emission
+- Routes each concrete integration payload to durable `IBus.PublishAsync<TConcrete>` through a cached compiled invoker (`IntegrationEventPublishInvokerCache`) — one compiled delegate per runtime event type for allocation efficiency
 - Both sync (`Dispatch`) and async (`DispatchAsync`) save paths via `OutboxIntegrationEventDispatcher`
 - `.AddIntegrationEventOutbox()` builder extension on `IHeadlessDbContextBuilder`
 
@@ -517,7 +517,7 @@ Bridge package that supplies the real `IHeadlessOutboxDispatcher` for EF integra
 - **Occurrence forwarding.** The bridge forwards captured integration occurrences and publishes their concrete payloads through Messaging's existing contract name/version resolver. Application handlers derive new facts with new occurrence IDs and the immediate Domain parent as causation; forwarding an existing occurrence keeps its ID. There is no Domain durable-contract registry.
 - **Captured absence.** Each durable publish sets `SuppressAmbientBusinessContext = true`, so a captured root cause or system tenant cannot be replaced by unrelated consume/tenant state at save time. `TenantContextRequired = true` still rejects a captured null tenant. Diagnostic trace propagation and registered Messaging contracts remain independent.
 - **Save and recovery.** Persistence retry within a pipeline-owned save reuses the captured IDs and completed local drain. Each successful caller-owned save clears only its saved batch; outer commit persists all staged batches, while a known outer rollback requires a fresh context and aggregate graph. An unknown commit result requires durable outcome verification or application idempotency before replay. Broker delivery and external effects remain at-least-once.
-- **Source migration.** Custom `IHeadlessOutboxDispatcher` implementations now accept `IReadOnlyList<EventOccurrence<IIntegrationEvent>>` in both methods. Use `occurrence.Payload` for serialization and preserve `occurrence.Context` instead of recapturing during dispatch. Rebuild EF, the bridge, and custom dispatchers together. This bridge change adds no columns beyond the underlying Messaging schema requirements.
+- **Custom dispatchers.** Both `IHeadlessOutboxDispatcher` methods receive `IReadOnlyList<EventContext<object>>`. Serialize `context.Payload` while preserving `context.EventId`, correlation, causation, and tenant; dispatch never recaptures identity.
 - **Post-commit delivery.** The interceptor triggers the buffered dispatch on commit; the background relay also sweeps committed rows independently for crash recovery. On PostgreSQL the relay is the primary latency-bounded path. Pick the outbox storage provider on `AddHeadlessMessaging` with that trade-off in mind.
 - **Dependency isolation.** This bridge stays the only messaging-aware seam between the two domains. It selects `Headless.EntityFramework.CommitCoordination`, while the core `Headless.EntityFramework` package remains independent of both messaging and commit coordination.
 - **CDC alternative.** Change Data Capture (e.g. Debezium reading the database transaction log) is an advanced alternative deployment for capturing integration events outside the application process; it bypasses this dispatcher entirely and is a host-infrastructure decision, not a package option.
@@ -534,7 +534,7 @@ dotnet add package Headless.EntityFramework.Messaging
 // Chain after AddHeadlessDbContextServices:
 builder
     .Services.AddHeadlessDbContextServices()
-    .AddDomainEvents() // ILocalEventBus for in-process domain events
+    .AddDomainEvents() // IDomainEventDispatcher for in-process domain events
     .AddIntegrationEventOutbox(); // IHeadlessOutboxDispatcher — this package
 
 // A messaging setup with an outbox storage provider is required:

@@ -27,21 +27,21 @@ namespace Headless.EntityFramework.Contexts.Processors;
 [PublicAPI]
 public sealed class HeadlessLocalEventSaveEntryProcessor : IHeadlessSaveEntryProcessor
 {
-    private static readonly ConditionalWeakTable<Type, Func<object, IDomainEvent>> _CreatedFactories = [];
-    private static readonly ConditionalWeakTable<Type, Func<object, IDomainEvent>> _UpdatedFactories = [];
-    private static readonly ConditionalWeakTable<Type, Func<object, IDomainEvent>> _DeletedFactories = [];
-    private static readonly ConditionalWeakTable<Type, Func<object, IDomainEvent>> _ChangedFactories = [];
+    private static readonly ConditionalWeakTable<Type, Func<object, object>> _CreatedFactories = [];
+    private static readonly ConditionalWeakTable<Type, Func<object, object>> _UpdatedFactories = [];
+    private static readonly ConditionalWeakTable<Type, Func<object, object>> _DeletedFactories = [];
+    private static readonly ConditionalWeakTable<Type, Func<object, object>> _ChangedFactories = [];
 
-    private static readonly ConditionalWeakTable<Type, Func<object, IDomainEvent>>.CreateValueCallback _CreatedFactory =
+    private static readonly ConditionalWeakTable<Type, Func<object, object>>.CreateValueCallback _CreatedFactory =
         static type => _CompileEventFactory(typeof(EntityCreatedEventData<>), type);
 
-    private static readonly ConditionalWeakTable<Type, Func<object, IDomainEvent>>.CreateValueCallback _UpdatedFactory =
+    private static readonly ConditionalWeakTable<Type, Func<object, object>>.CreateValueCallback _UpdatedFactory =
         static type => _CompileEventFactory(typeof(EntityUpdatedEventData<>), type);
 
-    private static readonly ConditionalWeakTable<Type, Func<object, IDomainEvent>>.CreateValueCallback _DeletedFactory =
+    private static readonly ConditionalWeakTable<Type, Func<object, object>>.CreateValueCallback _DeletedFactory =
         static type => _CompileEventFactory(typeof(EntityDeletedEventData<>), type);
 
-    private static readonly ConditionalWeakTable<Type, Func<object, IDomainEvent>>.CreateValueCallback _ChangedFactory =
+    private static readonly ConditionalWeakTable<Type, Func<object, object>>.CreateValueCallback _ChangedFactory =
         static type => _CompileEventFactory(typeof(EntityChangedEventData<>), type);
 
     /// <summary>
@@ -117,16 +117,16 @@ public sealed class HeadlessLocalEventSaveEntryProcessor : IHeadlessSaveEntryPro
         entity.AddDomainEvent(factory(entity));
     }
 
-    private static Func<object, IDomainEvent> _CompileEventFactory(Type genericEventType, Type entityType)
+    private static Func<object, object> _CompileEventFactory(Type genericEventType, Type entityType)
     {
         var eventType = genericEventType.MakeGenericType(entityType);
         var ctor = eventType.GetConstructor([entityType])!;
         var param = Expression.Parameter(typeof(object));
         var converted = Expression.Convert(param, entityType);
         var newExpr = Expression.New(ctor, converted);
-        var cast = Expression.Convert(newExpr, typeof(IDomainEvent));
+        var cast = Expression.Convert(newExpr, typeof(object));
 
-        return Expression.Lambda<Func<object, IDomainEvent>>(cast, param).Compile();
+        return Expression.Lambda<Func<object, object>>(cast, param).Compile();
     }
 
     private static bool _HasDomainModifiedProperties(EntityEntry entry)

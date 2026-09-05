@@ -26,10 +26,10 @@ public interface IHeadlessOutboxDispatcher
 {
     /// <summary>Enqueues integration events into transaction-bound storage for post-commit delivery.</summary>
     Task DispatchAsync(
-        IReadOnlyList<EventOccurrence<IIntegrationEvent>> integrationEvents,
+        IReadOnlyList<EventContext<object>> integrationEvents,
         CancellationToken cancellationToken = default
     );
 
     /// <summary>Enqueues integration events into transaction-bound storage for post-commit delivery.</summary>
-    void Dispatch(IReadOnlyList<EventOccurrence<IIntegrationEvent>> integrationEvents);
+    void Dispatch(IReadOnlyList<EventContext<object>> integrationEvents);
 }

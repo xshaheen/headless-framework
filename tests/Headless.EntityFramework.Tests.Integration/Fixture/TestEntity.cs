@@ -63,12 +63,12 @@ public sealed class TestEntity
     }
 
     // Domain behavior that raises events through the encapsulated (protected) aggregate mutators.
-    public void EmitDomainEvent(IDomainEvent domainEvent)
+    public void EmitDomainEvent(object domainEvent)
     {
         AddDomainEvent(domainEvent);
     }
 
-    public void EmitIntegrationEvent(IIntegrationEvent integrationEvent)
+    public void EmitIntegrationEvent(object integrationEvent)
     {
         AddIntegrationEvent(integrationEvent);
     }

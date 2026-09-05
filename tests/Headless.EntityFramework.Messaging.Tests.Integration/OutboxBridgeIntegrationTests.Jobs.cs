@@ -119,8 +119,8 @@ public sealed partial class OutboxBridgeIntegrationTests
         published.Should().HaveCount(2);
         foreach (var occurrence in evidence.Children)
         {
-            _AssertOccurrence(published.Single(row => row.Id == occurrence.Context.EventId), occurrence);
-            occurrence.Context.CausationId.Should().Be(evidence.Parent.EventId);
+            _AssertOccurrence(published.Single(row => row.Id == occurrence.EventId), occurrence);
+            occurrence.CausationId.Should().Be(evidence.Parent.EventId);
         }
 
         // The second consumer receives the exact deserialized durable outbox envelope. Broker delivery is covered

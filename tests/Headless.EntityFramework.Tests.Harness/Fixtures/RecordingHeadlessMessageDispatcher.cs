@@ -15,18 +15,18 @@ public enum DispatchKind
 public sealed record DispatchCall(int Index, DispatchKind Kind, object Payload);
 
 /// <summary>
-/// Test double recording both event tiers: implements <see cref="ILocalEventBus"/> (domain events,
+/// Test double recording both event tiers: implements <see cref="IDomainEventDispatcher"/> (domain events,
 /// in-transaction) and <see cref="IHeadlessOutboxDispatcher"/> (integration events, outbox) and captures
 /// everything the save pipeline dispatches, preserving dispatch order via <see cref="Calls"/>.
 /// </summary>
-public sealed class RecordingHeadlessMessageDispatcher : ILocalEventBus, IHeadlessOutboxDispatcher
+public sealed class RecordingHeadlessMessageDispatcher : IDomainEventDispatcher, IHeadlessOutboxDispatcher
 {
     private int _callIndex;
     private readonly List<DispatchCall> _calls = [];
 
-    public List<IIntegrationEvent> EmittedDistributedMessages { get; } = [];
+    public List<object> EmittedDistributedMessages { get; } = [];
 
-    public List<IDomainEvent> EmittedLocalMessages { get; } = [];
+    public List<object> EmittedLocalMessages { get; } = [];
 
     public IReadOnlyList<DispatchCall> Calls => _calls;
 
@@ -40,34 +40,18 @@ public sealed class RecordingHeadlessMessageDispatcher : ILocalEventBus, IHeadle
         _calls.Add(new DispatchCall(NextIndex(), kind, payload));
     }
 
-    public ValueTask PublishAsync<T>(T domainEvent, CancellationToken cancellationToken = default)
-        where T : class, IDomainEvent
-    {
-        _RecordLocal(domainEvent);
-        return ValueTask.CompletedTask;
-    }
-
-    public ValueTask PublishAsync(IDomainEvent domainEvent, CancellationToken cancellationToken = default)
-    {
-        _RecordLocal(domainEvent);
-        return ValueTask.CompletedTask;
-    }
-
-    public ValueTask PublishAsync<T>(EventOccurrence<T> occurrence, CancellationToken cancellationToken = default)
-        where T : class, IDomainEvent =>
-        PublishAsync(new EventOccurrence<IDomainEvent>(occurrence.Payload, occurrence.Context), cancellationToken);
-
-    public ValueTask PublishAsync(
-        EventOccurrence<IDomainEvent> occurrence,
+    public ValueTask DispatchAsync<TPayload>(
+        EventContext<TPayload> context,
         CancellationToken cancellationToken = default
     )
+        where TPayload : class
     {
-        _RecordLocal(occurrence.Payload);
+        _RecordLocal(context.Payload);
         return ValueTask.CompletedTask;
     }
 
     public Task DispatchAsync(
-        IReadOnlyList<EventOccurrence<IIntegrationEvent>> integrationEvents,
+        IReadOnlyList<EventContext<object>> integrationEvents,
         CancellationToken cancellationToken = default
     )
     {
@@ -75,18 +59,18 @@ public sealed class RecordingHeadlessMessageDispatcher : ILocalEventBus, IHeadle
         return Task.CompletedTask;
     }
 
-    public void Dispatch(IReadOnlyList<EventOccurrence<IIntegrationEvent>> integrationEvents)
+    public void Dispatch(IReadOnlyList<EventContext<object>> integrationEvents)
     {
         _RecordDistributed(integrationEvents);
     }
 
-    private void _RecordLocal(IDomainEvent domainEvent)
+    private void _RecordLocal(object domainEvent)
     {
         EmittedLocalMessages.Add(domainEvent);
         _calls.Add(new DispatchCall(NextIndex(), DispatchKind.Local, domainEvent));
     }
 
-    private void _RecordDistributed(IReadOnlyList<EventOccurrence<IIntegrationEvent>> integrationEvents)
+    private void _RecordDistributed(IReadOnlyList<EventContext<object>> integrationEvents)
     {
         var payloads = integrationEvents.Select(occurrence => occurrence.Payload).ToArray();
         EmittedDistributedMessages.AddRange(payloads);
@@ -98,12 +82,12 @@ public static class RecordingHeadlessDispatcherSetup
 {
     /// <summary>
     /// Registers a single <see cref="RecordingHeadlessMessageDispatcher"/> instance as both the
-    /// <see cref="ILocalEventBus"/> and the <see cref="IHeadlessOutboxDispatcher"/> for the current scope.
+    /// <see cref="IDomainEventDispatcher"/> and the <see cref="IHeadlessOutboxDispatcher"/> for the current scope.
     /// </summary>
     public static IServiceCollection AddRecordingHeadlessDispatcher(this IServiceCollection services)
     {
         services.AddScoped<RecordingHeadlessMessageDispatcher>();
-        services.AddScoped<ILocalEventBus>(sp => sp.GetRequiredService<RecordingHeadlessMessageDispatcher>());
+        services.AddScoped<IDomainEventDispatcher>(sp => sp.GetRequiredService<RecordingHeadlessMessageDispatcher>());
         services.AddScoped<IHeadlessOutboxDispatcher>(sp =>
             sp.GetRequiredService<RecordingHeadlessMessageDispatcher>()
         );

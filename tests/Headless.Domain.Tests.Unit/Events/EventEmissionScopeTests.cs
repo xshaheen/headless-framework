@@ -8,24 +8,24 @@ namespace Tests.Events;
 
 public sealed class EventEmissionScopeTests : TestBase
 {
-    private sealed record Fact(string Value) : IDomainEvent;
+    private sealed record Fact(string Value);
 
     private sealed class TestAggregate : AggregateRoot<int>
     {
-        public void Raise(IDomainEvent payload) => AddDomainEvent(payload);
+        public void Raise(object payload) => AddDomainEvent(payload);
     }
 
     [Fact]
     public void should_reject_invalid_occurrences_and_scopes_without_changing_ambient_context()
     {
-        Action nullPayload = () => EventOccurrence.Capture<IDomainEvent>(null!);
-        Action nullContext = () => new EventOccurrence<IDomainEvent>(new Fact("payload"), null!);
-        Action blankIdentity = () => new EventOccurrenceContext(" ", "root", null, null);
+        Action nullPayload = () => EventContext.Capture<object>(null!);
+        Action nullIdentity = () => new EventContext<Fact>(new Fact("payload"), null!, "root");
+        Action blankIdentity = () => new EventContext<Fact>(new Fact("payload"), " ", "root");
         Action blankCorrelation = () => new EventEmissionContext(" ");
         Action nullScope = () => EventEmissionScope.Begin((EventEmissionContext)null!);
-        Action nullParent = () => EventEmissionScope.Begin((EventOccurrenceContext)null!);
+        Action nullParent = () => EventEmissionScope.Begin((EventContext<Fact>)null!);
         nullPayload.Should().Throw<ArgumentNullException>();
-        nullContext.Should().Throw<ArgumentNullException>();
+        nullIdentity.Should().Throw<ArgumentNullException>();
         blankIdentity.Should().Throw<ArgumentException>();
         blankCorrelation.Should().Throw<ArgumentException>();
         nullScope.Should().Throw<ArgumentNullException>();
@@ -45,21 +45,40 @@ public sealed class EventEmissionScopeTests : TestBase
 
         batch.Should().ContainSingle();
         occurrences.Should().HaveCount(2);
-        occurrences[0].Context.EventId.Should().NotBe(occurrences[1].Context.EventId);
+        occurrences[0].EventId.Should().NotBe(occurrences[1].EventId);
         occurrences[0].Payload.Should().BeSameAs(payload);
         aggregate.ClearDomainEvents(batch);
         aggregate.GetDomainEvents().Should().Equal(occurrences[1]);
     }
 
     [Fact]
+    public void should_forward_concrete_envelopes_through_both_emitter_buffers_without_recapture()
+    {
+        var aggregate = new TestAggregate { Id = 1 };
+        EventContext<Fact> context;
+        using (EventEmissionScope.Begin(new EventEmissionContext("root", "cause", "tenant")))
+        {
+            context = EventContext.Capture(new Fact("forwarded"));
+        }
+
+        ((IDomainEventEmitter)aggregate).AddDomainEvent(context);
+        ((IIntegrationEventEmitter)aggregate).AddIntegrationEvent(context);
+
+        aggregate.GetDomainEvents().Should().ContainSingle().Which.Should().BeEquivalentTo(context);
+        aggregate.GetIntegrationEvents().Should().ContainSingle().Which.Should().BeEquivalentTo(context);
+        aggregate.GetDomainEvents()[0].Payload.Should().BeSameAs(context.Payload);
+        aggregate.GetIntegrationEvents()[0].Payload.Should().BeSameAs(context.Payload);
+    }
+
+    [Fact]
     public void should_root_business_correlation_independently_of_activity()
     {
         using var activity = new Activity("trace-only").Start();
-        var occurrence = EventOccurrence.Capture<IDomainEvent>(new Fact("root"));
-        occurrence.Context.CorrelationId.Should().Be(occurrence.Context.EventId);
-        occurrence.Context.CausationId.Should().BeNull();
-        occurrence.Context.TenantId.Should().BeNull();
-        occurrence.Context.CorrelationId.Should().NotBe(activity.Id);
+        var occurrence = EventContext.Capture<object>(new Fact("root"));
+        occurrence.CorrelationId.Should().Be(occurrence.EventId);
+        occurrence.CausationId.Should().BeNull();
+        occurrence.TenantId.Should().BeNull();
+        occurrence.CorrelationId.Should().NotBe(activity.Id);
     }
 
     [Fact]
@@ -90,7 +109,7 @@ public sealed class EventEmissionScopeTests : TestBase
         using var outer = EventEmissionScope.Begin(new EventEmissionContext("outer"));
         var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var arrived = 0;
-        async Task<EventOccurrence<IDomainEvent>> CaptureAsync(string tenant)
+        async Task<EventContext<object>> CaptureAsync(string tenant)
         {
             using var scope = EventEmissionScope.Begin(new EventEmissionContext(tenant, "cause", tenant));
             if (Interlocked.Increment(ref arrived) == 2)
@@ -99,12 +118,12 @@ public sealed class EventEmissionScopeTests : TestBase
             }
 
             await ready.Task.WaitAsync(AbortToken);
-            return EventOccurrence.Capture<IDomainEvent>(new Fact(tenant));
+            return EventContext.Capture<object>(new Fact(tenant));
         }
 
         var occurrences = await Task.WhenAll(CaptureAsync("one"), CaptureAsync("two"));
-        occurrences.Select(occurrence => occurrence.Context.TenantId).Should().Equal("one", "two");
-        occurrences.Select(occurrence => occurrence.Context.CorrelationId).Should().Equal("one", "two");
+        occurrences.Select(occurrence => occurrence.TenantId).Should().Equal("one", "two");
+        occurrences.Select(occurrence => occurrence.CorrelationId).Should().Equal("one", "two");
         EventEmissionScope.Current!.CorrelationId.Should().Be("outer");
     }
 }

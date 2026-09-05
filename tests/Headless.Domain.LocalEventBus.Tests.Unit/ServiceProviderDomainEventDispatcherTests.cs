@@ -8,28 +8,28 @@ using Microsoft.Extensions.DependencyInjection;
 #pragma warning disable MA0015 // Specify the parameter name in ArgumentException
 namespace Tests;
 
-public sealed class ServiceProviderLocalEventBusTests : TestBase
+public sealed class ServiceProviderDomainEventDispatcherTests : TestBase
 {
     [Fact]
-    public async Task should_preserve_occurrence_context_and_dispatch_exact_runtime_type_from_generic_publish()
+    public async Task should_preserve_envelope_across_repeated_dispatch_by_exact_runtime_payload_type()
     {
         var handler = new TrackingHandler();
         var services = new ServiceCollection().AddSingleton<IDomainEventHandler<TestLocalMessage>>(handler);
         var bus = _CreatePublisher(services);
-        IDomainEvent payload = new TestLocalMessage("fact");
-        EventOccurrence<IDomainEvent> occurrence;
+        object payload = new TestLocalMessage("fact");
+        EventContext<object> occurrence;
         using (EventEmissionScope.Begin(new EventEmissionContext("root", "parent", "tenant")))
         {
-            occurrence = EventOccurrence.Capture<IDomainEvent>(payload);
+            occurrence = EventContext.Capture<object>(payload);
         }
 
-        await bus.PublishAsync(occurrence, AbortToken);
-        await bus.PublishAsync<IDomainEvent>(payload, AbortToken);
+        await bus.DispatchAsync(occurrence, AbortToken);
+        await bus.DispatchAsync(occurrence, AbortToken);
 
         handler.ReceivedMessages.Should().Equal("fact", "fact");
-        handler.ReceivedContexts[0].Should().BeSameAs(occurrence.Context);
-        handler.ReceivedContexts[1].EventId.Should().NotBe(occurrence.Context.EventId);
-        handler.ReceivedContexts[1].CausationId.Should().BeNull();
+        handler.ReceivedContexts[0].Should().BeEquivalentTo(occurrence);
+        handler.ReceivedContexts[1].Should().BeEquivalentTo(occurrence);
+        handler.ReceivedContexts[1].CausationId.Should().Be("parent");
         EventEmissionScope.Current.Should().BeNull();
     }
 
@@ -38,48 +38,46 @@ public sealed class ServiceProviderLocalEventBusTests : TestBase
     {
         var child = new ChildCapturingHandler();
         var bus = _CreatePublisher(new ServiceCollection().AddSingleton<IDomainEventHandler<TestLocalMessage>>(child));
-        var parent = EventOccurrence.Capture(new TestLocalMessage("parent"));
+        var parent = EventContext.Capture(new TestLocalMessage("parent"));
 
-        await bus.PublishAsync(parent, AbortToken);
+        await bus.DispatchAsync(parent, AbortToken);
 
-        child.Child!.Context.CorrelationId.Should().Be(parent.Context.CorrelationId);
-        child.Child.Context.CausationId.Should().Be(parent.Context.EventId);
-        child.Child.Context.EventId.Should().NotBe(parent.Context.EventId);
+        child.Child!.CorrelationId.Should().Be(parent.CorrelationId);
+        child.Child.CausationId.Should().Be(parent.EventId);
+        child.Child.EventId.Should().NotBe(parent.EventId);
         EventEmissionScope.Current.Should().BeNull();
     }
 
     private sealed class ChildCapturingHandler : IDomainEventHandler<TestLocalMessage>
     {
-        public EventOccurrence<IDomainEvent>? Child { get; private set; }
+        public EventContext<object>? Child { get; private set; }
 
         public ValueTask HandleAsync(
-            TestLocalMessage domainEvent,
-            EventOccurrenceContext context,
+            EventContext<TestLocalMessage> context,
             CancellationToken cancellationToken = default
         )
         {
-            Child = EventOccurrence.Capture<IDomainEvent>(new TestLocalMessage("child"));
+            Child = EventContext.Capture<object>(new TestLocalMessage("child"));
             return ValueTask.CompletedTask;
         }
     }
 
     #region Test Infrastructure
 
-    private sealed record TestLocalMessage(string Value) : IDomainEvent;
+    private sealed record TestLocalMessage(string Value);
 
     private sealed class TrackingHandler : IDomainEventHandler<TestLocalMessage>
     {
         public List<string> ReceivedMessages { get; } = [];
         public List<CancellationToken> ReceivedTokens { get; } = [];
-        public List<EventOccurrenceContext> ReceivedContexts { get; } = [];
+        public List<EventContext<TestLocalMessage>> ReceivedContexts { get; } = [];
 
         public ValueTask HandleAsync(
-            TestLocalMessage message,
-            EventOccurrenceContext context,
+            EventContext<TestLocalMessage> context,
             CancellationToken cancellationToken = default
         )
         {
-            ReceivedMessages.Add(message.Value);
+            ReceivedMessages.Add(context.Payload.Value);
             ReceivedTokens.Add(cancellationToken);
             ReceivedContexts.Add(context);
             return ValueTask.CompletedTask;
@@ -92,8 +90,7 @@ public sealed class ServiceProviderLocalEventBusTests : TestBase
         public List<string> InvocationOrder { get; } = invocationOrder;
 
         public ValueTask HandleAsync(
-            TestLocalMessage message,
-            EventOccurrenceContext context,
+            EventContext<TestLocalMessage> context,
             CancellationToken cancellationToken = default
         )
         {
@@ -107,8 +104,7 @@ public sealed class ServiceProviderLocalEventBusTests : TestBase
         public List<string> InvocationOrder { get; } = invocationOrder;
 
         public ValueTask HandleAsync(
-            TestLocalMessage message,
-            EventOccurrenceContext context,
+            EventContext<TestLocalMessage> context,
             CancellationToken cancellationToken = default
         )
         {
@@ -123,8 +119,7 @@ public sealed class ServiceProviderLocalEventBusTests : TestBase
         public List<string> InvocationOrder { get; } = invocationOrder;
 
         public ValueTask HandleAsync(
-            TestLocalMessage message,
-            EventOccurrenceContext context,
+            EventContext<TestLocalMessage> context,
             CancellationToken cancellationToken = default
         )
         {
@@ -141,8 +136,7 @@ public sealed class ServiceProviderLocalEventBusTests : TestBase
         public string ExceptionMessage { get; } = exceptionMessage;
 
         public ValueTask HandleAsync(
-            TestLocalMessage message,
-            EventOccurrenceContext context,
+            EventContext<TestLocalMessage> context,
             CancellationToken cancellationToken = default
         )
         {
@@ -157,8 +151,7 @@ public sealed class ServiceProviderLocalEventBusTests : TestBase
     ) : IDomainEventHandler<TestLocalMessage>
     {
         public async ValueTask HandleAsync(
-            TestLocalMessage message,
-            EventOccurrenceContext context,
+            EventContext<TestLocalMessage> context,
             CancellationToken cancellationToken = default
         )
         {
@@ -170,8 +163,7 @@ public sealed class ServiceProviderLocalEventBusTests : TestBase
     private sealed class TargetInvocationExceptionHandler : IDomainEventHandler<TestLocalMessage>
     {
         public ValueTask HandleAsync(
-            TestLocalMessage message,
-            EventOccurrenceContext context,
+            EventContext<TestLocalMessage> context,
             CancellationToken cancellationToken = default
         )
         {
@@ -184,8 +176,7 @@ public sealed class ServiceProviderLocalEventBusTests : TestBase
         public bool WasInvoked { get; private set; }
 
         public ValueTask HandleAsync(
-            TestLocalMessage message,
-            EventOccurrenceContext context,
+            EventContext<TestLocalMessage> context,
             CancellationToken cancellationToken = default
         )
         {
@@ -194,15 +185,15 @@ public sealed class ServiceProviderLocalEventBusTests : TestBase
         }
     }
 
-    private static ServiceProviderLocalEventBus _CreatePublisher(IServiceCollection services)
+    private static ServiceProviderDomainEventDispatcher _CreatePublisher(IServiceCollection services)
     {
         var serviceProvider = services.BuildServiceProvider();
-        return new ServiceProviderLocalEventBus(serviceProvider);
+        return new ServiceProviderDomainEventDispatcher(serviceProvider);
     }
 
     #endregion
 
-    #region PublishAsync Tests
+    #region DispatchAsync Tests
 
     [Fact]
     public async Task should_invoke_all_handlers_async()
@@ -217,7 +208,7 @@ public sealed class ServiceProviderLocalEventBusTests : TestBase
         var message = new TestLocalMessage("test-value");
 
         // when
-        await publisher.PublishAsync(message, AbortToken);
+        await publisher.DispatchAsync(EventContext.Capture(message), AbortToken);
 
         // then
         handler1.ReceivedMessages.Should().ContainSingle().Which.Should().Be("test-value");
@@ -236,7 +227,7 @@ public sealed class ServiceProviderLocalEventBusTests : TestBase
         var publisher = _CreatePublisher(services);
 
         // when
-        await publisher.PublishAsync(new TestLocalMessage("test"), AbortToken);
+        await publisher.DispatchAsync(EventContext.Capture(new TestLocalMessage("test")), AbortToken);
 
         // then
         invocationOrder.Should().ContainInOrder("Negative10", "Default0", "Positive10");
@@ -254,7 +245,7 @@ public sealed class ServiceProviderLocalEventBusTests : TestBase
         var publisher = _CreatePublisher(services);
 
         // when
-        await publisher.PublishAsync(new TestLocalMessage("test"), AbortToken);
+        await publisher.DispatchAsync(EventContext.Capture(new TestLocalMessage("test")), AbortToken);
 
         // then - Negative10 (-10) should come before Default0 (0)
         invocationOrder.Should().ContainInOrder("Negative10", "Default0");
@@ -269,7 +260,8 @@ public sealed class ServiceProviderLocalEventBusTests : TestBase
         var publisher = _CreatePublisher(services);
 
         // when
-        var act = async () => await publisher.PublishAsync(new TestLocalMessage("test"), AbortToken);
+        var act = async () =>
+            await publisher.DispatchAsync(EventContext.Capture(new TestLocalMessage("test")), AbortToken);
 
         // then - inner exception should be thrown, not TargetInvocationException
         await act.Should().ThrowAsync<ArgumentException>().WithMessage("Inner exception message");
@@ -287,7 +279,7 @@ public sealed class ServiceProviderLocalEventBusTests : TestBase
         var token = cts.Token;
 
         // when
-        await publisher.PublishAsync(new TestLocalMessage("test"), token);
+        await publisher.DispatchAsync(EventContext.Capture(new TestLocalMessage("test")), token);
 
         // then
         handler.ReceivedTokens.Should().ContainSingle().Which.Should().Be(token);
@@ -303,7 +295,7 @@ public sealed class ServiceProviderLocalEventBusTests : TestBase
         var publisher = _CreatePublisher(services);
 
         // when
-        var act = async () => await publisher.PublishAsync(new TestLocalMessage("test"));
+        var act = async () => await publisher.DispatchAsync(EventContext.Capture(new TestLocalMessage("test")));
 
         // then
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("Async failure");
@@ -321,7 +313,7 @@ public sealed class ServiceProviderLocalEventBusTests : TestBase
         var publisher = _CreatePublisher(services);
 
         // when
-        var act = async () => await publisher.PublishAsync(new TestLocalMessage("test"));
+        var act = async () => await publisher.DispatchAsync(EventContext.Capture(new TestLocalMessage("test")));
 
         // then
         var exception = (await act.Should().ThrowAsync<AggregateException>()).Which;
@@ -341,7 +333,7 @@ public sealed class ServiceProviderLocalEventBusTests : TestBase
         var publisher = _CreatePublisher(services);
 
         // when
-        var act = async () => await publisher.PublishAsync(new TestLocalMessage("test"));
+        var act = async () => await publisher.DispatchAsync(EventContext.Capture(new TestLocalMessage("test")));
 
         // then
         await act.Should().ThrowAsync<Exception>();
@@ -357,7 +349,7 @@ public sealed class ServiceProviderLocalEventBusTests : TestBase
         var publisher = _CreatePublisher(services);
 
         // when
-        var act = async () => await publisher.PublishAsync(new TestLocalMessage("test"));
+        var act = async () => await publisher.DispatchAsync(EventContext.Capture(new TestLocalMessage("test")));
 
         // then
         await act.Should().NotThrowAsync();
@@ -375,7 +367,8 @@ public sealed class ServiceProviderLocalEventBusTests : TestBase
         await cts.CancelAsync();
 
         // when
-        var act = async () => await publisher.PublishAsync(new TestLocalMessage("test"), cts.Token);
+        var act = async () =>
+            await publisher.DispatchAsync(EventContext.Capture(new TestLocalMessage("test")), cts.Token);
 
         // then
         await act.Should().ThrowAsync<OperationCanceledException>();
@@ -395,7 +388,8 @@ public sealed class ServiceProviderLocalEventBusTests : TestBase
         var publisher = _CreatePublisher(services);
 
         // when
-        var act = async () => await publisher.PublishAsync(new TestLocalMessage("test"), cts.Token);
+        var act = async () =>
+            await publisher.DispatchAsync(EventContext.Capture(new TestLocalMessage("test")), cts.Token);
 
         // then
         var exception = await act.Should().ThrowAsync<InvalidOperationException>();
@@ -405,23 +399,21 @@ public sealed class ServiceProviderLocalEventBusTests : TestBase
 
     #endregion
 
-    #region Non-generic runtime-typed dispatch (invoker cache)
+    #region Object-typed envelope runtime dispatch (invoker cache)
 
     [Fact]
-    public async Task should_dispatch_to_runtime_type_handlers_via_non_generic_publish_async()
+    public async Task should_dispatch_to_runtime_type_handlers_via_object_typed_envelope()
     {
-        // given — referenced through IDomainEvent so the non-generic PublishAsync(IDomainEvent) overload
-        // (compiled invoker) is selected. Handlers fire only if it routes by runtime type to
-        // PublishAsync<TestLocalMessage>; a wrong IDomainEvent-typed dispatch would resolve zero handlers.
+        // An object-typed envelope must resolve concrete payload handlers rather than object handlers.
         var handler = new TrackingHandler();
         var services = new ServiceCollection();
         services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(handler);
         var publisher = _CreatePublisher(services);
-        IDomainEvent message = new TestLocalMessage("runtime-typed-async");
+        object message = new TestLocalMessage("runtime-typed-async");
         using var cts = new CancellationTokenSource();
 
         // when
-        await publisher.PublishAsync(message, cts.Token);
+        await publisher.DispatchAsync(EventContext.Capture(message), cts.Token);
 
         // then
         handler.ReceivedMessages.Should().ContainSingle().Which.Should().Be("runtime-typed-async");
@@ -437,30 +429,30 @@ public sealed class ServiceProviderLocalEventBusTests : TestBase
         services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(handler);
         var publisher = _CreatePublisher(services);
 
-        // when — repeated non-generic dispatch of the same runtime type reuses the cached invoker
-        IDomainEvent first = new TestLocalMessage("first");
-        IDomainEvent second = new TestLocalMessage("second");
-        await publisher.PublishAsync(first, AbortToken);
-        await publisher.PublishAsync(second, AbortToken);
+        // when — repeated object-typed envelope dispatch of the same runtime type reuses the cached invoker
+        object first = new TestLocalMessage("first");
+        object second = new TestLocalMessage("second");
+        await publisher.DispatchAsync(EventContext.Capture(first), AbortToken);
+        await publisher.DispatchAsync(EventContext.Capture(second), AbortToken);
 
         // then
         handler.ReceivedMessages.Should().ContainInOrder("first", "second");
     }
 
     [Fact]
-    public async Task should_propagate_handler_failure_through_non_generic_publish()
+    public async Task should_propagate_handler_failure_through_object_typed_envelope()
     {
         // given — the generic path's exception semantics must flow through the compiled invoker.
         var services = new ServiceCollection();
-        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(new FailingHandler("non-generic failure"));
+        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(new FailingHandler("runtime dispatch failure"));
         var publisher = _CreatePublisher(services);
-        IDomainEvent message = new TestLocalMessage("test");
+        object message = new TestLocalMessage("test");
 
         // when
-        var act = async () => await publisher.PublishAsync(message, AbortToken);
+        var act = async () => await publisher.DispatchAsync(EventContext.Capture(message), AbortToken);
 
         // then
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("non-generic failure");
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("runtime dispatch failure");
     }
 
     #endregion
@@ -478,9 +470,9 @@ public sealed class ServiceProviderLocalEventBusTests : TestBase
         var publisher = _CreatePublisher(services);
 
         // when - publish multiple times
-        await publisher.PublishAsync(new TestLocalMessage("test1"), AbortToken);
+        await publisher.DispatchAsync(EventContext.Capture(new TestLocalMessage("test1")), AbortToken);
         invocationOrder.Clear();
-        await publisher.PublishAsync(new TestLocalMessage("test2"), AbortToken);
+        await publisher.DispatchAsync(EventContext.Capture(new TestLocalMessage("test2")), AbortToken);
 
         // then - order should be consistent (cached)
         invocationOrder.Should().ContainInOrder("Negative10", "Positive10");
@@ -497,9 +489,9 @@ public sealed class ServiceProviderLocalEventBusTests : TestBase
         var publisher = _CreatePublisher(services);
 
         // when - publish repeatedly against the same cached order
-        await publisher.PublishAsync(new TestLocalMessage("first"), AbortToken);
-        await publisher.PublishAsync(new TestLocalMessage("second"), AbortToken);
-        await publisher.PublishAsync(new TestLocalMessage("third"), AbortToken);
+        await publisher.DispatchAsync(EventContext.Capture(new TestLocalMessage("first")), AbortToken);
+        await publisher.DispatchAsync(EventContext.Capture(new TestLocalMessage("second")), AbortToken);
+        await publisher.DispatchAsync(EventContext.Capture(new TestLocalMessage("third")), AbortToken);
 
         // then - all should maintain same order (cache is shared)
         // Expected: Default0, Positive10 repeated 3 times

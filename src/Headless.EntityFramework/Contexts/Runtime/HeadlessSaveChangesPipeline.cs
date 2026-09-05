@@ -87,14 +87,14 @@ internal sealed class HeadlessSaveChangesPipeline(
     HeadlessDbContextOptions options,
     IHeadlessAuditPersistence auditPersistence,
     IHeadlessTransactionCoordinator transactionCoordinator,
-    ILocalEventBus? localEventBus = null,
+    IDomainEventDispatcher? domainEventDispatcher = null,
     IHeadlessOutboxDispatcher? outboxDispatcher = null,
     ILogger<HeadlessSaveChangesPipeline>? logger = null
 ) : IHeadlessSaveChangesPipeline
 {
-    private const string _MissingLocalEventBusMessage =
-        "Headless EF collected domain events to publish, but no ILocalEventBus is registered. "
-        + "Call AddHeadlessDbContextServices(...).AddDomainEvents() (or services.AddHeadlessLocalEventBus()).";
+    private const string _MissingDomainEventDispatcherMessage =
+        "Headless EF collected domain events to publish, but no IDomainEventDispatcher is registered. "
+        + "Call AddHeadlessDbContextServices(...).AddDomainEvents() (or services.AddHeadlessDomainEventDispatcher()).";
 
     private const string _MissingOutboxDispatcherMessage =
         "Headless EF collected integration events to enqueue, but no IHeadlessOutboxDispatcher is registered. "
@@ -300,8 +300,10 @@ internal sealed class HeadlessSaveChangesPipeline(
                 while (_TryTakeDomainOccurrence(state.Context, state.SaveContext) is { } occurrence)
                 {
                     state.CancellationToken.ThrowIfCancellationRequested();
-                    var bus = localEventBus ?? throw new InvalidOperationException(_MissingLocalEventBusMessage);
-                    await bus.PublishAsync(occurrence, state.CancellationToken).ConfigureAwait(false);
+                    var bus =
+                        domainEventDispatcher
+                        ?? throw new InvalidOperationException(_MissingDomainEventDispatcherMessage);
+                    await bus.DispatchAsync(occurrence, state.CancellationToken).ConfigureAwait(false);
                     state.SaveContext.DomainEventCursor++;
                 }
 
@@ -333,7 +335,7 @@ internal sealed class HeadlessSaveChangesPipeline(
 
                 var integrationEvents = state
                     .SaveContext.IntegrationEventEmitters.SelectMany(static emitter => emitter.Events)
-                    .DistinctBy(static occurrence => occurrence.Context.EventId, StringComparer.Ordinal)
+                    .DistinctBy(static occurrence => occurrence.EventId, StringComparer.Ordinal)
                     .ToArray();
 
                 await dispatcher.DispatchAsync(integrationEvents, state.CancellationToken).ConfigureAwait(false);
@@ -390,7 +392,9 @@ internal sealed class HeadlessSaveChangesPipeline(
             {
                 while (_TryTakeDomainOccurrence(state.Context, state.SaveContext) is { } occurrence)
                 {
-                    var bus = localEventBus ?? throw new InvalidOperationException(_MissingLocalEventBusMessage);
+                    var bus =
+                        domainEventDispatcher
+                        ?? throw new InvalidOperationException(_MissingDomainEventDispatcherMessage);
                     _PublishDomainEventBlocking(bus, occurrence);
                     state.SaveContext.DomainEventCursor++;
                 }
@@ -414,7 +418,7 @@ internal sealed class HeadlessSaveChangesPipeline(
 
                 var integrationEvents = state
                     .SaveContext.IntegrationEventEmitters.SelectMany(static emitter => emitter.Events)
-                    .DistinctBy(static occurrence => occurrence.Context.EventId, StringComparer.Ordinal)
+                    .DistinctBy(static occurrence => occurrence.EventId, StringComparer.Ordinal)
                     .ToArray();
 
                 dispatcher.Dispatch(integrationEvents);
@@ -456,10 +460,7 @@ internal sealed class HeadlessSaveChangesPipeline(
     // The finite budget also covers lifecycle events and new emitters, so recursive handlers fail before saving.
     private const int _MaximumDomainOccurrencesPerSave = 1024;
 
-    private EventOccurrence<IDomainEvent>? _TryTakeDomainOccurrence(
-        DbContext context,
-        HeadlessSaveEntryContext saveContext
-    )
+    private EventContext<object>? _TryTakeDomainOccurrence(DbContext context, HeadlessSaveEntryContext saveContext)
     {
         // Recollect after each completed pass, without synthesizing lifecycle events again for existing entries.
         if (saveContext.DomainEventCursor == saveContext.PendingDomainEvents.Count)
@@ -496,15 +497,15 @@ internal sealed class HeadlessSaveChangesPipeline(
         return saveContext.PendingDomainEvents[saveContext.DomainEventCursor];
     }
 
-    // ILocalEventBus is async-only by contract: exposing a public sync Publish invited sync-over-async
+    // IDomainEventDispatcher is async-only by contract: exposing a public sync Publish invited sync-over-async
     // dispatch (and its synchronization-context deadlocks) in application code. The synchronous
     // SaveChanges path still has to dispatch domain events inline, so the bridge lives HERE, contained
     // in infrastructure. Blocking is acceptable in this frame: EF's own sync SaveChanges is already
     // blocking database I/O on a thread without a synchronization context to deadlock against.
-    private static void _PublishDomainEventBlocking(ILocalEventBus bus, EventOccurrence<IDomainEvent> domainEvent)
+    private static void _PublishDomainEventBlocking(IDomainEventDispatcher bus, EventContext<object> domainEvent)
     {
 #pragma warning disable MA0045 // Sync SaveChanges path intentionally blocks; see comment above.
-        var pending = bus.PublishAsync(domainEvent);
+        var pending = bus.DispatchAsync(domainEvent);
 
         if (pending.IsCompletedSuccessfully)
         {

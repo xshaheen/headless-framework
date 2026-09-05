@@ -27,7 +27,8 @@ public sealed class EventEmissionScope : IDisposable
     public static EventEmissionScope Begin(EventEmissionContext context) => new(context);
 
     /// <summary>Establishes an existing occurrence as the immediate cause of subsequent emissions.</summary>
-    public static EventEmissionScope Begin(EventOccurrenceContext parent)
+    public static EventEmissionScope Begin<TPayload>(EventContext<TPayload> parent)
+        where TPayload : class
     {
         Argument.IsNotNull(parent);
         return new(new(parent.CorrelationId, parent.EventId, parent.TenantId));

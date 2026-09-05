@@ -307,14 +307,14 @@ public static class SetupEntityFramework
     }
 
     /// <summary>
-    /// Registers the in-process domain-event bus (<see cref="ILocalEventBus"/>) so entities implementing
+    /// Registers the in-process domain-event bus (<see cref="IDomainEventDispatcher"/>) so entities implementing
     /// <see cref="IDomainEventEmitter"/> have their domain events published within the save transaction.
     /// </summary>
     public static IHeadlessDbContextBuilder AddDomainEvents(this IHeadlessDbContextBuilder builder)
     {
         Argument.IsNotNull(builder);
 
-        builder.Services.AddHeadlessLocalEventBus();
+        builder.Services.AddHeadlessDomainEventDispatcher();
 
         return builder;
     }

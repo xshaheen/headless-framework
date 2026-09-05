@@ -47,7 +47,7 @@ public sealed class HeadlessSaveEntryContext(DbContext dbContext, string? tenant
     internal Dictionary<IIntegrationEventEmitter, HashSet<string>> CapturedIntegrationIdsByEmitter { get; } =
         new(ReferenceEqualityComparer.Instance);
 
-    internal List<EventOccurrence<IDomainEvent>> PendingDomainEvents { get; } = [];
+    internal List<EventContext<object>> PendingDomainEvents { get; } = [];
 
     internal int DomainEventCursor { get; set; }
 

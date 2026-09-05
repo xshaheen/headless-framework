@@ -14,25 +14,19 @@ Provides building blocks for implementing DDD patterns: entities with identity, 
 - **Auditing**: `ICreateAudit`, `IUpdateAudit`, `IDeleteAudit`, `ISuspendAudit`
 - **Concurrency**: `IHasConcurrencyStamp`, `IHasETag`
 - **Multi-tenancy**: `IMultiTenant`
-- **Domain Events (in-process)**: `IDomainEvent`, `IDomainEventEmitter`, `IDomainEventHandler<T>`, `DomainEventHandlerOrderAttribute`. An aggregate raises its own events through the `protected AddDomainEvent`; the readers/clearers (`GetDomainEvents`, `ClearDomainEvents`) and the `IDomainEventEmitter` contract stay public for infrastructure that collects and dispatches them. Dispatch is provided by `Headless.Domain.LocalEventBus`.
-- **Integration Events (distributed)**: `IIntegrationEvent`, `IIntegrationEventEmitter`. An aggregate raises its own events through the `protected AddIntegrationEvent`; `GetIntegrationEvents`/`ClearIntegrationEvents` and the `IIntegrationEventEmitter` contract stay public for infrastructure. This package only defines the contract and the emitter — integration events are dispatched by the ORM/messaging layer (`Headless.EntityFramework.Messaging`), not from `Headless.Domain`.
+- **Domain Events (in-process)**: `IDomainEventEmitter`, `IDomainEventHandler<T>`, `DomainEventHandlerOrderAttribute`. An aggregate raises its own events through the `protected AddDomainEvent`; the readers/clearers (`GetDomainEvents`, `ClearDomainEvents`) and the `IDomainEventEmitter` contract stay public for infrastructure that collects and dispatches them. Dispatch is provided by `Headless.Domain.LocalEventBus`.
+- **Integration Events (distributed)**: `IIntegrationEventEmitter`. An aggregate raises its own events through the `protected AddIntegrationEvent`; `GetIntegrationEvents`/`ClearIntegrationEvents` and the `IIntegrationEventEmitter` contract stay public for infrastructure. This package only defines the contract and the emitter — integration events are dispatched by the ORM/messaging layer (`Headless.EntityFramework.Messaging`), not from `Headless.Domain`.
 - **Entity Events**: `EntityCreatedEventData`, `EntityUpdatedEventData`, `EntityDeletedEventData`
 
-Event payload interfaces are pure markers. `AggregateRoot` captures an `EventOccurrence<TPayload>` for every raise, including repeated raises of the same payload object. Its immutable `Context` contains `EventId`, root `CorrelationId`, immediate `CausationId`, and `TenantId`. Payloads must be treated as immutable after emission; the framework does not deep-copy arbitrary business objects.
+Event payloads are plain reference types with no required marker interface. `AggregateRoot` captures an immutable `EventContext<TPayload>` for every raise, including repeated raises of the same payload object. The envelope contains `Payload`, `EventId`, root `CorrelationId`, immediate `CausationId`, and `TenantId`. Payloads must be treated as immutable after emission; the framework does not deep-copy arbitrary business objects.
 
-Use `EventEmissionScope.Begin(new EventEmissionContext(correlationId, parentId, tenantId))` at an application or subsystem boundary. The scope flows across awaits, nests with strict reverse-order disposal, and isolates parallel async flows. Without a scope, an occurrence roots correlation at its own new ID. `Activity` tracing never supplies business identity. Infrastructure forwards an existing occurrence explicitly; passing only its payload raises a new occurrence. Use `EventOccurrence.Capture(payload)` for an inferred concrete payload type, or `EventOccurrence.Capture<IDomainEvent>(payload)` when filling a Domain emitter buffer.
+Use `EventEmissionScope.Begin(new EventEmissionContext(correlationId, parentId, tenantId))` at an application or subsystem boundary. The scope flows across awaits, nests with strict reverse-order disposal, and isolates parallel async flows. Without a scope, an occurrence roots correlation at its own new ID. `Activity` tracing never supplies business identity. Infrastructure forwards an existing occurrence explicitly; passing only its payload raises a new occurrence. Use `EventContext.Capture(payload)` when explicitly creating an event outside aggregate behavior.
 
-Source migration for custom implementations:
+Emitter buffers contain `IReadOnlyList<EventContext<object>>` so one aggregate can raise different payload types. The generic `AddDomainEvent(context)` / `AddIntegrationEvent(context)` overloads preserve an existing concrete envelope. Batch clear removes only saved event IDs; parameterless clear explicitly discards the pending buffer.
 
-| Previous contract | New contract |
-| --- | --- |
-| Payload implements `UniqueId` | Remove the infrastructure ID from the payload; use `occurrence.Context.EventId` |
-| Emitter returns payload lists | Return `IReadOnlyList<EventOccurrence<IDomainEvent>>` or the integration equivalent; capture once when raising |
-| Clear the whole buffer after save | Implement `ClearDomainEvents(batch)` / `ClearIntegrationEvents(batch)` to remove only the saved occurrence IDs; parameterless clear remains explicit discard |
-| Custom handler takes payload and token | Add `EventOccurrenceContext context` before the cancellation token |
-| Custom local bus accepts only payload | Implement payload and occurrence overloads; occurrence publication preserves identity and dispatches exact runtime payload type |
+Handlers receive `EventContext<TPayload>` and a cancellation token. `IDomainEventDispatcher.DispatchAsync(context, token)` accepts only a captured envelope and resolves the exact runtime payload type, preserving identity and lineage across retries.
 
-This change adds no event store, stream version, replay, or durable Domain contract registry. Domain remains independent of Messaging, Jobs, persistence, and commit coordination.
+This package adds no event store, stream version, replay, or durable Domain contract registry. Domain remains independent of Messaging, Jobs, persistence, and commit coordination.
 
 
 ## Installation
@@ -56,7 +50,7 @@ public sealed class Order : AggregateRoot<Guid>, ICreateAudit
     }
 }
 
-public sealed record OrderCompletedEvent(Guid OrderId) : IDomainEvent;
+public sealed record OrderCompletedEvent(Guid OrderId);
 ```
 
 ### Auditing

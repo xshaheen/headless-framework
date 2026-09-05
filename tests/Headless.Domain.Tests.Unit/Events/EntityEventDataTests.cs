@@ -11,8 +11,6 @@ public sealed class EntityEventDataTests
     [Fact]
     public void should_keep_event_identity_out_of_business_payload_contracts()
     {
-        typeof(IDomainEvent).GetProperties().Should().BeEmpty();
-        typeof(IIntegrationEvent).GetProperties().Should().BeEmpty();
         typeof(EntityCreatedEventData<TestEntity>)
             .GetProperties()
             .Select(property => property.Name)
@@ -62,22 +60,6 @@ public sealed class EntityEventDataTests
 
         eventData.Should().NotBeNull();
         eventData.Entity.Should().BeSameAs(entity);
-    }
-
-    [Fact]
-    public void should_implement_i_local_message()
-    {
-        var entity = new TestEntity(1, "Test");
-
-        var createdEvent = new EntityCreatedEventData<TestEntity>(entity);
-        var updatedEvent = new EntityUpdatedEventData<TestEntity>(entity);
-        var deletedEvent = new EntityDeletedEventData<TestEntity>(entity);
-        var changedEvent = new EntityChangedEventData<TestEntity>(entity);
-
-        createdEvent.Should().BeAssignableTo<IDomainEvent>();
-        updatedEvent.Should().BeAssignableTo<IDomainEvent>();
-        deletedEvent.Should().BeAssignableTo<IDomainEvent>();
-        changedEvent.Should().BeAssignableTo<IDomainEvent>();
     }
 
     [Fact]

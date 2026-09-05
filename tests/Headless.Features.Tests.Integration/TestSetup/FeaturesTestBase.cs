@@ -47,7 +47,7 @@ public abstract class FeaturesTestBase(FeaturesTestFixture fixture) : TestBase
         services.AddSingleton(Substitute.For<ICurrentTenant>());
         services.AddSingleton(Substitute.For<IApplicationInformationAccessor>());
         services.AddSingleton(Substitute.For<ICurrentPrincipalAccessor>());
-        services.AddHeadlessLocalEventBus();
+        services.AddHeadlessDomainEventDispatcher();
 
         // Cache
         services.AddHeadlessCaching(setup =>

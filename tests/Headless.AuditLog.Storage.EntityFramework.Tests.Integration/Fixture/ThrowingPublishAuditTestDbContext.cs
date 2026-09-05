@@ -40,14 +40,14 @@ public sealed class ThrowingPublishAuditTestDbContext(
 public sealed class ThrowingHeadlessMessageDispatcher : IHeadlessOutboxDispatcher
 {
     public Task DispatchAsync(
-        IReadOnlyList<EventOccurrence<IIntegrationEvent>> integrationEvents,
+        IReadOnlyList<EventContext<object>> integrationEvents,
         CancellationToken cancellationToken = default
     )
     {
         throw new InvalidOperationException(_PublishFailureMessage);
     }
 
-    public void Dispatch(IReadOnlyList<EventOccurrence<IIntegrationEvent>> integrationEvents)
+    public void Dispatch(IReadOnlyList<EventContext<object>> integrationEvents)
     {
         throw new InvalidOperationException(_PublishFailureMessage);
     }

@@ -43,7 +43,7 @@ public sealed class HeadlessMessageCollectorSaveEntryProcessor : IHeadlessSaveEn
 
             var events = integrationEmitter
                 .GetIntegrationEvents()
-                .Where(occurrence => captured.Add(occurrence.Context.EventId))
+                .Where(occurrence => captured.Add(occurrence.EventId))
                 .ToArray();
 
             if (events.Length > 0)
@@ -62,7 +62,7 @@ public sealed class HeadlessMessageCollectorSaveEntryProcessor : IHeadlessSaveEn
 
             var events = domainEmitter
                 .GetDomainEvents()
-                .Where(occurrence => captured.Add(occurrence.Context.EventId))
+                .Where(occurrence => captured.Add(occurrence.EventId))
                 .ToArray();
 
             if (events.Length > 0)
@@ -70,7 +70,7 @@ public sealed class HeadlessMessageCollectorSaveEntryProcessor : IHeadlessSaveEn
                 context.DomainEventEmitters.Add(new(domainEmitter, events));
                 // Every emitter retains its saved membership, while one shared occurrence is dispatched only once.
                 context.PendingDomainEvents.AddRange(
-                    events.Where(occurrence => context.QueuedDomainIds.Add(occurrence.Context.EventId))
+                    events.Where(occurrence => context.QueuedDomainIds.Add(occurrence.EventId))
                 );
             }
         }

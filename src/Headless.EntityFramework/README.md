@@ -18,7 +18,7 @@ Provides a framework-aware base `DbContext` with conventions for audit fields, E
 - Composable save pipeline driven by `HeadlessDbContextOptions` and an ordered chain of `IHeadlessSaveEntryProcessor` instances
 - `AddSaveEntryProcessor<TProcessor>(ServiceLifetime)` / `RemoveSaveEntryProcessor<TProcessor>()` for custom pipeline extension
 - Optional tenant write guard for `IMultiTenant` save protection (`CrossTenantWriteException`, `MissingTenantContextException`)
-- Two-tier event dispatch: domain events via `ILocalEventBus` before commit (`.AddDomainEvents()`), integration events via `IHeadlessOutboxDispatcher` in-transaction before commit (`.AddIntegrationEventOutbox()`, from `Headless.EntityFramework.Messaging`)
+- Two-tier event dispatch: domain events via `IDomainEventDispatcher` before commit (`.AddDomainEvents()`), integration events via `IHeadlessOutboxDispatcher` in-transaction before commit (`.AddIntegrationEventOutbox()`, from `Headless.EntityFramework.Messaging`)
 - `IHeadlessDbContextBuilder` returned by `AddHeadlessDbContextServices(...)` for chaining event tiers
 - Runtime guard that fails the save with a remediation message when an entity emits events but the matching tier is not registered
 - Resilient transaction helpers: `ExecuteTransactionAsync(...)` (EF execution strategy), `ExecuteCoordinatedTransactionAsync(...)` (also enlists commit coordination)
@@ -70,7 +70,7 @@ builder.Services.AddHeadlessDbContext<AppDbContext>(options =>
 
 // Opt in to event tiers — chain off IHeadlessDbContextBuilder:
 builder.Services.AddHeadlessDbContextServices()
-    .AddDomainEvents()             // ILocalEventBus for in-process domain events
+    .AddDomainEvents()             // IDomainEventDispatcher for in-process domain events
     .AddIntegrationEventOutbox();  // IHeadlessOutboxDispatcher (from Headless.EntityFramework.Messaging)
 ```
 
@@ -170,9 +170,9 @@ builder.Services.AddHeadlessDbContextServices(options =>
 
 ### Event Dispatch
 
-Within a pipeline-owned transaction, the order is: domain events via `ILocalEventBus` → business `SaveChanges` → audit persistence → integration events via `IHeadlessOutboxDispatcher` → commit.
+Within a pipeline-owned transaction, the order is: domain events via `IDomainEventDispatcher` → business `SaveChanges` → audit persistence → integration events via `IHeadlessOutboxDispatcher` → commit.
 
-Custom `IHeadlessOutboxDispatcher` implementations now receive `IReadOnlyList<EventOccurrence<IIntegrationEvent>>` in both dispatch methods. Preserve the snapshot through retries: the Messaging bridge uses `Context.EventId` as `MessageId` and publishes `Payload` with the captured correlation, causation, and tenant. Rebuild custom dispatchers with the matching EF and bridge packages.
+Custom `IHeadlessOutboxDispatcher` implementations receive `IReadOnlyList<EventContext<object>>` in both dispatch methods. Preserve the snapshot through retries: the Messaging bridge uses `EventId` as `MessageId` and publishes `Payload` with the captured correlation, causation, and tenant.
 
 A completed local drain is not repeated by persistence retry; a failed local handler can run again. Atomic outbox persistence does not promise exactly-once delivery or external effects. Each successful save clears only its saved batch, including when a caller-owned transaction has not yet committed.
 
@@ -205,7 +205,7 @@ protected override void OnModelCreating(ModelBuilder modelBuilder)
 - Registers `IDbContextFactory<TDbContext>` as singleton (`HeadlessDbContextFactory<TDbContext>`)
 - Registers `IDbContextOptionsConfiguration<TDbContext>` that auto-attaches DI-registered `IInterceptor` instances to EF's option pipeline
 - Registers a no-op transaction-coordination seam; install `Headless.EntityFramework.CommitCoordination` and call `.AddCommitCoordination()` when the save pipeline must enlist in commit coordination
-- `.AddDomainEvents()` registers `ILocalEventBus`; `.AddIntegrationEventOutbox()` (from `Headless.EntityFramework.Messaging`) registers `IHeadlessOutboxDispatcher`; neither is registered by default
+- `.AddDomainEvents()` registers `IDomainEventDispatcher`; `.AddIntegrationEventOutbox()` (from `Headless.EntityFramework.Messaging`) registers `IHeadlessOutboxDispatcher`; neither is registered by default
 - Registers `TenantWriteGuardOptions` and `ITenantWriteGuardBypass` (always; guard is disabled by default)
 - Registers via `TryAddSingleton`: `TimeProvider.System`, keyed `IGuidGenerator` strategies (`Version7` and `SqlServer`) plus unkeyed `Version7` default, `ICurrentTenantAccessor`, `ICurrentUser` (`NullCurrentUser`), `ICorrelationIdProvider`
 - Registers `ICurrentTenant` (`CurrentTenant`), replacing only the framework-fallback `NullCurrentTenant`

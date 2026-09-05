@@ -9,7 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Domain;
 
-internal sealed class ServiceProviderLocalEventBus(IServiceProvider services) : ILocalEventBus
+internal sealed class ServiceProviderDomainEventDispatcher(IServiceProvider services) : IDomainEventDispatcher
 {
     private static readonly ConditionalWeakTable<Type, StrongBox<int>> _HandlerOrderCache = [];
 
@@ -20,25 +20,27 @@ internal sealed class ServiceProviderLocalEventBus(IServiceProvider services) : 
             return new StrongBox<int>(attribute?.Order ?? 0);
         };
 
-    public ValueTask PublishAsync<T>(T domainEvent, CancellationToken cancellationToken = default)
-        where T : class, IDomainEvent => PublishAsync((IDomainEvent)domainEvent, cancellationToken);
-
-    public ValueTask PublishAsync<T>(EventOccurrence<T> occurrence, CancellationToken cancellationToken = default)
-        where T : class, IDomainEvent
+    public ValueTask DispatchAsync<TPayload>(
+        EventContext<TPayload> context,
+        CancellationToken cancellationToken = default
+    )
+        where TPayload : class
     {
-        Argument.IsNotNull(occurrence);
-        return PublishAsync(
-            new EventOccurrence<IDomainEvent>(occurrence.Payload, occurrence.Context),
-            cancellationToken
-        );
+        Argument.IsNotNull(context);
+        if (context.Payload.GetType() == typeof(TPayload))
+        {
+            return _DispatchAsync(context, cancellationToken);
+        }
+
+        var invoker = _AsyncInvokers.GetOrAdd(context.Payload.GetType(), _CreateAsyncInvoker);
+        var untyped =
+            context as EventContext<object>
+            ?? new(context.Payload, context.EventId, context.CorrelationId, context.CausationId, context.TenantId);
+        return invoker(this, untyped, cancellationToken);
     }
 
-    private async ValueTask _PublishAsync<T>(
-        T domainEvent,
-        EventOccurrenceContext context,
-        CancellationToken cancellationToken
-    )
-        where T : class, IDomainEvent
+    private async ValueTask _DispatchAsync<T>(EventContext<T> context, CancellationToken cancellationToken)
+        where T : class
     {
         using var emissionScope = EventEmissionScope.Begin(context);
         var handlers = services.GetServices<IDomainEventHandler<T>>();
@@ -58,7 +60,7 @@ internal sealed class ServiceProviderLocalEventBus(IServiceProvider services) : 
 
             try
             {
-                await handler.HandleAsync(domainEvent, context, cancellationToken).ConfigureAwait(false);
+                await handler.HandleAsync(context, cancellationToken).ConfigureAwait(false);
             }
             catch (TargetInvocationException e)
             {
@@ -78,26 +80,6 @@ internal sealed class ServiceProviderLocalEventBus(IServiceProvider services) : 
         }
     }
 
-    // The non-generic overload dispatches to the exact runtime type (no contravariant base-type traversal),
-    // matching the generic path. A compiled per-type invoker avoids per-call reflection cost.
-    public ValueTask PublishAsync(IDomainEvent domainEvent, CancellationToken cancellationToken = default)
-    {
-        Argument.IsNotNull(domainEvent);
-
-        return PublishAsync(EventOccurrence.Capture<IDomainEvent>(domainEvent), cancellationToken);
-    }
-
-    public ValueTask PublishAsync(
-        EventOccurrence<IDomainEvent> occurrence,
-        CancellationToken cancellationToken = default
-    )
-    {
-        Argument.IsNotNull(occurrence);
-        Argument.IsNotNull(occurrence.Payload);
-        var invoker = _AsyncInvokers.GetOrAdd(occurrence.Payload.GetType(), _CreateAsyncInvoker);
-        return invoker(this, occurrence.Payload, occurrence.Context, cancellationToken);
-    }
-
     #region Helpers
 
     private static int _GetHandlerOrder(Type handlerType)
@@ -106,7 +88,7 @@ internal sealed class ServiceProviderLocalEventBus(IServiceProvider services) : 
     }
 
     private static IDomainEventHandler<T>[] _OrderHandlers<T>(IEnumerable<IDomainEventHandler<T>> handlers)
-        where T : class, IDomainEvent
+        where T : class
     {
         // Return a concrete array so the foreach call sites iterate it with the array enumerator (no heap
         // IEnumerator allocation). OrderBy is a stable sort but allocates a buffer on every publish, so skip
@@ -132,12 +114,12 @@ internal sealed class ServiceProviderLocalEventBus(IServiceProvider services) : 
 
     private static void _EnsureReferenceType(Type eventType)
     {
-        // The generic Publish<T>/PublishAsync<T> constrain `T : class`; a value-type event would make
+        // The generic DispatchAsync<T> constrains `T : class`; a value-type event would make
         // MakeGenericMethod throw a cryptic ArgumentException. Fail fast with an actionable message instead.
         if (eventType.IsValueType)
         {
             throw new ArgumentException(
-                $"Domain event type '{eventType}' must be a reference type; the generic publish path constrains 'T : class'.",
+                $"Domain event type '{eventType}' must be a reference type; the generic dispatch path constrains 'T : class'.",
                 nameof(eventType)
             );
         }
@@ -162,39 +144,54 @@ internal sealed class ServiceProviderLocalEventBus(IServiceProvider services) : 
 
     private static readonly ConcurrentDictionary<
         Type,
-        Func<ServiceProviderLocalEventBus, IDomainEvent, EventOccurrenceContext, CancellationToken, ValueTask>
+        Func<ServiceProviderDomainEventDispatcher, EventContext<object>, CancellationToken, ValueTask>
     > _AsyncInvokers = new();
 
-    private static readonly MethodInfo _GenericPublishAsync = typeof(ServiceProviderLocalEventBus)
-        .GetMethods(BindingFlags.NonPublic | BindingFlags.Instance)
-        .Single(m => m is { Name: nameof(_PublishAsync), IsGenericMethodDefinition: true });
+    private static readonly MethodInfo _GenericDispatchAsync = typeof(ServiceProviderDomainEventDispatcher).GetMethod(
+        nameof(_DispatchRuntimeAsync),
+        BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+    )!;
+
+    // The batch envelope may be object-typed; rebuilding only its generic view preserves the captured identity.
+    private ValueTask _DispatchRuntimeAsync<T>(EventContext<object> context, CancellationToken cancellationToken)
+        where T : class =>
+        _DispatchAsync(
+            new EventContext<T>(
+                (T)context.Payload,
+                context.EventId,
+                context.CorrelationId,
+                context.CausationId,
+                context.TenantId
+            ),
+            cancellationToken
+        );
 
     private static Func<
-        ServiceProviderLocalEventBus,
-        IDomainEvent,
-        EventOccurrenceContext,
+        ServiceProviderDomainEventDispatcher,
+        EventContext<object>,
         CancellationToken,
         ValueTask
     > _CreateAsyncInvoker(Type eventType)
     {
         _EnsureReferenceType(eventType);
 
-        var self = Expression.Parameter(typeof(ServiceProviderLocalEventBus), "self");
-        var domainEvent = Expression.Parameter(typeof(IDomainEvent), "domainEvent");
-        var context = Expression.Parameter(typeof(EventOccurrenceContext), "context");
+        var self = Expression.Parameter(typeof(ServiceProviderDomainEventDispatcher), "self");
+        var context = Expression.Parameter(typeof(EventContext<object>), "context");
         var cancellationToken = Expression.Parameter(typeof(CancellationToken), "cancellationToken");
         var call = Expression.Call(
             self,
-            _GenericPublishAsync.MakeGenericMethod(eventType),
-            Expression.Convert(domainEvent, eventType),
+            _GenericDispatchAsync.MakeGenericMethod(eventType),
             context,
             cancellationToken
         );
 
         return Expression
-            .Lambda<
-                Func<ServiceProviderLocalEventBus, IDomainEvent, EventOccurrenceContext, CancellationToken, ValueTask>
-            >(call, self, domainEvent, context, cancellationToken)
+            .Lambda<Func<ServiceProviderDomainEventDispatcher, EventContext<object>, CancellationToken, ValueTask>>(
+                call,
+                self,
+                context,
+                cancellationToken
+            )
             .Compile();
     }
 

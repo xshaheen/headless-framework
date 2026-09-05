@@ -18,18 +18,19 @@ public interface IIntegrationEventEmitter
     /// assemblies.
     /// </remarks>
     /// <param name="integrationEvent">The integration event to enqueue.</param>
-    void AddIntegrationEvent(IIntegrationEvent integrationEvent);
+    void AddIntegrationEvent(object integrationEvent);
 
     /// <summary>Discards all pending integration events without dispatching them.</summary>
     void ClearIntegrationEvents();
 
     /// <summary>Returns the current list of pending integration events.</summary>
     /// <returns>A read-only snapshot of enqueued integration events; empty when none have been added.</returns>
-    IReadOnlyList<EventOccurrence<IIntegrationEvent>> GetIntegrationEvents();
+    IReadOnlyList<EventContext<object>> GetIntegrationEvents();
 
     /// <summary>Preserves an occurrence already captured by infrastructure.</summary>
-    void AddIntegrationEvent(EventOccurrence<IIntegrationEvent> occurrence);
+    void AddIntegrationEvent<TPayload>(EventContext<TPayload> context)
+        where TPayload : class;
 
     /// <summary>Removes only the captured batch; occurrences appended later stay pending.</summary>
-    void ClearIntegrationEvents(IReadOnlyList<EventOccurrence<IIntegrationEvent>> occurrences);
+    void ClearIntegrationEvents(IReadOnlyList<EventContext<object>> occurrences);
 }

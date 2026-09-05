@@ -10,15 +10,15 @@ namespace Tests.Fixture;
 /// </summary>
 public sealed class EmittingOrder : IIntegrationEventEmitter
 {
-    private readonly List<EventOccurrence<IIntegrationEvent>> _messages = [];
+    private readonly List<EventContext<object>> _messages = [];
 
     public Guid Id { get; set; }
 
     public string Name { get; set; } = "";
 
-    public void AddIntegrationEvent(IIntegrationEvent integrationEvent)
+    public void AddIntegrationEvent(object integrationEvent)
     {
-        _messages.Add(EventOccurrence.Capture<IIntegrationEvent>(integrationEvent));
+        _messages.Add(EventContext.Capture<object>(integrationEvent));
     }
 
     public void ClearIntegrationEvents()
@@ -26,23 +26,28 @@ public sealed class EmittingOrder : IIntegrationEventEmitter
         _messages.Clear();
     }
 
-    public IReadOnlyList<EventOccurrence<IIntegrationEvent>> GetIntegrationEvents()
+    public IReadOnlyList<EventContext<object>> GetIntegrationEvents()
     {
         return _messages;
     }
 
-    public void AddIntegrationEvent(EventOccurrence<IIntegrationEvent> occurrence) => _messages.Add(occurrence);
+    public void AddIntegrationEvent<TPayload>(EventContext<TPayload> context)
+        where TPayload : class =>
+        _messages.Add(
+            context as EventContext<object>
+                ?? new(context.Payload, context.EventId, context.CorrelationId, context.CausationId, context.TenantId)
+        );
 
-    public void ClearIntegrationEvents(IReadOnlyList<EventOccurrence<IIntegrationEvent>> occurrences)
+    public void ClearIntegrationEvents(IReadOnlyList<EventContext<object>> occurrences)
     {
-        var ids = occurrences.Select(occurrence => occurrence.Context.EventId).ToHashSet(StringComparer.Ordinal);
-        _messages.RemoveAll(occurrence => ids.Contains(occurrence.Context.EventId));
+        var ids = occurrences.Select(occurrence => occurrence.EventId).ToHashSet(StringComparer.Ordinal);
+        _messages.RemoveAll(occurrence => ids.Contains(occurrence.EventId));
     }
 
-    public void Emit(IIntegrationEvent message)
+    public void Emit(object message)
     {
         AddIntegrationEvent(message);
     }
 }
 
-internal sealed record TestDistributedMessage(string UniqueId) : IIntegrationEvent;
+internal sealed record TestDistributedMessage(string UniqueId);

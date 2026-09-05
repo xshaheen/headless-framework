@@ -69,8 +69,8 @@ packages: Base, BuildingBlocks, Checks, Domain, Domain.LocalEventBus, Security.A
 - **`Headless.Security.Abstractions`** — security contracts and options in the `Headless.Security` namespace: `IStringEncryptionService`, `IStringHashService`, `StringEncryptionOptions`, and `StringHashOptions`. `IStringHashService.Create(...)` supports an optional salt and can fall back to `StringHashOptions.DefaultSalt` or an empty salt when no default is configured.
 - **`Headless.Security`** — default implementations and DI helpers for string encryption and hashing. `AddStringEncryptionService(...)` and `AddStringHashService(...)` are idempotent: the first registration wins.
 - **`Headless.Checks`** — guard clause library with `Argument` (preconditions) and `Ensure` (runtime assertions).
-- **`Headless.Domain`** — DDD abstractions: `Entity`, `AggregateRoot`, `ValueObject`, auditing interfaces, concurrency stamps, and event contracts. Domain (in-process) events use `IDomainEvent` + `IDomainEventEmitter`; integration (distributed) events use `IIntegrationEvent` + `IIntegrationEventEmitter`. `AggregateRoot` implements both emitters; integration events are dispatched by the ORM/messaging layer, not from this package (see [orm.md](orm.md)).
-- **`Headless.Domain.LocalEventBus`** — DI-based `ILocalEventBus` for in-process domain event dispatch. Register with `AddHeadlessLocalEventBus()` and implement `IDomainEventHandler<T>`. Namespace stays `Headless.Domain`; only the package/assembly name changed from `Headless.Domain.LocalPublisher`.
+- **`Headless.Domain`** — DDD abstractions: `Entity`, `AggregateRoot`, `ValueObject`, auditing interfaces, concurrency stamps, and event contracts. Domain (in-process) events use plain payloads through `IDomainEventEmitter`; integration (distributed) events use plain payloads through `IIntegrationEventEmitter`. `AggregateRoot` implements both emitters; integration events are dispatched by the ORM/messaging layer, not from this package (see [orm.md](orm.md)).
+- **`Headless.Domain.LocalEventBus`** — DI-based `IDomainEventDispatcher` for in-process domain event dispatch. Register with `AddHeadlessDomainEventDispatcher()` and implement `IDomainEventHandler<T>`. Namespace: `Headless.Domain`.
 
 ## Agent Instructions
 
@@ -82,7 +82,7 @@ packages: Base, BuildingBlocks, Checks, Domain, Domain.LocalEventBus, Security.A
 - Only that last row is an app-clock concern. Never sample the app clock to compute a lease deadline — pass a duration and let the store apply its own clock.
 - When a value arrives from an external SDK with an untrustworthy `DateTime.Kind` (AWS S3 returns `Unspecified`), normalize with `NormalizeToUtc()` from `Headless.Extensions` before converting to `DateTimeOffset` — `new DateTimeOffset(DateTime)` applies the *host's* offset to an `Unspecified` value.
 - Use `ApiResult<T>` / `ApiResult` from `Headless.Extensions` for service return types instead of throwing exceptions for expected failures. Use `Result<TValue, TError>` when you need custom error types.
-- For local (in-process) domain events, register `AddHeadlessLocalEventBus()` and implement `IDomainEventHandler<T>`. Use `DomainEventHandlerOrderAttribute` to control handler execution order. For integration (distributed) events, emit `IIntegrationEvent` via `AddIntegrationEvent()` on the aggregate; dispatch is handled by the ORM/messaging layer (see [orm.md](orm.md)), not by this package.
+- For local (in-process) domain events, register `AddHeadlessDomainEventDispatcher()` and implement `IDomainEventHandler<T>`. Use `DomainEventHandlerOrderAttribute` to control handler execution order. For integration (distributed) events, emit integration payloads via `AddIntegrationEvent()` on the aggregate; dispatch is handled by the ORM/messaging layer (see [orm.md](orm.md)), not by this package.
 - For strongly-typed IDs, use the primitives from `Headless.Extensions` (`UserId`, `AccountId`) — they have source-generated JSON and TypeConverter support.
 - Auditing interfaces (`ICreateAudit`, `IUpdateAudit`, `IDeleteAudit`, `ISuspendAudit`) are marker interfaces — the ORM layer fills the properties automatically.
 - Register GUID generation through `AddHeadlessGuidGenerator()` only from host/package setup; persisted backends should resolve `SequentialGuidType.Version7` or `SequentialGuidType.SqlServer` by key instead of depending on the unkeyed default. The `IGuidGenerator` / `SequentialGuidType` contracts live in `Headless.Extensions` (see [extensions.md](extensions.md)).
@@ -304,25 +304,19 @@ Provides building blocks for implementing DDD patterns: entities with identity, 
 - **Auditing**: `ICreateAudit`, `IUpdateAudit`, `IDeleteAudit`, `ISuspendAudit`
 - **Concurrency**: `IHasConcurrencyStamp`, `IHasETag`
 - **Multi-tenancy**: `IMultiTenant`
-- **Domain Events (in-process)**: `IDomainEvent`, `IDomainEventEmitter`, `IDomainEventHandler<T>`, `DomainEventHandlerOrderAttribute`. An aggregate raises its own events through the `protected AddDomainEvent`; the readers/clearers (`GetDomainEvents`, `ClearDomainEvents`) and the `IDomainEventEmitter` contract stay public for infrastructure that collects and dispatches them. Dispatch is provided by `Headless.Domain.LocalEventBus`.
-- **Integration Events (distributed)**: `IIntegrationEvent`, `IIntegrationEventEmitter`. An aggregate raises its own events through the `protected AddIntegrationEvent`; `GetIntegrationEvents`/`ClearIntegrationEvents` and the `IIntegrationEventEmitter` contract stay public for infrastructure. This package only defines the contract and the emitter — integration events are dispatched by the ORM/messaging layer (`Headless.EntityFramework.Messaging`), not from `Headless.Domain` (see [orm.md](orm.md)).
+- **Domain Events (in-process)**: `IDomainEventEmitter`, `IDomainEventHandler<T>`, `DomainEventHandlerOrderAttribute`. An aggregate raises its own events through the `protected AddDomainEvent`; the readers/clearers (`GetDomainEvents`, `ClearDomainEvents`) and the `IDomainEventEmitter` contract stay public for infrastructure that collects and dispatches them. Dispatch is provided by `Headless.Domain.LocalEventBus`.
+- **Integration Events (distributed)**: `IIntegrationEventEmitter`. An aggregate raises its own events through the `protected AddIntegrationEvent`; `GetIntegrationEvents`/`ClearIntegrationEvents` and the `IIntegrationEventEmitter` contract stay public for infrastructure. This package only defines the contract and the emitter — integration events are dispatched by the ORM/messaging layer (`Headless.EntityFramework.Messaging`), not from `Headless.Domain` (see [orm.md](orm.md)).
 - **Entity Events**: `EntityCreatedEventData`, `EntityUpdatedEventData`, `EntityDeletedEventData`
 
-Event payload interfaces are pure markers. `AggregateRoot` captures an `EventOccurrence<TPayload>` for every raise, including repeated raises of the same payload object. Its immutable `Context` contains `EventId`, root `CorrelationId`, immediate `CausationId`, and `TenantId`. Payloads must be treated as immutable after emission; the framework does not deep-copy arbitrary business objects.
+Event payloads are plain reference types with no required marker interface. `AggregateRoot` captures an immutable `EventContext<TPayload>` for every raise, including repeated raises of the same payload object. The envelope contains `Payload`, `EventId`, root `CorrelationId`, immediate `CausationId`, and `TenantId`. Payloads must be treated as immutable after emission; the framework does not deep-copy arbitrary business objects.
 
-Use `EventEmissionScope.Begin(new EventEmissionContext(correlationId, parentId, tenantId))` at an application or subsystem boundary. The scope flows across awaits, nests with strict reverse-order disposal, and isolates parallel async flows. Without a scope, an occurrence roots correlation at its own new ID. `Activity` tracing never supplies business identity. Infrastructure forwards an existing occurrence explicitly; passing only its payload raises a new occurrence. Use `EventOccurrence.Capture(payload)` for an inferred concrete payload type, or `EventOccurrence.Capture<IDomainEvent>(payload)` when filling a Domain emitter buffer.
+Use `EventEmissionScope.Begin(new EventEmissionContext(correlationId, parentId, tenantId))` at an application or subsystem boundary. The scope flows across awaits, nests with strict reverse-order disposal, and isolates parallel async flows. Without a scope, an occurrence roots correlation at its own new ID. `Activity` tracing never supplies business identity. Infrastructure forwards an existing occurrence explicitly; passing only its payload raises a new occurrence. Use `EventContext.Capture(payload)` when explicitly creating an event outside aggregate behavior.
 
-Source migration for custom implementations:
+Emitter buffers contain `IReadOnlyList<EventContext<object>>` so one aggregate can raise different payload types. The generic `AddDomainEvent(context)` / `AddIntegrationEvent(context)` overloads preserve an existing concrete envelope. Batch clear removes only saved event IDs; parameterless clear explicitly discards the pending buffer.
 
-| Previous contract | New contract |
-| --- | --- |
-| Payload implements `UniqueId` | Remove the infrastructure ID from the payload; use `occurrence.Context.EventId` |
-| Emitter returns payload lists | Return `IReadOnlyList<EventOccurrence<IDomainEvent>>` or the integration equivalent; capture once when raising |
-| Clear the whole buffer after save | Implement `ClearDomainEvents(batch)` / `ClearIntegrationEvents(batch)` to remove only the saved occurrence IDs; parameterless clear remains explicit discard |
-| Custom handler takes payload and token | Add `EventOccurrenceContext context` before the cancellation token |
-| Custom local bus accepts only payload | Implement payload and occurrence overloads; occurrence publication preserves identity and dispatches exact runtime payload type |
+Handlers receive `EventContext<TPayload>` and a cancellation token. `IDomainEventDispatcher.DispatchAsync(context, token)` accepts only a captured envelope and resolves the exact runtime payload type, preserving identity and lineage across retries.
 
-This change adds no event store, stream version, replay, or durable Domain contract registry. Domain remains independent of Messaging, Jobs, persistence, and commit coordination.
+This package adds no event store, stream version, replay, or durable Domain contract registry. Domain remains independent of Messaging, Jobs, persistence, and commit coordination.
 
 
 ### Installation
@@ -346,7 +340,7 @@ public sealed class Order : AggregateRoot<Guid>, ICreateAudit
     }
 }
 
-public sealed record OrderCompletedEvent(Guid OrderId) : IDomainEvent;
+public sealed record OrderCompletedEvent(Guid OrderId);
 ```
 
 #### Auditing
@@ -392,7 +386,7 @@ No configuration required. This is an abstractions package.
 
 ## Headless.Domain.LocalEventBus
 
-DI-based implementation of `ILocalEventBus` for in-process domain event handling.
+DI-based implementation of `IDomainEventDispatcher` for in-process domain event handling.
 
 ### Problem Solved
 
@@ -400,19 +394,18 @@ Provides in-memory domain event dispatch that resolves handlers from the DI cont
 
 ### Key Features
 
-- `ILocalEventBus` implementation (`ServiceProviderLocalEventBus`) backed by DI
-- Generic and non-generic async publish overloads (`PublishAsync`)
+- `IDomainEventDispatcher` implementation (`ServiceProviderDomainEventDispatcher`) backed by DI
+- One envelope-only async contract: `DispatchAsync<TPayload>(EventContext<TPayload>, CancellationToken)`
 - Handler resolution per publish from the active scope
 - Handler ordering via `DomainEventHandlerOrderAttribute`
 - Handler exception aggregation and cooperative cancellation
 
 ### Design Notes
 
-- **Async-only contract.** `ILocalEventBus` deliberately exposes no synchronous `Publish`: a public sync member would dispatch the async handlers sync-over-async, which can deadlock on threads that carry a synchronization context (classic ASP.NET, Blazor Server, WPF). Infrastructure that must publish from a synchronous code path (for example the EF sync `SaveChanges` pipeline) owns and contains that bridge internally.
-- **Exact-runtime dispatch.** Every payload and occurrence overload resolves handlers for the payload's exact runtime type, with no base/interface traversal. Cached compiled invokers avoid repeated reflection. Payload publication captures a new occurrence; `PublishAsync(EventOccurrence<T>)` preserves its existing context. Each handler receives payload plus immutable `EventOccurrenceContext`, and nested emissions use the current occurrence as their immediate cause.
-- **Scoped lifetime.** `AddHeadlessLocalEventBus()` registers `ILocalEventBus` as scoped (`TryAddScoped`). Handlers are resolved from the caller's scope, so they share the same scoped services — notably the `DbContext` — when published inside a unit of work.
+- **Async-only contract.** `IDomainEventDispatcher` deliberately exposes no synchronous `Publish`: a public sync member would dispatch the async handlers sync-over-async, which can deadlock on threads that carry a synchronization context (classic ASP.NET, Blazor Server, WPF). Infrastructure that must publish from a synchronous code path (for example the EF sync `SaveChanges` pipeline) owns and contains that bridge internally.
+- **Exact-runtime dispatch.** `DispatchAsync(context)` resolves handlers for the exact runtime payload type, with no base/interface traversal. Cached compiled invokers support heterogeneous emitter batches without repeated reflection. Dispatch preserves captured identity and lineage. Each handler receives one immutable `EventContext<TPayload>`; nested emissions use that event as their immediate cause.
+- **Scoped lifetime.** `AddHeadlessDomainEventDispatcher()` registers `IDomainEventDispatcher` as scoped (`TryAddScoped`). Handlers are resolved from the caller's scope, so they share the same scoped services — notably the `DbContext` — when published inside a unit of work.
 - **Exception aggregation and cancellation.** Handlers are resolved and invoked per publish. A single handler exception is rethrown as-is; multiple handler exceptions are wrapped in an `AggregateException`. Cancellation is observed between handlers; if the token is cancelled, already-accumulated handler exceptions are preserved rather than discarded.
-- **Namespace unchanged.** The package/assembly was renamed from `Headless.Domain.LocalPublisher`, but the namespace stays `Headless.Domain` — no `using` changes are needed.
 
 ### Installation
 
@@ -425,23 +418,24 @@ dotnet add package Headless.Domain.LocalEventBus
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-// Register the in-process local event bus
-builder.Services.AddHeadlessLocalEventBus();
+// Register the in-process domain event dispatcher
+builder.Services.AddHeadlessDomainEventDispatcher();
 
 // Register handlers
 builder.Services.AddScoped<IDomainEventHandler<OrderCreatedEvent>, OrderCreatedHandler>();
 ```
 
-#### Publishing Events
+#### Dispatching Events
 
 ```csharp
-public sealed class OrderService(ILocalEventBus eventBus)
+public sealed class OrderService(IDomainEventDispatcher eventDispatcher)
 {
     public async Task CreateOrderAsync(Order order, CancellationToken ct)
     {
         await _repository.AddAsync(order, ct).ConfigureAwait(false);
 
-        await eventBus.PublishAsync(new OrderCreatedEvent(order.Id), ct).ConfigureAwait(false);
+        var context = EventContext.Capture(new OrderCreatedEvent(order.Id));
+        await eventDispatcher.DispatchAsync(context, ct).ConfigureAwait(false);
     }
 }
 ```
@@ -451,17 +445,17 @@ public sealed class OrderService(ILocalEventBus eventBus)
 ```csharp
 public sealed class OrderCreatedHandler : IDomainEventHandler<OrderCreatedEvent>
 {
-    public ValueTask HandleAsync(OrderCreatedEvent domainEvent, EventOccurrenceContext context, CancellationToken ct = default)
+    public ValueTask HandleAsync(EventContext<OrderCreatedEvent> context, CancellationToken ct = default)
     {
         // Apply local transactional state changes; external effects belong in an outbox.
         return ValueTask.CompletedTask;
     }
 }
 
-[DomainEventHandlerOrder(1)] // Execute first
+[DomainEventHandlerOrder(-1)] // Execute before handlers with the default order
 public sealed class AuditHandler : IDomainEventHandler<OrderCreatedEvent>
 {
-    public ValueTask HandleAsync(OrderCreatedEvent domainEvent, EventOccurrenceContext context, CancellationToken ct = default)
+    public ValueTask HandleAsync(EventContext<OrderCreatedEvent> context, CancellationToken ct = default)
     {
         // Audit logging
         return ValueTask.CompletedTask;
@@ -480,7 +474,7 @@ No configuration required.
 
 ### Side Effects
 
-- Registers `ILocalEventBus` (`ServiceProviderLocalEventBus`) as scoped
+- Registers `IDomainEventDispatcher` (`ServiceProviderDomainEventDispatcher`) as scoped
 
 ---
 
