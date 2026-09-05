@@ -17,6 +17,65 @@ namespace Tests;
 public sealed class JobExecutionTaskHandlerTests : TestBase
 {
     [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public async Task unsupported_version_rejects_before_delegate_and_fences_descendants(int affected)
+    {
+        var manager = _HealthyManager();
+        manager
+            .UpdateTickerAsync(
+                Arg.Is<JobExecutionState>(x => x.Status == JobStatus.Failed),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(Task.FromResult(affected));
+        await using var services = new ServiceCollection().AddSingleton(manager).BuildServiceProvider();
+        var ran = false;
+        var childRan = false;
+        var root = _Node("stable", () => ran = true);
+        root.ContractVersion = "1";
+        root.TimeJobChildren.Add(_Node("child", () => childRan = true, RunCondition.OnFailure));
+        var registry = JobFunctionRegistryBuilder.Build(
+            [],
+            [],
+            [
+                new KeyValuePair<string, JobFunctionDescriptor>(
+                    "stable",
+                    new("stable", null, "", JobPriority.Normal, 0, "2")
+                ),
+            ]
+        );
+        var handler = new JobsExecutionTaskHandler(
+            services,
+            TimeProvider.System,
+            Substitute.For<IJobsInstrumentation>(),
+            manager,
+            registry,
+            new JobsExecutionCancellationRegistry(),
+            new SchedulerOptionsBuilder(),
+            NullLogger<JobsExecutionTaskHandler>.Instance
+        );
+
+        await handler.ExecuteTaskAsync(root, isDue: false, cancellationToken: AbortToken);
+
+        ran.Should().BeFalse("unsupported versions must be rejected before request deserialization in the delegate");
+        root.ExceptionDetails.Should().Contain("Unsupported stored Jobs contract");
+        root.LeaseLost.Should().Be(affected == 0);
+        childRan.Should().Be(affected == 1);
+        if (affected == 0)
+        {
+            await manager
+                .DidNotReceive()
+                .ApplyParentTerminalRunConditionsAsync(root.JobId, Arg.Any<CancellationToken>());
+            await manager
+                .DidNotReceive()
+                .UpdateSkipTimeJobsWithUnifiedContextAsync(
+                    Arg.Any<JobExecutionState[]>(),
+                    Arg.Any<CancellationToken>()
+                );
+        }
+    }
+
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task should_preserve_parent_child_order_with_or_without_activity(bool activityEnabled)

@@ -9,7 +9,7 @@ using Headless.Jobs.Models;
 
 namespace Headless.Jobs;
 
-internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
+internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {
@@ -221,6 +221,9 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
         var entity = new TTimeJob
         {
             Function = descriptor.FunctionName,
+            ContractVersion = descriptor.ContractVersion,
+            CorrelationId = options?.CorrelationId,
+            CausationId = options?.CausationId,
             Request =
                 descriptor.RequestType == null ? null : JobsHelper.CreateJobRequest(request, _serializationOptions),
             ExecutionTime = executionTime,
@@ -247,6 +250,9 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
         var entity = new TCronJob
         {
             Function = descriptor.FunctionName,
+            ContractVersion = descriptor.ContractVersion,
+            CorrelationId = options?.CorrelationId,
+            CausationId = options?.CausationId,
             Request =
                 descriptor.RequestType == null ? null : JobsHelper.CreateJobRequest(request, _serializationOptions),
             Expression = cronExpression,
@@ -268,6 +274,9 @@ internal sealed class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
         var entity = new TTimeJob
         {
             Function = descriptor.FunctionName,
+            ContractVersion = descriptor.ContractVersion,
+            CorrelationId = node.Options?.CorrelationId,
+            CausationId = node.Options?.CausationId,
             Request = descriptor.RequestType is null
                 ? null
                 : JobsHelper.CreateJobRequest(node.Payload!, descriptor.RequestType, _serializationOptions),

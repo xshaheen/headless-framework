@@ -11,6 +11,12 @@ namespace Headless.Jobs.Models;
 [PublicAPI]
 public sealed record RecurringJobOptions
 {
+    /// <summary>Optional root business correlation captured by each materialized occurrence.</summary>
+    public string? CorrelationId { get; init; }
+
+    /// <summary>Optional immediate business cause captured by each materialized occurrence.</summary>
+    public string? CausationId { get; init; }
+
     /// <summary>Optional IANA timezone identifier. A <see langword="null"/> value uses the scheduler-global timezone.</summary>
     public string? TimeZoneId { get; init; }
 

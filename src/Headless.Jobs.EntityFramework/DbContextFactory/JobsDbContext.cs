@@ -21,10 +21,18 @@ public class JobsDbContext<TTimeJob, TCronJob> : DbContext
     {
         var schema = this.GetService<JobsEfCoreOptionBuilder<TTimeJob, TCronJob>>().Schema;
 
-        modelBuilder.ApplyConfiguration(new TimeJobConfigurations<TTimeJob>(schema));
-        modelBuilder.ApplyConfiguration(new CronJobConfigurations<TCronJob>(schema));
-        modelBuilder.ApplyConfiguration(new CronJobOccurrenceConfigurations<TCronJob>(schema));
+        var contractCollation = this.Database.ProviderName switch
+        {
+            "Microsoft.EntityFrameworkCore.SqlServer" => "Latin1_General_100_BIN2",
+            "Npgsql.EntityFrameworkCore.PostgreSQL" => "C",
+            _ => (string?)null,
+        };
+
+        modelBuilder.ApplyConfiguration(new TimeJobConfigurations<TTimeJob>(schema, contractCollation));
+        modelBuilder.ApplyConfiguration(new CronJobConfigurations<TCronJob>(schema, contractCollation));
+        modelBuilder.ApplyConfiguration(new CronJobOccurrenceConfigurations<TCronJob>(schema, contractCollation));
         base.OnModelCreating(modelBuilder);
+        JobsKeyedModelConfiguration.Configure<TTimeJob>(modelBuilder, this);
     }
 }
 

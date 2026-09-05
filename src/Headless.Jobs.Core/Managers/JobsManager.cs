@@ -65,6 +65,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     // See the throw-on-failure note on ICronJobManager.AddAsync above — the same applies to the time-job Add path.
     Task<TTimeJob> ITimeJobManager<TTimeJob>.AddAsync(TTimeJob entity, CancellationToken cancellationToken)
     {
+        JobIntentFingerprint.RejectOrdinaryMutation(entity);
         return _AddTimeJobAsync(entity, cancellationToken);
     }
 
@@ -99,6 +100,11 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         CancellationToken cancellationToken
     )
     {
+        foreach (var entity in entities)
+        {
+            JobIntentFingerprint.RejectOrdinaryMutation(entity);
+        }
+
         return _AddTimeJobsBatchAsync(entities, cancellationToken);
     }
 
@@ -768,6 +774,9 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         var context = new JobExecutionState
         {
             FunctionName = job.Function,
+            ContractVersion = job.ContractVersion,
+            CorrelationId = job.CorrelationId,
+            CausationId = job.CausationId,
             JobId = job.Id,
             Type = JobType.TimeJob,
             Retries = job.Retries,
@@ -1081,6 +1090,12 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             _StampJob(current.Job, now, assignIds);
             current.Job.ParentId = current.ParentId;
 
+            if (current.ParentId is not null)
+            {
+                current.Job.CorrelationId = root.CorrelationId;
+                current.Job.CausationId = current.ParentId.Value.ToString("D");
+            }
+
             foreach (var child in current.Job.Children.Reverse())
             {
                 pending.Push((child, current.Job.Id));
@@ -1096,6 +1111,14 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         }
         entity.CreatedAt = now;
         entity.UpdatedAt = now;
+        JobContract.ValidateName(entity.Function);
+        JobContract.ValidateVersion(entity.ContractVersion);
+        var parent = JobCausalContext.Current;
+        entity.CorrelationId ??=
+            parent?.CorrelationId
+            ?? parent?.Id.ToString("D")
+            ?? (entity is CronJobEntity ? null : entity.Id.ToString("D"));
+        entity.CausationId ??= parent?.Id.ToString("D");
     }
 
     // Propagate the middleware-resolved root tenant onto chain descendants before persistence (KTD6). The schedule

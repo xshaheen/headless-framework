@@ -20,6 +20,15 @@ public class BaseJobEntity
     /// </summary>
     public virtual string Function { get; set; } = null!;
 
+    /// <summary>Payload schema version captured when the job is scheduled.</summary>
+    public virtual string ContractVersion { get; set; } = JobContract.LegacyVersion;
+
+    /// <summary>Root business correlation; independent of W3C trace context.</summary>
+    public virtual string? CorrelationId { get; set; }
+
+    /// <summary>Immediate business cause, when this work was scheduled by another occurrence.</summary>
+    public virtual string? CausationId { get; set; }
+
     /// <summary>
     /// Optional human-readable description of this job instance, used for display in the dashboard.
     /// <see langword="null"/> when no description was supplied.

@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Jobs.Instrumentation;
 
-internal abstract partial class JobsBaseLoggerInstrumentation(ILogger logger, IJobsOwnerIdentity ownerIdentity)
+internal abstract class JobsBaseLoggerInstrumentation(ILogger logger, IJobsOwnerIdentity ownerIdentity)
 {
     // Live read so telemetry reflects the node@incarnation owner once registration completes (DisplayOwner never throws).
     protected string InstanceIdentifier => ownerIdentity.DisplayOwner;

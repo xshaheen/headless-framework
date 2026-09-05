@@ -89,6 +89,17 @@ public sealed class ReleaseAcquiredResourcesProviderTests : TestBase
         var mineQueued = _Occurrence(JobStatus.Queued, _NodeA);
         var mineInProgress = _Occurrence(JobStatus.InProgress, _NodeA);
         var foreignQueued = _Occurrence(JobStatus.Queued, _NodeB);
+        await provider.InsertCronJobsAsync(
+            new[] { mineQueued, mineInProgress, foreignQueued }
+                .Select(x => new FakeCronJob
+                {
+                    Id = x.CronJobId,
+                    Function = "fn",
+                    Expression = "* * * * *",
+                })
+                .ToArray(),
+            AbortToken
+        );
         await provider.InsertCronJobOccurrencesAsync([mineQueued, mineInProgress, foreignQueued], AbortToken);
 
         await provider.ReleaseAcquiredCronJobOccurrencesAsync([], AbortToken);
@@ -114,6 +125,17 @@ public sealed class ReleaseAcquiredResourcesProviderTests : TestBase
         var unowned = _TimeJob(JobStatus.Idle, owner: null, lockedUntil: null);
         await provider.AddTimeJobsAsync([mineQueued, mineInProgress, otherIdle, terminalOwned, unowned], AbortToken);
         var cronOwned = _Occurrence(JobStatus.InProgress, "cron-owner@9");
+        await provider.InsertCronJobsAsync(
+            [
+                new FakeCronJob
+                {
+                    Id = cronOwned.CronJobId,
+                    Function = "fn",
+                    Expression = "* * * * *",
+                },
+            ],
+            AbortToken
+        );
         await provider.InsertCronJobOccurrencesAsync([cronOwned], AbortToken);
 
         var owners = await provider.GetActiveOwnerIdsAsync(AbortToken);

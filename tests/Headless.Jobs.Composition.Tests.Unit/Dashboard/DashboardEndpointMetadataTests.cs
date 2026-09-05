@@ -96,6 +96,7 @@ public sealed class DashboardEndpointMetadataTests : TestBase
         builder.Services.AddSingleton(config);
         builder.Services.AddSingleton(Substitute.For<IAuthService>());
         builder.Services.AddSingleton(new JobsExecutionContext());
+        builder.Services.AddSingleton(JobFunctionRegistryBuilder.Build([], [], []));
         builder.Services.AddSingleton(new SchedulerOptionsBuilder());
         builder.Services.AddSingleton(Substitute.For<IJobsDashboardRepository<TimeJobEntity, CronJobEntity>>());
         builder.Services.AddSingleton(Substitute.For<ITimeJobManager<TimeJobEntity>>());

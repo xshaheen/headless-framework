@@ -273,6 +273,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         using var host = fixture.BuildHost("chain-success");
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
         await host.StartAsync(ct);
+        await _StopBackgroundRecoveryAsync(host, ct);
 
         try
         {
@@ -1034,6 +1035,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         using var host = fixture.BuildHost("gate-grid");
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
         await host.StartAsync(ct);
+        await _StopBackgroundRecoveryAsync(host, ct);
 
         try
         {
@@ -1093,7 +1095,24 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
 
             foreach (var (childId, expected) in expectedClaimed)
             {
-                claimedIds.Contains(childId).Should().Be(expected, "native-SQL gate parity for child {0}", childId);
+                var child = seed.Single(x => x.Id == childId);
+                var parent = seed.Single(x => x.Id == child.ParentId);
+                var storedChild = claimedIds.Contains(childId) == expected ? null : await _ReadNodeAsync(childId, ct);
+                var storedParent = storedChild is null ? null : await _ReadNodeAsync(parent.Id, ct);
+                claimedIds
+                    .Contains(childId)
+                    .Should()
+                    .Be(
+                        expected,
+                        "native-SQL gate parity for child {0}, condition {1}, parent status {2}; claimed {3} of {4} expected rows; stored child {5}, stored parent {6}",
+                        childId,
+                        child.RunCondition,
+                        parent.Status,
+                        claimedIds.Count,
+                        expectedClaimed.Count(x => x.Value),
+                        storedChild,
+                        storedParent
+                    );
             }
         }
         finally
@@ -1189,6 +1208,21 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         finally
         {
             await host.StopAsync(ct);
+        }
+    }
+
+    private static async Task _StopBackgroundRecoveryAsync(
+        Microsoft.Extensions.Hosting.IHost host,
+        CancellationToken cancellationToken
+    )
+    {
+        // These scenarios arbitrate claims directly; an unrelated dead-node sweep can re-stamp their timed children.
+        foreach (var service in host.Services.GetServices<Microsoft.Extensions.Hosting.IHostedService>())
+        {
+            if (service is Headless.Coordination.IDeadOwnerRecoveryBridge)
+            {
+                await service.StopAsync(cancellationToken);
+            }
         }
     }
 

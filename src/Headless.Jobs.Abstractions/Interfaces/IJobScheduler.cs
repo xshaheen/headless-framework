@@ -11,6 +11,52 @@ namespace Headless.Jobs.Interfaces;
 [PublicAPI]
 public interface IJobScheduler
 {
+    /// <summary>Schedules one durable keyed intent at an absolute instant. Repeating the same intent observes its current run, including terminal runs.</summary>
+    Task<JobScheduleResult> ScheduleKeyedAsync<TArgs>(
+        JobKey key,
+        TArgs request,
+        DateTimeOffset executionTime,
+        EnqueueOptions? options = null,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>Schedules a requestless durable keyed intent at an absolute instant.</summary>
+    Task<JobScheduleResult> ScheduleKeyedAsync(
+        JobKey key,
+        JobFunctionDescriptor descriptor,
+        DateTimeOffset executionTime,
+        EnqueueOptions? options = null,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>Replaces or reschedules only a pending, unclaimed observed generation. A replay cannot advance another generation.</summary>
+    Task<JobScheduleResult> ReplaceKeyedAsync<TArgs>(
+        JobKey key,
+        long expectedGeneration,
+        TArgs request,
+        DateTimeOffset executionTime,
+        EnqueueOptions? options = null,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>Replaces or reschedules a requestless pending, unclaimed observed generation.</summary>
+    Task<JobScheduleResult> ReplaceKeyedAsync(
+        JobKey key,
+        long expectedGeneration,
+        JobFunctionDescriptor descriptor,
+        DateTimeOffset executionTime,
+        EnqueueOptions? options = null,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>Cancels the observed current generation. Claimed cancellation is cooperative.</summary>
+    Task<JobScheduleResult> CancelKeyedAsync(
+        JobKeyScope scope,
+        JobKey key,
+        long expectedGeneration,
+        CancellationToken cancellationToken = default
+    );
+
     /// <summary>
     /// Durably requests cooperative cancellation of the one-shot job identified by <paramref name="jobId"/>.
     /// </summary>

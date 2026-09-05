@@ -58,7 +58,11 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>
                     new JobExecutionState
                     {
                         ParentId = occurrence.CronJobId,
-                        FunctionName = occurrence.CronJob.Function,
+                        FunctionName = occurrence.Function,
+                        ContractVersion = occurrence.ContractVersion,
+                        CorrelationId = occurrence.CorrelationId,
+                        CausationId = occurrence.CausationId,
+                        TenantId = occurrence.TenantId,
                         JobId = occurrence.Id,
                         Type = JobType.CronJobOccurrence,
                         Retries = occurrence.CronJob.Retries,
@@ -117,7 +121,11 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>
             {
                 var functionContext = new JobExecutionState
                 {
-                    FunctionName = timedOutCronJob.CronJob.Function,
+                    FunctionName = timedOutCronJob.Function,
+                    ContractVersion = timedOutCronJob.ContractVersion,
+                    CorrelationId = timedOutCronJob.CorrelationId,
+                    CausationId = timedOutCronJob.CausationId,
+                    TenantId = timedOutCronJob.TenantId,
                     JobId = timedOutCronJob.Id,
                     Type = JobType.CronJobOccurrence,
                     Retries = timedOutCronJob.CronJob.Retries,
