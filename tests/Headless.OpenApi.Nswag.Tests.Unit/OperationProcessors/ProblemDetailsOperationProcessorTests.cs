@@ -4,8 +4,8 @@ using System.Reflection;
 using Headless.OpenApi.Nswag;
 using Headless.OpenApi.Nswag.Models;
 using Headless.OpenApi.Nswag.OperationProcessors;
+using Headless.Primitives;
 using Headless.Testing.Tests;
-using NJsonSchema.Generation;
 using NSwag;
 using NSwag.Generation;
 using NSwag.Generation.AspNetCore;
@@ -45,6 +45,20 @@ public sealed class ProblemDetailsOperationProcessorTests : TestBase
         ];
         mediaType.Schema.Reference.Should().BeSameAs(context.Document.Definitions[problemType.Name]);
         mediaType.Example.Should().BeOfType(problemType);
+        context.Document.Definitions.Should().NotContainKey(nameof(HeadlessProblemDetails));
+        if (problemType != typeof(PreconditionRequiredProblemDetails))
+        {
+            context.Document.Definitions.Should().NotContainKey(nameof(PreconditionRequiredProblemDetails));
+        }
+
+        if (
+            problemType == typeof(ConflictProblemDetails)
+            || problemType == typeof(UnprocessableEntityProblemDetails)
+            || problemType == typeof(PreconditionRequiredProblemDetails)
+        )
+        {
+            context.Document.Definitions.Should().ContainKey(nameof(ErrorDescriptor));
+        }
     }
 
     [Fact]
@@ -68,24 +82,17 @@ public sealed class ProblemDetailsOperationProcessorTests : TestBase
     }
 
     [Fact]
-    public void should_leave_unrecognized_responses_unchanged_while_registering_shared_definitions_once()
+    public void should_leave_unrecognized_responses_unchanged_without_registering_problem_definitions()
     {
         var response = new OpenApiResponse { Description = "Server error" };
         var context = _CreateContext(("500", response));
         var processor = new ProblemDetailsOperationProcessor();
 
         processor.Process(context);
-        var definitions = context.Document.Definitions.ToDictionary(
-            pair => pair.Key,
-            pair => pair.Value,
-            StringComparer.Ordinal
-        );
         processor.Process(context);
 
         response.Content.Should().BeEmpty();
-        context.Document.Definitions.Should().HaveCount(definitions.Count);
-        context.Document.Definitions.Should().ContainKeys([.. definitions.Keys]);
-        context.Document.Definitions.Should().ContainKey(nameof(HeadlessProblemDetails));
+        context.Document.Definitions.Should().BeEmpty();
     }
 
     private static OperationProcessorContext _CreateContext(
@@ -106,7 +113,8 @@ public sealed class ProblemDetailsOperationProcessorTests : TestBase
             Method = "GET",
         };
         var settings = new AspNetCoreOpenApiDocumentGeneratorSettings();
-        var resolver = new JsonSchemaResolver(new NJsonSchema.JsonSchema(), settings.SchemaSettings);
+        settings.SchemaSettings.FlattenInheritanceHierarchy = true;
+        var resolver = new OpenApiSchemaResolver(document, settings.SchemaSettings);
         var generator = new OpenApiDocumentGenerator(settings, resolver);
 
         return new OperationProcessorContext(
