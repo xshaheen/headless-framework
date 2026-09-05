@@ -467,6 +467,13 @@ public sealed class MessagingOptions
             );
         }
 
+        if (consumerIdentity.Length > ConsumerMetadata.ConsumerIdentityMaxLength)
+        {
+            throw new MessagingConfigurationException(
+                $"Durable consumer {consumerType.FullName ?? consumerType.Name} requires a consumer identity of at most {ConsumerMetadata.ConsumerIdentityMaxLength} characters."
+            );
+        }
+
         string validatedMessageContractVersion;
         try
         {

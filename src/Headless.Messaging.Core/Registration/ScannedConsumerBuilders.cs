@@ -50,7 +50,7 @@ public interface IScannedConsumerBuilder
     IScannedConsumerBuilder HandlerId(string handlerId);
 
     /// <summary>Sets the operator-stable identity used by the durable inbox.</summary>
-    /// <param name="consumerIdentity">Identity that remains unchanged across handler and topology refactors.</param>
+    /// <param name="consumerIdentity">Nonblank identity of at most <see cref="ConsumerMetadata.ConsumerIdentityMaxLength"/> characters that remains unchanged across handler and topology refactors.</param>
     /// <returns>The same builder instance for chaining.</returns>
     IScannedConsumerBuilder ConsumerIdentity(string consumerIdentity);
 

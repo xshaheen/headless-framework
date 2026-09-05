@@ -167,6 +167,7 @@ Inbox metrics use registered consumer identity and bounded lane, outcome, tier, 
 The transactional tier commits the fenced inbox outcome, compatible enlisted application state, and captured durable Bus/Queue work atomically. It does not guarantee exactly-once handler entry, direct transport, or external/non-enlisted effects.
 
 - `AddHeadlessMessaging(...)` is the primary DI entry point.
+- Durable `ConsumerIdentity(...)` values must be nonblank and at most 200 characters (`ConsumerMetadata.ConsumerIdentityMaxLength`). Fluent and scanned registration reject longer identities before delivery, matching relational inbox admission.
 - `setup.Bus` and `setup.Queue` are the only registration roots. `ForMessage<TMessage>(...)` inherits its lane from that root, `Contract(name, version)` sets the stable logical name and schema version, and `Consumer<TConsumer>(...)` registers the matching behavior with an explicit durable identity.
 - `setup.Bus.ForMessage<TMessage>(message => message.Contract("orders.placed"))` is valid without consumers and declares a Bus publisher-only mapping; use the Queue root for an enqueue-only mapping.
 - A plain class, record, or interface contract may use the same logical name on both roots. Registration, metadata, circuits, callbacks, retry/backpressure state, and transport selection remain lane-qualified. Every built-in dual-lane transport declares and proves independent physical topology; Kafka remains Queue-only and rejects Bus routes before readiness or side effects.
