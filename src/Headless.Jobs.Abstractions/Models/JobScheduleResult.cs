@@ -11,4 +11,8 @@ public sealed record JobScheduleResult(
     Guid? RunId,
     long? Generation,
     JobStatus? State
-);
+)
+{
+    /// <summary>The observation/write belongs to the caller transaction; its durable effect depends on the outer commit.</summary>
+    public bool IsProvisional { get; init; }
+}

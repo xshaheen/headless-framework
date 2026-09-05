@@ -240,6 +240,14 @@ including terminal runs. Replacing a pending unclaimed generation creates a new 
 the observed generation once. Claimed cancellation is cooperative. Current and historical keyed rows
 remain indefinitely; ordinary edits, resets, retries, and hard deletion cannot remove this memory.
 
+### Transactional deadline capability
+
+`RequireAtomicEnlistment` requires a one-shot Jobs write to use the exact live relational transaction
+that owns the application update. The requirement is transient; it is not job payload or persisted
+intent. A keyed result returned inside that transaction is provisional until the caller commits, and
+rollback removes the write. Scheduler wake-up is post-commit acceleration; polling recovers a missed
+wake-up. Messaging delivery delay, distributed locks, and membership do not provide this capability.
+
 ### Catch step
 
 A chain step attached to run only when its parent fails (`RunCondition.OnFailure`). Pure authoring

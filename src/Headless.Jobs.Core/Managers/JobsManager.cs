@@ -150,6 +150,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
     private async Task<TTimeJob> _AddTimeJobAsync(TTimeJob entity, CancellationToken cancellationToken)
     {
+        var coordinated = _TryCaptureCoordinatedContext(JobAtomicity.IsRequired([entity]));
         var now = timeProvider.GetUtcNow();
         _StampTimeJobTree(entity, now, assignIds: true);
 
@@ -177,16 +178,11 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                     : _ConvertToUtcIfNeeded(entity.ExecutionTime.Value);
             _NormalizeDescendantExecutionTimes(entity);
 
-            // Synchronous capture before the first await (KTD-1): a dead/completed coordinated transaction or a
-            // mis-wired provider throws here and propagates (KTD-2). Add never swallows a failure into a result — the
-            // write and any persistence fault propagate too, so on the coordinated path the caller's transaction rolls
-            // back rather than committing without the job row, the exact divergence this feature prevents.
-            var coordinated = _TryCaptureCoordinatedContext();
-
             var executionTime = entity.ExecutionTime.Value;
 
             if (coordinated is { } context)
             {
+                _RevalidateCoordinatedContext(context);
                 // Write the row inside the caller's transaction; defer dispatch/scheduler/notify to commit (KTD-4). A
                 // returned entity means the row was enlisted into the transaction (it commits with it), not that the
                 // deferred dispatch ran — a post-commit dispatch failure is recovered by the scheduler's polling sweep.
@@ -264,6 +260,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
     private async Task<TCronJob> _AddCronJobAsync(TCronJob entity, CancellationToken cancellationToken)
     {
+        var coordinated = _TryCaptureCoordinatedContext();
         var now = timeProvider.GetUtcNow();
         _StampJob(entity, now, assignId: true);
 
@@ -287,11 +284,9 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         entity.FingerprintFailureCount = 0;
         entity.FingerprintRetryAfterUtc = null;
 
-        // Synchronous capture before the first await; dead-transaction / mis-wire / write faults propagate (KTD-2).
-        var coordinated = _TryCaptureCoordinatedContext();
-
         if (coordinated is { } context)
         {
+            _RevalidateCoordinatedContext(context);
             var coordinatedSeed = await context
                 .Writer.WriteCronJobsAsync([entity], _SeedCronSchedulePosition, context.Relational, cancellationToken)
                 .ConfigureAwait(false);
@@ -803,6 +798,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             return entities ?? [];
         }
 
+        var coordinated = _TryCaptureCoordinatedContext(JobAtomicity.IsRequired(entities));
         var jobFunctionsHashSet = new HashSet<string>(_functionRegistry.Functions.Keys, StringComparer.Ordinal);
         var immediateTickers = new List<Guid>();
         var now = timeProvider.GetUtcNow();
@@ -882,11 +878,9 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 throw new JobValidatorException(errors);
             }
 
-            // Synchronous capture before the first await; dead-transaction / mis-wire / write faults propagate (KTD-2).
-            var coordinated = _TryCaptureCoordinatedContext();
-
             if (coordinated is { } context)
             {
+                _RevalidateCoordinatedContext(context);
                 // Route every entity through the seam in insertion order; defer the batch side effects once (KTD-4/R5).
                 await context
                     .Writer.WriteTimeJobsAsync([.. entities], context.Relational, cancellationToken)
@@ -960,6 +954,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
+        var coordinated = _TryCaptureCoordinatedContext();
         var validEntities = new List<TCronJob>();
         List<string>? errors = null;
         var now = timeProvider.GetUtcNow();
@@ -1026,11 +1021,9 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             throw new JobValidatorException(errors);
         }
 
-        // Synchronous capture before the first await; dead-transaction / mis-wire / write faults propagate (KTD-2).
-        var coordinated = _TryCaptureCoordinatedContext();
-
         if (coordinated is { } context)
         {
+            _RevalidateCoordinatedContext(context);
             var coordinatedSeed = await context
                 .Writer.WriteCronJobsAsync(
                     [.. validEntities],

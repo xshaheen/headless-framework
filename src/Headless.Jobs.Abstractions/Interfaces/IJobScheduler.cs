@@ -57,6 +57,15 @@ public interface IJobScheduler
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>Requests cancellation with an explicit required-atomic assertion.</summary>
+    Task<JobScheduleResult> CancelKeyedAsync(
+        JobKeyScope scope,
+        JobKey key,
+        long expectedGeneration,
+        bool requireAtomicEnlistment,
+        CancellationToken cancellationToken = default
+    );
+
     /// <summary>
     /// Durably requests cooperative cancellation of the one-shot job identified by <paramref name="jobId"/>.
     /// </summary>

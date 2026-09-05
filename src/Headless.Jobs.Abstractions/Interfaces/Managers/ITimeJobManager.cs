@@ -33,6 +33,15 @@ public interface ITimeJobManager<TTimeJob>
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>Requests cancellation with an explicit required-atomic assertion.</summary>
+    Task<JobScheduleResult> CancelKeyedAsync(
+        JobKeyScope scope,
+        JobKey key,
+        long expectedGeneration,
+        bool requireAtomicEnlistment,
+        CancellationToken cancellationToken = default
+    );
+
     /// <summary>Enqueues a time job and returns the persisted entity.</summary>
     /// <remarks>
     /// When a relational commit coordinator is active, the row is written inside the caller's ambient transaction and

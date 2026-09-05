@@ -10,7 +10,6 @@ using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Models;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.Logging;
 
 #pragma warning disable MA0133 // EF must keep DateTime.UtcNow in expression trees so providers translate the database clock before the DateTimeOffset assignment.
@@ -157,42 +156,6 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         return InvalidateCronExpressionsCacheAsync();
     }
 
-    // Builds a short-lived, NON-pooled context bound to the caller's already-open connection + live transaction.
-    // The pooled factory cannot be reused: a pooled context owns its own connection and Database.UseTransaction
-    // requires the transaction's connection to be the context's current connection (KTD-1). Cloning the registered
-    // options template and swapping only the relational connection keeps the compiled model cached (the model cache
-    // key is unchanged) and preserves the schema/model customizer. WithConnection(connection, owned: false) clears
-    // the template's connection string (EF asserts ConnectionString is null once a Connection is set) and marks the
-    // connection unowned so EF never disposes or closes the caller's connection.
-    private TDbContext _CreateCoordinatedContext(IRelationalCommitContext relationalContext)
-    {
-        var connection =
-            relationalContext.Connection
-            ?? throw new InvalidOperationException(
-                "The relational commit context exposed no live connection for the coordinated job write."
-            );
-
-        var transaction =
-            relationalContext.Transaction
-            ?? throw new InvalidOperationException(
-                "The relational commit context exposed no live transaction for the coordinated job write."
-            );
-
-        var reboundRelational = RelationalOptionsExtension
-            .Extract(coordinatedWriteOptions)
-            .WithConnection(connection, owned: false);
-
-        var coordinatedOptionsBuilder = new DbContextOptionsBuilder<TDbContext>(coordinatedWriteOptions);
-        ((IDbContextOptionsBuilderInfrastructure)coordinatedOptionsBuilder).AddOrUpdateExtension(reboundRelational);
-
-        var dbContext = _CreateContext(coordinatedOptionsBuilder.Options);
-#pragma warning disable MA0045 // Enlisting an existing transaction is an in-memory operation (no I/O), and this is a synchronous context factory.
-        dbContext.Database.UseTransaction(transaction);
-#pragma warning restore MA0045
-
-        return dbContext;
-    }
-
     #endregion
 
     #region Time_Ticker_Implementations
@@ -259,6 +222,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
 
     public async Task<int> AddTimeJobsAsync(TTimeJob[] jobs, CancellationToken cancellationToken = default)
     {
+        JobAtomicity.RejectDirect(jobs);
         foreach (var job in jobs)
         {
             JobIntentFingerprint.RejectOrdinaryMutation(job);
@@ -303,6 +267,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
 
     public async Task<int> UpdateTimeJobsAsync(TTimeJob[] timeJobs, CancellationToken cancellationToken = default)
     {
+        JobAtomicity.RejectDirect(timeJobs);
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -311,7 +276,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
 
         foreach (var candidate in dbContext.ChangeTracker.Entries<TTimeJob>())
         {
-            JobIntentFingerprint.RejectOrdinaryMutation(candidate.Entity);
+            JobIntentFingerprint.RejectOrdinaryMetadata(candidate.Entity);
         }
 
         var updatedIds = dbContext.ChangeTracker.Entries<TTimeJob>().Select(entry => entry.Entity.Id).ToArray();

@@ -287,7 +287,8 @@ public static class JobsCoordinationFixtureExtensions
         string nodeId,
         Action<DbContextOptionsBuilder>? configureOptions = null,
         bool includeMessaging = false,
-        TimeProvider? timeProvider = null
+        TimeProvider? timeProvider = null,
+        Action<IServiceCollection>? configureServices = null
     )
         where TDbContext : JobsDbContext<TimeJobEntity, CronJobEntity>
     {
@@ -296,7 +297,8 @@ public static class JobsCoordinationFixtureExtensions
             nodeId,
             configureOptions,
             includeMessaging,
-            timeProvider: timeProvider
+            timeProvider: timeProvider,
+            configureServices: configureServices
         );
     }
 
@@ -318,7 +320,8 @@ public static class JobsCoordinationFixtureExtensions
         bool includeMessaging = false,
         JobsSideEffectsProbe? sideEffectsProbe = null,
         bool enableTenantPropagation = false,
-        TimeProvider? timeProvider = null
+        TimeProvider? timeProvider = null,
+        Action<IServiceCollection>? configureServices = null
     )
         where TDbContext : JobsDbContext<TimeJobEntity, CronJobEntity>
     {
@@ -389,6 +392,7 @@ public static class JobsCoordinationFixtureExtensions
             builder.AddHeadlessTenancy(tenancy => tenancy.Jobs(jobs => jobs.PropagateTenant()));
         }
 
+        configureServices?.Invoke(builder.Services);
         return builder.Build();
     }
 

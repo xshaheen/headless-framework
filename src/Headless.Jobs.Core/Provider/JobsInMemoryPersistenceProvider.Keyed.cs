@@ -19,6 +19,8 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         CancellationToken cancellationToken = default
     )
     {
+        ArgumentNullException.ThrowIfNull(job);
+        JobAtomicity.RejectDirect([job]);
         ArgumentNullException.ThrowIfNull(key);
         ArgumentNullException.ThrowIfNull(job);
         cancellationToken.ThrowIfCancellationRequested();
@@ -212,18 +214,27 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         }
     }
 
-    private void _RejectKeyedTreeUpdate(TTimeJob candidate, Guid? parentId = null)
+    private void _RejectKeyedTreeUpdates(IEnumerable<TTimeJob> candidates)
     {
-        JobIntentFingerprint.RejectOrdinaryMutation(candidate);
-        _RejectKeyedParent(parentId ?? candidate.ParentId);
-        if (_timeJobs.TryGetValue(candidate.Id, out var stored))
+        var pending = new Stack<TTimeJob>(candidates);
+        var visited = new HashSet<TTimeJob>(ReferenceEqualityComparer.Instance);
+        while (pending.TryPop(out var candidate))
         {
-            JobIntentFingerprint.RejectOrdinaryMutation(stored);
-        }
-
-        foreach (var child in candidate.Children)
-        {
-            _RejectKeyedTreeUpdate(child, candidate.Id);
+            if (!visited.Add(candidate))
+            {
+                continue;
+            }
+            JobIntentFingerprint.RejectOrdinaryMetadata(candidate);
+            _RejectKeyedParent(candidate.ParentId);
+            if (_timeJobs.TryGetValue(candidate.Id, out var stored))
+            {
+                pending.Push(stored);
+            }
+            foreach (var child in candidate.Children)
+            {
+                _RejectKeyedParent(candidate.Id);
+                pending.Push(child);
+            }
         }
     }
 }

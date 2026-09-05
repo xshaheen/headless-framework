@@ -1,7 +1,7 @@
 ---
 title: Coordination Domains Boundary — Locks vs Membership vs Commit
 date: 2026-06-21
-last_updated: 2026-06-21
+last_updated: 2026-09-05
 category: architecture-patterns
 module: headless-coordination
 problem_type: architecture_pattern
@@ -36,7 +36,7 @@ solves a different problem. Pick by the question you are answering:
 |---|---|---|
 | **DistributedLocks** | **Mutual exclusion** — at most one worker in a critical section across processes | `IDistributedLock`, `IDistributedSemaphore`, `IDistributedReadWriteLock`, `IDistributedLease` |
 | **Coordination** | **Cluster membership / node liveness** — which nodes are alive, who owns what, reclaim a dead owner's work | `INodeMembership`, `INodeIdProvider`, `IDeadOwnerReclaimer`, `NodeLivenessState`, `MembershipLostBehavior` |
-| **CommitCoordination** | **Commit-time work orchestration** — defer side-effects (outbox writes, notifications) until a relational transaction *commits* | `ICommitCoordinator`, `ICommitScope`, `IRelationalCommitContext`, `ICommitWorkBuffer`, `CommitOutcome` |
+| **CommitCoordination** | **Transaction outcome orchestration** — enlist durable outbox/job writes in the caller transaction and defer dispatch/notifications until it commits | `ICommitCoordinator`, `ICommitScope`, `IRelationalCommitContext`, `ICommitWorkBuffer`, `CommitOutcome` |
 
 ### Quick disambiguation
 
@@ -46,7 +46,22 @@ solves a different problem. Pick by the question you are answering:
 - "Run these side-effects only if the DB transaction actually commits" → **CommitCoordination**.
 
 They compose rather than overlap: e.g. a job may take a **DistributedLock**, rely on **Coordination** to
-reclaim its lease if the node dies, and use **CommitCoordination** to flush its outbox on commit.
+reclaim its lease if the node dies, and use **CommitCoordination** to enlist an outbox row in the
+application transaction and accelerate its dispatch after commit.
+
+### Jobs transactional deadlines
+
+`EnqueueOptions.RequireAtomicEnlistment` asserts that an ordinary or keyed one-shot deadline must
+share the caller's live relational transaction. Jobs validates its actual configured database and
+captures the exact caller connection and transaction before scheduling middleware. The Jobs-owned
+writer enlists the durable row immediately; only restart/notification acceleration waits for commit.
+Keyed results are provisional until the caller outcome, and operation savepoints protect replacement
+retirement plus insertion together. Missing or incompatible capabilities fail before middleware.
+
+A Messaging transport delay is a delivery setting, not this transaction capability. Distributed locks
+and membership also cannot make an application update and a Jobs row atomic. See the
+[Jobs atomic enqueue contract](../../../src/Headless.Jobs.Abstractions/README.md#commit-coordination-atomic-enqueue)
+for supported providers, connection ownership, isolation, and retry requirements.
 
 ## Package-shape difference is justified, not drift (N5 — resolved)
 
