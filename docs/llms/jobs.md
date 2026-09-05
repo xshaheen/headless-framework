@@ -937,6 +937,10 @@ Configure facade policies once with `ConfigureDefaults(new JobOptions { Retries 
 
 Startup policies accept only retries, retry intervals, node-death policy, and required atomic enlistment. Tenant, system scope, description, correlation, and causation remain per-invocation metadata; supplying them in startup policies throws. Concurrency and priority remain generated function/scheduler metadata.
 
+The plural `JobsOptionsBuilder<TTimeJob, TCronJob>` also accepts `Action<JobOptionsBuilder>` for all three policy methods. Import `Headless.Jobs` for the singular options builder and `Headless.Jobs.Enums` for `NodeDeathPolicy`. For example, use `ConfigureDefaults(job => job.WithRetries(3).WithRetryIntervals(5, 30))`, `ConfigureJob<MyRequest>(job => job.WithNodeDeathPolicy(NodeDeathPolicy.MarkFailed))`, or `ConfigureJob(AppJobs.Cleanup, job => job.WithRetries(5))`. Each callback runs once synchronously with a fresh builder; asynchronous callbacks are unsupported. Each successful call replaces the previous policy for that scope. Callback failures or invalid settings leave the prior policy intact. Retained builders and supplied arrays cannot change the captured policy or another host.
+
+Bare `null` and `default` arguments are ambiguous between the options-record and callback configuration overloads. Use `options:` or a typed `JobOptions` argument for the record overload, and `configure:` or a typed `Action<JobOptionsBuilder>` for the callback overload. Both reject null arguments.
+
 Policies apply to facade one-shot scheduling, keyed scheduling/replacement, every chain node, and required atomic assertions on keyed cancellation using its scope function. Facade recurring definitions inherit retries and node-death policy, but reject a required-atomic policy because that operation has no such guarantee. Attribute-seeded cron definitions and low-level manager calls retain their own settings. Ordinary ID-only cancellation and cron pause/resume retain their existing control semantics.
 
 ```csharp

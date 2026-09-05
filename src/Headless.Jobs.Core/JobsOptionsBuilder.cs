@@ -33,11 +33,40 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
         return this;
     }
 
+    /// <summary>Authors retry, node-death, and atomic-enlistment defaults for this host.</summary>
+    /// <remarks>Invokes the callback once synchronously with a fresh builder, then validates and snapshots its options. Asynchronous callbacks are not supported.</remarks>
+    /// <param name="configure">Authors startup policy settings; invocation metadata is not accepted.</param>
+    /// <returns>This builder for method chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="configure"/> is null.</exception>
+    /// <exception cref="ArgumentException">The authored policy contains invalid settings or invocation metadata.</exception>
+    public JobsOptionsBuilder<TTimeJob, TCronJob> ConfigureDefaults(Action<JobOptionsBuilder> configure)
+    {
+        Argument.IsNotNull(configure);
+        var builder = new JobOptionsBuilder();
+        configure(builder);
+        return ConfigureDefaults(builder.Build());
+    }
+
     /// <summary>Overrides host defaults for the generated handler accepting this request type.</summary>
     public JobsOptionsBuilder<TTimeJob, TCronJob> ConfigureJob<TRequest>(JobOptions options)
     {
         _jobOptionsByRequest[typeof(TRequest)] = JobSchedulingPolicies.Snapshot(options);
         return this;
+    }
+
+    /// <summary>Authors policy overrides for the generated handler accepting this request type.</summary>
+    /// <remarks>Invokes the callback once synchronously with a fresh builder, then validates and snapshots its options. Asynchronous callbacks are not supported.</remarks>
+    /// <typeparam name="TRequest">The request type accepted by the generated handler.</typeparam>
+    /// <param name="configure">Authors startup policy settings; invocation metadata is not accepted.</param>
+    /// <returns>This builder for method chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="configure"/> is null.</exception>
+    /// <exception cref="ArgumentException">The authored policy contains invalid settings or invocation metadata.</exception>
+    public JobsOptionsBuilder<TTimeJob, TCronJob> ConfigureJob<TRequest>(Action<JobOptionsBuilder> configure)
+    {
+        Argument.IsNotNull(configure);
+        var builder = new JobOptionsBuilder();
+        configure(builder);
+        return ConfigureJob<TRequest>(builder.Build());
     }
 
     /// <summary>Overrides host defaults for one canonical generated job descriptor.</summary>
@@ -46,6 +75,25 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
         Argument.IsNotNull(descriptor);
         _jobOptionsByDescriptor[descriptor] = JobSchedulingPolicies.Snapshot(options);
         return this;
+    }
+
+    /// <summary>Authors policy overrides for one canonical generated job descriptor.</summary>
+    /// <remarks>Invokes the callback once synchronously with a fresh builder, then validates and snapshots its options. Asynchronous callbacks are not supported.</remarks>
+    /// <param name="descriptor">The canonical generated descriptor to configure.</param>
+    /// <param name="configure">Authors startup policy settings; invocation metadata is not accepted.</param>
+    /// <returns>This builder for method chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="descriptor"/> or <paramref name="configure"/> is null.</exception>
+    /// <exception cref="ArgumentException">The authored policy contains invalid settings or invocation metadata.</exception>
+    public JobsOptionsBuilder<TTimeJob, TCronJob> ConfigureJob(
+        JobFunctionDescriptor descriptor,
+        Action<JobOptionsBuilder> configure
+    )
+    {
+        Argument.IsNotNull(descriptor);
+        Argument.IsNotNull(configure);
+        var builder = new JobOptionsBuilder();
+        configure(builder);
+        return ConfigureJob(descriptor, builder.Build());
     }
 
     internal JobSchedulingPolicies FreezeSchedulingPolicies() =>
