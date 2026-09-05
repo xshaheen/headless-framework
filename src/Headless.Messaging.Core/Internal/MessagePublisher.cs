@@ -39,7 +39,7 @@ internal sealed class MessagePublisher(
         var coordination = _ResolveCoordination(coordinator);
         var decision = DeliveryDecisionResolver.Resolve(
             lane,
-            options?.DeliveryMode ?? DeliveryMode.Auto,
+            options?.DeliveryMode ?? DeliveryMode.Durable,
             options?.Delay,
             coordination,
             timeProvider.GetUtcNow()

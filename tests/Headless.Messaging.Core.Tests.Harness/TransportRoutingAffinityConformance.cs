@@ -56,7 +56,7 @@ public static class TransportRoutingAffinityConformance
                     .GetRequiredService<IQueue>()
                     .EnqueueAsync(
                         new RoutingAffinityProbe("payload"),
-                        new EnqueueOptions
+                        new QueueOptions
                         {
                             MessageId = messageId,
                             RoutingAffinityKey = "order-42",

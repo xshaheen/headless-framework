@@ -8,7 +8,7 @@ namespace Headless.Messaging;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Accepted by <see cref="IQueue.EnqueueAsync{T}"/>. The invoked queue verb fixes the Queue lane;
+/// Accepted by <see cref="IQueue"/>. The invoked queue verb fixes the Queue lane;
 /// <see cref="MessageOptions.DeliveryMode"/> controls durability independently.
 /// </para>
 /// <para>
@@ -18,4 +18,4 @@ namespace Headless.Messaging;
 /// </para>
 /// </remarks>
 [PublicAPI]
-public sealed record EnqueueOptions : MessageOptions;
+public sealed record QueueOptions : MessageOptions;

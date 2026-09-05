@@ -8,7 +8,7 @@ namespace Headless.Messaging;
 /// <remarks>
 /// <para>
 /// The <see cref="IQueue"/> contract is point-to-point intent: exactly one competing worker
-/// receives each enqueued message. The <c>DeliveryMode</c> on <see cref="EnqueueOptions"/> selects automatic,
+/// receives each enqueued message. The <c>DeliveryMode</c> on <see cref="QueueOptions"/> selects automatic,
 /// durable, or transport-direct delivery without changing the Queue lane.
 /// </para>
 /// <para>
@@ -45,5 +45,13 @@ public interface IQueue
     /// supplied with disagreeing values, or when any outbound header name/value contains control
     /// characters.
     /// </exception>
-    Task EnqueueAsync<T>(T? contentObj, EnqueueOptions? options = null, CancellationToken cancellationToken = default);
+    Task EnqueueAsync<T>(T? contentObj, QueueOptions? options, CancellationToken cancellationToken = default);
+
+    /// <summary>Captures a message durably using the configured contract and default metadata.</summary>
+    /// <typeparam name="T">The message type.</typeparam>
+    /// <param name="contentObj">The message payload. Can be <see langword="null"/>.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>A task representing durable acceptance, not consumer completion.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when durable storage is unavailable or an active commit boundary is incompatible.</exception>
+    Task EnqueueAsync<T>(T? contentObj, CancellationToken cancellationToken = default);
 }

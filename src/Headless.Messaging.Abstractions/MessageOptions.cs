@@ -37,8 +37,8 @@ public abstract record MessageOptions
     /// </summary>
     public const int TenantIdMaxLength = 200;
 
-    /// <summary>Gets the requested delivery behavior. The default is <see cref="DeliveryMode.Auto"/>.</summary>
-    public DeliveryMode DeliveryMode { get; init; } = DeliveryMode.Auto;
+    /// <summary>Gets the requested delivery behavior. The default is <see cref="DeliveryMode.Durable"/>.</summary>
+    public DeliveryMode DeliveryMode { get; init; } = DeliveryMode.Durable;
 
     /// <summary>Gets the relative delay applied before the durably captured message is dispatched.</summary>
     /// <remarks>

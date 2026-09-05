@@ -48,7 +48,7 @@ public sealed class TenantPropagationPublishMiddleware(
             // downstream middleware and the factory receive the correct derived type.
             MessageOptions stamped = context.Lane switch
             {
-                MessageLane.Queue => (context.Options as EnqueueOptions ?? new EnqueueOptions()) with
+                MessageLane.Queue => (context.Options as QueueOptions ?? new QueueOptions()) with
                 {
                     TenantId = ambientTenantId,
                 },

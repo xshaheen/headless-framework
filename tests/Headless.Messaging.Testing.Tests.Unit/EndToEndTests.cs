@@ -133,12 +133,12 @@ public sealed class EndToEndTests : TestBase
         recorded.MessageName.Should().NotBeNullOrWhiteSpace();
         recorded.MessageType.Should().Be<OrderCreatedEvent>();
         recorded.Message.Should().BeOfType<OrderCreatedEvent>().Which.OrderId.Should().Be("ORD-001");
-        recorded.RequestedDeliveryMode.Should().Be(DeliveryMode.Auto);
-        recorded.ResolvedDeliveryMode.Should().Be(DeliveryMode.TransportDirect);
+        recorded.RequestedDeliveryMode.Should().Be(DeliveryMode.Durable);
+        recorded.ResolvedDeliveryMode.Should().Be(DeliveryMode.Durable);
 
         harness.Published.Should().ContainSingle();
-        harness.Published.Single().RequestedDeliveryMode.Should().Be(DeliveryMode.Auto);
-        harness.Published.Single().ResolvedDeliveryMode.Should().Be(DeliveryMode.TransportDirect);
+        harness.Published.Single().RequestedDeliveryMode.Should().Be(DeliveryMode.Durable);
+        harness.Published.Single().ResolvedDeliveryMode.Should().Be(DeliveryMode.Durable);
         harness.Consumed.Should().ContainSingle();
         harness.Faulted.Should().BeEmpty();
     }
@@ -371,7 +371,7 @@ public sealed class EndToEndTests : TestBase
         );
         await queue.EnqueueAsync(
             new OrderCreatedEvent("same-payload", 10m),
-            new EnqueueOptions { MessageName = "order-created" },
+            new QueueOptions { MessageName = "order-created" },
             AbortToken
         );
 
@@ -452,7 +452,7 @@ public sealed class EndToEndTests : TestBase
         );
         await queue.EnqueueAsync(
             new OrderCreatedEvent("durable-queue", 20m),
-            new EnqueueOptions { MessageName = "durable-order-created", DeliveryMode = DeliveryMode.Durable },
+            new QueueOptions { MessageName = "durable-order-created", DeliveryMode = DeliveryMode.Durable },
             AbortToken
         );
 
@@ -511,7 +511,7 @@ public sealed class EndToEndTests : TestBase
         // when
         await queue.EnqueueAsync(
             new OrderCreatedEvent("queue-only", 10m),
-            new EnqueueOptions { MessageName = "queue-only-order-created" },
+            new QueueOptions { MessageName = "queue-only-order-created" },
             AbortToken
         );
 

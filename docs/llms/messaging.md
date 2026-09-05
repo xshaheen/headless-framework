@@ -231,7 +231,7 @@ services.AddHeadlessMessaging(setup =>
 - **Atomic outbox is on by default in the EF adapter packages** (`Headless.Messaging.Storage.PostgreSql.EntityFramework` / `.SqlServer.EntityFramework`): `setup.UseEntityFramework<TContext>()` couples a publish to the DB write with zero consumer wiring. Opt out with `setup.UseEntityFramework<TContext>(o => o.EnableTransactionalOutbox = false)`. The raw storage packages expose only `UsePostgreSql` / `UseSqlServer` and have no EF or commit-coordination dependency.
 - **Mis-wire fails loud at startup**: if the outbox is enabled but the commit interceptor is not firing, `CommitInterceptorStartupGate<TContext>` logs a warning by default; set `CommitProbeMode.Strict` (via `services.Configure<CommitInterceptorProbeOptions>(o => o.Mode = CommitProbeMode.Strict)`) to fail startup instead of shipping a silently non-transactional outbox.
 - **Dashboard.K8s requires RBAC** permissions to read Services in the configured Kubernetes namespace.
-- **Callbacks enable async response routing**: Set `CallbackName` on `PublishOptions` (Bus) **or** `EnqueueOptions` (Queue). The response always publishes through the durable Bus path, including for a Queue-originated request; Queue remains origin metadata and exactly one Bus response is produced for a single Queue delivery. `SetResponse<TResponse>` preserves the declared response contract for typed middleware and the concrete payload value/type. This is not request/reply and remains at-least-once, so response consumers must be idempotent. A Bus request still fans out and each subscriber may emit its own response.
+- **Callbacks enable async response routing**: Set `CallbackName` on `PublishOptions` (Bus) **or** `QueueOptions` (Queue). The response always publishes through the durable Bus path, including for a Queue-originated request; Queue remains origin metadata and exactly one Bus response is produced for a single Queue delivery. `SetResponse<TResponse>` preserves the declared response contract for typed middleware and the concrete payload value/type. This is not request/reply and remains at-least-once, so response consumers must be idempotent. A Bus request still fans out and each subscriber may emit its own response.
 - **Strict publish tenancy is opt-in**: Use `builder.AddHeadlessTenancy(tenancy => tenancy.Messaging(m => m.PropagateTenant().RequireTenantOnPublish()))`. The previous `MessagingBuilder.AddTenantPropagation()` extension has been removed; the root tenancy seam is the single composition point. When neither `PublishOptions.TenantId` nor ambient `ICurrentTenant` is set, the publish wrapper throws `Headless.Abstractions.MissingTenantContextException`. See [Strict Publish Tenancy](#strict-publish-tenancy) and the multi-tenancy doc's [Message Consumers](multi-tenancy.md#message-consumers) section.
 - **Retry behavior is configured via `MessagingOptions.RetryPolicy`**. `RetryStrategy` is a public Polly `RetryStrategyOptions` contract; `MaxPersistedRetries`, durable scheduling, leases, and terminal callbacks remain Messaging-owned. Configure `ShouldHandle` explicitly. `OnExhausted` fires only after a matched failure consumes the complete budget and the owned terminal write succeeds.
 - **Retry pressure is quadrant-isolated**: Published-Bus, Published-Queue, Received-Bus, and Received-Queue own independent atomic claims, workers, lock resources, counters, failure state, cadence, and adaptive interval. `IRetryProcessorMonitor` remains an aggregate compatibility projection (maximum interval, backed off when any quadrant is backed off, reset all four); that aggregate never drives runtime scheduling or lock TTL.
@@ -310,7 +310,7 @@ services.AddHeadlessMessaging(setup =>
     setup.Queue.ForMessage<OrderChanged>(message => message.Contract("orders.changed").RequireRoutingAffinity());
 });
 
-await queue.EnqueueAsync(order, new EnqueueOptions
+await queue.EnqueueAsync(order, new QueueOptions
 {
     RoutingAffinityKey = order.OrderId.ToString(),
     DeliveryMode = DeliveryMode.Durable,
@@ -357,7 +357,7 @@ Conformance tests exercise the provider behavior; a deployment must still config
 
 Use matching versions of the `Headless.Messaging.*` packages. The package-family probe verifies the complete current package graph and its public API:
 
-- Publish through `IBus.PublishAsync(...)` and enqueue through `IQueue.EnqueueAsync(...)`. Select durability with `DeliveryMode.Auto`, `Durable`, or `TransportDirect`.
+- Publish through `IBus.PublishAsync(...)` and enqueue through `IQueue.EnqueueAsync(...)`. Both default to `DeliveryMode.Durable`, including when options are omitted or null; `Auto` and `TransportDirect` are explicit overrides.
 - Register consumers through `setup.Bus` or `setup.Queue`; public APIs use `MessageLane`.
 - Dashboard and monitoring JSON expose `lane`, `requestedDeliveryMode`, and `resolvedDeliveryMode`. Storage uses the `IntentType` column and the `headless-intent` header with `Bus = 0` and `Queue = 1`.
 - `Delay` is a one-shot durable scheduling request: `Auto` resolves to durable capture, `Durable` remains durable, and `TransportDirect` is rejected before side effects. The delay controls initial outbox eligibility and is removed from transport dispatch so broker recovery does not schedule it again.
@@ -401,7 +401,7 @@ Defines shared messaging contracts and envelope types used by all bus, queue, co
 - `IConsume<TMessage>` consumer contract.
 - `MessageOptions` base options, including headers, correlation, delay, message id, message type, and tenant id.
 - `MessageOptions.SuppressAmbientBusinessContext` preserves captured business metadata by disabling ambient correlation, causation, and tenant defaults. It defaults to `false`; explicit options, registered contract/selector resolution, and diagnostic trace propagation remain unchanged. Required tenancy still rejects a null explicit tenant when suppression is enabled.
-- `DeliveryMode.Auto` captures under compatible coordination, sends directly with no coordination, and rejects an active incompatible boundary. `Durable` always persists first. `TransportDirect` bypasses storage and any ambient coordination boundary and cannot be combined with `Delay`.
+- `DeliveryMode.Auto` captures under compatible coordination, sends directly with no coordination, and rejects an active incompatible boundary. `Durable` is the default, including when options are omitted or null, and always persists first. `TransportDirect` bypasses storage and any ambient coordination boundary and cannot be combined with `Delay`.
 - `MessageHeader`, `Headers`, `TransportMessage`, and broker address primitives.
 - Common transport pause/resume and retry/backoff abstractions.
 
@@ -450,7 +450,7 @@ Defines bus publishing contracts without requiring a concrete messaging host or 
 ### Key Features
 
 - `IBus.PublishAsync(...)`.
-- `IBus` is the only bus publisher; `PublishOptions.DeliveryMode` selects Auto, Durable, or TransportDirect.
+- `IBus` is the only bus publisher; `PublishOptions.DeliveryMode` defaults to Durable; Auto and TransportDirect are explicit overrides.
 - `TransportDirect` bypasses storage and any ambient coordination boundary; it cannot be combined with `Delay`.
 - `PublishOptions` with value-equality and `with` support.
 
@@ -463,7 +463,9 @@ dotnet add package Headless.Messaging.Bus.Abstractions
 ### Quick Start
 
 ```csharp
-await bus.PublishAsync(new OrderPlaced(orderId), new PublishOptions { CorrelationId = correlationId });
+await bus.PublishAsync(new OrderPlaced(orderId), ct);
+// Override metadata only when needed.
+await bus.PublishAsync(new OrderPlaced(orderId), new PublishOptions { CorrelationId = correlationId }, ct);
 ```
 
 ### Configuration
@@ -487,7 +489,7 @@ Defines point-to-point queue publishing contracts independently from concrete pr
 ### Key Features
 
 - `IQueue.EnqueueAsync(...)`.
-- `IQueue` is the only queue publisher; `EnqueueOptions.DeliveryMode` selects Auto, Durable, or TransportDirect.
+- `IQueue` is the only queue publisher; `QueueOptions.DeliveryMode` defaults to Durable; Auto and TransportDirect are explicit overrides.
 - `TransportDirect` bypasses storage and any ambient coordination boundary; it cannot be combined with `Delay`.
 - Queue options align with `MessageOptions`.
 
@@ -500,7 +502,7 @@ dotnet add package Headless.Messaging.Queue.Abstractions
 ### Quick Start
 
 ```csharp
-await queue.EnqueueAsync(new RebuildProjection(commandId));
+await queue.EnqueueAsync(new RebuildProjection(commandId), ct);
 ```
 
 ### Configuration
@@ -586,7 +588,7 @@ services.AddHeadlessMessaging(setup =>
 
 ### Configuration
 
-`RequireRoutingAffinity()` on a Bus or Queue message registration requires a locally supported native mapping at startup; it does not require every publication to supply a key. Set `PublishOptions.RoutingAffinityKey` or `EnqueueOptions.RoutingAffinityKey` per publication. The frozen capability model snapshots registered destinations from inert options before clients or processors start. Keyed unknown destination overrides, invalid keys, and typed/raw conflicts fail before outbox insertion or transport effects. `MediumMessage.RoutingAffinityKey` reads the authoritative serialized envelope; InMemory, PostgreSQL, and SQL Server preserve it without a new storage column.
+`RequireRoutingAffinity()` on a Bus or Queue message registration requires a locally supported native mapping at startup; it does not require every publication to supply a key. Set `PublishOptions.RoutingAffinityKey` or `QueueOptions.RoutingAffinityKey` per publication. The frozen capability model snapshots registered destinations from inert options before clients or processors start. Keyed unknown destination overrides, invalid keys, and typed/raw conflicts fail before outbox insertion or transport effects. `MediumMessage.RoutingAffinityKey` reads the authoritative serialized envelope; InMemory, PostgreSQL, and SQL Server preserve it without a new storage column.
 
 - `MessagingOptions.DefaultGroupName`, `GroupNamePrefix`, `MessageNamePrefix`, and `Version` control naming and isolation. `Version` is validated non-empty and at most 20 characters — the SQL storage providers persist it as a literal into a `VARCHAR(20)`/`nvarchar(20)` column, so an over-long value is rejected at startup instead of failing every outbox insert.
 - `MessagingOptions.RequiredInboxCapability` defaults to `MessagingInboxCapabilityTier.Transactional`. Set `DurableDedupeOnly` only when the application accepts that inbox outcome and business state cannot commit atomically, or `ProcessLocal` for the in-process development provider. The configured storage must declare the selected tier before durable consumers can start.
@@ -1494,7 +1496,7 @@ setup.Queue.ForMessage<OrderPlaced>(message =>
 
 ### Configuration
 
-`EnqueueOptions.RoutingAffinityKey` maps to the native UTF-8 string key on registered Queue routes. The optional `KafkaMessagingHeaders.KafkaKey` adapter must match it. `RequireRoutingAffinity()` rejects configurations with a random or unrecognized `MainConfig["partitioner"]`; accepted partitioners are `consistent`, `consistent_random` (default), `murmur2`, `murmur2_random`, `fnv1a`, and `fnv1a_random`, all deterministic for a nonempty key. Headless adds no key-length limit beyond broker message limits. Keep partition count, encoding, and partitioner fixed while relying on placement. Different keys may share partitions; affinity promises neither FIFO nor exclusive handling.
+`QueueOptions.RoutingAffinityKey` maps to the native UTF-8 string key on registered Queue routes. The optional `KafkaMessagingHeaders.KafkaKey` adapter must match it. `RequireRoutingAffinity()` rejects configurations with a random or unrecognized `MainConfig["partitioner"]`; accepted partitioners are `consistent`, `consistent_random` (default), `murmur2`, `murmur2_random`, `fnv1a`, and `fnv1a_random`, all deterministic for a nonempty key. Headless adds no key-length limit beyond broker message limits. Keep partition count, encoding, and partitioner fixed while relying on placement. Different keys may share partitions; affinity promises neither FIFO nor exclusive handling.
 
 Configure bootstrap servers, main Kafka config, topic options, custom headers, and retriable error codes through `KafkaMessagingOptions`. `RetriableErrorCodes` / `DefaultRetriableErrorCodes` are `int` values of Confluent's `ErrorCode` enum (not the native enum type), so configuring retries needs no compile-time `Confluent.Kafka` reference; the framework casts back to `ErrorCode` internally.
 

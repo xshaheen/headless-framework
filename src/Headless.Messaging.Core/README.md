@@ -10,7 +10,7 @@ Provides the foundational runtime for reliable distributed messaging with transa
 
 - **Verb-Conveyed Lanes**: `IBus` selects broadcast Bus semantics and `IQueue` selects point-to-point Queue semantics; immutable delivery modes control persistence without changing the lane
 - **Outbox Delivery**: Transactional message publishing with database consistency
-- **Scheduled Delivery**: `PublishOptions.Delay` and `EnqueueOptions.Delay` defer outbox dispatch
+- **Scheduled Delivery**: `PublishOptions.Delay` and `QueueOptions.Delay` defer outbox dispatch
 - **Lane-Owned Consumer Management**: `setup.Bus.ForMessage<TMessage>(...)`, `setup.Queue.ForMessage<TMessage>(...)`, lane-scoped assembly scanning, invocation, and per-dispatch lifecycle handling
 - **Registration Builders**: `IBusMessageBuilder<TMessage>`, `IQueueMessageBuilder<TMessage>`, and their lane-matched consumer builders live under `Headless.Messaging.Registration`; lambda setup usually infers them, while explicit references should import that namespace
 - **Public Runtime SPI**: the blessed cross-package contracts consumed by storage providers, transports, and dashboards — `IProcessingServer`, `IConsumerServiceSelector`, and `MethodMatcherCache` — live under `Headless.Messaging.Runtime` (the `TransportNaming` / `RuntimeTypeInspection` helpers there are `internal`, shared with first-party transports via `InternalsVisibleTo`) (previously `Headless.Messaging.Internal`, which now holds only implementation detail); monitoring status is the typed `StatusName` enum under `Headless.Messaging.Monitoring`, so `MessageView.StatusName` and the `MessageQuery.StatusName` filter are compile-time safe while the persisted/serialized value stays the enum member name
@@ -227,7 +227,7 @@ No affinity storage migration is required: the authoritative key lives in the se
 Use bus publishers for broadcast publish/subscribe delivery:
 
 - `IBus` always selects the Bus lane.
-- `PublishOptions.DeliveryMode` selects Auto, Durable, or TransportDirect. TransportDirect bypasses storage and any ambient coordination boundary.
+- `PublishOptions.DeliveryMode` defaults to Durable; Auto and TransportDirect are explicit overrides. TransportDirect bypasses storage and any ambient coordination boundary.
 - `PublishOptions.Delay` schedules durable delivery; TransportDirect with a delay is rejected.
 - Stored rows and consume contexts carry `MessageLane.Bus`.
 
@@ -236,8 +236,8 @@ Use bus publishers for broadcast publish/subscribe delivery:
 Use queue publishers for point-to-point competing-worker delivery:
 
 - `IQueue` always selects the Queue lane.
-- `EnqueueOptions.DeliveryMode` selects Auto, Durable, or TransportDirect. TransportDirect bypasses storage and any ambient coordination boundary.
-- `EnqueueOptions.Delay` schedules durable delivery; TransportDirect with a delay is rejected.
+- `QueueOptions.DeliveryMode` defaults to Durable; Auto and TransportDirect are explicit overrides. TransportDirect bypasses storage and any ambient coordination boundary.
+- `QueueOptions.Delay` schedules durable delivery; TransportDirect with a delay is rejected.
 - Stored rows and consume contexts carry `MessageLane.Queue`.
 
 ### Publisher Contracts
@@ -254,7 +254,7 @@ public sealed class MetricsPublisher(IBus bus)
 }
 ```
 
-Durable publishes use `DeliveryMode.Durable` on `IBus` or `IQueue`. Delayed delivery is expressed with `PublishOptions.Delay` or `EnqueueOptions.Delay` and is always durable.
+`IBus.PublishAsync(message, ct)` and `IQueue.EnqueueAsync(message, ct)` capture durably by default. Their explicit-options overloads accept `PublishOptions` and `QueueOptions`, respectively, before the cancellation token. Durable acceptance waits for storage, not consumer completion. Persistent storage is required for restart survival; the process-local provider remains process-local. A compatible coordination boundary commits the capture with application state; outside one, the capture persists independently. Delayed delivery is expressed with `PublishOptions.Delay` or `QueueOptions.Delay` and is always durable.
 
 ## Runtime Delegates
 
@@ -282,7 +282,7 @@ When runtime delegates are attached during application startup, the messaging ru
 
 ## Configuration
 
-`RequireRoutingAffinity()` on a Bus or Queue message registration requires a locally supported native mapping at startup; it does not require every publication to supply a key. Set `PublishOptions.RoutingAffinityKey` or `EnqueueOptions.RoutingAffinityKey` per publication. The frozen capability model snapshots registered destinations from inert options before clients or processors start. Keyed unknown destination overrides, invalid keys, and typed/raw conflicts fail before outbox insertion or transport effects. `MediumMessage.RoutingAffinityKey` reads the authoritative serialized envelope; InMemory, PostgreSQL, and SQL Server preserve it without a new storage column.
+`RequireRoutingAffinity()` on a Bus or Queue message registration requires a locally supported native mapping at startup; it does not require every publication to supply a key. Set `PublishOptions.RoutingAffinityKey` or `QueueOptions.RoutingAffinityKey` per publication. The frozen capability model snapshots registered destinations from inert options before clients or processors start. Keyed unknown destination overrides, invalid keys, and typed/raw conflicts fail before outbox insertion or transport effects. `MediumMessage.RoutingAffinityKey` reads the authoritative serialized envelope; InMemory, PostgreSQL, and SQL Server preserve it without a new storage column.
 
 Register in `Program.cs`:
 

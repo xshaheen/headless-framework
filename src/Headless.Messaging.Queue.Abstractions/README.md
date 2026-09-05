@@ -8,9 +8,9 @@ Gives application code a compile-time queue surface for work-queue delivery wher
 
 ## Key Features
 
-- `IQueue` is the only queue publisher; `EnqueueOptions.DeliveryMode` selects Auto, Durable, or TransportDirect.
+- `IQueue` is the only queue publisher; `QueueOptions.DeliveryMode` defaults to Durable; Auto and TransportDirect are explicit overrides.
 - Durable delivery persists messages first, then drains them through the configured queue transport.
-- `EnqueueOptions.Delay` schedules durable queue delivery.
+- `QueueOptions.Delay` schedules durable queue delivery.
 - Every queue enqueue carries `MessageLane.Queue` through storage, tracing, dashboard projections, and consume context.
 
 ## Installation
@@ -26,16 +26,12 @@ public sealed class ImportJobs(IQueue queue)
 {
     public Task EnqueueAsync(ImportRequested message, CancellationToken cancellationToken)
     {
-        return queue.EnqueueAsync(
-            message,
-            new EnqueueOptions { MessageName = "imports.requested", DeliveryMode = DeliveryMode.Durable },
-            cancellationToken
-        );
+        return queue.EnqueueAsync(message, cancellationToken);
     }
 }
 ```
 
-Use `DeliveryMode.Durable` when the enqueue must survive process crashes, `TransportDirect` to bypass storage and any ambient coordination boundary, or the default `Auto` to capture in a compatible boundary and send directly with no boundary. `Auto` rejects an active incompatible boundary, and `TransportDirect` cannot be combined with `Delay`.
+The short overload uses the registered message contract and captures durably by default, including outside a transaction. Pass `QueueOptions` before the cancellation token for metadata or delivery overrides. Durable acceptance waits for storage, not consumer completion; restart survival requires persistent storage. Inside a compatible coordination boundary the capture commits with application state, while an incompatible boundary is rejected. Explicit `Auto` captures in a compatible boundary and sends directly with no boundary. `TransportDirect` bypasses storage and coordination and cannot be combined with `Delay`.
 
 ## Configuration
 

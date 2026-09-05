@@ -150,11 +150,13 @@ public sealed class TypeSafePublishApiTests
         typeof(IBus)
             .GetMethods()
             .Should()
-            .ContainSingle(method => method.Name == nameof(IBus.PublishAsync) && method.IsGenericMethod);
+            .HaveCount(2)
+            .And.OnlyContain(method => method.Name == nameof(IBus.PublishAsync) && method.IsGenericMethod);
         typeof(IQueue)
             .GetMethods()
             .Should()
-            .ContainSingle(method => method.Name == nameof(IQueue.EnqueueAsync) && method.IsGenericMethod);
+            .HaveCount(2)
+            .And.OnlyContain(method => method.Name == nameof(IQueue.EnqueueAsync) && method.IsGenericMethod);
 
         typeof(IBus).Assembly.GetTypes().Should().NotContain(type => type.FullName == "Headless.Messaging.IOutboxBus");
         typeof(IQueue)

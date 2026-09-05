@@ -15,7 +15,7 @@ internal static class Program
         );
         await queue.EnqueueAsync(
             new RebuildProjection("order-123"),
-            new EnqueueOptions { DeliveryMode = DeliveryMode.TransportDirect },
+            new QueueOptions { DeliveryMode = DeliveryMode.TransportDirect },
             cancellationToken
         );
     }

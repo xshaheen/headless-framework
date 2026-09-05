@@ -45,5 +45,13 @@ public interface IBus
     /// supplied with disagreeing values, or when any outbound header name/value contains control
     /// characters.
     /// </exception>
-    Task PublishAsync<T>(T? contentObj, PublishOptions? options = null, CancellationToken cancellationToken = default);
+    Task PublishAsync<T>(T? contentObj, PublishOptions? options, CancellationToken cancellationToken = default);
+
+    /// <summary>Captures a message durably using the configured contract and default metadata.</summary>
+    /// <typeparam name="T">The message type.</typeparam>
+    /// <param name="contentObj">The message payload. Can be <see langword="null"/>.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>A task representing durable acceptance, not consumer completion.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when durable storage is unavailable or an active commit boundary is incompatible.</exception>
+    Task PublishAsync<T>(T? contentObj, CancellationToken cancellationToken = default);
 }

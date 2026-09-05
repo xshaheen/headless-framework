@@ -5,24 +5,24 @@ using Headless.Testing.Tests;
 
 namespace Tests;
 
-public sealed class EnqueueOptionsTests : TestBase
+public sealed class QueueOptionsTests : TestBase
 {
     [Fact]
-    public void should_default_delivery_mode_to_auto()
+    public void should_default_delivery_mode_to_durable()
     {
         // when
-        var options = new EnqueueOptions();
+        var options = new QueueOptions();
 
         // then
-        options.DeliveryMode.Should().Be(DeliveryMode.Auto);
+        options.DeliveryMode.Should().Be(DeliveryMode.Durable);
     }
 
     [Fact]
     public void should_include_delivery_mode_and_delay_in_equality_and_hashing()
     {
         // given
-        var expected = new EnqueueOptions { DeliveryMode = DeliveryMode.Durable, Delay = TimeSpan.FromMinutes(1) };
-        var equivalent = new EnqueueOptions { DeliveryMode = DeliveryMode.Durable, Delay = TimeSpan.FromMinutes(1) };
+        var expected = new QueueOptions { DeliveryMode = DeliveryMode.Durable, Delay = TimeSpan.FromMinutes(1) };
+        var equivalent = new QueueOptions { DeliveryMode = DeliveryMode.Durable, Delay = TimeSpan.FromMinutes(1) };
         var differentMode = expected with { DeliveryMode = DeliveryMode.Auto };
         var differentDelay = expected with { Delay = TimeSpan.FromMinutes(2) };
 
@@ -39,6 +39,6 @@ public sealed class EnqueueOptionsTests : TestBase
     public void should_not_expose_lane_override()
     {
         // then
-        typeof(EnqueueOptions).GetProperties().Should().NotContain(property => property.Name == "Lane");
+        typeof(QueueOptions).GetProperties().Should().NotContain(property => property.Name == "Lane");
     }
 }

@@ -19,7 +19,7 @@ public sealed class TenantPropagationPublishMiddlewareTests : TestBase
         MessageOptions options =
             lane == MessageLane.Bus
                 ? new PublishOptions { SuppressAmbientBusinessContext = true }
-                : new EnqueueOptions { SuppressAmbientBusinessContext = true };
+                : new QueueOptions { SuppressAmbientBusinessContext = true };
         var context = new PublishContext<Payload>(new Payload("captured"), lane, options, delayTime: null);
         var nextCalled = false;
 
