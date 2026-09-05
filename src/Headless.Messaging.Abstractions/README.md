@@ -11,6 +11,8 @@ Defines the stable message envelope, consume context, consumer contract, publish
 - `IConsume<TMessage>` with `ConsumeContext<TMessage>` for type-safe handlers.
 - `MessageLane` for broadcast bus versus point-to-point queue delivery.
 - `Message`, `TransportMessage`, headers, and publish option base types.
+- `ConsumeContext.ContractVersion` exposes the logical message contract's schema version; a missing header defaults to `"1"` for legacy or external producers.
+- `ConsumeContext.CorrelationId` identifies the chain root and is preserved by publishes inside a handler; `ConsumeContext.CausationId` identifies the immediate parent message when available.
 - `IRuntimeSubscriber` for scoped runtime delegate subscriptions.
 - Verb-specific publisher contracts: `IBus` and `IQueue`, with immutable delivery-mode options.
 
@@ -50,7 +52,7 @@ Callbacks are fire-and-forget async chaining, not request/reply. The publisher s
 - `context.SetResponse<TResponse>(value)` — capture a typed response body to publish to the request's callback message name through the durable bus path. `TResponse` must be a reference type (`where TResponse : class`); wrap value types in a record if needed. No `SetResponse` keeps the callback headers-only; `SetResponse` without a `CallbackName` is dropped.
 - `context.SetResponseCallbackName(callbackName)` — stamp the response callback name the published response will carry, enabling explicit multi-hop chaining (typed alternative to writing the reserved `CallbackName` key through `AddResponseHeader`).
 
-Callback delivery is at-least-once — make response consumers idempotent (dedupe on `(CorrelationId, CorrelationSequence)`; `CorrelationId` alone is ambiguous across hops because it is set to the immediate parent message id per hop, not the chain root).
+Callback delivery is at-least-once — make response consumers idempotent (for example, dedupe on `(CausationId, CorrelationSequence)`). `CorrelationId` identifies the chain root; `CausationId` identifies the immediate parent message. The framework does not deduplicate callback deliveries.
 
 ## Configuration
 
