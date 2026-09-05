@@ -211,6 +211,18 @@ public sealed class PostgreSqlConformanceTests(PostgreSqlJobsCoordinationFixture
 public sealed class PostgreSqlClaimConformanceTests(PostgreSqlJobsCoordinationFixture fixture)
     : JobsClaimConformanceTests<PostgreSqlJobsCoordinationFixture>(fixture)
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public override Task reseeding_after_restart_preserves_the_stored_payload_contract(bool changeExpression) =>
+        base.reseeding_after_restart_preserves_the_stored_payload_contract(changeExpression);
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("replacement-lineage")]
+    public override Task ordinary_job_edits_preserve_captured_lineage(string? incomingLineage) =>
+        base.ordinary_job_edits_preserve_captured_lineage(incomingLineage);
+
     [Fact]
     public override Task cron_materialization_ignores_stale_caller_tuple_and_restart_claims_its_snapshot() =>
         base.cron_materialization_ignores_stale_caller_tuple_and_restart_claims_its_snapshot();

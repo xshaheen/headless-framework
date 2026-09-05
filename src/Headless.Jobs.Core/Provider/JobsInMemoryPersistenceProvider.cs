@@ -1182,9 +1182,10 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         // Update the job itself
         if (_timeJobs.TryGetValue(job.Id, out var existing))
         {
-            // TenantId is resolved once at schedule time and is not updatable through the generic update API —
-            // update payloads omit it, and writing it would silently clear the tenant.
+            // Ownership and business lineage are captured at scheduling; ordinary edits cannot replace them.
             job.TenantId = existing.TenantId;
+            job.CorrelationId = existing.CorrelationId;
+            job.CausationId = existing.CausationId;
 
             if (_timeJobs.TryUpdate(job.Id, job, existing))
             {
@@ -1403,13 +1404,8 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
             if (_cronJobs.TryGetValue(id, out var existing))
             {
-                lock (_GetCronDefinitionLock(id))
-                {
-                    var versioned = _CloneCronJob(_cronJobs[id]);
-                    versioned.ContractVersion = JobContract.ValidateVersion(contractVersion);
-                    _SetCronJob(versioned);
-                    existing = versioned;
-                }
+                // Reseeding cannot upgrade the schema label of bytes already stored by an older writer.
+                // Existing function/version/request tuples change only through an explicit definition edit.
                 if (!string.Equals(existing.Expression, expression, StringComparison.Ordinal))
                 {
                     lock (_GetCronDefinitionLock(id))
@@ -2237,6 +2233,8 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                 }
 
                 var definition = _CloneCronJob(update.Definition);
+                definition.CorrelationId = current.CorrelationId;
+                definition.CausationId = current.CausationId;
                 definition.IsPaused = current.IsPaused;
                 definition.ScheduleRevision = revisionChanged ? current.ScheduleRevision + 1 : current.ScheduleRevision;
                 definition.CreatedAt = current.CreatedAt;
@@ -2473,6 +2471,8 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         {
             if (_cronJobs.TryGetValue(job.Id, out var existing))
             {
+                job.CorrelationId = existing.CorrelationId;
+                job.CausationId = existing.CausationId;
                 if (_TryUpdateCronJob(job, existing))
                 {
                     count++;
@@ -2852,21 +2852,9 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
     public Task<byte[]> GetCronJobOccurrenceRequestAsync(Guid jobId, CancellationToken cancellationToken = default)
     {
-        // Cron job occurrences don't have their own request, get it from the cron job
-        if (_cronOccurrences.TryGetValue(jobId, out var occurrence))
-        {
-            if (occurrence.CronJob != null)
-            {
-                return Task.FromResult(occurrence.Request?.ToArray() ?? []);
-            }
-
-            if (_cronJobs.TryGetValue(occurrence.CronJobId, out var cronJob))
-            {
-                return Task.FromResult(cronJob.Request ?? []);
-            }
-        }
-
-        return Task.FromResult(Array.Empty<byte>());
+        return Task.FromResult(
+            _cronOccurrences.TryGetValue(jobId, out var occurrence) ? occurrence.Request?.ToArray() ?? [] : []
+        );
     }
 
     public Task<Guid[]> UpdateCronJobOccurrencesWithUnifiedContextAsync(

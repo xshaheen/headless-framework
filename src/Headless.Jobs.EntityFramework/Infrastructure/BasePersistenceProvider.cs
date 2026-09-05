@@ -1226,7 +1226,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         {
             if (existingByFunction.TryGetValue(function, out var cron))
             {
-                cron.ContractVersion = JobContract.ValidateVersion(contractVersion);
+                // Reseeding cannot upgrade the schema label of bytes already stored by an older writer.
+                // Existing function/version/request tuples change only through an explicit definition edit.
                 // Update expression if it changed
                 if (!string.Equals(cron.Expression, expression, StringComparison.Ordinal))
                 {
@@ -1238,7 +1239,6 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         )
                         .ConfigureAwait(false);
                     await dbContext.Entry(cron).ReloadAsync(cancellationToken).ConfigureAwait(false);
-                    cron.ContractVersion = contractVersion;
 
                     if (!string.Equals(cron.Expression, expression, StringComparison.Ordinal))
                     {

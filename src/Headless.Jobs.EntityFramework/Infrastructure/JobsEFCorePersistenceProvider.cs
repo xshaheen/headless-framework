@@ -265,11 +265,12 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
 
         dbContext.Set<TTimeJob>().UpdateRange(timeJobs);
 
-        // TenantId is resolved once at schedule time and is not updatable through the generic update API —
-        // update payloads (e.g. dashboard edits) omit it, and writing it would silently clear the tenant.
+        // Ownership and business lineage are captured at scheduling; ordinary edits cannot replace them.
         foreach (var entry in dbContext.ChangeTracker.Entries<TTimeJob>())
         {
             entry.Property(nameof(Entities.BaseEntity.BaseJobEntity.TenantId)).IsModified = false;
+            entry.Property(nameof(Entities.BaseEntity.BaseJobEntity.CorrelationId)).IsModified = false;
+            entry.Property(nameof(Entities.BaseEntity.BaseJobEntity.CausationId)).IsModified = false;
         }
 
         return await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
@@ -570,8 +571,6 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
                         setter
                             .SetProperty(x => x.Function, update.Definition.Function)
                             .SetProperty(x => x.ContractVersion, update.Definition.ContractVersion)
-                            .SetProperty(x => x.CorrelationId, update.Definition.CorrelationId)
-                            .SetProperty(x => x.CausationId, update.Definition.CausationId)
                             .SetProperty(x => x.Description, update.Definition.Description)
                             .SetProperty(x => x.Expression, update.Definition.Expression)
                             .SetProperty(x => x.TimeZoneId, update.Definition.TimeZoneId)
@@ -690,6 +689,8 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
             }
 
             var result = update.Definition;
+            result.CorrelationId = current.CorrelationId;
+            result.CausationId = current.CausationId;
             result.IsPaused = current.IsPaused;
             result.ScheduleRevision = revisionChanged ? current.ScheduleRevision + 1 : current.ScheduleRevision;
             result.EvaluationFingerprint = revisionChanged
@@ -853,6 +854,13 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
             .ConfigureAwait(false);
 
         dbContext.Set<TCronJob>().UpdateRange(cronJobs);
+
+        // Dashboard forms omit lineage; preserve the original scheduling cause for future occurrences.
+        foreach (var entry in dbContext.ChangeTracker.Entries<TCronJob>())
+        {
+            entry.Property(nameof(Entities.BaseEntity.BaseJobEntity.CorrelationId)).IsModified = false;
+            entry.Property(nameof(Entities.BaseEntity.BaseJobEntity.CausationId)).IsModified = false;
+        }
 
         var result = await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 

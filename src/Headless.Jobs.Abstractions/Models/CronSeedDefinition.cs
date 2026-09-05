@@ -13,6 +13,7 @@ namespace Headless.Jobs.Models;
 /// <param name="OnMissedRun">Recovery policy to seed at creation.</param>
 /// <param name="MissedRunGraceSeconds">Misfire grace, in seconds, to seed at creation.</param>
 /// <param name="EvaluationFingerprint">Current evaluator fingerprint stamped with a new or repositioned seed.</param>
+/// <param name="ContractVersion">Registered payload version stamped only on newly created definitions.</param>
 /// <remarks>
 /// Both recovery settings are already resolved by the caller — attribute value, else the scheduler-wide setting, else
 /// the framework default — so the provider persists a concrete value rather than re-deriving one. That matters because
@@ -22,6 +23,10 @@ namespace Headless.Jobs.Models;
 /// They are applied <b>only when the definition is created</b> and never reapplied to an existing row. That single
 /// rule is what makes a value later set through <c>ICronJobManager</c> an operator override by construction, with no
 /// provenance marker to persist and no way for a redeploy to silently revert it.
+/// </para>
+/// <para>
+/// Existing function/version/request tuples also remain unchanged. A new registration version cannot relabel
+/// previously stored request bytes; changing an existing payload contract requires an explicit definition edit.
 /// </para>
 /// </remarks>
 [PublicAPI]

@@ -20,6 +20,162 @@ namespace Tests;
 public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : TestBase
     where TFixture : class, IJobsCoordinationFixture
 {
+    public virtual async Task reseeding_after_restart_preserves_the_stored_payload_contract(bool changeExpression)
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        var seed = new CronSeedDefinition(
+            "seeded.contract",
+            "* * * * *",
+            MissedRunPolicy.Skip,
+            60,
+            ContractVersion: "1"
+        );
+        Guid definitionId;
+        using (var host = fixture.BuildHost("seed-v1"))
+        {
+            await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+            var provider = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            await provider.MigrateDefinedCronJobsAsync([seed], ct);
+            definitionId = (await provider.GetAllCronJobExpressionsAsync(ct)).Single().Id;
+            var definition = (await provider.GetCronJobByIdAsync(definitionId, ct))!;
+            definition.Request = [1, 2, 3];
+            await provider.UpdateCronJobsAsync([definition], ct);
+        }
+
+        using var restarted = fixture.BuildHost("seed-v2");
+        var restartedProvider = restarted.Services.GetRequiredService<
+            IJobPersistenceProvider<TimeJobEntity, CronJobEntity>
+        >();
+        var upgradedSeed = seed with
+        {
+            ContractVersion = "2",
+            Expression = changeExpression ? "*/2 * * * *" : seed.Expression,
+        };
+        await restartedProvider.MigrateDefinedCronJobsAsync(
+            [upgradedSeed, upgradedSeed with { Function = "new.contract" }],
+            ct
+        );
+
+        var stored = (await restartedProvider.GetCronJobByIdAsync(definitionId, ct))!;
+        stored.Function.Should().Be(seed.Function);
+        stored.ContractVersion.Should().Be("1");
+        stored.Request.Should().Equal(1, 2, 3);
+        stored.Expression.Should().Be(upgradedSeed.Expression);
+        (await restartedProvider.GetAllCronJobExpressionsAsync(ct))
+            .Single(x => x.Function == "new.contract")
+            .ContractVersion.Should()
+            .Be("2");
+
+        var occurrence = new CronJobOccurrenceEntity<CronJobEntity>
+        {
+            Id = Guid.NewGuid(),
+            CronJobId = definitionId,
+            ExecutionTime = DateTime.UtcNow.AddHours(1),
+        };
+        await restartedProvider.InsertCronJobOccurrencesAsync([occurrence], ct);
+        var storedOccurrence = (
+            await restartedProvider.GetAllCronJobOccurrencesAsync(x => x.Id == occurrence.Id, ct)
+        ).Single();
+        storedOccurrence.Function.Should().Be(seed.Function);
+        storedOccurrence.ContractVersion.Should().Be("1");
+        (await restartedProvider.GetCronJobOccurrenceRequestAsync(occurrence.Id, ct)).Should().Equal(1, 2, 3);
+    }
+
+    public virtual async Task ordinary_job_edits_preserve_captured_lineage(string? incomingLineage)
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("lineage-edits");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        var provider = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+        var timeJob = new TimeJobEntity
+        {
+            Id = Guid.NewGuid(),
+            Function = "causal.time",
+            CorrelationId = "root",
+            CausationId = "parent",
+            TenantId = "tenant",
+        };
+        await provider.AddTimeJobsAsync([timeJob], ct);
+        await provider.UpdateTimeJobsAsync(
+            [
+                new TimeJobEntity
+                {
+                    Id = timeJob.Id,
+                    Function = timeJob.Function,
+                    Description = "Edited in dashboard",
+                    Retries = 4,
+                    CorrelationId = incomingLineage,
+                    CausationId = incomingLineage,
+                },
+            ],
+            ct
+        );
+        var storedTime = (await provider.GetTimeJobByIdAsync(timeJob.Id, ct))!;
+        storedTime.Description.Should().Be("Edited in dashboard");
+        storedTime.Retries.Should().Be(4);
+        storedTime.CorrelationId.Should().Be("root");
+        storedTime.CausationId.Should().Be("parent");
+        storedTime.TenantId.Should().Be("tenant");
+
+        var definition = new CronJobEntity
+        {
+            Id = Guid.NewGuid(),
+            Function = "causal.cron",
+            Expression = "* * * * *",
+            CorrelationId = "root",
+            CausationId = "parent",
+        };
+        await provider.InsertCronJobsAsync([definition], ct);
+        foreach (var atomic in new[] { false, true })
+        {
+            var edit = new CronJobEntity
+            {
+                Id = definition.Id,
+                Function = definition.Function,
+                Expression = definition.Expression,
+                Description = atomic ? "Atomic dashboard edit" : "Generic dashboard edit",
+                Retries = atomic ? 5 : 4,
+                CorrelationId = incomingLineage,
+                CausationId = incomingLineage,
+            };
+            if (atomic)
+            {
+                var result = await provider.UpdateCronJobsAtomicallyAsync(
+                    [new(edit, definition.ScheduleRevision, null)],
+                    DateTimeOffset.UtcNow,
+                    ct
+                );
+                result.Should().ContainSingle();
+                result![0].CorrelationId.Should().Be("root");
+                result[0].CausationId.Should().Be("parent");
+            }
+            else
+            {
+                (await provider.UpdateCronJobsAsync([edit], ct)).Should().Be(1);
+            }
+
+            var storedCron = (await provider.GetCronJobByIdAsync(definition.Id, ct))!;
+            storedCron.Description.Should().Be(edit.Description);
+            storedCron.Retries.Should().Be(edit.Retries);
+            storedCron.CorrelationId.Should().Be("root");
+            storedCron.CausationId.Should().Be("parent");
+            var occurrence = new CronJobOccurrenceEntity<CronJobEntity>
+            {
+                Id = Guid.NewGuid(),
+                CronJobId = definition.Id,
+                ExecutionTime = DateTime.UtcNow.AddHours(atomic ? 2 : 1),
+            };
+            await provider.InsertCronJobOccurrencesAsync([occurrence], ct);
+            var storedOccurrence = (
+                await provider.GetAllCronJobOccurrencesAsync(x => x.Id == occurrence.Id, ct)
+            ).Single();
+            storedOccurrence.CorrelationId.Should().Be("root");
+            storedOccurrence.CausationId.Should().Be("parent");
+        }
+    }
+
     public virtual async Task cron_materialization_ignores_stale_caller_tuple_and_restart_claims_its_snapshot()
     {
         var ct = AbortToken;
