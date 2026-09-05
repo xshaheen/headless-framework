@@ -24,7 +24,7 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(expectedGeneration ?? 1, nameof(expectedGeneration));
         JobIntentFingerprint.RejectOrdinaryMutation(entity);
         JobIntentFingerprint.Validate(entity);
-        _RejectKeyedCoordination();
+        var coordinated = _TryCaptureCoordinatedContext(entity.RequireAtomicEnlistment, requireSavepoints: true);
         var now = timeProvider.GetUtcNow();
         _StampTimeJobTree(entity, now, assignIds: true);
         await _RunSchedulePipelineAsync(entity, cancellationToken).ConfigureAwait(false);
@@ -37,28 +37,50 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
             );
         }
         JobIntentFingerprint.Normalize(entity);
-        var result = await persistenceProvider
-            .ScheduleKeyedTimeJobAsync(key, entity, expectedGeneration, cancellationToken)
-            .ConfigureAwait(false);
-        if (result.Disposition is JobScheduleDisposition.Created or JobScheduleDisposition.Replaced)
+        JobScheduleResult result;
+        if (coordinated is { } context)
         {
-            // Polling is the durable dispatch authority. Avoid an immediate dispatch against a superseded candidate.
-            _jobsHostScheduler.Restart();
+            _RevalidateCoordinatedContext(context);
+            result = await context
+                .Writer.WriteKeyedTimeJobAsync(key, entity, expectedGeneration, context.Relational, cancellationToken)
+                .ConfigureAwait(false);
         }
-
-        return result;
+        else
+        {
+            result = await persistenceProvider
+                .ScheduleKeyedTimeJobAsync(key, entity, expectedGeneration, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        return _CompleteKeyedOperation(result, coordinated);
     }
 
-    async Task<JobScheduleResult> ITimeJobManager<TTimeJob>.CancelKeyedAsync(
+    Task<JobScheduleResult> ITimeJobManager<TTimeJob>.CancelKeyedAsync(
         JobKeyScope scope,
         JobKey key,
         long expectedGeneration,
+        CancellationToken cancellationToken
+    ) => _CancelKeyedAsync(scope, key, expectedGeneration, requireAtomicEnlistment: false, cancellationToken);
+
+    Task<JobScheduleResult> ITimeJobManager<TTimeJob>.CancelKeyedAsync(
+        JobKeyScope scope,
+        JobKey key,
+        long expectedGeneration,
+        bool requireAtomicEnlistment,
+        CancellationToken cancellationToken
+    ) => _CancelKeyedAsync(scope, key, expectedGeneration, requireAtomicEnlistment, cancellationToken);
+
+    private async Task<JobScheduleResult> _CancelKeyedAsync(
+        JobKeyScope scope,
+        JobKey key,
+        long expectedGeneration,
+        bool requireAtomicEnlistment,
         CancellationToken cancellationToken
     )
     {
         ArgumentNullException.ThrowIfNull(scope);
         ArgumentNullException.ThrowIfNull(key);
-        _RejectKeyedCoordination();
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(expectedGeneration);
+        var coordinated = _TryCaptureCoordinatedContext(requireAtomicEnlistment, requireSavepoints: true);
         if (scope.TenantId is null)
         {
             JobTenantValidation.ValidateSystemJob(
@@ -71,24 +93,51 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
             JobTenantValidation.CheckCrossTenant(scope.TenantId, _currentTenant?.Id, _rejectCrossTenant);
         }
 
-        var result = await persistenceProvider
-            .CancelKeyedTimeJobAsync(scope, key, expectedGeneration, cancellationToken)
-            .ConfigureAwait(false);
-        if (result.Disposition is JobScheduleDisposition.Cancelled or JobScheduleDisposition.CancellationRequested)
+        JobScheduleResult result;
+        if (coordinated is { } context)
         {
-            _jobsHostScheduler.Restart();
+            _RevalidateCoordinatedContext(context);
+            result = await context
+                .Writer.CancelKeyedTimeJobAsync(scope, key, expectedGeneration, context.Relational, cancellationToken)
+                .ConfigureAwait(false);
         }
-
-        return result;
+        else
+        {
+            result = await persistenceProvider
+                .CancelKeyedTimeJobAsync(scope, key, expectedGeneration, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        return _CompleteKeyedOperation(result, coordinated);
     }
 
-    private void _RejectKeyedCoordination()
+    private JobScheduleResult _CompleteKeyedOperation(JobScheduleResult result, CoordinatedJobContext? coordinated)
     {
-        if (_TryCaptureCoordinatedContext() is not null)
+        if (
+            result.Disposition
+            is JobScheduleDisposition.Created
+                or JobScheduleDisposition.Replaced
+                or JobScheduleDisposition.Cancelled
+                or JobScheduleDisposition.CancellationRequested
+        )
         {
-            throw new NotSupportedException(
-                "Keyed Jobs writes cannot yet enlist in an ambient relational transaction. No direct fallback is performed."
-            );
+            if (coordinated is { } context)
+            {
+                _DeferSideEffects(
+                    context.Coordinator,
+                    result.RunId.ToString()!,
+                    cancellationToken =>
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        _jobsHostScheduler.Restart();
+                        return Task.CompletedTask;
+                    }
+                );
+            }
+            else
+            {
+                _jobsHostScheduler.Restart();
+            }
         }
+        return result with { IsProvisional = coordinated is not null };
     }
 }

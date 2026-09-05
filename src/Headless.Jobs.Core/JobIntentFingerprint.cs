@@ -125,23 +125,29 @@ internal static class JobIntentFingerprint
                 continue;
             }
 
-            if (
-                current.BusinessKey is not null
-                || current.IntentFingerprint is not null
-                || current.FingerprintAlgorithm is not null
-                || current.Generation is not null
-                || current.IsCurrentGeneration is not null
-            )
-            {
-                throw new InvalidOperationException(
-                    "Keyed jobs and every historical generation are retained indefinitely. Ordinary add, update, reset, retry, and delete cannot change them; use generation-fenced keyed control."
-                );
-            }
+            RejectOrdinaryMetadata(current);
 
             foreach (var child in current.Children)
             {
                 pending.Push(child);
             }
+        }
+    }
+
+    internal static void RejectOrdinaryMetadata<TJob>(TJob job)
+        where TJob : TimeJobEntity<TJob>
+    {
+        if (
+            job.BusinessKey is not null
+            || job.IntentFingerprint is not null
+            || job.FingerprintAlgorithm is not null
+            || job.Generation is not null
+            || job.IsCurrentGeneration is not null
+        )
+        {
+            throw new InvalidOperationException(
+                "Keyed jobs and every historical generation are retained indefinitely. Ordinary add, update, reset, retry, and delete cannot change them; use generation-fenced keyed control."
+            );
         }
     }
 

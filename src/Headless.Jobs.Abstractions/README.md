@@ -119,7 +119,7 @@ Use `ScheduleKeyedAsync(new JobKey("invoice-42"), request, dueInstant, options, 
 
 Every current and historical keyed row is retained indefinitely. Ordinary manager/provider/dashboard edits, resets, retries, and hard deletion reject keyed rows; a mixed delete batch rejects before removing any member. There is no automatic cleanup worker or forget-key/rearm API. Keyed `JobChain` scheduling and replacement are unsupported because the chain is a static conditional continuation tree, without whole-tree generation fencing. A chain has no keyed identity to cancel.
 
-The `v1` fingerprint hashes exact durable payload bytes after schedule middleware, plus version, UTC due ticks truncated to microseconds, retry count/intervals, and node-death policy. Null and empty payloads differ; empty and absent retry interval arrays are equivalent. Presentation, lineage, and trace data do not affect intent. Stable serialization is the caller's responsibility. Existing rows use their recorded algorithm; unknown algorithms fail explicitly. PostgreSQL and SQL Server serialize key operations with transaction-owned locks and enforce filtered uniqueness for both tenant and system scope. Apply the consumer-owned [keyed migration](../../docs/migrations/jobs-keyed-scheduling.md) while all workers/writers are stopped; mixed old/new binaries and downgrade after keyed writes are unsupported. Keyed writes currently reject an ambient relational transaction before middleware instead of falling back to an independent commit.
+The `v1` fingerprint hashes exact durable payload bytes after schedule middleware, plus version, UTC due ticks truncated to microseconds, retry count/intervals, and node-death policy. Null and empty payloads differ; empty and absent retry interval arrays are equivalent. Presentation, lineage, and trace data do not affect intent. Stable serialization is the caller's responsibility. Existing rows use their recorded algorithm; unknown algorithms fail explicitly. PostgreSQL and SQL Server serialize key operations with transaction-owned locks and enforce filtered uniqueness for both tenant and system scope. Apply the consumer-owned [keyed migration](../../docs/migrations/jobs-keyed-scheduling.md) while all workers/writers are stopped; mixed old/new binaries and downgrade after keyed writes are unsupported. Compatible ambient relational transactions enlist keyed create/observe/replace/cancel directly; returned dispositions have `IsProvisional = true` until the caller establishes the outer commit outcome.
 
 `IJobScheduler.CancelAsync(jobId)` is job-ID-only and durable. It returns `true` only for the first accepted request: an idle job becomes terminal `Cancelled`, while queued or in-progress work records `CancelRequested` for its owning node to observe. Unknown, already-requested, and terminal jobs return `false`. `CancelRequested` remains audit data even when an in-progress handler ignores its token and completes naturally.
 
@@ -201,9 +201,18 @@ None.
 
 ## Commit Coordination (Atomic Enqueue)
 
+Set `EnqueueOptions.RequireAtomicEnlistment = true` for an ordinary or keyed one-shot deadline that must commit with application state. Low-level callers can set the transient `TimeJobEntity.RequireAtomicEnlistment`; it is excluded from persisted columns, JSON, and intent fingerprints. Required calls reject missing/nonrelational/incompatible coordination before scheduling middleware. Direct persistence cannot satisfy this assertion. The default remains automatic: a compatible ambient transaction enlists the write, otherwise scheduling uses the existing direct path. Recurring scheduling retains its existing automatic routing; the chain facade has no new transactional option.
+
+For keyed cancellation, retain the ordinary overload or use `CancelKeyedAsync(scope, key, generation, requireAtomicEnlistment: true, cancellationToken: ct)`. Keyed writes happen inside the caller transaction immediately. `JobScheduleResult.IsProvisional` identifies a result returned before the outer outcome; the immutable result does not flip its flag after commit. Rollback removes its durable effect. Only restart/notification acceleration waits for commit, and a failure there leaves committed rows available to polling.
+
+Preflight inspects the actual configured provider, endpoint, and database after `OnConfiguring`, requires the exact open caller connection and its live transaction, and revalidates the captured scope before writing. A same-database `OnConfiguring` connection override is accepted, then the context borrows the captured caller handles without taking ownership. Matching uses conservative ordinal endpoint/database comparison; align configuration spelling rather than relying on aliases. Externally supplied Jobs connections must use `contextOwnsConnection: false`; owned external handles are rejected before the validation context resolves their connection service. PostgreSQL and SQL Server keyed writes also require operation savepoints (SQL Server MARS configurations without savepoints are unsupported). A savepoint encloses replacement retirement and insertion together.
+
+A normal `Existing`/`Conflict` disposition leaves a read-committed caller transaction usable. Higher isolation levels can preserve an older snapshot or raise serialization/uniqueness failures despite transaction-owned key locks; these remain exceptions, never successful dispositions. Savepoint restoration does not promise every provider transaction is recoverable. If restoration fails, or a serialization/deadlock error poisons the transaction before commit, roll back the outer unit of work. Retry a known rollback with fresh application state, context lease, and job candidates. An unknown commit may already be durable; rollback cannot be assumed to undo it. Never automatically replay it: reconcile business state and the retained key using the same captured absolute due instant before deciding recovery. Messaging transport delay does not provide this Jobs capability.
+
 When a `Headless.CommitCoordination` provider is registered (`services.AddPostgreSqlCommitCoordination()` or `services.AddSqlServerCommitCoordination()`), `IJobScheduler` inherits the same atomic behavior from the managers it calls. `ITimeJobManager.AddAsync` / `AddBatchAsync` and `ICronJobManager.AddAsync` / `AddBatchAsync` write the job row inside the caller's ambient transaction and defer dispatch, scheduler restart, notifications, and cron-cache invalidation to post-commit.
 
 ```csharp
+var reminderDueAt = DateTimeOffset.UtcNow.AddHours(24);
 await db.ExecuteCoordinatedTransactionAsync(
     async (ctx, ct) =>
     {
@@ -216,15 +225,16 @@ await db.ExecuteCoordinatedTransactionAsync(
             ct
         );
 
-        await jobScheduler.ScheduleAsync(
+        await jobScheduler.ScheduleKeyedAsync(
+            new JobKey($"order-reminder:{order.Id}"),
             new OrderReminderRequest(order.Id),
-            DateTime.UtcNow.AddHours(24),
-            new EnqueueOptions { Description = "order-reminder" },
+            reminderDueAt,
+            new EnqueueOptions { Description = "order-reminder", RequireAtomicEnlistment = true },
             ct
         );
     },
     services,
-    ct
+    cancellationToken: ct
 );
 ```
 

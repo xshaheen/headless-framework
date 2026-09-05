@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data;
+using System.Data.Common;
 using Headless.CommitCoordination;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Interfaces;
@@ -19,29 +21,33 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
     // observe a torn-down AsyncLocal scope and silently take the direct path, breaking atomicity.
     private readonly record struct CoordinatedJobContext(
         ICommitCoordinator Coordinator,
-        IRelationalCommitContext Relational,
-        ICoordinatedJobWriter<TTimeJob, TCronJob> Writer
+        CapturedRelationalContext Relational,
+        ICoordinatedJobWriter<TTimeJob, TCronJob> Writer,
+        bool RequireSavepoints
     );
 
     // Routing decision read once, synchronously, before any await (KTD-1):
-    //  - null  → no coordinator, or a coordinated scope with no relational capability → today's direct path.
+    //  - null  → no relational capability and atomicity was not required → today's direct path.
     //  - value → a live relational transaction is present → write rows inside it and defer side effects to commit.
     // Throws when a relational capability is present but its transaction is dead/completed: the caller opened a
     // transaction expecting atomicity, so silent fallback would reintroduce the divergence this feature prevents (KTD-2).
-    // NOTE: this is a deliberate divergence from messaging's OutboxMessageWriter, which falls back rather than throwing.
-    // Jobs fail loud here (and Add propagates write faults) because a swallowed enqueue would let the caller commit its
-    // domain writes without the job row — the exact split this feature exists to prevent. Do not "align" the two.
-    private CoordinatedJobContext? _TryCaptureCoordinatedContext()
+    // Jobs propagate write faults so callers cannot mistake a failed enqueue for a successfully enlisted deadline.
+    private CoordinatedJobContext? _TryCaptureCoordinatedContext(
+        bool requireAtomicEnlistment = false,
+        bool requireSavepoints = false
+    )
     {
         var coordinator = _currentCommitCoordinator.Current;
 
         if (coordinator is null)
         {
+            _RejectMissingAtomicCapability(requireAtomicEnlistment);
             return null;
         }
 
         if (!coordinator.TryGetCapability<IRelationalCommitContext>(out var relational))
         {
+            _RejectMissingAtomicCapability(requireAtomicEnlistment);
             // A coordinated scope without a relational capability (e.g. a messaging-only scope): the coordinator is an
             // ambient scope any subsystem may open, so jobs must not make it infectious — fall back to direct insert.
             return null;
@@ -58,7 +64,66 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
 
         // Resolve the writer here — still synchronous, before the caller's first await — so a relational coordinator
         // wired to a non-coordinated provider fails loud at capture (KTD-2) rather than mid-write.
-        return new CoordinatedJobContext(coordinator, relational, _RequireCoordinatedWriter());
+        var writer = _RequireCoordinatedWriter();
+        var captured = new CapturedRelationalContext(relational);
+        writer.ValidateContext(captured, requireSavepoints);
+        return new CoordinatedJobContext(coordinator, captured, writer, requireSavepoints);
+    }
+
+    private static void _RejectMissingAtomicCapability(bool required)
+    {
+        if (required)
+        {
+            throw new InvalidOperationException(
+                "Required atomic Jobs scheduling needs an active commit coordinator with a compatible live relational transaction."
+            );
+        }
+    }
+
+    private void _RevalidateCoordinatedContext(CoordinatedJobContext context)
+    {
+        if (!ReferenceEquals(_currentCommitCoordinator.Current, context.Coordinator))
+        {
+            throw new InvalidOperationException(
+                "The captured Jobs commit coordinator changed during scheduling; atomic enlistment cannot continue."
+            );
+        }
+        context.Relational.Validate();
+        context.Writer.ValidateContext(context.Relational, context.RequireSavepoints);
+    }
+
+    private sealed class CapturedRelationalContext : IRelationalCommitContext
+    {
+        private readonly IRelationalCommitContext _original;
+        public DbConnection Connection { get; }
+        public DbTransaction Transaction { get; }
+
+        public CapturedRelationalContext(IRelationalCommitContext original)
+        {
+            _original = original;
+            Connection =
+                original.Connection
+                ?? throw new InvalidOperationException("The relational Jobs transaction has no live connection.");
+            Transaction =
+                original.Transaction
+                ?? throw new InvalidOperationException("The relational Jobs transaction is no longer live.");
+            Validate();
+        }
+
+        public void Validate()
+        {
+            if (
+                !ReferenceEquals(_original.Connection, Connection)
+                || !ReferenceEquals(_original.Transaction, Transaction)
+                || Connection.State != ConnectionState.Open
+                || !ReferenceEquals(Transaction.Connection, Connection)
+            )
+            {
+                throw new InvalidOperationException(
+                    "The captured Jobs connection/transaction is closed, completed, or changed; atomic enlistment cannot continue."
+                );
+            }
+        }
     }
 
     private ICoordinatedJobWriter<TTimeJob, TCronJob> _RequireCoordinatedWriter()

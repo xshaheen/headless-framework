@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Text.Json.Serialization;
 using Headless.Jobs.Entities.BaseEntity;
 using Headless.Jobs.Enums;
 
@@ -24,6 +25,10 @@ public class TimeJobEntity : TimeJobEntity<TimeJobEntity>;
 public class TimeJobEntity<TTicker> : BaseJobEntity
     where TTicker : TimeJobEntity<TTicker>
 {
+    /// <summary>Requires this scheduling call to enlist in a compatible live application transaction. Never persisted.</summary>
+    [JsonIgnore]
+    public bool RequireAtomicEnlistment { get; set; }
+
     /// <summary>Reserved business identity. All keyed metadata is null on ordinary jobs.</summary>
     public virtual string? BusinessKey { get; internal set; }
 

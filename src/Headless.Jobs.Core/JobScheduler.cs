@@ -233,6 +233,7 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
             OnNodeDeath = options?.OnNodeDeath ?? Enums.NodeDeathPolicy.Retry,
             TenantId = options?.TenantId,
             IsSystemJob = options?.IsSystemJob ?? false,
+            RequireAtomicEnlistment = options?.RequireAtomicEnlistment ?? false,
         };
 
         var persisted = await _timeJobManager.AddAsync(entity, cancellationToken).ConfigureAwait(false);

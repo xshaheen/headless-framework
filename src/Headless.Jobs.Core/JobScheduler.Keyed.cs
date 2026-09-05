@@ -87,6 +87,14 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob>
         CancellationToken cancellationToken = default
     ) => _timeJobManager.CancelKeyedAsync(scope, key, expectedGeneration, cancellationToken);
 
+    public Task<JobScheduleResult> CancelKeyedAsync(
+        JobKeyScope scope,
+        JobKey key,
+        long expectedGeneration,
+        bool requireAtomicEnlistment,
+        CancellationToken cancellationToken = default
+    ) => _timeJobManager.CancelKeyedAsync(scope, key, expectedGeneration, requireAtomicEnlistment, cancellationToken);
+
     private JobFunctionDescriptor _GetKeyedDescriptor<TArgs>()
     {
         if (typeof(TArgs) == typeof(JobChain))
@@ -125,6 +133,7 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob>
             OnNodeDeath = options?.OnNodeDeath ?? NodeDeathPolicy.Retry,
             TenantId = options?.TenantId,
             IsSystemJob = options?.IsSystemJob ?? false,
+            RequireAtomicEnlistment = options?.RequireAtomicEnlistment ?? false,
         };
         return _timeJobManager.ScheduleKeyedAsync(key, entity, expectedGeneration, cancellationToken);
     }

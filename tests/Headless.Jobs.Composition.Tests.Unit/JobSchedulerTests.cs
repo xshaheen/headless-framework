@@ -514,8 +514,8 @@ public sealed class JobSchedulerTests : TestBase
     {
         var methods = typeof(IJobScheduler).GetMethods(BindingFlags.Instance | BindingFlags.Public);
 
-        methods.Should().HaveCount(15);
-        methods.Count(method => method.ReturnType == typeof(Task<JobScheduleResult>)).Should().Be(5);
+        methods.Should().HaveCount(16);
+        methods.Count(method => method.ReturnType == typeof(Task<JobScheduleResult>)).Should().Be(6);
         var keyedSchedules = methods.Where(method =>
             method.Name is nameof(IJobScheduler.ScheduleKeyedAsync) or nameof(IJobScheduler.ReplaceKeyedAsync)
         );
@@ -589,7 +589,8 @@ public sealed class JobSchedulerTests : TestBase
                 nameof(EnqueueOptions.RetryIntervals),
                 nameof(EnqueueOptions.OnNodeDeath),
                 nameof(EnqueueOptions.TenantId),
-                nameof(EnqueueOptions.IsSystemJob)
+                nameof(EnqueueOptions.IsSystemJob),
+                nameof(EnqueueOptions.RequireAtomicEnlistment)
             );
         typeof(RecurringJobOptions)
             .GetProperties(BindingFlags.Instance | BindingFlags.Public)
