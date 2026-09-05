@@ -233,7 +233,7 @@ public abstract class TransactionalInboxScopeConformanceTests : TestBase
             state.HandlerEntries++;
             state.HandlerContext = db;
             state.HandlerHadTransaction = db.Database.CurrentTransaction is not null;
-            db.Effects.Add(new InboxScopeEffect { Id = context.Message.Id });
+            await db.Effects.AddAsync(new InboxScopeEffect { Id = context.Message.Id }, cancellationToken);
             if (state.ExplicitSave)
             {
                 await db.SaveChangesAsync(cancellationToken);
