@@ -220,6 +220,10 @@ internal sealed class NatsConsumerClient(
                 continue;
             }
 
+            // Must stay an InvalidOperationException. ConsumerRegister.ExecuteAsync catches
+            // BrokerConnectionException, flips the health flag, and returns, so raising a divergence as one
+            // would hide it behind an unhealthy consumer instead of surfacing it. This also matches the
+            // lane-identity guard above, which already reports a configuration fault the same way.
             throw new InvalidOperationException(
                 NatsStreamReconciliation.ComposeDivergenceMessage(
                     streamName,
