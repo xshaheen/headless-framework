@@ -175,4 +175,38 @@ public abstract class TenantStoreConformanceTests<TFixture>(TFixture fixture) : 
         found.ExtraProperties.Should().ContainKey("plan");
         found.ExtraProperties["plan"]!.ToString().Should().Be("enterprise");
     }
+
+    [Fact]
+    public async Task should_return_isolated_tenant_info_instances_on_repeated_lookups()
+    {
+        // given - ITenantStore's contract requires a freshly materialized TenantInfo per call: the
+        // catalog service hands a store result straight to application code on a cache miss, so an
+        // implementation backed by an in-process cache or a seeded dictionary must not alias its own
+        // state across calls (see ITenantStore remarks).
+        var seed = TenantSeedFaker.Create(Faker);
+        var store = await fixture.SeedAsync([seed], AbortToken);
+
+        // when
+        var firstByIdentifier = await store.FindByIdentifierAsync(seed.Identifier, AbortToken);
+        var secondByIdentifier = await store.FindByIdentifierAsync(seed.Identifier, AbortToken);
+        var firstById = await store.FindByIdAsync(seed.Id, AbortToken);
+        var secondById = await store.FindByIdAsync(seed.Id, AbortToken);
+
+        // then - repeated lookups return distinct instances, not aliases of the store's own state
+        firstByIdentifier.Should().NotBeNull();
+        secondByIdentifier.Should().NotBeNull();
+        firstById.Should().NotBeNull();
+        secondById.Should().NotBeNull();
+        secondByIdentifier.Should().NotBeSameAs(firstByIdentifier);
+        secondByIdentifier!.ExtraProperties.Should().NotBeSameAs(firstByIdentifier!.ExtraProperties);
+        secondById.Should().NotBeSameAs(firstById);
+        secondById!.ExtraProperties.Should().NotBeSameAs(firstById!.ExtraProperties);
+
+        // and - mutating a caller-owned instance must not leak into a later lookup
+        firstByIdentifier.ExtraProperties["poisoned"] = "true";
+
+        var thirdByIdentifier = await store.FindByIdentifierAsync(seed.Identifier, AbortToken);
+        thirdByIdentifier.Should().NotBeNull();
+        thirdByIdentifier!.ExtraProperties.Should().NotContainKey("poisoned");
+    }
 }

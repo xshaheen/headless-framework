@@ -97,15 +97,17 @@ internal sealed partial class TenantCatalogResolutionMiddleware(
         {
             identifier = source.GetIdentifier(context);
 
-            if (identifier is not null)
+            if (!string.IsNullOrWhiteSpace(identifier))
             {
                 break;
             }
+
+            identifier = null;
         }
 
         if (identifier is null)
         {
-            // Zero sources registered, or every source returned null — no-op, host context (R5).
+            // Zero sources registered, or every source returned null/empty/whitespace — no-op, host context (R5).
             await next(context).ConfigureAwait(false);
             return;
         }

@@ -158,8 +158,6 @@ public static class SetupMiddlewares
     /// </remarks>
     public static IServiceCollection AddTenantCatalogResolution(this IServiceCollection services)
     {
-        services.TryAddSingleton<TenantCatalogResolutionMiddleware>();
-
         // Every rejection path of this middleware (unknown/disabled/invalid outcomes, the R19 claim
         // mismatch, and TenantResolutionMiddleware's claim-vs-feature fast path) resolves
         // IProblemDetailsCreator from request services. That must not depend on the host also calling

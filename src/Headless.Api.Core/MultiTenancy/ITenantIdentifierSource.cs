@@ -8,8 +8,8 @@ namespace Headless.Api.MultiTenancy;
 /// Reads a raw, caller-supplied tenant identifier (for example a hostname label, route segment, or
 /// header value) from the current HTTP request. Implemented by the deferred host/route/header
 /// identifier strategies; v1 ships no built-in source. Registered sources are consulted in
-/// registration order by <c>TenantCatalogResolutionMiddleware</c> — the first non-<see langword="null"/>
-/// identifier wins.
+/// registration order by <c>TenantCatalogResolutionMiddleware</c> — the first non-empty,
+/// non-whitespace-only identifier wins.
 /// </summary>
 /// <remarks>
 /// Implementations should be synchronous and side-effect free: reading a header, host label, or route
@@ -21,6 +21,13 @@ public interface ITenantIdentifierSource
 {
     /// <summary>Reads a raw tenant identifier from the current request, if present.</summary>
     /// <param name="context">The current HTTP context.</param>
-    /// <returns>The raw identifier, or <see langword="null"/> when this source found none.</returns>
+    /// <returns>
+    /// The raw identifier, or <see langword="null"/> when this source found none. An empty or
+    /// whitespace-only string is treated the same as <see langword="null"/> by
+    /// <c>TenantCatalogResolutionMiddleware</c> — for example
+    /// <c>context.Request.Headers["X-Tenant-Id"].ToString()</c> returns <c>""</c> rather than
+    /// <see langword="null"/> when the header is absent, so returning it directly still lets later
+    /// registered sources run.
+    /// </returns>
     string? GetIdentifier(HttpContext context);
 }
