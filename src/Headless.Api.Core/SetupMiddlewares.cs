@@ -88,7 +88,13 @@ public static class SetupMiddlewares
     /// <param name="app">The application builder.</param>
     /// <remarks>
     /// Notifies any registered <see cref="IStatusCodesRewriterCalledNotifier"/> (e.g.,
-    /// <c>HeadlessServiceDefaultsValidationStartupFilter</c>) synchronously before adding the middleware.
+    /// <c>HeadlessServiceDefaultsValidationStartupFilter</c>) synchronously before adding the middleware,
+    /// and records <see cref="TenantCatalogPosture.StatusCodesRewriterRuntimeMarker"/> on an already-configured
+    /// tenant catalog seam so <c>TenantCatalogPostureValidator</c> can fail a catalog-resolution host that
+    /// never wired the rewriter (its R19 mismatch rejection would otherwise stay distinguishable from the
+    /// unknown-tenant rejection). The marker records presence only — it cannot observe whether this call
+    /// precedes <c>UseAuthorization()</c>, which it must, since a rewriter registered after authorization
+    /// never sees the failed evaluation.
     /// </remarks>
     /// <returns>The same application builder.</returns>
     public static IApplicationBuilder UseStatusCodesRewriter(this IApplicationBuilder app)
@@ -100,6 +106,23 @@ public static class SetupMiddlewares
         )
         {
             notifier.OnCalled();
+        }
+
+        // The notifier above is implemented by Headless.Api.ServiceDefaults, which a plain Headless.Api.Core
+        // catalog host does not reference; the posture manifest is the channel Headless.MultiTenancy's startup
+        // validator can actually observe, and it is the same one UseHeadlessTenantCatalogResolution() writes
+        // its pipeline marker to. Gated on an already-recorded seam so a host with no catalog does not
+        // materialize an empty Catalog seam in the manifest — AddHeadlessTenancy(...) always runs before the
+        // pipeline is composed, so a configured catalog is recorded by this point.
+        if (
+            app.ApplicationServices.GetService<TenantPostureManifest>() is { } manifest
+            && manifest.IsConfigured(TenantCatalogPosture.Seam)
+        )
+        {
+            manifest.MarkRuntimeApplied(
+                TenantCatalogPosture.Seam,
+                TenantCatalogPosture.StatusCodesRewriterRuntimeMarker
+            );
         }
 
         return app.UseMiddleware<StatusCodesRewriterMiddleware>();

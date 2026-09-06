@@ -35,6 +35,13 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
     private const string SecondaryIdentifierHeader = "X-Test-Catalog-Identifier-2";
     private const string SecondarySchemeTenantHeader = "X-Test-Secondary-Tenant";
 
+    // Response headers the /self-authenticated-authorize route uses to report what happened inside it —
+    // the authorization outcome and the request-wide marker are only observable there, before
+    // StatusCodesRewriterMiddleware would have acted on them.
+    private const string SelfAuthenticatedSchemeAuthenticatedHeader = "X-Test-Self-Authenticated";
+    private const string SelfAuthenticatedAuthorizationSucceededHeader = "X-Test-Self-Authorized";
+    private const string SelfAuthenticatedMismatchFeatureHeader = "X-Test-Self-Mismatch-Feature";
+
     [Fact]
     public async Task should_resolve_ambient_tenant_and_expose_feature_when_identifier_maps_to_enabled_tenant()
     {
@@ -224,7 +231,7 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
     }
 
     [Fact]
-    public async Task should_emit_ordering_warning_once_when_endpoint_is_null_before_use_routing()
+    public async Task should_resolve_and_emit_ordering_warning_once_when_endpoint_is_null_before_use_routing()
     {
         TenantCatalogResolutionMiddleware.ResetOrderingWarningForTesting();
         using var loggerProvider = new CapturingLoggerProvider();
@@ -233,13 +240,69 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
 
         var tenant = await _GetTenantAsync(client, identifier: "acme");
 
-        // Ordering misconfigured: routing has not run yet, so no endpoint metadata is resolvable and
-        // resolution never runs — the request continues as host context, and identity resolution never
-        // engaged for this call.
-        tenant.Id.Should().BeNull();
+        // Ordering misconfigured: routing has not run yet, so SkipTenantResolution metadata is not
+        // discoverable. Identifier sources read the raw request, though, so resolution itself must still
+        // run — the misordering costs the opt-out and earns a warning, it does not disable tenancy.
+        tenant.Id.Should().Be("ten_123");
+        tenant.IsAvailable.Should().BeTrue();
         loggerProvider
             .Entries.Should()
             .ContainSingle(entry => entry.EventId.Name == "HEADLESS_TENANT_CATALOG_MIDDLEWARE_ORDERING");
+    }
+
+    [Fact]
+    public async Task should_still_reject_unknown_and_disabled_identifiers_when_placed_before_use_routing()
+    {
+        // The fail-closed contract does not depend on middleware ordering. A host that misorders the
+        // pipeline must not silently serve every request as host context; it loses only the
+        // SkipTenantResolution opt-out. Both rejections short-circuit before next(), so neither touches
+        // the one-shot ordering warning this test deliberately does not reset.
+        await using var app = await _CreateAppAsync(applyBeforeUseRouting: true, detailedResolutionErrors: true);
+        using var client = HttpTenancyTestHarness.CreateClient(app);
+
+        using var unknownResponse = await _SendAsync(client, identifier: "ghost");
+        using var disabledResponse = await _SendAsync(client, identifier: "disabled-co");
+
+        unknownResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var unknownBody = await unknownResponse.Content.ReadAsStringAsync(AbortToken);
+        using var unknownDoc = JsonDocument.Parse(unknownBody);
+        unknownDoc
+            .RootElement.GetProperty("error")
+            .GetProperty("code")
+            .GetString()
+            .Should()
+            .Be(TenancyErrorCodes.Unknown);
+
+        disabledResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var disabledBody = await disabledResponse.Content.ReadAsStringAsync(AbortToken);
+        using var disabledDoc = JsonDocument.Parse(disabledBody);
+        disabledDoc
+            .RootElement.GetProperty("error")
+            .GetProperty("code")
+            .GetString()
+            .Should()
+            .Be(TenancyErrorCodes.Disabled);
+    }
+
+    [Fact]
+    public async Task should_still_enforce_claim_integrity_when_placed_before_use_routing()
+    {
+        // R19 enforcement is gated on identifier resolution having produced a tenant, so the middleware
+        // tier stayed dead under misordering too. It must now reject a contradicting default-scheme claim
+        // exactly as it does on a correctly ordered pipeline.
+        await using var app = await _CreateAppAsync(applyBeforeUseRouting: true, requireAuthenticatedUser: true);
+        using var client = HttpTenancyTestHarness.CreateClient(app);
+
+        using var response = await _SendAsync(client, identifier: "acme", user: "alice", tenantId: "ten_999");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var body = await response.Content.ReadAsStringAsync(AbortToken);
+        using var doc = JsonDocument.Parse(body);
+        doc.RootElement.GetProperty("error")
+            .GetProperty("code")
+            .GetString()
+            .Should()
+            .Be(TenancyErrorCodes.ResolutionFailed);
     }
 
     [Fact]
@@ -577,6 +640,44 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
         httpContext.Features.Get<TenantIdentifierMismatchFeature>().Should().BeNull();
     }
 
+    [Fact]
+    public async Task should_deliberately_leave_tier_2_scope_unwidened_for_a_principal_the_endpoint_authenticated_itself()
+    {
+        // SCOPE-BOUNDARY PIN — this test encodes a decision, not an incidental behavior.
+        //
+        // TenantIdentifierIntegrityHandler stamps the request-wide mismatch marker only for the principal
+        // the authorization pipeline authenticated for this request, using reference identity against
+        // HttpContext.User as the proxy. An endpoint that calls HttpContext.AuthenticateAsync("secondary")
+        // itself gets a principal that IS a credential this request presented, yet is not reference-equal
+        // to HttpContext.User — so a tenant mismatch on it fails that evaluation and nothing more.
+        //
+        // That narrowing is intentional: tier 2 covers only principals PolicyEvaluator authenticates.
+        // Widening it would re-open the side-channel hole that
+        // should_not_rewrite_a_successful_response_when_a_side_channel_authorize_uses_a_foreign_principal
+        // closes, because the two cases are indistinguishable at the handler. If this test fails, someone
+        // has widened tier 2 — that is a deliberate scope decision to make explicitly, not a test to fix.
+        await using var app = await _CreateAppAsync(useIsolatedSecondaryScheme: true);
+        using var client = HttpTenancyTestHarness.CreateClient(app);
+
+        using var response = await _SendAsync(
+            client,
+            identifier: "acme",
+            user: "alice",
+            tenantId: "ten_123",
+            path: "/self-authenticated-authorize",
+            secondarySchemeTenantId: "ten_999"
+        );
+
+        // The endpoint's own success status survives: the marker was never stamped, so
+        // StatusCodesRewriterMiddleware had nothing to rewrite.
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        response.Headers.GetValues(SelfAuthenticatedSchemeAuthenticatedHeader).Single().Should().Be("true");
+        // The evaluation itself still fails — the handler calls Fail() unconditionally.
+        response.Headers.GetValues(SelfAuthenticatedAuthorizationSucceededHeader).Single().Should().Be("false");
+        // ...but the request-wide marker stays unset.
+        response.Headers.GetValues(SelfAuthenticatedMismatchFeatureHeader).Single().Should().Be("false");
+    }
+
     private static ClaimsPrincipal _CreatePrincipal(string tenantId)
     {
         var identity = new ClaimsIdentity(
@@ -765,6 +866,39 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
                     _CreatePrincipal(tenantId: "ten_999"),
                     resource: null,
                     new AuthorizationPolicyBuilder().RequireAssertion(_ => true).Build()
+                );
+
+                return Results.NoContent();
+            }
+        );
+
+        // Models an endpoint that authenticates a secondary scheme itself and authorizes the resulting
+        // principal — a credential this request genuinely presented, but not the one PolicyEvaluator
+        // assigned to HttpContext.User. Pins the tier-2 scope boundary; see
+        // should_deliberately_leave_tier_2_scope_unwidened_for_a_principal_the_endpoint_authenticated_itself.
+        app.MapGet(
+            "/self-authenticated-authorize",
+            async (HttpContext ctx, IAuthorizationService authorizationService) =>
+            {
+                var authenticateResult = await ctx.AuthenticateAsync("secondary");
+
+                var authorizationResult = await authorizationService.AuthorizeAsync(
+                    authenticateResult.Principal!,
+                    resource: null,
+                    new AuthorizationPolicyBuilder().RequireAssertion(_ => true).Build()
+                );
+
+                ctx.Response.Headers.Append(
+                    SelfAuthenticatedSchemeAuthenticatedHeader,
+                    authenticateResult.Succeeded ? "true" : "false"
+                );
+                ctx.Response.Headers.Append(
+                    SelfAuthenticatedAuthorizationSucceededHeader,
+                    authorizationResult.Succeeded ? "true" : "false"
+                );
+                ctx.Response.Headers.Append(
+                    SelfAuthenticatedMismatchFeatureHeader,
+                    ctx.Features.Get<TenantIdentifierMismatchFeature>() is not null ? "true" : "false"
                 );
 
                 return Results.NoContent();

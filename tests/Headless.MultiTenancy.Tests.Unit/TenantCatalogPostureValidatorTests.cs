@@ -190,13 +190,81 @@ public sealed class TenantCatalogPostureValidatorTests
         diagnostics.Should().NotContain(diagnostic => diagnostic.Code == "CATALOG_WITHOUT_CACHING_PROVIDER");
     }
 
+    [Fact]
+    public void should_report_error_when_resolution_is_recorded_without_the_status_codes_rewriter_marker()
+    {
+        // given — a fully wired resolution posture whose only defect is that UseStatusCodesRewriter() was
+        // never called, leaving the R19 authorization-tier rejection distinguishable from an unknown tenant
+        var manifest = new TenantPostureManifest();
+        manifest.RecordSeam(
+            TenantCatalogPosture.Seam,
+            TenantPostureStatus.Enforcing,
+            TenantCatalogPosture.AccessorCapability,
+            TenantCatalogPosture.ResolutionCapability
+        );
+        manifest.MarkRuntimeApplied(TenantCatalogPosture.Seam, TenantCatalogPosture.ResolutionPipelineRuntimeMarker);
+        var context = _CreateContext(manifest, withStatusCodesRewriter: false);
+
+        // when
+        var diagnostics = _sut.Validate(context).ToArray();
+
+        // then
+        var diagnostic = diagnostics.Should().ContainSingle().Subject;
+        diagnostic.Code.Should().Be("CATALOG_RESOLUTION_WITHOUT_REWRITER");
+        diagnostic.Severity.Should().Be(HeadlessTenancyDiagnosticSeverity.Error);
+        diagnostic.Message.Should().Contain("UseStatusCodesRewriter()").And.Contain("enumerate tenants");
+    }
+
+    [Fact]
+    public void should_report_nothing_about_the_rewriter_when_its_marker_is_present()
+    {
+        // given
+        var manifest = new TenantPostureManifest();
+        manifest.RecordSeam(
+            TenantCatalogPosture.Seam,
+            TenantPostureStatus.Enforcing,
+            TenantCatalogPosture.AccessorCapability,
+            TenantCatalogPosture.ResolutionCapability
+        );
+        manifest.MarkRuntimeApplied(TenantCatalogPosture.Seam, TenantCatalogPosture.ResolutionPipelineRuntimeMarker);
+        var context = _CreateContext(manifest);
+
+        // when
+        var diagnostics = _sut.Validate(context);
+
+        // then
+        diagnostics.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void should_report_nothing_about_the_rewriter_for_an_accessor_only_host()
+    {
+        // given — deliberately a different gate from the caching rule: tier-2 R19 only exists for
+        // identifier-resolved requests, so an accessor-only host has no mismatch path to collapse
+        var manifest = new TenantPostureManifest();
+        manifest.RecordSeam(
+            TenantCatalogPosture.Seam,
+            TenantPostureStatus.Configured,
+            TenantCatalogPosture.AccessorCapability
+        );
+        var context = _CreateContext(manifest, withStatusCodesRewriter: false);
+
+        // when
+        var diagnostics = _sut.Validate(context).ToArray();
+
+        // then
+        diagnostics.Should().BeEmpty();
+    }
+
     /// <summary>
-    /// Registers a caching provider by default so the tests above isolate the posture rules they target;
-    /// pass <see langword="false"/> to exercise the missing-provider probe.
+    /// Registers a caching provider and marks the status-codes rewriter by default so the tests above
+    /// isolate the posture rules they target; pass <see langword="false"/> to exercise the missing-provider
+    /// probe or the missing-rewriter rule.
     /// </summary>
     private static HeadlessTenancyValidationContext _CreateContext(
         TenantPostureManifest manifest,
-        bool withCachingProvider = true
+        bool withCachingProvider = true,
+        bool withStatusCodesRewriter = true
     )
     {
         var services = new ServiceCollection();
@@ -204,6 +272,16 @@ public sealed class TenantCatalogPostureValidatorTests
         if (withCachingProvider)
         {
             services.AddHeadlessCaching(setup => setup.UseInMemory());
+        }
+
+        // Skipped when no seam was recorded: MarkRuntimeApplied would otherwise materialize a Catalog seam
+        // and rob the "catalog not configured at all" case of the posture it is asserting.
+        if (withStatusCodesRewriter && manifest.GetSeam(TenantCatalogPosture.Seam) is not null)
+        {
+            manifest.MarkRuntimeApplied(
+                TenantCatalogPosture.Seam,
+                TenantCatalogPosture.StatusCodesRewriterRuntimeMarker
+            );
         }
 
         return new HeadlessTenancyValidationContext(services.BuildServiceProvider(), manifest);

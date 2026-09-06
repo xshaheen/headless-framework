@@ -22,7 +22,10 @@ namespace Headless.Api.Middlewares;
 /// Registered through its own pipeline hook — <c>SetupApiTenancy.UseHeadlessTenantCatalogResolution</c> —
 /// separate from the existing post-auth claim hook (<c>UseHeadlessTenancy</c>). Documented ordering
 /// contract: after <c>UseRouting()</c> (so <see cref="SkipTenantResolutionAttribute"/> endpoint metadata
-/// is resolvable) and before <c>UseAuthentication()</c> (KTD2). With zero registered sources, or when
+/// is resolvable) and before <c>UseAuthentication()</c> (KTD2). Placing it ahead of <c>UseRouting()</c>
+/// does not disable resolution — identifier sources read the raw request and need no routing, so
+/// rejection and R19 enforcement stay intact and only the <see cref="SkipTenantResolutionAttribute"/>
+/// opt-out is lost, alongside a once-per-process warning. With zero registered sources, or when
 /// every source returns <see langword="null"/>, this middleware no-ops and the request continues as host
 /// context (R5). Store or cache infrastructure faults from <see cref="ITenantCatalogService.ResolveAsync"/>
 /// propagate unchanged — they are never mapped to a tenant rejection code (KTD4).
@@ -63,33 +66,32 @@ internal sealed partial class TenantCatalogResolutionMiddleware(
         Argument.IsNotNull(currentTenant);
         Argument.IsNotNull(catalogService);
 
+        // Marks that a Headless tenancy middleware processed this request. HeadlessApiExceptionHandler
+        // reads it to decide whether a MissingTenantContextException deserves a "tenancy middleware not
+        // wired" hint. Every path below either runs resolution or deliberately opts the endpoint out, so
+        // the marker never overstates what ran; TenantResolutionMiddleware stamps its own skip path for
+        // the same reason — opting an endpoint out is the middleware doing its job, not it being absent.
         context.Features.Set(HeadlessTenancyResolutionApplied.Instance);
 
         var endpoint = context.GetEndpoint();
 
-        if (endpoint is null)
-        {
-            // Endpoint metadata (SkipTenantResolution) is not resolvable before UseRouting() has run, so
-            // resolution is skipped either way. But a null endpoint here is ambiguous: the consumer may
-            // have placed this middleware ahead of UseRouting(), or routing may already have run and
-            // simply not matched a route (an ordinary 404 probe). Only the former is a misconfiguration,
-            // and the two are distinguishable after the fact — routing running downstream assigns an
-            // endpoint. Deciding after next() keeps unmatched routes from consuming the one-shot warning.
-            await next(context).ConfigureAwait(false);
-
-            if (context.GetEndpoint() is not null)
-            {
-                _WarnIfMiddlewareLikelyMisordered();
-            }
-
-            return;
-        }
-
-        if (endpoint.Metadata.GetMetadata<SkipTenantResolutionAttribute>() is not null)
+        // The only thing this middleware needs the endpoint for is the SkipTenantResolution opt-out;
+        // identifier sources read the raw request and need no routing. A null endpoint therefore means
+        // "no opt-out is discoverable", never "do not resolve" — a host that placed this middleware ahead
+        // of UseRouting() still gets unknown and disabled identifiers rejected and still gets R19 mapping
+        // integrity, and loses only the opt-out (a skip-marked endpoint gets tenant-resolved anyway).
+        if (endpoint?.Metadata.GetMetadata<SkipTenantResolutionAttribute>() is not null)
         {
             await next(context).ConfigureAwait(false);
             return;
         }
+
+        // A null endpoint is ambiguous: the consumer may have placed this middleware ahead of
+        // UseRouting(), or routing may already have run and simply not matched a route (an ordinary 404
+        // probe). Only the former is a misconfiguration, and the two are distinguishable after the fact —
+        // routing running downstream assigns an endpoint. _InvokeNextAsync defers the decision until
+        // next() returns, which keeps unmatched routes from consuming the one-shot warning.
+        var endpointWasUnresolved = endpoint is null;
 
         string? identifier = null;
 
@@ -108,7 +110,7 @@ internal sealed partial class TenantCatalogResolutionMiddleware(
         if (identifier is null)
         {
             // Zero sources registered, or every source returned null/empty/whitespace — no-op, host context (R5).
-            await next(context).ConfigureAwait(false);
+            await _InvokeNextAsync(context, endpointWasUnresolved).ConfigureAwait(false);
             return;
         }
 
@@ -117,7 +119,7 @@ internal sealed partial class TenantCatalogResolutionMiddleware(
         switch (outcome.Kind)
         {
             case TenantResolutionKind.Ignored:
-                await next(context).ConfigureAwait(false);
+                await _InvokeNextAsync(context, endpointWasUnresolved).ConfigureAwait(false);
                 return;
 
             case TenantResolutionKind.Resolved:
@@ -145,7 +147,7 @@ internal sealed partial class TenantCatalogResolutionMiddleware(
                         return;
                     }
 
-                    await next(context).ConfigureAwait(false);
+                    await _InvokeNextAsync(context, endpointWasUnresolved).ConfigureAwait(false);
                 }
 
                 return;
@@ -157,6 +159,27 @@ internal sealed partial class TenantCatalogResolutionMiddleware(
                     .RejectAsync(context, outcome.Kind, problemDetailsCreator, options.Value.DetailedResolutionErrors)
                     .ConfigureAwait(false);
                 return;
+        }
+    }
+
+    /// <summary>
+    /// Continues the pipeline and, when this middleware saw no endpoint, reports a likely ordering
+    /// misconfiguration once routing downstream has proved one was resolvable.
+    /// </summary>
+    /// <remarks>
+    /// Only reachable from the continue paths — a rejection short-circuits before routing can run, so
+    /// there is no honest ordering signal to read on that path. A misordered host that rejects every
+    /// request therefore never sees the warning; the alternative (warning on rejection too) would blame
+    /// ordering for an ordinary unmatched-route probe on a correctly ordered pipeline and burn the
+    /// one-shot slot. The warning is best-effort diagnostics — resolution itself is now correct either way.
+    /// </remarks>
+    private async Task _InvokeNextAsync(HttpContext context, bool endpointWasUnresolved)
+    {
+        await next(context).ConfigureAwait(false);
+
+        if (endpointWasUnresolved && context.GetEndpoint() is not null)
+        {
+            _WarnIfMiddlewareLikelyMisordered();
         }
     }
 
@@ -267,8 +290,9 @@ internal sealed partial class TenantCatalogResolutionMiddleware(
         EventName = "HEADLESS_TENANT_CATALOG_MIDDLEWARE_ORDERING",
         Level = LogLevel.Warning,
         Message = "UseHeadlessTenantCatalogResolution() observed a request with no resolved endpoint. "
-            + "Place UseHeadlessTenantCatalogResolution() AFTER UseRouting() and BEFORE UseAuthentication(). "
-            + "This warning is emitted once per process."
+            + "Tenant resolution still ran, but [SkipTenantResolution] endpoint metadata was not "
+            + "discoverable and was ignored. Place UseHeadlessTenantCatalogResolution() AFTER "
+            + "UseRouting() and BEFORE UseAuthentication(). This warning is emitted once per process."
     )]
     // ReSharper disable once InconsistentNaming
     private static partial void LogMiddlewareOrderingWarning(ILogger logger);

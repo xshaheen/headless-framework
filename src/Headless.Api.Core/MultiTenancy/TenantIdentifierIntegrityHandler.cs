@@ -33,6 +33,23 @@ namespace Headless.Api.MultiTenancy;
 /// <see cref="ICurrentTenant.Id"/>, which claim resolution's own <c>Change()</c> may have already
 /// overwritten by the time this handler runs.
 /// </para>
+/// <para>
+/// Scope boundary: the request-wide rejection marker is set only for the principal the authorization
+/// pipeline itself authenticated for this request. Reference identity against
+/// <see cref="HttpContext.User"/> is the proxy used for exactly that — every framework path that
+/// authenticates on the request's behalf (<c>PolicyEvaluator</c> for default and endpoint-scoped
+/// schemes, MVC's <c>AuthorizeFilter</c>, SignalR, Blazor SSR, and <c>IClaimsTransformation</c> output)
+/// assigns its principal to <see cref="HttpContext.User"/> and then passes that same reference into the
+/// evaluation. A principal an endpoint materializes itself — calling
+/// <c>HttpContext.AuthenticateAsync("SomeScheme")</c> and handing the resulting
+/// principal to <c>IAuthorizationService.AuthorizeAsync</c> — is deliberately outside that boundary,
+/// even though it is a credential the request genuinely presented: its evaluation fails on its own
+/// terms via <c>context.Fail(...)</c>, but it does
+/// not stamp the marker and so does not rewrite the response. Widening the boundary to cover
+/// self-materialized principals would re-open the side-channel hole this gate closes, where an
+/// authorization check an endpoint makes against somebody else's principal replaces the caller's own
+/// successful response with a tenant-resolution rejection.
+/// </para>
 /// </remarks>
 internal sealed class TenantIdentifierIntegrityHandler(
     IOptions<MultiTenancyOptions> options,
@@ -79,7 +96,9 @@ internal sealed class TenantIdentifierIntegrityHandler(
         // in the process, including side-channel checks an endpoint makes against somebody else's
         // principal (permission previews, admin tooling, delegated access). A foreign principal's tenant
         // must not poison the request-wide marker, or StatusCodesRewriterMiddleware would replace the
-        // caller's own successful response with a tenant-resolution rejection.
+        // caller's own successful response with a tenant-resolution rejection. Reference identity is a
+        // deliberate scope boundary, not just a foreign-principal filter — see the type remarks for what
+        // it excludes and why that exclusion is intended.
         if (ReferenceEquals(context.User, httpContext.User))
         {
             httpContext.Features.Set(TenantIdentifierMismatchFeature.Instance);
