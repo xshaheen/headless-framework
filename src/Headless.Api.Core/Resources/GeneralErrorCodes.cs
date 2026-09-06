@@ -26,6 +26,12 @@ public static class GeneralErrorCodes
     /// <summary>An optimistic-concurrency conflict prevented the operation from completing. Maps to 409.</summary>
     public const string ConcurrencyFailure = "g:concurrency_failure";
 
+    /// <summary>A required <c>If-Match</c> precondition was omitted. Maps to 428.</summary>
+    public const string IfMatchRequired = "g:if_match_required";
+
+    /// <summary>The supplied <c>If-Match</c> precondition was invalid. Maps to 400.</summary>
+    public const string IfMatchInvalid = "g:if_match_invalid";
+
     /// <summary>The request was already processed or is a duplicate of an in-flight request. Maps to 409.</summary>
     public const string DuplicatedRequest = "g:duplicated_request";
 

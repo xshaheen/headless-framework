@@ -190,7 +190,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             )
             .Returns(call => call.ArgAt<Func<CancellationToken, Task>>(1)(call.ArgAt<CancellationToken>(2)));
         IServiceProvider? runnerServices = null;
-        using var dispatchServices = new ServiceCollection()
+        await using var dispatchServices = new ServiceCollection()
             .AddScoped<IInboxTransactionRunner>(services =>
             {
                 runnerServices = services;
@@ -239,7 +239,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<CancellationToken>()
             )
             .Returns<Task>(_ => throw new StaleInboxAttemptException(message.StorageId));
-        using var dispatchServices = new ServiceCollection().AddSingleton(runner).BuildServiceProvider();
+        await using var dispatchServices = new ServiceCollection().AddSingleton(runner).BuildServiceProvider();
 
         var result = await executor.ExecuteAsync(message, dispatchServices, _CreateDescriptor(), AbortToken);
 

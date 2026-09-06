@@ -497,9 +497,11 @@
           "FlexLabs.EntityFrameworkCore.Upsert": "[10.0.0, )",
           "Headless.Caching.Abstractions": "[1.0.0, )",
           "Headless.EntityFramework.Core": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
           "Headless.Jobs.Abstractions": "[1.0.0, )",
           "Headless.Jobs.Core": "[1.0.0, )",
-          "Microsoft.EntityFrameworkCore.Relational": "[10.0.9, )"
+          "Microsoft.EntityFrameworkCore.Relational": "[10.0.9, )",
+          "Polly.Core": "[8.7.0, )"
         }
       },
       "headless.multitenancy": {

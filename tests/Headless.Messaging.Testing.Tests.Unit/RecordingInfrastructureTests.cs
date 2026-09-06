@@ -8,6 +8,7 @@ using Headless.Messaging.Serialization;
 using Headless.Messaging.Testing;
 using Headless.Messaging.Testing.Internal;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
@@ -431,6 +432,115 @@ public sealed class RecordingInfrastructureTests : TestBase
         store.Consumed.Single().CorrelationId.Should().BeNull();
     }
 
+    [Fact]
+    public async Task recording_scoped_pipeline_preserves_scope_callback_result_and_envelope()
+    {
+        var services = new ServiceCollection();
+        services.AddScoped(_ => new SimplePayload());
+        await using var root = services.BuildServiceProvider();
+        await using var scope = root.CreateAsyncScope();
+        var scopeInstance = scope.ServiceProvider.GetRequiredService<SimplePayload>();
+        var store = new MessageObservationStore();
+        var medium = _MakeMediumMessage(id: "scope-message", name: "scope.message", correlationId: "root-id");
+        medium.Lane = MessageLane.Queue;
+        medium.Origin.Headers[Headers.CausationId] = "parent-id";
+        var context = _MakeConsumerContext(medium);
+        var payload = new SimplePayload { Value = "scoped" };
+        var expected = new ConsumerExecutedResult(
+            payload,
+            typeof(SimplePayload),
+            "scope-message",
+            "response.message",
+            new Dictionary<string, string?>(StringComparer.Ordinal) { ["custom-response"] = "value" },
+            "next.response"
+        );
+        var inner = new FakePipeline(expected);
+        var pipeline = new RecordingConsumeMiddlewarePipeline(inner, store);
+
+        var result = await pipeline.ExecuteInScopeAsync(
+            context,
+            payload,
+            typeof(SimplePayload),
+            scope.ServiceProvider,
+            AbortToken
+        );
+
+        result.Should().BeSameAs(expected);
+        inner.ScopedCallCount.Should().Be(1);
+        inner.CallCount.Should().Be(0);
+        inner.Provider.Should().BeSameAs(scope.ServiceProvider);
+        inner.CancellationToken.Should().Be(AbortToken);
+        scope.ServiceProvider.GetRequiredService<SimplePayload>().Should().BeSameAs(scopeInstance);
+        var recorded = store.Consumed.Should().ContainSingle().Which;
+        recorded.Message.Should().BeSameAs(payload);
+        recorded.MessageType.Should().Be<SimplePayload>();
+        recorded.MessageId.Should().Be("scope-message");
+        recorded.MessageName.Should().Be("scope.message");
+        recorded.CorrelationId.Should().Be("root-id");
+        recorded.Headers[Headers.CausationId].Should().Be("parent-id");
+        recorded.Lane.Should().Be(MessageLane.Queue);
+        store.Faulted.Should().BeEmpty();
+        store.Published.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task recording_scoped_pipeline_records_and_rethrows_the_original_failure()
+    {
+        await using var root = new ServiceCollection().BuildServiceProvider();
+        await using var scope = root.CreateAsyncScope();
+        var store = new MessageObservationStore();
+        var context = _MakeConsumerContext(_MakeMediumMessage());
+        var exception = new InvalidOperationException("scoped handler failed");
+        var inner = new FakePipeline(exception);
+        var pipeline = new RecordingConsumeMiddlewarePipeline(inner, store);
+        var payload = new SimplePayload();
+
+        var act = async () =>
+            await pipeline.ExecuteInScopeAsync(
+                context,
+                payload,
+                typeof(SimplePayload),
+                scope.ServiceProvider,
+                AbortToken
+            );
+
+        (await act.Should().ThrowAsync<InvalidOperationException>()).Which.Should().BeSameAs(exception);
+        store.Faulted.Should().ContainSingle().Which.Exception.Should().BeSameAs(exception);
+        store.Consumed.Should().BeEmpty();
+        inner.Provider.Should().BeSameAs(scope.ServiceProvider);
+        inner.CallCount.Should().Be(0);
+        scope.ServiceProvider.GetRequiredService<IServiceProvider>().Should().BeSameAs(scope.ServiceProvider);
+    }
+
+    [Fact]
+    public async Task recording_scoped_pipeline_propagates_cancellation_without_recording_fault()
+    {
+        await using var root = new ServiceCollection().BuildServiceProvider();
+        await using var scope = root.CreateAsyncScope();
+        var store = new MessageObservationStore();
+        var context = _MakeConsumerContext(_MakeMediumMessage());
+        var exception = new OperationCanceledException(AbortToken);
+        var inner = new FakePipeline(exception);
+        var pipeline = new RecordingConsumeMiddlewarePipeline(inner, store);
+        var payload = new SimplePayload();
+
+        var act = async () =>
+            await pipeline.ExecuteInScopeAsync(
+                context,
+                payload,
+                typeof(SimplePayload),
+                scope.ServiceProvider,
+                AbortToken
+            );
+
+        (await act.Should().ThrowAsync<OperationCanceledException>()).Which.Should().BeSameAs(exception);
+        store.Faulted.Should().BeEmpty();
+        store.Consumed.Should().BeEmpty();
+        inner.Provider.Should().BeSameAs(scope.ServiceProvider);
+        inner.CallCount.Should().Be(0);
+        scope.ServiceProvider.GetRequiredService<IServiceProvider>().Should().BeSameAs(scope.ServiceProvider);
+    }
+
     // ─── fakes ───────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -521,6 +631,10 @@ public sealed class RecordingInfrastructureTests : TestBase
 
         public FakePipeline(ConsumerExecutedResult result) => _result = result;
 
+        public int ScopedCallCount { get; private set; }
+        public IServiceProvider? Provider { get; private set; }
+        public CancellationToken CancellationToken { get; private set; }
+
         public FakePipeline(Exception exception) => _exception = exception;
 
         public Task<ConsumerExecutedResult> ExecuteAsync(
@@ -531,7 +645,25 @@ public sealed class RecordingInfrastructureTests : TestBase
         )
         {
             CallCount++;
+            return _Execute();
+        }
 
+        public Task<ConsumerExecutedResult> ExecuteInScopeAsync(
+            ConsumerContext context,
+            object messageInstance,
+            Type messageType,
+            IServiceProvider provider,
+            CancellationToken cancellationToken = default
+        )
+        {
+            ScopedCallCount++;
+            Provider = provider;
+            CancellationToken = cancellationToken;
+            return _Execute();
+        }
+
+        private Task<ConsumerExecutedResult> _Execute()
+        {
             if (_exception != null)
             {
                 throw _exception;

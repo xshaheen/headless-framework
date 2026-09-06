@@ -397,7 +397,7 @@ public sealed class BootstrapperTests : TestBase
 
         await bootstrapper.BootstrapAsync(AbortToken);
 
-        captured.Any(entry => entry.Level == LogLevel.Warning && entry.EventId.Id == 97).Should().Be(shouldWarn);
+        captured.Exists(entry => entry.Level == LogLevel.Warning && entry.EventId.Id == 97).Should().Be(shouldWarn);
     }
 
     [Fact]

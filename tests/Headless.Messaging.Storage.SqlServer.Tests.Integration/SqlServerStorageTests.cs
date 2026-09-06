@@ -1001,6 +1001,12 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
     }
 
     [Fact]
+    public override Task should_reach_healthy_row_after_deferring_a_full_leading_open_batch()
+    {
+        return base.should_reach_healthy_row_after_deferring_a_full_leading_open_batch();
+    }
+
+    [Fact]
     public override Task should_not_release_terminal_retry_lease_generation()
     {
         return base.should_not_release_terminal_retry_lease_generation();

@@ -51,7 +51,7 @@ Claiming a chained time job leases its non-timed descendants down to the configu
 
 The whole chain executes in-process under the root's single pickup lease. If the owning node crashes mid-chain after the root already completed, the running tail can be orphaned (reclaim returns a non-timed descendant to idle with no execution time and nothing re-picks it up); per-node `OnNodeDeath` policies still apply, and per-node independent pickup is deferred hardening. Lowering `MaxChainDepth` after deeper chains were persisted truncates runtime traversal for those chains.
 
-Deleting a time job deletes its whole descendant chain. The parent/child foreign key is deliberately non-cascading, so both the in-memory and EF providers resolve the subtree explicitly and delete it deepest-first (the EF provider does so inside one transaction); the returned count includes every removed descendant. Deleting a non-root node removes only that node's subtree and leaves its ancestors intact.
+Deleting a time job deletes its whole descendant chain. The parent/child foreign key is deliberately non-cascading, so both the in-memory and EF providers resolve the subtree explicitly and delete it deepest-first. On the EF path, discovery and deletion share one read-committed transaction. A foreign-key violation, deadlock, serialization failure, or driver-reported transient error retries the complete scope with fresh discovery up to three times, using jittered exponential backoff. Exhausting those retries leaves the tree intact and is surfaced by `ITimeJobManager` as a failed `JobResult`; caller cancellation is wrapped the same way and is never retried. A commit failure is also never retried because its outcome is in doubt; reissuing the delete safely resolves that uncertainty and returns zero rows if the first commit succeeded. The returned count includes every descendant removed by the attempt that committed. Deleting a non-root node removes only that node's subtree and leaves its ancestors intact.
 
 A typed job function's stored request is read immediately before the handler runs. A read or deserialization failure fails that attempt and is classified by the normal retry pipeline; the handler is never invoked with a default payload, and cancellation stays cancellation. `JobsRequestProvider.GetRequestAsync` therefore returns `default` only when the job genuinely stored no request.
 
@@ -349,7 +349,7 @@ var cancellationAccepted = await scheduler.CancelAsync(delayedId, ct);
 
 `EnqueueOptions` and `RecurringJobOptions` expose description, durable retries/intervals, and node-death policy; recurring options also expose nullable IANA `TimeZoneId`. Execution time and cron expression are explicit method arguments. Priority remains immutable `[JobFunction]` / descriptor metadata.
 
-Low-level managers are not deprecated. Continue using `ITimeJobManager<TTimeJob>` and `ICronJobManager<TCronJob>` for CRUD, batching, seeding, custom entities, chains, and advanced persistence workflows.
+Low-level managers are not deprecated. Continue using `ITimeJobManager<TTimeJob>` and `ICronJobManager<TCronJob>` for CRUD, batching, seeding, custom entities, chains, and advanced persistence workflows. `ITimeJobManager.UpdateAsync`, `UpdateBatchAsync`, `DeleteAsync`, and `DeleteBatchAsync` return a failed `JobResult` instead of throwing when persistence fails; caller cancellation is carried by that result too.
 
 ## Middleware
 

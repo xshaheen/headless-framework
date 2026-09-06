@@ -12,45 +12,68 @@ using Headless.Jobs.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.Logging;
+using Polly;
+using Polly.Retry;
 
 #pragma warning disable MA0133 // EF must keep DateTime.UtcNow in expression trees so providers translate the database clock before the DateTimeOffset assignment.
 namespace Headless.Jobs.Infrastructure;
 
-internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
-    IDbContextFactory<TDbContext> dbContextFactory,
-    DbContextOptions<TDbContext> coordinatedWriteOptions,
-    TimeProvider timeProvider,
-    IGuidGenerator guidGenerator,
-    IJobsOwnerIdentity ownerIdentity,
-    SchedulerOptionsBuilder optionsBuilder,
-    ICache? cache,
-    IJobsClaimStrategy<TTimeJob, TCronJob> claimStrategy,
-    ILogger logger
-)
-    : BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
-        dbContextFactory,
-        timeProvider,
-        guidGenerator,
-        ownerIdentity,
-        optionsBuilder,
-        cache,
-        claimStrategy,
-        logger
-    ),
+internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>
+    : BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>,
         IJobPersistenceProvider<TTimeJob, TCronJob>,
         ICoordinatedJobWriter<TTimeJob, TCronJob>
     where TDbContext : DbContext
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {
+    private const int _MaxTreeDeleteRetryAttempts = 3;
+    private static readonly ResiliencePropertyKey<bool> _TreeDeleteCommitStartedKey = new(
+        "headless.jobs.tree-delete.commit-started"
+    );
+    private static readonly ResiliencePropertyKey<int> _TreeDeleteRootIdCountKey = new(
+        "headless.jobs.tree-delete.root-id-count"
+    );
+
     // The registered options template, cloned per coordinated write so the context attaches to the caller's
     // connection while reusing the cached compiled model / internal service provider — no model recompilation.
+    private readonly DbContextOptions<TDbContext> _coordinatedWriteOptions;
+    private readonly ResiliencePipeline _treeDeleteRetryPipeline;
+    private string? _treeDeleteProviderName;
+
+    // Test seam for the discovery/delete race. Always null in production and intentionally fires on every attempt.
+    internal Func<Task>? OnTreeDeleteBeforeFirstDelete { get; set; }
 
     // Compiled (DbContextOptions<TDbContext>) constructor delegate — the same constructor EF Core's DbContext pooling
     // requires, so any context usable with the pooled factory works here too. Cached per closed generic so coordinated
     // writes never pay reflection, and a context missing that constructor fails with a clear message instead of the
     // raw MissingMethodException Activator.CreateInstance would surface mid-transaction.
     private static readonly Func<DbContextOptions<TDbContext>, TDbContext> _CreateContext = _BuildContextFactory();
+
+    public JobsEfCorePersistenceProvider(
+        IDbContextFactory<TDbContext> dbContextFactory,
+        DbContextOptions<TDbContext> coordinatedWriteOptions,
+        TimeProvider timeProvider,
+        IGuidGenerator guidGenerator,
+        IJobsOwnerIdentity ownerIdentity,
+        SchedulerOptionsBuilder optionsBuilder,
+        ICache? cache,
+        IJobsClaimStrategy<TTimeJob, TCronJob> claimStrategy,
+        ILogger logger
+    )
+        : base(
+            dbContextFactory,
+            timeProvider,
+            guidGenerator,
+            ownerIdentity,
+            optionsBuilder,
+            cache,
+            claimStrategy,
+            logger
+        )
+    {
+        _coordinatedWriteOptions = coordinatedWriteOptions;
+        _treeDeleteRetryPipeline = _BuildTreeDeleteRetryPipeline(timeProvider, logger);
+    }
 
     private static Func<DbContextOptions<TDbContext>, TDbContext> _BuildContextFactory()
     {
@@ -168,10 +191,10 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
             );
 
         var reboundRelational = RelationalOptionsExtension
-            .Extract(coordinatedWriteOptions)
+            .Extract(_coordinatedWriteOptions)
             .WithConnection(connection, owned: false);
 
-        var coordinatedOptionsBuilder = new DbContextOptionsBuilder<TDbContext>(coordinatedWriteOptions);
+        var coordinatedOptionsBuilder = new DbContextOptionsBuilder<TDbContext>(_coordinatedWriteOptions);
         ((IDbContextOptionsBuilderInfrastructure)coordinatedOptionsBuilder).AddOrUpdateExtension(reboundRelational);
 
         var dbContext = _CreateContext(coordinatedOptionsBuilder.Options);
@@ -282,15 +305,51 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
             return 0;
         }
 
+        var resilienceContext = ResilienceContextPool.Shared.Get(cancellationToken);
+        resilienceContext.Properties.Set(_TreeDeleteRootIdCountKey, timeJobIds.Length);
+
+        try
+        {
+            return await _treeDeleteRetryPipeline
+                .ExecuteAsync(
+                    static async (context, state) =>
+                        await state.Provider._RemoveTimeJobsAttemptAsync(state.Ids, context).ConfigureAwait(false),
+                    resilienceContext,
+                    (Provider: this, Ids: timeJobIds)
+                )
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            ResilienceContextPool.Shared.Return(resilienceContext);
+        }
+    }
+
+    private async ValueTask<int> _RemoveTimeJobsAttemptAsync(Guid[] timeJobIds, ResilienceContext resilienceContext)
+    {
+        resilienceContext.Properties.Set(_TreeDeleteCommitStartedKey, value: false);
+        var cancellationToken = resilienceContext.CancellationToken;
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
+        // The factory is bound to one provider for the instance's lifetime, so the name is captured once; the retry
+        // predicate reads it because Polly's predicate never sees the per-call state.
+        if (_treeDeleteProviderName is null)
+        {
+            Interlocked.CompareExchange(ref _treeDeleteProviderName, dbContext.Database.ProviderName, comparand: null);
+        }
+
+        await using var transaction = await dbContext
+            .Database.BeginTransactionAsync(cancellationToken)
+            .ConfigureAwait(false);
+
         // The Parent/Children FK is DeleteBehavior.NoAction (TimeJobConfigurations): neither EF nor the database
         // cascades, so the subtree must be resolved explicitly. A surviving descendant is never harmless — a
         // non-timed one is unreachable forever (every claim path requires ExecutionTime != null), and a timed one
         // whose ParentId was nulled passes the ParentId == null arm of the parent-terminal gate and runs
         // unconditionally at its scheduled time. Walked one level at a time rather than with a recursive CTE so a
         // single query shape serves every relational provider; the visited set also terminates a corrupted cycle.
+        // The foreign key is the atomicity fence: a conflicting write rolls this scope back and fresh discovery runs.
         var levels = new List<Guid[]> { timeJobIds };
         var visited = new HashSet<Guid>(timeJobIds);
         var frontier = timeJobIds;
@@ -315,9 +374,10 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
             }
         }
 
-        await using var transaction = await dbContext
-            .Database.BeginTransactionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        if (OnTreeDeleteBeforeFirstDelete is { } beforeFirstDelete)
+        {
+            await beforeFirstDelete().ConfigureAwait(false);
+        }
 
         // Deepest level first: with a non-cascading FK a row may only be deleted once its children are gone.
         var deleted = 0;
@@ -332,9 +392,47 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
                 .ConfigureAwait(false);
         }
 
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        resilienceContext.Properties.Set(_TreeDeleteCommitStartedKey, value: true);
+        await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
 
         return deleted;
+    }
+
+    private ResiliencePipeline _BuildTreeDeleteRetryPipeline(TimeProvider timeProvider, ILogger logger)
+    {
+        return new ResiliencePipelineBuilder { TimeProvider = timeProvider }
+            .AddRetry(
+                new RetryStrategyOptions
+                {
+                    ShouldHandle = args => new ValueTask<bool>(
+                        args.Outcome.Exception is { } exception
+                            && JobsTreeDeleteConflicts.IsRetryableTreeDeleteFailure(
+                                _treeDeleteProviderName,
+                                exception,
+                                args.Context.Properties.GetValue(_TreeDeleteCommitStartedKey, defaultValue: false),
+                                args.Context.CancellationToken
+                            )
+                    ),
+                    MaxRetryAttempts = _MaxTreeDeleteRetryAttempts,
+                    BackoffType = DelayBackoffType.Exponential,
+                    Delay = TimeSpan.FromMilliseconds(50),
+                    MaxDelay = TimeSpan.FromMilliseconds(500),
+                    UseJitter = true,
+                    OnRetry = args =>
+                    {
+                        logger.LogTreeDeleteConflictRetry(
+                            args.AttemptNumber + 2,
+                            _MaxTreeDeleteRetryAttempts + 1,
+                            args.RetryDelay,
+                            args.Context.Properties.GetValue(_TreeDeleteRootIdCountKey, 0),
+                            args.Outcome.Exception
+                        );
+
+                        return default;
+                    },
+                }
+            )
+            .Build();
     }
     #endregion
 
@@ -1036,4 +1134,23 @@ internal sealed class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJ
     }
 
     #endregion
+}
+
+internal static partial class JobsEfCorePersistenceProviderLog
+{
+    [LoggerMessage(
+        EventId = 3002,
+        EventName = "TimeJobTreeDeleteConflictRetry",
+        Level = LogLevel.Warning,
+        Message = "Time-job tree delete hit a conflict; retrying attempt {AttemptNumber}/{MaxAttempts} after {Delay} "
+            + "for {RootIdCount} root ids."
+    )]
+    public static partial void LogTreeDeleteConflictRetry(
+        this ILogger logger,
+        int attemptNumber,
+        int maxAttempts,
+        TimeSpan delay,
+        int rootIdCount,
+        Exception? exception
+    );
 }
