@@ -2,6 +2,7 @@
 
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
+using Headless.Messaging.Nats;
 using Microsoft.Extensions.DependencyInjection;
 using NATS.Client.JetStream.Models;
 using Tests.Helpers;
