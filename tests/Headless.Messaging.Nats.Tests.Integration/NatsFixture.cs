@@ -211,7 +211,7 @@ public sealed class NatsFixture : HeadlessNatsFixture
             new NatsMessagingOptions
             {
                 Servers = ConnectionString,
-                EnableSubscriberClientStreamAndSubjectCreation = true,
+                StreamProvisioning = NatsStreamProvisioning.Reconcile,
                 NormalizeStreamName = _ => streamName,
                 StreamOptions = config => config.Storage = StreamConfigStorage.Memory,
                 ConsumerOptions = config =>

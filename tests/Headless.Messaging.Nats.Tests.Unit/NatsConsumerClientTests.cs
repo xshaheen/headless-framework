@@ -80,7 +80,7 @@ public sealed class NatsConsumerClientTests : TestBase
             new NatsMessagingOptions
             {
                 Servers = "nats://localhost:4222",
-                EnableSubscriberClientStreamAndSubjectCreation = false,
+                StreamProvisioning = NatsStreamProvisioning.Disabled,
             }
         );
         await using var client = new NatsConsumerClient("test-group", 1, options, _serviceProvider);

@@ -295,7 +295,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
         var subject = $"{streamName}.test";
         await _EnsureStreamAsync(streamName, $"{streamName}.>");
 
-        var options = _CreateOptions(enableStreamCreation: false);
+        var options = _CreateOptions(NatsStreamProvisioning.Disabled);
         await using var client = new NatsConsumerClient("test-group", 0, options, _serviceProvider);
         await client.ConnectAsync(AbortToken);
 
@@ -346,7 +346,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
         var subject = $"{streamName}.test";
         await _EnsureStreamAsync(streamName, $"{streamName}.>");
 
-        var options = _CreateOptions(enableStreamCreation: false);
+        var options = _CreateOptions(NatsStreamProvisioning.Disabled);
         await using var client = new NatsConsumerClient("test-group", 0, options, _serviceProvider);
         await client.ConnectAsync(AbortToken);
 
@@ -388,11 +388,11 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
         var streamName = $"autocreate-{Guid.NewGuid():N}"[..25];
         var subject = $"{streamName}.orders";
 
-        var options = _CreateOptions(enableStreamCreation: true);
+        var options = _CreateOptions(NatsStreamProvisioning.Reconcile);
         await using var client = new NatsConsumerClient("test-group", 0, options, _serviceProvider);
         await client.ConnectAsync(AbortToken);
 
-        // when — FetchMessageNamesAsync with EnableSubscriberClientStreamAndSubjectCreation=true
+        // when — FetchMessageNamesAsync under NatsStreamProvisioning.Reconcile
         var result = await client.FetchMessageNamesAsync([subject], AbortToken);
 
         // then — stream should exist on the NATS server
@@ -418,7 +418,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
             new NatsMessagingOptions
             {
                 Servers = fixture.ConnectionString,
-                EnableSubscriberClientStreamAndSubjectCreation = true,
+                StreamProvisioning = NatsStreamProvisioning.Reconcile,
                 StreamOptions = config => config.Storage = StreamConfigStorage.Memory,
             }
         );
@@ -456,7 +456,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
             new NatsMessagingOptions
             {
                 Servers = fixture.ConnectionString,
-                EnableSubscriberClientStreamAndSubjectCreation = true,
+                StreamProvisioning = NatsStreamProvisioning.Reconcile,
                 StreamOptions = config => config.Storage = StreamConfigStorage.Memory,
                 ConsumerOptions = config =>
                 {
@@ -492,7 +492,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
             new NatsMessagingOptions
             {
                 Servers = fixture.ConnectionString,
-                EnableSubscriberClientStreamAndSubjectCreation = true,
+                StreamProvisioning = NatsStreamProvisioning.Reconcile,
                 StreamOptions = config => config.Storage = StreamConfigStorage.Memory,
                 ConsumerOptions = config => config.AckWait = TimeSpan.FromSeconds(5),
             }
@@ -518,7 +518,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
         var subject = $"{streamName}.test";
         await _EnsureStreamAsync(streamName, $"{streamName}.>");
 
-        var options = _CreateOptions(enableStreamCreation: false);
+        var options = _CreateOptions(NatsStreamProvisioning.Disabled);
         await using var client = new NatsConsumerClient("test-group", 0, options, _serviceProvider);
         await client.ConnectAsync(AbortToken);
         await client.FetchMessageNamesAsync([subject], AbortToken);
@@ -591,7 +591,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
         var subject = $"{streamName}.test";
         await _EnsureStreamAsync(streamName, $"{streamName}.>");
 
-        var options = _CreateOptions(enableStreamCreation: false);
+        var options = _CreateOptions(NatsStreamProvisioning.Disabled);
         await using var client = new NatsConsumerClient("test-group", 0, options, _serviceProvider);
         await client.ConnectAsync(AbortToken);
         await client.FetchMessageNamesAsync([subject], AbortToken);
@@ -637,14 +637,10 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
         }
     }
 
-    private IOptions<NatsMessagingOptions> _CreateOptions(bool enableStreamCreation)
+    private IOptions<NatsMessagingOptions> _CreateOptions(NatsStreamProvisioning streamProvisioning)
     {
         return Options.Create(
-            new NatsMessagingOptions
-            {
-                Servers = fixture.ConnectionString,
-                EnableSubscriberClientStreamAndSubjectCreation = enableStreamCreation,
-            }
+            new NatsMessagingOptions { Servers = fixture.ConnectionString, StreamProvisioning = streamProvisioning }
         );
     }
 

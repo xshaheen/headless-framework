@@ -25,7 +25,7 @@ public sealed class NatsPostgreSqlBootstrapReadinessTests(NatsPostgreSqlFixture 
         setup.UseNats(nats =>
         {
             nats.Servers = fixture.NatsConnectionString;
-            nats.EnableSubscriberClientStreamAndSubjectCreation = true;
+            nats.StreamProvisioning = NatsStreamProvisioning.Reconcile;
             nats.StreamOptions = static config => config.Storage = StreamConfigStorage.Memory;
         });
     }

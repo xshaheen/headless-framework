@@ -39,17 +39,21 @@ public sealed class NatsMessagingOptions
     public int MaxConsecutiveConsumeFailures { get; set; } = 10;
 
     /// <summary>
-    /// When <see langword="true"/> (default), consumer clients auto-create JetStream streams on first
-    /// startup, deriving the stream name from <see cref="NormalizeStreamName"/> and declaring the subjects
-    /// their consumers listen on. Individual consumers then use a <c>FilterSubject</c> for precise matching.
+    /// How consumer clients provision the JetStream streams their subjects live on, deriving the stream name
+    /// from <see cref="NormalizeStreamName"/> and declaring the subjects their consumers listen on. Individual
+    /// consumers then use a <c>FilterSubject</c> for precise matching. Defaults to
+    /// <see cref="NatsStreamProvisioning.Verify"/>, which creates a missing stream but never rewrites one that
+    /// already exists.
     /// </summary>
     /// <remarks>
-    /// Auto-creation is additive: each client unions its subjects with the stream's existing subjects rather
-    /// than replacing them, so consumer groups (or instances) that share a stream name do not clobber each
-    /// other's subject configuration. Set to <see langword="false"/> to manage streams externally via the
-    /// NATS CLI or infrastructure-as-code tooling when fine-grained stream subject control is needed.
+    /// Subject handling is asymmetric in every mode. Subjects the live stream already carries — contributed by
+    /// a sibling consumer group or an earlier deployment — are left alone rather than replaced. Subjects this
+    /// client requires that the stream does not cover are written under
+    /// <see cref="NatsStreamProvisioning.Reconcile"/> and reported as divergence under
+    /// <see cref="NatsStreamProvisioning.Verify"/>, because JetStream delivers nothing, and reports no error,
+    /// to a filter that matches no subject on the stream.
     /// </remarks>
-    public bool EnableSubscriberClientStreamAndSubjectCreation { get; set; } = true;
+    public NatsStreamProvisioning StreamProvisioning { get; set; } = NatsStreamProvisioning.Verify;
 
     /// <summary>
     /// Customises the underlying NATS connection options. Because <c>NatsOpts</c> is a record,
@@ -113,5 +117,6 @@ internal sealed class NatsMessagingOptionsValidator : AbstractValidator<NatsMess
         RuleFor(x => x.ConnectionPoolSize).GreaterThan(0);
         RuleFor(x => x.MaxConsecutiveConsumeFailures).GreaterThan(0);
         RuleFor(x => x.StreamCreateTimeout).GreaterThan(TimeSpan.Zero);
+        RuleFor(x => x.StreamProvisioning).IsInEnum();
     }
 }

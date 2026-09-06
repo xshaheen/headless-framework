@@ -93,7 +93,7 @@ internal sealed class NatsConsumerClient(
         // input would otherwise be enumerated twice.
         var names = messageNames.AsIReadOnlyList();
 
-        if (!_natsOptions.EnableSubscriberClientStreamAndSubjectCreation)
+        if (_natsOptions.StreamProvisioning is NatsStreamProvisioning.Disabled)
         {
             return [.. names];
         }
