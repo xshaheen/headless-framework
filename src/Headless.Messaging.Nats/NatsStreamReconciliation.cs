@@ -228,6 +228,20 @@ internal static class NatsStreamReconciliation
                     );
             }
 
+            if (
+                reconcilable.Exists(d =>
+                    string.Equals(d.Field, nameof(StreamConfig.Subjects), StringComparison.Ordinal)
+                )
+            )
+            {
+                message
+                    .AppendLine()
+                    .AppendLine()
+                    .Append("A consumer bound to a subject the stream does not carry receives no messages, and ")
+                    .Append("JetStream reports no error for it — which is why this stops startup rather than ")
+                    .Append("letting the consumer run against a stream that cannot deliver to it.");
+            }
+
             if (_ShouldOfferReconcile(mode))
             {
                 message
