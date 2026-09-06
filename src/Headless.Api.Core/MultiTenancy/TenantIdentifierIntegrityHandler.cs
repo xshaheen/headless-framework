@@ -74,7 +74,17 @@ internal sealed class TenantIdentifierIntegrityHandler(
             return Task.CompletedTask;
         }
 
-        httpContext.Features.Set(TenantIdentifierMismatchFeature.Instance);
+        // The failure is always correct — this evaluation genuinely mismatches — but the request-wide
+        // response override is not. This handler runs for EVERY IAuthorizationService.AuthorizeAsync call
+        // in the process, including side-channel checks an endpoint makes against somebody else's
+        // principal (permission previews, admin tooling, delegated access). A foreign principal's tenant
+        // must not poison the request-wide marker, or StatusCodesRewriterMiddleware would replace the
+        // caller's own successful response with a tenant-resolution rejection.
+        if (ReferenceEquals(context.User, httpContext.User))
+        {
+            httpContext.Features.Set(TenantIdentifierMismatchFeature.Instance);
+        }
+
         context.Fail(new AuthorizationFailureReason(this, _MismatchFailureReason));
 
         return Task.CompletedTask;

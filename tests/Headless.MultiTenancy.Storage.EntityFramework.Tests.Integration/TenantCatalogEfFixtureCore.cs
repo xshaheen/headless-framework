@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Caching;
 using Headless.MultiTenancy;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -95,6 +96,9 @@ internal sealed class TenantCatalogEfFixtureCore(
         var builder = Host.CreateApplicationBuilder();
         builder.Logging.ClearProviders();
         builder.Services.AddDbContextFactory<TenantCatalogDbContext>(options => configureProvider(options, connection));
+        // The catalog resolves its read-through caches as ICache<T>; without a caching provider the tenancy
+        // posture validator fails host startup with CATALOG_WITHOUT_CACHING_PROVIDER.
+        builder.Services.AddHeadlessCaching(caching => caching.UseInMemory());
         builder.AddHeadlessTenancy(tenancy =>
             tenancy.Catalog(catalog => catalog.UseEntityFramework<TenantCatalogDbContext>())
         );

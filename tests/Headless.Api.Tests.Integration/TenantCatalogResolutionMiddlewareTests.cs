@@ -479,12 +479,85 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
     }
 
     [Fact]
+    public async Task should_not_rewrite_a_successful_response_when_a_side_channel_authorize_uses_a_foreign_principal()
+    {
+        // TenantIdentifierIntegrityHandler is a global IAuthorizationHandler, so it also observes the
+        // imperative AuthorizeAsync calls an endpoint makes against a principal that is not the request's
+        // own. Only the request's own principal may stamp the request-wide mismatch marker — otherwise
+        // StatusCodesRewriterMiddleware would replace this 204 with the generic 404 tenant rejection even
+        // though the request itself authenticated cleanly as the resolved tenant.
+        await using var app = await _CreateAppAsync(requireAuthenticatedUser: true);
+        using var client = HttpTenancyTestHarness.CreateClient(app);
+
+        using var response = await _SendAsync(
+            client,
+            identifier: "acme",
+            user: "alice",
+            tenantId: "ten_123",
+            path: "/side-channel-authorize"
+        );
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+    }
+
+    [Fact]
     public async Task should_reject_mismatch_when_authorization_resource_is_not_the_http_context()
     {
         // The SuppressUseHttpContextAsAuthorizationResource AppContext switch makes AuthorizationMiddleware
         // pass the Endpoint as the resource. Exercised directly rather than through the process-global
         // switch, which would leak into every other test running in parallel.
-        var httpContext = new DefaultHttpContext();
+        var principal = _CreatePrincipal(tenantId: "ten_999");
+        var httpContext = new DefaultHttpContext { User = principal };
+        httpContext.Features.Set(new TenantIdentifierResolvedFeature("ten_123"));
+
+        var handler = new TenantIdentifierIntegrityHandler(
+            Options.Create(new MultiTenancyOptions()),
+            new HttpContextAccessor { HttpContext = httpContext }
+        );
+
+        var authorizationContext = new AuthorizationHandlerContext(
+            [new TenantRequirement()],
+            principal,
+            resource: new Endpoint(_ => Task.CompletedTask, new EndpointMetadataCollection(), "test")
+        );
+
+        await handler.HandleAsync(authorizationContext);
+
+        authorizationContext.HasFailed.Should().BeTrue();
+        httpContext.Features.Get<TenantIdentifierMismatchFeature>().Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task should_not_fail_authorization_when_the_claim_matches_and_the_resource_is_not_the_http_context()
+    {
+        var principal = _CreatePrincipal(tenantId: "ten_123");
+        var httpContext = new DefaultHttpContext { User = principal };
+        httpContext.Features.Set(new TenantIdentifierResolvedFeature("ten_123"));
+
+        var handler = new TenantIdentifierIntegrityHandler(
+            Options.Create(new MultiTenancyOptions()),
+            new HttpContextAccessor { HttpContext = httpContext }
+        );
+
+        var authorizationContext = new AuthorizationHandlerContext(
+            [new TenantRequirement()],
+            principal,
+            resource: new Endpoint(_ => Task.CompletedTask, new EndpointMetadataCollection(), "test")
+        );
+
+        await handler.HandleAsync(authorizationContext);
+
+        authorizationContext.HasFailed.Should().BeFalse();
+        httpContext.Features.Get<TenantIdentifierMismatchFeature>().Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_fail_the_evaluation_without_marking_the_request_when_the_principal_is_not_the_requests_own()
+    {
+        // A side-channel AuthorizeAsync against somebody else's principal must fail on its own terms but
+        // must not stamp the request-wide mismatch marker — see the integration counterpart
+        // should_not_rewrite_a_successful_response_when_a_side_channel_authorize_uses_a_foreign_principal.
+        var httpContext = new DefaultHttpContext { User = _CreatePrincipal(tenantId: "ten_123") };
         httpContext.Features.Set(new TenantIdentifierResolvedFeature("ten_123"));
 
         var handler = new TenantIdentifierIntegrityHandler(
@@ -501,29 +574,6 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
         await handler.HandleAsync(authorizationContext);
 
         authorizationContext.HasFailed.Should().BeTrue();
-        httpContext.Features.Get<TenantIdentifierMismatchFeature>().Should().NotBeNull();
-    }
-
-    [Fact]
-    public async Task should_not_fail_authorization_when_the_claim_matches_and_the_resource_is_not_the_http_context()
-    {
-        var httpContext = new DefaultHttpContext();
-        httpContext.Features.Set(new TenantIdentifierResolvedFeature("ten_123"));
-
-        var handler = new TenantIdentifierIntegrityHandler(
-            Options.Create(new MultiTenancyOptions()),
-            new HttpContextAccessor { HttpContext = httpContext }
-        );
-
-        var authorizationContext = new AuthorizationHandlerContext(
-            [new TenantRequirement()],
-            _CreatePrincipal(tenantId: "ten_123"),
-            resource: new Endpoint(_ => Task.CompletedTask, new EndpointMetadataCollection(), "test")
-        );
-
-        await handler.HandleAsync(authorizationContext);
-
-        authorizationContext.HasFailed.Should().BeFalse();
         httpContext.Features.Get<TenantIdentifierMismatchFeature>().Should().BeNull();
     }
 
@@ -702,6 +752,24 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
                     Results.Json(new TenantCatalogResponse(currentTenant.Id, currentTenant.IsAvailable))
             )
             .AllowAnonymous();
+
+        // Models the imperative "can user X do Y" check an endpoint runs against somebody else's
+        // principal — a permission preview or delegated-access check. The foreign tenant claim reaches
+        // TenantIdentifierIntegrityHandler like any other evaluation, so this route exercises whether it
+        // leaks into the request-wide mismatch marker.
+        app.MapGet(
+            "/side-channel-authorize",
+            async (IAuthorizationService authorizationService) =>
+            {
+                await authorizationService.AuthorizeAsync(
+                    _CreatePrincipal(tenantId: "ten_999"),
+                    resource: null,
+                    new AuthorizationPolicyBuilder().RequireAssertion(_ => true).Build()
+                );
+
+                return Results.NoContent();
+            }
+        );
 
         await app.StartAsync(AbortToken);
         return app;

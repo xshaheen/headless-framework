@@ -142,7 +142,7 @@ app.UseAuthorization();
 
 ## Choosing a Tenant Catalog Store
 
-The tenant catalog (`Catalog(...)`) requires exactly one storage provider. Registering zero or more than one fails startup.
+The tenant catalog (`Catalog(...)`) requires exactly one storage provider. Registering zero or more than one fails startup. It also requires a caching provider registered via `AddHeadlessCaching(...)` — see [Tenant Catalog](#tenant-catalog).
 
 | Store | Use when | Avoid when | Trade-off |
 |---|---|---|---|
@@ -365,9 +365,13 @@ The tenant catalog is opt-in (R5): a host that never calls `.Catalog(...)` behav
 1. **Metadata access** — `.Catalog(...)` alone makes `ICurrentTenantInfo` resolve `TenantInfo` for whatever tenant is already ambient (typically via claim resolution). This is a valid, non-failing posture (`catalog-accessor`).
 2. **Identifier-based resolution** — `Headless.Api.Core`'s `.Http(http => http.ResolveFromCatalog(...))` plus `app.UseHeadlessTenantCatalogResolution()` additionally resolves the ambient tenant from a public identifier before authentication runs (`catalog-resolution`). This requires a store to be configured; enabling it with none configured, or with no identifier source ever registered, fails startup (R18).
 
+Both decisions share one prerequisite: **a caching provider must be registered**. `TenantCatalogService` resolves the identifier→id and id→`TenantInfo` caches as `ICache<T>` constructor dependencies, and `Headless.MultiTenancy` references only `Headless.Caching.Abstractions` — the open-generic `ICache<>` implementation comes from `Headless.Caching.InMemory`, `.Redis`, or `.Hybrid`. Configuring a store without calling `AddHeadlessCaching(...)` fails startup with `CATALOG_WITHOUT_CACHING_PROVIDER`; this applies to accessor-only hosts too, because `ICurrentTenantInfo` reads go through the same service and the same caches.
+
 ### Accessor-only setup
 
 ```csharp
+builder.Services.AddHeadlessCaching(caching => caching.UseInMemory());
+
 builder.AddHeadlessTenancy(tenancy =>
 {
     tenancy
@@ -861,6 +865,7 @@ Provides one composition surface for tenant posture across Headless packages whi
 - **`HeadlessTenancyStartupValidator`** is registered as an `IHostedLifecycleService` (not a plain `IHostedService`) so `StartingAsync` runs before any other hosted service's `StartAsync`. This ordering guarantees that a misconfigured posture fails the host before background workers or messaging consumers begin processing under the wrong assumptions. The validation itself is synchronous inside `StartingAsync` — the task is only faulted if the host's own startup continuation throws; the validated diagnostics surface as the typed `HeadlessTenancyValidationException` before the task is awaited.
 - **Two independent cache namespaces, one shared expiration.** The catalog caches the identifier→id mapping and the id→`TenantInfo` shape as separate `ICache<T>` item types, both defaulting to `TenantCatalogOptions.CacheExpiration`. A single store hit from an identifier lookup populates both namespaces in one pass. The cache always holds the base `TenantInfo` shape — a subclass returned by an app-owned store is cloned down before caching and re-hydrated (or downcast, when the store returns the subtype directly) on read, so no polymorphic instance is ever serialized into the cache.
 - **Accessor-only is a first-class, non-failing posture.** A host can call `Catalog(catalog => catalog.UseInMemory(...))` without ever calling `Headless.Api.Core`'s `.Http(http => http.ResolveFromCatalog(...))`. That combination records only the `catalog-accessor` capability — `ICurrentTenantInfo` metadata reads work, but no HTTP identifier resolution runs. `TenantCatalogPostureValidator` treats this as valid and never fails startup for it; it only fails when `catalog-resolution` is recorded without a configured store, or without an actually-wired resolution pipeline.
+- **A caching provider is a hard prerequisite of `Catalog(...)`.** This package references `Headless.Caching.Abstractions` only; the open-generic `ICache<>` implementation ships with a caching *provider* (`Headless.Caching.InMemory`, `.Redis`, `.Hybrid`). Since `TenantCatalogService` takes both cache item types as constructor dependencies, a host that configures a store but never calls `AddHeadlessCaching(...)` would start clean and then fail every tenant lookup — including plain `ICurrentTenantInfo` reads on accessor-only hosts. `TenantCatalogPostureValidator` therefore probes for a registered `ICache<T>` whenever the `catalog-accessor` capability is present and fails startup with `CATALOG_WITHOUT_CACHING_PROVIDER` when none is. It probes the registration rather than resolving the cache, so validation never builds the backing cache singleton early.
 - **Exactly-one-storage-provider guard.** `Catalog(...)` reuses the same `GuardSingleStorageProvider` mechanism as `Headless.Settings.Core` — registering zero or more than one of `UseInMemory`/`UseConfiguration`/`UseEntityFramework` in the same `Catalog(...)` callback fails startup immediately rather than silently picking one.
 
 ### Installation
@@ -909,7 +914,7 @@ Custom validators implement `IHeadlessTenancyValidator` and register themselves 
 
 ### Dependencies
 
-- `Headless.Caching.Abstractions`
+- `Headless.Caching.Abstractions` — contracts only. Hosts that call `Catalog(...)` must additionally install a caching provider (`Headless.Caching.InMemory`, `.Redis`, or `.Hybrid`) and register it with `AddHeadlessCaching(...)`.
 - `Headless.Checks`
 - `Headless.Extensions`
 - `Headless.Hosting`
