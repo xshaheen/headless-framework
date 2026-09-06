@@ -148,7 +148,7 @@ public sealed class FluentValidationSchemaProcessor(
 
         var propertyValidators = declaringTypeValidator.GetValidatorsByPropertyNameIgnoreCase(propertyName);
 
-        foreach (var propertyValidator in propertyValidators)
+        foreach (var (propertyValidator, isCollectionRule) in propertyValidators)
         {
             foreach (var rule in _rules)
             {
@@ -159,7 +159,7 @@ public sealed class FluentValidationSchemaProcessor(
 
                 try
                 {
-                    rule.Apply(new RuleContext(context, propertyName, propertyValidator));
+                    rule.Apply(new RuleContext(context, propertyName, propertyValidator, isCollectionRule));
 
                     _logger.LogRuleApplied(rule.RuleName, declaringType.Name, propertyName);
                 }
@@ -185,7 +185,7 @@ public sealed class FluentValidationSchemaProcessor(
         {
             var propertyValidators = validator.GetValidatorsByPropertyNameIgnoreCase(propertyName);
 
-            foreach (var propertyValidator in propertyValidators)
+            foreach (var (propertyValidator, isCollectionRule) in propertyValidators)
             {
                 foreach (var rule in _rules)
                 {
@@ -196,7 +196,7 @@ public sealed class FluentValidationSchemaProcessor(
 
                     try
                     {
-                        rule.Apply(new RuleContext(context, propertyName, propertyValidator));
+                        rule.Apply(new RuleContext(context, propertyName, propertyValidator, isCollectionRule));
 
                         _logger.LogRuleApplied(rule.RuleName, context.ContextualType.Name, propertyName);
                     }

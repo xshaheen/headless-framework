@@ -128,9 +128,10 @@ public sealed class FluentValidationRule
     };
 
     /// <summary>
-    /// Sets <c>minimum</c>, <c>exclusiveMinimum</c>, <c>maximum</c>, or <c>exclusiveMaximum</c> from
-    /// a comparison validator (<c>GreaterThan</c>, <c>GreaterThanOrEqualTo</c>, <c>LessThan</c>,
-    /// <c>LessThanOrEqualTo</c>). Only applies when the comparison value is a supported numeric type.
+    /// Sets <c>minimum</c>/<c>maximum</c>, with <c>exclusiveMinimum</c>/<c>exclusiveMaximum</c> as the
+    /// OpenAPI 3.0 boolean modifiers, from a comparison validator (<c>GreaterThan</c>,
+    /// <c>GreaterThanOrEqualTo</c>, <c>LessThan</c>, <c>LessThanOrEqualTo</c>). Only applies when the
+    /// comparison value is a supported numeric type.
     /// </summary>
     public static readonly FluentValidationRule ComparisonRule = new()
     {
@@ -151,20 +152,19 @@ public sealed class FluentValidationRule
             switch (comparisonValidator.Comparison)
             {
                 case Comparison.GreaterThanOrEqual:
-                    propertySchema.Minimum = valueToCompare;
+                    propertySchema.SetMinimum(valueToCompare, exclusive: false);
 
                     break;
                 case Comparison.GreaterThan:
-                    propertySchema.ExclusiveMinimum = valueToCompare;
+                    propertySchema.SetMinimum(valueToCompare, exclusive: true);
 
                     break;
                 case Comparison.LessThanOrEqual:
-                    propertySchema.Maximum = valueToCompare;
+                    propertySchema.SetMaximum(valueToCompare, exclusive: false);
 
                     break;
                 case Comparison.LessThan:
-                    propertySchema.Maximum = valueToCompare;
-                    propertySchema.IsExclusiveMaximum = true;
+                    propertySchema.SetMaximum(valueToCompare, exclusive: true);
 
                     break;
             }
@@ -184,34 +184,22 @@ public sealed class FluentValidationRule
             var betweenValidator = (IBetweenValidator)context.PropertyValidator;
             var propertySchema = context.PropertySchema;
 
+            var exclusive = betweenValidator.GetType().IsSubClassOfGeneric(typeof(ExclusiveBetweenValidator<,>));
+
             if (betweenValidator.From.IsSupportedSwaggerNumericNumeric())
             {
-                if (betweenValidator.GetType().IsSubClassOfGeneric(typeof(ExclusiveBetweenValidator<,>)))
-                {
-                    propertySchema.ExclusiveMinimum = Convert.ToDecimal(
-                        betweenValidator.From,
-                        CultureInfo.InvariantCulture
-                    );
-                }
-                else
-                {
-                    propertySchema.Minimum = Convert.ToDecimal(betweenValidator.From, CultureInfo.InvariantCulture);
-                }
+                propertySchema.SetMinimum(
+                    Convert.ToDecimal(betweenValidator.From, CultureInfo.InvariantCulture),
+                    exclusive
+                );
             }
 
             if (betweenValidator.To.IsSupportedSwaggerNumericNumeric())
             {
-                if (betweenValidator.GetType().IsSubClassOfGeneric(typeof(ExclusiveBetweenValidator<,>)))
-                {
-                    propertySchema.ExclusiveMaximum = Convert.ToDecimal(
-                        betweenValidator.To,
-                        CultureInfo.InvariantCulture
-                    );
-                }
-                else
-                {
-                    propertySchema.Maximum = Convert.ToDecimal(betweenValidator.To, CultureInfo.InvariantCulture);
-                }
+                propertySchema.SetMaximum(
+                    Convert.ToDecimal(betweenValidator.To, CultureInfo.InvariantCulture),
+                    exclusive
+                );
             }
         },
     };
