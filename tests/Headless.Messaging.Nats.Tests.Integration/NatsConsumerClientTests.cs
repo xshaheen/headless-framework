@@ -637,6 +637,219 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
         }
     }
 
+    // Stream provisioning modes
+
+    [Fact]
+    public async Task should_leave_an_operator_provisioned_stream_unmodified_and_report_it_when_verifying()
+    {
+        // given — a stream provisioned out of band on Memory storage, while the provider wants File
+        var logicalName = $"opprov-{Guid.NewGuid():N}"[..22];
+        var subject = $"{logicalName}.orders";
+        var streamName = NatsPhysicalAddress.Stream(MessageLane.Bus, logicalName);
+        await fixture.EnsureStreamAsync(streamName, NatsPhysicalAddress.Subject(MessageLane.Bus, $"{logicalName}.>"));
+
+        var options = _CreateOptions(NatsStreamProvisioning.Verify);
+        await using var client = new NatsConsumerClient("test-group", 0, options, _serviceProvider);
+        await client.ConnectAsync(AbortToken);
+
+        // when
+        var act = async () => await client.FetchMessageNamesAsync([subject], AbortToken);
+
+        // then — startup stops, and the operator's storage choice is untouched
+        var thrown = await act.Should().ThrowAsync<InvalidOperationException>();
+        thrown.WithMessage($"*{streamName}*");
+        thrown.WithMessage("*Recreate or migrate*");
+
+        var js = new NatsJSContext(await fixture.GetConnectionAsync());
+        var stream = await js.GetStreamAsync(streamName, cancellationToken: AbortToken);
+        stream.Info.Config.Storage.Should().Be(StreamConfigStorage.Memory);
+    }
+
+    [Fact]
+    public async Task should_report_no_divergence_when_verifying_a_stream_this_provider_created()
+    {
+        // given — the provider creates the stream itself
+        var logicalName = $"selfcreate-{Guid.NewGuid():N}"[..24];
+        var subject = $"{logicalName}.orders";
+
+        await using (
+            var creator = new NatsConsumerClient(
+                "test-group",
+                0,
+                _CreateOptions(NatsStreamProvisioning.Verify),
+                _serviceProvider
+            )
+        )
+        {
+            await creator.ConnectAsync(AbortToken);
+            await creator.FetchMessageNamesAsync([subject], AbortToken);
+        }
+
+        // when — a second startup verifies the same stream
+        await using var verifier = new NatsConsumerClient(
+            "test-group",
+            0,
+            _CreateOptions(NatsStreamProvisioning.Verify),
+            _serviceProvider
+        );
+        await verifier.ConnectAsync(AbortToken);
+        var act = async () => await verifier.FetchMessageNamesAsync([subject], AbortToken);
+
+        // then — server-applied defaults must not read as drift
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task should_write_a_mutable_divergence_when_reconciling()
+    {
+        // given — same storage as the provider wants, but a different retention limit
+        var logicalName = $"mutable-{Guid.NewGuid():N}"[..22];
+        var subject = $"{logicalName}.orders";
+        var streamName = NatsPhysicalAddress.Stream(MessageLane.Bus, logicalName);
+
+        var js = new NatsJSContext(await fixture.GetConnectionAsync());
+        await js.CreateStreamAsync(
+            new StreamConfig
+            {
+                Name = streamName,
+                Subjects = [NatsPhysicalAddress.Subject(MessageLane.Bus, $"{logicalName}.>")],
+                Storage = StreamConfigStorage.Memory,
+                Retention = NatsPhysicalAddress.Retention(MessageLane.Bus),
+                MaxMsgs = 100,
+            },
+            AbortToken
+        );
+
+        var options = Options.Create(
+            new NatsMessagingOptions
+            {
+                Servers = fixture.ConnectionString,
+                StreamProvisioning = NatsStreamProvisioning.Reconcile,
+                StreamOptions = config =>
+                {
+                    config.Storage = StreamConfigStorage.Memory;
+                    config.MaxMsgs = 500;
+                },
+            }
+        );
+
+        await using var client = new NatsConsumerClient("test-group", 0, options, _serviceProvider);
+        await client.ConnectAsync(AbortToken);
+
+        // when
+        await client.FetchMessageNamesAsync([subject], AbortToken);
+
+        // then
+        var stream = await js.GetStreamAsync(streamName, cancellationToken: AbortToken);
+        stream.Info.Config.MaxMsgs.Should().Be(500);
+    }
+
+    [Fact]
+    public async Task should_report_an_immutable_divergence_when_reconciling_instead_of_attempting_the_update()
+    {
+        // given — storage differs, which JetStream refuses to change on a live stream
+        var logicalName = $"immut-{Guid.NewGuid():N}"[..22];
+        var subject = $"{logicalName}.orders";
+        var streamName = NatsPhysicalAddress.Stream(MessageLane.Bus, logicalName);
+        await fixture.EnsureStreamAsync(streamName, NatsPhysicalAddress.Subject(MessageLane.Bus, $"{logicalName}.>"));
+
+        var options = _CreateOptions(NatsStreamProvisioning.Reconcile);
+        await using var client = new NatsConsumerClient("test-group", 0, options, _serviceProvider);
+        await client.ConnectAsync(AbortToken);
+
+        // when
+        var act = async () => await client.FetchMessageNamesAsync([subject], AbortToken);
+
+        // then — a migration remedy, not a rejected update and not a Reconcile suggestion
+        var thrown = await act.Should().ThrowAsync<InvalidOperationException>();
+        thrown.WithMessage("*Recreate or migrate*");
+
+        var js = new NatsJSContext(await fixture.GetConnectionAsync());
+        var stream = await js.GetStreamAsync(streamName, cancellationToken: AbortToken);
+        stream.Info.Config.Storage.Should().Be(StreamConfigStorage.Memory);
+    }
+
+    [Fact]
+    public async Task should_not_create_a_missing_stream_when_provisioning_is_disabled()
+    {
+        // given
+        var logicalName = $"nocreate-{Guid.NewGuid():N}"[..22];
+        var subject = $"{logicalName}.orders";
+        var streamName = NatsPhysicalAddress.Stream(MessageLane.Bus, logicalName);
+
+        var options = _CreateOptions(NatsStreamProvisioning.Disabled);
+        await using var client = new NatsConsumerClient("test-group", 0, options, _serviceProvider);
+        await client.ConnectAsync(AbortToken);
+
+        // when
+        var result = await client.FetchMessageNamesAsync([subject], AbortToken);
+
+        // then
+        result.Should().Contain(subject);
+
+        var js = new NatsJSContext(await fixture.GetConnectionAsync());
+        var act = async () => await js.GetStreamAsync(streamName, cancellationToken: AbortToken);
+        await act.Should().ThrowAsync<NatsJSApiException>();
+    }
+
+    [Fact]
+    public async Task should_fail_a_second_consumer_group_whose_subject_the_shared_stream_does_not_carry()
+    {
+        // given — group A creates the shared stream carrying only its own subject
+        var logicalName = $"twogroup-{Guid.NewGuid():N}"[..22];
+        var subjectA = $"{logicalName}.created";
+        var subjectB = $"{logicalName}.shipped";
+        var streamName = NatsPhysicalAddress.Stream(MessageLane.Bus, logicalName);
+
+        await using (
+            var groupA = new NatsConsumerClient(
+                "group-a",
+                0,
+                _CreateOptions(NatsStreamProvisioning.Verify),
+                _serviceProvider
+            )
+        )
+        {
+            await groupA.ConnectAsync(AbortToken);
+            await groupA.FetchMessageNamesAsync([subjectA], AbortToken);
+        }
+
+        // when — group B verifies against a stream that cannot deliver to it
+        await using (
+            var groupB = new NatsConsumerClient(
+                "group-b",
+                0,
+                _CreateOptions(NatsStreamProvisioning.Verify),
+                _serviceProvider
+            )
+        )
+        {
+            await groupB.ConnectAsync(AbortToken);
+            var act = async () => await groupB.FetchMessageNamesAsync([subjectB], AbortToken);
+
+            // then — the silent-loss case the old unconditional upsert hid
+            var thrown = await act.Should().ThrowAsync<InvalidOperationException>();
+            thrown.WithMessage("*no messages*");
+        }
+
+        // and — reconciling admits the second group and the stream then carries both subjects
+        await using var groupBReconciling = new NatsConsumerClient(
+            "group-b",
+            0,
+            _CreateOptions(NatsStreamProvisioning.Reconcile),
+            _serviceProvider
+        );
+        await groupBReconciling.ConnectAsync(AbortToken);
+        await groupBReconciling.FetchMessageNamesAsync([subjectB], AbortToken);
+
+        var js = new NatsJSContext(await fixture.GetConnectionAsync());
+        var stream = await js.GetStreamAsync(streamName, cancellationToken: AbortToken);
+        stream
+            .Info.Config.Subjects.Should()
+            .Contain(NatsPhysicalAddress.Subject(MessageLane.Bus, subjectA))
+            .And.Contain(NatsPhysicalAddress.Subject(MessageLane.Bus, subjectB));
+    }
+
     private IOptions<NatsMessagingOptions> _CreateOptions(NatsStreamProvisioning streamProvisioning)
     {
         return Options.Create(
