@@ -1,4 +1,5 @@
 using Headless.Abstractions;
+using Headless.MultiTenancy;
 using Headless.Testing.Helpers;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;

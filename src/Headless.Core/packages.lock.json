@@ -215,6 +215,12 @@
       "headless.generator.primitives.abstractions": {
         "type": "Project"
       },
+      "headless.multitenancy.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Primitives": "[1.0.0, )"
+        }
+      },
       "headless.primitives": {
         "type": "Project",
         "dependencies": {

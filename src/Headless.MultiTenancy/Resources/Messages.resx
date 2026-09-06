@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:element name="root" msdata:IsDataSet="true"></xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>1.3</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=2.0.0.0, Culture=neutral,
+      PublicKeyToken=b77a5c561934e089
+    </value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=2.0.0.0, Culture=neutral,
+      PublicKeyToken=b77a5c561934e089
+    </value>
+  </resheader>
+  <data name="g:tenant_resolution_failed" xml:space="preserve">
+    <value>The requested tenant could not be resolved.</value>
+  </data>
+  <data name="g:tenant_unknown" xml:space="preserve">
+    <value>No tenant matches the requested identifier.</value>
+  </data>
+  <data name="g:tenant_disabled" xml:space="preserve">
+    <value>This tenant is disabled.</value>
+  </data>
+  <data name="g:tenant_identifier_mismatch" xml:space="preserve">
+    <value>The resolved tenant identifier does not match the authenticated tenant.</value>
+  </data>
+  <data name="g:tenant_identifier_invalid" xml:space="preserve">
+    <value>The tenant identifier is invalid.</value>
+  </data>
+</root>

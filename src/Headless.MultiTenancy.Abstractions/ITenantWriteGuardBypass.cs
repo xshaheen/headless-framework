@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Abstractions;
+namespace Headless.MultiTenancy;
 
 /// <summary>Tracks an operation-local bypass for intentional host or admin tenant-owned writes.</summary>
 [PublicAPI]

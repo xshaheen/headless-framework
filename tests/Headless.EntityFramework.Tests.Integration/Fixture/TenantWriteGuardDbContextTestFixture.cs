@@ -1,5 +1,6 @@
 using Headless.Abstractions;
 using Headless.EntityFramework;
+using Headless.MultiTenancy;
 using Headless.Testing.Helpers;
 using Headless.Testing.Testcontainers;
 using Microsoft.EntityFrameworkCore;

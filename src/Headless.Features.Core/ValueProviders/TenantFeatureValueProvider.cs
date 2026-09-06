@@ -3,6 +3,7 @@
 using Headless.Abstractions;
 using Headless.Core;
 using Headless.Features.Values;
+using Headless.MultiTenancy;
 
 namespace Headless.Features.ValueProviders;
 

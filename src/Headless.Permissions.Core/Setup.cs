@@ -4,6 +4,7 @@ using Headless.Abstractions;
 using Headless.Caching;
 using Headless.Checks;
 using Headless.Hosting.Initialization;
+using Headless.MultiTenancy;
 using Headless.Permissions.Definitions;
 using Headless.Permissions.GrantProviders;
 using Headless.Permissions.Grants;

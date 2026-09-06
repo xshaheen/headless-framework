@@ -10,9 +10,6 @@ Provides standardized interfaces for common cross-cutting concerns (user, tenant
 
 - **Abstractions**:
   - `ICurrentUser` - Current authenticated user context; `UserId` and `Roles` are exposed only for authenticated principals
-  - `ICurrentTenant` - Multi-tenancy support with scoped tenant switching
-  - `ITenantWriteGuardBypass` - Explicit bypass scope for audited host/admin tenant writes
-  - `CrossTenantWriteException` - Non-transient exception for blocked tenant-owned writes
   - `ICurrentLocale` - Localization context (language, locale, culture)
   - `ICurrentTimeZone` - Timezone handling
   - `ICurrentPrincipalAccessor` - Scoped `ClaimsPrincipal` access with temporary switching
@@ -21,6 +18,12 @@ Provides standardized interfaces for common cross-cutting concerns (user, tenant
   - `ITimezoneProvider` - Windows/IANA timezone conversion and listing
   - `IApplicationInformationAccessor` / `IBuildInformationAccessor` - Application metadata and build info
   - `IEnumLocaleAccessor` - Localized enum display values
+
+- **Multi-tenancy implementations** (contracts live in `Headless.MultiTenancy.Abstractions`, namespace `Headless.MultiTenancy` — see `Headless.MultiTenancy.Abstractions` and `Headless.MultiTenancy`):
+  - `CurrentTenant` / `AsyncLocalCurrentTenantAccessor` - default `ICurrentTenant` / `ICurrentTenantAccessor` implementations, `AsyncLocal`-scoped
+  - `NullCurrentTenant` - fallback `ICurrentTenant` registered until a real tenant source (HTTP claim resolution, `AddHeadlessDbContextServices()`, ...) replaces it
+  - `TenantWriteGuardBypass` - default `ITenantWriteGuardBypass` implementation; explicit bypass scope for audited host/admin tenant writes
+  - `CrossTenantWriteException` / `MissingTenantContextException` - tenant write-guard exception types (defined in `Headless.MultiTenancy.Abstractions`; non-transient, exclude from retry)
 
 - **Utilities**:
   - `SnappyCompressor` - Snappy compression/decompression with JSON serialization (AOT-compatible)

@@ -2,6 +2,7 @@
 
 using Headless.Abstractions;
 using Headless.Core;
+using Headless.MultiTenancy;
 
 namespace Headless.Testing.Helpers;
 

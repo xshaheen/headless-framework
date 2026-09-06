@@ -2,7 +2,11 @@
 
 using System.ComponentModel;
 using Headless.Abstractions;
+using Headless.Api.Abstractions;
 using Headless.Api.Middlewares;
+using Headless.Api.MultiTenancy;
+using Headless.MultiTenancy;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -84,7 +88,13 @@ public static class SetupMiddlewares
     /// <param name="app">The application builder.</param>
     /// <remarks>
     /// Notifies any registered <see cref="IStatusCodesRewriterCalledNotifier"/> (e.g.,
-    /// <c>HeadlessServiceDefaultsValidationStartupFilter</c>) synchronously before adding the middleware.
+    /// <c>HeadlessServiceDefaultsValidationStartupFilter</c>) synchronously before adding the middleware,
+    /// and records <see cref="TenantCatalogPosture.StatusCodesRewriterRuntimeMarker"/> on an already-configured
+    /// tenant catalog seam so <c>TenantCatalogPostureValidator</c> can fail a catalog-resolution host that
+    /// never wired the rewriter (its R19 mismatch rejection would otherwise stay distinguishable from the
+    /// unknown-tenant rejection). The marker records presence only — it cannot observe whether this call
+    /// precedes <c>UseAuthorization()</c>, which it must, since a rewriter registered after authorization
+    /// never sees the failed evaluation.
     /// </remarks>
     /// <returns>The same application builder.</returns>
     public static IApplicationBuilder UseStatusCodesRewriter(this IApplicationBuilder app)
@@ -96,6 +106,23 @@ public static class SetupMiddlewares
         )
         {
             notifier.OnCalled();
+        }
+
+        // The notifier above is implemented by Headless.Api.ServiceDefaults, which a plain Headless.Api.Core
+        // catalog host does not reference; the posture manifest is the channel Headless.MultiTenancy's startup
+        // validator can actually observe, and it is the same one UseHeadlessTenantCatalogResolution() writes
+        // its pipeline marker to. Gated on an already-recorded seam so a host with no catalog does not
+        // materialize an empty Catalog seam in the manifest — AddHeadlessTenancy(...) always runs before the
+        // pipeline is composed, so a configured catalog is recorded by this point.
+        if (
+            app.ApplicationServices.GetService<TenantPostureManifest>() is { } manifest
+            && manifest.IsConfigured(TenantCatalogPosture.Seam)
+        )
+        {
+            manifest.MarkRuntimeApplied(
+                TenantCatalogPosture.Seam,
+                TenantCatalogPosture.StatusCodesRewriterRuntimeMarker
+            );
         }
 
         return app.UseMiddleware<StatusCodesRewriterMiddleware>();
@@ -116,7 +143,7 @@ public static class SetupMiddlewares
 
     /// <summary>
     /// Adds <c>TenantResolutionMiddleware</c> to the pipeline. It reads the configured tenant claim
-    /// from the authenticated principal and sets <see cref="Headless.Abstractions.ICurrentTenant"/>
+    /// from the authenticated principal and sets <see cref="Headless.MultiTenancy.ICurrentTenant"/>
     /// for the duration of the request. Endpoints decorated with <see cref="MultiTenancy.SkipTenantResolutionAttribute"/>
     /// are bypassed entirely. Unauthenticated requests are passed through without setting a tenant.
     /// </summary>
@@ -132,5 +159,72 @@ public static class SetupMiddlewares
     public static IApplicationBuilder UseTenantResolution(this IApplicationBuilder application)
     {
         return application.UseMiddleware<TenantResolutionMiddleware>();
+    }
+
+    /// <summary>
+    /// Registers <c>TenantCatalogResolutionMiddleware</c> as a singleton in the DI container, together
+    /// with the services its rejection and integrity paths depend on.
+    /// Call <see cref="UseTenantCatalogResolution"/> (or
+    /// <see cref="SetupApiTenancy.UseHeadlessTenantCatalogResolution"/>) after this to add it to the
+    /// pipeline.
+    /// </summary>
+    /// <param name="services">The service collection to register into.</param>
+    /// <returns>The same service collection.</returns>
+    /// <remarks>
+    /// Also registers the R19 post-authorization mapping-integrity handler
+    /// (<c>TenantIdentifierIntegrityHandler</c>) and
+    /// <see cref="Microsoft.AspNetCore.Http.IHttpContextAccessor"/>, so cross-tenant integrity
+    /// enforcement is inseparable from the middleware — a host wiring this low-level pair directly would
+    /// otherwise get identifier resolution and ambient tenant assignment with tier-2 R19 enforcement
+    /// silently absent. <see cref="IProblemDetailsCreator"/> and its dependencies are registered for the
+    /// same reason: every rejection path resolves it from request services.
+    /// </remarks>
+    public static IServiceCollection AddTenantCatalogResolution(this IServiceCollection services)
+    {
+        // Every rejection path of this middleware (unknown/disabled/invalid outcomes, the R19 claim
+        // mismatch, and TenantResolutionMiddleware's claim-vs-feature fast path) resolves
+        // IProblemDetailsCreator from request services. That must not depend on the host also calling
+        // AddHeadlessProblemDetails(), or a catalog host turns every rejection into a runtime 500 while
+        // startup validation stays green. TryAdd keeps AddHeadlessProblemDetails() and consumer
+        // replacements authoritative; ProblemDetailsCreator's own dependencies are registered the same
+        // way so the write path is resolvable in a host that registers nothing else.
+        services.TryAddSingleton<IProblemDetailsCreator, ProblemDetailsCreator>();
+        services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<IBuildInformationAccessor, BuildInformationAccessor>();
+
+        // TenantIdentifierIntegrityHandler needs a fallback route to the request when authorization does
+        // not pass the HttpContext as the resource (the AppContext switch
+        // Microsoft.AspNetCore.Authorization.SuppressUseHttpContextAsAuthorizationResource passes the
+        // Endpoint instead).
+        services.AddHttpContextAccessor();
+
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IAuthorizationHandler, TenantIdentifierIntegrityHandler>()
+        );
+
+        return services;
+    }
+
+    /// <summary>
+    /// Adds <c>TenantCatalogResolutionMiddleware</c> to the pipeline. It consults registered
+    /// <c>ITenantIdentifierSource</c>s in registration order and resolves the first non-null
+    /// identifier through the tenant catalog, setting <see cref="Headless.MultiTenancy.ICurrentTenant"/>
+    /// on a match or short-circuiting with a fail-closed ProblemDetails response. Endpoints decorated
+    /// with <see cref="MultiTenancy.SkipTenantResolutionAttribute"/> are bypassed entirely.
+    /// </summary>
+    /// <param name="application">The application builder.</param>
+    /// <returns>The same application builder.</returns>
+    /// <remarks>
+    /// Place this after <c>UseRouting()</c> and before <c>UseAuthentication()</c> — separate from
+    /// <see cref="UseTenantResolution"/>'s post-authentication claim placement (KTD2). A one-time
+    /// process-level warning is emitted when the middleware observes a request with no resolved
+    /// endpoint (likely ordering misconfiguration). Prefer
+    /// <see cref="SetupApiTenancy.UseHeadlessTenantCatalogResolution"/> when catalog resolution was
+    /// configured through the tenancy builder — it guards against double-registration, no-ops for
+    /// accessor-only hosts, and records the posture runtime marker validated at startup.
+    /// </remarks>
+    public static IApplicationBuilder UseTenantCatalogResolution(this IApplicationBuilder application)
+    {
+        return application.UseMiddleware<TenantCatalogResolutionMiddleware>();
     }
 }

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.MultiTenancy;
 using Microsoft.AspNetCore.Builder;
 
 namespace Headless.Api.Idempotency;

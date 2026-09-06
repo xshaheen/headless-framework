@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Abstractions;
+namespace Headless.MultiTenancy;
 
 /// <summary>
 /// Thrown when a tenant write guard detects a tenant-owned write that does not match the current

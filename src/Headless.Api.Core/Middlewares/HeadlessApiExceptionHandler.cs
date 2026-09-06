@@ -7,6 +7,7 @@ using Headless.Abstractions;
 using Headless.Api.Resources;
 using Headless.Constants;
 using Headless.Exceptions;
+using Headless.MultiTenancy;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;

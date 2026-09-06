@@ -20,6 +20,7 @@ using Headless.Jobs.MultiTenancy;
 using Headless.Jobs.Provider;
 using Headless.Jobs.Temps;
 using Headless.Jobs.Transactions;
+using Headless.MultiTenancy;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
