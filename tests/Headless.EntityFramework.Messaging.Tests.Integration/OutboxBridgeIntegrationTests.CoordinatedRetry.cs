@@ -48,7 +48,7 @@ public sealed partial class OutboxBridgeIntegrationTests
             }
             db.Orders.Add(order);
 
-            var save = () => _SaveAsync(db, synchronous);
+            var save = async () => await _SaveAsync(db, synchronous);
             await save.Should().ThrowAsync<TransientOutboxException>();
         }
 

@@ -454,7 +454,11 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
             Lane = MessageLane.Bus,
             Content = provider.GetRequiredService<ISerializer>().Serialize(message),
         };
-        var method = typeof(IConsume<ShipOrder>).GetMethod(nameof(IConsume<ShipOrder>.ConsumeAsync))!;
+        var method = typeof(IConsume<ShipOrder>).GetMethod(
+            nameof(IConsume<ShipOrder>.ConsumeAsync),
+            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+            [typeof(ConsumeContext<ShipOrder>), typeof(CancellationToken)]
+        )!;
         var descriptor = new ConsumerExecutorDescriptor
         {
             ServiceTypeInfo = typeof(ShipOrderConsumer).GetTypeInfo(),

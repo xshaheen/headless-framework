@@ -26,8 +26,9 @@ public sealed class MessagePublisherDeliveryTests : TestBase
     {
         await using var harness = _CreateHarness();
         var serializer = new JsonUtf8Serializer(Options.Create(new MessagingOptions()));
-        harness
-            .Storage.StoreMessageAsync(
+        var storage = harness.Storage;
+        storage
+            .StoreMessageAsync(
                 Arg.Any<string>(),
                 Arg.Any<MediumMessage>(),
                 Arg.Any<System.Data.Common.DbTransaction?>(),
@@ -181,8 +182,9 @@ public sealed class MessagePublisherDeliveryTests : TestBase
     {
         await using var harness = _CreateHarness();
         using var caller = new CancellationTokenSource();
-        harness
-            .Storage.StoreMessageAsync(
+        var storage = harness.Storage;
+        storage
+            .StoreMessageAsync(
                 Arg.Any<string>(),
                 Arg.Any<MediumMessage>(),
                 Arg.Any<System.Data.Common.DbTransaction?>(),
@@ -238,8 +240,9 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         await using var harness = _CreateHarness();
         using var caller = new CancellationTokenSource();
         await caller.CancelAsync();
-        harness
-            .Storage.StoreMessageAsync(
+        var storage = harness.Storage;
+        storage
+            .StoreMessageAsync(
                 Arg.Any<string>(),
                 Arg.Any<MediumMessage>(),
                 Arg.Any<System.Data.Common.DbTransaction?>(),

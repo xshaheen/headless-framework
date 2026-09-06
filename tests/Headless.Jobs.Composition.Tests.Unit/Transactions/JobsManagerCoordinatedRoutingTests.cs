@@ -73,7 +73,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase, IDisp
             .Persistence.DidNotReceive()
             .AddTimeJobsAsync(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
         sut.Scheduler.DidNotReceiveWithAnyArgs().RestartIfNeeded(default);
-        await sut.Notification.DidNotReceiveWithAnyArgs().AddTimeJobNotifyAsync(default(Guid));
+        await sut.Notification.DidNotReceiveWithAnyArgs().AddTimeJobNotifyAsync(default);
     }
 
     [Fact]
@@ -1203,9 +1203,18 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase, IDisp
     {
         var connection = Substitute.For<DbConnection>();
         connection.State.Returns(ConnectionState.Open);
-        var transaction = Substitute.For<DbTransaction>();
-        transaction.Connection.Returns(connection);
-        return transaction;
+        return new LiveTransaction(connection);
+    }
+
+    private sealed class LiveTransaction(DbConnection connection) : DbTransaction
+    {
+        public override IsolationLevel IsolationLevel => IsolationLevel.Unspecified;
+
+        protected override DbConnection DbConnection => connection;
+
+        public override void Commit() => throw new NotSupportedException();
+
+        public override void Rollback() => throw new NotSupportedException();
     }
 
     private sealed class FakeRelationalCommitContext(DbTransaction? transaction) : IRelationalCommitContext
