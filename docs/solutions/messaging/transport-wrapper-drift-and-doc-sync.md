@@ -59,7 +59,7 @@ options.UseDashboard(dashboard =>
 
 options.UseNats(nats =>
 {
-    nats.EnableSubscriberClientStreamAndSubjectCreation = false;
+    nats.StreamProvisioning = NatsStreamProvisioning.Disabled;
 });
 ```
 
