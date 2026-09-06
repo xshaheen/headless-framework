@@ -114,15 +114,20 @@ internal sealed class NatsConsumerClient(
             using var cts = _natsOptions.StreamCreateTimeout.ToCancellationTokenSource(cancellationToken);
 
             // Several consumer groups can normalize to the same stream name, and each group only knows its
-            // own subjects. CreateOrUpdateStream REPLACES the subject list, so union with whatever the stream
-            // already carries (from an earlier group, or a pre-provisioned stream) to avoid clobbering them.
+            // own subjects. An update REPLACES the subject list, so union with whatever the stream already
+            // carries (from an earlier group, or a pre-provisioned stream) to avoid clobbering them.
+            // The probe also decides create-versus-exists, so its result outlives the try block.
+            StreamConfig? liveConfig = null;
+
             try
             {
                 var existing = await _jsContext!
                     .GetStreamAsync(streamName, cancellationToken: cts.Token)
                     .ConfigureAwait(false);
 
-                if (existing.Info.Config.Subjects is { } existingSubjects)
+                liveConfig = existing.Info.Config;
+
+                if (liveConfig.Subjects is { } existingSubjects)
                 {
                     subjects.UnionWith(existingSubjects);
                 }
@@ -148,7 +153,18 @@ internal sealed class NatsConsumerClient(
                 Retention = NatsPhysicalAddress.Retention(lane),
             };
 
+            // Snapshot either side of the callback so the comparison below can tell a field the operator
+            // asserted from one the server will fill with its own default. Diffing an unasserted field would
+            // report drift against every stream that exists.
+            var beforeOptions = NatsStreamReconciliation.Snapshot(config);
             _natsOptions.StreamOptions?.Invoke(config);
+            var assertedFields = NatsStreamReconciliation.AssertedFields(
+                beforeOptions,
+                NatsStreamReconciliation.Snapshot(config)
+            );
+
+            // The provider sets storage itself, so it is asserted whether or not the callback touched it.
+            assertedFields.Add(nameof(StreamConfig.Storage));
 
             if (
                 !string.Equals(config.Name, streamName, StringComparison.Ordinal)
@@ -162,7 +178,55 @@ internal sealed class NatsConsumerClient(
                 );
             }
 
-            await _jsContext!.CreateOrUpdateStreamAsync(config, cts.Token).ConfigureAwait(false);
+            if (liveConfig is null)
+            {
+                // First-run creation happens in every enabled mode; only an existing stream is contentious.
+                await _jsContext!.CreateStreamAsync(config, cts.Token).ConfigureAwait(false);
+
+                continue;
+            }
+
+            var divergences = new List<StreamDivergence>(
+                NatsStreamReconciliation.CompareFields(config, liveConfig, assertedFields)
+            );
+
+            // A subject this client needs that the stream does not carry is not cosmetic drift: JetStream
+            // delivers nothing, and reports no error, to a consumer filter that matches no subject.
+            var uncovered = NatsStreamReconciliation.FindUncoveredSubjects(expectedSubjects, liveConfig.Subjects);
+
+            if (uncovered.Count > 0)
+            {
+                divergences.Add(
+                    new StreamDivergence(
+                        nameof(StreamConfig.Subjects),
+                        string.Join(", ", uncovered),
+                        "not carried by the stream",
+                        IsImmutable: false
+                    )
+                );
+            }
+
+            if (divergences.Count == 0)
+            {
+                continue;
+            }
+
+            var reconcilable = divergences.TrueForAll(divergence => !divergence.IsImmutable);
+
+            if (_natsOptions.StreamProvisioning is NatsStreamProvisioning.Reconcile && reconcilable)
+            {
+                await _jsContext!.UpdateStreamAsync(config, cts.Token).ConfigureAwait(false);
+
+                continue;
+            }
+
+            throw new InvalidOperationException(
+                NatsStreamReconciliation.ComposeDivergenceMessage(
+                    streamName,
+                    divergences,
+                    _natsOptions.StreamProvisioning
+                )
+            );
         }
 
         return [.. names];
