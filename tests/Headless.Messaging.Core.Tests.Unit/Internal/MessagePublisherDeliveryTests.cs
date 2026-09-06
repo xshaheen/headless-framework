@@ -191,6 +191,98 @@ public sealed class MessagePublisherDeliveryTests : TestBase
     }
 
     [Theory]
+    [InlineData(MessageLane.Bus, 3)]
+    [InlineData(MessageLane.Queue, 3)]
+    [InlineData(MessageLane.Bus, -2)]
+    [InlineData(MessageLane.Queue, -2)]
+    public async Task should_publish_an_absolute_schedule_without_a_relative_delay(MessageLane lane, int offsetHours)
+    {
+        // Regression: the scheduled branch used to dereference decision.Delay, so an absolute-only schedule
+        // threw before the message reached storage. A negative offset covers the accepted past-instant case.
+        var now = new DateTimeOffset(2026, 7, 26, 12, 0, 0, TimeSpan.Zero);
+        var scheduledAt = now.AddHours(offsetHours);
+        await using var harness = _CreateHarness(new FakeTimeProvider(now));
+#pragma warning disable AsyncFixer04 // Substitute setup is synchronous; the publish is awaited before disposal.
+        harness
+            .Storage.StoreScheduledMessageAsync(
+                Arg.Any<string>(),
+                Arg.Any<MediumMessage>(),
+                Arg.Any<DateTimeOffset>(),
+                Arg.Any<System.Data.Common.DbTransaction?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(call =>
+            {
+                call.ArgAt<DateTimeOffset>(2).Should().Be(scheduledAt);
+                var stored = call.ArgAt<MediumMessage>(1);
+                stored.StorageId = Guid.NewGuid();
+                return ValueTask.FromResult(stored);
+            });
+#pragma warning restore AsyncFixer04
+        IBus bus = new Bus(harness.Publisher);
+        IQueue queue = new Queue(harness.Publisher);
+        var message = new DeliveryMessage("absolute");
+
+        if (lane == MessageLane.Bus)
+        {
+            await bus.PublishAsync(message, options => options.WithScheduledAt(scheduledAt), AbortToken);
+        }
+        else
+        {
+            await queue.EnqueueAsync(message, options => options.WithScheduledAt(scheduledAt), AbortToken);
+        }
+
+        // Assert the scheduled-store call itself: ExpiresAt is stamped by the real provider, so a substituted
+        // storage never populates it and asserting on it would prove nothing here.
+        await harness
+            .Storage.Received(1)
+            .StoreScheduledMessageAsync(
+                Arg.Any<string>(),
+                Arg.Any<MediumMessage>(),
+                scheduledAt,
+                Arg.Any<System.Data.Common.DbTransaction?>(),
+                Arg.Any<CancellationToken>()
+            );
+        var stored = harness.Dispatcher.CommittedDelayedMessages.Should().ContainSingle().Subject;
+        stored.Lane.Should().Be(lane);
+        stored.Origin.Headers[Headers.ResolvedDeliveryMode].Should().Be(nameof(DeliveryMode.Durable));
+        // The delay header describes a relative offset that was never supplied.
+        stored.Origin.Headers.ContainsKey(Headers.DelayTime).Should().BeFalse();
+        harness.TransportMessages.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(MessageLane.Bus)]
+    [InlineData(MessageLane.Queue)]
+    public async Task should_reject_supplying_both_a_delay_and_an_absolute_schedule(MessageLane lane)
+    {
+        await using var harness = _CreateHarness();
+        IBus bus = new Bus(harness.Publisher);
+        IQueue queue = new Queue(harness.Publisher);
+        var message = new DeliveryMessage("both");
+        var scheduledAt = DateTimeOffset.UnixEpoch.AddYears(60);
+
+        Func<Task> publish = () =>
+            lane == MessageLane.Bus
+                ? bus.PublishAsync(
+                    message,
+                    options => options.WithDelay(TimeSpan.FromMinutes(5)).WithScheduledAt(scheduledAt),
+                    AbortToken
+                )
+                : queue.EnqueueAsync(
+                    message,
+                    options => options.WithDelay(TimeSpan.FromMinutes(5)).WithScheduledAt(scheduledAt),
+                    AbortToken
+                );
+
+        await publish.Should().ThrowAsync<ArgumentException>();
+        harness.Storage.ReceivedCalls().Should().BeEmpty();
+        harness.Dispatcher.CommittedMessages.Should().BeEmpty();
+        harness.Dispatcher.CommittedDelayedMessages.Should().BeEmpty();
+        harness.TransportMessages.Should().BeEmpty();
+    }
+
+    [Theory]
     [InlineData(MessageLane.Bus)]
     [InlineData(MessageLane.Queue)]
     public async Task should_preserve_same_affinity_in_direct_transport_and_committed_outbox(MessageLane lane)

@@ -33,6 +33,7 @@ public abstract class PublishContext
         ResolvedDeliveryMode = decision.ResolvedMode;
         OptionsCore = options;
         DelayTime = decision.Delay;
+        ScheduledAt = decision.ScheduledAt;
         PublishAt = decision.PublishAt;
         IsTransactional = decision.IsTransactional;
         DeliveryFrozen = deliveryFrozen;
@@ -79,6 +80,9 @@ public abstract class PublishContext
     /// <summary>Gets the scheduled delay for this operation. <see langword="null"/> means immediate publish.</summary>
     public TimeSpan? DelayTime { get; private set; }
 
+    /// <summary>Gets the caller's absolute schedule for this operation, when one was supplied instead of a delay.</summary>
+    public DateTimeOffset? ScheduledAt { get; }
+
     /// <summary>Gets the resolved UTC not-before timestamp for delayed delivery.</summary>
     public DateTimeOffset? PublishAt { get; }
 
@@ -119,6 +123,11 @@ public abstract class PublishContext
         if (DeliveryFrozen && options?.Delay != DelayTime)
         {
             throw new InvalidOperationException("Publish middleware cannot change the resolved delivery delay.");
+        }
+
+        if (DeliveryFrozen && options?.ScheduledAt != ScheduledAt)
+        {
+            throw new InvalidOperationException("Publish middleware cannot change the resolved delivery schedule.");
         }
 
         OptionsCore = options;

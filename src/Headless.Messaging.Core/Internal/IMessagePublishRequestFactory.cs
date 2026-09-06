@@ -14,11 +14,15 @@ namespace Headless.Messaging.Internal;
 
 internal interface IMessagePublishRequestFactory
 {
+    /// <summary>
+    /// Creates a request for an explicitly resolved not-before instant. <paramref name="delayTime"/> is nullable
+    /// because an absolute schedule produces a <paramref name="publishAt"/> with no relative delay.
+    /// </summary>
     PreparedPublishMessage Create(
         object? contentObj,
         Type declaredMessageType,
         MessageOptions? options,
-        TimeSpan delayTime,
+        TimeSpan? delayTime,
         DateTimeOffset publishAt,
         MessageLane lane
     );
@@ -103,7 +107,7 @@ internal sealed class MessagePublishRequestFactory(
         object? contentObj,
         Type declaredMessageType,
         MessageOptions? options,
-        TimeSpan delayTime,
+        TimeSpan? delayTime,
         DateTimeOffset publishAt,
         MessageLane lane
     )

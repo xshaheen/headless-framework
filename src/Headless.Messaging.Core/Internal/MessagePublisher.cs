@@ -43,7 +43,8 @@ internal sealed class MessagePublisher(
             options?.DeliveryMode ?? defaultDeliveryMode,
             options?.Delay,
             coordination,
-            timeProvider.GetUtcNow()
+            timeProvider.GetUtcNow(),
+            scheduledAt: options?.ScheduledAt
         );
 
         if (decision.Path is DeliveryPath.Direct)
@@ -52,7 +53,9 @@ internal sealed class MessagePublisher(
         }
         else
         {
-            capabilities.EnsureOutboxSupported(lane, scheduled: decision.Delay is not null);
+            // PublishAt, not Delay: an absolute schedule is equally a scheduled send, and gating on Delay
+            // alone would let an absolute instant past a provider that cannot schedule.
+            capabilities.EnsureOutboxSupported(lane, scheduled: decision.PublishAt is not null);
         }
 
         var declaredMessageType = options?.MessageType ?? typeof(T);
@@ -68,7 +71,9 @@ internal sealed class MessagePublisher(
                         content,
                         declaredMessageType,
                         middlewareOptions,
-                        decision.Delay!.Value,
+                        // Nullable: an absolute schedule resolves a publishAt with no relative delay, so
+                        // dereferencing Delay here threw before the message ever reached storage.
+                        decision.Delay,
                         publishAt,
                         lane
                     )
