@@ -292,7 +292,7 @@ internal static class NatsStreamReconciliation
         return value switch
         {
             null => "(unset)",
-            IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture),
+            IFormattable formattable => formattable.ToString(format: null, CultureInfo.InvariantCulture),
             _ => value.ToString() ?? "(unset)",
         };
     }
