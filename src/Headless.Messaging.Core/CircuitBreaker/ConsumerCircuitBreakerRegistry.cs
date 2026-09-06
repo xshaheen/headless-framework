@@ -42,7 +42,7 @@ internal sealed class ConsumerCircuitBreakerRegistry
                 $"Circuit breaker already registered for group '{groupName}'. "
                     + "Each consumer group can only have one circuit breaker override. "
                     + "Check that you haven't configured the same group via both "
-                    + "ForMessage<T>().Bus.Consumer<TConsumer>()/Queue.Consumer<TConsumer>() registrations."
+                    + "ForMessage<T>().Bus.Consumer<TConsumer>(...)/Queue.Consumer<TConsumer>(...) registrations."
             );
         }
     }

@@ -105,6 +105,13 @@ internal sealed class SqlServerStorageInitializer(
                 IF ERROR_NUMBER() <> 2714 THROW;
             END CATCH;
 
+            IF OBJECT_ID(N'{schema}.SchemaState',N'U') IS NOT NULL
+                EXEC(N'
+                    IF EXISTS (SELECT 1 FROM [{schema}].[SchemaState] WHERE [Component]=N''inbox'' AND [SchemaVersion] > 4)
+                        THROW 50003, N''Headless.Messaging inbox schema is newer than supported version 4. Upgrade the application before starting this binary.'', 1;
+                    DELETE FROM [{schema}].[SchemaState] WHERE [Component]=N''inbox'';
+                ');
+
             BEGIN TRY
                 IF TYPE_ID(N'{schema}.HeadlessMessagingIdList') IS NULL
                     CREATE TYPE [{schema}].[HeadlessMessagingIdList] AS TABLE ([Id] UNIQUEIDENTIFIER NOT NULL PRIMARY KEY);
@@ -154,8 +161,36 @@ internal sealed class SqlServerStorageInitializer(
                         [LockedUntil] [datetimeoffset](7) NULL,
                         [Owner] [nvarchar]({options.Value.OwnerColumnMaxLength}) NULL,
                         [StatusName] [nvarchar](50) NOT NULL,
-                        [MessageId] [nvarchar](200) NOT NULL,
+                        [MessageId] [nvarchar](200) COLLATE Latin1_General_100_BIN2 NOT NULL,
                         [ExceptionInfo] [nvarchar](max) NULL,
+                        [IsInboxRecord] [bit] NOT NULL CONSTRAINT [DF_{receivedPrefix}_IsInboxRecord] DEFAULT 0,
+                        [TenantPresent] [bit] NOT NULL CONSTRAINT [DF_{receivedPrefix}_TenantPresent] DEFAULT 0,
+                        [TenantId] [nvarchar](200) COLLATE Latin1_General_100_BIN2 NOT NULL CONSTRAINT [DF_{receivedPrefix}_TenantId] DEFAULT N'',
+                        [ContractIdentity] [nvarchar](200) COLLATE Latin1_General_100_BIN2 NOT NULL CONSTRAINT [DF_{receivedPrefix}_ContractIdentity] DEFAULT N'',
+                        [ContractVersion] [nvarchar](100) COLLATE Latin1_General_100_BIN2 NOT NULL CONSTRAINT [DF_{receivedPrefix}_ContractVersion] DEFAULT N'',
+                        [ConsumerIdentity] [nvarchar](200) COLLATE Latin1_General_100_BIN2 NOT NULL CONSTRAINT [DF_{receivedPrefix}_ConsumerIdentity] DEFAULT N'',
+                        [Generation] [bigint] NOT NULL CONSTRAINT [DF_{receivedPrefix}_Generation] DEFAULT 0,
+                        [GenerationIncarnationId] [uniqueidentifier] NULL,
+                        [LifecycleId] [uniqueidentifier] NULL,
+                        [AttemptId] [uniqueidentifier] NULL,
+                        [IsInboxOrphaned] [bit] NOT NULL CONSTRAINT [DF_{receivedPrefix}_IsInboxOrphaned] DEFAULT 0,
+                        [IsCurrentGeneration] [bit] NOT NULL CONSTRAINT [DF_{receivedPrefix}_IsCurrentGeneration] DEFAULT 1,
+                        [ReplayParentIncarnationId] [uniqueidentifier] NULL,
+                        [ReplayOperationId] [uniqueidentifier] NULL,
+                        [TerminalAt] [datetimeoffset](7) NULL,
+                        [EffectiveExpiresAt] [datetimeoffset](7) NULL,
+                        [IsHeld] [bit] NOT NULL CONSTRAINT [DF_{receivedPrefix}_IsHeld] DEFAULT 0,
+                        [HeldAt] [datetimeoffset](7) NULL,
+                        [HeldBy] [nvarchar](200) COLLATE Latin1_General_100_BIN2 NULL,
+                        [HoldReason] [nvarchar](1000) NULL,
+                        [HoldOperationId] [uniqueidentifier] NULL,
+                        [InboxRetentionSeconds] [bigint] NOT NULL CONSTRAINT [DF_{receivedPrefix}_InboxRetentionSeconds] DEFAULT 2592000,
+                        [TenantIdOrdinal] AS CONVERT(varbinary(400),[TenantId]) PERSISTED,
+                        [MessageIdOrdinal] AS CONVERT(varbinary(400),[MessageId]) PERSISTED,
+                        [ContractIdentityOrdinal] AS CONVERT(varbinary(400),[ContractIdentity]) PERSISTED,
+                        [ContractVersionOrdinal] AS CONVERT(varbinary(200),[ContractVersion]) PERSISTED,
+                        [ConsumerIdentityOrdinal] AS CONVERT(varbinary(400),[ConsumerIdentity]) PERSISTED,
+                        [InboxKeyHash] [binary](32) NULL,
                         CONSTRAINT [PK_{receivedPrefix}] PRIMARY KEY CLUSTERED ([Id] ASC)
                     );
 
@@ -165,12 +200,127 @@ internal sealed class SqlServerStorageInitializer(
                 IF ERROR_NUMBER() <> 2714 THROW;
             END CATCH;
 
-            -- #19 — unique index on the GroupCoalesced computed column (not the nullable [Group]) so the
-            -- schema-level uniqueness guarantee for NULL groups matches PostgreSQL; raw INSERTs that bypass
-            -- the MERGE can no longer accumulate duplicate NULL-group rows.
+            -- A nonempty baseline table has no trustworthy stable consumer or contract identity.
+            -- Stop startup rather than synthesizing identity. Empty/partial schemas are repaired in place.
+            IF COL_LENGTH(N'{GetReceivedTableName()}', N'GenerationIncarnationId') IS NULL
+               AND EXISTS (SELECT TOP (1) 1 FROM {GetReceivedTableName()})
+                THROW 50001, N'Headless.Messaging cannot upgrade a nonempty legacy Received table without stable inbox identity. Export or reset it, then restart.', 1;
+
+            IF COL_LENGTH(N'{GetReceivedTableName()}', N'IsInboxRecord') IS NULL
+                ALTER TABLE {GetReceivedTableName()} ADD [IsInboxRecord] [bit] NOT NULL CONSTRAINT [DF_{receivedPrefix}_IsInboxRecord] DEFAULT 0;
+            IF COL_LENGTH(N'{GetReceivedTableName()}', N'TenantPresent') IS NULL
+                ALTER TABLE {GetReceivedTableName()} ADD [TenantPresent] [bit] NOT NULL CONSTRAINT [DF_{receivedPrefix}_TenantPresent] DEFAULT 0;
+            IF COL_LENGTH(N'{GetReceivedTableName()}', N'TenantId') IS NULL
+                ALTER TABLE {GetReceivedTableName()} ADD [TenantId] [nvarchar](200) COLLATE Latin1_General_100_BIN2 NOT NULL CONSTRAINT [DF_{receivedPrefix}_TenantId] DEFAULT N'';
+            IF COL_LENGTH(N'{GetReceivedTableName()}', N'ContractIdentity') IS NULL
+                ALTER TABLE {GetReceivedTableName()} ADD [ContractIdentity] [nvarchar](200) COLLATE Latin1_General_100_BIN2 NOT NULL CONSTRAINT [DF_{receivedPrefix}_ContractIdentity] DEFAULT N'';
+            IF COL_LENGTH(N'{GetReceivedTableName()}', N'ContractVersion') IS NULL
+                ALTER TABLE {GetReceivedTableName()} ADD [ContractVersion] [nvarchar](100) COLLATE Latin1_General_100_BIN2 NOT NULL CONSTRAINT [DF_{receivedPrefix}_ContractVersion] DEFAULT N'';
+            IF COL_LENGTH(N'{GetReceivedTableName()}', N'ConsumerIdentity') IS NULL
+                ALTER TABLE {GetReceivedTableName()} ADD [ConsumerIdentity] [nvarchar](200) COLLATE Latin1_General_100_BIN2 NOT NULL CONSTRAINT [DF_{receivedPrefix}_ConsumerIdentity] DEFAULT N'';
+            IF COL_LENGTH(N'{GetReceivedTableName()}', N'Generation') IS NULL
+                ALTER TABLE {GetReceivedTableName()} ADD [Generation] [bigint] NOT NULL CONSTRAINT [DF_{receivedPrefix}_Generation] DEFAULT 0;
+            IF COL_LENGTH(N'{GetReceivedTableName()}', N'GenerationIncarnationId') IS NULL
+                ALTER TABLE {GetReceivedTableName()} ADD [GenerationIncarnationId] [uniqueidentifier] NULL;
+            IF COL_LENGTH(N'{GetReceivedTableName()}', N'LifecycleId') IS NULL
+            BEGIN
+                EXEC(N'IF EXISTS (SELECT 1 FROM {GetReceivedTableName()} WHERE [IsInboxRecord]=1)
+                    THROW 50005, N''Headless.Messaging cannot upgrade retained inbox rows without lifecycle identity. Export or reset Received, then restart.'', 1;');
+                ALTER TABLE {GetReceivedTableName()} ADD [LifecycleId] [uniqueidentifier] NULL;
+            END;
+            IF COL_LENGTH(N'{GetReceivedTableName()}', N'AttemptId') IS NULL
+                ALTER TABLE {GetReceivedTableName()} ADD [AttemptId] [uniqueidentifier] NULL;
+            IF COL_LENGTH(N'{GetReceivedTableName()}', N'IsInboxOrphaned') IS NULL
+                ALTER TABLE {GetReceivedTableName()} ADD [IsInboxOrphaned] [bit] NOT NULL CONSTRAINT [DF_{receivedPrefix}_IsInboxOrphaned] DEFAULT 0;
+            IF COL_LENGTH(N'{GetReceivedTableName()}', N'IsCurrentGeneration') IS NULL
+                ALTER TABLE {GetReceivedTableName()} ADD [IsCurrentGeneration] [bit] NOT NULL CONSTRAINT [DF_{receivedPrefix}_IsCurrentGeneration] DEFAULT 1;
+            IF COL_LENGTH(N'{GetReceivedTableName()}', N'ReplayParentIncarnationId') IS NULL
+                ALTER TABLE {GetReceivedTableName()} ADD [ReplayParentIncarnationId] [uniqueidentifier] NULL;
+            IF COL_LENGTH(N'{GetReceivedTableName()}', N'ReplayOperationId') IS NULL
+                ALTER TABLE {GetReceivedTableName()} ADD [ReplayOperationId] [uniqueidentifier] NULL;
+            IF COL_LENGTH(N'{GetReceivedTableName()}', N'TerminalAt') IS NULL
+                ALTER TABLE {GetReceivedTableName()} ADD [TerminalAt] [datetimeoffset](7) NULL;
+            IF COL_LENGTH(N'{GetReceivedTableName()}', N'EffectiveExpiresAt') IS NULL
+                ALTER TABLE {GetReceivedTableName()} ADD [EffectiveExpiresAt] [datetimeoffset](7) NULL;
+            IF COL_LENGTH(N'{GetReceivedTableName()}', N'IsHeld') IS NULL
+                ALTER TABLE {GetReceivedTableName()} ADD [IsHeld] [bit] NOT NULL CONSTRAINT [DF_{receivedPrefix}_IsHeld] DEFAULT 0;
+            IF COL_LENGTH(N'{GetReceivedTableName()}', N'HeldAt') IS NULL
+                ALTER TABLE {GetReceivedTableName()} ADD [HeldAt] [datetimeoffset](7) NULL;
+            IF COL_LENGTH(N'{GetReceivedTableName()}', N'HeldBy') IS NULL
+                ALTER TABLE {GetReceivedTableName()} ADD [HeldBy] [nvarchar](200) COLLATE Latin1_General_100_BIN2 NULL;
+            IF COL_LENGTH(N'{GetReceivedTableName()}', N'HoldReason') IS NULL
+                ALTER TABLE {GetReceivedTableName()} ADD [HoldReason] [nvarchar](1000) NULL;
+            IF COL_LENGTH(N'{GetReceivedTableName()}', N'HoldOperationId') IS NULL
+                ALTER TABLE {GetReceivedTableName()} ADD [HoldOperationId] [uniqueidentifier] NULL;
+            IF COL_LENGTH(N'{GetReceivedTableName()}', N'InboxRetentionSeconds') IS NULL
+                ALTER TABLE {GetReceivedTableName()} ADD [InboxRetentionSeconds] [bigint] NOT NULL CONSTRAINT [DF_{receivedPrefix}_InboxRetentionSeconds] DEFAULT 2592000;
+            IF COL_LENGTH(N'{GetReceivedTableName()}', N'TenantIdOrdinal') IS NULL
+                EXEC(N'ALTER TABLE {GetReceivedTableName()} ADD [TenantIdOrdinal] AS CONVERT(varbinary(400),[TenantId]) PERSISTED');
+            IF COL_LENGTH(N'{GetReceivedTableName()}', N'MessageIdOrdinal') IS NULL
+                EXEC(N'ALTER TABLE {GetReceivedTableName()} ADD [MessageIdOrdinal] AS CONVERT(varbinary(400),[MessageId]) PERSISTED');
+            IF COL_LENGTH(N'{GetReceivedTableName()}', N'ContractIdentityOrdinal') IS NULL
+                EXEC(N'ALTER TABLE {GetReceivedTableName()} ADD [ContractIdentityOrdinal] AS CONVERT(varbinary(400),[ContractIdentity]) PERSISTED');
+            IF COL_LENGTH(N'{GetReceivedTableName()}', N'ContractVersionOrdinal') IS NULL
+                EXEC(N'ALTER TABLE {GetReceivedTableName()} ADD [ContractVersionOrdinal] AS CONVERT(varbinary(200),[ContractVersion]) PERSISTED');
+            IF COL_LENGTH(N'{GetReceivedTableName()}', N'ConsumerIdentityOrdinal') IS NULL
+                EXEC(N'ALTER TABLE {GetReceivedTableName()} ADD [ConsumerIdentityOrdinal] AS CONVERT(varbinary(400),[ConsumerIdentity]) PERSISTED');
+            IF COL_LENGTH(N'{GetReceivedTableName()}', N'InboxKeyHash') IS NULL
+                ALTER TABLE {GetReceivedTableName()} ADD [InboxKeyHash] [binary](32) NULL;
+
+            IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_Version_MessageId_GroupCoalesced_IntentType' AND object_id = OBJECT_ID(N'{GetReceivedTableName()}'))
+                DROP INDEX [IX_{receivedPrefix}_Version_MessageId_GroupCoalesced_IntentType] ON {GetReceivedTableName()};
+
+            IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_{receivedPrefix}_InboxIdentity')
+                EXEC(N'ALTER TABLE {GetReceivedTableName()} ADD CONSTRAINT [CK_{receivedPrefix}_InboxIdentity] CHECK (
+                    [IsInboxRecord]=0 OR (
+                        [Generation]>=0 AND [InboxRetentionSeconds] BETWEEN 1 AND 2147483647 AND [GenerationIncarnationId] IS NOT NULL AND [InboxKeyHash] IS NOT NULL
+                        AND LEN([MessageId]) BETWEEN 1 AND 200
+                        AND LEN([ContractIdentity]) BETWEEN 1 AND 200
+                        AND LEN([ContractVersion]) BETWEEN 1 AND 100
+                        AND LEN([ConsumerIdentity]) BETWEEN 1 AND 200
+                        AND (([TenantPresent]=0 AND DATALENGTH([TenantId])=0) OR ([TenantPresent]=1 AND LEN([TenantId]) BETWEEN 1 AND 200))
+                    )
+                )');
+
+            IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_{receivedPrefix}_InboxRetentionV3')
+                EXEC(N'ALTER TABLE {GetReceivedTableName()} ADD CONSTRAINT [CK_{receivedPrefix}_InboxRetentionV3] CHECK (
+                    [IsInboxRecord]=0 OR [InboxRetentionSeconds] BETWEEN 1 AND 2147483647
+                )');
+
+            IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_{receivedPrefix}_InboxLifecycleV4'
+                AND parent_object_id = OBJECT_ID(N'{GetReceivedTableName()}'))
+                EXEC(N'ALTER TABLE {GetReceivedTableName()} ADD CONSTRAINT [CK_{receivedPrefix}_InboxLifecycleV4] CHECK (
+                    [IsInboxRecord]=0 OR ([LifecycleId] IS NOT NULL
+                        AND ([ReplayParentIncarnationId] IS NOT NULL OR [LifecycleId]=[GenerationIncarnationId]))
+                )');
+
+            IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UX_{receivedPrefix}_InboxKey' AND object_id = OBJECT_ID(N'{GetReceivedTableName()}'))
+                DROP INDEX [UX_{receivedPrefix}_InboxKey] ON {GetReceivedTableName()};
+
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UX_{receivedPrefix}_InboxLifecycleGeneration' AND object_id = OBJECT_ID(N'{GetReceivedTableName()}'))
+                EXEC(N'CREATE UNIQUE NONCLUSTERED INDEX [UX_{receivedPrefix}_InboxLifecycleGeneration]
+                    ON {GetReceivedTableName()} ([LifecycleId],[Generation]) WHERE [IsInboxRecord]=1');
+
             BEGIN TRY
-                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_Version_MessageId_GroupCoalesced_IntentType' AND object_id = OBJECT_ID(N'{GetReceivedTableName()}'))
-                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{receivedPrefix}_Version_MessageId_GroupCoalesced_IntentType] ON {GetReceivedTableName()} ([Version] ASC, [MessageId] ASC, [GroupCoalesced] ASC, [IntentType] ASC);
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UX_{receivedPrefix}_InboxRootKey' AND object_id = OBJECT_ID(N'{GetReceivedTableName()}'))
+                    EXEC(N'CREATE UNIQUE NONCLUSTERED INDEX [UX_{receivedPrefix}_InboxRootKey] ON {GetReceivedTableName()} ([InboxKeyHash] ASC) WHERE [IsInboxRecord]=1 AND [ReplayParentIncarnationId] IS NULL');
+            END TRY
+            BEGIN CATCH
+                IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
+            END CATCH;
+
+            BEGIN TRY
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UX_{receivedPrefix}_NonInboxTransportIdentity' AND object_id = OBJECT_ID(N'{GetReceivedTableName()}'))
+                    EXEC(N'CREATE UNIQUE NONCLUSTERED INDEX [UX_{receivedPrefix}_NonInboxTransportIdentity]
+                        ON {GetReceivedTableName()} ([Version],[MessageId],[GroupCoalesced],[IntentType]) WHERE [IsInboxRecord]=0');
+            END TRY
+            BEGIN CATCH
+                IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
+            END CATCH;
+
+            BEGIN TRY
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UX_{receivedPrefix}_GenerationIncarnationId' AND object_id = OBJECT_ID(N'{GetReceivedTableName()}'))
+                    EXEC(N'CREATE UNIQUE NONCLUSTERED INDEX [UX_{receivedPrefix}_GenerationIncarnationId] ON {GetReceivedTableName()} ([GenerationIncarnationId] ASC) WHERE [GenerationIncarnationId] IS NOT NULL');
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
@@ -287,6 +437,86 @@ internal sealed class SqlServerStorageInitializer(
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
             END CATCH;
+
+            IF OBJECT_ID(N'{schema}.InboxOperationReceipts',N'U') IS NULL
+            BEGIN
+                CREATE TABLE [{schema}].[InboxOperationReceipts](
+                    [OperationId] [uniqueidentifier] NOT NULL,
+                    [GenerationIncarnationId] [uniqueidentifier] NOT NULL,
+                    [OperationType] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NOT NULL,
+                    [ExpectedStatus] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NOT NULL,
+                    [Actor] [nvarchar](200) COLLATE Latin1_General_100_BIN2 NOT NULL,
+                    [Reason] [nvarchar](1000) NOT NULL,
+                    [Outcome] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NOT NULL,
+                    [StorageId] [uniqueidentifier] NULL,
+                    [ChildStorageId] [uniqueidentifier] NULL,
+                    [ChildGeneration] [bigint] NULL,
+                    [ChildIncarnationId] [uniqueidentifier] NULL,
+                    [CreatedAt] [datetimeoffset](7) NOT NULL,
+                    CONSTRAINT [PK_{schema}_InboxOperationReceipts] PRIMARY KEY CLUSTERED ([OperationId])
+                );
+            END;
+
+            IF COL_LENGTH(N'{schema}.InboxOperationReceipts', N'Outcome') IS NULL
+                ALTER TABLE [{schema}].[InboxOperationReceipts] ADD [Outcome] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NOT NULL CONSTRAINT [DF_{schema}_InboxOperationReceipts_Outcome] DEFAULT N'StateConflict';
+            IF COL_LENGTH(N'{schema}.InboxOperationReceipts', N'ExpectedStatus') IS NULL
+                ALTER TABLE [{schema}].[InboxOperationReceipts] ADD [ExpectedStatus] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NOT NULL CONSTRAINT [DF_{schema}_InboxOperationReceipts_ExpectedStatus] DEFAULT N'Failed';
+            IF COL_LENGTH(N'{schema}.InboxOperationReceipts', N'StorageId') IS NULL
+                ALTER TABLE [{schema}].[InboxOperationReceipts] ADD [StorageId] [uniqueidentifier] NULL;
+            IF COL_LENGTH(N'{schema}.InboxOperationReceipts', N'ChildStorageId') IS NULL
+                ALTER TABLE [{schema}].[InboxOperationReceipts] ADD [ChildStorageId] [uniqueidentifier] NULL;
+            IF COL_LENGTH(N'{schema}.InboxOperationReceipts', N'ChildGeneration') IS NULL
+                ALTER TABLE [{schema}].[InboxOperationReceipts] ADD [ChildGeneration] [bigint] NULL;
+            IF COL_LENGTH(N'{schema}.InboxOperationReceipts', N'ChildIncarnationId') IS NULL
+                ALTER TABLE [{schema}].[InboxOperationReceipts] ADD [ChildIncarnationId] [uniqueidentifier] NULL;
+
+            IF OBJECT_ID(N'{schema}.InboxAudit',N'U') IS NULL
+            BEGIN
+                CREATE TABLE [{schema}].[InboxAudit](
+                    [AuditId] [uniqueidentifier] NOT NULL,
+                    [OperationId] [uniqueidentifier] NOT NULL,
+                    [GenerationIncarnationId] [uniqueidentifier] NOT NULL,
+                    [OperationType] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NOT NULL,
+                    [Actor] [nvarchar](200) COLLATE Latin1_General_100_BIN2 NOT NULL,
+                    [Reason] [nvarchar](1000) NOT NULL,
+                    [Outcome] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NOT NULL,
+                    [CreatedAt] [datetimeoffset](7) NOT NULL,
+                    CONSTRAINT [PK_{schema}_InboxAudit] PRIMARY KEY CLUSTERED ([AuditId]),
+                    CONSTRAINT [FK_{schema}_InboxAudit_Operation] FOREIGN KEY ([OperationId])
+                        REFERENCES [{schema}].[InboxOperationReceipts]([OperationId]) ON DELETE NO ACTION
+                );
+            END;
+
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'IX_{schema}_InboxAudit_Incarnation_CreatedAt' AND object_id=OBJECT_ID(N'{schema}.InboxAudit'))
+                CREATE NONCLUSTERED INDEX [IX_{schema}_InboxAudit_Incarnation_CreatedAt]
+                    ON [{schema}].[InboxAudit] ([GenerationIncarnationId],[CreatedAt]);
+
+            IF OBJECT_ID(N'{schema}.SchemaState',N'U') IS NULL
+            BEGIN
+                CREATE TABLE [{schema}].[SchemaState](
+                    [Component] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NOT NULL,
+                    [SchemaVersion] [int] NOT NULL,
+                    [ReadyAt] [datetimeoffset](7) NOT NULL,
+                    CONSTRAINT [PK_{schema}_SchemaState] PRIMARY KEY CLUSTERED ([Component])
+                );
+            END;
+
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'UX_{receivedPrefix}_InboxRootKey' AND object_id=OBJECT_ID(N'{GetReceivedTableName()}'))
+               OR NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'UX_{receivedPrefix}_InboxLifecycleGeneration' AND object_id=OBJECT_ID(N'{GetReceivedTableName()}'))
+                THROW 50002, N'Headless.Messaging inbox schema is incomplete: the final inbox key index is missing.', 1;
+
+            IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name=N'CK_{receivedPrefix}_InboxRetentionV3')
+               OR COL_LENGTH(N'{GetReceivedTableName()}',N'LifecycleId') IS NULL
+               OR NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name=N'CK_{receivedPrefix}_InboxLifecycleV4' AND parent_object_id=OBJECT_ID(N'{GetReceivedTableName()}'))
+               OR COL_LENGTH(N'{schema}.InboxOperationReceipts',N'ExpectedStatus') IS NULL
+               OR COL_LENGTH(N'{schema}.InboxOperationReceipts',N'Outcome') IS NULL
+                THROW 50004, N'Headless.Messaging inbox schema is incomplete: the lifecycle, retention or operation receipt contract is missing.', 1;
+
+            MERGE [{schema}].[SchemaState] WITH (HOLDLOCK) AS target
+            USING (SELECT N'inbox' AS [Component], 4 AS [SchemaVersion], SYSDATETIMEOFFSET() AS [ReadyAt]) AS source
+            ON target.[Component]=source.[Component]
+            WHEN MATCHED THEN UPDATE SET [SchemaVersion]=source.[SchemaVersion],[ReadyAt]=source.[ReadyAt]
+            WHEN NOT MATCHED THEN INSERT ([Component],[SchemaVersion],[ReadyAt]) VALUES (source.[Component],source.[SchemaVersion],source.[ReadyAt]);
 
                 EXEC sp_releaseapplock @Resource = N'{lockResource}', @LockOwner = N'Session';
             END TRY

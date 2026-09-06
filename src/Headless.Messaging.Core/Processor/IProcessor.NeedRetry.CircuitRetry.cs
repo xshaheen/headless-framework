@@ -166,7 +166,13 @@ internal sealed partial class MessageNeedToRetryProcessor
             return CircuitDeferralOutcome.NoLiveLease;
         }
 
-        var identity = new MessageLeaseIdentity(message.StorageId, message.Owner, lockedUntil, message.Lane);
+        var identity = new MessageLeaseIdentity(
+            message.StorageId,
+            message.Owner,
+            lockedUntil,
+            message.Lane,
+            message.InboxAttemptFence
+        );
         var deferred = await deferralStorage
             .DeferReceivedRetryAsync(new CircuitRetryDeferral(identity, nextRetryAt), CancellationToken.None)
             .ConfigureAwait(false);

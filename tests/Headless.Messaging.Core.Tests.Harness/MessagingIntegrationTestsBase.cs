@@ -120,105 +120,169 @@ public abstract class MessagingIntegrationTestsBase : TestBase
             // Register test consumer
             setup.Bus.ForMessage<TestMessage>(message =>
                 message
-                    .MessageName("test-message")
-                    .Consumer<TestSubscriber>(consumer => consumer.Group("test-group").Concurrency(1))
+                    .Contract("test-message")
+                    .Consumer<TestSubscriber>(consumer =>
+                        consumer
+                            .ConsumerIdentity("tests.integration.test-subscriber")
+                            .Group("test-group")
+                            .Concurrency(1)
+                    )
             );
             // Register failing consumer for exception tests
             setup.Bus.ForMessage<FailingTestMessage>(message =>
                 message
-                    .MessageName("failing-message")
-                    .Consumer<FailingTestSubscriber>(consumer => consumer.Group("test-group").Concurrency(1))
+                    .Contract("failing-message")
+                    .Consumer<FailingTestSubscriber>(consumer =>
+                        consumer
+                            .ConsumerIdentity("tests.integration.failing-subscriber")
+                            .Group("test-group")
+                            .Concurrency(1)
+                    )
             );
             setup.Bus.ForMessage<CallbackRequestMessage>(message =>
                 message
-                    .MessageName("callback-request")
-                    .Consumer<CallbackRequestConsumer>(consumer => consumer.Group("callback-request").Concurrency(1))
+                    .Contract("callback-request")
+                    .Consumer<CallbackRequestConsumer>(consumer =>
+                        consumer
+                            .ConsumerIdentity("tests.integration.callback-request")
+                            .Group("callback-request")
+                            .Concurrency(1)
+                    )
             );
             setup.Queue.ForMessage<CallbackQueueRequestMessage>(message =>
                 message
-                    .MessageName("callback-queue-request")
+                    .Contract("callback-queue-request")
                     .Consumer<CallbackQueueRequestConsumer>(consumer =>
-                        consumer.Group("callback-queue-request").Concurrency(1)
+                        consumer
+                            .ConsumerIdentity("tests.integration.callback-queue-request")
+                            .Group("callback-queue-request")
+                            .Concurrency(1)
                     )
             );
             setup.Bus.ForMessage<CallbackFailureRequestMessage>(message =>
                 message
-                    .MessageName("callback-failure-request")
+                    .Contract("callback-failure-request")
                     .Consumer<CallbackFailureRequestConsumer>(consumer =>
-                        consumer.Group("callback-failure-request").Concurrency(1)
+                        consumer
+                            .ConsumerIdentity("tests.integration.callback-failure-request")
+                            .Group("callback-failure-request")
+                            .Concurrency(1)
                     )
             );
             setup.Bus.ForMessage<FanOutRequestMessage>(message =>
                 message
-                    .MessageName("fanout-request")
-                    .Consumer<FanOutConsumerA>(consumer => consumer.Group("fanout-a").Concurrency(1))
-                    .Consumer<FanOutConsumerB>(consumer => consumer.Group("fanout-b").Concurrency(1))
+                    .Contract("fanout-request")
+                    .Consumer<FanOutConsumerA>(consumer =>
+                        consumer.ConsumerIdentity("tests.integration.fanout-a").Group("fanout-a").Concurrency(1)
+                    )
+                    .Consumer<FanOutConsumerB>(consumer =>
+                        consumer.ConsumerIdentity("tests.integration.fanout-b").Group("fanout-b").Concurrency(1)
+                    )
             );
             setup.Bus.ForMessage<IsolationRequestMessage>(message =>
                 message
-                    .MessageName("isolation-request")
-                    .Consumer<IsolationKeepConsumer>(consumer => consumer.Group("isolation-keep").Concurrency(1))
-                    .Consumer<IsolationRewriteConsumer>(consumer => consumer.Group("isolation-rewrite").Concurrency(1))
+                    .Contract("isolation-request")
+                    .Consumer<IsolationKeepConsumer>(consumer =>
+                        consumer
+                            .ConsumerIdentity("tests.integration.isolation-keep")
+                            .Group("isolation-keep")
+                            .Concurrency(1)
+                    )
+                    .Consumer<IsolationRewriteConsumer>(consumer =>
+                        consumer
+                            .ConsumerIdentity("tests.integration.isolation-rewrite")
+                            .Group("isolation-rewrite")
+                            .Concurrency(1)
+                    )
             );
             setup.Bus.ForMessage<ChainRequestMessage>(message =>
                 message
-                    .MessageName("chain-request")
-                    .Consumer<ChainRequestConsumer>(consumer => consumer.Group("chain-request").Concurrency(1))
+                    .Contract("chain-request")
+                    .Consumer<ChainRequestConsumer>(consumer =>
+                        consumer
+                            .ConsumerIdentity("tests.integration.chain-request")
+                            .Group("chain-request")
+                            .Concurrency(1)
+                    )
             );
             setup.Bus.ForMessage<CallbackResponse>(message =>
                 message
-                    .MessageName("callback-response")
+                    .Contract("callback-response")
                     .Consumer<MessageCollector<CallbackResponse>>(consumer =>
-                        consumer.Group("callback-response").Concurrency(1)
+                        consumer
+                            .ConsumerIdentity("tests.integration.callback-response")
+                            .Group("callback-response")
+                            .Concurrency(1)
                     )
             );
             setup.Bus.ForMessage<ConcreteCallbackResponse>(message =>
                 message
-                    .MessageName("callback-contract-response")
+                    .Contract("callback-contract-response")
                     .Consumer<MessageCollector<ConcreteCallbackResponse>>(consumer =>
-                        consumer.Group("callback-contract-response").Concurrency(1)
+                        consumer
+                            .ConsumerIdentity("tests.integration.callback-contract-response")
+                            .Group("callback-contract-response")
+                            .Concurrency(1)
                     )
             );
             setup.Bus.ForMessage<RewrittenCallbackResponse>(message =>
                 message
-                    .MessageName("rewritten-callback-response")
+                    .Contract("rewritten-callback-response")
                     .Consumer<MessageCollector<RewrittenCallbackResponse>>(consumer =>
-                        consumer.Group("rewritten-callback-response").Concurrency(1)
+                        consumer
+                            .ConsumerIdentity("tests.integration.rewritten-callback-response")
+                            .Group("rewritten-callback-response")
+                            .Concurrency(1)
                     )
             );
             setup.Bus.ForMessage<FanOutResponse>(message =>
                 message
-                    .MessageName("fanout-response")
+                    .Contract("fanout-response")
                     .Consumer<MessageCollector<FanOutResponse>>(consumer =>
-                        consumer.Group("fanout-response").Concurrency(1)
+                        consumer
+                            .ConsumerIdentity("tests.integration.fanout-response")
+                            .Group("fanout-response")
+                            .Concurrency(1)
                     )
             );
             setup.Bus.ForMessage<IsolationKeepResponse>(message =>
                 message
-                    .MessageName("isolation-callback")
+                    .Contract("isolation-callback")
                     .Consumer<MessageCollector<IsolationKeepResponse>>(consumer =>
-                        consumer.Group("isolation-callback").Concurrency(1)
+                        consumer
+                            .ConsumerIdentity("tests.integration.isolation-callback")
+                            .Group("isolation-callback")
+                            .Concurrency(1)
                     )
             );
             setup.Bus.ForMessage<IsolationRewriteResponse>(message =>
                 message
-                    .MessageName("isolation-rewritten-callback")
+                    .Contract("isolation-rewritten-callback")
                     .Consumer<MessageCollector<IsolationRewriteResponse>>(consumer =>
-                        consumer.Group("isolation-rewritten-callback").Concurrency(1)
+                        consumer
+                            .ConsumerIdentity("tests.integration.isolation-rewritten-callback")
+                            .Group("isolation-rewritten-callback")
+                            .Concurrency(1)
                     )
             );
             setup.Bus.ForMessage<ChainIntermediateResponse>(message =>
                 message
-                    .MessageName("chain-intermediate-callback")
+                    .Contract("chain-intermediate-callback")
                     .Consumer<ChainIntermediateConsumer>(consumer =>
-                        consumer.Group("chain-intermediate-callback").Concurrency(1)
+                        consumer
+                            .ConsumerIdentity("tests.integration.chain-intermediate-callback")
+                            .Group("chain-intermediate-callback")
+                            .Concurrency(1)
                     )
             );
             setup.Bus.ForMessage<ChainFinalResponse>(message =>
                 message
-                    .MessageName("chain-final-callback")
+                    .Contract("chain-final-callback")
                     .Consumer<MessageCollector<ChainFinalResponse>>(consumer =>
-                        consumer.Group("chain-final-callback").Concurrency(1)
+                        consumer
+                            .ConsumerIdentity("tests.integration.chain-final-callback")
+                            .Group("chain-final-callback")
+                            .Concurrency(1)
                     )
             );
         });

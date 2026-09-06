@@ -119,6 +119,7 @@ public sealed class TenantPropagationE2ETests : TestBase
             {
                 setup.UseInMemory();
                 setup.UseInMemoryStorage();
+                setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
                 configureMessaging(services, setup);
             });
             messagingBuilder.AddTenantPropagationServices();
@@ -136,7 +137,11 @@ public sealed class TenantPropagationE2ETests : TestBase
             capture,
             (_, setup) =>
                 setup.Bus.ForMessage<TenantOrderEvent>(message =>
-                    message.MessageName("tenant-orders").Consumer<TenantCapturingConsumer>()
+                    message
+                        .Contract("tenant-orders")
+                        .Consumer<TenantCapturingConsumer>(consumer =>
+                            consumer.ConsumerIdentity("tests.tenant-propagation.capture")
+                        )
                 )
         );
         var currentTenant = harness.ServiceProvider.GetRequiredService<ICurrentTenant>();
@@ -171,7 +176,11 @@ public sealed class TenantPropagationE2ETests : TestBase
             capture,
             (_, setup) =>
                 setup.Bus.ForMessage<TenantOrderEvent>(message =>
-                    message.MessageName("tenant-orders").Consumer<TenantCapturingConsumer>()
+                    message
+                        .Contract("tenant-orders")
+                        .Consumer<TenantCapturingConsumer>(consumer =>
+                            consumer.ConsumerIdentity("tests.tenant-propagation.capture")
+                        )
                 )
         );
         // when — no ambient tenant; publish without explicit options
@@ -197,7 +206,11 @@ public sealed class TenantPropagationE2ETests : TestBase
             capture,
             (_, setup) =>
                 setup.Bus.ForMessage<TenantOrderEvent>(message =>
-                    message.MessageName("tenant-orders").Consumer<TenantCapturingConsumer>()
+                    message
+                        .Contract("tenant-orders")
+                        .Consumer<TenantCapturingConsumer>(consumer =>
+                            consumer.ConsumerIdentity("tests.tenant-propagation.capture")
+                        )
                 )
         );
         var currentTenant = harness.ServiceProvider.GetRequiredService<ICurrentTenant>();
@@ -233,7 +246,11 @@ public sealed class TenantPropagationE2ETests : TestBase
             capture,
             (_, setup) =>
                 setup.Bus.ForMessage<TenantOrderEvent>(message =>
-                    message.MessageName("tenant-orders").Consumer<FlakyTenantConsumer>()
+                    message
+                        .Contract("tenant-orders")
+                        .Consumer<FlakyTenantConsumer>(consumer =>
+                            consumer.ConsumerIdentity("tests.tenant-propagation.flaky")
+                        )
                 )
         );
         var currentTenant = harness.ServiceProvider.GetRequiredService<ICurrentTenant>();
@@ -285,7 +302,11 @@ public sealed class TenantPropagationE2ETests : TestBase
             (services, setup) =>
             {
                 setup.Bus.ForMessage<TenantOrderEvent>(message =>
-                    message.MessageName("tenant-orders").Consumer<TenantCapturingConsumer>()
+                    message
+                        .Contract("tenant-orders")
+                        .Consumer<TenantCapturingConsumer>(consumer =>
+                            consumer.ConsumerIdentity("tests.tenant-propagation.capture")
+                        )
                 );
                 // Allow parallel subscriber execution to actually exercise concurrent dispatch
                 setup.Options.EnableSubscriberParallelExecute = true;
@@ -350,10 +371,18 @@ public sealed class TenantPropagationE2ETests : TestBase
             (_, setup) =>
             {
                 setup.Bus.ForMessage<TenantOrderUpstream>(message =>
-                    message.MessageName("upstream-orders").Consumer<ChainedRepublishConsumer>()
+                    message
+                        .Contract("upstream-orders")
+                        .Consumer<ChainedRepublishConsumer>(consumer =>
+                            consumer.ConsumerIdentity("tests.tenant-propagation.republish")
+                        )
                 );
                 setup.Bus.ForMessage<TenantOrderEvent>(message =>
-                    message.MessageName("tenant-orders").Consumer<TenantCapturingConsumer>()
+                    message
+                        .Contract("tenant-orders")
+                        .Consumer<TenantCapturingConsumer>(consumer =>
+                            consumer.ConsumerIdentity("tests.tenant-propagation.capture")
+                        )
                 );
             }
         );
@@ -390,7 +419,11 @@ public sealed class TenantPropagationE2ETests : TestBase
             capture,
             (_, setup) =>
                 setup.Bus.ForMessage<TenantOrderEvent>(message =>
-                    message.MessageName("tenant-orders").Consumer<TenantCapturingConsumer>()
+                    message
+                        .Contract("tenant-orders")
+                        .Consumer<TenantCapturingConsumer>(consumer =>
+                            consumer.ConsumerIdentity("tests.tenant-propagation.capture")
+                        )
                 )
         );
         var currentTenant = harness.ServiceProvider.GetRequiredService<ICurrentTenant>();

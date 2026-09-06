@@ -2,6 +2,7 @@ using Demo;
 using Demo.Contracts.DomainEvents;
 using Demo.Contracts.IntegrationEvents;
 using Headless.Messaging;
+using Headless.Messaging.Configuration;
 using Headless.Messaging.Dashboard;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -11,8 +12,11 @@ builder.Services.AddLogging(l => l.AddConsole());
 builder.Services.AddHeadlessMessaging(setup =>
 {
     setup.Bus.ForMessage<SampleMessage>(message =>
-        message.MessageName("messaging.sample.tests").Consumer<SampleSubscriber>()
+        message
+            .Contract("messaging.sample.tests")
+            .Consumer<SampleSubscriber>(consumer => consumer.ConsumerIdentity("azure-service-bus.sample"))
     );
+    setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
     setup.UseInMemoryStorage();
     setup.UseAzureServiceBus(asb =>
     {

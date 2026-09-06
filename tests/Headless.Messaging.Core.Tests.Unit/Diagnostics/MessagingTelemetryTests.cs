@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Reflection;
 using Headless.Messaging;
+using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Testing.Tests;
@@ -185,6 +186,71 @@ public sealed class MessagingTelemetryTests : TestBase
             .Contain(["messaging.operation", "messaging.system", "error.type", "messaging.consumer.group"]);
     }
 
+    [Fact]
+    public void should_emit_bounded_inbox_metrics_without_sensitive_or_unbounded_dimensions()
+    {
+        var consumerIdentity = $"orders.consumer.{Guid.NewGuid():N}";
+        var measurements = new ConcurrentBag<(string Name, KeyValuePair<string, object?>[] Tags)>();
+        using var listener = _StartInboxMeterListener(measurements, consumerIdentity);
+
+        foreach (var kind in Enum.GetValues<InboxMetricKind>())
+        {
+            MessagingMetrics.RecordInbox(
+                kind,
+                consumerIdentity,
+                MessageLane.Queue,
+                InboxMetricOutcome.Winner,
+                MessagingInboxCapabilityTier.Transactional,
+                "PostgreSql",
+                tenantId: "tenant-unbounded",
+                includeTenantId: false
+            );
+        }
+
+        var inboxMeasurements = measurements
+            .Where(measurement => measurement.Name.StartsWith("messaging.inbox.", StringComparison.Ordinal))
+            .ToArray();
+        inboxMeasurements
+            .Select(measurement => measurement.Name)
+            .Should()
+            .BeEquivalentTo([
+                "messaging.inbox.duplicates",
+                "messaging.inbox.attempts",
+                "messaging.inbox.recoveries",
+                "messaging.inbox.terminal",
+                "messaging.inbox.replays",
+                "messaging.inbox.retention",
+                "messaging.inbox.capabilities",
+            ]);
+        inboxMeasurements.Should().OnlyContain(measurement => _HasExpectedInboxTags(measurement.Tags));
+    }
+
+    [Fact]
+    public void should_add_tenant_metric_dimension_only_when_explicitly_enabled()
+    {
+        var consumerIdentity = $"orders.consumer.{Guid.NewGuid():N}";
+        var measurements = new ConcurrentBag<(string Name, KeyValuePair<string, object?>[] Tags)>();
+        using var listener = _StartInboxMeterListener(measurements, consumerIdentity);
+
+        MessagingMetrics.RecordInbox(
+            InboxMetricKind.Duplicate,
+            consumerIdentity,
+            MessageLane.Bus,
+            InboxMetricOutcome.SucceededDuplicate,
+            MessagingInboxCapabilityTier.DurableDedupeOnly,
+            "PostgreSql",
+            tenantId: "tenant-7",
+            includeTenantId: true
+        );
+
+        measurements
+            .Should()
+            .Contain(measurement =>
+                measurement.Name == "messaging.inbox.duplicates"
+                && measurement.Tags.Any(tag => string.Equals(tag.Key, MessagingTags.TenantId, StringComparison.Ordinal))
+            );
+    }
+
     // AE2 (R4/R5): publish injects traceparent; consume extracts and continues the same trace.
     [Fact]
     public void should_propagate_trace_context_through_headers_when_publish_then_consume()
@@ -319,6 +385,59 @@ public sealed class MessagingTelemetryTests : TestBase
         listener.Start();
 
         return listener;
+    }
+
+    private static MeterListener _StartInboxMeterListener(
+        ConcurrentBag<(string Name, KeyValuePair<string, object?>[] Tags)> captured,
+        string consumerIdentity
+    )
+    {
+        var listener = new MeterListener
+        {
+            InstrumentPublished = (instrument, l) =>
+            {
+                if (string.Equals(instrument.Meter.Name, MessagingDiagnostics.SourceName, StringComparison.Ordinal))
+                {
+                    l.EnableMeasurementEvents(instrument);
+                }
+            },
+        };
+
+        listener.SetMeasurementEventCallback<long>(
+            (instrument, _, tags, _) =>
+            {
+                for (var i = 0; i < tags.Length; i++)
+                {
+                    if (
+                        string.Equals(tags[i].Key, MessagingTags.InboxConsumer, StringComparison.Ordinal)
+                        && string.Equals(tags[i].Value as string, consumerIdentity, StringComparison.Ordinal)
+                    )
+                    {
+                        captured.Add((instrument.Name, tags.ToArray()));
+                        return;
+                    }
+                }
+            }
+        );
+        listener.Start();
+        return listener;
+    }
+
+    private static bool _HasExpectedInboxTags(KeyValuePair<string, object?>[] tags)
+    {
+        var tagKeys = tags.Select(tag => tag.Key).ToArray();
+        return tagKeys.Contains(MessagingTags.InboxConsumer, StringComparer.Ordinal)
+            && tagKeys.Contains(MessagingTags.Lane, StringComparer.Ordinal)
+            && tagKeys.Contains(MessagingTags.InboxOutcome, StringComparer.Ordinal)
+            && tagKeys.Contains(MessagingTags.InboxTier, StringComparer.Ordinal)
+            && tagKeys.Contains(MessagingTags.InboxProvider, StringComparer.Ordinal)
+            && !tagKeys.Contains(MessagingTags.TenantId, StringComparer.Ordinal)
+            && !tagKeys.Any(key =>
+                key.Contains("message", StringComparison.OrdinalIgnoreCase)
+                || key.Contains("replay", StringComparison.OrdinalIgnoreCase)
+                || key.Contains("payload", StringComparison.OrdinalIgnoreCase)
+                || key.Contains("header", StringComparison.OrdinalIgnoreCase)
+            );
     }
 
     private static string[] _Keys(ReadOnlySpan<KeyValuePair<string, object?>> tags)

@@ -154,7 +154,14 @@ public sealed class ConsumerRegistryExtensionsTests
         Dictionary<Type, object> providerConfigs
     )
     {
-        return new(typeof(TestMessage), typeof(TestConsumer), messageName, group, 1, lane)
+        var consumerIdentity = messageName switch
+        {
+            "order.created" => "tests.registry-extensions.order-created",
+            "order.shipped" => "tests.registry-extensions.order-shipped",
+            _ => throw new ArgumentOutOfRangeException(nameof(messageName), messageName, "Unknown test contract."),
+        };
+
+        return new(typeof(TestMessage), typeof(TestConsumer), messageName, group, 1, lane, consumerIdentity, "v1")
         {
             ProviderConfigs = providerConfigs,
         };

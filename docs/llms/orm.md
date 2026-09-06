@@ -158,6 +158,8 @@ The full save-transaction order within a `HeadlessDbContext` pipeline-owned tran
 1. `Headless.EntityFramework.CommitCoordination` replaces the core no-op coordinator, and the save pipeline synchronously enlists its transaction in commit coordination (`DatabaseFacade.EnlistCommitCoordination`). The synchronous enlist is by design — an `AsyncLocal` push inside an `async` helper does not flow back to the caller.
 2. The `OutboxIntegrationEventDispatcher` publishes each integration event to `IBus.PublishAsync<T>` with `DeliveryMode.Durable`. The outbox writer sees the ambient coordinator and buffers the rows inside the transaction — not sent to the broker in-band.
 3. The registered `IDbTransactionInterceptor` drains the buffered dispatch when the transaction commits and discards it on rollback.
+
+On a transactional messaging consume path, the same compatible local transaction also owns the current fenced inbox completion. This atomic boundary covers enlisted EF state and captured durable Bus/Queue rows, not handler entry, `TransportDirect`, or external effects.
 4. The background messaging relay sweeps committed rows independently for crash recovery. On PostgreSQL the relay is the primary latency-bounded path; pick the outbox storage provider on `AddHeadlessMessaging` with that trade-off in mind.
 
 Change Data Capture (e.g. Debezium) is an advanced alternative that bypasses this bridge entirely — it reads the database transaction log and is a host-infrastructure decision, not a package option.

@@ -52,7 +52,12 @@ dotnet add package Headless.Messaging.Aws
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
-    options.Bus.ForConsumersFromAssemblyContaining<Program>();
+    options.Bus.ForMessage<OrderPlaced>(message =>
+        message.Consumer<OrderPlacedConsumer>(consumer =>
+            consumer.ConsumerIdentity("orders.order-placed")
+        )
+    );
+    options.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
     options.UsePostgreSql("connection_string");
 
     options.UseAws(sqs =>
@@ -75,7 +80,7 @@ options.UseAws(sqs =>
 });
 
 options.Bus.ForMessage<OrderEvent>(message =>
-    message.MessageName("orders.events.fifo").UseAws(aws => aws.MessageGroupId(order => order.CustomerId.ToString()))
+    message.Contract("orders.events.fifo").UseAws(aws => aws.MessageGroupId(order => order.CustomerId.ToString()))
 );
 ```
 

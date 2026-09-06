@@ -2,6 +2,7 @@
 
 using System.Diagnostics;
 using System.Net;
+using System.Text.Json.Serialization;
 using Headless.Dashboard.Authentication;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Dashboard.GatewayProxy;
@@ -27,6 +28,18 @@ public static class MessagingDashboardEndpoints
     internal const string PingHttpClientName = "Headless.Messaging.Dashboard.Ping";
     private const int _MaxPageSize = 200;
     private const int _MaxBulkActionSize = 500;
+
+    // Inbox requests and responses share a wire contract independent of the hosting application's JSON settings.
+    private static readonly JsonSerializerOptions _InboxJsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        Converters =
+        {
+            new JsonStringEnumConverter<StatusName>(allowIntegerValues: false),
+            new JsonStringEnumConverter<MessageLane>(allowIntegerValues: false),
+            new JsonStringEnumConverter<InboxOperationType>(allowIntegerValues: false),
+            new JsonStringEnumConverter<InboxOperationOutcome>(allowIntegerValues: false),
+        },
+    };
 
     internal static void MapMessagingDashboardEndpoints(
         this IEndpointRouteBuilder endpoints,
@@ -128,13 +141,23 @@ public static class MessagingDashboardEndpoints
         apiGroup
             .MapPost("/received/reexecute", _ReceivedRequeue)
             .WithName("Messaging_ReceivedRequeue")
-            .WithSummary("Re-execute received messages")
-            .WithDescription("Accepts a JSON array of message IDs (Guid[]) in the request body.");
+            .WithSummary("Create an audited child inbox generation");
         apiGroup
             .MapPost("/received/delete", _ReceivedDelete)
             .WithName("Messaging_ReceivedDelete")
-            .WithSummary("Delete received messages")
-            .WithDescription("Accepts a JSON array of message IDs (Guid[]) in the request body.");
+            .WithSummary("Purge an audited terminal inbox generation");
+        apiGroup
+            .MapGet("/inbox", _InboxList)
+            .WithName("Messaging_InboxList")
+            .WithSummary("Query retained inbox generations");
+        apiGroup
+            .MapPost("/inbox/hold", _InboxHold)
+            .WithName("Messaging_InboxHold")
+            .WithSummary("Hold a terminal inbox generation");
+        apiGroup
+            .MapPost("/inbox/release", _InboxRelease)
+            .WithName("Messaging_InboxRelease")
+            .WithSummary("Release an inbox retention hold");
         apiGroup
             .MapGet("/received/{status}", _ReceivedList)
             .WithName("Messaging_ReceivedList")
@@ -232,6 +255,7 @@ public static class MessagingDashboardEndpoints
                 Lanes = capability.Lanes.Order().Select(lane => lane.ToString()).ToArray(),
                 capability.SupportsIndependentLaneTopology,
                 capability.SupportsDelayedScheduling,
+                InboxCapability = capability.InboxCapability?.ToString("G"),
             });
 
         return Results.Json(
@@ -504,75 +528,153 @@ public static class MessagingDashboardEndpoints
 
     private static async Task<IResult> _ReceivedRequeue(HttpContext httpContext, IServiceProvider sp)
     {
-        var storageIds = await _ReadStorageIdsAsync(httpContext).ConfigureAwait(false);
-        if (storageIds == null || storageIds.Length == 0)
-        {
-            return Results.UnprocessableEntity();
-        }
-
-        if (storageIds.Length > _MaxBulkActionSize)
-        {
-            return _BulkTooLarge();
-        }
-
-        var dataStorage = sp.GetRequiredService<IDataStorage>();
-        var monitoringApi = dataStorage.GetMonitoringApi();
-        var dispatcher = sp.GetRequiredService<IDispatcher>();
-        var busTransport = sp.GetService<IBusTransport>();
-        var queueTransport = sp.GetService<IQueueTransport>();
-
-        var messages = await monitoringApi
-            .GetReceivedMessagesAsync(storageIds, httpContext.RequestAborted)
+        return await _ExecuteInboxDashboardOperationAsync(
+                httpContext,
+                sp,
+                static (api, request, token) => api.ForceReprocessAsync(request, token)
+            )
             .ConfigureAwait(false);
-
-        var rejected = new List<Guid>();
-        var requeued = new List<Guid>();
-
-        foreach (var message in messages)
-        {
-            var hasTransport = message.Lane switch
-            {
-                MessageLane.Bus => busTransport is not null,
-                MessageLane.Queue => queueTransport is not null,
-                _ => false,
-            };
-
-            if (!hasTransport)
-            {
-                rejected.Add(message.StorageId);
-                continue;
-            }
-
-            await dispatcher
-                .EnqueueToExecute(message, descriptor: null, cancellationToken: httpContext.RequestAborted)
-                .ConfigureAwait(false);
-            requeued.Add(message.StorageId);
-        }
-
-        if (rejected.Count > 0)
-        {
-            return Results.UnprocessableEntity(new { rejected, requeued });
-        }
-
-        return Results.NoContent();
     }
 
     private static async Task<IResult> _ReceivedDelete(HttpContext httpContext, IServiceProvider sp)
     {
-        var storageIds = await _ReadStorageIdsAsync(httpContext).ConfigureAwait(false);
-        if (storageIds == null || storageIds.Length == 0)
+        return await _ExecuteInboxDashboardOperationAsync(
+                httpContext,
+                sp,
+                static (api, request, token) => api.PurgeAsync(request, token)
+            )
+            .ConfigureAwait(false);
+    }
+
+    private static async Task<IResult> _InboxHold(HttpContext httpContext, IServiceProvider sp) =>
+        await _ExecuteInboxDashboardOperationAsync(
+                httpContext,
+                sp,
+                static (api, request, token) => api.HoldAsync(request, token)
+            )
+            .ConfigureAwait(false);
+
+    private static async Task<IResult> _InboxRelease(HttpContext httpContext, IServiceProvider sp) =>
+        await _ExecuteInboxDashboardOperationAsync(
+                httpContext,
+                sp,
+                static (api, request, token) => api.ReleaseHoldAsync(request, token)
+            )
+            .ConfigureAwait(false);
+
+    private static async Task<IResult> _InboxList(
+        HttpContext httpContext,
+        IServiceProvider sp,
+        Guid? incarnationId = null,
+        string? consumerIdentity = null,
+        MessageLane? lane = null,
+        StatusName? status = null,
+        bool? isOrphaned = null,
+        bool? isHeld = null,
+        int perPage = 20,
+        int currentPage = 1
+    )
+    {
+        if (!_TryCreateInboxAuthority(httpContext, out var authorization))
+        {
+            return Results.Unauthorized();
+        }
+        var result = await sp.GetRequiredService<IDataStorage>()
+            .GetInboxOperationsApi()
+            .QueryAsync(
+                new InboxGenerationQuery
+                {
+                    IncarnationId = incarnationId,
+                    ConsumerIdentity = consumerIdentity,
+                    Lane = lane,
+                    Status = status,
+                    IsOrphaned = isOrphaned,
+                    IsHeld = isHeld,
+                    CurrentPage = Math.Max(currentPage - 1, 0),
+                    PageSize = Math.Clamp(perPage, 1, _MaxPageSize),
+                },
+                authorization,
+                httpContext.RequestAborted
+            )
+            .ConfigureAwait(false);
+        return Results.Json(result, _InboxJsonOptions);
+    }
+
+    private static async Task<IResult> _ExecuteInboxDashboardOperationAsync(
+        HttpContext httpContext,
+        IServiceProvider sp,
+        Func<IInboxOperationsApi, InboxOperationRequest, CancellationToken, ValueTask<InboxOperationResult>> execute
+    )
+    {
+        if (!_TryCreateInboxAuthority(httpContext, out var authorization))
+        {
+            return Results.Unauthorized();
+        }
+        InboxDashboardOperationRequest? payload;
+        try
+        {
+            payload = await httpContext
+                .Request.ReadFromJsonAsync<InboxDashboardOperationRequest>(
+                    _InboxJsonOptions,
+                    httpContext.RequestAborted
+                )
+                .ConfigureAwait(false);
+        }
+        catch (JsonException)
         {
             return Results.UnprocessableEntity();
         }
 
-        if (storageIds.Length > _MaxBulkActionSize)
+        if (payload is null)
         {
-            return _BulkTooLarge();
+            return Results.UnprocessableEntity();
         }
+        var request = new InboxOperationRequest(
+            payload.OperationId,
+            payload.ExpectedIncarnationId,
+            payload.ExpectedStatus,
+            payload.Reason ?? string.Empty,
+            authorization
+        );
+        try
+        {
+            var result = await execute(
+                    sp.GetRequiredService<IDataStorage>().GetInboxOperationsApi(),
+                    request,
+                    httpContext.RequestAborted
+                )
+                .ConfigureAwait(false);
+            var statusCode = result.Outcome switch
+            {
+                InboxOperationOutcome.Applied => StatusCodes.Status200OK,
+                InboxOperationOutcome.NotFound => StatusCodes.Status404NotFound,
+                _ => StatusCodes.Status409Conflict,
+            };
+            return Results.Json(result, _InboxJsonOptions, statusCode: statusCode);
+        }
+        catch (InvalidOperationException)
+        {
+            return Results.UnprocessableEntity();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Results.Unauthorized();
+        }
+    }
 
-        var dataStorage = sp.GetRequiredService<IDataStorage>();
-        _ = await dataStorage.DeleteReceivedMessagesAsync(storageIds, httpContext.RequestAborted).ConfigureAwait(false);
-        return Results.NoContent();
+    private static bool _TryCreateInboxAuthority(HttpContext httpContext, out InboxAuthorizationContext authorization)
+    {
+        authorization = new InboxAuthorizationContext(httpContext.User);
+        return httpContext.User.Identity is { IsAuthenticated: true }
+            && !string.IsNullOrWhiteSpace(httpContext.User.Identity.Name);
+    }
+
+    private sealed class InboxDashboardOperationRequest
+    {
+        public Guid OperationId { get; init; }
+        public Guid ExpectedIncarnationId { get; init; }
+        public StatusName ExpectedStatus { get; init; }
+        public string? Reason { get; init; }
     }
 
     private static async Task<IResult> _PublishedList(

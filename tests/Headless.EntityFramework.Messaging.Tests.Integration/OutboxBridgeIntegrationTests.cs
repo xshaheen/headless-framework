@@ -3,6 +3,7 @@
 using Headless.Domain;
 using Headless.EntityFramework;
 using Headless.Messaging;
+using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
@@ -273,6 +274,7 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
 
         services.AddHeadlessMessaging(setup =>
         {
+            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
             setup.UseInMemory();
             setup.UsePostgreSql(fixture.ConnectionString);
         });

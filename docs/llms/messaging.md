@@ -188,7 +188,7 @@ services.AddHeadlessMessaging(setup =>
 
     setup.Bus.ForMessage<OrderPlaced>(message =>
         message
-            .MessageName("orders.placed")
+            .Contract("orders.placed")
             .CorrelationFrom(order => order.OrderId.ToString())
             .Consumer<OrderProjection>(consumer =>
                 consumer.Group("orders-projection").Concurrency(4).UseRabbitMq(rabbit => rabbit.PrefetchCount(20))
@@ -205,21 +205,27 @@ services.AddHeadlessMessaging(setup =>
 - **OpenTelemetry is native to `Messaging.Core`** (no satellite package). Subscribe traces/metrics with `AddMessagingInstrumentation()` on the `TracerProviderBuilder`/`MeterProviderBuilder`, and configure enrichers/suppression via `setup.Instrumentation` inside `AddHeadlessMessaging(...)`.
 - **Add `Messaging.Testing`** in test projects for integration testing with awaitable assertions. Use `AddMessagingTestHarness()` to decorate an existing host's DI container (WebApplicationFactory, IHost), or `MessagingTestHarness.CreateAsync()` for standalone harness.
 - **Add `Messaging.Dashboard`** when monitoring UI is needed; it exposes operational message actions and requires an explicit authentication choice (the host fails to start otherwise), so configure `WithBasicAuth`, `WithApiKey`, `WithHostAuthentication`, or `WithCustomAuth` — and `SetCorsOrigins` if the SPA is served cross-origin — before production exposure.
-- **Messages are type-safe and lane-owned**: Define plain class, record, or interface contracts. Register explicit consumers with `setup.Bus.ForMessage<TMessage>(...)` or `setup.Queue.ForMessage<TMessage>(...)`, then call `Consumer<TConsumer>()`. Assembly scans also start from a lane root (`ForConsumersFromAssembly*`); callbacks configure group, concurrency, handler id, circuit breaker, or `Skip()`, never the lane.
+- **Messages are type-safe and lane-owned**: Define plain class, record, or interface contracts. Register their stable logical name and schema version with `Contract(name, version)` under `setup.Bus.ForMessage<TMessage>(...)` or `setup.Queue.ForMessage<TMessage>(...)`, then call `Consumer<TConsumer>(...)` with its durable consumer settings. Assembly scans also start from a lane root (`ForConsumersFromAssembly*`); callbacks configure contract metadata, identity, group, concurrency, handler id, circuit breaker, or `Skip()`, never the lane.
+- **Contract and consumer identity are separate**: `Contract(name, version)` belongs to the message schema. Every durable consumer declares only an operator-stable `ConsumerIdentity(...)`, which is independent from CLR type, group, destination, or display name. Intentional reprocessing uses an explicit linked inbox generation; changing a schema version is not a dedupe-reset mechanism.
 - **Library-owned consumers can register out of order**: Core-owned internal immutable contributions may be added before or after `AddHeadlessMessaging(...)`. Bootstrap drains them through the same lane-scoped registration pipeline; no public service-collection registration or contributor alternate root exists.
 - **The same contract can use both lanes**: an identical contract and logical name may have independent Bus and Queue registrations, metadata, middleware, circuits, retry/backpressure state, and transport selection. Every built-in dual-lane transport now declares and proves independent physical lane topology; Kafka remains Queue-only and rejects Bus registration before readiness or side effects.
 - **Runtime handlers are first-class**: Use `IRuntimeSubscriber` for ephemeral broker-attached delegates. They share scoped DI, middleware, diagnostics, retry, and correlation semantics with class handlers.
 - **The publisher verb selects the lane**: Use `IBus.PublishAsync` for broadcast Bus delivery and `IQueue.EnqueueAsync` for point-to-point Queue delivery.
 - **Choose durability separately**: Set `DeliveryMode` on immutable publish/enqueue options: `Auto` captures under compatible coordination, sends directly with no coordination, and rejects an active incompatible boundary; `Durable` persists first; `TransportDirect` bypasses storage and coordination.
 - **Provider behavior is capability-gated**: immutable transport, storage, and coordination descriptors declare lanes, delayed scheduling, and physical lane-topology support. Bootstrap freezes and validates them before readiness or resolving provider implementations; direct and outbox calls reject unsupported combinations before middleware, storage writes, client creation, or transport I/O. Raw transport DI registration is not capability evidence.
+- **Durable inbox guarantees fail closed**: durable consumers require `MessagingOptions.RequiredInboxCapability`, which defaults to `Transactional`. Selecting `DurableDedupeOnly` is an explicit opt-down when duplicate suppression may commit separately from application state; selecting `ProcessLocal` is reserved for process-local development storage. Bootstrap validates the declared storage tier before subscription creation or retry pickup.
 - **The lane discriminator remains wire-compatible**: public/runtime APIs use `MessageLane`, while storage columns retain the legacy `IntentType` name and the `headless-intent` header retains its stable literal and `0`/`1` values. Retry drainers dispatch Bus rows through `IBusTransport` and Queue rows through `IQueueTransport`. A persisted row whose value has no matching capability fails terminally; undefined values never default to Bus.
 - **Do NOT use raw transport client libraries** (e.g., `RabbitMQ.Client`, `Confluent.Kafka`) directly -- always use the `Headless.Messaging` abstraction layer.
 - **Ordering depends on transport**: Kafka orders by partition key. Azure Service Bus orders by session. RabbitMQ has no ordering with multiple consumers. Set `ConsumerThreadCount = 1` for strict ordering.
 - **RabbitMQ credentials**: The framework rejects default `guest`/`guest` credentials. Always configure explicit username/password.
 - **AWS SQS redrive is external**: Configure a dead-letter queue and redrive policy with a bounded receive count for handler failures. Headless terminally deletes malformed transport envelopes to prevent requeue storms and does not provision redrive infrastructure.
-- **Message-name mapping**: Map message types to lane-specific logical names via `setup.Bus.ForMessage<TMessage>(x => x.MessageName("message.name"))` or the Queue equivalent. `IMessagingBuilder.WithMessageNameMapping<TMessage>("message.name")` remains a global convention fallback when no lane-specific mapping exists.
+- **Message-name mapping**: Map message types to lane-specific logical names via `setup.Bus.ForMessage<TMessage>(x => x.Contract("message.name"))` or the Queue equivalent. `IMessagingBuilder.WithMessageNameMapping<TMessage>("message.name")` remains a global convention fallback when no lane-specific mapping exists.
 - **Fail-fast defaults**: Duplicate consumer or runtime registrations are rejected by default. Anonymous runtime delegates must provide `HandlerId`.
 - **Telemetry parity**: Existing diagnostic listener and metric names stay stable across direct publish, outbox publish, and runtime subscriptions.
+- **Inbox telemetry is bounded**: inbox counters use registered consumer identity plus finite lane, outcome, tier, and provider dimensions. Message/replay IDs, payloads, and headers are never metric labels. `setup.Instrumentation.IncludeTenantIdInMetricTags` is an explicit, default-off cardinality opt-in.
+- **Retention resets identity after purge or expiry**: terminal generations are retained for 30 days by default; configure `InboxRetention(...)` per consumer. Direct admission suppresses duplicates while its root is retained. Once that root expires or is purged, readmission creates a fresh lifecycle, even if older replay descendants remain held. Replay generation numbers are local to their lifecycle; explicit admission generations remain independent. Holds, mutations, and operation receipts target immutable generation incarnations. Relational inbox schema v4 requires lifecycle identity and separate admission/replay uniqueness; startup rejects retained older inbox rows whose lifecycle identity cannot be reconstructed safely.
+- **Poison inbox retention**: recovery of an unreadable inbox envelope records a terminal failure and clears the attempt fence in the claim transaction. Terminal retention starts from the database clock using the row's persisted retention duration. Terminal redeliveries are suppressed without deserializing or replacing the retained payload; expiry then allows fresh admission.
+- **SQL Server pooled isolation**: monitoring, expiry cleanup, and delayed scheduling preserve skip-locked behavior with `READ_COMMITTED_SNAPSHOT` on or off, even after pooled Serializable inbox admission. Delayed scheduling opens explicit ReadCommitted transactions without weakening inbox admission.
 - **Consumer lifecycle semantics**: `IConsumerLifecycle` runs per delivery on the scoped consumer instance. Do not treat it as application startup or shutdown.
 - **Consumer startup is host-cancellable**: consumer factory creation, metadata provisioning, and subscription receive the host-stopping token. Provider implementations preserve `OperationCanceledException`; do not wrap shutdown cancellation as a broker failure.
 - **Core handles outbox automatically** when paired with EF Core -- messages are stored in database before being dispatched to transport.
@@ -240,12 +246,15 @@ services.AddHeadlessMessaging(setup =>
 
 - **Transactional outbox (atomic publish) — on by default in the EF adapter packages**: install `Headless.Messaging.Storage.PostgreSql.EntityFramework` or `Headless.Messaging.Storage.SqlServer.EntityFramework`, then select `setup.UseEntityFramework<TContext>()`. A `producer.PublishAsync(...)` inside a coordinated transaction writes its outbox row in the SAME DB transaction and is discarded on rollback. The adapter auto-registers commit coordination, attaches the interceptor through `IDbContextOptionsConfiguration<TContext>`, and enables the startup self-probe. The raw ADO.NET packages remain EF-free and expose only connection/data-source setup. This is an atomicity guarantee for the write, not exactly-once delivery.
 - **Delivery semantics — at-least-once, consumer idempotency required**: the framework never promises exactly-once. The commit-edge drain and the relay sweep can both deliver the same message in a narrow window (the `LockedUntil` lease and the Succeeded/Failed terminal-row guard minimize but do not eliminate duplicates), and a crash between broker accept and the success-mark write redelivers. Consumers must be idempotent — dedupe by business key or message id.
+- **Transactional inbox scope**: the transactional tier atomically commits the current fenced inbox outcome, compatible enlisted application state, and captured durable Bus/Queue work. Each Messaging attempt owns one DI scope shared by the EF runner, consume middleware, and handler, with the configured scoped `TContext` alive through commit or rollback. The runner saves tracked changes after the handler returns; explicit handler saves roll back if inbox completion rejects the attempt fence. A subsequent Messaging attempt gets a fresh scope. This does not make handler entry, `TransportDirect`, or external/non-enlisted effects exactly once.
+- **Transactional inbox retries**: EF execution strategies may retry transaction setup before handler entry. Every failure after entry, including save, commit, rollback, and scope/transaction disposal, returns to Messaging's fenced retry path rather than replaying the handler inside the reserved attempt. The adapter still probes ambiguous commit outcomes to recognize a durable commit.
 - **Message lane**: Bus is broadcast/pub-sub and Queue is point-to-point. Registration, monitoring, dashboard JSON, testing, and runtime APIs use `MessageLane`; only intentional compatibility boundaries retain the `IntentType` database column, `headless-intent` header, and stable `0`/`1` values. Received-message identity includes the lane so the two paths do not collapse into one storage row.
-- **Envelope**: All transport messages carry framework headers such as message id, correlation id, message name, type, sent time, intent, and optional tenant id.
-- **Reserved headers**: `MessageId`, `CorrelationId`, `CorrelationSequence`, `CallbackName`, `MessageName`, `Type`, `SentTime`, `DelayTime`, and `Intent` are rejected in custom publish headers and provider contributions. `TenantId` is also framework-owned; provider contributions cannot write it, while raw publish headers are handled by the stricter tenant-integrity policy for compatibility.
+- **Envelope**: All transport messages carry framework headers such as message id, message-contract version, root correlation id, optional immediate causation id, message name, type, sent time, intent, and optional tenant id.
+- **Reserved headers**: `MessageId`, `ContractVersion`, `CorrelationId`, `CausationId`, `CorrelationSequence`, `CallbackName`, `MessageName`, `Type`, `SentTime`, `DelayTime`, and `Intent` are rejected in custom publish headers and provider contributions. `TenantId` is also framework-owned; provider contributions cannot write it, while raw publish headers are handled by the stricter tenant-integrity policy for compatibility.
 - **Header validation**: custom header names, custom header values, and framework/provider-stamped header values all reject control characters before publish. This includes explicit `MessageId`, `CorrelationId`, `CallbackName`, and typed `TenantId`.
 - **Explicit message names**: `PublishOptions.MessageName` follows the same validator as registered message mappings. Invalid dot shapes and invalid characters are rejected before publish.
-- **Correlation**: `PublishOptions.CorrelationId` wins. If absent, `CorrelationFrom(...)` runs against the payload. If absent, publishes inside a consumer inherit ambient `ConsumeContext.CorrelationId`. If absent, the message id becomes the correlation id.
+- **Contract version**: `Contract(name, version)` is the normal authority and defaults to version `"1"`. `PublishOptions.ContractVersion` is an explicit per-send override for controlled compatibility work. Consumers validate the header before deserialization, expose it through `ConsumeContext.ContractVersion`, and treat a missing header as version `"1"` for legacy or external producers.
+- **Correlation and causation**: `PublishOptions.CorrelationId` wins. If absent, `CorrelationFrom(...)` runs against the payload. If absent, publishes inside a consumer preserve ambient `ConsumeContext.CorrelationId`. If absent, the message id becomes the root correlation id. `PublishOptions.CausationId` wins for the immediate parent; otherwise an ambient consume context contributes its current message id. Consumers read it from `ConsumeContext.CausationId`.
 - **Tenant integrity**: use `MessageOptions.TenantId` or ambient tenancy. Do not write `Headers.TenantId` directly.
 - **Provider config bag**: provider packages attach opaque config objects keyed by config type. Consumer config overlays message config for the same provider type. Repeated message metadata registrations are deterministic: later metadata for the same message/config type overrides earlier metadata.
 - **Declared-contract authority**: lane-scoped registration selects the declared contract used for logical name and typed middleware; assignable-type fallback does not silently bind a concrete payload to another registration. The concrete payload or callback-response type is preserved separately for serialization and typed values. Explicit publish options still override their corresponding envelope fields.
@@ -486,8 +495,10 @@ Wires messaging into dependency injection: registration, publishing, dispatch, m
 
 - `services.AddHeadlessMessaging(setup => ...)`.
 - `setup.Bus.ForMessage<TMessage>(...)`, `setup.Queue.ForMessage<TMessage>(...)`, and root-scoped assembly scanning.
-- `MessageName(...)`, `CorrelationFrom(...)`, and `Consumer<TConsumer>()` inherit the selected root lane.
+- `Contract(...)`, `CorrelationFrom(...)`, and `Consumer<TConsumer>(...)` inherit the selected root lane.
 - Consumer settings: `Group(...)`, `Concurrency(...)`, `HandlerId(...)`, `WithCircuitBreaker(...)`.
+- Message contract settings: stable `Contract(name, version)` metadata, stamped on every outgoing envelope and checked before durable dispatch.
+- Durable consumer settings: mandatory, nonblank `ConsumerIdentity(...)` of at most 200 characters (`ConsumerMetadata.ConsumerIdentityMaxLength`). Fluent and scanned registration reject longer identities before delivery, matching relational inbox admission. Identity is stable across CLR and topology refactors; changing it intentionally creates a new durable consumer scope. Bus and Queue identities are collision-scoped independently.
 - Publish and consume middleware.
 - Strict publish tenancy via `RequireTenantOnPublish()`.
 - Storage-backed retry/outbox and cleanup processors.
@@ -530,12 +541,15 @@ services.AddHeadlessMessaging(setup =>
 {
     setup.UseInMemory();
     setup.UseInMemoryStorage();
+    setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
 
     setup.Bus.ForMessage<OrderPlaced>(message =>
         message
-            .MessageName("orders.placed")
+            .Contract("orders.placed")
             .CorrelationFrom(order => order.OrderId.ToString())
-            .Consumer<OrderPlacedConsumer>(consumer => consumer.Group("orders"))
+            .Consumer<OrderPlacedConsumer>(consumer => consumer
+                .ConsumerIdentity("orders.projection")
+                .Group("orders"))
     );
 });
 ```
@@ -543,6 +557,8 @@ services.AddHeadlessMessaging(setup =>
 ### Configuration
 
 - `MessagingOptions.DefaultGroupName`, `GroupNamePrefix`, `MessageNamePrefix`, and `Version` control naming and isolation. `Version` is validated non-empty and at most 20 characters — the SQL storage providers persist it as a literal into a `VARCHAR(20)`/`nvarchar(20)` column, so an over-long value is rejected at startup instead of failing every outbox insert.
+- `MessagingOptions.RequiredInboxCapability` defaults to `MessagingInboxCapabilityTier.Transactional`. Set `DurableDedupeOnly` only when the application accepts that inbox outcome and business state cannot commit atomically, or `ProcessLocal` for the in-process development provider. The configured storage must declare the selected tier before durable consumers can start.
+- `MessagingInstrumentationOptions.IncludeTenantIdInMetricTags` defaults to `false`. Enable it only when the metrics backend and tenant population have an explicit cardinality budget; traces retain their separate tenant-tag policy.
 - `ConsumerThreadCount`, `SubscriberParallelExecuteThreadCount`, and `SubscriberParallelExecuteBufferFactor` accept 1 through 1,024; the subscriber thread-count × buffer-factor product must not exceed 100,000.
 - Retry configuration lives under `RetryPolicy`, publish/receive retry processors, and storage cleanup options. `RetryBatchSize` (default 200) and `SchedulerBatchSize` (default 1,000) accept 1 through 100,000. `SchedulerBatchSize` also bounds the in-memory near-term scheduler queue; overflow remains durable as `Delayed` work.
 - `UseStorageLock` coordinates retry processors through a messaging-keyed distributed lock provider.
@@ -624,7 +640,7 @@ var info = new FailedInfo
 };
 ```
 
-`ServiceProvider` is the **live per-message DI scope** — the same scope used while the consume / publish attempts ran. Scoped services resolved through `FailedInfo.ServiceProvider` are the same instances seen by the consumer/handler.
+`ServiceProvider` is the live outer dispatch scope. Transactional consume attempts own separate scopes that end after commit or rollback; services resolved through `FailedInfo.ServiceProvider` must not be assumed to be the handler's instances or to participate in its completed transaction.
 
 ### RetryProcessorOptions
 
@@ -932,7 +948,7 @@ builder.Services.AddHeadlessMessaging(setup =>
 {
     setup.Bus.ForMessage<PaymentProcessed>(message =>
         message
-            .MessageName("payments.process")
+            .Contract("payments.process")
             .Consumer<PaymentHandler>(consumer =>
                 consumer.WithCircuitBreaker(cb =>
                 {
@@ -1047,6 +1063,8 @@ Provides real-time visibility into message processing, failures, retries, and sy
 
 The dashboard exposes operational endpoints for inspecting, retrying, re-executing, and deleting message records. Its protected `/api/meta` response also projects sanitized registered-provider descriptors; deployment cutover state remains operator-owned and is never inferred by the dashboard. Treat `WithNoAuth()` as development-only unless the dashboard is isolated behind trusted network controls. Production deployments should use `WithHostAuthentication(...)`, `WithBasicAuth(...)`, `WithApiKey(...)`, or `WithCustomAuth(...)`, and should set an explicit CORS policy before exposing the dashboard cross-origin.
 
+Inbox query and operation JSON uses camelCase properties and named string enum values, such as `"Failed"`, `"Succeeded"`, and `"Queue"`, independently of the host's JSON configuration. Operation requests must send `expectedStatus` as a string; responses use the same format for status, lane, operation type, and outcome, including conflict and not-found results.
+
 ### Installation
 
 ```bash
@@ -1148,6 +1166,7 @@ Spans and metrics for messaging publish, persist, consume, and subscriber-invoke
 - The Meter/ActivitySource is named `Headless.Messaging` — exposed as the `public const string MessagingDiagnostics.SourceName`.
 - Typed `AddMessagingInstrumentation()` extensions on both `TracerProviderBuilder` (namespace `OpenTelemetry.Trace`) and `MeterProviderBuilder` (namespace `OpenTelemetry.Metrics`) — thin `AddSource`/`AddMeter` wrappers over the const. Subscribing by name is equally supported.
 - Instrument names + standard dimensions follow the OpenTelemetry messaging **semconv** (`messaging.publish.messages`, `messaging.consume.duration`, dims `messaging.operation` / `messaging.system` / `messaging.consumer.group` / `error.type` / `messaging.subscriber` / `messaging.persistence.type`); framework-specific span attributes are bespoke `headless.messaging.*`.
+- Inbox lifecycle counters are `messaging.inbox.duplicates`, `.attempts`, `.recoveries`, `.terminal`, `.replays`, `.retention`, and `.capabilities`. Their fixed labels are registered consumer identity, lane, finite outcome, tier, and provider; tenant is present only with the explicit cardinality opt-in.
 - W3C `traceparent` + baggage are injected on publish headers and extracted on consume — **always on whenever any messaging telemetry is enabled**, no toggle. A metrics-only service (meter subscribed, no trace listener) — or a sampled-out publish — **relays** the incoming/ambient parent context verbatim onto outgoing messages instead of dropping it, so trace continuity survives non-tracing hops; a consumed message's context flows to publishes made from its handler even without a span. A fully unobserved host (no listeners at all) pays nothing and forwards nothing. The framework never fabricates a root: relay happens only when a parent actually exists. The app's OpenTelemetry setup must assign `Propagators.DefaultTextMapPropagator` (the standard `AddOpenTelemetry().WithTracing()` does this).
 - `IActivityTagEnricher` extension point, invoked **synchronously at span start** (`void Enrich(Activity activity, in MessagingEnrichmentContext context)`), with per-enricher exception isolation.
 
@@ -1241,9 +1260,11 @@ setup.UseAws(options =>
 
 setup.Queue.ForMessage<OrderPlaced>(message =>
     message
-        .MessageName("orders-placed.fifo")
+        .Contract("orders-placed.fifo")
         .UseAws(aws => aws.MessageGroupId(order => order.CustomerId.ToString()))
-        .Consumer<OrderWorker>()
+        .Consumer<OrderWorker>(consumer => consumer
+            .ConsumerIdentity("orders.worker")
+            )
 );
 ```
 
@@ -1296,7 +1317,11 @@ dotnet add package Headless.Messaging.AzureServiceBus
 setup.UseAzureServiceBus(options => options.ConnectionString = connectionString);
 
 setup.Bus.ForMessage<OrderPlaced>(message =>
-    message.UseAzureServiceBus(asb => asb.PartitionKey(order => order.CustomerId.ToString())).Consumer<OrderProjection>()
+    message
+        .UseAzureServiceBus(asb => asb.PartitionKey(order => order.CustomerId.ToString()))
+        .Consumer<OrderProjection>(consumer => consumer
+            .ConsumerIdentity("orders.projection")
+            )
 );
 ```
 
@@ -1362,6 +1387,7 @@ Provides in-process messaging storage for local development and tests.
 
 - `setup.UseInMemoryStorage()`.
 - Stores published, received, failed, and monitoring state in memory.
+- Declares `MessagingInboxCapabilityTier.ProcessLocal`; state and duplicate suppression do not survive process restart and cannot satisfy a durable transactional requirement.
 
 InMemoryStorage uses its injected `TimeProvider` for both application-scheduled `NextRetryAt` and authoritative lease ownership. It implements the same duration-based lease SPI and returns the persisted `(LockedUntil, Owner)` identity. Delayed scheduling atomically transitions and leases each per-message winner before returning a deterministic bounded batch. Circuit-open received retries atomically advance `NextRetryAt` and clear only the exact live `(lane, Owner, LockedUntil)` lease generation under the per-row lock. Retry pickup claims due rows in `NextRetryAt` order, as the relational providers do, so an earlier-scheduled row is never starved by a later one once `RetryBatchSize` bounds the batch. Rows sharing an identical `NextRetryAt` fall back to a deterministic per-provider tie-break, which no fairness guarantee depends on.
 
@@ -1420,7 +1446,7 @@ setup.UseKafka(options => options.Servers = "localhost:9092");
 
 setup.Queue.ForMessage<OrderPlaced>(message =>
     message
-        .MessageName("orders.placed")
+        .Contract("orders.placed")
         .UseKafka(kafka => kafka.PartitionBy(order => order.CustomerId.ToString()))
         .Consumer<OrderWorker>(consumer =>
             consumer.UseKafka(kafka => kafka.IsolationLevel(IsolationLevel.ReadCommitted))
@@ -1532,7 +1558,11 @@ dotnet add package Headless.Messaging.Pulsar
 setup.UsePulsar(options => options.ServiceUrl = "pulsar://localhost:6650");
 
 setup.Bus.ForMessage<OrderPlaced>(message =>
-    message.MessageName("persistent://public/default/orders.placed").Consumer<OrderProjection>()
+    message
+        .Contract("persistent://public/default/orders.placed")
+        .Consumer<OrderProjection>(consumer => consumer
+            .ConsumerIdentity("orders.projection")
+            )
 );
 ```
 
@@ -1654,6 +1684,7 @@ Provides PostgreSQL durable storage for messaging publish/receive state, retries
 - `setup.UsePostgreSql(...)` — connection string, `IConfiguration` binding, `Action<PostgreSqlOptions>`, or `Action<PostgreSqlOptions, IServiceProvider>`.
 - PostgreSQL schema/table configuration.
 - Raw ADO.NET integration and startup initialization.
+- Declares `MessagingInboxCapabilityTier.DurableDedupeOnly`; applications with durable consumers must explicitly select that degraded tier until a compatible transaction runner is configured.
 - **GUID Row IDs**: Message storage identifiers come from the `Version7` keyed `IGuidGenerator` and are persisted as PostgreSQL `UUID` columns.
 
 Fresh dispatch, retry pickup, and delayed scheduling atomically compare and stamp ownership from one PostgreSQL clock snapshot. Delayed scheduling uses ordered `FOR UPDATE SKIP LOCKED` claiming, commits the transition to `Queued`, and only then returns winner messages for local enqueue. Circuit-open received retries atomically advance `NextRetryAt` and clear only the exact live `(lane, Owner, LockedUntil)` lease generation using PostgreSQL's authoritative clock and null-safe owner matching.
@@ -1690,6 +1721,10 @@ Registers PostgreSQL storage, monitoring API, and storage initializer. It does n
 
 Adds `setup.UseEntityFramework<TContext>()` for PostgreSQL, derives the connection from the registered context, and selects commit coordination plus its startup gate. Depends on the raw PostgreSQL storage package; install it only for EF-backed transactional outbox composition.
 
+Each transactional consume attempt shares one DI scope and configured `TContext` across the EF runner, consume middleware, and handler. The runner saves tracked changes after the handler returns and keeps the scope alive through commit or rollback. Explicit handler saves and captured durable Bus/Queue rows roll back with application state when inbox completion rejects the attempt fence.
+
+EF execution-strategy retries are allowed only before handler entry. After entry, handler, save, commit, rollback, and disposal failures return to Messaging's fenced retry path; EF cannot transparently replay the handler within the reserved attempt. Ambiguous commit outcomes are still probed before deciding whether the attempt committed.
+
 ## Headless.Messaging.Storage.SqlServer
 
 ### Problem Solved
@@ -1701,6 +1736,7 @@ Provides SQL Server durable storage for messaging publish/receive state, retries
 - `setup.UseSqlServer(...)` — connection string, `IConfiguration` binding, `Action<SqlServerOptions>`, or `Action<SqlServerOptions, IServiceProvider>`.
 - SQL Server schema/table configuration.
 - Raw ADO.NET integration and startup initialization.
+- Declares `MessagingInboxCapabilityTier.DurableDedupeOnly`; applications with durable consumers must explicitly select that degraded tier until a compatible transaction runner is configured.
 - **GUID Row IDs**: Message storage identifiers come from the `SqlServer` keyed `IGuidGenerator` and are persisted as SQL Server `uniqueidentifier` columns.
 
 Fresh dispatch, retry pickup, and delayed scheduling atomically compare and stamp ownership from one SQL Server clock snapshot. Delayed scheduling uses ordered `UPDLOCK, READPAST` claiming, commits the transition to `Queued`, and only then returns winner messages for local enqueue. Circuit-open received retries atomically advance `NextRetryAt` and clear only the exact live `(lane, Owner, LockedUntil)` lease generation using SQL Server's authoritative clock and null-safe owner matching.
@@ -1734,6 +1770,10 @@ Registers SQL Server storage, monitoring API, and storage initializer. It does n
 ## Headless.Messaging.Storage.SqlServer.EntityFramework
 
 Adds `setup.UseEntityFramework<TContext>()` for SQL Server, derives the connection from the registered context, and selects commit coordination plus its startup gate. Depends on the raw SQL Server storage package; install it only for EF-backed transactional outbox composition.
+
+Each transactional consume attempt shares one DI scope and configured `TContext` across the EF runner, consume middleware, and handler. The runner saves tracked changes after the handler returns and keeps the scope alive through commit or rollback. Explicit handler saves and captured durable Bus/Queue rows roll back with application state when inbox completion rejects the attempt fence.
+
+EF execution-strategy retries are allowed only before handler entry. After entry, handler, save, commit, rollback, and disposal failures return to Messaging's fenced retry path; EF cannot transparently replay the handler within the reserved attempt. Ambiguous commit outcomes are still probed before deciding whether the attempt committed.
 
 ## Headless.Messaging.Testing
 

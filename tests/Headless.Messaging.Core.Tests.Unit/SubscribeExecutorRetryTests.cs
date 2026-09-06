@@ -58,6 +58,8 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             MethodInfo = consumeMethod,
             MessageName = "test.messageName",
             GroupName = "test-group",
+            ConsumerIdentity = "tests.subscribe-retry",
+            MessageContractVersion = "1",
             Parameters = consumeMethod
                 .GetParameters()
                 .Select(p => new ParameterDescriptor
@@ -109,17 +111,143 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         {
             setup.Bus.ForMessage<CancellationExecutorTestMessage>(message =>
                 message
-                    .MessageName("test.messageName")
-                    .Consumer<CancellationExecutorTestConsumer>(consumer => consumer.Group("test-group"))
+                    .Contract("test.messageName")
+                    .Consumer<CancellationExecutorTestConsumer>(consumer =>
+                        consumer.StableContract("tests.subscribe-retry").Group("test-group")
+                    )
             );
             setup.UseInMemory();
-            setup.UseInMemoryStorage();
+            setup.UseProcessLocalInMemoryStorage();
         });
 
         var provider = services.BuildServiceProvider();
         var logger = provider.GetRequiredService<ILogger<SubscribeExecutor>>();
 
         return new SubscribeExecutor(provider, storage, invoker, TimeProvider.System, logger, Options.Create(options));
+    }
+
+    [Fact]
+    public async Task persisted_inbox_retry_should_resolve_by_stable_identity_after_group_refactor()
+    {
+        var storage = Substitute.For<IDataStorage>();
+        var invoker = Substitute.For<ISubscribeInvoker>();
+        invoker
+            .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new ConsumerExecutedResult(null, null, null!, null, null)));
+        var executor = _CreateExecutor(
+            invoker,
+            storage,
+            new MessagingOptions { RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly }
+        );
+        var message = _CreateMediumMessage();
+        message.Origin.Headers[Headers.Group] = "obsolete-group";
+        message.InboxKey = new InboxKey(
+            TenantId: null,
+            message.Origin.Id,
+            MessageLane.Bus,
+            "test.messageName",
+            "1",
+            "tests.subscribe-retry",
+            Generation: 0
+        );
+
+        var result = await executor.ExecuteAsync(message, _EmptyScope, descriptor: null, AbortToken);
+
+        result.Succeeded.Should().BeTrue();
+        await invoker
+            .Received(1)
+            .InvokeAsync(
+                Arg.Is<ConsumerContext>(context => context.ConsumerDescriptor.GroupName == "test-group"),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task transactional_inbox_should_share_attempt_scope_with_runner_and_invoker()
+    {
+        var storage = Substitute.For<IDataStorage>();
+        var invoker = Substitute.For<ISubscribeInvoker>();
+        invoker
+            .InvokeInScopeAsync(Arg.Any<ConsumerContext>(), Arg.Any<IServiceProvider>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new ConsumerExecutedResult(null, null, null!, null, null)));
+        var executor = _CreateExecutor(invoker, storage, new MessagingOptions());
+        var message = _CreateMediumMessage();
+        message.InboxKey = new InboxKey(
+            TenantId: null,
+            message.Origin.Id,
+            MessageLane.Bus,
+            "test.messageName",
+            "v1",
+            "tests.subscribe-retry",
+            Generation: 0
+        );
+        var runner = Substitute.For<IInboxTransactionRunner>();
+        runner
+            .ExecuteAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<Func<CancellationToken, Task>>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(call => call.ArgAt<Func<CancellationToken, Task>>(1)(call.ArgAt<CancellationToken>(2)));
+        IServiceProvider? runnerServices = null;
+        await using var dispatchServices = new ServiceCollection()
+            .AddScoped<IInboxTransactionRunner>(services =>
+            {
+                runnerServices = services;
+                return runner;
+            })
+            .BuildServiceProvider();
+
+        var result = await executor.ExecuteAsync(message, dispatchServices, _CreateDescriptor(), AbortToken);
+
+        result.Succeeded.Should().BeTrue();
+        await runner
+            .Received(1)
+            .ExecuteAsync(message, Arg.Any<Func<CancellationToken, Task>>(), Arg.Any<CancellationToken>());
+        await invoker
+            .Received(1)
+            .InvokeInScopeAsync(
+                Arg.Any<ConsumerContext>(),
+                Arg.Is<IServiceProvider>(services =>
+                    ReferenceEquals(services, runnerServices) && !ReferenceEquals(services, dispatchServices)
+                ),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task stale_transactional_inbox_fence_should_wait_for_recovery_without_inline_reentry()
+    {
+        var storage = Substitute.For<IDataStorage>();
+        var invoker = Substitute.For<ISubscribeInvoker>();
+        var executor = _CreateExecutor(invoker, storage, new MessagingOptions());
+        var message = _CreateMediumMessage();
+        message.InboxKey = new InboxKey(
+            TenantId: null,
+            message.Origin.Id,
+            MessageLane.Bus,
+            "test.messageName",
+            "v1",
+            "tests.subscribe-retry",
+            Generation: 0
+        );
+        var runner = Substitute.For<IInboxTransactionRunner>();
+        runner
+            .ExecuteAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<Func<CancellationToken, Task>>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns<Task>(_ => throw new StaleInboxAttemptException(message.StorageId));
+        await using var dispatchServices = new ServiceCollection().AddSingleton(runner).BuildServiceProvider();
+
+        var result = await executor.ExecuteAsync(message, dispatchServices, _CreateDescriptor(), AbortToken);
+
+        result.Succeeded.Should().BeFalse();
+        await runner
+            .Received(1)
+            .ExecuteAsync(message, Arg.Any<Func<CancellationToken, Task>>(), Arg.Any<CancellationToken>());
+        await invoker.DidNotReceive().InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]

@@ -43,6 +43,8 @@ internal sealed class ConsumerRegistry : IConsumerRegistry
     /// </exception>
     public void Register(ConsumerMetadata metadata)
     {
+        _ValidateDurableContract(metadata);
+
         lock (_lock)
         {
             if (_frozen != null)
@@ -51,6 +53,12 @@ internal sealed class ConsumerRegistry : IConsumerRegistry
                     "Cannot register consumers after the registry has been frozen. "
                         + "Ensure all consumers are registered during configuration before the application starts."
                 );
+            }
+
+            var existingIdentityConflict = _FindDuplicateDurableIdentityConflict(_consumers!, metadata);
+            if (existingIdentityConflict != null)
+            {
+                throw _CreateDurableIdentityCollision(metadata, existingIdentityConflict);
             }
 
             var existingConflict = _FindDuplicateTopicGroupConflict(_consumers!, metadata);
@@ -141,6 +149,8 @@ internal sealed class ConsumerRegistry : IConsumerRegistry
     /// </exception>
     public void Update(Func<ConsumerMetadata, bool> predicate, ConsumerMetadata newMetadata)
     {
+        _ValidateDurableContract(newMetadata);
+
         lock (_lock)
         {
             if (_frozen != null)
@@ -151,6 +161,12 @@ internal sealed class ConsumerRegistry : IConsumerRegistry
             var index = _consumers!.FindIndex(m => predicate(m));
             if (index >= 0)
             {
+                var existingIdentityConflict = _FindDuplicateDurableIdentityConflict(_consumers!, newMetadata, index);
+                if (existingIdentityConflict != null)
+                {
+                    throw _CreateDurableIdentityCollision(newMetadata, existingIdentityConflict);
+                }
+
                 var existingConflict = _FindDuplicateTopicGroupConflict(_consumers!, newMetadata, index);
                 if (existingConflict != null)
                 {
@@ -389,5 +405,61 @@ internal sealed class ConsumerRegistry : IConsumerRegistry
         }
 
         return null;
+    }
+
+    private static ConsumerMetadata? _FindDuplicateDurableIdentityConflict(
+        IEnumerable<ConsumerMetadata> consumers,
+        ConsumerMetadata candidate,
+        int? skipIndex = null
+    )
+    {
+        return consumers
+            .Where((_, index) => index != skipIndex)
+            .FirstOrDefault(existing =>
+                existing.Lane == candidate.Lane
+                && string.Equals(existing.ConsumerIdentity, candidate.ConsumerIdentity, StringComparison.Ordinal)
+                && string.Equals(
+                    existing.MessageContractVersion,
+                    candidate.MessageContractVersion,
+                    StringComparison.Ordinal
+                )
+            );
+    }
+
+    private static void _ValidateDurableContract(ConsumerMetadata metadata)
+    {
+        Argument.IsNotNull(metadata);
+
+        if (string.IsNullOrWhiteSpace(metadata.ConsumerIdentity))
+        {
+            throw new ArgumentException("Consumer identity cannot be null or whitespace.", nameof(metadata));
+        }
+
+        MessagingOptions.ValidateContractVersion(metadata.MessageContractVersion);
+
+        if (
+            metadata.InboxRetention <= TimeSpan.Zero
+            || metadata.InboxRetention.Ticks % TimeSpan.TicksPerSecond != 0
+            || metadata.InboxRetention.TotalSeconds > int.MaxValue
+        )
+        {
+            throw new ArgumentException(
+                "Inbox retention must be a positive whole-second duration no greater than Int32.MaxValue seconds.",
+                nameof(metadata)
+            );
+        }
+    }
+
+    private static InvalidOperationException _CreateDurableIdentityCollision(
+        ConsumerMetadata candidate,
+        ConsumerMetadata existing
+    )
+    {
+        return new InvalidOperationException(
+            $"Duplicate durable consumer identity '{candidate.ConsumerIdentity}' for lane {candidate.Lane} and "
+                + $"message contract version '{candidate.MessageContractVersion}'. Existing consumer "
+                + $"'{existing.ConsumerType.FullName ?? existing.ConsumerType.Name}' conflicts with "
+                + $"'{candidate.ConsumerType.FullName ?? candidate.ConsumerType.Name}'."
+        );
     }
 }

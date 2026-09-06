@@ -29,7 +29,7 @@ public sealed class TypeSafePublishApiTests
         {
             opt.WithMessageNameMapping<OrderCreated>("orders.created");
             opt.UseInMemory();
-            opt.UseInMemoryStorage();
+            opt.UseProcessLocalInMemoryStorage();
         });
 
         // when
@@ -52,7 +52,7 @@ public sealed class TypeSafePublishApiTests
             opt.WithMessageNameMapping<OrderCreated>("orders.created");
             opt.WithMessageNameMapping<UserRegistered>("users.registered");
             opt.UseInMemory();
-            opt.UseInMemoryStorage();
+            opt.UseProcessLocalInMemoryStorage();
         });
 
         // when
@@ -80,7 +80,7 @@ public sealed class TypeSafePublishApiTests
                     opt.WithMessageNameMapping<OrderCreated>("orders.created");
                     opt.WithMessageNameMapping<OrderCreated>("orders.new"); // Different messageName
                     opt.UseInMemory();
-                    opt.UseInMemoryStorage();
+                    opt.UseProcessLocalInMemoryStorage();
                 })
             )
             .Should()
@@ -102,7 +102,7 @@ public sealed class TypeSafePublishApiTests
                     opt.WithMessageNameMapping<OrderCreated>("orders.created");
                     opt.WithMessageNameMapping<OrderCreated>("orders.created"); // Same messageName
                     opt.UseInMemory();
-                    opt.UseInMemoryStorage();
+                    opt.UseProcessLocalInMemoryStorage();
                 })
             )
             .Should()
@@ -121,7 +121,7 @@ public sealed class TypeSafePublishApiTests
             // MessageName mapping can be used by both publisher and consumer
             opt.WithMessageNameMapping<OrderCreated>("orders.created");
             opt.UseInMemory();
-            opt.UseInMemoryStorage();
+            opt.UseProcessLocalInMemoryStorage();
         });
 
         // when

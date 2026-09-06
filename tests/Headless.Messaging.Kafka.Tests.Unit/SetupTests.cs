@@ -22,13 +22,14 @@ public sealed class SetupTests : TestBase
         services.AddHeadlessMessaging(options =>
         {
             options.UseKafka("localhost:9092");
-            options.Bus.ForMessage<KafkaBusContract>(message => message.MessageName("orders.changed"));
+            options.Bus.ForMessage<KafkaBusContract>(message => message.Contract("orders.changed"));
         });
         services.AddMessagingProviderCapabilities(
             MessagingProviderCapabilities.Storage(
                 "TestStorage",
                 [MessageLane.Bus, MessageLane.Queue],
-                supportsDelayedScheduling: true
+                supportsDelayedScheduling: true,
+                inboxCapability: MessagingInboxCapabilityTier.Transactional
             )
         );
         services.AddSingleton<IStorageInitializer>(new RecordingStorageInitializer(() => storageInitializeCalls++));

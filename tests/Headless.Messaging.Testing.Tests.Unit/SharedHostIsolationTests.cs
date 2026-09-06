@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging;
+using Headless.Messaging.Configuration;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
@@ -46,11 +47,16 @@ public sealed class SharedHarnessFixture : IAsyncLifetime
             {
                 setup.UseInMemory();
                 setup.UseInMemoryStorage();
+                setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
                 setup.Bus.ForMessage<AlphaEvent>(message =>
-                    message.MessageName("alpha-messageName").Consumer<AlphaConsumer>()
+                    message
+                        .Contract("alpha-messageName")
+                        .Consumer<AlphaConsumer>(consumer => consumer.ConsumerIdentity("tests.messaging-testing.alpha"))
                 );
                 setup.Bus.ForMessage<BetaEvent>(message =>
-                    message.MessageName("beta-messageName").Consumer<BetaConsumer>()
+                    message
+                        .Contract("beta-messageName")
+                        .Consumer<BetaConsumer>(consumer => consumer.ConsumerIdentity("tests.messaging-testing.beta"))
                 );
             });
         });

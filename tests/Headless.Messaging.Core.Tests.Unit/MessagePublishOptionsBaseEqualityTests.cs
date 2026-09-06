@@ -60,5 +60,25 @@ public sealed class MessagePublishOptionsBaseEqualityTests
         first.GetHashCode().Should().Be(second.GetHashCode());
     }
 
+    [Theory]
+    [InlineData("contract")]
+    [InlineData("causation")]
+    public void should_compare_not_equal_when_lineage_or_contract_metadata_differs(string field)
+    {
+        var baseline = new PublishOptions { ContractVersion = "1", CausationId = "parent-1" };
+        var changed = string.Equals(field, "contract", StringComparison.Ordinal)
+            ? baseline with
+            {
+                ContractVersion = "2",
+            }
+            : baseline with
+            {
+                CausationId = "parent-2",
+            };
+
+        baseline.Should().NotBe(changed);
+        baseline.GetHashCode().Should().NotBe(changed.GetHashCode());
+    }
+
     private sealed record SampleResponse(string Status);
 }

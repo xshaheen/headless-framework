@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Messaging.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -12,15 +13,11 @@ namespace Headless.Messaging.Registration;
 public interface IBusMessageBuilder<TMessage>
     where TMessage : class
 {
-    /// <summary>Overrides the convention-derived message name on the Bus lane.</summary>
-    IBusMessageBuilder<TMessage> MessageName(string messageName);
+    /// <summary>Defines the stable logical name and schema version of this message contract.</summary>
+    IBusMessageBuilder<TMessage> Contract(string name, string version = MessageOptions.InitialContractVersion);
 
     /// <summary>Derives a correlation identifier from the outgoing payload.</summary>
     IBusMessageBuilder<TMessage> CorrelationFrom(Func<TMessage, string?> selector);
-
-    /// <summary>Registers a Bus consumer.</summary>
-    IBusMessageBuilder<TMessage> Consumer<TConsumer>()
-        where TConsumer : class, IConsume<TMessage>;
 
     /// <summary>Registers and configures a Bus consumer.</summary>
     IBusMessageBuilder<TMessage> Consumer<TConsumer>(Action<IBusConsumerBuilder<TConsumer>> configure)
@@ -33,15 +30,11 @@ public interface IBusMessageBuilder<TMessage>
 public interface IQueueMessageBuilder<TMessage>
     where TMessage : class
 {
-    /// <summary>Overrides the convention-derived message name on the Queue lane.</summary>
-    IQueueMessageBuilder<TMessage> MessageName(string messageName);
+    /// <summary>Defines the stable logical name and schema version of this message contract.</summary>
+    IQueueMessageBuilder<TMessage> Contract(string name, string version = MessageOptions.InitialContractVersion);
 
     /// <summary>Derives a correlation identifier from the outgoing payload.</summary>
     IQueueMessageBuilder<TMessage> CorrelationFrom(Func<TMessage, string?> selector);
-
-    /// <summary>Registers a Queue consumer.</summary>
-    IQueueMessageBuilder<TMessage> Consumer<TConsumer>()
-        where TConsumer : class, IConsume<TMessage>;
 
     /// <summary>Registers and configures a Queue consumer.</summary>
     IQueueMessageBuilder<TMessage> Consumer<TConsumer>(Action<IQueueConsumerBuilder<TConsumer>> configure)
@@ -55,6 +48,7 @@ internal abstract class MessageBuilder<TMessage>(IServiceCollection services, Me
     private readonly List<MessageConsumerRegistrationBuilder> _consumers = [];
     private readonly ProviderConfigBag _providerConfigs = new();
     private string? _messageName;
+    private string _contractVersion = MessageOptions.InitialContractVersion;
     private Func<object, string?>? _correlationSelector;
 
     protected MessageRegistration BuildRegistration()
@@ -67,14 +61,17 @@ internal abstract class MessageBuilder<TMessage>(IServiceCollection services, Me
             _messageName,
             _correlationSelector,
             providerConfigs,
-            _consumers.ConvertAll(x => x.Build(providerConfigs))
+            _consumers.ConvertAll(x => x.Build(providerConfigs)),
+            _contractVersion
         );
     }
 
-    protected void SetMessageName(string messageName)
+    protected void SetContract(string name, string version)
     {
-        Argument.IsNotNullOrWhiteSpace(messageName);
-        _messageName = messageName;
+        Argument.IsNotNullOrWhiteSpace(name);
+        MessagingOptions.ValidateContractVersion(version);
+        _messageName = name;
+        _contractVersion = version;
     }
 
     protected void SetCorrelationFrom(Func<TMessage, string?> selector)
@@ -103,9 +100,9 @@ internal sealed class BusMessageBuilder<TMessage>(IServiceCollection services)
         IBusMessageBuilder<TMessage>
     where TMessage : class
 {
-    public IBusMessageBuilder<TMessage> MessageName(string messageName)
+    public IBusMessageBuilder<TMessage> Contract(string name, string version = MessageOptions.InitialContractVersion)
     {
-        SetMessageName(messageName);
+        SetContract(name, version);
         return this;
     }
 
@@ -114,9 +111,6 @@ internal sealed class BusMessageBuilder<TMessage>(IServiceCollection services)
         SetCorrelationFrom(selector);
         return this;
     }
-
-    public IBusMessageBuilder<TMessage> Consumer<TConsumer>()
-        where TConsumer : class, IConsume<TMessage> => Consumer<TConsumer>(static _ => { });
 
     public IBusMessageBuilder<TMessage> Consumer<TConsumer>(Action<IBusConsumerBuilder<TConsumer>> configure)
         where TConsumer : class, IConsume<TMessage>
@@ -134,9 +128,9 @@ internal sealed class QueueMessageBuilder<TMessage>(IServiceCollection services)
         IQueueMessageBuilder<TMessage>
     where TMessage : class
 {
-    public IQueueMessageBuilder<TMessage> MessageName(string messageName)
+    public IQueueMessageBuilder<TMessage> Contract(string name, string version = MessageOptions.InitialContractVersion)
     {
-        SetMessageName(messageName);
+        SetContract(name, version);
         return this;
     }
 
@@ -145,9 +139,6 @@ internal sealed class QueueMessageBuilder<TMessage>(IServiceCollection services)
         SetCorrelationFrom(selector);
         return this;
     }
-
-    public IQueueMessageBuilder<TMessage> Consumer<TConsumer>()
-        where TConsumer : class, IConsume<TMessage> => Consumer<TConsumer>(static _ => { });
 
     public IQueueMessageBuilder<TMessage> Consumer<TConsumer>(Action<IQueueConsumerBuilder<TConsumer>> configure)
         where TConsumer : class, IConsume<TMessage>

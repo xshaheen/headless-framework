@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Headless.Dashboard.Authentication;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Http;
@@ -108,5 +109,33 @@ public sealed class AuthMiddlewareTests : TestBase
         nextCalled.Should().BeTrue();
         context.Items[AuthMiddleware.AuthenticatedKey].Should().Be(true);
         context.Items[AuthMiddleware.UsernameKey].Should().Be("api-user");
+        context.User.Identity.Should().NotBeNull();
+        context.User.Identity.IsAuthenticated.Should().BeTrue();
+        context.User.Identity.Name.Should().Be("api-user");
+    }
+
+    [Fact]
+    public async Task preserves_existing_authenticated_host_principal()
+    {
+        var hostPrincipal = new ClaimsPrincipal(
+            new ClaimsIdentity([new Claim(ClaimTypes.Name, "host-operator")], authenticationType: "host")
+        );
+        var authService = Substitute.For<IAuthService>();
+        authService
+            .AuthenticateAsync(Arg.Any<HttpContext>(), Arg.Any<CancellationToken>())
+            .Returns(AuthResult.Success("host-operator"));
+        var services = new ServiceCollection();
+        services.AddSingleton(authService);
+        var context = new DefaultHttpContext
+        {
+            RequestServices = services.BuildServiceProvider(),
+            User = hostPrincipal,
+        };
+        context.Request.Path = "/api/data";
+
+        var middleware = new AuthMiddleware(_ => Task.CompletedTask, _logger);
+        await middleware.InvokeAsync(context);
+
+        context.User.Should().BeSameAs(hostPrincipal);
     }
 }

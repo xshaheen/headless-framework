@@ -188,7 +188,12 @@ public sealed class IsTransactionalPropagationTests : TestBase
                 [MessageLane.Bus],
                 supportsIndependentLaneTopology: true
             ),
-            MessagingProviderCapabilities.Storage("TestStorage", [MessageLane.Bus], supportsDelayedScheduling: true),
+            MessagingProviderCapabilities.Storage(
+                "TestStorage",
+                [MessageLane.Bus],
+                supportsDelayedScheduling: true,
+                inboxCapability: MessagingInboxCapabilityTier.Transactional
+            ),
         ]);
 
         return new MessagePublisher(

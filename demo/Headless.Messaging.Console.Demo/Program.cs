@@ -2,6 +2,7 @@
 
 using Demo;
 using Headless.Messaging;
+using Headless.Messaging.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -14,12 +15,17 @@ container
     .AddHeadlessMessaging(setup =>
     {
         setup.Bus.ForMessage<ShowTimeEvent>(message =>
-            message.MessageName("sample.console.showtime").Consumer<EventConsumer>()
+            message
+                .Contract("sample.console.showtime")
+                .Consumer<EventConsumer>(consumer => consumer.ConsumerIdentity("console.showtime"))
         );
         setup.Bus.ForMessage<ShowTimeResponse>(message =>
-            message.MessageName("sample.console.showtime.response").Consumer<ShowTimeResponseConsumer>()
+            message
+                .Contract("sample.console.showtime.response")
+                .Consumer<ShowTimeResponseConsumer>(consumer => consumer.ConsumerIdentity("console.showtime-response"))
         );
         // Console app does not support dashboard
+        setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
         setup.UseInMemoryStorage();
         setup.UseInMemory();
     })

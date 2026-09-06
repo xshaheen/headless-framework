@@ -2,6 +2,7 @@
 
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
+using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
@@ -34,6 +35,13 @@ internal static class MessagingMetrics
     internal const string SubscriberDurationName = "messaging.subscriber.duration";
     internal const string PersistenceDurationName = "messaging.persistence.duration";
     internal const string MessageSizeName = "messaging.message.size";
+    internal const string InboxDuplicatesName = "messaging.inbox.duplicates";
+    internal const string InboxAttemptsName = "messaging.inbox.attempts";
+    internal const string InboxRecoveriesName = "messaging.inbox.recoveries";
+    internal const string InboxTerminalName = "messaging.inbox.terminal";
+    internal const string InboxReplaysName = "messaging.inbox.replays";
+    internal const string InboxRetentionName = "messaging.inbox.retention";
+    internal const string InboxCapabilitiesName = "messaging.inbox.capabilities";
 
     // --- Dimension (tag) names --------------------------------------------------------------------------------
 
@@ -95,6 +103,28 @@ internal static class MessagingMetrics
         unit: "By"
     );
 
+    private static readonly Counter<long> _InboxDuplicates = MessagingDiagnostics.Meter.CreateCounter<long>(
+        InboxDuplicatesName
+    );
+    private static readonly Counter<long> _InboxAttempts = MessagingDiagnostics.Meter.CreateCounter<long>(
+        InboxAttemptsName
+    );
+    private static readonly Counter<long> _InboxRecoveries = MessagingDiagnostics.Meter.CreateCounter<long>(
+        InboxRecoveriesName
+    );
+    private static readonly Counter<long> _InboxTerminal = MessagingDiagnostics.Meter.CreateCounter<long>(
+        InboxTerminalName
+    );
+    private static readonly Counter<long> _InboxReplays = MessagingDiagnostics.Meter.CreateCounter<long>(
+        InboxReplaysName
+    );
+    private static readonly Counter<long> _InboxRetention = MessagingDiagnostics.Meter.CreateCounter<long>(
+        InboxRetentionName
+    );
+    private static readonly Counter<long> _InboxCapabilities = MessagingDiagnostics.Meter.CreateCounter<long>(
+        InboxCapabilitiesName
+    );
+
     /// <summary>Whether any messaging instrument currently has a subscribed listener.</summary>
     internal static bool AnyEnabled =>
         _MessagesPublished.Enabled
@@ -107,7 +137,57 @@ internal static class MessagingMetrics
         || _ConsumeDuration.Enabled
         || _SubscriberDuration.Enabled
         || _PersistenceDuration.Enabled
-        || _MessageSize.Enabled;
+        || _MessageSize.Enabled
+        || _InboxDuplicates.Enabled
+        || _InboxAttempts.Enabled
+        || _InboxRecoveries.Enabled
+        || _InboxTerminal.Enabled
+        || _InboxReplays.Enabled
+        || _InboxRetention.Enabled
+        || _InboxCapabilities.Enabled;
+
+    internal static void RecordInbox(
+        InboxMetricKind kind,
+        string consumerIdentity,
+        MessageLane lane,
+        InboxMetricOutcome outcome,
+        MessagingInboxCapabilityTier tier,
+        string provider,
+        string? tenantId = null,
+        bool includeTenantId = false
+    )
+    {
+        var instrument = kind switch
+        {
+            InboxMetricKind.Duplicate => _InboxDuplicates,
+            InboxMetricKind.Attempt => _InboxAttempts,
+            InboxMetricKind.Recovery => _InboxRecoveries,
+            InboxMetricKind.Terminal => _InboxTerminal,
+            InboxMetricKind.Replay => _InboxReplays,
+            InboxMetricKind.Retention => _InboxRetention,
+            InboxMetricKind.Capability => _InboxCapabilities,
+            _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, message: null),
+        };
+        if (!instrument.Enabled)
+        {
+            return;
+        }
+
+        var tags = new TagList
+        {
+            { MessagingTags.InboxConsumer, consumerIdentity },
+            { MessagingTags.Lane, LaneTagEnricher.ToTagValues(lane).Lane },
+            { MessagingTags.InboxOutcome, outcome.ToString("G") },
+            { MessagingTags.InboxTier, tier.ToString("G") },
+            { MessagingTags.InboxProvider, provider },
+        };
+        if (includeTenantId && tenantId is not null)
+        {
+            tags.Add(MessagingTags.TenantId, tenantId);
+        }
+
+        instrument.Add(1, tags);
+    }
 
     // --- Record helpers ---------------------------------------------------------------------------------------
 
@@ -314,3 +394,34 @@ internal static class MessagingMetrics
         }
     }
 }
+
+internal enum InboxMetricKind
+{
+    Duplicate = 0,
+    Attempt = 1,
+    Recovery = 2,
+    Terminal = 3,
+    Replay = 4,
+    Retention = 5,
+    Capability = 6,
+}
+
+internal enum InboxMetricOutcome
+{
+    Winner = 0,
+    InFlightDuplicate = 1,
+    SucceededDuplicate = 2,
+    TerminalFailedDuplicate = 3,
+    Reserved = 4,
+    Succeeded = 5,
+    FailedExhausted = 6,
+    Orphaned = 7,
+    Routable = 8,
+    Held = 9,
+    Released = 10,
+    Purged = 11,
+    Replayed = 12,
+    Expired = 13,
+}
+
+internal sealed record InboxMetricPolicy(bool IncludeTenantId);

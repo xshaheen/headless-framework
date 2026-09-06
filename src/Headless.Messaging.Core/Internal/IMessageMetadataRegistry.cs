@@ -14,6 +14,7 @@ internal interface IMessageMetadataRegistry
 internal sealed record MessageMetadata(
     MessageRouteKey Route,
     Type MessageType,
+    string ContractVersion,
     Func<object, string?>? CorrelationSelector,
     IReadOnlyDictionary<Type, object> ProviderConfigs
 );
@@ -60,12 +61,36 @@ internal sealed class MessageMetadataRegistry(
 
             var correlationSelector = _MergeCorrelationSelector(group);
             var providerConfigs = _MergeProviderConfigs(group);
+            var contractVersion = _MergeContractVersion(group);
 
             var route = new MessageRouteKey(group.Key.MessageType, group.Key.MessageName, group.Key.Lane);
-            metadata[route] = new MessageMetadata(route, group.Key.MessageType, correlationSelector, providerConfigs);
+            metadata[route] = new MessageMetadata(
+                route,
+                group.Key.MessageType,
+                contractVersion,
+                correlationSelector,
+                providerConfigs
+            );
         }
 
         return metadata;
+    }
+
+    private static string _MergeContractVersion(IEnumerable<MessageRegistration> registrations)
+    {
+        var versions = registrations
+            .Select(static registration => registration.ContractVersion)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        if (versions.Length != 1)
+        {
+            throw new InvalidOperationException(
+                "A message route must have exactly one contract version across all registrations."
+            );
+        }
+
+        return MessagingOptions.ValidateContractVersion(versions[0]);
     }
 
     private static string? _ResolveMessageName(

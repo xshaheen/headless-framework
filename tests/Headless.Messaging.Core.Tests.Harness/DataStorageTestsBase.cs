@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using System.Security.Claims;
+using System.Text.Json;
 using Headless.Messaging;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
@@ -123,6 +125,32 @@ public abstract class DataStorageTestsBase : TestBase
         string? ExceptionInfo
     );
 
+    /// <summary>Corrupts an inbox envelope and makes its persisted lease eligible for recovery.</summary>
+    protected virtual Task PreparePoisonInboxRecoveryAsync(Guid storageId, CancellationToken cancellationToken) =>
+        throw new NotSupportedException("Provider does not deserialize persisted inbox envelopes.");
+
+    /// <summary>Reads terminal retention and attempt identity directly from the database.</summary>
+    protected virtual Task<PersistedInboxPoisonState> ReadInboxPoisonStateAsync(
+        Guid storageId,
+        CancellationToken cancellationToken
+    ) => throw new NotSupportedException("Provider does not expose relational inbox state.");
+
+    /// <summary>Advances only the fixture row's terminal expiry after its retention interval has been verified.</summary>
+    protected virtual Task ExpirePoisonInboxAsync(Guid storageId, CancellationToken cancellationToken) =>
+        throw new NotSupportedException("Provider does not expose relational inbox expiry.");
+
+    protected readonly record struct PersistedInboxPoisonState(
+        DateTimeOffset DatabaseNow,
+        string StatusName,
+        DateTimeOffset? TerminalAt,
+        DateTimeOffset? EffectiveExpiresAt,
+        Guid? AttemptId,
+        DateTimeOffset? NextRetryAt,
+        DateTimeOffset? LockedUntil,
+        string? Owner,
+        string Content
+    );
+
     /// <summary>Controllable membership used by storage-provider conformance tests to stamp the owner identity.</summary>
     protected ControlledNodeMembership NodeMembership { get; } = new();
 
@@ -184,6 +212,614 @@ public abstract class DataStorageTestsBase : TestBase
         receivedTable.Should().NotBeNullOrEmpty();
 
         return Task.CompletedTask;
+    }
+
+    public virtual async Task should_converge_inbox_admission_and_require_exact_fence()
+    {
+        var storage = GetStorage();
+        var origin = CreateMessage($"inbox-{Guid.NewGuid():N}", "orders.created");
+
+        ValueTask<InboxAdmissionResult> admit() =>
+            storage.AdmitReceivedMessageAsync(
+                "orders.created",
+                "orders-topology-a",
+                "orders.consumer",
+                "v1",
+                new MediumMessage
+                {
+                    StorageId = Guid.Empty,
+                    Origin = origin,
+                    Content = string.Empty,
+                    Lane = MessageLane.Bus,
+                },
+                cancellationToken: AbortToken
+            );
+
+        var first = await admit();
+        var duplicate = await admit();
+
+        first.Disposition.Should().Be(InboxAdmissionDisposition.Winner);
+        duplicate.Disposition.Should().Be(InboxAdmissionDisposition.InFlightDuplicate);
+        duplicate.Message.StorageId.Should().Be(first.Message.StorageId);
+        first.Message.InboxGeneration.Should().NotBeNull();
+
+        var originalAttempts = first.Message.InlineAttempts;
+        first.Message.InlineAttempts++;
+        (
+            await storage.LeaseReceiveAndReserveAttemptAsync(
+                first.Message,
+                TimeSpan.FromMinutes(1),
+                originalAttempts,
+                AbortToken
+            )
+        )
+            .Should()
+            .BeTrue();
+        first.Message.InboxAttemptFence.Should().NotBeNull();
+
+        var stale = new MediumMessage
+        {
+            StorageId = first.Message.StorageId,
+            Origin = first.Message.Origin,
+            Content = first.Message.Content,
+            Lane = first.Message.Lane,
+            InboxKey = first.Message.InboxKey,
+            InboxGeneration = first.Message.InboxGeneration,
+            InboxAttemptFence = first.Message.InboxAttemptFence! with { AttemptId = Guid.NewGuid() },
+        };
+
+        (await storage.MarkReceivedInboxOrphanedAsync(stale, orphaned: true, AbortToken)).Should().BeFalse();
+        (await storage.MarkReceivedInboxOrphanedAsync(first.Message, orphaned: true, AbortToken)).Should().BeTrue();
+        (await storage.MarkReceivedInboxOrphanedAsync(first.Message, orphaned: true, AbortToken)).Should().BeFalse();
+
+        var releaseStorage = storage.Should().BeAssignableTo<IGracefulLeaseReleaseStorage>().Subject;
+        var exactIdentity = new MessageLeaseIdentity(
+            first.Message.StorageId,
+            first.Message.Owner,
+            first.Message.LockedUntil!.Value,
+            first.Message.Lane,
+            first.Message.InboxAttemptFence
+        );
+        (await releaseStorage.ReleaseReceivedLeaseAsync(exactIdentity with { InboxAttemptFence = null }, AbortToken))
+            .Should()
+            .BeFalse("an inbox lease cannot be released without its complete attempt fence");
+        (
+            await releaseStorage.ReleaseReceivedLeaseAsync(
+                exactIdentity with
+                {
+                    InboxAttemptFence = exactIdentity.InboxAttemptFence! with { AttemptId = Guid.NewGuid() },
+                },
+                AbortToken
+            )
+        )
+            .Should()
+            .BeFalse("a stale attempt cannot release its successor");
+        (await releaseStorage.ReleaseReceivedLeaseAsync(exactIdentity, AbortToken)).Should().BeTrue();
+
+        var previousAttempts = first.Message.InlineAttempts;
+        first.Message.InlineAttempts++;
+        (
+            await storage.LeaseReceiveAndReserveAttemptAsync(
+                first.Message,
+                TimeSpan.FromMinutes(1),
+                previousAttempts,
+                AbortToken
+            )
+        )
+            .Should()
+            .BeTrue();
+        var deferredIdentity = new MessageLeaseIdentity(
+            first.Message.StorageId,
+            first.Message.Owner,
+            first.Message.LockedUntil!.Value,
+            first.Message.Lane,
+            first.Message.InboxAttemptFence
+        );
+        var deferralStorage = storage.Should().BeAssignableTo<ICircuitRetryDeferralStorage>().Subject;
+        (
+            await deferralStorage.DeferReceivedRetryAsync(
+                new CircuitRetryDeferral(
+                    deferredIdentity with
+                    {
+                        InboxAttemptFence = deferredIdentity.InboxAttemptFence! with { AttemptId = Guid.NewGuid() },
+                    },
+                    _Now().AddMinutes(5)
+                ),
+                AbortToken
+            )
+        )
+            .Should()
+            .BeFalse("a stale attempt cannot defer its successor");
+        (
+            await deferralStorage.DeferReceivedRetryAsync(
+                new CircuitRetryDeferral(deferredIdentity, _Now().AddMinutes(5)),
+                AbortToken
+            )
+        )
+            .Should()
+            .BeTrue();
+    }
+
+    public virtual async Task should_converge_n_way_inbox_admission_on_one_generation()
+    {
+        var storage = GetStorage();
+        var origin = CreateMessage($"inbox-race-{Guid.NewGuid():N}", "orders.created");
+
+        var admissions = await Task.WhenAll(
+            Enumerable.Range(0, 16).Select(_ => _AdmitInboxAsync(storage, origin).AsTask())
+        );
+
+        admissions.Should().ContainSingle(result => result.Disposition == InboxAdmissionDisposition.Winner);
+        admissions
+            .Where(result => result.Disposition != InboxAdmissionDisposition.Winner)
+            .Should()
+            .OnlyContain(result => result.Disposition == InboxAdmissionDisposition.InFlightDuplicate);
+        admissions.Select(result => result.Message.StorageId).Distinct().Should().ContainSingle();
+        admissions.Select(result => result.Message.InboxGeneration).Distinct().Should().ContainSingle();
+    }
+
+    public virtual async Task should_isolate_every_persisted_inbox_key_component()
+    {
+        var storage = GetStorage();
+        var messageId = $"inbox-isolation-{Guid.NewGuid():N}";
+
+        static Message WithTenant(Message message, string? tenantId)
+        {
+            if (tenantId is null)
+            {
+                message.Headers.Remove(Headers.TenantId);
+            }
+            else
+            {
+                message.Headers[Headers.TenantId] = tenantId;
+            }
+
+            return message;
+        }
+
+        var first = await _AdmitInboxAsync(storage, WithTenant(CreateMessage(messageId, "orders.created"), null));
+        var tenantA = await _AdmitInboxAsync(
+            storage,
+            WithTenant(CreateMessage(messageId, "orders.created"), "tenant-a")
+        );
+        var tenantB = await _AdmitInboxAsync(
+            storage,
+            WithTenant(CreateMessage(messageId, "orders.created"), "tenant-b")
+        );
+        var queue = await _AdmitInboxAsync(
+            storage,
+            WithTenant(CreateMessage(messageId, "orders.created"), null),
+            lane: MessageLane.Queue
+        );
+        var contractV2 = await _AdmitInboxAsync(
+            storage,
+            WithTenant(CreateMessage(messageId, "orders.created"), null),
+            contractVersion: "v2"
+        );
+        var consumerB = await _AdmitInboxAsync(
+            storage,
+            WithTenant(CreateMessage(messageId, "orders.created"), null),
+            consumerIdentity: "orders.consumer-b"
+        );
+        var generationOne = await _AdmitInboxAsync(
+            storage,
+            WithTenant(CreateMessage(messageId, "orders.created"), null),
+            generation: 1
+        );
+        var contractCase = await _AdmitInboxAsync(
+            storage,
+            WithTenant(CreateMessage(messageId, "Orders.Created"), null)
+        );
+        var contractTrailingSpace = await _AdmitInboxAsync(
+            storage,
+            WithTenant(CreateMessage(messageId, "orders.created "), null)
+        );
+        var contractComposedUnicode = await _AdmitInboxAsync(
+            storage,
+            WithTenant(CreateMessage(messageId, "orders.créated"), null)
+        );
+        var contractDecomposedUnicode = await _AdmitInboxAsync(
+            storage,
+            WithTenant(CreateMessage(messageId, "orders.cre\u0301ated"), null)
+        );
+        var tenantlessDuplicate = await _AdmitInboxAsync(
+            storage,
+            WithTenant(CreateMessage(messageId, "orders.created"), "   ")
+        );
+
+        new[]
+        {
+            first,
+            tenantA,
+            tenantB,
+            queue,
+            contractV2,
+            consumerB,
+            generationOne,
+            contractCase,
+            contractTrailingSpace,
+            contractComposedUnicode,
+            contractDecomposedUnicode,
+        }
+            .Should()
+            .OnlyContain(result => result.Disposition == InboxAdmissionDisposition.Winner);
+        tenantlessDuplicate.Disposition.Should().Be(InboxAdmissionDisposition.InFlightDuplicate);
+    }
+
+    public virtual async Task should_enforce_inbox_key_length_boundaries_without_truncation()
+    {
+        var storage = GetStorage();
+        var maximum = CreateMessage(new string('m', 200), new string('n', 200));
+        maximum.Headers[Headers.TenantId] = new string('t', 200);
+
+        (
+            await _AdmitInboxAsync(
+                storage,
+                maximum,
+                consumerIdentity: new string('c', 200),
+                contractVersion: new string('v', 100)
+            )
+        )
+            .Disposition.Should()
+            .Be(InboxAdmissionDisposition.Winner);
+
+        Func<Task> oversizedName = async () =>
+            await _AdmitInboxAsync(storage, CreateMessage($"name-{Guid.NewGuid():N}", new string('n', 201)));
+        Func<Task> oversizedConsumer = async () =>
+            await _AdmitInboxAsync(
+                storage,
+                CreateMessage($"consumer-{Guid.NewGuid():N}", "orders.created"),
+                consumerIdentity: new string('c', 201)
+            );
+        Func<Task> oversizedVersion = async () =>
+            await _AdmitInboxAsync(
+                storage,
+                CreateMessage($"version-{Guid.NewGuid():N}", "orders.created"),
+                contractVersion: new string('v', 101)
+            );
+        Func<Task> oversizedMessageId = async () =>
+            await _AdmitInboxAsync(storage, CreateMessage(new string('m', 201), "orders.created"));
+        var oversizedTenant = CreateMessage($"tenant-{Guid.NewGuid():N}", "orders.created");
+        oversizedTenant.Headers[Headers.TenantId] = new string('t', 201);
+        Func<Task> oversizedTenantAct = async () => await _AdmitInboxAsync(storage, oversizedTenant);
+
+        await oversizedName.Should().ThrowAsync<ArgumentException>();
+        await oversizedConsumer.Should().ThrowAsync<ArgumentException>();
+        await oversizedVersion.Should().ThrowAsync<ArgumentException>();
+        await oversizedMessageId.Should().ThrowAsync<ArgumentException>();
+        await oversizedTenantAct.Should().ThrowAsync<ArgumentException>();
+    }
+
+    public virtual async Task should_suppress_terminal_inbox_redelivery_independent_of_topology_group()
+    {
+        var storage = GetStorage();
+        var origin = CreateMessage($"inbox-terminal-{Guid.NewGuid():N}", "orders.created");
+        var admitted = await _AdmitInboxAsync(storage, origin, group: "old-topology");
+
+        admitted.Message.InlineAttempts++;
+        (
+            await storage.LeaseReceiveAndReserveAttemptAsync(
+                admitted.Message,
+                TimeSpan.FromMinutes(1),
+                originalInlineAttempts: 0,
+                AbortToken
+            )
+        )
+            .Should()
+            .BeTrue();
+        (
+            await storage.ChangeReceiveRetryStateAsync(
+                admitted.Message,
+                StatusName.Failed,
+                MessageContentWrite.Preserve,
+                nextRetryAt: null,
+                lockedUntil: null,
+                originalRetries: 0,
+                originalInlineAttempts: 1,
+                AbortToken
+            )
+        )
+            .Should()
+            .BeTrue();
+
+        var redelivery = await _AdmitInboxAsync(storage, origin, group: "renamed-topology");
+
+        redelivery.Disposition.Should().Be(InboxAdmissionDisposition.TerminalFailedDuplicate);
+        redelivery.Message.StorageId.Should().Be(admitted.Message.StorageId);
+    }
+
+    public virtual async Task should_apply_audited_inbox_operations_once_and_reject_operation_identity_reuse()
+    {
+        var storage = GetStorage();
+        var admitted = await _AdmitInboxAsync(
+            storage,
+            CreateMessage($"inbox-operations-{Guid.NewGuid():N}", "orders.created")
+        );
+        admitted.Message.InlineAttempts++;
+        (await storage.LeaseReceiveAndReserveAttemptAsync(admitted.Message, TimeSpan.FromMinutes(1), 0, AbortToken))
+            .Should()
+            .BeTrue();
+        (
+            await storage.ChangeReceiveRetryStateAsync(
+                admitted.Message,
+                StatusName.Failed,
+                MessageContentWrite.Preserve,
+                null,
+                null,
+                0,
+                1,
+                AbortToken
+            )
+        )
+            .Should()
+            .BeTrue();
+
+        var principal = new ClaimsPrincipal(
+            new ClaimsIdentity([new Claim(ClaimTypes.Name, "operator-a")], authenticationType: "test")
+        );
+        var authorization = new InboxAuthorizationContext(principal);
+        var operationId = Guid.NewGuid();
+        var incarnation = admitted.Message.InboxGeneration!.IncarnationId;
+        var request = new InboxOperationRequest(
+            operationId,
+            incarnation,
+            StatusName.Failed,
+            "retry after repair",
+            authorization
+        );
+        var operations = storage.GetInboxOperationsApi();
+
+        var attempts = await Task.WhenAll(
+            Enumerable.Range(0, 8).Select(_ => operations.ForceReprocessAsync(request, AbortToken).AsTask())
+        );
+        var first = attempts.Should().ContainSingle(result => !result.IsReplay).Which;
+        attempts.Should().OnlyContain(result => result.Outcome == InboxOperationOutcome.Applied);
+        attempts.Select(result => result.ChildIncarnationId).Distinct().Should().ContainSingle();
+        var replay = await operations.ForceReprocessAsync(request, AbortToken);
+        var conflict = await operations.ForceReprocessAsync(
+            request with
+            {
+                ExpectedStatus = StatusName.Succeeded,
+            },
+            AbortToken
+        );
+
+        first.Outcome.Should().Be(InboxOperationOutcome.Applied);
+        first.ChildGeneration.Should().Be(admitted.Message.InboxGeneration.Number + 1);
+        replay.IsReplay.Should().BeTrue();
+        replay.ChildIncarnationId.Should().Be(first.ChildIncarnationId);
+        conflict.Outcome.Should().Be(InboxOperationOutcome.OperationConflict);
+
+        var page = await operations.QueryAsync(
+            new InboxGenerationQuery { IncarnationId = first.ChildIncarnationId },
+            authorization,
+            AbortToken
+        );
+        page.Items.Should().ContainSingle();
+        page.Items[0].ReplayParentIncarnationId.Should().Be(incarnation);
+        page.Items[0].ReplayOperationId.Should().Be(operationId);
+    }
+
+    public virtual async Task should_expire_terminal_poison_inbox_and_allow_readmission(MessageLane lane)
+    {
+        var storage = GetStorage();
+        var origin = CreateMessage($"inbox-poison-retention-{Guid.NewGuid():N}", "orders.created");
+        var retention = TimeSpan.FromMinutes(17);
+        var admitted = await storage.AdmitReceivedMessageAsync(
+            origin.Name,
+            "orders-group",
+            "orders.consumer-a",
+            "v1",
+            new MediumMessage
+            {
+                StorageId = Guid.Empty,
+                Origin = origin,
+                Content = string.Empty,
+                Lane = lane,
+            },
+            inboxRetention: retention,
+            cancellationToken: AbortToken
+        );
+        admitted.Message.InlineAttempts++;
+        (await storage.LeaseReceiveAndReserveAttemptAsync(admitted.Message, TimeSpan.FromMinutes(1), 0, AbortToken))
+            .Should()
+            .BeTrue();
+        await PreparePoisonInboxRecoveryAsync(admitted.Message.StorageId, AbortToken);
+        var before = await ReadInboxPoisonStateAsync(admitted.Message.StorageId, AbortToken);
+        before.AttemptId.Should().NotBeNull();
+        Func<Task> nonterminalRedelivery = async () => await _AdmitInboxAsync(storage, origin, lane: lane);
+        await nonterminalRedelivery.Should().ThrowAsync<JsonException>();
+
+        var picked = await storage.GetReceivedMessagesOfNeedRetryAsync(lane, AbortToken);
+        picked.Should().NotContain(message => message.StorageId == admitted.Message.StorageId);
+        var terminal = await ReadInboxPoisonStateAsync(admitted.Message.StorageId, AbortToken);
+        terminal.StatusName.Should().Be(nameof(StatusName.Failed));
+        terminal.TerminalAt.Should().NotBeNull();
+        terminal.TerminalAt!.Value.Should().BeOnOrAfter(before.DatabaseNow).And.BeOnOrBefore(terminal.DatabaseNow);
+        terminal.EffectiveExpiresAt.Should().Be(terminal.TerminalAt.Value.Add(retention));
+        terminal.AttemptId.Should().BeNull();
+        terminal.NextRetryAt.Should().BeNull();
+        terminal.LockedUntil.Should().BeNull();
+        terminal.Owner.Should().BeNull();
+        terminal.Content.Should().Be("not-json");
+
+        var duplicate = await _AdmitInboxAsync(storage, origin, lane: lane);
+        duplicate.Disposition.Should().Be(InboxAdmissionDisposition.TerminalFailedDuplicate);
+        duplicate.ShouldDispatch.Should().BeFalse();
+        duplicate.Message.StorageId.Should().Be(admitted.Message.StorageId);
+        duplicate.Message.Content.Should().Be("not-json");
+        await storage.DeleteExpiresAsync(
+            GetInitializer().GetReceivedTableName(),
+            DateTimeOffset.UtcNow,
+            cancellationToken: AbortToken
+        );
+        (await ReadInboxPoisonStateAsync(admitted.Message.StorageId, AbortToken)).Content.Should().Be("not-json");
+
+        await ExpirePoisonInboxAsync(admitted.Message.StorageId, AbortToken);
+        await storage.DeleteExpiresAsync(
+            GetInitializer().GetReceivedTableName(),
+            DateTimeOffset.UtcNow,
+            cancellationToken: AbortToken
+        );
+        var readmitted = await _AdmitInboxAsync(storage, origin, lane: lane);
+        readmitted.Disposition.Should().Be(InboxAdmissionDisposition.Winner);
+        readmitted
+            .Message.InboxGeneration!.IncarnationId.Should()
+            .NotBe(admitted.Message.InboxGeneration!.IncarnationId);
+        readmitted.Message.StorageId.Should().NotBe(admitted.Message.StorageId);
+    }
+
+    public virtual async Task should_isolate_replay_lifecycles_after_root_purge(MessageLane lane, long rootGeneration)
+    {
+        var storage = GetStorage();
+        var operations = storage.GetInboxOperationsApi();
+        var origin = CreateMessage($"inbox-lifecycles-{Guid.NewGuid():N}", "orders.created");
+        var authorization = new InboxAuthorizationContext(
+            new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "lifecycle-operator")], "test"))
+        );
+        var firstRoot = await _AdmitInboxAsync(storage, origin, lane: lane, generation: rootGeneration);
+        await _CompleteInboxForReplayAsync(storage, firstRoot.Message);
+        var firstRequest = new InboxOperationRequest(
+            Guid.NewGuid(),
+            firstRoot.Message.InboxGeneration!.IncarnationId,
+            StatusName.Failed,
+            "reprocess first lifecycle",
+            authorization
+        );
+        var firstChild = await operations.ForceReprocessAsync(firstRequest, AbortToken);
+        firstChild.Outcome.Should().Be(InboxOperationOutcome.Applied);
+        var childMessage = new MediumMessage
+        {
+            StorageId = firstChild.ChildStorageId!.Value,
+            Origin = origin,
+            Content = firstRoot.Message.Content,
+            Lane = lane,
+            InboxKey = firstRoot.Message.InboxKey! with { Generation = firstChild.ChildGeneration!.Value },
+            InboxGeneration = new InboxGeneration(
+                firstChild.ChildGeneration.Value,
+                firstChild.ChildIncarnationId!.Value
+            ),
+        };
+        await _CompleteInboxForReplayAsync(storage, childMessage);
+        var childRequest = firstRequest with
+        {
+            OperationId = Guid.NewGuid(),
+            ExpectedIncarnationId = firstChild.ChildIncarnationId.Value,
+            Reason = "retain old replay evidence",
+        };
+        (await operations.HoldAsync(childRequest, AbortToken)).Outcome.Should().Be(InboxOperationOutcome.Applied);
+        (await operations.PurgeAsync(firstRequest with { OperationId = Guid.NewGuid() }, AbortToken))
+            .Outcome.Should()
+            .Be(InboxOperationOutcome.Applied);
+
+        var secondRoot = await _AdmitInboxAsync(storage, origin, lane: lane, generation: rootGeneration);
+        secondRoot.Disposition.Should().Be(InboxAdmissionDisposition.Winner);
+        secondRoot.Message.InboxGeneration!.Number.Should().Be(rootGeneration);
+        secondRoot
+            .Message.InboxGeneration.IncarnationId.Should()
+            .NotBe(firstRoot.Message.InboxGeneration.IncarnationId);
+        await _CompleteInboxForReplayAsync(storage, secondRoot.Message);
+        var secondRequest = firstRequest with
+        {
+            OperationId = Guid.NewGuid(),
+            ExpectedIncarnationId = secondRoot.Message.InboxGeneration.IncarnationId,
+        };
+        var secondChild = await operations.ForceReprocessAsync(secondRequest, AbortToken);
+        secondChild.Outcome.Should().Be(InboxOperationOutcome.Applied);
+        secondChild.ChildGeneration.Should().Be(firstChild.ChildGeneration);
+        secondChild.ChildIncarnationId.Should().NotBe(firstChild.ChildIncarnationId!.Value);
+
+        var oldView = await operations.QueryAsync(
+            new InboxGenerationQuery { IncarnationId = firstChild.ChildIncarnationId },
+            authorization,
+            AbortToken
+        );
+        oldView.Items.Should().ContainSingle();
+        oldView.Items[0].IsHeld.Should().BeTrue();
+        oldView.Items[0].ReplayParentIncarnationId.Should().Be(firstRequest.ExpectedIncarnationId);
+        var newView = await operations.QueryAsync(
+            new InboxGenerationQuery { IncarnationId = secondChild.ChildIncarnationId },
+            authorization,
+            AbortToken
+        );
+        newView.Items.Should().ContainSingle();
+        newView.Items[0].ReplayParentIncarnationId.Should().Be(secondRequest.ExpectedIncarnationId);
+        newView.Items[0].IsCurrentGeneration.Should().BeTrue();
+
+        // Receipts outlive the parent row and must still identify the original replay child.
+        var oldReceipt = await operations.ForceReprocessAsync(firstRequest, AbortToken);
+        oldReceipt.IsReplay.Should().BeTrue();
+        oldReceipt.ChildIncarnationId.Should().Be(firstChild.ChildIncarnationId);
+        var duplicate = await _AdmitInboxAsync(storage, origin, lane: lane, generation: rootGeneration);
+        duplicate.Disposition.Should().Be(InboxAdmissionDisposition.TerminalFailedDuplicate);
+        duplicate.Message.StorageId.Should().Be(secondRoot.Message.StorageId);
+
+        // Explicit admission generations remain independent of replay generations with the same number.
+        var explicitRoot = await _AdmitInboxAsync(storage, origin, lane: lane, generation: rootGeneration + 1);
+        explicitRoot.Disposition.Should().Be(InboxAdmissionDisposition.Winner);
+        explicitRoot.Message.StorageId.Should().NotBe(firstChild.ChildStorageId!.Value);
+        explicitRoot.Message.StorageId.Should().NotBe(secondChild.ChildStorageId!.Value);
+        (await operations.ReleaseHoldAsync(childRequest with { OperationId = Guid.NewGuid() }, AbortToken))
+            .Outcome.Should()
+            .Be(InboxOperationOutcome.Applied);
+        (await operations.PurgeAsync(childRequest with { OperationId = Guid.NewGuid() }, AbortToken))
+            .Outcome.Should()
+            .Be(InboxOperationOutcome.Applied);
+        var explicitDuplicate = await _AdmitInboxAsync(storage, origin, lane: lane, generation: rootGeneration + 1);
+        explicitDuplicate.Disposition.Should().Be(InboxAdmissionDisposition.InFlightDuplicate);
+        explicitDuplicate.Message.StorageId.Should().Be(explicitRoot.Message.StorageId);
+        (await operations.ForceReprocessAsync(firstRequest, AbortToken))
+            .ChildIncarnationId.Should()
+            .Be(firstChild.ChildIncarnationId);
+    }
+
+    private static async Task _CompleteInboxForReplayAsync(IDataStorage storage, MediumMessage message)
+    {
+        message.InlineAttempts++;
+        (await storage.LeaseReceiveAndReserveAttemptAsync(message, TimeSpan.FromMinutes(1), 0, AbortToken))
+            .Should()
+            .BeTrue();
+        (
+            await storage.ChangeReceiveRetryStateAsync(
+                message,
+                StatusName.Failed,
+                MessageContentWrite.Preserve,
+                null,
+                null,
+                0,
+                1,
+                AbortToken
+            )
+        )
+            .Should()
+            .BeTrue();
+    }
+
+    private static ValueTask<InboxAdmissionResult> _AdmitInboxAsync(
+        IDataStorage storage,
+        Message origin,
+        string group = "orders-group",
+        string consumerIdentity = "orders.consumer-a",
+        string contractVersion = "v1",
+        MessageLane lane = MessageLane.Bus,
+        long generation = 0
+    )
+    {
+        return storage.AdmitReceivedMessageAsync(
+            origin.Name,
+            group,
+            consumerIdentity,
+            contractVersion,
+            new MediumMessage
+            {
+                StorageId = Guid.Empty,
+                Origin = origin,
+                Content = string.Empty,
+                Lane = lane,
+            },
+            generation,
+            cancellationToken: AbortToken
+        );
     }
 
     public virtual async Task should_store_published_message()

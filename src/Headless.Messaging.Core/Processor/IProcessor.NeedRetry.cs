@@ -9,6 +9,7 @@ using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
+using Headless.Messaging.Runtime;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -30,6 +31,9 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
     private readonly IOptions<MessagingOptions> _options;
     private readonly ICircuitBreakerMonitor? _circuitBreakerMonitor;
     private readonly ICircuitBreakerStateManager? _circuitBreakerStateManager;
+    private readonly MethodMatcherCache? _consumerResolver;
+    private readonly IMessagingCapabilityModel? _capabilityModel;
+    private readonly InboxMetricPolicy _inboxMetricPolicy;
     private readonly bool _adaptivePolling;
     private readonly double _circuitOpenRateThreshold;
     private readonly Dictionary<RetryQuadrantKey, RetryQuadrantState> _quadrants;
@@ -49,7 +53,10 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
         IDispatcher dispatcher,
         [FromKeyedServices(MessagingKeys.LockProvider)] IDistributedLock lockProvider,
         ICircuitBreakerMonitor? circuitBreakerMonitor = null,
-        ICircuitBreakerStateManager? circuitBreakerStateManager = null
+        ICircuitBreakerStateManager? circuitBreakerStateManager = null,
+        MethodMatcherCache? consumerResolver = null,
+        IMessagingCapabilityModel? capabilityModel = null,
+        InboxMetricPolicy? inboxMetricPolicy = null
     )
     {
         _options = options;
@@ -59,6 +66,9 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
         LockProvider = lockProvider;
         _circuitBreakerMonitor = circuitBreakerMonitor;
         _circuitBreakerStateManager = circuitBreakerStateManager;
+        _consumerResolver = consumerResolver;
+        _capabilityModel = capabilityModel;
+        _inboxMetricPolicy = inboxMetricPolicy ?? new InboxMetricPolicy(IncludeTenantId: false);
 
         _adaptivePolling = retryOptions.Value.AdaptivePolling;
         _maxInterval = retryOptions.Value.MaxPollingInterval;
@@ -469,6 +479,39 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
                 );
             }
 
+            if (message.InboxKey is { } inboxKey)
+            {
+                if (
+                    _consumerResolver is null
+                    || !_consumerResolver.TryGetInboxExecutor(
+                        inboxKey.ConsumerIdentity,
+                        inboxKey.ContractIdentity,
+                        inboxKey.ContractVersion,
+                        inboxKey.Lane,
+                        out var descriptor
+                    )
+                )
+                {
+                    var orphaned = await connection
+                        .MarkReceivedInboxOrphanedAsync(message, orphaned: true, CancellationToken.None)
+                        .ConfigureAwait(false);
+                    if (orphaned)
+                    {
+                        _RecordInboxRecovery(message, InboxMetricOutcome.Orphaned);
+                    }
+                    continue;
+                }
+
+                var routable = await connection
+                    .MarkReceivedInboxOrphanedAsync(message, orphaned: false, CancellationToken.None)
+                    .ConfigureAwait(false);
+                if (routable)
+                {
+                    _RecordInboxRecovery(message, InboxMetricOutcome.Routable);
+                }
+                message.Origin.Headers[Headers.Group] = descriptor.GroupName;
+            }
+
             var group = message.Origin.GetGroup();
             var decision = group is null
                 ? CircuitRetryDecision.Closed
@@ -555,6 +598,33 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
         {
             _AdjustPollingInterval(state, enqueued, skippedCircuitOpen);
         }
+    }
+
+    private void _RecordInboxRecovery(MediumMessage message, InboxMetricOutcome outcome)
+    {
+        if (message.InboxKey is not { } key || _capabilityModel is null)
+        {
+            return;
+        }
+
+        var storageCapability = _capabilityModel.Providers.FirstOrDefault(capability =>
+            capability.Role is MessagingProviderRole.Storage
+        );
+        if (storageCapability?.InboxCapability is not { } tier)
+        {
+            return;
+        }
+
+        MessagingMetrics.RecordInbox(
+            InboxMetricKind.Recovery,
+            key.ConsumerIdentity,
+            key.Lane,
+            outcome,
+            tier,
+            storageCapability.Provider,
+            message.Origin.Headers.TryGetValue(Headers.TenantId, out var tenantId) ? tenantId : null,
+            _inboxMetricPolicy.IncludeTenantId
+        );
     }
 
     private static ValueTask _ReleaseUnhandedAsync(

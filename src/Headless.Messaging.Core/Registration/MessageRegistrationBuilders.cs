@@ -16,17 +16,11 @@ public interface IBusRegistrationBuilder
     IBusRegistrationBuilder ForMessage<TMessage>(Action<IBusMessageBuilder<TMessage>> configure)
         where TMessage : class;
 
-    /// <summary>Scans an assembly for Bus consumers.</summary>
-    IBusRegistrationBuilder ForConsumersFromAssembly(Assembly assembly);
-
     /// <summary>Scans an assembly for Bus consumers and configures each discovered registration.</summary>
     IBusRegistrationBuilder ForConsumersFromAssembly(
         Assembly assembly,
         [InstantHandle] Action<ScannedConsumerContext, IScannedConsumerBuilder> configure
     );
-
-    /// <summary>Scans the assembly containing a marker type for Bus consumers.</summary>
-    IBusRegistrationBuilder ForConsumersFromAssemblyContaining<TMarker>();
 
     /// <summary>Scans the assembly containing a marker type and configures its Bus consumers.</summary>
     IBusRegistrationBuilder ForConsumersFromAssemblyContaining<TMarker>(
@@ -42,17 +36,11 @@ public interface IQueueRegistrationBuilder
     IQueueRegistrationBuilder ForMessage<TMessage>(Action<IQueueMessageBuilder<TMessage>> configure)
         where TMessage : class;
 
-    /// <summary>Scans an assembly for Queue consumers.</summary>
-    IQueueRegistrationBuilder ForConsumersFromAssembly(Assembly assembly);
-
     /// <summary>Scans an assembly for Queue consumers and configures each discovered registration.</summary>
     IQueueRegistrationBuilder ForConsumersFromAssembly(
         Assembly assembly,
         [InstantHandle] Action<ScannedConsumerContext, IScannedConsumerBuilder> configure
     );
-
-    /// <summary>Scans the assembly containing a marker type for Queue consumers.</summary>
-    IQueueRegistrationBuilder ForConsumersFromAssemblyContaining<TMarker>();
 
     /// <summary>Scans the assembly containing a marker type and configures its Queue consumers.</summary>
     IQueueRegistrationBuilder ForConsumersFromAssemblyContaining<TMarker>(
@@ -66,7 +54,7 @@ internal abstract class MessageLaneRegistrationBuilder(MessagingSetupBuilder set
 
     protected void ScanAssembly(
         Assembly assembly,
-        [InstantHandle] Action<ScannedConsumerContext, IScannedConsumerBuilder>? configure
+        [InstantHandle] Action<ScannedConsumerContext, IScannedConsumerBuilder> configure
     )
     {
         Argument.IsNotNull(assembly);
@@ -74,7 +62,7 @@ internal abstract class MessageLaneRegistrationBuilder(MessagingSetupBuilder set
         foreach (var (consumerType, messageType) in _FindConsumers(assembly))
         {
             var builder = new ScannedConsumerBuilder(consumerType, lane);
-            configure?.Invoke(new ScannedConsumerContext(consumerType, messageType), builder);
+            configure(new ScannedConsumerContext(consumerType, messageType), builder);
 
             if (builder.IsSkipped)
             {
@@ -90,10 +78,11 @@ internal abstract class MessageLaneRegistrationBuilder(MessagingSetupBuilder set
                 new MessageRegistration(
                     messageType,
                     lane,
-                    MessageName: null,
+                    builder.MessageName,
                     CorrelationSelector: null,
                     ProviderConfigs: new Dictionary<Type, object>(),
-                    Consumers: [builder.Build()]
+                    Consumers: [builder.Build()],
+                    ContractVersion: builder.ContractVersion
                 )
             );
         }
@@ -125,12 +114,6 @@ internal sealed class BusRegistrationBuilder(MessagingSetupBuilder setup)
         return this;
     }
 
-    public IBusRegistrationBuilder ForConsumersFromAssembly(Assembly assembly)
-    {
-        ScanAssembly(assembly, configure: null);
-        return this;
-    }
-
     public IBusRegistrationBuilder ForConsumersFromAssembly(
         Assembly assembly,
         Action<ScannedConsumerContext, IScannedConsumerBuilder> configure
@@ -140,9 +123,6 @@ internal sealed class BusRegistrationBuilder(MessagingSetupBuilder setup)
         ScanAssembly(assembly, configure);
         return this;
     }
-
-    public IBusRegistrationBuilder ForConsumersFromAssemblyContaining<TMarker>() =>
-        ForConsumersFromAssembly(typeof(TMarker).Assembly);
 
     public IBusRegistrationBuilder ForConsumersFromAssemblyContaining<TMarker>(
         Action<ScannedConsumerContext, IScannedConsumerBuilder> configure
@@ -163,12 +143,6 @@ internal sealed class QueueRegistrationBuilder(MessagingSetupBuilder setup)
         return this;
     }
 
-    public IQueueRegistrationBuilder ForConsumersFromAssembly(Assembly assembly)
-    {
-        ScanAssembly(assembly, configure: null);
-        return this;
-    }
-
     public IQueueRegistrationBuilder ForConsumersFromAssembly(
         Assembly assembly,
         Action<ScannedConsumerContext, IScannedConsumerBuilder> configure
@@ -178,9 +152,6 @@ internal sealed class QueueRegistrationBuilder(MessagingSetupBuilder setup)
         ScanAssembly(assembly, configure);
         return this;
     }
-
-    public IQueueRegistrationBuilder ForConsumersFromAssemblyContaining<TMarker>() =>
-        ForConsumersFromAssembly(typeof(TMarker).Assembly);
 
     public IQueueRegistrationBuilder ForConsumersFromAssemblyContaining<TMarker>(
         Action<ScannedConsumerContext, IScannedConsumerBuilder> configure
@@ -193,7 +164,9 @@ internal sealed record FrameworkConsumerRegistrationContribution(
     Type ConsumerType,
     string? MessageName,
     string? Group,
-    byte Concurrency
+    byte Concurrency,
+    string ConsumerIdentity,
+    string MessageContractVersion
 );
 
 internal static class FrameworkConsumerRegistrationExtensions
@@ -201,6 +174,8 @@ internal static class FrameworkConsumerRegistrationExtensions
     public static void AddFrameworkConsumerRegistration<TMessage, TConsumer>(
         this IServiceCollection services,
         MessageLane lane,
+        string consumerIdentity,
+        string messageContractVersion,
         string? messageName = null,
         string? group = null,
         byte concurrency = 1
@@ -208,6 +183,9 @@ internal static class FrameworkConsumerRegistrationExtensions
         where TMessage : class
         where TConsumer : class, IConsume<TMessage>
     {
+        Argument.IsNotNullOrWhiteSpace(consumerIdentity);
+        MessagingOptions.ValidateContractVersion(messageContractVersion);
+
         if (
             services.Any(descriptor =>
                 descriptor.ServiceType == typeof(FrameworkConsumerRegistrationContribution)
@@ -230,7 +208,9 @@ internal static class FrameworkConsumerRegistrationExtensions
                 typeof(TConsumer),
                 messageName,
                 group,
-                concurrency
+                concurrency,
+                consumerIdentity,
+                messageContractVersion
             )
         );
     }

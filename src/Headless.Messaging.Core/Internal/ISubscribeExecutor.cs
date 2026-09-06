@@ -30,8 +30,8 @@ internal interface ISubscribeExecutor
     /// <param name="dispatchServices">
     /// The live per-message DI scope's <see cref="IServiceProvider"/>. The caller (Dispatcher) creates
     /// this scope and disposes it after the call returns. Surfaces to <c>FailedInfo.ServiceProvider</c>
-    /// when the retry budget exhausts, so the user's exhausted callback resolves scoped services from the
-    /// SAME scope the consume attempt ran under.
+    /// when the retry budget exhausts. Transactional attempts own separate scopes that remain alive
+    /// through commit or rollback; their services are not exposed to the exhausted callback.
     /// </param>
     /// <param name="descriptor">Optional consumer descriptor; resolved from the message name when omitted.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
@@ -65,6 +65,9 @@ internal sealed class SubscribeExecutor(
     private readonly MessagingTelemetry _telemetry = telemetry ?? MessagingTelemetry.Default;
     private readonly string? _hostName = HostIdentity.GetInstanceHostname();
     private readonly MessagingOptions _options = options.Value;
+    private readonly InboxMetricPolicy _inboxMetricPolicy =
+        provider.GetService<InboxMetricPolicy>() ?? new InboxMetricPolicy(IncludeTenantId: false);
+    private readonly IMessagingCapabilityModel? _capabilityModel = provider.GetService<IMessagingCapabilityModel>();
     private readonly RetryPolicyOptions _retryPolicy = options.Value.RetryPolicy;
     private readonly MessagingRetryPipeline _retryPipeline = new(options.Value.RetryPolicy, timeProvider, logger);
 
@@ -102,14 +105,21 @@ internal sealed class SubscribeExecutor(
         if (descriptor == null)
         {
             var selector = provider.GetRequiredService<MethodMatcherCache>();
-            if (
-                !selector.TryGetMessageNameExecutor(
+            var found = message.InboxKey is { } inboxKey
+                ? selector.TryGetInboxExecutor(
+                    inboxKey.ConsumerIdentity,
+                    inboxKey.ContractIdentity,
+                    inboxKey.ContractVersion,
+                    inboxKey.Lane,
+                    out descriptor
+                )
+                : selector.TryGetMessageNameExecutor(
                     message.Origin.Name,
                     message.Origin.GetGroup()!,
                     message.Lane,
                     out descriptor
-                )
-            )
+                );
+            if (!found)
             {
                 var safeName = LogSanitizer.Sanitize(message.Origin.Name);
                 var safeGroup = LogSanitizer.Sanitize(message.Origin.GetGroup());
@@ -141,7 +151,7 @@ internal sealed class SubscribeExecutor(
 
         return await _retryPipeline
             .ExecuteAsync(
-                (_, ct) => _ExecuteWithoutRetryAsync(message, descriptor, executionState, ct),
+                (_, ct) => _ExecuteWithoutRetryAsync(message, descriptor!, dispatchServices, executionState, ct),
                 (inlineRetries, exception, delay, strategyFailed, ct) =>
                     _HandleRetryAsync(
                         message,
@@ -164,6 +174,7 @@ internal sealed class SubscribeExecutor(
     private async Task<MessagingRetryAttempt> _ExecuteWithoutRetryAsync(
         MediumMessage message,
         ConsumerExecutorDescriptor descriptor,
+        IServiceProvider dispatchServices,
         RetryExecutionState? executionState,
         CancellationToken cancellationToken
     )
@@ -213,11 +224,36 @@ internal sealed class SubscribeExecutor(
 
             var sp = Stopwatch.StartNew();
 
-            await _InvokeConsumerMethodAsync(message, descriptor, cancellationToken).ConfigureAwait(false);
+            if (
+                message.InboxKey is not null
+                && _options.RequiredInboxCapability is MessagingInboxCapabilityTier.Transactional
+            )
+            {
+                message.ExpiresAt = timeProvider.GetUtcNow().AddSeconds(_options.SucceedMessageExpiredAfter);
+                // The runner and consumer must share the same DbContext, alive until commit or rollback.
+                await using var attemptScope = dispatchServices.CreateAsyncScope();
+                var attemptServices = attemptScope.ServiceProvider;
+                var transactionRunner = attemptServices.GetRequiredService<IInboxTransactionRunner>();
+                await transactionRunner
+                    .ExecuteAsync(
+                        message,
+                        ct => _InvokeConsumerMethodAsync(message, descriptor, attemptServices, ct),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+                executionState?.RecordLeaseTransition(affected: true, lockedUntil: null);
+                await _ReportSuccessfulStateAsync(message).ConfigureAwait(false);
+            }
+            else
+            {
+                await _InvokeConsumerMethodAsync(message, descriptor, services: null, cancellationToken)
+                    .ConfigureAwait(false);
+                await _SetSuccessfulState(message, executionState).ConfigureAwait(false);
+            }
+
+            _RecordInboxMetric(message, InboxMetricKind.Terminal, InboxMetricOutcome.Succeeded);
 
             sp.Stop();
-
-            await _SetSuccessfulState(message, executionState).ConfigureAwait(false);
 
             MessageEventCounterSource.Log.WriteInvokeTimeMetrics(sp.Elapsed.TotalMilliseconds);
             if (logger.IsEnabled(LogLevel.Information))
@@ -233,6 +269,22 @@ internal sealed class SubscribeExecutor(
             }
 
             return MessagingRetryAttempt.Completed(OperateResult.Success);
+        }
+        catch (Exception ex)
+            when (ex
+                    is StaleInboxAttemptException
+                        or UncommittedInboxCommitException
+                        or IndeterminateInboxCommitException
+            )
+        {
+            logger.ConsumerExecuteFailed(
+                ex,
+                LogSanitizer.Sanitize(message.Origin.Name),
+                message.StorageId,
+                message.Origin.GetExecutionInstanceId()
+            );
+            _ReleaseHalfOpenProbe(message);
+            return MessagingRetryAttempt.Completed(OperateResult.Failed(ex));
         }
         catch (Exception ex)
         {
@@ -281,6 +333,11 @@ internal sealed class SubscribeExecutor(
             logger.SkippingSuccessfulAlreadyTerminal(message.StorageId);
         }
 
+        await _ReportSuccessfulStateAsync(message).ConfigureAwait(false);
+    }
+
+    private async ValueTask _ReportSuccessfulStateAsync(MediumMessage message)
+    {
         if (circuitBreakerStateManager is not null)
         {
             var circuitBreakerGroup = CircuitBreakerGroupKeys.For(message);
@@ -476,6 +533,7 @@ internal sealed class SubscribeExecutor(
 
         if (affected && decision.Outcome == MessagingRetryDecision.Kind.Exhausted)
         {
+            _RecordInboxMetric(message, InboxMetricKind.Terminal, InboxMetricOutcome.FailedExhausted);
             // #6 — shared OnExhausted body lives in RetryHelper; only MessageType varies per path.
             await RetryHelper
                 .RunOnExhaustedAsync(
@@ -556,6 +614,10 @@ internal sealed class SubscribeExecutor(
         {
             message.InlineAttempts = originalInlineAttempts;
         }
+        else
+        {
+            _RecordInboxMetric(message, InboxMetricKind.Attempt, InboxMetricOutcome.Reserved);
+        }
 
         return reserved;
     }
@@ -571,8 +633,39 @@ internal sealed class SubscribeExecutor(
         {
             message.InlineAttempts = originalInlineAttempts;
         }
+        else
+        {
+            _RecordInboxMetric(message, InboxMetricKind.Attempt, InboxMetricOutcome.Reserved);
+        }
 
         return reserved;
+    }
+
+    private void _RecordInboxMetric(MediumMessage message, InboxMetricKind kind, InboxMetricOutcome outcome)
+    {
+        if (message.InboxKey is not { } key || _capabilityModel is null)
+        {
+            return;
+        }
+
+        var storageCapability = _capabilityModel.Providers.FirstOrDefault(capability =>
+            capability.Role is MessagingProviderRole.Storage
+        );
+        if (storageCapability?.InboxCapability is not { } tier)
+        {
+            return;
+        }
+
+        MessagingMetrics.RecordInbox(
+            kind,
+            key.ConsumerIdentity,
+            key.Lane,
+            outcome,
+            tier,
+            storageCapability.Provider,
+            message.Origin.Headers.TryGetValue(Headers.TenantId, out var tenantId) ? tenantId : null,
+            _inboxMetricPolicy.IncludeTenantId
+        );
     }
 
     private void _LogRetryDecision(MediumMessage message, Exception ex, MessagingRetryDecision decision)
@@ -594,6 +687,7 @@ internal sealed class SubscribeExecutor(
     private async Task _InvokeConsumerMethodAsync(
         MediumMessage message,
         ConsumerExecutorDescriptor descriptor,
+        IServiceProvider? services,
         CancellationToken cancellationToken
     )
     {
@@ -601,12 +695,14 @@ internal sealed class SubscribeExecutor(
         var traceHandle = _TracingBefore(message.Origin, message.Lane, descriptor.MethodInfo, message.Retries);
         try
         {
-            var ret = await invoker.InvokeAsync(consumerContext, cancellationToken).ConfigureAwait(false);
+            var ret = services is null
+                ? await invoker.InvokeAsync(consumerContext, cancellationToken).ConfigureAwait(false)
+                : await invoker.InvokeInScopeAsync(consumerContext, services, cancellationToken).ConfigureAwait(false);
 
             if (!string.IsNullOrEmpty(ret.CallbackName))
             {
                 // TraceParent is NOT a reserved header, so it rides in PublishOptions.Headers alongside
-                // any user-supplied AddResponseHeader keys. The correlation identifiers ARE reserved
+                // any user-supplied AddResponseHeader keys. Lineage identifiers ARE reserved
                 // (MessagePublishRequestFactory rejects them as custom headers), so they must flow through
                 // the typed PublishOptions surface instead of CallbackHeader.
                 if (message.Origin.Headers.TryGetValue(Headers.TraceParent, out var traceParent))
@@ -625,7 +721,12 @@ internal sealed class SubscribeExecutor(
                             MessageName = ret.CallbackName,
                             Headers = ret.CallbackHeader,
                             MessageType = ret.ResultType,
-                            CorrelationId = message.Origin.Id,
+                            CorrelationId =
+                                message.Origin.Headers.TryGetValue(Headers.CorrelationId, out var correlationId)
+                                && !string.IsNullOrWhiteSpace(correlationId)
+                                    ? correlationId
+                                    : message.Origin.Id,
+                            CausationId = message.Origin.Id,
                             CorrelationSequence = message.Origin.GetCorrelationSequence() + 1,
                             // Chain the next hop: the published response carries this callback name so its
                             // consumer can react and publish a further response.

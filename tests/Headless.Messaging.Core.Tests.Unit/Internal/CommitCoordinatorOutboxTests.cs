@@ -78,6 +78,61 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
     }
 
     [Fact]
+    public async Task should_capture_bus_and_queue_work_in_the_same_transaction_and_release_together()
+    {
+        await using var transaction = new TestDbTransaction();
+        var stack = new CommitScopeStack();
+        var scope = new CommitScopeFactory(stack).Begin(
+            new EmptyServiceProvider(),
+            [new RelationalCommitContext(() => null, () => transaction)]
+        );
+
+        await using (scope)
+        {
+            var storage = Substitute.For<IDataStorage>();
+            var stored = new List<MediumMessage>();
+            storage
+                .StoreMessageAsync(
+                    Arg.Any<string>(),
+                    Arg.Any<MediumMessage>(),
+                    Arg.Any<DbTransaction?>(),
+                    Arg.Any<CancellationToken>()
+                )
+                .Returns(call =>
+                {
+                    call.ArgAt<DbTransaction?>(2).Should().BeSameAs(transaction);
+                    var message = call.ArgAt<MediumMessage>(1);
+                    stored.Add(message);
+                    return ValueTask.FromResult(message);
+                });
+
+            await using var dispatcher = new RecordingCommittedDispatcher();
+            var writer = new OutboxMessageWriter(storage, dispatcher, TimeProvider.System);
+            var factory = _CreatePublishRequestFactory();
+
+            foreach (var lane in new[] { MessageLane.Bus, MessageLane.Queue })
+            {
+                var request = factory.Create(new CoordinatorMessage(lane.ToString()), lane: lane);
+                var decision = DeliveryDecisionResolver.Resolve(
+                    lane,
+                    DeliveryMode.Durable,
+                    delay: null,
+                    DeliveryCoordination.Compatible(stack.Current!, transaction),
+                    TimeProvider.System.GetUtcNow()
+                );
+                await writer.WriteAsync(request, decision, AbortToken);
+            }
+
+            stored.Select(message => message.Lane).Should().Equal(MessageLane.Bus, MessageLane.Queue);
+            dispatcher.CommittedMessages.Should().BeEmpty();
+
+            await scope.SignalAsync(CommitOutcome.Committed);
+
+            dispatcher.CommittedMessages.Should().Equal(stored);
+        }
+    }
+
+    [Fact]
     public async Task should_reject_active_coordination_with_null_transaction_before_side_effects()
     {
         // Ambient coordination is authoritative. A torn-down relational capability must reject instead of silently

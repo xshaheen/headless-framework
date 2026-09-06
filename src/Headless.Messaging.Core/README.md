@@ -57,6 +57,7 @@ dotnet add package Headless.Messaging.Storage.InMemory
 
 ```csharp
 using Headless.Messaging;
+using Headless.Messaging.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -65,13 +66,19 @@ var builder = Host.CreateApplicationBuilder(args);
 
 builder.Services.AddHeadlessMessaging(setup =>
 {
+    setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
     setup.UseInMemoryStorage();
     setup.UseInMemory();
 
     setup.Bus.ForMessage<OrderPlaced>(message =>
         message
-            .MessageName("orders.placed")
-            .Consumer<OrderPlacedConsumer>(consumer => consumer.Group("orders").Concurrency(4))
+            .Contract("orders.placed", version: "1")
+            .Consumer<OrderPlacedConsumer>(consumer =>
+                consumer
+                    .ConsumerIdentity("orders.order-placed")
+                    .Group("orders")
+                    .Concurrency(4)
+            )
     );
 });
 
@@ -118,6 +125,7 @@ using Polly.Retry;
 
 builder.Services.AddHeadlessMessaging(setup =>
 {
+    setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
     setup.UsePostgreSql(options =>
     {
         options.ConnectionString = builder.Configuration.GetConnectionString("Messaging");
@@ -131,7 +139,9 @@ builder.Services.AddHeadlessMessaging(setup =>
     });
 
     setup.Bus.ForMessage<OrderPlaced>(message =>
-        message.MessageName("orders.placed").Consumer<OrderPlacedConsumer>()
+        message.Contract("orders.placed").Consumer<OrderPlacedConsumer>(consumer =>
+            consumer.ConsumerIdentity("orders.order-placed")
+        )
     );
 });
 ```
@@ -146,14 +156,25 @@ The transactional outbox is **on by default on the EF storage path**. When the h
 
 The write is atomic with the business data; delivery is still at-least-once, so consumers must be idempotent (see [Retry Policy](#retry-policy)). See `Headless.CommitCoordination.EntityFramework` for the interceptor attachment and probe details.
 
+Each transactional consume attempt owns one DI scope shared by the EF transaction runner, consume middleware, and handler. The configured scoped `TContext` stays alive through `SaveChangesAsync` and inbox commit or rollback. The runner saves tracked application changes after the handler returns; explicit handler saves remain inside the same transaction and roll back if inbox completion rejects the attempt fence. A subsequent Messaging attempt gets a fresh scope. `FailedInfo.ServiceProvider` refers to the outer dispatch scope and does not expose the completed attempt's services.
+
 ## Defaults And Telemetry
 
+Terminal inbox generations are retained for 30 days by default. Use `InboxRetention(...)` on a durable consumer for a deliberate override. Expiry or authorized purge removes that deduplication identity; force reprocessing instead creates a linked child generation with replay provenance.
+
+Inbox metrics use registered consumer identity and bounded lane, outcome, tier, and provider dimensions. They exclude message/replay IDs, payloads, and headers. Tenant identity is excluded unless `setup.Instrumentation.IncludeTenantIdInMetricTags = true` explicitly accepts the cardinality cost.
+
+The transactional tier commits the fenced inbox outcome, compatible enlisted application state, and captured durable Bus/Queue work atomically. It does not guarantee exactly-once handler entry, direct transport, or external/non-enlisted effects.
+
 - `AddHeadlessMessaging(...)` is the primary DI entry point.
-- `setup.Bus` and `setup.Queue` are the only registration roots. `ForMessage<TMessage>(...)` inherits its lane from that root, `MessageName(...)` sets the lane-specific logical name, and `Consumer<TConsumer>()` registers the matching consumer behavior.
-- `setup.Bus.ForMessage<TMessage>(message => message.MessageName("orders.placed"))` is valid without consumers and declares a Bus publisher-only mapping; use the Queue root for an enqueue-only mapping.
+- Durable `ConsumerIdentity(...)` values must be nonblank and at most 200 characters (`ConsumerMetadata.ConsumerIdentityMaxLength`). Fluent and scanned registration reject longer identities before delivery, matching relational inbox admission.
+- `setup.Bus` and `setup.Queue` are the only registration roots. `ForMessage<TMessage>(...)` inherits its lane from that root, `Contract(name, version)` sets the stable logical name and schema version, and `Consumer<TConsumer>(...)` registers the matching behavior with an explicit durable identity.
+- `setup.Bus.ForMessage<TMessage>(message => message.Contract("orders.placed"))` is valid without consumers and declares a Bus publisher-only mapping; use the Queue root for an enqueue-only mapping.
 - A plain class, record, or interface contract may use the same logical name on both roots. Registration, metadata, circuits, callbacks, retry/backpressure state, and transport selection remain lane-qualified. Every built-in dual-lane transport declares and proves independent physical topology; Kafka remains Queue-only and rejects Bus routes before readiness or side effects.
 - Library-owned automatic consumers use Core-owned inert immutable descriptors that bootstrap drains through the same lane-scoped registration pipeline. They may be added before or after `AddHeadlessMessaging(...)`; no public service-collection registration or contributor-based alternate root exists.
 - `CorrelationFrom(...)` derives `headless-corr-id` from the outgoing payload when `PublishOptions.CorrelationId` is not set. Correlation precedence is explicit publish option, message selector, ambient consume context, then framework message ID.
+- `headless-corr-id` identifies the root conversation, `headless-causation-id` identifies the immediate parent message, and `traceparent` remains tracing metadata. Publishing inside a consumer preserves correlation and automatically stamps causation.
+- `Contract(name, version)` is the normal schema-version authority and defaults to `"1"`. `PublishOptions.ContractVersion` is an explicit per-send override for controlled compatibility work. Consumers validate the version before payload deserialization and expose the resolved values through `ConsumeContext.ContractVersion` and `ConsumeContext.CausationId`; a missing version header maps to `"1"` for legacy or external producers.
 - Outbound header validation is centralized in the publish factory: reserved framework headers stay typed-only, provider contributions cannot overwrite framework-owned keys, and all stamped header names/values reject control characters before they reach a broker client.
 - Explicit `PublishOptions.MessageName` uses the same message-name validator as configured mappings: no leading/trailing dots, no consecutive dots, and only alphanumeric, `.`, `-`, and `_`.
 - Provider packages can add message-level escape hatches such as Kafka partition keys, Azure Service Bus partition keys, AWS FIFO message group IDs, and NATS subject shards. These physical-routing selectors run in the typed publish factory and are stamped as provider-owned headers; they do not change the logical `MessageName`.
@@ -161,11 +182,11 @@ The write is atomic with the business data; delivery is still at-least-once, so 
 
 ```csharp
 setup.Bus.ForMessage<OrderPlaced>(message =>
-    message.MessageName("orders.placed").CorrelationFrom(order => order.OrderId.ToString())
+    message.Contract("orders.placed").CorrelationFrom(order => order.OrderId.ToString())
 );
 ```
 
-- `setup.Bus.ForConsumersFromAssembly(...)` / `ForConsumersFromAssemblyContaining<TMarker>()` and their Queue-root equivalents scan closed `IConsume<TMessage>` implementations for exactly one lane. Use callback overloads for `Group(...)`, `Concurrency(...)`, `HandlerId(...)`, `WithCircuitBreaker(...)`, or `Skip()`; lane selection never occurs inside the scan callback.
+- `setup.Bus.ForConsumersFromAssembly(...)` / `ForConsumersFromAssemblyContaining<TMarker>(...)` and their Queue-root equivalents scan closed `IConsume<TMessage>` implementations for exactly one lane. The callback is mandatory and must assign each durable registration an application-owned `ConsumerIdentity(...)`; use `Contract(name, version)` on the scan builder when the convention-derived message contract is not the intended durable contract. The same callback may configure `Group(...)`, `Concurrency(...)`, `HandlerId(...)`, `WithCircuitBreaker(...)`, or `Skip()`; lane selection never occurs inside the scan callback.
 - message-name mappings are lane-qualified and registered eagerly. Re-registering the same type/name on one lane merges compatible consumers; a divergent mapping or competing consumer on that lane fails. An equivalent registration on the other lane remains independent.
 - message-name and group defaults are deterministic; duplicate registrations fail fast by default.
 - runtime, monitoring, and dashboard projections expose `MessageLane` with stable `Bus = 0` / `Queue = 1` values. Storage providers retain the legacy `IntentType` column name and transports retain the `headless-intent` header at explicit compatibility boundaries. Retry pickup and received-message identity include the lane, so the two lanes do not collapse into one row.
@@ -494,7 +515,7 @@ builder.Services.AddHeadlessMessaging(setup =>
 {
     setup.Bus.ForMessage<PaymentProcessed>(message =>
         message
-            .MessageName("payments.process")
+            .Contract("payments.process")
             .Consumer<PaymentHandler>(consumer =>
                 consumer.WithCircuitBreaker(cb =>
                 {
@@ -609,7 +630,7 @@ Operational invariant: set Coordination's dead threshold no lower than the large
 
 ## Observability
 
-Emits OpenTelemetry metrics and traces natively under a single instrumentation name, `Headless.Messaging` (both `Meter` and `ActivitySource`), exposed as `MessagingDiagnostics.SourceName`. Register with `TracerProviderBuilder.AddMessagingInstrumentation()` / `MeterProviderBuilder.AddMessagingInstrumentation()` (typed helpers, `OpenTelemetry.Api` only — no SDK dependency), or subscribe by name. Instrument names and dimensions follow the OTel messaging semantic conventions (`messaging.publish.messages`, `messaging.consume.duration`, dims `messaging.operation`/`messaging.system`/`messaging.consumer.group`/`error.type`); framework-specific span attributes are namespaced `headless.messaging.*`. W3C `traceparent`/baggage propagation is built into publish/consume. Custom span enrichers implement `IActivityTagEnricher` (synchronous) and register via `setup.Instrumentation` inside `AddHeadlessMessaging(...)`; tenant-id/intent/retry-count built-ins are suppressible there. See [docs/llms/messaging.md](../../docs/llms/messaging.md) for the full instrument table.
+Emits OpenTelemetry metrics and traces natively under a single instrumentation name, `Headless.Messaging` (both `Meter` and `ActivitySource`), exposed as `MessagingDiagnostics.SourceName`. Register with `TracerProviderBuilder.AddMessagingInstrumentation()` / `MeterProviderBuilder.AddMessagingInstrumentation()` (typed helpers, `OpenTelemetry.Api` only — no SDK dependency), or subscribe by name. Standard instruments follow the OTel messaging semantic conventions. Inbox lifecycle counters cover duplicate, attempt, recovery, terminal, replay, retention, and capability events with bounded consumer/lane/outcome/tier/provider tags. Framework-specific attributes are namespaced `headless.messaging.*`. W3C `traceparent`/baggage propagation is built into publish/consume. Custom span enrichers implement `IActivityTagEnricher` (synchronous) and register via `setup.Instrumentation` inside `AddHeadlessMessaging(...)`. See [docs/llms/messaging.md](../../docs/llms/messaging.md) for the full instrument table.
 
 ## Dependencies
 

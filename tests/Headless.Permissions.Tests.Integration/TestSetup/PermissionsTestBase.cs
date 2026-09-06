@@ -3,6 +3,7 @@ using Headless.Caching;
 using Headless.DistributedLocks;
 using Headless.Domain;
 using Headless.Messaging;
+using Headless.Messaging.Configuration;
 using Headless.Permissions;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
@@ -60,6 +61,7 @@ public abstract class PermissionsTestBase(PermissionsTestFixture fixture) : Test
         // Messages
         services.AddHeadlessMessaging(setup =>
         {
+            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
             setup.UseInMemory();
             setup.UseInMemoryStorage();
         });

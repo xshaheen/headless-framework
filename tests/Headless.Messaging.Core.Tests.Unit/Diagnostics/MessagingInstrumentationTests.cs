@@ -133,6 +133,16 @@ public sealed class MessagingInstrumentationTests : TestBase
         options.BuildEnrichers()[^1].Should().BeSameAs(custom);
     }
 
+    [Fact]
+    public void should_require_explicit_tenant_metric_cardinality_opt_in()
+    {
+        new MessagingInstrumentationOptions().IncludeTenantIdInMetricTags.Should().BeFalse();
+
+        var options = new MessagingInstrumentationOptions { IncludeTenantIdInMetricTags = true };
+
+        options.IncludeTenantIdInMetricTags.Should().BeTrue();
+    }
+
     // --- AE4: typed registration helpers --------------------------------------------------------------------
 
     [Fact]

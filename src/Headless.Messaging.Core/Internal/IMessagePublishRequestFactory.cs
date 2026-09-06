@@ -51,7 +51,9 @@ internal sealed class MessagePublishRequestFactory(
     private static readonly HashSet<string> _ReservedHeaders = new(StringComparer.Ordinal)
     {
         Headers.MessageId,
+        Headers.ContractVersion,
         Headers.CorrelationId,
+        Headers.CausationId,
         Headers.CorrelationSequence,
         Headers.CallbackName,
         Headers.MessageName,
@@ -132,8 +134,10 @@ internal sealed class MessagePublishRequestFactory(
             messageName,
             options,
             delayTime,
+            options?.ContractVersion ?? metadata?.ContractVersion ?? MessageOptions.InitialContractVersion,
             _ResolveCorrelationFromSelector(metadata, contentObj, declaredMessageType),
-            consumeContextAccessor?.Current?.CorrelationId
+            consumeContextAccessor?.Current?.CorrelationId,
+            consumeContextAccessor?.Current?.MessageId
         );
         _ApplyProviderHeaderContributions(headers, metadata, contentObj, declaredMessageType);
 
@@ -163,8 +167,10 @@ internal sealed class MessagePublishRequestFactory(
         string messageName,
         MessageOptions? options,
         TimeSpan? delayTime,
+        string contractVersion,
         string? selectorCorrelationId,
-        string? ambientCorrelationId
+        string? ambientCorrelationId,
+        string? ambientMessageId
     )
     {
         var headers =
@@ -180,6 +186,7 @@ internal sealed class MessagePublishRequestFactory(
             : _ValidateMessageId(options.MessageId);
 
         headers[Headers.MessageId] = messageId;
+        headers[Headers.ContractVersion] = _ValidateContractVersion(contractVersion);
         var correlationId = _ResolveCorrelationId(
             options?.CorrelationId,
             selectorCorrelationId,
@@ -188,6 +195,11 @@ internal sealed class MessagePublishRequestFactory(
         );
 
         headers[Headers.CorrelationId] = correlationId;
+        var causationId = !string.IsNullOrWhiteSpace(options?.CausationId) ? options.CausationId : ambientMessageId;
+        if (!string.IsNullOrWhiteSpace(causationId))
+        {
+            headers[Headers.CausationId] = causationId;
+        }
         headers[Headers.CorrelationSequence] = (options?.CorrelationSequence ?? 0).ToString(
             CultureInfo.InvariantCulture
         );
@@ -205,6 +217,13 @@ internal sealed class MessagePublishRequestFactory(
         }
 
         return headers;
+    }
+
+    private static string _ValidateContractVersion(string contractVersion)
+    {
+        MessagingOptions.ValidateContractVersion(contractVersion);
+        _ValidateHeaderValue(Headers.ContractVersion, contractVersion);
+        return contractVersion;
     }
 
     private static string _ResolveCorrelationId(

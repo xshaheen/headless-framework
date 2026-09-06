@@ -30,10 +30,20 @@ public interface IConsumerBuilderBase<TConsumer, out TBuilder>
     /// <returns>The same builder instance for chaining.</returns>
     TBuilder Concurrency(byte maxConcurrent);
 
-    /// <summary>Overrides the deterministic handler identity for this consumer registration.</summary>
-    /// <param name="handlerId">An explicit, stable handler identity string used for diagnostics and group generation.</param>
+    /// <summary>Overrides the deterministic handler identity for diagnostics and default group generation.</summary>
+    /// <param name="handlerId">An explicit handler identity string; this is not the durable inbox identity.</param>
     /// <returns>The same builder instance for chaining.</returns>
     TBuilder HandlerId(string handlerId);
+
+    /// <summary>Sets the operator-stable identity used by the durable inbox.</summary>
+    /// <param name="consumerIdentity">Nonblank identity of at most <see cref="ConsumerMetadata.ConsumerIdentityMaxLength"/> characters that remains unchanged across handler and topology refactors.</param>
+    /// <returns>The same builder instance for chaining.</returns>
+    TBuilder ConsumerIdentity(string consumerIdentity);
+
+    /// <summary>Overrides the terminal inbox retention captured for future generations.</summary>
+    /// <param name="retention">A positive whole-second duration no greater than <see cref="int.MaxValue"/> seconds.</param>
+    /// <returns>The same builder instance for chaining.</returns>
+    TBuilder InboxRetention(TimeSpan retention);
 
     /// <summary>Configures per-consumer circuit breaker overrides for this registration.</summary>
     /// <param name="configure">A callback that mutates a <see cref="ConsumerCircuitBreakerOptions"/> instance for this consumer.</param>
@@ -87,6 +97,18 @@ internal abstract class ConsumerBuilderBase<TConsumer, TBuilder>(MessageConsumer
         return Self;
     }
 
+    public TBuilder ConsumerIdentity(string consumerIdentity)
+    {
+        registration.SetConsumerIdentity(consumerIdentity);
+        return Self;
+    }
+
+    public TBuilder InboxRetention(TimeSpan retention)
+    {
+        registration.SetInboxRetention(retention);
+        return Self;
+    }
+
     public TBuilder WithCircuitBreaker(Action<ConsumerCircuitBreakerOptions> configure)
     {
         registration.SetCircuitBreaker(configure);
@@ -99,7 +121,7 @@ internal abstract class ConsumerBuilderBase<TConsumer, TBuilder>(MessageConsumer
     }
 
     // The concrete builder always implements TBuilder, so this is a safe self-cast that keeps
-    // the lane interface flowing through the fluent chain without duplicating the four methods.
+    // the lane interface flowing through the fluent chain without duplicating the shared fluent methods.
     private TBuilder Self => (TBuilder)(object)this;
 }
 
@@ -118,6 +140,10 @@ internal sealed class MessageConsumerRegistrationBuilder(
     public byte Concurrency { get; private set; } = 1;
 
     public string? HandlerId { get; private set; }
+
+    public string? ConsumerIdentity { get; private set; }
+
+    public TimeSpan? InboxRetention { get; private set; }
 
     public ConsumerCircuitBreakerOptions? CircuitBreakerOverride { get; private set; }
 
@@ -140,6 +166,25 @@ internal sealed class MessageConsumerRegistrationBuilder(
         Argument.IsNotNullOrWhiteSpace(handlerId);
 
         HandlerId = handlerId;
+    }
+
+    public void SetConsumerIdentity(string consumerIdentity)
+    {
+        Argument.IsNotNullOrWhiteSpace(consumerIdentity);
+        Argument.HasMaxLength(consumerIdentity, ConsumerMetadata.ConsumerIdentityMaxLength);
+
+        ConsumerIdentity = consumerIdentity;
+    }
+
+    public void SetInboxRetention(TimeSpan retention)
+    {
+        const string message =
+            "Inbox retention must be a positive whole-second duration no greater than Int32.MaxValue seconds.";
+        Argument.IsPositive(retention, message);
+        Argument.IsZero(retention.Ticks % TimeSpan.TicksPerSecond, message, nameof(retention));
+        Argument.IsLessThanOrEqualTo(retention.TotalSeconds, (double)int.MaxValue, message, nameof(retention));
+
+        InboxRetention = retention;
     }
 
     public void SetCircuitBreaker(Action<ConsumerCircuitBreakerOptions> configure)
@@ -165,8 +210,10 @@ internal sealed class MessageConsumerRegistrationBuilder(
             Group,
             Concurrency,
             HandlerId,
+            ConsumerIdentity,
             CircuitBreakerOverride,
-            _providerConfigs.BuildOverlay(messageProviderConfigs ?? new Dictionary<Type, object>())
+            _providerConfigs.BuildOverlay(messageProviderConfigs ?? new Dictionary<Type, object>()),
+            InboxRetention
         );
     }
 }

@@ -1,5 +1,6 @@
 using Demo.Controllers;
 using Headless.Messaging;
+using Headless.Messaging.Configuration;
 using Headless.Messaging.Dashboard;
 using StackExchange.Redis;
 
@@ -12,7 +13,11 @@ builder.Services.AddSwaggerGen();
 
 builder.Services.AddHeadlessMessaging(setup =>
 {
-    setup.Queue.ForMessage<Person>(message => message.MessageName("test-message").Consumer<PersonConsumer>());
+    setup.Queue.ForMessage<Person>(message =>
+        message
+            .Contract("test-message")
+            .Consumer<PersonConsumer>(consumer => consumer.ConsumerIdentity("redis-sqlserver.person"))
+    );
 
     setup.UseRedis(redis =>
     {
@@ -20,6 +25,7 @@ builder.Services.AddHeadlessMessaging(setup =>
         redis.OnConsumeError = context => throw new InvalidOperationException("Redis consume error", context.Exception);
     });
 
+    setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
     setup.UseSqlServer("Server=db;Database=master;User=sa;Password=P@ssw0rd;Encrypt=False");
 
     setup.UseDashboard(d => d.WithNoAuth());

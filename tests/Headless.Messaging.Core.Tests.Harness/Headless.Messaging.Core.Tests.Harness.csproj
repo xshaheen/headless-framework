@@ -6,6 +6,7 @@
     <IsTestHarnessProject>true</IsTestHarnessProject>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
     <PackageReference Include="Testcontainers" />
     <PackageReference Include="xunit.v3.extensibility.core" />
     <PackageReference Include="xunit.v3.assert" />
@@ -13,6 +14,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Messaging.Abstractions\Headless.Messaging.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.Core\Headless.Messaging.Core.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Messaging.InMemory\Headless.Messaging.InMemory.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
   </ItemGroup>
 </Project>

@@ -23,6 +23,7 @@ public sealed class SetupTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.Options.Version = "v7";
+            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
             setup.UseInMemory();
             setup.UsePostgreSql("Host=localhost;Database=test");
         });
@@ -46,6 +47,7 @@ public sealed class SetupTests : TestBase
 
         services.AddHeadlessMessaging(setup =>
         {
+            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
             setup.UseInMemory();
             setup.UsePostgreSql("Host=localhost;Database=test");
         });
