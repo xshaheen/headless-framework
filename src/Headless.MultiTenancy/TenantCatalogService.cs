@@ -94,14 +94,134 @@ internal sealed class TenantCatalogService(
 
     /// <summary>
     /// Resolves the identifier→id axis, then delegates to <see cref="_ResolveByIdAsync"/> for the id→info
-    /// axis on a cache hit, or caches both axes from a single store hit on a miss.
+    /// axis on a cache hit, or caches both axes from a single store hit on a miss. Two shapes implement that:
+    /// a factory-backed read that adds per-key single-flight, and — when negative caching is disabled — a
+    /// plain read-then-conditional-write.
     /// </summary>
-    private async Task<TenantInfo?> _ResolveByIdentifierAsync(
+    private Task<TenantInfo?> _ResolveByIdentifierAsync(
         string normalizedIdentifier,
         CancellationToken cancellationToken
     )
     {
         var identifierCacheKey = TenantIdentifierCacheItem.CalculateCacheKey(normalizedIdentifier);
+
+        // `UnknownIdentifierCacheExpiration = 0` means "an unknown identifier never enters the cache" — the
+        // control for attacker-influenced keyspace. A factory-backed read cannot honor it: GetOrAddAsync always
+        // persists whatever the factory returns, and a zero duration is a write followed by an immediate
+        // eviction (a delete round trip on a network cache), not a skipped write. Hosts that disable negative
+        // caching therefore keep the read-then-conditional-write shape and trade single-flight away for it.
+        return _options.UnknownIdentifierCacheExpiration > TimeSpan.Zero
+            ? _GetOrAddByIdentifierAsync(normalizedIdentifier, identifierCacheKey, cancellationToken)
+            : _ReadThroughByIdentifierAsync(normalizedIdentifier, identifierCacheKey, cancellationToken);
+    }
+
+    /// <summary>
+    /// Factory-backed identifier resolution: one <c>GetOrAddAsync</c> call covers the read, the single-flight
+    /// per-key lock (so a concurrent expiry rollover for one identifier costs one store read, not one per
+    /// caller), and the write of the positive or negative entry under its own expiration.
+    /// </summary>
+    private async Task<TenantInfo?> _GetOrAddByIdentifierAsync(
+        string normalizedIdentifier,
+        string identifierCacheKey,
+        CancellationToken cancellationToken
+    )
+    {
+        // These two flags split the single exception surface of GetOrAddAsync into the three outcomes KTD4
+        // distinguishes: a fault before the factory ran is a cache read fault (degrade to a miss), a fault after
+        // the store answered is a cache write fault (swallow; the store-derived outcome stands), and a fault
+        // between the two is the store's own (propagate unwrapped — never caught here).
+        var factoryStarted = false;
+        var storeAnswered = false;
+        TenantInfo? freshFromStore = null;
+
+        CacheValue<TenantIdentifierCacheItem> cached;
+
+        try
+        {
+            cached = await identifierCache
+                .GetOrAddAsync(
+                    identifierCacheKey,
+                    async (context, factoryCancellationToken) =>
+                    {
+                        factoryStarted = true;
+
+                        var tenant = await store
+                            .FindByIdentifierAsync(normalizedIdentifier, factoryCancellationToken)
+                            .ConfigureAwait(false);
+
+                        storeAnswered = true;
+                        freshFromStore = tenant;
+
+                        // Adaptive expiration: a negative entry lives under the shorter unknown-identifier window.
+                        context.Options = CacheEntryOptions.FromTimeSpan(
+                            tenant is null ? _options.UnknownIdentifierCacheExpiration : _options.CacheExpiration
+                        );
+
+                        if (tenant is null)
+                        {
+                            return context.Modified(new TenantIdentifierCacheItem(tenantId: null));
+                        }
+
+                        // One store hit still populates both axes: the identifier→id mapping written here, and
+                        // the id→TenantInfo shape, so the caller's own chain into _ResolveByIdAsync — and a later
+                        // FindByIdAsync for the same tenant — does not have to re-read the store.
+                        await _CacheTenantInfoAsync(tenant, factoryCancellationToken).ConfigureAwait(false);
+
+                        return context.Modified(new TenantIdentifierCacheItem(tenant.Id));
+                    },
+                    CacheEntryOptions.FromTimeSpan(_options.CacheExpiration),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+#pragma warning disable CA1031 // The store already answered, so only the cache write (or its option validation) can have faulted: KTD4 keeps the store-derived outcome and issues no second store read. OperationCanceledException is excluded so caller cancellation still propagates.
+        catch (Exception fault) when (fault is not OperationCanceledException && storeAnswered)
+#pragma warning restore CA1031
+        {
+            logger.LogTenantCatalogCacheWriteFaulted(fault, nameof(TenantIdentifierCacheItem));
+
+            return freshFromStore;
+        }
+#pragma warning disable CA1031 // The factory never ran, so the fault is on the cache read side: KTD4 degrades it to a miss and falls through to the store. OperationCanceledException is excluded so caller cancellation still propagates.
+        catch (Exception fault) when (fault is not OperationCanceledException && !factoryStarted)
+#pragma warning restore CA1031
+        {
+            logger.LogTenantCatalogCacheReadFaultedDegradingToMiss(fault, nameof(TenantIdentifierCacheItem));
+
+            return await _LoadByIdentifierFromStoreAsync(normalizedIdentifier, identifierCacheKey, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        if (storeAnswered)
+        {
+            // The fresh store instance is returned directly (not re-read through the id axis), preserving
+            // subclass identity for the typed accessor's downcast fast path (R10) while the cached copy stays
+            // an isolated base-shape clone (R9's defensive-snapshot contract; KTD5).
+            return freshFromStore;
+        }
+
+        if (!cached.HasValue)
+        {
+            // A lock-timeout degradation returns a miss without ever running the factory; treat it as a miss.
+            return await _LoadByIdentifierFromStoreAsync(normalizedIdentifier, identifierCacheKey, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        var cachedId = cached.Value?.TenantId;
+
+        return cachedId is null ? null : await _ResolveByIdAsync(cachedId, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Identifier resolution for hosts that disabled negative caching: read the cache, and write only when the
+    /// store actually found a tenant. No single-flight — see <see cref="_ResolveByIdentifierAsync"/>.
+    /// </summary>
+    private async Task<TenantInfo?> _ReadThroughByIdentifierAsync(
+        string normalizedIdentifier,
+        string identifierCacheKey,
+        CancellationToken cancellationToken
+    )
+    {
         var cachedIdentifier = await _TryGetCacheAsync(identifierCache, identifierCacheKey, cancellationToken)
             .ConfigureAwait(false);
 
@@ -112,6 +232,22 @@ internal sealed class TenantCatalogService(
             return cachedId is null ? null : await _ResolveByIdAsync(cachedId, cancellationToken).ConfigureAwait(false);
         }
 
+        return await _LoadByIdentifierFromStoreAsync(normalizedIdentifier, identifierCacheKey, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Reads the identifier from the store and best-effort populates both cache axes. Shared by the
+    /// negative-caching-disabled path and by the cache-read-fault fallback, so both keep the write rules the
+    /// factory-backed path applies: a negative entry only when negative caching is enabled, and the id axis
+    /// written from the same store hit.
+    /// </summary>
+    private async Task<TenantInfo?> _LoadByIdentifierFromStoreAsync(
+        string normalizedIdentifier,
+        string identifierCacheKey,
+        CancellationToken cancellationToken
+    )
+    {
         var tenant = await store.FindByIdentifierAsync(normalizedIdentifier, cancellationToken).ConfigureAwait(false);
 
         if (tenant is null)
@@ -153,7 +289,9 @@ internal sealed class TenantCatalogService(
     /// <summary>
     /// Resolves the id→<see cref="TenantInfo"/> axis: cache hit returns a defensive base-shape clone;
     /// cache miss consults the store directly and caches a base-shape clone for next time. No negative
-    /// caching on this axis.
+    /// caching on this axis — which is also why this axis keeps the read-then-conditional-write shape
+    /// instead of <c>GetOrAddAsync</c>: a factory-backed read cannot express "do not cache this result",
+    /// and caching an id that has no catalog row would change <see cref="FindByIdAsync"/>'s contract.
     /// </summary>
     private async Task<TenantInfo?> _ResolveByIdAsync(string id, CancellationToken cancellationToken)
     {

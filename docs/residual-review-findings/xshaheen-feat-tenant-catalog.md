@@ -39,8 +39,17 @@ No tracker tickets were filed (no sink configured for this run), so this file is
 - Negative identifier caching is keyed on attacker-controlled input with no entry-count bound; probes
   can amplify eviction in the shared `ICache` working set. Rate limiting is delegated to consumers.
 - Pre-auth ambient tenant makes idempotency keys attacker-derivable when `RequireUserIdentity=false`.
-- Catalog cache lookups bypass `ICache.GetOrAddAsync` stampede protection (deliberate: one store read
-  populates two cache axes, which the single-factory model does not support).
+- ~~Catalog cache lookups bypass `ICache.GetOrAddAsync` stampede protection~~ — fixed for identifier
+  resolution. The original rationale ("one store read populates two cache axes, which the single-factory
+  model does not support") was wrong: a factory can populate a second axis as a side effect, and the
+  conditional overload's adaptive `CacheFactoryContext<T>.Options` covers the differing negative
+  expiration. The real obstacle was fault semantics — `GetOrAddAsync` surfaces cache faults, while KTD4
+  requires a read fault to degrade to a miss and a write fault to be swallowed — and it is solved by
+  splitting that single exception surface on whether the factory had already read the store. Two paths
+  still read-then-write, because a factory-backed read always persists its result: the id axis (which must
+  not cache an id with no catalog row) and identifier resolution on hosts with
+  `UnknownIdentifierCacheExpiration = TimeSpan.Zero` (which must not write unknown identifiers at all).
+  Concurrent lookups can still fan out to the store on those two.
 - `EfTenantStore<TContext>` is a singleton capturing `IDbContextFactory<TContext>`; a host registering
   the factory as scoped creates a captive dependency. No fixture covers that.
 - `TenantRecordConfiguration` maps collations only for SQL Server and PostgreSQL; other providers fall

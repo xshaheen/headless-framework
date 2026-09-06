@@ -22,6 +22,13 @@ public sealed class TenantCatalogOptions
     /// unknown identifier do not reach the store. A newly created tenant becomes resolvable within this
     /// window. <see cref="TimeSpan.Zero"/> disables negative caching. Default: 30 seconds.
     /// </summary>
+    /// <remarks>
+    /// Disabling negative caching also opts identifier resolution out of the cache's read-through single-flight:
+    /// a factory-backed read always persists what the factory produced, and a zero duration is a write plus an
+    /// immediate eviction rather than a skipped write, so the "unknown identifiers never enter the cache" rule
+    /// can only be kept by reading and writing separately. Concurrent lookups of one identifier can then each
+    /// reach the store while its entry is cold.
+    /// </remarks>
     public TimeSpan UnknownIdentifierCacheExpiration { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
