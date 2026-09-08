@@ -278,6 +278,7 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         BuildNumber = "<version>",
         CommitNumber = "<commit>",
         Timestamp = _ExampleTimestamp,
+        RetryAfter = 60,
     };
 
     #endregion
