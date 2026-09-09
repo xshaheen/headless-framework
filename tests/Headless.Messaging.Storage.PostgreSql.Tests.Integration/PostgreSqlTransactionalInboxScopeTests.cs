@@ -19,7 +19,7 @@ public sealed class PostgreSqlTransactionalInboxScopeTests(PostgreSqlTestFixture
         setup.UseEntityFramework<InboxScopeDbContext>(options => options.Schema = _Schema);
 
     protected override string CreateEffectsTableSql =>
-        "CREATE TABLE IF NOT EXISTS \"InboxScopeEffects\" (\"Id\" uuid PRIMARY KEY);";
+        "CREATE TABLE IF NOT EXISTS \"TenantInboxScopeEffects\" (\"Id\" uuid PRIMARY KEY, \"TenantId\" text NULL);";
 
     protected override string ReplaceAttemptSql(string receivedTable) =>
         $"UPDATE {receivedTable} SET \"AttemptId\"=@attempt WHERE \"Id\"=@id;";

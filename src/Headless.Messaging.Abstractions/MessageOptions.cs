@@ -101,6 +101,9 @@ public abstract record MessageOptions
 
     internal Type? MessageType { get; init; }
 
+    // Only the EF outbox bridge can promise that the save pipeline retains this occurrence for transaction replay.
+    internal bool IsRetainedForTransactionReplay { get; init; }
+
     /// <summary>
     /// Gets the explicit multi-tenancy identifier for this message.
     /// </summary>
@@ -155,6 +158,7 @@ public abstract record MessageOptions
             && string.Equals(CorrelationId, other.CorrelationId, StringComparison.Ordinal)
             && string.Equals(CausationId, other.CausationId, StringComparison.Ordinal)
             && SuppressAmbientBusinessContext == other.SuppressAmbientBusinessContext
+            && IsRetainedForTransactionReplay == other.IsRetainedForTransactionReplay
             && CorrelationSequence == other.CorrelationSequence
             // MessageType is internal-init and participates in equality so internally-produced options carrying a
             // captured response type are not silently treated as equal to otherwise-identical options (prevents
@@ -178,6 +182,7 @@ public abstract record MessageOptions
         hash.Add(CorrelationId, StringComparer.Ordinal);
         hash.Add(CausationId, StringComparer.Ordinal);
         hash.Add(SuppressAmbientBusinessContext);
+        hash.Add(IsRetainedForTransactionReplay);
         hash.Add(CorrelationSequence);
         // MessageType is internal-init and participates in equality so internally-produced options carrying a
         // captured response type are not silently treated as equal to otherwise-identical options (prevents

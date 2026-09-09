@@ -19,7 +19,7 @@ public sealed class SqlServerTransactionalInboxScopeTests(SqlServerTestFixture f
         setup.UseEntityFramework<InboxScopeDbContext>(options => options.Schema = _Schema);
 
     protected override string CreateEffectsTableSql =>
-        "IF OBJECT_ID(N'InboxScopeEffects', N'U') IS NULL CREATE TABLE [InboxScopeEffects] ([Id] uniqueidentifier PRIMARY KEY);";
+        "IF OBJECT_ID(N'TenantInboxScopeEffects', N'U') IS NULL CREATE TABLE [TenantInboxScopeEffects] ([Id] uniqueidentifier PRIMARY KEY, [TenantId] nvarchar(64) NULL);";
 
     protected override string ReplaceAttemptSql(string receivedTable) =>
         $"UPDATE {receivedTable} SET [AttemptId]=@attempt WHERE [Id]=@id;";

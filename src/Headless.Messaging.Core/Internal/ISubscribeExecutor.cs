@@ -9,6 +9,7 @@ using Headless.Messaging.Diagnostics;
 using Headless.Messaging.Exceptions;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
+using Headless.Messaging.MultiTenancy;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Retry;
 using Headless.Messaging.Runtime;
@@ -233,6 +234,20 @@ internal sealed class SubscribeExecutor(
                 // The runner and consumer must share the same DbContext, alive until commit or rollback.
                 await using var attemptScope = dispatchServices.CreateAsyncScope();
                 var attemptServices = attemptScope.ServiceProvider;
+                var propagateTenant =
+                    descriptor.MessageValueType is { } messageType
+                    && attemptServices.GetService<IMiddlewareDescriptorRegistry>() is { } middlewareRegistry
+                    && middlewareRegistry.TryGetConsumeDescriptors(
+                        messageType,
+                        descriptor.GroupName,
+                        descriptor.Lane,
+                        out var middlewareDescriptors
+                    )
+                    && middlewareDescriptors.Any(m => m.MiddlewareType == typeof(TenantPropagationConsumeMiddleware));
+                // Tenant-aware services can read the tenant at resolution, and auto-save runs after consume middleware.
+                using var tenantScope = propagateTenant
+                    ? TenantContextScope.ChangeFromEnvelope(attemptServices, message.Origin, logger)
+                    : null;
                 var transactionRunner = attemptServices.GetRequiredService<IInboxTransactionRunner>();
                 await transactionRunner
                     .ExecuteAsync(

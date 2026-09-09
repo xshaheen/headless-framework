@@ -53,6 +53,7 @@ internal sealed class OutboxIntegrationEventDispatcher(
                 CausationId = context.CausationId,
                 TenantId = context.TenantId,
                 SuppressAmbientBusinessContext = true,
+                IsRetainedForTransactionReplay = true,
             };
             var publish = invokerCache.GetPublishInvoker(integrationEvent.Payload.GetType());
             await publish(bus, integrationEvent.Payload, options, cancellationToken).ConfigureAwait(false);

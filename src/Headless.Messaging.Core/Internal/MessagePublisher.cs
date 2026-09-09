@@ -97,6 +97,16 @@ internal sealed class MessagePublisher(
                     ?? throw new InvalidOperationException(
                         "Durable delivery requires a configured messaging storage provider."
                     );
+                if (
+                    decision.Path is DeliveryPath.DurableCoordinated
+                    && options?.IsRetainedForTransactionReplay is not true
+                )
+                {
+                    // A completed domain occurrence is not rerun after rollback. Its direct outbox writes
+                    // cannot be recovered from EF's retained state, so mark before attempting storage.
+                    decision.Coordination.Coordinator!.GetOrAdd(static _ => new CommitRetryGuard()).PreventRetry();
+                }
+
                 return writer.WriteAsync(request, decision, ct);
             },
             cancellationToken

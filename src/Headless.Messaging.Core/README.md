@@ -28,6 +28,7 @@ Provides the foundational runtime for reliable distributed messaging with transa
 - **Circuit Breaker**: Per-consumer-group circuit breaker (Closed → Open → HalfOpen) with exponential open-duration escalation
 - **Adaptive Retry Backpressure**: Retry processor backs off polling when circuit-open rate exceeds threshold
 - **Distributed Lock Integration**: Optional `IDistributedLock`-backed mutual exclusion for multi-replica retry pickup (`UseStorageLock`)
+- Coordinated durable publishes mark `CommitRetryGuard` before the write, requiring a fresh unit of work after transaction failure. The EF integration-event bridge exempts only captured occurrences that its save pipeline retains for replay.
 
 Storage providers that implement `IDelayedMessageClaimStorage` must stamp each winner's `LockedUntil` as `max(authoritative store now, ExpiresAt) + DispatchTimeout`, using the same store-clock snapshot that tests lease eligibility, and return only after the claim commits. Extending a future message's lease from its schedule time keeps the ownership grant alive until the first dispatch attempt.
 

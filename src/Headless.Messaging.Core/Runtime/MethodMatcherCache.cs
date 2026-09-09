@@ -183,15 +183,15 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
     {
         _EnsureEntries();
 
-        var identityMatches = _laneEntries
+        // Persisted inbox identities must not use subscription wildcards or their group-level caches.
+        descriptor = _laneEntries
             .Where(entry => entry.Key.Lane == lane)
             .SelectMany(static entry => entry.Value)
-            .Where(candidate =>
+            .FirstOrDefault(candidate =>
                 string.Equals(candidate.ConsumerIdentity, consumerIdentity, StringComparison.Ordinal)
                 && string.Equals(candidate.MessageContractVersion, contractVersion, StringComparison.Ordinal)
-            )
-            .ToArray();
-        descriptor = selector.SelectBestCandidate(contractIdentity, identityMatches);
+                && string.Equals(candidate.MessageName, contractIdentity, StringComparison.Ordinal)
+            );
 
         return descriptor is not null;
     }

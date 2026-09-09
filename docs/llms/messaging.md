@@ -599,6 +599,7 @@ Wires messaging into dependency injection: registration, publishing, dispatch, m
 - Host-cancellable consumer factory creation, metadata provisioning, and subscription.
 - Monitoring pagination uses zero-based `MessageQuery.CurrentPage` values, returns that value as `IndexPage.Index`, and normalizes negative values to zero.
 - Direct publishing bypasses storage and any ambient coordination boundary, while delayed delivery is always durable.
+- Coordinated durable publishes mark `CommitRetryGuard` before the write, requiring a fresh unit of work after transaction failure. The EF integration-event bridge exempts only captured occurrences that its save pipeline retains for replay.
 
 ### Design Notes
 

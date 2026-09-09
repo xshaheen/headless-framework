@@ -1,5 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Abstractions;
+using Headless.Domain;
+using Headless.EntityFramework;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
@@ -7,9 +10,11 @@ using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Runtime;
+using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace Tests;
 
@@ -25,20 +30,31 @@ public abstract class TransactionalInboxScopeConformanceTests : TestBase
     protected abstract string ReplaceAttemptSql(string receivedTable);
 
     [Theory]
-    [InlineData(false, false)]
-    [InlineData(true, false)]
-    [InlineData(false, true)]
-    [InlineData(true, true)]
+    [InlineData(false, false, true, null)]
+    [InlineData(true, false, true, null)]
+    [InlineData(false, true, true, null)]
+    [InlineData(true, true, true, null)]
+    [InlineData(false, false, true, "dispatch-tenant")]
+    [InlineData(false, true, true, "dispatch-tenant")]
+    [InlineData(false, false, false, "dispatch-tenant")]
     public async Task should_commit_or_rollback_handler_state_and_outbox_in_the_attempt_scope(
         bool explicitSave,
-        bool rejectFence
+        bool rejectFence,
+        bool propagateTenant,
+        string? ambientTenant
     )
     {
         var state = new ExecutionState { ExplicitSave = explicitSave };
-        var services = new ServiceCollection();
+        var builder = Host.CreateApplicationBuilder();
+        var services = builder.Services;
         services.AddLogging();
         services.AddSingleton(state);
-        services.AddDbContext<InboxScopeDbContext>(ConfigureContext);
+        services.AddHeadlessDbContext<InboxScopeDbContext>(ConfigureContext);
+        services.AddHeadlessTenantWriteGuard();
+        if (propagateTenant)
+        {
+            builder.AddHeadlessTenancy(tenancy => tenancy.Messaging(messaging => messaging.PropagateTenant()));
+        }
         services
             .AddHeadlessMessaging(setup =>
             {
@@ -58,6 +74,8 @@ public abstract class TransactionalInboxScopeConformanceTests : TestBase
             .AddBusConsumeMiddleware<InboxScopeMiddleware>();
 
         await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        var currentTenant = provider.GetRequiredService<ICurrentTenant>();
+        using var callerTenantScope = currentTenant.Change(ambientTenant);
         var storage = provider.GetRequiredService<IDataStorage>();
         var initializer = provider.GetRequiredService<IStorageInitializer>();
         await initializer.InitializeAsync(AbortToken);
@@ -78,6 +96,7 @@ public abstract class TransactionalInboxScopeConformanceTests : TestBase
                 [Headers.MessageId] = state.Id.ToString(),
                 [Headers.MessageName] = descriptor.MessageName,
                 [Headers.Group] = descriptor.GroupName,
+                [Headers.TenantId] = "envelope-tenant",
             },
             new InboxScopeMessage(state.Id)
         );
@@ -127,7 +146,10 @@ public abstract class TransactionalInboxScopeConformanceTests : TestBase
             .GetRequiredService<ISubscribeExecutor>()
             .ExecuteAsync(admitted.Message, dispatchScope.ServiceProvider, descriptor, AbortToken);
 
-        result.Succeeded.Should().Be(!rejectFence);
+        result.Succeeded.Should().Be(!rejectFence, "{0}", result.Exception);
+        currentTenant
+            .Id.Should()
+            .Be(ambientTenant, "the attempt must restore the caller's tenant on success or failure");
         if (rejectFence)
         {
             result.Exception.Should().BeOfType<StaleInboxAttemptException>();
@@ -139,10 +161,25 @@ public abstract class TransactionalInboxScopeConformanceTests : TestBase
         state.MiddlewareHadTransaction.Should().BeTrue();
         state.ContextDisposedBeforeHandlerReturned.Should().BeFalse();
         state.HandlerContext!.Disposed.Should().BeTrue("the attempt scope must end after commit or rollback");
+        var expectedTenant = propagateTenant ? "envelope-tenant" : ambientTenant;
+        state.HandlerContext.TenantAtResolution.Should().Be(expectedTenant);
+        state.HandlerTenant.Should().Be(expectedTenant);
+        state.HandlerContext.TenantsAtSave.Should().NotBeEmpty().And.AllBe(expectedTenant);
 
         await using var verificationScope = provider.CreateAsyncScope();
         var verificationDb = verificationScope.ServiceProvider.GetRequiredService<InboxScopeDbContext>();
-        (await verificationDb.Effects.AnyAsync(effect => effect.Id == state.Id, AbortToken)).Should().Be(!rejectFence);
+        var effect = await verificationDb
+            .Effects.IgnoreQueryFilters()
+            .SingleOrDefaultAsync(e => e.Id == state.Id, AbortToken);
+        if (rejectFence)
+        {
+            effect.Should().BeNull();
+        }
+        else
+        {
+            effect.Should().NotBeNull();
+            effect!.TenantId.Should().Be(expectedTenant);
+        }
         var monitoring = storage.GetMonitoringApi();
         foreach (var lane in new[] { MessageLane.Bus, MessageLane.Queue })
         {
@@ -174,20 +211,39 @@ public abstract class TransactionalInboxScopeConformanceTests : TestBase
 
     public sealed record InboxScopeOutput(Guid Id);
 
-    public sealed class InboxScopeEffect
+    public sealed class InboxScopeEffect : IMultiTenant
     {
         public Guid Id { get; set; }
+
+        public string? TenantId { get; set; }
     }
 
-    public sealed class InboxScopeDbContext(DbContextOptions<InboxScopeDbContext> options) : DbContext(options)
+    public sealed class InboxScopeDbContext(
+        HeadlessDbContextServices services,
+        DbContextOptions<InboxScopeDbContext> options,
+        ICurrentTenant currentTenant
+    ) : HeadlessDbContext(services, options)
     {
         public DbSet<InboxScopeEffect> Effects => Set<InboxScopeEffect>();
+
+        public override string? DefaultSchema => null;
+
+        public string? TenantAtResolution { get; } = currentTenant.Id;
+
+        public List<string?> TenantsAtSave { get; } = [];
 
         public bool Disposed { get; private set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            modelBuilder.Entity<InboxScopeEffect>().ToTable("InboxScopeEffects").HasKey(effect => effect.Id);
+            modelBuilder.Entity<InboxScopeEffect>().ToTable("TenantInboxScopeEffects").HasKey(effect => effect.Id);
+            base.OnModelCreating(modelBuilder);
+        }
+
+        public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        {
+            TenantsAtSave.Add(TenantId);
+            return base.SaveChangesAsync(cancellationToken);
         }
 
         public override async ValueTask DisposeAsync()
@@ -201,6 +257,7 @@ public abstract class TransactionalInboxScopeConformanceTests : TestBase
     {
         public Guid Id { get; } = Guid.NewGuid();
         public bool ExplicitSave { get; init; }
+        public string? HandlerTenant { get; set; }
         public InboxScopeDbContext? HandlerContext { get; set; }
         public InboxScopeDbContext? MiddlewareContext { get; set; }
         public bool HandlerHadTransaction { get; set; }
@@ -232,6 +289,7 @@ public abstract class TransactionalInboxScopeConformanceTests : TestBase
         {
             state.HandlerEntries++;
             state.HandlerContext = db;
+            state.HandlerTenant = db.TenantId;
             state.HandlerHadTransaction = db.Database.CurrentTransaction is not null;
             await db.Effects.AddAsync(new InboxScopeEffect { Id = context.Message.Id }, cancellationToken);
             if (state.ExplicitSave)
