@@ -14,7 +14,7 @@ public sealed class QueueOptionsTests : TestBase
         var options = new QueueOptions();
 
         // then
-        options.DeliveryMode.Should().Be(DeliveryMode.Durable);
+        options.DeliveryMode.Should().BeNull();
     }
 
     [Fact]

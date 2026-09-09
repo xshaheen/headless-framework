@@ -72,7 +72,7 @@ public sealed class MessagingOptionsExtensionsTests : TestBase
         optionsSnapshot.TenantId.Should().Be("tenant");
         optionsSnapshot.Delay.Should().Be(TimeSpan.FromMinutes(1));
         optionsSnapshot.Headers!["source"].Should().Be("checkout");
-        optionsSnapshot.DeliveryMode.Should().Be(DeliveryMode.Durable);
+        optionsSnapshot.DeliveryMode.Should().BeNull();
         (publish ? queue.ReceivedCalls() : bus.ReceivedCalls()).Should().BeEmpty();
     }
 

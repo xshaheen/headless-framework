@@ -131,7 +131,7 @@ public sealed class HybridCacheAutoRecoveryTests : TestBase
             .Received(2)
             .PublishAsync(
                 Arg.Is<CacheInvalidationMessage>(m => m.Key == key),
-                Arg.Is<PublishOptions?>(options => options!.DeliveryMode == DeliveryMode.TransportDirect),
+                Arg.Is<PublishOptions?>(options => options!.DeliveryMode == DeliveryMode.Direct),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -326,7 +326,7 @@ public sealed class HybridCacheAutoRecoveryTests : TestBase
             .Received(2)
             .PublishAsync(
                 Arg.Is<CacheInvalidationMessage>(m => m.Key == key),
-                Arg.Is<PublishOptions?>(options => options!.DeliveryMode == DeliveryMode.TransportDirect),
+                Arg.Is<PublishOptions?>(options => options!.DeliveryMode == DeliveryMode.Direct),
                 Arg.Any<CancellationToken>()
             );
     }

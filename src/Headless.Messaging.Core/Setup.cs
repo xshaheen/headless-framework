@@ -17,6 +17,7 @@ using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging;
 
@@ -231,7 +232,8 @@ public static class SetupMessaging
                 () => sp.GetService<IDeliveryCoordinationResolver>(),
                 () => sp.GetService<OutboxMessageWriter>(),
                 sp.GetService<MessagingTelemetry>(),
-                options.TransportPublishTimeout
+                options.TransportPublishTimeout,
+                sp.GetRequiredService<IOptions<MessagingOptions>>().Value.DefaultDeliveryMode
             );
         });
         services.TryAddSingleton<IBus>(sp => new Bus(sp.GetRequiredService<MessagePublisher>()));

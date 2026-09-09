@@ -250,6 +250,9 @@ public sealed class MessagingOptions
     public MessagingInboxCapabilityTier RequiredInboxCapability { get; set; } =
         MessagingInboxCapabilityTier.Transactional;
 
+    /// <summary>Gets or sets the delivery mode inherited by publications without a per-call override.</summary>
+    public DeliveryMode DefaultDeliveryMode { get; set; } = DeliveryMode.Auto;
+
     /// <summary>
     /// Gets the global circuit breaker configuration that applies to all consumer groups.
     /// Individual consumers may override specific properties via
@@ -308,6 +311,7 @@ public sealed class MessagingOptions
         target.ShutdownTimeout = ShutdownTimeout;
         target.DeadNodeReconcileInterval = DeadNodeReconcileInterval;
         target.RequiredInboxCapability = RequiredInboxCapability;
+        target.DefaultDeliveryMode = DefaultDeliveryMode;
         _CopyJsonSerializerOptions(JsonSerializerOptions, target.JsonSerializerOptions);
         RetryPolicy.CopyTo(target.RetryPolicy);
         CircuitBreaker.CopyTo(target.CircuitBreaker);
@@ -553,6 +557,7 @@ internal sealed class MessagingOptionsValidator : AbstractValidator<MessagingOpt
         RuleFor(x => x.DeadNodeReconcileInterval)
             .GreaterThan(TimeSpan.Zero)
             .WithMessage("DeadNodeReconcileInterval must be greater than zero.");
+        RuleFor(x => x.DefaultDeliveryMode).IsInEnum();
         RuleFor(x => x.RequiredInboxCapability)
             .IsInEnum()
             .WithMessage("RequiredInboxCapability must be a defined inbox capability tier.");

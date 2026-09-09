@@ -77,7 +77,7 @@ public sealed class MessagingInstrumentationTests : TestBase
             new MessagingEnrichmentContext
             {
                 RequestedDeliveryMode = DeliveryMode.Auto,
-                ResolvedDeliveryMode = DeliveryMode.TransportDirect,
+                ResolvedDeliveryMode = DeliveryMode.Direct,
             }
         );
 

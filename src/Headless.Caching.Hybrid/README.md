@@ -43,7 +43,7 @@ The coordinator's `ConcurrencyStamp` compare-and-set (a late factory must not re
 
 Per-tier read skip on a factory-backed `GetOrAddAsync` (mirrors FusionCache's `SkipMemoryCacheRead` / `SkipDistributedCacheRead`): `CacheEntryOptions.SkipMemoryCacheRead` bypasses the L1 read so the value is served from — or refreshed against — L2, and `CacheEntryOptions.SkipDistributedCacheRead` bypasses the L2 read so a fresh L1 value serves without an L2 round-trip and an L1 miss falls straight through to the factory. A value read from L2 under `SkipMemoryCacheRead` is still promoted into L1 (promotion is a write, governed by `SkipMemoryCacheWrite`). Setting both is a miss, equivalent to the coarse `SkipCacheRead` (which itself skips the read on both tiers outright). Single-tier providers ignore all three flags — there is only one tier to read.
 
-Initial and replayed invalidations use `DeliveryMode.TransportDirect`, so an ambient commit-coordination boundary never captures or delays the backplane signal. Publish failures are non-fatal. Other instances may keep their L1 value until TTL or the next successful invalidation, while the local instance still observes the write result.
+Initial and replayed invalidations use `DeliveryMode.Direct`, so an ambient commit-coordination boundary never captures or delays the backplane signal. Publish failures are non-fatal. Other instances may keep their L1 value until TTL or the next successful invalidation, while the local instance still observes the write result.
 
 ## Installation
 

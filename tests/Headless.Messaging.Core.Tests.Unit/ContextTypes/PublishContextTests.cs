@@ -200,7 +200,7 @@ public sealed class PublishContextTests : TestBase
     {
         var decision = DeliveryDecisionResolver.Resolve(
             MessageLane.Bus,
-            options.DeliveryMode,
+            options.DeliveryMode ?? DeliveryMode.Auto,
             options.Delay,
             DeliveryCoordination.None,
             DateTimeOffset.UnixEpoch

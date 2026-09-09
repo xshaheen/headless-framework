@@ -17,7 +17,8 @@ internal sealed class MessagePublisher(
     Func<IDeliveryCoordinationResolver?> coordinationResolver,
     Func<OutboxMessageWriter?> outboxWriterResolver,
     MessagingTelemetry? telemetry = null,
-    TimeSpan? transportPublishTimeout = null
+    TimeSpan? transportPublishTimeout = null,
+    DeliveryMode defaultDeliveryMode = DeliveryMode.Auto
 )
 {
     private readonly MessagingTelemetry _telemetry = telemetry ?? MessagingTelemetry.Default;
@@ -39,13 +40,13 @@ internal sealed class MessagePublisher(
         var coordination = _ResolveCoordination(coordinator);
         var decision = DeliveryDecisionResolver.Resolve(
             lane,
-            options?.DeliveryMode ?? DeliveryMode.Durable,
+            options?.DeliveryMode ?? defaultDeliveryMode,
             options?.Delay,
             coordination,
             timeProvider.GetUtcNow()
         );
 
-        if (decision.Path is DeliveryPath.TransportDirect)
+        if (decision.Path is DeliveryPath.Direct)
         {
             capabilities.EnsureDirectSupported(lane);
         }
@@ -73,7 +74,7 @@ internal sealed class MessagePublisher(
                     )
                     : publishRequestFactory.Create(content, declaredMessageType, middlewareOptions, lane: lane);
 
-                if (decision.Path is DeliveryPath.TransportDirect)
+                if (decision.Path is DeliveryPath.Direct)
                 {
                     DeliveryMetadata.Stamp(request.Message.Headers, decision);
                     var transport = transportResolver(lane);

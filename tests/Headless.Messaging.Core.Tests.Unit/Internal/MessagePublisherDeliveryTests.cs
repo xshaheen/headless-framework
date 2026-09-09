@@ -20,6 +20,29 @@ namespace Tests.Internal;
 public sealed class MessagePublisherDeliveryTests : TestBase
 {
     [Theory]
+    [InlineData(MessageLane.Bus)]
+    [InlineData(MessageLane.Queue)]
+    public async Task should_use_auto_by_default_outside_coordination(MessageLane lane)
+    {
+        await using var harness = _CreateHarness();
+        var message = new DeliveryMessage("auto-default");
+        if (lane == MessageLane.Bus)
+        {
+            IBus bus = new Bus(harness.Publisher);
+            await bus.PublishAsync(message, AbortToken);
+        }
+        else
+        {
+            IQueue queue = new Queue(harness.Publisher);
+            await queue.EnqueueAsync(message, AbortToken);
+        }
+
+        var sent = harness.TransportMessages.Should().ContainSingle().Subject;
+        sent.Headers[Headers.RequestedDeliveryMode].Should().Be(nameof(DeliveryMode.Auto));
+        harness.Storage.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [Theory]
     [InlineData(MessageLane.Bus, Headers.MessageName, "forbidden", null)]
     [InlineData(MessageLane.Queue, Headers.MessageName, "forbidden", null)]
     [InlineData(MessageLane.Bus, "bad\r\nname", "value", null)]
@@ -68,13 +91,13 @@ public sealed class MessagePublisherDeliveryTests : TestBase
     [InlineData(MessageLane.Queue, 0)]
     [InlineData(MessageLane.Bus, 5)]
     [InlineData(MessageLane.Queue, 5)]
-    public async Task should_preserve_fluent_durable_defaults_metadata_and_delay_validation(
+    public async Task should_inherit_global_durable_mode_with_fluent_metadata_and_validate_delay(
         MessageLane lane,
         int delayMinutes
     )
     {
         var now = new DateTimeOffset(2026, 7, 26, 12, 0, 0, TimeSpan.Zero);
-        await using var harness = _CreateHarness(new FakeTimeProvider(now));
+        await using var harness = _CreateHarness(new FakeTimeProvider(now), defaultDeliveryMode: DeliveryMode.Durable);
         using var caller = new CancellationTokenSource();
         TimeSpan? delay = delayMinutes < 0 ? null : TimeSpan.FromMinutes(delayMinutes);
 #pragma warning disable AsyncFixer04 // Substitute setup is synchronous; the publish operation is awaited before disposing the harness.
@@ -196,13 +219,13 @@ public sealed class MessagePublisherDeliveryTests : TestBase
                 {
                     MessageName = "delivery.message",
                     RoutingAffinityKey = "order-42",
-                    DeliveryMode = DeliveryMode.TransportDirect,
+                    DeliveryMode = DeliveryMode.Direct,
                 }
                 : new QueueOptions
                 {
                     MessageName = "delivery.message",
                     RoutingAffinityKey = "order-42",
-                    DeliveryMode = DeliveryMode.TransportDirect,
+                    DeliveryMode = DeliveryMode.Direct,
                 };
 
         await harness.Publisher.PublishAsync(lane, new DeliveryMessage("payload"), direct, AbortToken);
@@ -240,7 +263,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         harness.TransportLanes.Should().ContainSingle().Which.Should().Be(MessageLane.Bus);
         var sent = harness.TransportMessages.Should().ContainSingle().Which;
         sent.Headers[Headers.RequestedDeliveryMode].Should().Be(nameof(DeliveryMode.Auto));
-        sent.Headers[Headers.ResolvedDeliveryMode].Should().Be(nameof(DeliveryMode.TransportDirect));
+        sent.Headers[Headers.ResolvedDeliveryMode].Should().Be(nameof(DeliveryMode.Direct));
         await harness
             .Storage.DidNotReceive()
             .StoreMessageAsync(
@@ -264,14 +287,14 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         await harness.Publisher.PublishAsync(
             MessageLane.Bus,
             new DeliveryMessage("direct"),
-            new PublishOptions { DeliveryMode = DeliveryMode.TransportDirect },
+            new PublishOptions { DeliveryMode = DeliveryMode.Direct },
             AbortToken
         );
 
         harness.TransportLanes.Should().ContainSingle().Which.Should().Be(MessageLane.Bus);
         var sent = harness.TransportMessages.Should().ContainSingle().Which;
-        sent.Headers[Headers.RequestedDeliveryMode].Should().Be(nameof(DeliveryMode.TransportDirect));
-        sent.Headers[Headers.ResolvedDeliveryMode].Should().Be(nameof(DeliveryMode.TransportDirect));
+        sent.Headers[Headers.RequestedDeliveryMode].Should().Be(nameof(DeliveryMode.Direct));
+        sent.Headers[Headers.ResolvedDeliveryMode].Should().Be(nameof(DeliveryMode.Direct));
         await harness
             .Storage.DidNotReceive()
             .StoreMessageAsync(
@@ -323,12 +346,12 @@ public sealed class MessagePublisherDeliveryTests : TestBase
     [InlineData(MessageLane.Bus, true)]
     [InlineData(MessageLane.Queue, false)]
     [InlineData(MessageLane.Queue, true)]
-    public async Task should_capture_by_default_outside_coordination_and_forward_caller_token(
+    public async Task should_capture_with_global_durable_mode_outside_coordination_and_forward_caller_token(
         MessageLane lane,
         bool explicitOptions
     )
     {
-        await using var harness = _CreateHarness();
+        await using var harness = _CreateHarness(defaultDeliveryMode: DeliveryMode.Durable);
         using var caller = new CancellationTokenSource();
         var storage = harness.Storage;
         storage
@@ -385,7 +408,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
     [InlineData(MessageLane.Queue)]
     public async Task should_forward_cancellation_from_short_overload_to_durable_storage(MessageLane lane)
     {
-        await using var harness = _CreateHarness();
+        await using var harness = _CreateHarness(defaultDeliveryMode: DeliveryMode.Durable);
         using var caller = new CancellationTokenSource();
         await caller.CancelAsync();
         var storage = harness.Storage;
@@ -421,11 +444,11 @@ public sealed class MessagePublisherDeliveryTests : TestBase
             harness.Publisher.PublishAsync(
                 MessageLane.Bus,
                 new DeliveryMessage("invalid"),
-                new PublishOptions { DeliveryMode = DeliveryMode.TransportDirect, Delay = TimeSpan.FromMinutes(1) },
+                new PublishOptions { DeliveryMode = DeliveryMode.Direct, Delay = TimeSpan.FromMinutes(1) },
                 AbortToken
             );
 
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*TransportDirect*delay*");
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Direct*delay*");
         harness.TransportLanes.Should().BeEmpty();
         await harness
             .Storage.DidNotReceive()
@@ -489,7 +512,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         var publishTask = harness.Publisher.PublishAsync(
             MessageLane.Bus,
             new DeliveryMessage("timeout"),
-            new PublishOptions { DeliveryMode = DeliveryMode.TransportDirect },
+            new PublishOptions { DeliveryMode = DeliveryMode.Direct },
             AbortToken
         );
         await transport.Started.Task.WaitAsync(AbortToken);
@@ -515,7 +538,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         var publishTask = harness.Publisher.PublishAsync(
             MessageLane.Bus,
             new DeliveryMessage("caller-canceled"),
-            new PublishOptions { DeliveryMode = DeliveryMode.TransportDirect },
+            new PublishOptions { DeliveryMode = DeliveryMode.Direct },
             callerCts.Token
         );
         await transport.Started.Task.WaitAsync(AbortToken);
@@ -543,7 +566,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         var publishTask = harness.Publisher.PublishAsync(
             MessageLane.Bus,
             new DeliveryMessage("slow-serialization"),
-            new PublishOptions { DeliveryMode = DeliveryMode.TransportDirect },
+            new PublishOptions { DeliveryMode = DeliveryMode.Direct },
             AbortToken
         );
         await serializer.Started.Task.WaitAsync(AbortToken);
@@ -567,7 +590,8 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         ITransport? busTransport = null,
         ISerializer? serializer = null,
         ICurrentCommitCoordinator? currentCommitCoordinator = null,
-        Func<IDeliveryCoordinationResolver?>? coordinationResolver = null
+        Func<IDeliveryCoordinationResolver?>? coordinationResolver = null,
+        DeliveryMode defaultDeliveryMode = DeliveryMode.Auto
     )
     {
         timeProvider ??= TimeProvider.System;
@@ -646,7 +670,8 @@ public sealed class MessagePublisherDeliveryTests : TestBase
             coordinationResolver ?? (static () => null),
             () => writer,
             telemetry: null,
-            transportPublishTimeout
+            transportPublishTimeout,
+            defaultDeliveryMode
         );
 
         return new MessagePublisherHarness(

@@ -18,5 +18,5 @@ public enum DeliveryMode
     /// <summary>
     /// Sends directly to the transport without durable capture, regardless of ambient commit coordination.
     /// </summary>
-    TransportDirect = 2,
+    Direct = 2,
 }

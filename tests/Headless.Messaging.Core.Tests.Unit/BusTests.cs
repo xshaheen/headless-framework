@@ -20,18 +20,14 @@ public sealed class BusTests : TestBase
     private sealed record UnmappedMessage(int Id);
 
     [Fact]
-    public async Task should_require_storage_for_empty_fluent_publish_without_sending_directly()
+    public async Task should_use_auto_for_empty_fluent_publish_without_storage()
     {
         await using var transport = new TestTransport();
         var bus = _CreateBus(transport, new MessagingOptions());
 
-        var publish = () => bus.PublishAsync(new TestMessage("test"), _ => { }, AbortToken);
+        await bus.PublishAsync(new TestMessage("test"), static _ => { }, AbortToken);
 
-        await publish
-            .Should()
-            .ThrowAsync<MessagingConfigurationException>()
-            .WithMessage("*requires a matching storage capability*");
-        transport.SentMessages.Should().BeEmpty();
+        transport.SentMessages.Should().ContainSingle();
     }
 
     [Fact]
@@ -46,7 +42,7 @@ public sealed class BusTests : TestBase
         // when
         await publisher.PublishAsync(
             new TestMessage("test-value"),
-            new PublishOptions { DeliveryMode = DeliveryMode.TransportDirect },
+            new PublishOptions { DeliveryMode = DeliveryMode.Direct },
             cancellationToken: AbortToken
         );
 
@@ -67,7 +63,7 @@ public sealed class BusTests : TestBase
         // when
         await publisher.PublishAsync(
             new TestMessage("test-value"),
-            new PublishOptions { DeliveryMode = DeliveryMode.TransportDirect },
+            new PublishOptions { DeliveryMode = DeliveryMode.Direct },
             cancellationToken: AbortToken
         );
 
@@ -88,7 +84,7 @@ public sealed class BusTests : TestBase
         // when
         await publisher.PublishAsync(
             new TestMessage("test-value"),
-            new PublishOptions { DeliveryMode = DeliveryMode.TransportDirect },
+            new PublishOptions { DeliveryMode = DeliveryMode.Direct },
             cancellationToken: AbortToken
         );
 
@@ -108,7 +104,7 @@ public sealed class BusTests : TestBase
         // when
         await publisher.PublishAsync(
             new UnmappedMessage(42),
-            new PublishOptions { DeliveryMode = DeliveryMode.TransportDirect },
+            new PublishOptions { DeliveryMode = DeliveryMode.Direct },
             cancellationToken: AbortToken
         );
 
@@ -129,7 +125,7 @@ public sealed class BusTests : TestBase
         // when
         await publisher.PublishAsync<TestMessage>(
             null,
-            new PublishOptions { DeliveryMode = DeliveryMode.TransportDirect },
+            new PublishOptions { DeliveryMode = DeliveryMode.Direct },
             cancellationToken: AbortToken
         );
 
@@ -150,7 +146,7 @@ public sealed class BusTests : TestBase
         // when
         await publisher.PublishAsync(
             new TestMessage("test"),
-            new PublishOptions { DeliveryMode = DeliveryMode.TransportDirect },
+            new PublishOptions { DeliveryMode = DeliveryMode.Direct },
             cancellationToken: AbortToken
         );
 
@@ -172,7 +168,7 @@ public sealed class BusTests : TestBase
         var act = () =>
             publisher.PublishAsync(
                 new TestMessage("test"),
-                new PublishOptions { DeliveryMode = DeliveryMode.TransportDirect },
+                new PublishOptions { DeliveryMode = DeliveryMode.Direct },
                 cancellationToken: AbortToken
             );
 
@@ -197,7 +193,7 @@ public sealed class BusTests : TestBase
         var act = () =>
             publisher.PublishAsync(
                 new TestMessage("test"),
-                new PublishOptions { DeliveryMode = DeliveryMode.TransportDirect },
+                new PublishOptions { DeliveryMode = DeliveryMode.Direct },
                 cancellationToken: AbortToken
             );
 
@@ -217,7 +213,7 @@ public sealed class BusTests : TestBase
         // when
         await publisher.PublishAsync(
             new TestMessage("test"),
-            new PublishOptions { DeliveryMode = DeliveryMode.TransportDirect },
+            new PublishOptions { DeliveryMode = DeliveryMode.Direct },
             cancellationToken: AbortToken
         );
 
@@ -241,7 +237,7 @@ public sealed class BusTests : TestBase
         var publisher = _CreateBus(testTransport, options);
         var publishOptions = new PublishOptions
         {
-            DeliveryMode = DeliveryMode.TransportDirect,
+            DeliveryMode = DeliveryMode.Direct,
             MessageId = "custom-id-123",
             CorrelationId = "corr-123",
             CorrelationSequence = 5,
@@ -269,7 +265,7 @@ public sealed class BusTests : TestBase
         var publisher = _CreateBus(testTransport, options);
         var publishOptions = new PublishOptions
         {
-            DeliveryMode = DeliveryMode.TransportDirect,
+            DeliveryMode = DeliveryMode.Direct,
             CallbackName = "callbacks\r\nnext",
         };
 
@@ -292,7 +288,7 @@ public sealed class BusTests : TestBase
         var publisher = _CreateBus(testTransport, options);
         var publishOptions = new PublishOptions
         {
-            DeliveryMode = DeliveryMode.TransportDirect,
+            DeliveryMode = DeliveryMode.Direct,
             MessageId = new string('m', MessageOptions.MessageIdMaxLength),
         };
 
@@ -314,7 +310,7 @@ public sealed class BusTests : TestBase
         var publisher = _CreateBus(testTransport, options);
         var publishOptions = new PublishOptions
         {
-            DeliveryMode = DeliveryMode.TransportDirect,
+            DeliveryMode = DeliveryMode.Direct,
             MessageId = new string('m', MessageOptions.MessageIdMaxLength + 1),
         };
 
@@ -336,7 +332,7 @@ public sealed class BusTests : TestBase
         var options = new MessagingOptions();
 
         var publisher = _CreateBus(testTransport, options);
-        var publishOptions = new PublishOptions { DeliveryMode = DeliveryMode.TransportDirect, MessageId = "msg\r\n1" };
+        var publishOptions = new PublishOptions { DeliveryMode = DeliveryMode.Direct, MessageId = "msg\r\n1" };
 
         // when
         var act = () => publisher.PublishAsync(new TestMessage("test"), publishOptions, AbortToken);
@@ -357,7 +353,7 @@ public sealed class BusTests : TestBase
         var publisher = _CreateBus(testTransport, options);
         var publishOptions = new PublishOptions
         {
-            DeliveryMode = DeliveryMode.TransportDirect,
+            DeliveryMode = DeliveryMode.Direct,
             MessageName = "explicit.messageName",
         };
 
@@ -379,11 +375,7 @@ public sealed class BusTests : TestBase
         // given
         await using var testTransport = new TestTransport();
         var publisher = _CreateBus(testTransport, new MessagingOptions());
-        var publishOptions = new PublishOptions
-        {
-            DeliveryMode = DeliveryMode.TransportDirect,
-            MessageName = messageName,
-        };
+        var publishOptions = new PublishOptions { DeliveryMode = DeliveryMode.Direct, MessageName = messageName };
 
         // when
         var act = () => publisher.PublishAsync(new TestMessage("test"), publishOptions, AbortToken);
@@ -404,7 +396,7 @@ public sealed class BusTests : TestBase
 
         var publishOptions = new PublishOptions
         {
-            DeliveryMode = DeliveryMode.TransportDirect,
+            DeliveryMode = DeliveryMode.Direct,
             Headers = new Dictionary<string, string?>(StringComparer.Ordinal)
             {
                 [Headers.MessageName] = "forbidden.messageName",
@@ -428,7 +420,7 @@ public sealed class BusTests : TestBase
         var publisher = _CreateBus(testTransport, options);
         var publishOptions = new PublishOptions
         {
-            DeliveryMode = DeliveryMode.TransportDirect,
+            DeliveryMode = DeliveryMode.Direct,
             Headers = new Dictionary<string, string?>(StringComparer.Ordinal) { ["bad\r\nheader"] = "value" },
         };
 
@@ -449,7 +441,7 @@ public sealed class BusTests : TestBase
         var publisher = _CreateBus(testTransport, options);
         var publishOptions = new PublishOptions
         {
-            DeliveryMode = DeliveryMode.TransportDirect,
+            DeliveryMode = DeliveryMode.Direct,
             Headers = new Dictionary<string, string?>(StringComparer.Ordinal) { ["x-custom"] = "bad\r\nvalue" },
         };
 
@@ -468,7 +460,7 @@ public sealed class BusTests : TestBase
         var options = new MessagingOptions();
 
         var publisher = _CreateBus(testTransport, options);
-        var publishOptions = new PublishOptions { DeliveryMode = DeliveryMode.TransportDirect, TenantId = "acme" };
+        var publishOptions = new PublishOptions { DeliveryMode = DeliveryMode.Direct, TenantId = "acme" };
 
         // when
         await publisher.PublishAsync(new TestMessage("test"), publishOptions, AbortToken);
@@ -488,7 +480,7 @@ public sealed class BusTests : TestBase
         var publisher = _CreateBus(testTransport, options);
         var publishOptions = new PublishOptions
         {
-            DeliveryMode = DeliveryMode.TransportDirect,
+            DeliveryMode = DeliveryMode.Direct,
             TenantId = "acme",
             Headers = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.TenantId] = "acme" },
         };
@@ -511,7 +503,7 @@ public sealed class BusTests : TestBase
         var publisher = _CreateBus(testTransport, options);
         var publishOptions = new PublishOptions
         {
-            DeliveryMode = DeliveryMode.TransportDirect,
+            DeliveryMode = DeliveryMode.Direct,
             Headers = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.TenantId] = "evil" },
         };
 
@@ -535,7 +527,7 @@ public sealed class BusTests : TestBase
         var publisher = _CreateBus(testTransport, options);
         var publishOptions = new PublishOptions
         {
-            DeliveryMode = DeliveryMode.TransportDirect,
+            DeliveryMode = DeliveryMode.Direct,
             TenantId = "acme",
             Headers = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.TenantId] = "acme-evil" },
         };
@@ -560,7 +552,7 @@ public sealed class BusTests : TestBase
         // when
         await publisher.PublishAsync(
             new TestMessage("test"),
-            new PublishOptions { DeliveryMode = DeliveryMode.TransportDirect },
+            new PublishOptions { DeliveryMode = DeliveryMode.Direct },
             cancellationToken: AbortToken
         );
 
@@ -579,7 +571,7 @@ public sealed class BusTests : TestBase
         var publisher = _CreateBus(testTransport, options);
         var publishOptions = new PublishOptions
         {
-            DeliveryMode = DeliveryMode.TransportDirect,
+            DeliveryMode = DeliveryMode.Direct,
             Headers = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.TenantId] = "   " },
         };
 
@@ -599,7 +591,7 @@ public sealed class BusTests : TestBase
         var options = new MessagingOptions();
 
         var publisher = _CreateBus(testTransport, options);
-        var publishOptions = new PublishOptions { DeliveryMode = DeliveryMode.TransportDirect, TenantId = "   " };
+        var publishOptions = new PublishOptions { DeliveryMode = DeliveryMode.Direct, TenantId = "   " };
 
         // when
         var act = () => publisher.PublishAsync(new TestMessage("test"), publishOptions, AbortToken);
@@ -617,11 +609,7 @@ public sealed class BusTests : TestBase
         var options = new MessagingOptions();
 
         var publisher = _CreateBus(testTransport, options);
-        var publishOptions = new PublishOptions
-        {
-            DeliveryMode = DeliveryMode.TransportDirect,
-            TenantId = "acme\r\ncorp",
-        };
+        var publishOptions = new PublishOptions { DeliveryMode = DeliveryMode.Direct, TenantId = "acme\r\ncorp" };
 
         // when
         var act = () => publisher.PublishAsync(new TestMessage("test"), publishOptions, AbortToken);
@@ -643,7 +631,7 @@ public sealed class BusTests : TestBase
         var publisher = _CreateBus(testTransport, options);
         var publishOptions = new PublishOptions
         {
-            DeliveryMode = DeliveryMode.TransportDirect,
+            DeliveryMode = DeliveryMode.Direct,
             TenantId = new string('t', MessageOptions.TenantIdMaxLength + 1),
         };
 
@@ -667,7 +655,7 @@ public sealed class BusTests : TestBase
 
         var publisher = _CreateBus(testTransport, options);
         var maxTenantId = new string('t', MessageOptions.TenantIdMaxLength);
-        var publishOptions = new PublishOptions { DeliveryMode = DeliveryMode.TransportDirect, TenantId = maxTenantId };
+        var publishOptions = new PublishOptions { DeliveryMode = DeliveryMode.Direct, TenantId = maxTenantId };
 
         // when
         await publisher.PublishAsync(new TestMessage("test"), publishOptions, AbortToken);
@@ -689,7 +677,7 @@ public sealed class BusTests : TestBase
         // when
         await publisher.PublishAsync(
             new TestMessage("test-value"),
-            new PublishOptions { DeliveryMode = DeliveryMode.TransportDirect },
+            new PublishOptions { DeliveryMode = DeliveryMode.Direct },
             cancellationToken: AbortToken
         );
 
@@ -716,7 +704,7 @@ public sealed class BusTests : TestBase
         var act = () =>
             publisher.PublishAsync(
                 new TestMessage("test"),
-                new PublishOptions { DeliveryMode = DeliveryMode.TransportDirect },
+                new PublishOptions { DeliveryMode = DeliveryMode.Direct },
                 cancellationToken: cts.Token
             );
 
@@ -737,7 +725,7 @@ public sealed class BusTests : TestBase
         // when
         await publisher.PublishAsync(
             new TestMessage("test"),
-            new PublishOptions { DeliveryMode = DeliveryMode.TransportDirect },
+            new PublishOptions { DeliveryMode = DeliveryMode.Direct },
             cancellationToken: AbortToken
         );
 
@@ -804,7 +792,7 @@ public sealed class BusTests : TestBase
         var act = () =>
             publisher.PublishAsync(
                 new TestMessage("test"),
-                new PublishOptions { DeliveryMode = DeliveryMode.TransportDirect },
+                new PublishOptions { DeliveryMode = DeliveryMode.Direct },
                 cancellationToken: AbortToken
             );
 

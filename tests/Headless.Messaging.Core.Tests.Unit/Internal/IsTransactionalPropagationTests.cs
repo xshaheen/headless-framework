@@ -57,7 +57,7 @@ public sealed class IsTransactionalPropagationTests : TestBase
         // when
         await publisher.PublishAsync(
             new TestMessage("hi"),
-            new PublishOptions { DeliveryMode = DeliveryMode.TransportDirect },
+            new PublishOptions { DeliveryMode = DeliveryMode.Direct },
             cancellationToken: AbortToken
         );
 

@@ -1156,7 +1156,7 @@ public sealed class DistributedLockTests : TestBase
         await _bus.Received(1)
             .PublishAsync(
                 Arg.Is<DistributedLockReleased>(m => m.Resource == resource && m.LeaseId == acquiredLock.LeaseId),
-                Arg.Is<PublishOptions?>(options => options!.DeliveryMode == DeliveryMode.TransportDirect),
+                Arg.Is<PublishOptions?>(options => options!.DeliveryMode == DeliveryMode.Direct),
                 Arg.Any<CancellationToken>()
             );
     }

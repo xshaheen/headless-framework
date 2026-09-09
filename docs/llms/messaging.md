@@ -212,7 +212,7 @@ services.AddHeadlessMessaging(setup =>
 - **Runtime handlers are first-class**: Use `IRuntimeSubscriber` for ephemeral broker-attached delegates. They share scoped DI, middleware, diagnostics, retry, and correlation semantics with class handlers.
 - **The publisher verb selects the lane**: Use `IBus.PublishAsync` for broadcast Bus delivery and `IQueue.EnqueueAsync` for point-to-point Queue delivery.
 - **Use typed routing affinity**: set `RoutingAffinityKey`; reserve `headless-routing-affinity-key`. Validate registered route support from frozen capabilities before startup effects, and typed/native conflicts before durable writes. Provider session/FIFO topology still requires broker evidence.
-- **Choose durability separately**: Set `DeliveryMode` on immutable publish/enqueue options: `Auto` captures under compatible coordination, sends directly with no coordination, and rejects an active incompatible boundary; `Durable` persists first; `TransportDirect` bypasses storage and coordination.
+- **Choose durability separately**: Set `DeliveryMode` on immutable publish/enqueue options: `Auto` captures under compatible coordination, sends directly with no coordination, and rejects an active incompatible boundary; `Durable` persists first; `Direct` bypasses storage and coordination.
 - **Provider behavior is capability-gated**: immutable transport, storage, and coordination descriptors declare lanes, delayed scheduling, and physical lane-topology support. Bootstrap freezes and validates them before readiness or resolving provider implementations; direct and outbox calls reject unsupported combinations before middleware, storage writes, client creation, or transport I/O. Raw transport DI registration is not capability evidence.
 - **Durable inbox guarantees fail closed**: durable consumers require `MessagingOptions.RequiredInboxCapability`, which defaults to `Transactional`. Selecting `DurableDedupeOnly` is an explicit opt-down when duplicate suppression may commit separately from application state; selecting `ProcessLocal` is reserved for process-local development storage. Bootstrap validates the declared storage tier before subscription creation or retry pickup.
 - **The lane discriminator remains wire-compatible**: public/runtime APIs use `MessageLane`, while storage columns use the `IntentType` name and the `headless-intent` header retains its stable literal and `0`/`1` values. Retry drainers dispatch Bus rows through `IBusTransport` and Queue rows through `IQueueTransport`. A persisted row whose value has no matching capability fails terminally; undefined values never default to Bus.
@@ -247,7 +247,7 @@ services.AddHeadlessMessaging(setup =>
 
 - **Transactional outbox (atomic publish) — on by default in the EF adapter packages**: install `Headless.Messaging.Storage.PostgreSql.EntityFramework` or `Headless.Messaging.Storage.SqlServer.EntityFramework`, then select `setup.UseEntityFramework<TContext>()`. A `producer.PublishAsync(...)` inside a coordinated transaction writes its outbox row in the SAME DB transaction and is discarded on rollback. The adapter auto-registers commit coordination, attaches the interceptor through `IDbContextOptionsConfiguration<TContext>`, and enables the startup self-probe. The raw ADO.NET packages remain EF-free and expose only connection/data-source setup. This is an atomicity guarantee for the write, not exactly-once delivery.
 - **Delivery semantics — at-least-once, consumer idempotency required**: the framework never promises exactly-once. The commit-edge drain and the relay sweep can both deliver the same message in a narrow window (the `LockedUntil` lease and the Succeeded/Failed terminal-row guard minimize but do not eliminate duplicates), and a crash between broker accept and the success-mark write redelivers. Consumers must be idempotent — dedupe by business key or message id.
-- **Transactional inbox scope**: the transactional tier atomically commits the current fenced inbox outcome, compatible enlisted application state, and captured durable Bus/Queue work. Each Messaging attempt owns one DI scope shared by the EF runner, consume middleware, and handler, with the configured scoped `TContext` alive through commit or rollback. The runner saves tracked changes after the handler returns; explicit handler saves roll back if inbox completion rejects the attempt fence. A subsequent Messaging attempt gets a fresh scope. This does not make handler entry, `TransportDirect`, or external/non-enlisted effects exactly once.
+- **Transactional inbox scope**: the transactional tier atomically commits the current fenced inbox outcome, compatible enlisted application state, and captured durable Bus/Queue work. Each Messaging attempt owns one DI scope shared by the EF runner, consume middleware, and handler, with the configured scoped `TContext` alive through commit or rollback. The runner saves tracked changes after the handler returns; explicit handler saves roll back if inbox completion rejects the attempt fence. A subsequent Messaging attempt gets a fresh scope. This does not make handler entry, `Direct`, or external/non-enlisted effects exactly once.
 - **Transactional inbox retries**: EF execution strategies may retry transaction setup before handler entry. Every failure after entry, including save, commit, rollback, and scope/transaction disposal, returns to Messaging's fenced retry path rather than replaying the handler inside the reserved attempt. The adapter still probes ambiguous commit outcomes to recognize a durable commit.
 - **Message lane**: Bus is broadcast/pub-sub and Queue is point-to-point. Registration, monitoring, dashboard JSON, testing, and runtime APIs use `MessageLane`; only intentional compatibility boundaries retain the `IntentType` database column, `headless-intent` header, and stable `0`/`1` values. Received-message identity includes the lane so the two paths do not collapse into one storage row.
 - **Envelope**: All transport messages carry framework headers such as message id, message-contract version, root correlation id, optional immediate causation id, message name, type, sent time, intent, and optional tenant id.
@@ -360,11 +360,11 @@ Conformance tests exercise the provider behavior; a deployment must still config
 
 Use matching versions of the `Headless.Messaging.*` packages. The package-family probe verifies the complete current package graph and its public API:
 
-- Publish through `IBus.PublishAsync(...)` and enqueue through `IQueue.EnqueueAsync(...)`. Both default to `DeliveryMode.Durable`, including when options are omitted or null; `Auto` and `TransportDirect` are explicit overrides.
+- Publish through `IBus.PublishAsync(...)` and enqueue through `IQueue.EnqueueAsync(...)`. Both inherit `MessagingOptions.DefaultDeliveryMode` (Auto by default) when the per-call mode is unset, including omitted, null, metadata-only, and fluent options. Explicit Auto, Durable, or Direct overrides the host setting.
 - Omit an unused cancellation token, or pass `default` or `cancellationToken: default` to select the existing token overload. Supplying `default` followed by a cancellation token selects the options overload. Use `options:` and `configure:` to make record and callback intent explicit.
 - Register consumers through `setup.Bus` or `setup.Queue`; public APIs use `MessageLane`.
 - Dashboard and monitoring JSON expose `lane`, `requestedDeliveryMode`, and `resolvedDeliveryMode`. Storage uses the `IntentType` column and the `headless-intent` header with `Bus = 0` and `Queue = 1`.
-- `Delay` is a one-shot durable scheduling request: `Auto` resolves to durable capture, `Durable` remains durable, and `TransportDirect` is rejected before side effects. The delay controls initial outbox eligibility and is removed from transport dispatch so broker recovery does not schedule it again.
+- `Delay` is a one-shot durable scheduling request: `Auto` resolves to durable capture, `Durable` remains durable, and `Direct` is rejected before side effects. The delay controls initial outbox eligibility and is removed from transport dispatch so broker recovery does not schedule it again.
 - Redis uses Streams for both lanes. AWS Bus subscriber groups, RabbitMQ, NATS JetStream, and Pulsar use the physical topologies above.
 
 ### Registration Overloads
@@ -405,7 +405,7 @@ Defines shared messaging contracts and envelope types used by all bus, queue, co
 - `IConsume<TMessage>` consumer contract.
 - `MessageOptions` base options, including headers, correlation, delay, message id, message type, and tenant id.
 - `MessageOptions.SuppressAmbientBusinessContext` preserves captured business metadata by disabling ambient correlation, causation, and tenant defaults. It defaults to `false`; explicit options, registered contract/selector resolution, and diagnostic trace propagation remain unchanged. Required tenancy still rejects a null explicit tenant when suppression is enabled.
-- `DeliveryMode.Auto` captures under compatible coordination, sends directly with no coordination, and rejects an active incompatible boundary. `Durable` is the default, including when options are omitted or null, and always persists first. `TransportDirect` bypasses storage and any ambient coordination boundary and cannot be combined with `Delay`.
+- `DeliveryMode.Auto` captures under compatible coordination, sends directly with no coordination, and rejects an active incompatible boundary. The host default is `Auto`; configure `setup.Options.DefaultDeliveryMode` to change it. `Durable` always persists first. `Direct` bypasses storage and any ambient coordination boundary and cannot be combined with `Delay`.
 - `MessageHeader`, `Headers`, `TransportMessage`, and broker address primitives.
 - Common transport pause/resume and retry/backoff abstractions.
 
@@ -453,7 +453,7 @@ Gives application code a compile-time bus surface for publish/subscribe delivery
 
 ### Key Features
 
-- `IBus` is the only bus publisher; `PublishOptions.DeliveryMode` defaults to Durable; Auto and TransportDirect are explicit overrides.
+- `IBus` is the only bus publisher; an unset `PublishOptions.DeliveryMode` inherits `MessagingOptions.DefaultDeliveryMode`, which defaults to Auto. Explicit modes override that setting.
 - Durable delivery persists messages first, then drains them through the configured bus transport.
 - `PublishOptions.Delay` schedules durable bus delivery.
 - `PublishOptionsBuilder` and the `BusExtensions.PublishAsync` callback author canonical options snapshots without a Core dependency.
@@ -488,7 +488,7 @@ public sealed class OrderEvents(IBus bus)
 public sealed record OrderPlaced(Guid OrderId);
 ```
 
-The short overload uses the registered message contract and captures durably by default, including outside a transaction. Pass `PublishOptions` before the cancellation token for metadata or delivery overrides. Durable acceptance waits for storage, not consumer completion; restart survival requires persistent storage. Inside a compatible coordination boundary the capture commits with application state, while an incompatible boundary is rejected. Explicit `Auto` captures in a compatible boundary and sends directly with no boundary. `TransportDirect` bypasses storage and coordination and cannot be combined with `Delay`.
+The short overload uses the registered message contract and inherits the host delivery mode, which defaults to `Auto`. Auto sends directly outside coordination and captures durably inside a compatible transaction. Pass `PublishOptions` before the cancellation token for metadata or delivery overrides. Durable acceptance waits for storage, not consumer completion; restart survival requires persistent storage. Inside a compatible coordination boundary the capture commits with application state, while an incompatible boundary is rejected. Explicit `Auto` captures in a compatible boundary and sends directly with no boundary. `Direct` bypasses storage and coordination and cannot be combined with `Delay`.
 
 Omit an unused cancellation token, or pass `default` or `cancellationToken: default` to select the existing token overload. Supplying `default` followed by a cancellation token selects the options overload. Use `options:` and `configure:` to make record and callback intent explicit.
 
@@ -496,7 +496,7 @@ Import `Headless.Messaging` for `PublishOptionsBuilder` and the callback extensi
 
 Each callback runs synchronously exactly once on a fresh builder; async-void callbacks are unsupported. A null receiver or `configure` throws before user code, and a throwing callback submits nothing. The adapter forwards the original token and returns the original task. `options: null` and positional `null` keep the existing options path; `configure: null!` selects the callback guard.
 
-Builders support sequential reuse, not concurrent mutation. Header input is copied immediately and again on each `Build()`: ordinal keys, last-write-wins merges, distinct casing, and null values are preserved. No header call leaves `Headers` null; an empty supplied collection creates an empty dictionary. Each result owns mutable headers independently. Nullable metadata and delay setters accept null to clear an explicit value. `Build()` retains `DeliveryMode.Durable` and does not validate or accept delivery; the publisher still validates headers, tenancy, and positive delays (zero is invalid).
+Builders support sequential reuse, not concurrent mutation. Header input is copied immediately and again on each `Build()`: ordinal keys, last-write-wins merges, distinct casing, and null values are preserved. No header call leaves `Headers` null; an empty supplied collection creates an empty dictionary. Each result owns mutable headers independently. Nullable metadata and delay setters accept null to clear an explicit value. `Build()` leaves `DeliveryMode` null to inherit the host default and does not validate or accept delivery; the publisher still validates headers, tenancy, and positive delays (zero is invalid).
 
 ### Configuration
 
@@ -518,7 +518,7 @@ Gives application code a compile-time queue surface for work-queue delivery wher
 
 ### Key Features
 
-- `IQueue` is the only queue publisher; `QueueOptions.DeliveryMode` defaults to Durable; Auto and TransportDirect are explicit overrides.
+- `IQueue` is the only queue publisher; an unset `QueueOptions.DeliveryMode` inherits `MessagingOptions.DefaultDeliveryMode`, which defaults to Auto. Explicit modes override that setting.
 - Durable delivery persists messages first, then drains them through the configured queue transport.
 - `QueueOptions.Delay` schedules durable queue delivery.
 - `QueueOptionsBuilder` and the `QueueExtensions.EnqueueAsync` callback author canonical options snapshots without a Core dependency.
@@ -553,7 +553,7 @@ public sealed class ImportJobs(IQueue queue)
 public sealed record ImportRequested(Guid ImportId);
 ```
 
-The short overload uses the registered message contract and captures durably by default, including outside a transaction. Pass `QueueOptions` before the cancellation token for metadata or delivery overrides. Durable acceptance waits for storage, not consumer completion; restart survival requires persistent storage. Inside a compatible coordination boundary the capture commits with application state, while an incompatible boundary is rejected. Explicit `Auto` captures in a compatible boundary and sends directly with no boundary. `TransportDirect` bypasses storage and coordination and cannot be combined with `Delay`.
+The short overload uses the registered message contract and inherits the host delivery mode, which defaults to `Auto`. Auto sends directly outside coordination and captures durably inside a compatible transaction. Pass `QueueOptions` before the cancellation token for metadata or delivery overrides. Durable acceptance waits for storage, not consumer completion; restart survival requires persistent storage. Inside a compatible coordination boundary the capture commits with application state, while an incompatible boundary is rejected. Explicit `Auto` captures in a compatible boundary and sends directly with no boundary. `Direct` bypasses storage and coordination and cannot be combined with `Delay`.
 
 Omit an unused cancellation token, or pass `default` or `cancellationToken: default` to select the existing token overload. Supplying `default` followed by a cancellation token selects the options overload. Use `options:` and `configure:` to make record and callback intent explicit.
 
@@ -561,7 +561,7 @@ Import `Headless.Messaging` for `QueueOptionsBuilder` and the callback extension
 
 Each callback runs synchronously exactly once on a fresh builder; async-void callbacks are unsupported. A null receiver or `configure` throws before user code, and a throwing callback submits nothing. The adapter forwards the original token and returns the original task. `options: null` and positional `null` keep the existing options path; `configure: null!` selects the callback guard.
 
-Builders support sequential reuse, not concurrent mutation. Header input is copied immediately and again on each `Build()`: ordinal keys, last-write-wins merges, distinct casing, and null values are preserved. No header call leaves `Headers` null; an empty supplied collection creates an empty dictionary. Each result owns mutable headers independently. Nullable metadata and delay setters accept null to clear an explicit value. `Build()` retains `DeliveryMode.Durable` and does not validate or accept delivery; the publisher still validates headers, tenancy, and positive delays (zero is invalid).
+Builders support sequential reuse, not concurrent mutation. Header input is copied immediately and again on each `Build()`: ordinal keys, last-write-wins merges, distinct casing, and null values are preserved. No header call leaves `Headers` null; an empty supplied collection creates an empty dictionary. Each result owns mutable headers independently. Nullable metadata and delay setters accept null to clear an explicit value. `Build()` leaves `DeliveryMode` null to inherit the host default and does not validate or accept delivery; the publisher still validates headers, tenancy, and positive delays (zero is invalid).
 
 ### Configuration
 
@@ -598,7 +598,7 @@ Wires messaging into dependency injection: registration, publishing, dispatch, m
 - Circuit breaker monitor/control APIs.
 - Host-cancellable consumer factory creation, metadata provisioning, and subscription.
 - Monitoring pagination uses zero-based `MessageQuery.CurrentPage` values, returns that value as `IndexPage.Index`, and normalizes negative values to zero.
-- TransportDirect publishing bypasses storage and any ambient coordination boundary, while delayed delivery is always durable.
+- Direct publishing bypasses storage and any ambient coordination boundary, while delayed delivery is always durable.
 
 ### Design Notes
 
@@ -649,6 +649,7 @@ services.AddHeadlessMessaging(setup =>
 `RequireRoutingAffinity()` on a Bus or Queue message registration requires a locally supported native mapping at startup; it does not require every publication to supply a key. Set `PublishOptions.RoutingAffinityKey` or `QueueOptions.RoutingAffinityKey` per publication. The frozen capability model snapshots registered destinations from inert options before clients or processors start. Keyed unknown destination overrides, invalid keys, and typed/raw conflicts fail before outbox insertion or transport effects. `MediumMessage.RoutingAffinityKey` reads the authoritative serialized envelope; InMemory, PostgreSQL, and SQL Server preserve it without a new storage column.
 
 - `MessagingOptions.DefaultGroupName`, `GroupNamePrefix`, `MessageNamePrefix`, and `Version` control naming and isolation. `Version` is validated non-empty and at most 20 characters — the SQL storage providers persist it as a literal into a `VARCHAR(20)`/`nvarchar(20)` column, so an over-long value is rejected at startup instead of failing every outbox insert.
+- `MessagingOptions.DefaultDeliveryMode` defaults to `DeliveryMode.Auto` for both lanes. Null per-call modes inherit it; explicit modes override it. Metadata-only records and fluent callbacks inherit the same setting. Invalid global values fail options validation.
 - `MessagingOptions.RequiredInboxCapability` defaults to `MessagingInboxCapabilityTier.Transactional`. Set `DurableDedupeOnly` only when the application accepts that inbox outcome and business state cannot commit atomically, or `ProcessLocal` for the in-process development provider. The configured storage must declare the selected tier before durable consumers can start.
 - `MessagingInstrumentationOptions.IncludeTenantIdInMetricTags` defaults to `false`. Enable it only when the metrics backend and tenant population have an explicit cardinality budget; traces retain their separate tenant-tag policy.
 - `ConsumerThreadCount`, `SubscriberParallelExecuteThreadCount`, and `SubscriberParallelExecuteBufferFactor` accept 1 through 1,024; the subscriber thread-count × buffer-factor product must not exceed 100,000.

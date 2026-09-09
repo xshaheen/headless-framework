@@ -47,7 +47,7 @@ public static class TransportRoutingAffinityConformance
             }
         });
         await using var provider = services.BuildServiceProvider();
-        foreach (var mode in new[] { DeliveryMode.TransportDirect, DeliveryMode.Durable })
+        foreach (var mode in new[] { DeliveryMode.Direct, DeliveryMode.Durable })
         {
             var messageId = Guid.NewGuid().ToString("N");
             if (lane == MessageLane.Queue)

@@ -13,7 +13,7 @@ public sealed class QueueOptionsBuilderTests : TestBase
         var builder = new QueueOptionsBuilder();
 
         builder.Build().Should().Be(new QueueOptions());
-        builder.Build().DeliveryMode.Should().Be(DeliveryMode.Durable);
+        builder.Build().DeliveryMode.Should().BeNull();
         builder.Build().Headers.Should().BeNull();
         builder.WithHeaders([]).Build().Headers.Should().NotBeNull().And.BeEmpty();
     }

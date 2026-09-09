@@ -205,8 +205,8 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
         _EnsureInitialized();
         var storage = _storage!;
         var explicitlyDirect = CreateMessage();
-        explicitlyDirect.Headers[Headers.RequestedDeliveryMode] = nameof(DeliveryMode.TransportDirect);
-        explicitlyDirect.Headers[Headers.ResolvedDeliveryMode] = nameof(DeliveryMode.TransportDirect);
+        explicitlyDirect.Headers[Headers.RequestedDeliveryMode] = nameof(DeliveryMode.Direct);
+        explicitlyDirect.Headers[Headers.ResolvedDeliveryMode] = nameof(DeliveryMode.Direct);
 
         var published = await storage.StoreMessageAsync(
             "delivery-metadata-published",
@@ -241,8 +241,8 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
         );
 
         var publishedView = publishedPage.Items.Single(x => x.StorageId == published.StorageId);
-        publishedView.RequestedDeliveryMode.Should().Be(DeliveryMode.TransportDirect);
-        publishedView.ResolvedDeliveryMode.Should().Be(DeliveryMode.TransportDirect);
+        publishedView.RequestedDeliveryMode.Should().Be(DeliveryMode.Direct);
+        publishedView.ResolvedDeliveryMode.Should().Be(DeliveryMode.Direct);
 
         var receivedView = receivedPage.Items.Single(x => x.StorageId == received.StorageId);
         receivedView.RequestedDeliveryMode.Should().BeNull();

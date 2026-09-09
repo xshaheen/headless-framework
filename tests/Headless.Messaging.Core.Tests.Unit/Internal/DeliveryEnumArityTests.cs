@@ -31,8 +31,8 @@ public sealed class DeliveryEnumArityTests : TestBase
         Enum.GetValues<DeliveryMode>()
             .Should()
             .Equal(
-                [DeliveryMode.Auto, DeliveryMode.Durable, DeliveryMode.TransportDirect],
-                "DeliveryDecisionResolver.Resolve rejects anything outside `requestedMode is (Auto or Durable or TransportDirect)`, and its resolvedMode/path switches would hit UnreachableException for a new member"
+                [DeliveryMode.Auto, DeliveryMode.Durable, DeliveryMode.Direct],
+                "DeliveryDecisionResolver.Resolve rejects anything outside `requestedMode is (Auto or Durable or Direct)`, and its resolvedMode/path switches would hit UnreachableException for a new member"
             );
     }
 

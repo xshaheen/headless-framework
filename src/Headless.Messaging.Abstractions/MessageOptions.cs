@@ -37,13 +37,13 @@ public abstract record MessageOptions
     /// </summary>
     public const int TenantIdMaxLength = 200;
 
-    /// <summary>Gets the requested delivery behavior. The default is <see cref="DeliveryMode.Durable"/>.</summary>
-    public DeliveryMode DeliveryMode { get; init; } = DeliveryMode.Durable;
+    /// <summary>Gets the per-call delivery override. Null inherits the host default, which is Auto.</summary>
+    public DeliveryMode? DeliveryMode { get; init; }
 
     /// <summary>Gets the relative delay applied before the durably captured message is dispatched.</summary>
     /// <remarks>
     /// A delay requires durable delivery. With <see cref="DeliveryMode.Auto"/> it selects durable capture;
-    /// with <see cref="DeliveryMode.TransportDirect"/> the operation is rejected.
+    /// with <see cref="DeliveryMode.Direct"/> the operation is rejected.
     /// </remarks>
     public TimeSpan? Delay { get; init; }
 

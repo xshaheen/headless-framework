@@ -107,8 +107,8 @@ public sealed class ReceivedMessageEndpointTests : TestBase
                     Name = "orders.received",
                     Group = "workers",
                     Lane = MessageLane.Queue,
-                    RequestedDeliveryMode = DeliveryMode.TransportDirect,
-                    ResolvedDeliveryMode = DeliveryMode.TransportDirect,
+                    RequestedDeliveryMode = DeliveryMode.Direct,
+                    ResolvedDeliveryMode = DeliveryMode.Direct,
                     Content = "{\"received\":\"data\"}",
                     Added = new DateTimeOffset(2026, 03, 24, 11, 00, 00, TimeSpan.Zero),
                     Retries = 1,
@@ -153,8 +153,8 @@ public sealed class ReceivedMessageEndpointTests : TestBase
         item.GetProperty("messageId").GetString().Should().Be("logical-rec-456");
         item.GetProperty("group").GetString().Should().Be("workers");
         item.GetProperty("lane").GetString().Should().Be(nameof(MessageLane.Queue));
-        item.GetProperty("requestedDeliveryMode").GetString().Should().Be(nameof(DeliveryMode.TransportDirect));
-        item.GetProperty("resolvedDeliveryMode").GetString().Should().Be(nameof(DeliveryMode.TransportDirect));
+        item.GetProperty("requestedDeliveryMode").GetString().Should().Be(nameof(DeliveryMode.Direct));
+        item.GetProperty("resolvedDeliveryMode").GetString().Should().Be(nameof(DeliveryMode.Direct));
 
         await _monitoringApi
             .Received(1)

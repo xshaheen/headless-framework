@@ -275,7 +275,7 @@ public sealed class MessagingLaneSplitTests : TestBase
         var act = () =>
             bus.PublishAsync(
                 new TestMessage(),
-                new PublishOptions { DeliveryMode = DeliveryMode.TransportDirect },
+                new PublishOptions { DeliveryMode = DeliveryMode.Direct },
                 cancellationToken: AbortToken
             );
 
@@ -306,7 +306,7 @@ public sealed class MessagingLaneSplitTests : TestBase
         // when
         await bus.PublishAsync(
             new TestMessage(),
-            new PublishOptions { DeliveryMode = DeliveryMode.TransportDirect },
+            new PublishOptions { DeliveryMode = DeliveryMode.Direct },
             cancellationToken: AbortToken
         );
 
@@ -341,7 +341,7 @@ public sealed class MessagingLaneSplitTests : TestBase
         var act = () =>
             queue.EnqueueAsync(
                 new TestMessage(),
-                new QueueOptions { DeliveryMode = DeliveryMode.TransportDirect },
+                new QueueOptions { DeliveryMode = DeliveryMode.Direct },
                 cancellationToken: AbortToken
             );
 
@@ -372,7 +372,7 @@ public sealed class MessagingLaneSplitTests : TestBase
         // when
         await queue.EnqueueAsync(
             new TestMessage(),
-            new QueueOptions { DeliveryMode = DeliveryMode.TransportDirect },
+            new QueueOptions { DeliveryMode = DeliveryMode.Direct },
             cancellationToken: AbortToken
         );
 

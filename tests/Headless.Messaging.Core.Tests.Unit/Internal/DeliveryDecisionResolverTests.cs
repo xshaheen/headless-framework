@@ -15,7 +15,7 @@ public sealed class DeliveryDecisionResolverTests : TestBase
     public static TheoryData<DeliveryMode, bool, TimeSpan?, DeliveryMode, int, bool> ValidDecisions =>
         new()
         {
-            { DeliveryMode.Auto, false, null, DeliveryMode.TransportDirect, (int)DeliveryPath.TransportDirect, false },
+            { DeliveryMode.Auto, false, null, DeliveryMode.Direct, (int)DeliveryPath.Direct, false },
             { DeliveryMode.Auto, true, null, DeliveryMode.Durable, (int)DeliveryPath.DurableCoordinated, false },
             {
                 DeliveryMode.Auto,
@@ -35,22 +35,8 @@ public sealed class DeliveryDecisionResolverTests : TestBase
             },
             { DeliveryMode.Durable, false, null, DeliveryMode.Durable, (int)DeliveryPath.DurableStandalone, false },
             { DeliveryMode.Durable, true, null, DeliveryMode.Durable, (int)DeliveryPath.DurableCoordinated, false },
-            {
-                DeliveryMode.TransportDirect,
-                false,
-                null,
-                DeliveryMode.TransportDirect,
-                (int)DeliveryPath.TransportDirect,
-                false
-            },
-            {
-                DeliveryMode.TransportDirect,
-                true,
-                null,
-                DeliveryMode.TransportDirect,
-                (int)DeliveryPath.TransportDirect,
-                false
-            },
+            { DeliveryMode.Direct, false, null, DeliveryMode.Direct, (int)DeliveryPath.Direct, false },
+            { DeliveryMode.Direct, true, null, DeliveryMode.Direct, (int)DeliveryPath.Direct, false },
         };
 
     [Theory]
@@ -123,13 +109,13 @@ public sealed class DeliveryDecisionResolverTests : TestBase
         var act = () =>
             DeliveryDecisionResolver.Resolve(
                 MessageLane.Bus,
-                DeliveryMode.TransportDirect,
+                DeliveryMode.Direct,
                 TimeSpan.FromSeconds(1),
                 DeliveryCoordination.None,
                 _Now
             );
 
-        act.Should().Throw<InvalidOperationException>().WithMessage("*TransportDirect*delay*");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*Direct*delay*");
     }
 
     [Theory]
@@ -148,16 +134,10 @@ public sealed class DeliveryDecisionResolverTests : TestBase
     {
         var coordination = DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.StorageProvider);
 
-        var decision = DeliveryDecisionResolver.Resolve(
-            MessageLane.Bus,
-            DeliveryMode.TransportDirect,
-            null,
-            coordination,
-            _Now
-        );
+        var decision = DeliveryDecisionResolver.Resolve(MessageLane.Bus, DeliveryMode.Direct, null, coordination, _Now);
 
-        decision.ResolvedMode.Should().Be(DeliveryMode.TransportDirect);
-        decision.Path.Should().Be(DeliveryPath.TransportDirect);
+        decision.ResolvedMode.Should().Be(DeliveryMode.Direct);
+        decision.Path.Should().Be(DeliveryPath.Direct);
     }
 
     private static DeliveryCoordination _CompatibleCoordination()

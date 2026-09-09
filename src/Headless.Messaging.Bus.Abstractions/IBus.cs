@@ -12,7 +12,7 @@ namespace Headless.Messaging;
 /// durable, or transport-direct delivery without changing the Bus lane.
 /// </para>
 /// <para>
-/// Delayed delivery is durable and cannot be combined with <c>TransportDirect</c> delivery.
+/// Delayed delivery is durable and cannot be combined with <c>Direct</c> delivery.
 /// </para>
 /// <para>
 /// At least one <see cref="IBusTransport"/> must be registered in DI for direct bus publishing.
@@ -47,11 +47,11 @@ public interface IBus
     /// </exception>
     Task PublishAsync<T>(T? contentObj, PublishOptions? options, CancellationToken cancellationToken = default);
 
-    /// <summary>Captures a message durably using the configured contract and default metadata.</summary>
+    /// <summary>Publishes a message using the configured contract and host delivery mode, which defaults to Auto.</summary>
     /// <typeparam name="T">The message type.</typeparam>
     /// <param name="contentObj">The message payload. Can be <see langword="null"/>.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
-    /// <returns>A task representing durable acceptance, not consumer completion.</returns>
-    /// <exception cref="InvalidOperationException">Thrown when durable storage is unavailable or an active commit boundary is incompatible.</exception>
+    /// <returns>A task representing transport acceptance or durable capture, not consumer completion.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when the selected delivery mode requires unavailable storage or an active commit boundary is incompatible.</exception>
     Task PublishAsync<T>(T? contentObj, CancellationToken cancellationToken = default);
 }

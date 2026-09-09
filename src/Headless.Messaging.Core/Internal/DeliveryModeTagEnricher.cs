@@ -26,7 +26,7 @@ internal sealed class DeliveryModeTagEnricher : IActivityTagEnricher
         {
             DeliveryMode.Auto => "auto",
             DeliveryMode.Durable => "durable",
-            DeliveryMode.TransportDirect => "transport_direct",
+            DeliveryMode.Direct => "transport_direct",
             _ => null,
         };
 }

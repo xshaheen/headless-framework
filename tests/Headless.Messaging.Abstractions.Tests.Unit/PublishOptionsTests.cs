@@ -15,7 +15,7 @@ public sealed class PublishOptionsTests : TestBase
             .Should()
             .Be(0);
         ((int)DeliveryMode.Durable).Should().Be(1);
-        ((int)DeliveryMode.TransportDirect).Should().Be(2);
+        ((int)DeliveryMode.Direct).Should().Be(2);
     }
 
     [Fact]
@@ -25,7 +25,7 @@ public sealed class PublishOptionsTests : TestBase
         var options = new PublishOptions();
 
         // then
-        options.DeliveryMode.Should().Be(DeliveryMode.Durable);
+        options.DeliveryMode.Should().BeNull();
     }
 
     [Fact]

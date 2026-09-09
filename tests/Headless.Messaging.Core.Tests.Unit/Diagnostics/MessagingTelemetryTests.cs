@@ -50,7 +50,7 @@ public sealed class MessagingTelemetryTests : TestBase
             {
                 [Headers.TenantId] = "tenant-7",
                 [Headers.RequestedDeliveryMode] = nameof(DeliveryMode.Auto),
-                [Headers.ResolvedDeliveryMode] = nameof(DeliveryMode.TransportDirect),
+                [Headers.ResolvedDeliveryMode] = nameof(DeliveryMode.Direct),
             }
         );
         var publish = telemetry.PublishStart(publishMessage, MessageLane.Bus, _Broker, 200);
@@ -119,7 +119,7 @@ public sealed class MessagingTelemetryTests : TestBase
             new Dictionary<string, string?>(StringComparer.Ordinal)
             {
                 [Headers.RequestedDeliveryMode] = nameof(DeliveryMode.Auto),
-                [Headers.ResolvedDeliveryMode] = nameof(DeliveryMode.TransportDirect),
+                [Headers.ResolvedDeliveryMode] = nameof(DeliveryMode.Direct),
             }
         );
         var publish = telemetry.PublishStart(publishMessage, MessageLane.Bus, _Broker, 200);

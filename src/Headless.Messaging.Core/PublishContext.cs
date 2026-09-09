@@ -111,7 +111,7 @@ public abstract class PublishContext
     public void WithOptions(MessageOptions? options)
     {
         ThrowIfCompleted();
-        if (DeliveryFrozen && (options?.DeliveryMode ?? DeliveryMode.Durable) != RequestedDeliveryMode)
+        if (DeliveryFrozen && (options?.DeliveryMode ?? RequestedDeliveryMode) != RequestedDeliveryMode)
         {
             throw new InvalidOperationException("Publish middleware cannot change the resolved delivery mode.");
         }
@@ -196,20 +196,20 @@ public sealed class PublishContext<TMessage> : PublishContext, ICompletablePubli
         bool isTransactional
     )
     {
-        var requestedMode = options?.DeliveryMode ?? DeliveryMode.Durable;
+        var requestedMode = options?.DeliveryMode ?? DeliveryMode.Auto;
         var resolvedMode = requestedMode switch
         {
             DeliveryMode.Durable => DeliveryMode.Durable,
-            DeliveryMode.TransportDirect => DeliveryMode.TransportDirect,
+            DeliveryMode.Direct => DeliveryMode.Direct,
             DeliveryMode.Auto when isTransactional || delayTime is not null => DeliveryMode.Durable,
-            DeliveryMode.Auto => DeliveryMode.TransportDirect,
+            DeliveryMode.Auto => DeliveryMode.Direct,
             _ => requestedMode,
         };
         var path = resolvedMode switch
         {
             DeliveryMode.Durable when isTransactional => DeliveryPath.DurableCoordinated,
             DeliveryMode.Durable => DeliveryPath.DurableStandalone,
-            _ => DeliveryPath.TransportDirect,
+            _ => DeliveryPath.Direct,
         };
 
         return new DeliveryDecision(

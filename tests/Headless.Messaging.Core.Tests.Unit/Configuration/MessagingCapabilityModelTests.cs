@@ -50,7 +50,7 @@ public sealed class MessagingCapabilityModelTests : TestBase
 
     [Theory]
     [InlineData(DeliveryMode.Durable)]
-    [InlineData(DeliveryMode.TransportDirect)]
+    [InlineData(DeliveryMode.Direct)]
     public async Task should_reject_unknown_keyed_override_before_storage_or_transport_resolution(DeliveryMode mode)
     {
         var sideEffects = 0;
@@ -447,7 +447,7 @@ public sealed class MessagingCapabilityModelTests : TestBase
         var act = () =>
             bus.PublishAsync(
                 new SharedContract(),
-                new PublishOptions { DeliveryMode = DeliveryMode.TransportDirect },
+                new PublishOptions { DeliveryMode = DeliveryMode.Direct },
                 cancellationToken: AbortToken
             );
 
@@ -478,7 +478,7 @@ public sealed class MessagingCapabilityModelTests : TestBase
         var act = () =>
             queue.EnqueueAsync(
                 new SharedContract(),
-                new QueueOptions { DeliveryMode = DeliveryMode.TransportDirect },
+                new QueueOptions { DeliveryMode = DeliveryMode.Direct },
                 cancellationToken: AbortToken
             );
 

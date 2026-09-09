@@ -160,6 +160,19 @@ Each transactional consume attempt owns one DI scope shared by the EF transactio
 
 ## Defaults And Telemetry
 
+Configure the host default for both Bus and Queue:
+
+```csharp
+services.AddHeadlessMessaging(setup =>
+{
+    setup.UseRabbitMq(configuration);
+    setup.UseEntityFramework<AppDbContext>();
+    setup.Options.DefaultDeliveryMode = DeliveryMode.Durable;
+});
+```
+
+The framework default is `DeliveryMode.Auto`. A null per-call `DeliveryMode` inherits this setting; an explicit `Auto`, `Durable`, or `Direct` overrides it. Metadata-only records and fluent callbacks also inherit. Delivery is resolved before middleware and stays fixed for that call. Invalid global enum values fail options validation. Delays require durable capture and reject Direct. Domain integration-event capture and callback responses explicitly select Durable and keep that guarantee regardless of the host default.
+
 Terminal inbox generations are retained for 30 days by default. Use `InboxRetention(...)` on a durable consumer for a deliberate override. Expiry or authorized purge removes that deduplication identity; force reprocessing instead creates a linked child generation with replay provenance.
 
 Inbox metrics use registered consumer identity and bounded lane, outcome, tier, and provider dimensions. They exclude message/replay IDs, payloads, and headers. Tenant identity is excluded unless `setup.Instrumentation.IncludeTenantIdInMetricTags = true` explicitly accepts the cardinality cost.
@@ -230,8 +243,8 @@ No affinity storage migration is required: the authoritative key lives in the se
 Use bus publishers for broadcast publish/subscribe delivery:
 
 - `IBus` always selects the Bus lane.
-- `PublishOptions.DeliveryMode` defaults to Durable; Auto and TransportDirect are explicit overrides. TransportDirect bypasses storage and any ambient coordination boundary.
-- `PublishOptions.Delay` schedules durable delivery; TransportDirect with a delay is rejected.
+- An unset `PublishOptions.DeliveryMode` inherits `MessagingOptions.DefaultDeliveryMode`, which defaults to Auto. Explicit modes override that setting. Direct bypasses storage and any ambient coordination boundary.
+- `PublishOptions.Delay` schedules durable delivery; Direct with a delay is rejected.
 - Stored rows and consume contexts carry `MessageLane.Bus`.
 
 ### Queue Publishers
@@ -239,8 +252,8 @@ Use bus publishers for broadcast publish/subscribe delivery:
 Use queue publishers for point-to-point competing-worker delivery:
 
 - `IQueue` always selects the Queue lane.
-- `QueueOptions.DeliveryMode` defaults to Durable; Auto and TransportDirect are explicit overrides. TransportDirect bypasses storage and any ambient coordination boundary.
-- `QueueOptions.Delay` schedules durable delivery; TransportDirect with a delay is rejected.
+- An unset `QueueOptions.DeliveryMode` inherits `MessagingOptions.DefaultDeliveryMode`, which defaults to Auto. Explicit modes override that setting. Direct bypasses storage and any ambient coordination boundary.
+- `QueueOptions.Delay` schedules durable delivery; Direct with a delay is rejected.
 - Stored rows and consume contexts carry `MessageLane.Queue`.
 
 ### Publisher Contracts
@@ -257,7 +270,7 @@ public sealed class MetricsPublisher(IBus bus)
 }
 ```
 
-`IBus.PublishAsync(message, ct)` and `IQueue.EnqueueAsync(message, ct)` capture durably by default. Their explicit-options overloads accept `PublishOptions` and `QueueOptions`, respectively, before the cancellation token. Durable acceptance waits for storage, not consumer completion. Persistent storage is required for restart survival; the process-local provider remains process-local. A compatible coordination boundary commits the capture with application state; outside one, the capture persists independently. Delayed delivery is expressed with `PublishOptions.Delay` or `QueueOptions.Delay` and is always durable.
+`IBus.PublishAsync(message, ct)` and `IQueue.EnqueueAsync(message, ct)` inherit `MessagingOptions.DefaultDeliveryMode`, which defaults to Auto. Auto sends directly without coordination and captures durably within a compatible boundary. Their explicit-options overloads accept `PublishOptions` and `QueueOptions`, respectively, before the cancellation token. Durable acceptance waits for storage, not consumer completion. Persistent storage is required for restart survival; the process-local provider remains process-local. A compatible coordination boundary commits the capture with application state; outside one, the capture persists independently. Delayed delivery is expressed with `PublishOptions.Delay` or `QueueOptions.Delay` and is always durable.
 
 ## Runtime Delegates
 

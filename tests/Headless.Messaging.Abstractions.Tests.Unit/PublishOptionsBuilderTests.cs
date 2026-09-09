@@ -13,7 +13,7 @@ public sealed class PublishOptionsBuilderTests : TestBase
         var builder = new PublishOptionsBuilder();
 
         builder.Build().Should().Be(new PublishOptions());
-        builder.Build().DeliveryMode.Should().Be(DeliveryMode.Durable);
+        builder.Build().DeliveryMode.Should().BeNull();
         builder.Build().Headers.Should().BeNull();
         builder.WithHeaders([]).Build().Headers.Should().NotBeNull().And.BeEmpty();
     }

@@ -6,7 +6,7 @@ namespace Headless.Messaging.Internal;
 
 internal enum DeliveryPath
 {
-    TransportDirect = 0,
+    Direct = 0,
     DurableStandalone = 1,
     DurableCoordinated = 2,
 }
@@ -40,7 +40,7 @@ internal static class DeliveryDecisionResolver
             throw new ArgumentOutOfRangeException(nameof(lane), lane, "A defined messaging lane is required.");
         }
 
-        if (requestedMode is not (DeliveryMode.Auto or DeliveryMode.Durable or DeliveryMode.TransportDirect))
+        if (requestedMode is not (DeliveryMode.Auto or DeliveryMode.Durable or DeliveryMode.Direct))
         {
             throw new ArgumentOutOfRangeException(
                 nameof(requestedMode),
@@ -65,10 +65,7 @@ internal static class DeliveryDecisionResolver
             );
         }
 
-        if (
-            coordination.Status is DeliveryCoordinationStatus.Incompatible
-            && requestedMode is not DeliveryMode.TransportDirect
-        )
+        if (coordination.Status is DeliveryCoordinationStatus.Incompatible && requestedMode is not DeliveryMode.Direct)
         {
             throw new InvalidOperationException(
                 $"The active coordination boundary is incompatible with messaging storage ({coordination.Mismatch})."
@@ -97,24 +94,24 @@ internal static class DeliveryDecisionResolver
             }
         }
 
-        if (requestedMode is DeliveryMode.TransportDirect && delay is not null)
+        if (requestedMode is DeliveryMode.Direct && delay is not null)
         {
-            throw new InvalidOperationException("TransportDirect delivery cannot specify a delay.");
+            throw new InvalidOperationException("Direct delivery cannot specify a delay.");
         }
 
         var resolvedMode = requestedMode switch
         {
-            DeliveryMode.TransportDirect => DeliveryMode.TransportDirect,
+            DeliveryMode.Direct => DeliveryMode.Direct,
             DeliveryMode.Durable => DeliveryMode.Durable,
             DeliveryMode.Auto when delay is not null => DeliveryMode.Durable,
             DeliveryMode.Auto when coordination.Status is DeliveryCoordinationStatus.Compatible => DeliveryMode.Durable,
-            DeliveryMode.Auto => DeliveryMode.TransportDirect,
+            DeliveryMode.Auto => DeliveryMode.Direct,
             _ => throw new UnreachableException(),
         };
 
         var path = resolvedMode switch
         {
-            DeliveryMode.TransportDirect => DeliveryPath.TransportDirect,
+            DeliveryMode.Direct => DeliveryPath.Direct,
             DeliveryMode.Durable when coordination.Status is DeliveryCoordinationStatus.Compatible =>
                 DeliveryPath.DurableCoordinated,
             DeliveryMode.Durable => DeliveryPath.DurableStandalone,
