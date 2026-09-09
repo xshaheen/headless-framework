@@ -80,7 +80,7 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
         }
     }
 
-    private void _RevalidateCoordinatedContext(CoordinatedJobContext context)
+    private void _PrepareCoordinatedWrite(CoordinatedJobContext context)
     {
         if (!ReferenceEquals(_currentCommitCoordinator.Current, context.Coordinator))
         {
@@ -90,6 +90,8 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
         }
         context.Relational.Validate();
         context.Writer.ValidateContext(context.Relational, context.RequireSavepoints);
+        // Jobs writes use a separate context; an owned business save cannot recreate them after rollback.
+        context.Coordinator.GetOrAdd(static _ => new CommitRetryGuard()).PreventRetry();
     }
 
     private sealed class CapturedRelationalContext : IRelationalCommitContext

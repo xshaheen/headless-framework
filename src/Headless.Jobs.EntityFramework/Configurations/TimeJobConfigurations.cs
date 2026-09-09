@@ -84,11 +84,5 @@ public class TimeJobConfigurations<TTimeJob>(
         builder.HasIndex("OwnerId", "Status").HasDatabaseName("IX_TimeJob_OwnerId_Status");
 
         builder.ToTable("TimeJobs", schema);
-        // Both supported providers convert the quoted constant to the column's Boolean type.
-        JobsKeyedModelConfiguration.Configure(
-            builder,
-            static name => "\"" + name.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"",
-            "'1'"
-        );
     }
 }

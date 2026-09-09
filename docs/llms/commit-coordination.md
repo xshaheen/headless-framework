@@ -140,11 +140,14 @@ Defines the public commit coordination contracts without provider dependencies.
 - Outcome callbacks for commit and rollback.
 - `CommitOutcome` has explicit values (`Unspecified = 0`, `Committed = 1`, `RolledBack = 2`); `Unspecified` is the default sentinel and is rejected by `ICommitScope.SignalAsync`.
 - Typed scope-local work buffers.
+- `CommitRetryGuard`: shared scope-local marker for participant writes that the unit-of-work owner cannot safely replay.
 - Capability lookup through `ICommitCapability`.
 
 ### Design Notes
 
 The root contract is not a transaction. Consumers can register work but cannot decide the terminal outcome.
+
+Participants obtain `coordinator.GetOrAdd(static _ => new CommitRetryGuard())` and call `PreventRetry()` before a non-replayable write attempt. The owner retains that instance and checks `IsRetryPrevented` even after scope disposal. The marker never resets. The Headless EF adapter observes it; other unit-of-work owners must explicitly honor it.
 
 ### Installation
 
@@ -338,6 +341,8 @@ Both overloads register core commit coordination, the EF commit signal source, a
 ## Headless.EntityFramework.CommitCoordination
 
 This opt-in adapter connects `Headless.EntityFramework`'s internal save-pipeline transaction seam to `Headless.CommitCoordination.EntityFramework`. Install it and chain `.AddCommitCoordination()` from `AddHeadlessDbContextServices(...)` when buffered work must enlist in the transaction opened by the Headless save pipeline. The core `Headless.EntityFramework` package otherwise keeps a no-op coordinator and carries no commit-coordination package reference.
+
+Coordinated Jobs write attempts prevent automatic retries of a pipeline-owned save because their separate context is not retained in the business change tracker. A later failure propagates unchanged; recover with a fresh context and aggregate graph after a known rollback, or reconcile an unknown commit first. Outbox-only saves retain their existing retry behavior.
 
 ## Headless.CommitCoordination.InMemory
 

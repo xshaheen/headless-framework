@@ -216,7 +216,11 @@ public sealed partial class OutboxBridgeIntegrationTests
         where TMessage : class
         where TConsumer : IConsume<TMessage>
     {
-        var method = typeof(IConsume<TMessage>).GetMethod(nameof(IConsume<TMessage>.ConsumeAsync))!;
+        var method = typeof(IConsume<TMessage>).GetMethod(
+            nameof(IConsume<TMessage>.ConsumeAsync),
+            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+            [typeof(ConsumeContext<TMessage>), typeof(CancellationToken)]
+        )!;
         var descriptor = new ConsumerExecutorDescriptor
         {
             ServiceTypeInfo = typeof(TConsumer).GetTypeInfo(),

@@ -35,7 +35,7 @@ public sealed class HeadlessSaveEntryContext(DbContext dbContext, string? tenant
 
     internal bool CommitStarted { get; set; }
 
-    internal ExceptionDispatchInfo? CommitFailure { get; set; }
+    internal ExceptionDispatchInfo? NonRetryableFailure { get; set; }
 
     internal HashSet<object> ProcessedEntities { get; } = new(ReferenceEqualityComparer.Instance);
 

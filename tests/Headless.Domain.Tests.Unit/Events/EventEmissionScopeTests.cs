@@ -19,9 +19,9 @@ public sealed class EventEmissionScopeTests : TestBase
     public void should_reject_invalid_occurrences_and_scopes_without_changing_ambient_context()
     {
         Action nullPayload = () => EventContext.Capture<object>(null!);
-        Action nullIdentity = () => new EventContext<Fact>(new Fact("payload"), null!, "root");
-        Action blankIdentity = () => new EventContext<Fact>(new Fact("payload"), " ", "root");
-        Action blankCorrelation = () => new EventEmissionContext(" ");
+        Action nullIdentity = () => _ = new EventContext<Fact>(new Fact("payload"), null!, "root");
+        Action blankIdentity = () => _ = new EventContext<Fact>(new Fact("payload"), " ", "root");
+        Action blankCorrelation = () => _ = new EventEmissionContext(" ");
         Action nullScope = () => EventEmissionScope.Begin((EventEmissionContext)null!);
         Action nullParent = () => EventEmissionScope.Begin((EventContext<Fact>)null!);
         nullPayload.Should().Throw<ArgumentNullException>();

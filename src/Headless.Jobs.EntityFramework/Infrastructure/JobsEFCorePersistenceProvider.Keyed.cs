@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Runtime.ExceptionServices;
 using Headless.Jobs.Configurations;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
@@ -22,13 +23,35 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
     {
         ArgumentNullException.ThrowIfNull(job);
         JobAtomicity.RejectDirect([job]);
-        await using var context = await DbContextFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
-        await using var transaction = await context
-            .Database.BeginTransactionAsync(cancellationToken)
+        var intent = job.Clone();
+        var (result, persisted) = await _ExecuteKeyedTransactionAsync(
+                async (context, ct) =>
+                {
+                    // The kernel stamps durable metadata, which must not survive a rolled-back attempt.
+                    var candidate = intent.Clone();
+                    var result = await _ScheduleKeyedAsync(context, key, candidate, expectedGeneration, ct)
+                        .ConfigureAwait(false);
+                    return (result, candidate);
+                },
+                cancellationToken
+            )
             .ConfigureAwait(false);
-        var result = await _ScheduleKeyedAsync(context, key, job, expectedGeneration, cancellationToken)
-            .ConfigureAwait(false);
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+        // Preserve the successful input-entity updates without exposing a failed attempt to the caller.
+        job.ExecutionTime = persisted.ExecutionTime;
+        job.Request = persisted.Request;
+        job.RetryIntervals = persisted.RetryIntervals;
+        job.Id = persisted.Id;
+        job.BusinessKey = persisted.BusinessKey;
+        job.IntentFingerprint = persisted.IntentFingerprint;
+        job.FingerprintAlgorithm = persisted.FingerprintAlgorithm;
+        job.Generation = persisted.Generation;
+        job.IsCurrentGeneration = persisted.IsCurrentGeneration;
+        job.Status = persisted.Status;
+        job.OwnerId = persisted.OwnerId;
+        job.LockedUntil = persisted.LockedUntil;
+        job.CreatedAt = persisted.CreatedAt;
+        job.UpdatedAt = persisted.UpdatedAt;
         return result;
     }
 
@@ -134,20 +157,53 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         );
     }
 
-    public async Task<JobScheduleResult> CancelKeyedTimeJobAsync(
+    public Task<JobScheduleResult> CancelKeyedTimeJobAsync(
         JobKeyScope scope,
         JobKey key,
         long expectedGeneration,
         CancellationToken cancellationToken = default
+    ) =>
+        _ExecuteKeyedTransactionAsync(
+            (context, ct) => _CancelKeyedAsync(context, scope, key, expectedGeneration, ct),
+            cancellationToken
+        );
+
+    private async Task<TResult> _ExecuteKeyedTransactionAsync<TResult>(
+        Func<TDbContext, CancellationToken, Task<TResult>> operation,
+        CancellationToken cancellationToken
     )
     {
-        await using var context = await DbContextFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
-        await using var transaction = await context
-            .Database.BeginTransactionAsync(cancellationToken)
+        await using var strategyContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
-        var result = await _CancelKeyedAsync(context, scope, key, expectedGeneration, cancellationToken)
+        var (result, error) = await strategyContext
+            .Database.CreateExecutionStrategy()
+            .ExecuteAsync(
+                async ct =>
+                {
+                    var commitStarted = false;
+                    var result = default(TResult)!;
+                    try
+                    {
+                        await using var context = await DbContextFactory.CreateDbContextAsync(ct).ConfigureAwait(false);
+                        await using var transaction = await context
+                            .Database.BeginTransactionAsync(ct)
+                            .ConfigureAwait(false);
+                        result = await operation(context, ct).ConfigureAwait(false);
+                        commitStarted = true;
+                        await transaction.CommitAsync(ct).ConfigureAwait(false);
+                        return (Result: result, Error: (ExceptionDispatchInfo?)null);
+                    }
+                    catch (Exception exception) when (commitStarted)
+                    {
+                        // A commit or disposal fault may follow a successful commit; never replay it speculatively.
+                        return (Result: result, Error: ExceptionDispatchInfo.Capture(exception));
+                    }
+                },
+                cancellationToken
+            )
             .ConfigureAwait(false);
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        error?.Throw();
         return result;
     }
 

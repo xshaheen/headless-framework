@@ -40,7 +40,7 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
         JobScheduleResult result;
         if (coordinated is { } context)
         {
-            _RevalidateCoordinatedContext(context);
+            _PrepareCoordinatedWrite(context);
             result = await context
                 .Writer.WriteKeyedTimeJobAsync(key, entity, expectedGeneration, context.Relational, cancellationToken)
                 .ConfigureAwait(false);
@@ -96,7 +96,7 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
         JobScheduleResult result;
         if (coordinated is { } context)
         {
-            _RevalidateCoordinatedContext(context);
+            _PrepareCoordinatedWrite(context);
             result = await context
                 .Writer.CancelKeyedTimeJobAsync(scope, key, expectedGeneration, context.Relational, cancellationToken)
                 .ConfigureAwait(false);

@@ -46,6 +46,8 @@ public sealed class SqlServerJobsCoordinationFixture
     // then the schema, then the Coordination tables. DROP TABLE IF EXISTS is a no-op when the table is absent.
     public string ResetSql =>
         "DROP TABLE IF EXISTS [jobs].[CronJobOccurrences];"
+        + "DROP TABLE IF EXISTS [consumer_jobs].[consumer_time_jobs];"
+        + "IF EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'consumer_jobs') DROP SCHEMA [consumer_jobs];"
         + "DROP TABLE IF EXISTS [jobs].[TimeJobs];"
         + "DROP TABLE IF EXISTS [jobs].[CronJobs];"
         + "DROP TABLE IF EXISTS [jobs].[ApplicationProbe];"

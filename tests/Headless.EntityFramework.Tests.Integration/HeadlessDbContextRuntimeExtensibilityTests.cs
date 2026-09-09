@@ -487,7 +487,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
             }
         };
 
-        Func<Task> save = () => _SaveAsync(db, synchronous);
+        var save = async () => await _SaveAsync(db, synchronous);
         (await save.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*1024*recursive*");
         (await db.Entities.CountAsync(AbortToken)).Should().Be(0);
         entity.GetDomainEvents().Should().NotBeEmpty();
@@ -678,7 +678,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
         db.Entities.Add(new RuntimeEntity { Name = "commit-result-lost" });
         interceptor.Enabled = true;
 
-        Func<Task> save = () => _SaveAsync(db, synchronous);
+        var save = async () => await _SaveAsync(db, synchronous);
         await save.Should().ThrowAsync<TransientMarkerException>();
         interceptor.CommitCalls.Should().Be(1);
         dispatcher.LocalEmitters.Should().HaveCount(2);

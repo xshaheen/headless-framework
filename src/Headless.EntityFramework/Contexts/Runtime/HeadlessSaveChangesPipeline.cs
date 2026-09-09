@@ -27,7 +27,9 @@ namespace Headless.EntityFramework.Contexts.Runtime;
 /// <para>
 /// A completed local drain is not repeated by subsequent persistence retries within an owned save.
 /// Handler failures can repeat handler entry; there are no per-handler checkpoints. Local handlers must
-/// remain replay-safe and avoid rollback-unsafe external effects. Caller-owned successful saves clear only
+/// remain replay-safe and avoid rollback-unsafe external effects. Once a participant prevents retry
+/// (such as a coordinated Jobs write), any failure propagates and requires a fresh context and graph.
+/// Caller-owned successful saves clear only
 /// their saved batches before physical commit; a known outer rollback requires a fresh context and graph. Outbox storage can enlist atomically; delivery and external effects remain at-least-once.
 /// </para>
 /// </remarks>
@@ -148,7 +150,7 @@ internal sealed class HeadlessSaveChangesPipeline(
             .Database.CreateExecutionStrategy()
             .ExecuteAsync(state, _ExecuteWithNewTransactionAsync)
             .ConfigureAwait(false);
-        saveContext.CommitFailure?.Throw();
+        saveContext.NonRetryableFailure?.Throw();
         return saved;
     }
 
@@ -182,7 +184,7 @@ internal sealed class HeadlessSaveChangesPipeline(
         }
 
         var saved = context.Database.CreateExecutionStrategy().Execute(state, _ExecuteWithNewTransaction);
-        saveContext.CommitFailure?.Throw();
+        saveContext.NonRetryableFailure?.Throw();
         return saved;
 #pragma warning restore MA0045
     }
@@ -227,6 +229,7 @@ internal sealed class HeadlessSaveChangesPipeline(
 
     private async Task<int> _ExecuteWithNewTransactionAsync(AsyncSaveState state)
     {
+        IHeadlessTransactionScope? coordination = null;
         try
         {
             await using var transaction = await state
@@ -236,7 +239,7 @@ internal sealed class HeadlessSaveChangesPipeline(
             // is a no-op; the commit-coordination package pushes its ambient coordinator here so it flows to work
             // invoked inside the save. The push must not live behind an async helper because AsyncLocal state created
             // there does not propagate back to this caller.
-            await using var coordination = transactionCoordinator.Enlist(
+            await using var enlistedScope = coordination = transactionCoordinator.Enlist(
                 state.Context.Database,
                 transaction,
                 serviceProvider,
@@ -244,22 +247,24 @@ internal sealed class HeadlessSaveChangesPipeline(
             );
             return await _SaveWithinTransactionAsync(state, transaction, commitTransaction: true).ConfigureAwait(false);
         }
-        catch (Exception exception) when (state.SaveContext.CommitStarted)
+        catch (Exception exception) when (state.SaveContext.CommitStarted || coordination?.IsRetryPrevented is true)
         {
-            // A commit or post-commit notification failure does not prove rollback; do not replay the save.
-            state.SaveContext.CommitFailure = ExceptionDispatchInfo.Capture(exception);
+            // Commit outcomes may be unknown, and coordinated writes are absent from the retained tracker.
+            // Rethrow outside the execution strategy so it cannot replay an incomplete unit of work.
+            state.SaveContext.NonRetryableFailure = ExceptionDispatchInfo.Capture(exception);
             return 0;
         }
     }
 
     private int _ExecuteWithNewTransaction(SaveState state)
     {
+        IHeadlessTransactionScope? coordination = null;
         try
         {
 #pragma warning disable MA0045 // Sync intentionally
             // Sync twin of _ExecuteWithNewTransactionAsync — same open-then-synchronously-enlist shape.
             using var transaction = state.Context.Database.BeginTransaction(IsolationLevel.ReadCommitted);
-            using var coordination = transactionCoordinator.Enlist(
+            using var enlistedScope = coordination = transactionCoordinator.Enlist(
                 state.Context.Database,
                 transaction,
                 serviceProvider,
@@ -268,10 +273,11 @@ internal sealed class HeadlessSaveChangesPipeline(
             return _SaveWithinTransaction(state, transaction, commitTransaction: true);
 #pragma warning restore MA0045
         }
-        catch (Exception exception) when (state.SaveContext.CommitStarted)
+        catch (Exception exception) when (state.SaveContext.CommitStarted || coordination?.IsRetryPrevented is true)
         {
-            // A commit or post-commit notification failure does not prove rollback; do not replay the save.
-            state.SaveContext.CommitFailure = ExceptionDispatchInfo.Capture(exception);
+            // Commit outcomes may be unknown, and coordinated writes are absent from the retained tracker.
+            // Rethrow outside the execution strategy so it cannot replay an incomplete unit of work.
+            state.SaveContext.NonRetryableFailure = ExceptionDispatchInfo.Capture(exception);
             return 0;
         }
     }
