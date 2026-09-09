@@ -609,6 +609,8 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                 continue;
             }
 
+            result.Status = JobStatus.Queued;
+            result.OwnerId = owner;
             result.LockedUntil = timestamps.LockedUntil;
             result.UpdatedAt = timestamps.UpdatedAt;
             yield return result;

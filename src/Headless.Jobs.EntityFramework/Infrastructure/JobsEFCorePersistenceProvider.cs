@@ -302,33 +302,51 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             JobIntentFingerprint.RejectOrdinaryMetadata(candidate.Entity);
         }
 
-        var updatedIds = dbContext.ChangeTracker.Entries<TTimeJob>().Select(entry => entry.Entity.Id).ToArray();
-        await using var transaction = await dbContext
-            .Database.BeginTransactionAsync(cancellationToken)
+        // Capture the complete tracked graph after FK fixup, including consumer-mapped properties.
+        var intent = dbContext
+            .ChangeTracker.Entries<TTimeJob>()
+            .Select(entry => (Entry: entry, Values: entry.CurrentValues.Clone()))
+            .ToArray();
+        var (affected, persisted) = await _ExecuteKeyedTransactionAsync(
+                async (context, ct) =>
+                {
+                    var candidates = intent.Select(item => ((TTimeJob)item.Values.ToObject()).Clone()).ToArray();
+                    for (var i = 0; i < candidates.Length; i++)
+                    {
+                        // UpdateRange may mark new children Added and generate their keys during the initial fixup.
+                        context.Entry(candidates[i]).State = intent[i].Entry.State;
+                    }
+                    var updatedIds = candidates.Select(candidate => candidate.Id).ToArray();
+                    await _GuardTimeJobParentReferencesAsync(context, updatedIds, ct).ConfigureAwait(false);
+                    if (
+                        await context
+                            .Set<TTimeJob>()
+                            .AnyAsync(row => updatedIds.Contains(row.Id) && row.BusinessKey != null, ct)
+                            .ConfigureAwait(false)
+                    )
+                    {
+                        throw new InvalidOperationException(
+                            "Ordinary updates, resets, and retries cannot mutate retained keyed jobs. Use generation-fenced keyed control."
+                        );
+                    }
+
+                    // Ownership and business lineage are captured at scheduling; ordinary edits cannot replace them.
+                    foreach (var entry in context.ChangeTracker.Entries<TTimeJob>())
+                    {
+                        entry.Property(nameof(Entities.BaseEntity.BaseJobEntity.TenantId)).IsModified = false;
+                        entry.Property(nameof(Entities.BaseEntity.BaseJobEntity.CorrelationId)).IsModified = false;
+                        entry.Property(nameof(Entities.BaseEntity.BaseJobEntity.CausationId)).IsModified = false;
+                    }
+
+                    return (await context.SaveChangesAsync(ct).ConfigureAwait(false), candidates);
+                },
+                cancellationToken
+            )
             .ConfigureAwait(false);
-        await _GuardTimeJobParentReferencesAsync(dbContext, updatedIds, cancellationToken).ConfigureAwait(false);
-        if (
-            await dbContext
-                .Set<TTimeJob>()
-                .AnyAsync(row => updatedIds.Contains(row.Id) && row.BusinessKey != null, cancellationToken)
-                .ConfigureAwait(false)
-        )
+        for (var i = 0; i < intent.Length; i++)
         {
-            throw new InvalidOperationException(
-                "Ordinary updates, resets, and retries cannot mutate retained keyed jobs. Use generation-fenced keyed control."
-            );
+            intent[i].Entry.CurrentValues.SetValues(persisted[i]);
         }
-
-        // Ownership and business lineage are captured at scheduling; ordinary edits cannot replace them.
-        foreach (var entry in dbContext.ChangeTracker.Entries<TTimeJob>())
-        {
-            entry.Property(nameof(Entities.BaseEntity.BaseJobEntity.TenantId)).IsModified = false;
-            entry.Property(nameof(Entities.BaseEntity.BaseJobEntity.CorrelationId)).IsModified = false;
-            entry.Property(nameof(Entities.BaseEntity.BaseJobEntity.CausationId)).IsModified = false;
-        }
-
-        var affected = await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         return affected;
     }
 
@@ -1158,45 +1176,57 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
-        await using var transaction = await dbContext
-            .Database.BeginTransactionAsync(cancellationToken)
+        var intent = cronJobOccurrences.Select(row => dbContext.Entry(row).CurrentValues.Clone()).ToArray();
+        var (inserted, persisted) = await _ExecuteKeyedTransactionAsync(
+                async (context, ct) =>
+                {
+                    var candidates = intent
+                        .Select(values => (CronJobOccurrenceEntity<TCronJob>)values.ToObject())
+                        .ToArray();
+                    var definitions = new Dictionary<Guid, TCronJob>();
+                    foreach (var definitionId in candidates.Select(x => x.CronJobId).Distinct().Order())
+                    {
+                        // Serialize every materialization with definition edits, including payload-only changes.
+                        var affected = await context
+                            .Set<TCronJob>()
+                            .Where(x => x.Id == definitionId)
+                            .ExecuteUpdateAsync(
+                                setters => setters.SetProperty(x => x.ScheduleRevision, x => x.ScheduleRevision),
+                                ct
+                            )
+                            .ConfigureAwait(false);
+                        if (affected == 0)
+                        {
+                            throw new InvalidOperationException("A cron occurrence requires an existing definition.");
+                        }
+                        definitions.Add(
+                            definitionId,
+                            await context
+                                .Set<TCronJob>()
+                                .AsNoTracking()
+                                .SingleAsync(x => x.Id == definitionId, ct)
+                                .ConfigureAwait(false)
+                        );
+                    }
+                    foreach (var occurrence in candidates)
+                    {
+                        occurrence.SnapshotContract(definitions[occurrence.CronJobId]);
+                        occurrence.CronJob = null!;
+                    }
+                    await context
+                        .Set<CronJobOccurrenceEntity<TCronJob>>()
+                        .AddRangeAsync(candidates, ct)
+                        .ConfigureAwait(false);
+                    return (await context.SaveChangesAsync(ct).ConfigureAwait(false), candidates);
+                },
+                cancellationToken
+            )
             .ConfigureAwait(false);
-        var definitions = new Dictionary<Guid, TCronJob>();
-        foreach (var definitionId in cronJobOccurrences.Select(x => x.CronJobId).Distinct().Order())
+        for (var i = 0; i < cronJobOccurrences.Length; i++)
         {
-            // Serialize every materialization with definition edits, including payload-only changes.
-            var affected = await dbContext
-                .Set<TCronJob>()
-                .Where(x => x.Id == definitionId)
-                .ExecuteUpdateAsync(
-                    setters => setters.SetProperty(x => x.ScheduleRevision, x => x.ScheduleRevision),
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-            if (affected == 0)
-            {
-                throw new InvalidOperationException("A cron occurrence requires an existing definition.");
-            }
-            definitions.Add(
-                definitionId,
-                await dbContext
-                    .Set<TCronJob>()
-                    .AsNoTracking()
-                    .SingleAsync(x => x.Id == definitionId, cancellationToken)
-                    .ConfigureAwait(false)
-            );
+            dbContext.Entry(cronJobOccurrences[i]).CurrentValues.SetValues(persisted[i]);
+            cronJobOccurrences[i].CronJob = null!;
         }
-        foreach (var occurrence in cronJobOccurrences)
-        {
-            occurrence.SnapshotContract(definitions[occurrence.CronJobId]);
-            occurrence.CronJob = null!;
-        }
-        await dbContext
-            .Set<CronJobOccurrenceEntity<TCronJob>>()
-            .AddRangeAsync(cronJobOccurrences, cancellationToken)
-            .ConfigureAwait(false);
-        var inserted = await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         return inserted;
     }
 

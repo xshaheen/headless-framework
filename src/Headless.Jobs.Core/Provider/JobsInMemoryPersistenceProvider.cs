@@ -2268,6 +2268,8 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 }
 
                 var definition = _CloneCronJob(update.Definition);
+                JobContract.ValidateName(definition.Function);
+                JobContract.ValidateVersion(definition.ContractVersion);
                 definition.CorrelationId = current.CorrelationId;
                 definition.CausationId = current.CausationId;
                 definition.IsPaused = current.IsPaused;

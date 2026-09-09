@@ -12,6 +12,24 @@ public sealed class PostgreSqlKeyedSchedulingTests(PostgreSqlJobsCoordinationFix
         options.UseNpgsql(Fixture.ConnectionString, provider => provider.EnableRetryOnFailure(1, TimeSpan.Zero, null));
 
     [Fact]
+    public override Task ordinary_write_transactions_support_retry_enabled_contexts() =>
+        base.ordinary_write_transactions_support_retry_enabled_contexts();
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public override Task ordinary_write_retry_uses_fresh_context_and_entities(bool cron) =>
+        base.ordinary_write_retry_uses_fresh_context_and_entities(cron);
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public override Task ordinary_write_commit_fault_is_not_replayed(bool cron, bool afterCommit) =>
+        base.ordinary_write_commit_fault_is_not_replayed(cron, afterCommit);
+
+    [Fact]
     public override Task keyed_operations_support_retry_enabled_contexts() =>
         base.keyed_operations_support_retry_enabled_contexts();
 
