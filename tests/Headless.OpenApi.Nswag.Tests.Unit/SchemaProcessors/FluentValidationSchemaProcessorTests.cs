@@ -41,11 +41,105 @@ public sealed class FluentValidationSchemaProcessorTests : TestBase
         schema.RequiredProperties.Should().Contain("Code");
         schema.Properties["Code"].MinLength.Should().Be(1);
         schema.Properties["Age"].Minimum.Should().Be(18);
+        schema.Properties["Age"].IsExclusiveMinimum.Should().BeFalse();
         schema.Properties["Age"].Maximum.Should().Be(100);
         schema.Properties["Age"].IsExclusiveMaximum.Should().BeTrue();
-        schema.Properties["Score"].ExclusiveMinimum.Should().Be(1);
-        schema.Properties["Score"].ExclusiveMaximum.Should().Be(10);
+        schema.Properties["Score"].Minimum.Should().Be(1);
+        schema.Properties["Score"].IsExclusiveMinimum.Should().BeTrue();
+        schema.Properties["Score"].Maximum.Should().Be(10);
+        schema.Properties["Score"].IsExclusiveMaximum.Should().BeTrue();
         schema.Properties["Email"].Pattern.Should().Be("^[^@]+@[^@]+$");
+    }
+
+    [Fact]
+    public void should_write_exclusive_bounds_in_the_openapi_30_form_for_every_comparison()
+    {
+        // NSwag emits `openapi: 3.0.0`, where `exclusiveMinimum`/`exclusiveMaximum` are booleans that
+        // modify `minimum`/`maximum`. NJsonSchema also exposes the JSON Schema draft-6 numeric form on
+        // the same object; writing that leaves the document with no `minimum` at all, so 3.0 tooling
+        // silently drops the bound and strict client generators reject the schema.
+        using var services = _CreateServices(new BoundsValidator());
+        var schema = _CreateObjectSchema(
+            ("AboveZero", JsonObjectType.Number),
+            ("AtLeastOne", JsonObjectType.Number),
+            ("BelowTen", JsonObjectType.Number),
+            ("AtMostTen", JsonObjectType.Number),
+            ("Between", JsonObjectType.Number)
+        );
+
+        new FluentValidationSchemaProcessor(services).Process(
+            _CreateContext(typeof(Bounds).ToContextualType(), schema)
+        );
+
+        schema.Properties["AboveZero"].Minimum.Should().Be(0);
+        schema.Properties["AboveZero"].IsExclusiveMinimum.Should().BeTrue();
+        schema.Properties["AtLeastOne"].Minimum.Should().Be(1);
+        schema.Properties["AtLeastOne"].IsExclusiveMinimum.Should().BeFalse();
+        schema.Properties["BelowTen"].Maximum.Should().Be(10);
+        schema.Properties["BelowTen"].IsExclusiveMaximum.Should().BeTrue();
+        schema.Properties["AtMostTen"].Maximum.Should().Be(10);
+        schema.Properties["AtMostTen"].IsExclusiveMaximum.Should().BeFalse();
+        schema.Properties["Between"].Minimum.Should().Be(2);
+        schema.Properties["Between"].Maximum.Should().Be(8);
+
+        foreach (var property in schema.Properties.Values)
+        {
+            property.ExclusiveMinimum.Should().BeNull();
+            property.ExclusiveMaximum.Should().BeNull();
+        }
+    }
+
+    [Fact]
+    public void should_constrain_the_item_schema_when_the_rule_came_from_rule_for_each()
+    {
+        // RuleForEach validates each ELEMENT, but FluentValidation reports the rule under the collection
+        // property's own name. Left on the array schema, `minimum` and `maxLength` mean nothing — JSON
+        // Schema sizes arrays with minItems/maxItems — and generators emit nonsense such as
+        // `z.array(...).gt(0)`.
+        using var services = _CreateServices(new BasketValidator());
+        var schema = new JsonSchema { Type = JsonObjectType.Object };
+        schema.Properties["Quantities"] = new JsonSchemaProperty
+        {
+            Type = JsonObjectType.Array,
+            Item = new JsonSchema { Type = JsonObjectType.Integer },
+        };
+        schema.Properties["Labels"] = new JsonSchemaProperty
+        {
+            Type = JsonObjectType.Array,
+            Item = new JsonSchema { Type = JsonObjectType.String },
+        };
+
+        new FluentValidationSchemaProcessor(services).Process(
+            _CreateContext(typeof(Basket).ToContextualType(), schema)
+        );
+
+        schema.Properties["Quantities"].Item!.Minimum.Should().Be(0);
+        schema.Properties["Quantities"].Item!.IsExclusiveMinimum.Should().BeTrue();
+        schema.Properties["Quantities"].Minimum.Should().BeNull();
+        schema.Properties["Quantities"].Maximum.Should().BeNull();
+
+        schema.Properties["Labels"].Item!.MaxLength.Should().Be(5);
+        schema.Properties["Labels"].MaxLength.Should().BeNull();
+    }
+
+    [Fact]
+    public void should_constrain_the_property_itself_when_the_rule_is_not_a_collection_rule()
+    {
+        // Guard for the redirect above: a plain RuleFor on a collection property still targets the array.
+        using var services = _CreateServices(new BasketValidator());
+        var schema = new JsonSchema { Type = JsonObjectType.Object };
+        schema.Properties["Tags"] = new JsonSchemaProperty
+        {
+            Type = JsonObjectType.Array,
+            Item = new JsonSchema { Type = JsonObjectType.String },
+        };
+
+        new FluentValidationSchemaProcessor(services).Process(
+            _CreateContext(typeof(Basket).ToContextualType(), schema)
+        );
+
+        schema.Properties["Tags"].MinLength.Should().Be(1);
+        schema.Properties["Tags"].Item!.MinLength.Should().BeNull();
     }
 
     [Fact]
@@ -131,11 +225,11 @@ public sealed class FluentValidationSchemaProcessorTests : TestBase
         schema.Properties["Name"].MaxLength.Should().BeNull();
     }
 
-    private static ServiceProvider _CreateServices(IValidator<Request> validator)
+    private static ServiceProvider _CreateServices<T>(IValidator<T> validator)
     {
         return new ServiceCollection()
             .AddSingleton(validator)
-            .AddSingleton<IValidator<Request>>(validator)
+            .AddSingleton<IValidator<T>>(validator)
             .BuildServiceProvider();
     }
 
@@ -184,6 +278,50 @@ public sealed class FluentValidationSchemaProcessorTests : TestBase
             RuleFor(request => request.Age).GreaterThanOrEqualTo(18).LessThan(100);
             RuleFor(request => request.Score).ExclusiveBetween(1, 10);
             RuleFor(request => request.Email).EmailAddress(EmailValidationMode.AspNetCoreCompatible);
+        }
+    }
+
+    private sealed class Bounds
+    {
+        public decimal AboveZero { get; set; }
+
+        public decimal AtLeastOne { get; set; }
+
+        public decimal BelowTen { get; set; }
+
+        public decimal AtMostTen { get; set; }
+
+        public decimal Between { get; set; }
+    }
+
+    private sealed class BoundsValidator : AbstractValidator<Bounds>
+    {
+        public BoundsValidator()
+        {
+            RuleFor(bounds => bounds.AboveZero).GreaterThan(0);
+            RuleFor(bounds => bounds.AtLeastOne).GreaterThanOrEqualTo(1);
+            RuleFor(bounds => bounds.BelowTen).LessThan(10);
+            RuleFor(bounds => bounds.AtMostTen).LessThanOrEqualTo(10);
+            RuleFor(bounds => bounds.Between).InclusiveBetween(2, 8);
+        }
+    }
+
+    private sealed class Basket
+    {
+        public List<int> Quantities { get; set; } = [];
+
+        public List<string> Labels { get; set; } = [];
+
+        public List<string> Tags { get; set; } = [];
+    }
+
+    private sealed class BasketValidator : AbstractValidator<Basket>
+    {
+        public BasketValidator()
+        {
+            RuleForEach(basket => basket.Quantities).GreaterThan(0);
+            RuleForEach(basket => basket.Labels).MaximumLength(5);
+            RuleFor(basket => basket.Tags).NotEmpty();
         }
     }
 }
