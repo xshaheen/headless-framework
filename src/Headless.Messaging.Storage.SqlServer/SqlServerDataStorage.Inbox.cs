@@ -166,6 +166,7 @@ internal sealed partial class SqlServerDataStorage
         var stored = await _ReadInboxGenerationAsync(
                 connection,
                 (SqlTransaction)transaction,
+                inboxKeyHash,
                 tenantPresent,
                 normalizedTenantId,
                 message.Origin.Id,
@@ -355,6 +356,7 @@ internal sealed partial class SqlServerDataStorage
     private async ValueTask<(MediumMessage Message, StatusName Status)> _ReadInboxGenerationAsync(
         SqlConnection connection,
         SqlTransaction transaction,
+        byte[] inboxKeyHash,
         bool tenantPresent,
         string tenantId,
         string messageId,
@@ -373,7 +375,8 @@ internal sealed partial class SqlServerDataStorage
                    [ContractIdentity],[ContractVersion],[ConsumerIdentity],[Generation],[GenerationIncarnationId],
                    [AttemptId],[IsInboxOrphaned]
             FROM {_receivedTable}
-            WHERE [TenantPresent]=@TenantPresent
+            WHERE [InboxKeyHash]=@InboxKeyHash
+              AND [TenantPresent]=@TenantPresent
               AND [TenantIdOrdinal]=CONVERT(varbinary(400),@TenantId)
               AND [MessageIdOrdinal]=CONVERT(varbinary(400),@MessageId)
               AND [IntentType]=@IntentType
@@ -385,6 +388,7 @@ internal sealed partial class SqlServerDataStorage
             """;
         object[] parameters =
         [
+            new SqlParameter("@InboxKeyHash", SqlDbType.Binary, 32) { Value = inboxKeyHash },
             new SqlParameter("@TenantPresent", SqlDbType.Bit) { Value = tenantPresent },
             new SqlParameter("@TenantId", SqlDbType.NVarChar, 200) { Value = tenantId },
             new SqlParameter("@MessageId", SqlDbType.NVarChar, 200) { Value = messageId },

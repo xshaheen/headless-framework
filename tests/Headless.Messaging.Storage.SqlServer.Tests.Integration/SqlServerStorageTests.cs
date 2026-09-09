@@ -1689,8 +1689,15 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
         picked.Should().NotContain(message => message.StorageId == newestId);
     }
 
-    [Fact]
-    public async Task should_claim_received_recovery_when_read_committed_snapshot_is_enabled()
+    [Theory]
+    [InlineData(false, "Received")]
+    [InlineData(false, "Published")]
+    [InlineData(true, "Received")]
+    [InlineData(true, "Published")]
+    public async Task should_claim_recovery_with_read_committed_snapshot_enabled_or_disabled(
+        bool readCommittedSnapshotEnabled,
+        string tableName
+    )
     {
         var databaseName = $"headless_messaging_rcsi_{Guid.NewGuid():N}";
         var masterBuilder = new SqlConnectionStringBuilder(fixture.ConnectionString)
@@ -1711,7 +1718,7 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
         try
         {
             await master.ExecuteAsync(
-                $"ALTER DATABASE [{databaseName}] SET READ_COMMITTED_SNAPSHOT ON WITH ROLLBACK IMMEDIATE;"
+                $"ALTER DATABASE [{databaseName}] SET READ_COMMITTED_SNAPSHOT {(readCommittedSnapshotEnabled ? "ON" : "OFF")} WITH ROLLBACK IMMEDIATE;"
             );
             var messagingOptions = new MessagingOptions { Version = "v1", RetryBatchSize = 1 };
             var sqlServerOptions = Options.Create(
@@ -1735,17 +1742,17 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
                     )
                 )
                     .Should()
-                    .BeTrue();
+                    .Be(readCommittedSnapshotEnabled);
                 await _InsertHealthyRetryRowAsync(
                     connection,
-                    "Received",
+                    tableName,
                     retryId,
                     GetSerializer().Serialize(CreateMessage("sql-rcsi-recovery")),
                     DateTimeOffset.UtcNow.AddMinutes(-1)
                 );
             }
 
-            var claimed = await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken);
+            var claimed = await _ClaimRetryAsync(storage, tableName == "Published", MessageLane.Bus);
 
             claimed.Should().ContainSingle(message => message.StorageId == retryId);
         }
