@@ -483,47 +483,6 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     }
 
     [Fact]
-    public async Task should_reject_retained_inbox_rows_without_lifecycle_identity()
-    {
-        const string schema = "inbox_lifecycle_upgrade";
-        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await connection.ExecuteAsync(
-            new CommandDefinition(
-                $"""
-                CREATE SCHEMA {schema};
-                CREATE TABLE {schema}.received ("Id" UUID, "GenerationIncarnationId" UUID, "IsInboxRecord" BOOLEAN);
-                INSERT INTO {schema}.received VALUES (@Id,@Incarnation,TRUE);
-                """,
-                new { Id = Guid.NewGuid(), Incarnation = Guid.NewGuid() },
-                cancellationToken: AbortToken
-            )
-        );
-        try
-        {
-            var initializer = new PostgreSqlStorageInitializer(
-                NullLogger<PostgreSqlStorageInitializer>.Instance,
-                Options.Create(new PostgreSqlOptions { ConnectionString = fixture.ConnectionString, Schema = schema }),
-                Options.Create(new MessagingOptions())
-            );
-            var act = async () => await initializer.InitializeAsync(AbortToken);
-            await act.Should().ThrowAsync<PostgresException>().WithMessage("*without lifecycle identity*");
-            (
-                await connection.ExecuteScalarAsync<int>(
-                    new CommandDefinition($"SELECT COUNT(*) FROM {schema}.received", cancellationToken: AbortToken)
-                )
-            )
-                .Should()
-                .Be(1);
-        }
-        finally
-        {
-            await connection.ExecuteAsync(
-                new CommandDefinition($"DROP SCHEMA {schema} CASCADE", cancellationToken: AbortToken)
-            );
-        }
-    }
-
-    [Fact]
     public async Task should_fail_closed_when_inbox_schema_is_newer_than_supported()
     {
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);

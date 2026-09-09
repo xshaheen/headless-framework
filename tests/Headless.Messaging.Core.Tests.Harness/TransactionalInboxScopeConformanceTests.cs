@@ -247,7 +247,7 @@ public abstract class TransactionalInboxScopeConformanceTests : TestBase
             );
             await queue.EnqueueAsync(
                 output,
-                new EnqueueOptions { DeliveryMode = DeliveryMode.Durable },
+                new QueueOptions { DeliveryMode = DeliveryMode.Durable },
                 cancellationToken
             );
             if (state.BeforeHandlerReturns is { } beforeHandlerReturns)

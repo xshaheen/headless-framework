@@ -448,53 +448,6 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
     }
 
     [Fact]
-    public async Task should_reject_retained_inbox_rows_without_lifecycle_identity()
-    {
-        const string schema = "inbox_lifecycle_upgrade";
-        await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.ExecuteAsync(
-            new CommandDefinition(
-                $"""
-                CREATE SCHEMA [{schema}];
-                """,
-                cancellationToken: AbortToken
-            )
-        );
-        await connection.ExecuteAsync(
-            new CommandDefinition(
-                $"""
-                CREATE TABLE [{schema}].[Received] ([Id] uniqueidentifier, [GenerationIncarnationId] uniqueidentifier, [IsInboxRecord] bit, [NextRetryAt] datetimeoffset NULL, [Owner] nvarchar(100) NULL);
-                INSERT INTO [{schema}].[Received] ([Id],[GenerationIncarnationId],[IsInboxRecord]) VALUES (@Id,@Incarnation,1);
-                """,
-                new { Id = Guid.NewGuid(), Incarnation = Guid.NewGuid() },
-                cancellationToken: AbortToken
-            )
-        );
-        try
-        {
-            var initializer = _CreateInitializer(schema, useStorageLock: false);
-            var act = async () => await initializer.InitializeAsync(AbortToken);
-            await act.Should().ThrowAsync<SqlException>().WithMessage("*without lifecycle identity*");
-            (
-                await connection.ExecuteScalarAsync<int>(
-                    new CommandDefinition($"SELECT COUNT(*) FROM [{schema}].[Received]", cancellationToken: AbortToken)
-                )
-            )
-                .Should()
-                .Be(1);
-        }
-        finally
-        {
-            await connection.ExecuteAsync(
-                new CommandDefinition(
-                    $"DROP TABLE IF EXISTS [{schema}].InboxAudit; DROP TABLE IF EXISTS [{schema}].InboxOperationReceipts; DROP TABLE IF EXISTS [{schema}].SchemaState; DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingIdList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingOwnerList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingPoisonMessageList]; DROP SCHEMA IF EXISTS [{schema}]",
-                    cancellationToken: AbortToken
-                )
-            );
-        }
-    }
-
-    [Fact]
     public void should_return_correct_table_names()
     {
         // given

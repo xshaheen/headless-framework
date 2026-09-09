@@ -147,7 +147,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         try
         {
             var scheduler = host.Services.GetRequiredService<IJobScheduler>();
-            var builder = JobChain.Start(_Payload("append-root"), executionTime: DateTime.UtcNow.AddHours(1));
+            var builder = JobChain.Start(_Payload("append-root"), executionTime: DateTimeOffset.UtcNow.AddHours(1));
             var child = builder.Root.Then(_Payload("append-child"));
             var grandchild = child.Then(_Payload("append-grandchild"));
             grandchild.Then(_Payload("append-great-grandchild"));
@@ -202,7 +202,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
             var scheduler = host.Services.GetRequiredService<IJobScheduler>();
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
             var manager = host.Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
-            var builder = JobChain.Start(_Payload("stale-root"), executionTime: DateTime.UtcNow.AddHours(1));
+            var builder = JobChain.Start(_Payload("stale-root"), executionTime: DateTimeOffset.UtcNow.AddHours(1));
             var child = builder.Root.Then(_Payload("stale-child"));
             child.Then(_Payload("stale-grandchild"));
 
@@ -240,12 +240,15 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         try
         {
             var scheduler = host.Services.GetRequiredService<IJobScheduler>();
-            var firstBuilder = JobChain.Start(_Payload("batch-first-root"), executionTime: DateTime.UtcNow.AddHours(1));
+            var firstBuilder = JobChain.Start(
+                _Payload("batch-first-root"),
+                executionTime: DateTimeOffset.UtcNow.AddHours(1)
+            );
             var firstChild = firstBuilder.Root.Then(_Payload("batch-first-child"));
             firstChild.Then(_Payload("batch-first-grandchild"));
             var secondBuilder = JobChain.Start(
                 _Payload("batch-second-root"),
-                executionTime: DateTime.UtcNow.AddHours(1)
+                executionTime: DateTimeOffset.UtcNow.AddHours(1)
             );
             var secondChild = secondBuilder.Root.Then(_Payload("batch-second-child"));
             secondChild.Then(_Payload("batch-second-grandchild"));
@@ -303,7 +306,10 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         try
         {
             var scheduler = host.Services.GetRequiredService<IJobScheduler>();
-            var builder = JobChain.Start(_Payload("root-append-root"), executionTime: DateTime.UtcNow.AddHours(1));
+            var builder = JobChain.Start(
+                _Payload("root-append-root"),
+                executionTime: DateTimeOffset.UtcNow.AddHours(1)
+            );
             var child = builder.Root.Then(_Payload("root-append-child"));
             var grandchild = child.Then(_Payload("root-append-grandchild"));
             grandchild.Then(_Payload("root-append-great-grandchild"));
@@ -360,7 +366,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         try
         {
             var scheduler = host.Services.GetRequiredService<IJobScheduler>();
-            var builder = JobChain.Start(_Payload("mid-root"), executionTime: DateTime.UtcNow.AddHours(1));
+            var builder = JobChain.Start(_Payload("mid-root"), executionTime: DateTimeOffset.UtcNow.AddHours(1));
             var subtree = builder.Root.Then(_Payload("mid-subtree"));
             subtree.Then(_Payload("mid-grandchild"));
             builder.Root.Catch(_Payload("mid-sibling"));
