@@ -358,6 +358,7 @@ public static class SetupNswag
         settings.OperationProcessors.Add(new CamelCaseQueryParameterOperationProcessor());
         settings.OperationProcessors.Add(new UnauthorizedResponseOperationProcessor());
         settings.OperationProcessors.Add(new ForbiddenResponseOperationProcessor());
+        settings.OperationProcessors.Add(new IfMatchOperationProcessor());
         settings.OperationProcessors.Add(new ProblemDetailsOperationProcessor());
     }
 

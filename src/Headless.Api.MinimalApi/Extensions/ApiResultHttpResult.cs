@@ -19,7 +19,7 @@ namespace Headless.Primitives;
 /// </summary>
 /// <typeparam name="T">The success value type.</typeparam>
 [PublicAPI]
-public sealed class ApiResultHttpResult<T> : IResult, IEndpointMetadataProvider, IStatusCodeHttpResult
+public sealed class ApiResultHttpResult<T> : IResult, IEndpointMetadataProvider, IStatusCodeHttpResult, IValueHttpResult
 {
     private readonly IResult _result;
 
@@ -30,6 +30,8 @@ public sealed class ApiResultHttpResult<T> : IResult, IEndpointMetadataProvider,
     }
 
     int? IStatusCodeHttpResult.StatusCode => (_result as IStatusCodeHttpResult)?.StatusCode;
+
+    object? IValueHttpResult.Value => (_result as IValueHttpResult)?.Value;
 
     /// <inheritdoc/>
     public Task ExecuteAsync(HttpContext httpContext) => _result.ExecuteAsync(httpContext);

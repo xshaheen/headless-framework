@@ -23,6 +23,8 @@ The dashboard exposes operational endpoints for inspecting, retrying, re-executi
 
 Inbox operations are generation-fenced and audited. Terminal identity is retained for 30 days by default or the consumer's `InboxRetention(...)` override. Expiry and purge reset duplicate-suppression identity; force reprocessing creates a linked child generation.
 
+Inbox query and operation JSON uses camelCase properties and named string enum values, such as `"Failed"`, `"Succeeded"`, and `"Queue"`, independently of the host's JSON configuration. Operation requests must send `expectedStatus` as a string; responses use the same format for status, lane, operation type, and outcome, including conflict and not-found results.
+
 ## Installation
 
 ```bash

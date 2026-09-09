@@ -757,6 +757,7 @@
         "type": "Project",
         "dependencies": {
           "Headless.Coordination.Core.Database": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Microsoft.Data.SqlClient": "[7.0.2, )",
           "Polly.Core": "[8.7.0, )"

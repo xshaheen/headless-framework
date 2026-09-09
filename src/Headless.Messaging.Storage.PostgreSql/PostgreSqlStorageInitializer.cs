@@ -381,13 +381,13 @@ internal sealed class PostgreSqlStorageInitializer(
     {
         var finalIndexCount = await connection
             .ExecuteScalarAsync(
-                "SELECT COUNT(1) FROM pg_indexes WHERE schemaname=@Schema AND indexname='uq_received_inbox_key';",
+                "SELECT COUNT(1) FROM pg_indexes WHERE schemaname=@Schema AND indexname IN ('uq_received_inbox_root_key','uq_received_inbox_lifecycle_generation');",
                 commandTimeout: messagingOptions.Value.CommandTimeout,
                 sqlParams: [new NpgsqlParameter("@Schema", postgreSqlOptions.Value.Schema)],
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
-        if (finalIndexCount != 1)
+        if (finalIndexCount != 2)
         {
             throw new InvalidOperationException(
                 "Headless.Messaging inbox schema is incomplete: the final inbox key index is missing."
@@ -403,6 +403,10 @@ internal sealed class PostgreSqlStorageInitializer(
                         WHERE conname='ck_received_inbox_retention_v3'
                           AND conrelid=format('%I.received', @Schema)::regclass
                     )
+                    AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname='ck_received_inbox_lifecycle_v4'
+                        AND conrelid = format('%I.received', @Schema)::regclass)
+                    AND EXISTS (SELECT 1 FROM information_schema.columns
+                        WHERE table_schema=@Schema AND table_name='received' AND column_name='LifecycleId')
                     AND EXISTS (
                         SELECT 1 FROM information_schema.columns
                         WHERE table_schema=@Schema AND table_name='inbox_operation_receipts' AND column_name='ExpectedStatus'
@@ -421,13 +425,13 @@ internal sealed class PostgreSqlStorageInitializer(
         if (operationShapeReady != 1)
         {
             throw new InvalidOperationException(
-                "Headless.Messaging inbox schema is incomplete: the v3 retention or operation receipt contract is missing."
+                "Headless.Messaging inbox schema is incomplete: the lifecycle, retention or operation receipt contract is missing."
             );
         }
 
         var sql = $"""
             INSERT INTO "{postgreSqlOptions.Value.Schema}"."schema_state" ("Component","SchemaVersion","ReadyAt")
-            VALUES ('inbox', 3, statement_timestamp())
+            VALUES ('inbox', 4, statement_timestamp())
             ON CONFLICT ("Component") DO UPDATE
             SET "SchemaVersion"=EXCLUDED."SchemaVersion", "ReadyAt"=EXCLUDED."ReadyAt";
             """;
@@ -456,8 +460,8 @@ internal sealed class PostgreSqlStorageInitializer(
                     FROM "{schema}"."schema_state"
                     WHERE "Component"='inbox';
 
-                    IF current_schema_version > 3 THEN
-                        RAISE EXCEPTION 'Headless.Messaging inbox schema version % is newer than supported version 3. Upgrade the application before starting this binary.', current_schema_version;
+                    IF current_schema_version > 4 THEN
+                        RAISE EXCEPTION 'Headless.Messaging inbox schema version % is newer than supported version 4. Upgrade the application before starting this binary.', current_schema_version;
                     END IF;
                 END IF;
             END
@@ -488,6 +492,7 @@ internal sealed class PostgreSqlStorageInitializer(
                 "ConsumerIdentity" VARCHAR(200) COLLATE "C" NOT NULL DEFAULT '',
                 "Generation" BIGINT NOT NULL DEFAULT 0,
                 "GenerationIncarnationId" UUID NULL,
+                "LifecycleId" UUID NULL,
                 "AttemptId" UUID NULL,
                 "IsInboxOrphaned" BOOLEAN NOT NULL DEFAULT FALSE,
                 "IsCurrentGeneration" BOOLEAN NOT NULL DEFAULT TRUE,
@@ -538,9 +543,24 @@ internal sealed class PostgreSqlStorageInitializer(
             END
             $headless$;
 
-            CREATE UNIQUE INDEX IF NOT EXISTS "uq_received_inbox_key" ON {GetReceivedTableName()}
+            DO $headless$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_received_inbox_lifecycle_v4'
+                    AND conrelid = '{GetReceivedTableName()}'::regclass) THEN
+                    ALTER TABLE {GetReceivedTableName()} ADD CONSTRAINT "ck_received_inbox_lifecycle_v4" CHECK (
+                        NOT "IsInboxRecord" OR ("LifecycleId" IS NOT NULL
+                            AND ("ReplayParentIncarnationId" IS NOT NULL OR "LifecycleId" = "GenerationIncarnationId"))
+                    );
+                END IF;
+            END
+            $headless$;
+
+            DROP INDEX IF EXISTS "{schema}"."uq_received_inbox_key";
+            CREATE UNIQUE INDEX IF NOT EXISTS "uq_received_inbox_root_key" ON {GetReceivedTableName()}
                 ("TenantPresent","TenantId","MessageId","IntentType","ContractIdentity","ContractVersion","ConsumerIdentity","Generation")
-                WHERE "IsInboxRecord";
+                WHERE "IsInboxRecord" AND "ReplayParentIncarnationId" IS NULL;
+            CREATE UNIQUE INDEX IF NOT EXISTS "uq_received_inbox_lifecycle_generation" ON {GetReceivedTableName()}
+                ("LifecycleId","Generation") WHERE "IsInboxRecord";
             CREATE UNIQUE INDEX IF NOT EXISTS "uq_received_generation_incarnation" ON {GetReceivedTableName()} ("GenerationIncarnationId")
                 WHERE "GenerationIncarnationId" IS NOT NULL;
             CREATE UNIQUE INDEX IF NOT EXISTS "uq_received_non_inbox_transport_identity" ON {GetReceivedTableName()}

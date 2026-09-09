@@ -140,67 +140,54 @@ public static class SetupSqlServerEntityFrameworkMessaging
                 );
             }
 
-            var commitError = await context
+            var attemptError = await context
                 .Database.CreateExecutionStrategy()
                 .ExecuteAsync(
                     async ct =>
                     {
-                        await using var transaction = await context
-                            .Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct)
-                            .ConfigureAwait(false);
-                        var dbTransaction = transaction.GetDbTransaction();
-                        await using var coordinationScope = context.Database.EnlistCommitCoordination(
-                            transaction,
-                            services,
-                            ct
-                        );
-                        var coordinator =
-                            currentCoordinator.Current
-                            ?? throw new InvalidOperationException(
-                                "The EF inbox transaction did not establish commit coordination before handler entry."
-                            );
-                        var coordination = coordinationResolver.Resolve(coordinator);
-                        if (coordination.Status is not DeliveryCoordinationStatus.Compatible)
-                        {
-                            throw new InvalidOperationException(
-                                $"The EF inbox transaction is incompatible with messaging storage: {coordination.Mismatch}."
-                            );
-                        }
-
-                        await handler(ct).ConfigureAwait(false);
-                        await context.SaveChangesAsync(ct).ConfigureAwait(false);
-                        var completed = await ((ITransactionalInboxStorage)storage)
-                            .CompleteReceivedInboxAsync(message, dbTransaction, ct)
-                            .ConfigureAwait(false);
-                        if (!completed)
-                        {
-                            throw new StaleInboxAttemptException(message.StorageId);
-                        }
-
+                        var handlerEntered = false;
                         try
                         {
-                            await transaction.CommitAsync(ct).ConfigureAwait(false);
-                            await signalSource.SignalCommittedAsync(dbTransaction).ConfigureAwait(false);
-                            return null;
-                        }
-                        catch (Exception commitException)
-                        {
-                            if (
-                                await ((ITransactionalInboxStorage)storage)
-                                    .ProbeReceivedInboxCommitAsync(message, CancellationToken.None)
-                                    .ConfigureAwait(false) is InboxCommitProbe.Committed
-                            )
+                            await using var transaction = await context
+                                .Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct)
+                                .ConfigureAwait(false);
+                            var dbTransaction = transaction.GetDbTransaction();
+                            await using var coordinationScope = context.Database.EnlistCommitCoordination(
+                                transaction,
+                                services,
+                                ct
+                            );
+                            var coordinator =
+                                currentCoordinator.Current
+                                ?? throw new InvalidOperationException(
+                                    "The EF inbox transaction did not establish commit coordination before handler entry."
+                                );
+                            var coordination = coordinationResolver.Resolve(coordinator);
+                            if (coordination.Status is not DeliveryCoordinationStatus.Compatible)
                             {
-                                await signalSource.SignalCommittedAsync(dbTransaction).ConfigureAwait(false);
-                                return null;
+                                throw new InvalidOperationException(
+                                    $"The EF inbox transaction is incompatible with messaging storage: {coordination.Mismatch}."
+                                );
+                            }
+
+                            handlerEntered = true;
+                            await handler(ct).ConfigureAwait(false);
+                            await context.SaveChangesAsync(ct).ConfigureAwait(false);
+                            var completed = await ((ITransactionalInboxStorage)storage)
+                                .CompleteReceivedInboxAsync(message, dbTransaction, ct)
+                                .ConfigureAwait(false);
+                            if (!completed)
+                            {
+                                throw new StaleInboxAttemptException(message.StorageId);
                             }
 
                             try
                             {
-                                await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
-                                await signalSource.SignalRolledBackAsync(dbTransaction).ConfigureAwait(false);
+                                await transaction.CommitAsync(ct).ConfigureAwait(false);
+                                await signalSource.SignalCommittedAsync(dbTransaction).ConfigureAwait(false);
+                                return null;
                             }
-                            catch (Exception rollbackException)
+                            catch (Exception commitException)
                             {
                                 if (
                                     await ((ITransactionalInboxStorage)storage)
@@ -212,24 +199,48 @@ public static class SetupSqlServerEntityFrameworkMessaging
                                     return null;
                                 }
 
-                                return ExceptionDispatchInfo.Capture(
-                                    new IndeterminateInboxCommitException(
-                                        message.StorageId,
-                                        commitException,
-                                        rollbackException
+                                try
+                                {
+                                    await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+                                    await signalSource.SignalRolledBackAsync(dbTransaction).ConfigureAwait(false);
+                                }
+                                catch (Exception rollbackException)
+                                {
+                                    if (
+                                        await ((ITransactionalInboxStorage)storage)
+                                            .ProbeReceivedInboxCommitAsync(message, CancellationToken.None)
+                                            .ConfigureAwait(false) is InboxCommitProbe.Committed
                                     )
+                                    {
+                                        await signalSource.SignalCommittedAsync(dbTransaction).ConfigureAwait(false);
+                                        return null;
+                                    }
+
+                                    return ExceptionDispatchInfo.Capture(
+                                        new IndeterminateInboxCommitException(
+                                            message.StorageId,
+                                            commitException,
+                                            rollbackException
+                                        )
+                                    );
+                                }
+
+                                return ExceptionDispatchInfo.Capture(
+                                    new UncommittedInboxCommitException(message.StorageId, commitException)
                                 );
                             }
-
-                            return ExceptionDispatchInfo.Capture(
-                                new UncommittedInboxCommitException(message.StorageId, commitException)
-                            );
+                        }
+                        catch (Exception exception) when (handlerEntered)
+                        {
+                            // Persisted inbox recovery owns every retry after entry, including failures
+                            // raised while disposing the coordination scope or transaction.
+                            return ExceptionDispatchInfo.Capture(exception);
                         }
                     },
                     cancellationToken
                 )
                 .ConfigureAwait(false);
-            commitError?.Throw();
+            attemptError?.Throw();
         }
     }
 

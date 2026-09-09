@@ -3,6 +3,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
+using Headless.Constants;
 using Npgsql;
 
 namespace Headless.DistributedLocks.PostgreSql;
@@ -100,12 +101,12 @@ internal sealed partial class PostgresAdvisoryLock(bool isShared, TimeProvider t
                     // means we might have actually acquired the lock just before timing out, so re-check. We use
                     // CancellationToken.None because if we DO hold the lock it would be invalid to abort the check.
                     // See https://github.com/madelson/DistributedLock/issues/147.
-                    case "55P03":
+                    case SqlErrorCodes.PostgreSql.LockTimeout:
                         return await _IsHoldingLockAsync(connection, key, CancellationToken.None).ConfigureAwait(false)
                             ? _Cookie
                             : null;
                     // deadlock_detected
-                    case "40P01":
+                    case SqlErrorCodes.PostgreSql.DeadlockDetected:
                         throw new InvalidOperationException(
                             $"The distributed-lock request failed with SqlState '{postgresException.SqlState}' (deadlock_detected).",
                             exception

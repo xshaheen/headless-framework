@@ -48,7 +48,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         }
 
         // Finish OnConfiguring before binding: a same-database override must not replace the borrowed caller handles.
-        var context = _CreateContext(new CoordinatedJobsDbContextOptions<TDbContext>(coordinatedWriteOptions));
+        var context = _CreateContext(new CoordinatedJobsDbContextOptions<TDbContext>(_coordinatedWriteOptions));
         try
         {
             var configured = context.Database.GetDbConnection();

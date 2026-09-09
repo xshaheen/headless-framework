@@ -38,6 +38,89 @@ public sealed class ForMessageRegistrationTests : TestBase
     }
 
     [Theory]
+    [InlineData(MessageLane.Bus)]
+    [InlineData(MessageLane.Queue)]
+    public void should_preserve_consumer_identity_at_the_durable_storage_length_limit(MessageLane lane)
+    {
+        var identity = new string('c', ConsumerMetadata.ConsumerIdentityMaxLength);
+        var services = new ServiceCollection();
+        services.AddHeadlessMessaging(setup =>
+        {
+            if (lane is MessageLane.Bus)
+            {
+                setup.Bus.ForMessage<OrderPlaced>(message =>
+                    message
+                        .Contract("orders.placed")
+                        .Consumer<OrderPlacedHandler>(consumer => consumer.ConsumerIdentity(identity))
+                );
+            }
+            else
+            {
+                setup.Queue.ForMessage<OrderPlaced>(message =>
+                    message
+                        .Contract("orders.placed")
+                        .Consumer<OrderPlacedHandler>(consumer => consumer.ConsumerIdentity(identity))
+                );
+            }
+            setup.UseInMemory();
+            setup.UseProcessLocalInMemoryStorage();
+        });
+        using var provider = services.BuildServiceProvider();
+
+        var metadata = provider.GetDrainedConsumerRegistry().GetAll().Single();
+        metadata.ConsumerIdentity.Should().Be(identity);
+        metadata.Lane.Should().Be(lane);
+    }
+
+    [Theory]
+    [InlineData(MessageLane.Bus)]
+    [InlineData(MessageLane.Queue)]
+    public void should_reject_oversized_consumer_identity_during_registration(MessageLane lane)
+    {
+        var identity = new string('c', ConsumerMetadata.ConsumerIdentityMaxLength + 1);
+        Action act = () =>
+            new ServiceCollection().AddHeadlessMessaging(setup =>
+            {
+                if (lane is MessageLane.Bus)
+                {
+                    setup.Bus.ForMessage<OrderPlaced>(message =>
+                        message.Consumer<OrderPlacedHandler>(consumer => consumer.ConsumerIdentity(identity))
+                    );
+                }
+                else
+                {
+                    setup.Queue.ForMessage<OrderPlaced>(message =>
+                        message.Consumer<OrderPlacedHandler>(consumer => consumer.ConsumerIdentity(identity))
+                    );
+                }
+            });
+
+        act.Should().Throw<ArgumentOutOfRangeException>().WithParameterName("consumerIdentity");
+    }
+
+    [Theory]
+    [InlineData(MessageLane.Bus)]
+    [InlineData(MessageLane.Queue)]
+    public void should_reject_oversized_consumer_identity_through_internal_metadata_registration(MessageLane lane)
+    {
+        Action act = () =>
+            new ServiceCollection().AddHeadlessMessaging(setup =>
+                setup.RegisterConsumer(
+                    typeof(OrderPlacedHandler),
+                    typeof(OrderPlaced),
+                    "orders.placed",
+                    "orders",
+                    1,
+                    lane,
+                    new string('c', ConsumerMetadata.ConsumerIdentityMaxLength + 1),
+                    MessageOptions.InitialContractVersion
+                )
+            );
+
+        act.Should().Throw<MessagingConfigurationException>().WithMessage("*consumer identity*200*");
+    }
+
+    [Theory]
     [InlineData("")]
     [InlineData(" ")]
     [InlineData("v 2")]

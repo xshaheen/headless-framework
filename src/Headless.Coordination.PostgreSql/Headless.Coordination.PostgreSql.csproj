@@ -10,6 +10,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Coordination.Core.Database\Headless.Coordination.Core.Database.csproj" />
+    <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
   </ItemGroup>
 </Project>

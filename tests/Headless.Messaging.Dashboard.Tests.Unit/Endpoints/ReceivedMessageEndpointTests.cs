@@ -4,6 +4,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Claims;
+using System.Text.Json.Serialization;
 using Headless.Dashboard.Authentication;
 using Headless.Messaging;
 using Headless.Messaging.Dashboard;
@@ -241,11 +242,25 @@ public sealed class ReceivedMessageEndpointTests : TestBase
         response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
     }
 
-    [Fact]
-    public async Task should_return_authorized_safe_inbox_generation_projection()
+    [Theory]
+    [InlineData(StatusName.Failed, false, InboxOperationOutcome.Applied, HttpStatusCode.OK)]
+    [InlineData(StatusName.Succeeded, false, InboxOperationOutcome.Applied, HttpStatusCode.OK)]
+    [InlineData(StatusName.Failed, true, InboxOperationOutcome.Applied, HttpStatusCode.OK)]
+    [InlineData(StatusName.Succeeded, true, InboxOperationOutcome.Applied, HttpStatusCode.OK)]
+    [InlineData(StatusName.Failed, true, InboxOperationOutcome.NotFound, HttpStatusCode.NotFound)]
+    [InlineData(StatusName.Succeeded, true, InboxOperationOutcome.NotFound, HttpStatusCode.NotFound)]
+    [InlineData(StatusName.Failed, true, InboxOperationOutcome.StateConflict, HttpStatusCode.Conflict)]
+    [InlineData(StatusName.Succeeded, true, InboxOperationOutcome.StateConflict, HttpStatusCode.Conflict)]
+    public async Task should_round_trip_authorized_inbox_json_independently_of_host_options(
+        StatusName status,
+        bool customizeHostJson,
+        InboxOperationOutcome outcome,
+        HttpStatusCode expectedHttpStatus
+    )
     {
         var operations = Substitute.For<IInboxOperationsApi>();
         var incarnationId = Guid.NewGuid();
+        var operationId = Guid.NewGuid();
         operations
             .QueryAsync(
                 Arg.Any<InboxGenerationQuery>(),
@@ -266,7 +281,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
                                 "orders.created",
                                 "v1",
                                 "orders.consumer",
-                                StatusName.Failed,
+                                status,
                                 true,
                                 true,
                                 Guid.NewGuid(),
@@ -285,10 +300,37 @@ public sealed class ReceivedMessageEndpointTests : TestBase
                     )
                 )
             );
+        operations
+            .HoldAsync(Arg.Any<InboxOperationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(
+                ValueTask.FromResult(
+                    new InboxOperationResult(
+                        operationId,
+                        InboxOperationType.Hold,
+                        outcome,
+                        incarnationId,
+                        status,
+                        null,
+                        null,
+                        null,
+                        null,
+                        "api-user",
+                        "investigation",
+                        DateTimeOffset.UtcNow
+                    )
+                )
+            );
         _dataStorage.GetInboxOperationsApi().Returns(operations);
-        await using var app = _CreateTestApp(_dataStorage);
+        await using var app = _CreateTestApp(
+            _dataStorage,
+            authenticate: false,
+            config: new MessagingDashboardOptionsBuilder().WithApiKey("secret"),
+            useAuthenticationMiddleware: true,
+            customizeHostJson: customizeHostJson
+        );
         await app.StartAsync(AbortToken);
         using var client = app.GetTestClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "secret");
 
         var response = await client.GetAsync("/api/inbox?currentPage=1&perPage=20", AbortToken);
 
@@ -301,6 +343,41 @@ public sealed class ReceivedMessageEndpointTests : TestBase
             .And.Contain("orders.consumer")
             .And.Contain(incarnationId.ToString());
         json.Should().NotContain("content").And.NotContain("headers").And.NotContain("payload");
+        var generation = document.RootElement.GetProperty("items")[0];
+        generation.GetProperty("status").GetString().Should().Be(status.ToString());
+        generation.GetProperty("lane").GetString().Should().Be(nameof(MessageLane.Queue));
+
+        // Send the values returned to the browser unchanged through the authenticated mutation boundary.
+        using var mutation = await client.PostAsJsonAsync(
+            "/api/inbox/hold",
+            new
+            {
+                operationId,
+                expectedIncarnationId = generation.GetProperty("incarnationId").GetString(),
+                expectedStatus = generation.GetProperty("status").GetString(),
+                reason = "investigation",
+            },
+            AbortToken
+        );
+
+        mutation.StatusCode.Should().Be(expectedHttpStatus);
+        using var mutationDocument = JsonDocument.Parse(await mutation.Content.ReadAsStringAsync(AbortToken));
+        var mutationResult = mutationDocument.RootElement;
+        mutationResult.GetProperty("expectedStatus").GetString().Should().Be(status.ToString());
+        mutationResult.GetProperty("operationType").GetString().Should().Be(nameof(InboxOperationType.Hold));
+        mutationResult.GetProperty("outcome").GetString().Should().Be(outcome.ToString());
+        await operations
+            .Received(1)
+            .HoldAsync(
+                Arg.Is<InboxOperationRequest>(request =>
+                    request.OperationId == operationId
+                    && request.ExpectedIncarnationId == incarnationId
+                    && request.ExpectedStatus == status
+                    && request.Actor == "api-user"
+                    && request.Reason == "investigation"
+                ),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -344,7 +421,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
             {
                 operationId,
                 expectedIncarnationId = incarnationId,
-                expectedStatus = StatusName.Failed,
+                expectedStatus = nameof(StatusName.Failed),
                 reason = "retention complete",
             },
             AbortToken
@@ -410,7 +487,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
             {
                 operationId,
                 expectedIncarnationId = incarnationId,
-                expectedStatus = StatusName.Failed,
+                expectedStatus = nameof(StatusName.Failed),
                 reason = "dashboard action",
             },
             AbortToken
@@ -452,6 +529,35 @@ public sealed class ReceivedMessageEndpointTests : TestBase
         }
     }
 
+    [Theory]
+    [InlineData("-1")]
+    [InlineData("\"-1\"")]
+    [InlineData("\"Unknown\"")]
+    public async Task should_reject_inbox_mutation_with_non_contract_status(string statusJson)
+    {
+        var operations = Substitute.For<IInboxOperationsApi>();
+        _dataStorage.GetInboxOperationsApi().Returns(operations);
+        await using var app = _CreateTestApp(_dataStorage);
+        await app.StartAsync(AbortToken);
+        using var client = app.GetTestClient();
+        using var status = JsonDocument.Parse(statusJson);
+
+        using var response = await client.PostAsJsonAsync(
+            "/api/inbox/hold",
+            new
+            {
+                operationId = Guid.NewGuid(),
+                expectedIncarnationId = Guid.NewGuid(),
+                expectedStatus = status.RootElement,
+                reason = "investigation",
+            },
+            AbortToken
+        );
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        await operations.DidNotReceive().HoldAsync(Arg.Any<InboxOperationRequest>(), Arg.Any<CancellationToken>());
+    }
+
     [Fact]
     public async Task should_reject_inbox_mutation_without_authenticated_actor()
     {
@@ -464,7 +570,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
             {
                 operationId = Guid.NewGuid(),
                 expectedIncarnationId = Guid.NewGuid(),
-                expectedStatus = StatusName.Failed,
+                expectedStatus = nameof(StatusName.Failed),
                 reason = "retention complete",
             },
             AbortToken
@@ -511,13 +617,22 @@ public sealed class ReceivedMessageEndpointTests : TestBase
         IDataStorage dataStorage,
         bool authenticate = true,
         MessagingDashboardOptionsBuilder? config = null,
-        bool useAuthenticationMiddleware = false
+        bool useAuthenticationMiddleware = false,
+        bool customizeHostJson = false
     )
     {
         config ??= new MessagingDashboardOptionsBuilder().WithNoAuth();
 
         var appBuilder = WebApplication.CreateSlimBuilder();
         appBuilder.WebHost.UseTestServer();
+        if (customizeHostJson)
+        {
+            appBuilder.Services.ConfigureHttpJsonOptions(options =>
+            {
+                options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower;
+                options.SerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
+            });
+        }
 
         appBuilder.Services.AddSingleton(config);
         appBuilder.Services.AddSingleton(config.Auth);

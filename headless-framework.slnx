@@ -18,6 +18,7 @@
         <Project Path="src\Headless.Api.Core\Headless.Api.Core.csproj" />
         <Project Path="src\Headless.Api.Idempotency\Headless.Api.Idempotency.csproj" />
         <Project Path="src\Headless.Api.ServiceDefaults\Headless.Api.ServiceDefaults.csproj" />
+        <Project Path="tests/Headless.Api.Abstractions.Tests.Unit/Headless.Api.Abstractions.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Api.DataProtection.Tests.Integration\Headless.Api.DataProtection.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Api.DataProtection.Tests.Unit\Headless.Api.DataProtection.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Api.FluentValidation.Tests.Unit\Headless.Api.FluentValidation.Tests.Unit.csproj" />

@@ -140,10 +140,10 @@ internal sealed partial class InMemoryDataStorage
                     InboxOperationOutcome.OperationConflict,
                     request.ExpectedIncarnationId,
                     request.ExpectedStatus,
-                    null,
-                    null,
-                    null,
-                    null,
+                    StorageId: null,
+                    ChildStorageId: null,
+                    ChildGeneration: null,
+                    ChildIncarnationId: null,
                     request.Actor,
                     request.Reason,
                     conflictAt,
@@ -195,7 +195,6 @@ internal sealed partial class InMemoryDataStorage
                         var child = _CreateForcedChild(row, request.OperationId, now);
                         row.IsCurrentGeneration = false;
                         ReceivedMessages[child.StorageId] = child;
-                        _inboxIdentityIndex[child.InboxKey!] = child.StorageId;
                         childStorageId = child.StorageId;
                         childGeneration = child.InboxGeneration!.Number;
                         childIncarnationId = child.InboxGeneration.IncarnationId;
@@ -311,6 +310,7 @@ internal sealed partial class InMemoryDataStorage
             InboxKey = parentKey with { Generation = generation },
             InboxGeneration = new InboxGeneration(generation, incarnationId),
             InboxRetention = parent.InboxRetention,
+            LifecycleId = parent.LifecycleId,
             ReplayParentIncarnationId = parent.InboxGeneration!.IncarnationId,
             ReplayOperationId = operationId,
         };

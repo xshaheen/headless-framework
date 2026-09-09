@@ -36,7 +36,7 @@ public interface IConsumerBuilderBase<TConsumer, out TBuilder>
     TBuilder HandlerId(string handlerId);
 
     /// <summary>Sets the operator-stable identity used by the durable inbox.</summary>
-    /// <param name="consumerIdentity">Identity that remains unchanged across handler and topology refactors.</param>
+    /// <param name="consumerIdentity">Nonblank identity of at most <see cref="ConsumerMetadata.ConsumerIdentityMaxLength"/> characters that remains unchanged across handler and topology refactors.</param>
     /// <returns>The same builder instance for chaining.</returns>
     TBuilder ConsumerIdentity(string consumerIdentity);
 
@@ -171,6 +171,7 @@ internal sealed class MessageConsumerRegistrationBuilder(
     public void SetConsumerIdentity(string consumerIdentity)
     {
         Argument.IsNotNullOrWhiteSpace(consumerIdentity);
+        Argument.HasMaxLength(consumerIdentity, ConsumerMetadata.ConsumerIdentityMaxLength);
 
         ConsumerIdentity = consumerIdentity;
     }

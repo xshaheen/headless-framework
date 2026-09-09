@@ -931,7 +931,7 @@ internal sealed partial class SqlServerDataStorage(
                  WHERE IntentType IN (0, 1)
                  AND Id IN (
                      SELECT TOP (@batchCount) Id
-                     FROM {table} WITH (READPAST)
+                     FROM {table} WITH (READPAST, READCOMMITTEDLOCK)
                      WHERE ExpiresAt < @timeout
                      AND StatusName IN('{nameof(StatusName.Succeeded)}','{nameof(StatusName.Failed)}')
                      AND NextRetryAt IS NULL
@@ -1211,52 +1211,60 @@ internal sealed partial class SqlServerDataStorage(
             var sqlParams = new List<object>(batch.Length * (isReceivedTable ? 11 : 4));
             for (var index = 0; index < batch.Length; index++)
             {
+                var parameterSuffix = index.ToString(CultureInfo.InvariantCulture);
                 var identity = batch[index];
                 var inboxFence = identity.InboxAttemptFence;
                 var inboxGuard = isReceivedTable
                     ? $"""
                          AND (IsInboxRecord=0 OR (
-                                Id=@InboxStorageId{index}
-                            AND IntentType=@InboxIntentType{index}
-                            AND Generation=@InboxGeneration{index}
-                            AND GenerationIncarnationId=@InboxGenerationIncarnationId{index}
-                            AND AttemptId=@InboxAttemptId{index}
-                            AND (Owner=@InboxOwner{index} OR (Owner IS NULL AND @InboxOwner{index} IS NULL))
-                            AND LockedUntil=@InboxLockedUntil{index}))
+                                Id=@InboxStorageId{parameterSuffix}
+                            AND IntentType=@InboxIntentType{parameterSuffix}
+                            AND Generation=@InboxGeneration{parameterSuffix}
+                            AND GenerationIncarnationId=@InboxGenerationIncarnationId{parameterSuffix}
+                            AND AttemptId=@InboxAttemptId{parameterSuffix}
+                            AND (Owner=@InboxOwner{parameterSuffix} OR (Owner IS NULL AND @InboxOwner{parameterSuffix} IS NULL))
+                            AND LockedUntil=@InboxLockedUntil{parameterSuffix}))
                         """
                     : string.Empty;
                 predicates[index] = $"""
-                    (Id = @Id{index}
-                     AND IntentType = @IntentType{index}
-                     AND (Owner = @Owner{index} OR (Owner IS NULL AND @Owner{index} IS NULL))
-                     AND LockedUntil = @LockedUntil{index}{inboxGuard})
+                    (Id = @Id{parameterSuffix}
+                     AND IntentType = @IntentType{parameterSuffix}
+                     AND (Owner = @Owner{parameterSuffix} OR (Owner IS NULL AND @Owner{parameterSuffix} IS NULL))
+                     AND LockedUntil = @LockedUntil{parameterSuffix}{inboxGuard})
                     """;
-                sqlParams.Add(new SqlParameter($"@Id{index}", identity.StorageId));
+                sqlParams.Add(new SqlParameter($"@Id{parameterSuffix}", identity.StorageId));
                 sqlParams.Add(
-                    new SqlParameter($"@IntentType{index}", SqlDbType.SmallInt)
+                    new SqlParameter($"@IntentType{parameterSuffix}", SqlDbType.SmallInt)
                     {
                         Value = MessageLaneCompatibility.ToPersistedValue(identity.Lane),
                     }
                 );
                 sqlParams.Add(
-                    new SqlParameter($"@Owner{index}", SqlDbType.NVarChar, DataStorageConstants.OwnerColumnMaxLength)
+                    new SqlParameter(
+                        $"@Owner{parameterSuffix}",
+                        SqlDbType.NVarChar,
+                        DataStorageConstants.OwnerColumnMaxLength
+                    )
                     {
                         Value = identity.Owner ?? (object)DBNull.Value,
                     }
                 );
                 sqlParams.Add(
-                    new SqlParameter($"@LockedUntil{index}", SqlDbType.DateTimeOffset) { Value = identity.LockedUntil }
+                    new SqlParameter($"@LockedUntil{parameterSuffix}", SqlDbType.DateTimeOffset)
+                    {
+                        Value = identity.LockedUntil,
+                    }
                 );
                 if (isReceivedTable)
                 {
                     sqlParams.Add(
-                        new SqlParameter($"@InboxStorageId{index}", SqlDbType.UniqueIdentifier)
+                        new SqlParameter($"@InboxStorageId{parameterSuffix}", SqlDbType.UniqueIdentifier)
                         {
                             Value = inboxFence?.StorageId ?? (object)DBNull.Value,
                         }
                     );
                     sqlParams.Add(
-                        new SqlParameter($"@InboxIntentType{index}", SqlDbType.SmallInt)
+                        new SqlParameter($"@InboxIntentType{parameterSuffix}", SqlDbType.SmallInt)
                         {
                             Value = inboxFence is null
                                 ? (object)DBNull.Value
@@ -1264,26 +1272,26 @@ internal sealed partial class SqlServerDataStorage(
                         }
                     );
                     sqlParams.Add(
-                        new SqlParameter($"@InboxGeneration{index}", SqlDbType.BigInt)
+                        new SqlParameter($"@InboxGeneration{parameterSuffix}", SqlDbType.BigInt)
                         {
                             Value = inboxFence?.Generation ?? (object)DBNull.Value,
                         }
                     );
                     sqlParams.Add(
-                        new SqlParameter($"@InboxGenerationIncarnationId{index}", SqlDbType.UniqueIdentifier)
+                        new SqlParameter($"@InboxGenerationIncarnationId{parameterSuffix}", SqlDbType.UniqueIdentifier)
                         {
                             Value = inboxFence?.GenerationIncarnationId ?? (object)DBNull.Value,
                         }
                     );
                     sqlParams.Add(
-                        new SqlParameter($"@InboxAttemptId{index}", SqlDbType.UniqueIdentifier)
+                        new SqlParameter($"@InboxAttemptId{parameterSuffix}", SqlDbType.UniqueIdentifier)
                         {
                             Value = inboxFence?.AttemptId ?? (object)DBNull.Value,
                         }
                     );
                     sqlParams.Add(
                         new SqlParameter(
-                            $"@InboxOwner{index}",
+                            $"@InboxOwner{parameterSuffix}",
                             SqlDbType.NVarChar,
                             DataStorageConstants.OwnerColumnMaxLength
                         )
@@ -1292,7 +1300,7 @@ internal sealed partial class SqlServerDataStorage(
                         }
                     );
                     sqlParams.Add(
-                        new SqlParameter($"@InboxLockedUntil{index}", SqlDbType.DateTimeOffset)
+                        new SqlParameter($"@InboxLockedUntil{parameterSuffix}", SqlDbType.DateTimeOffset)
                         {
                             Value = inboxFence?.LockedUntil ?? (object)DBNull.Value,
                         }
@@ -1996,9 +2004,15 @@ internal sealed partial class SqlServerDataStorage(
         var isReceivedTable = string.Equals(tableName, _receivedTable, StringComparison.Ordinal);
         var sql = isReceivedTable
             ? $"""
+                DECLARE @PoisonTerminalAt datetimeoffset(7) = SYSUTCDATETIME();
                 UPDATE target
                 SET StatusName=@StatusName, NextRetryAt=NULL, LockedUntil=NULL, Owner=NULL,
-                    ExpiresAt=@ExpiresAt, ExceptionInfo=poison.ExceptionInfo
+                    ExpiresAt=@ExpiresAt, ExceptionInfo=poison.ExceptionInfo,
+                    AttemptId=CASE WHEN target.IsInboxRecord=1 THEN NULL ELSE target.AttemptId END,
+                    TerminalAt=CASE WHEN target.IsInboxRecord=1 THEN @PoisonTerminalAt ELSE target.TerminalAt END,
+                    EffectiveExpiresAt=CASE WHEN target.IsInboxRecord=1
+                        THEN DATEADD(second,CONVERT(int,target.InboxRetentionSeconds),@PoisonTerminalAt)
+                        ELSE target.EffectiveExpiresAt END
                 FROM {tableName} AS target
                 INNER JOIN @PoisonMessages AS poison ON target.Id=poison.Id
                 WHERE {_TerminalRowGuardSimple};

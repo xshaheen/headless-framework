@@ -43,9 +43,9 @@ internal sealed partial class InMemoryDataStorage(
         Guid
     > _receivedIdentityIndex = new();
 
-    private readonly Dictionary<InboxKey, Guid> _inboxIdentityIndex = new();
+    private readonly Dictionary<InboxKey, Guid> _inboxIdentityIndex = [];
 
-    private readonly Dictionary<Guid, InboxOperationResult> _inboxOperationReceipts = new();
+    private readonly Dictionary<Guid, InboxOperationResult> _inboxOperationReceipts = [];
 
     private readonly List<InMemoryInboxAudit> _inboxAudit = [];
 
@@ -537,6 +537,7 @@ internal sealed partial class InMemoryDataStorage(
             _inboxIdentityIndex.Remove(key);
 
             var now = timeProvider.GetUtcNow();
+            var incarnationId = guidGenerator.Create();
             var stored = new MemoryMessage
             {
                 StorageId = guidGenerator.Create(),
@@ -550,7 +551,8 @@ internal sealed partial class InMemoryDataStorage(
                 NextRetryAt = now.Add(messagingOptions.Value.RetryPolicy.InitialDispatchGrace),
                 StatusName = StatusName.Scheduled,
                 InboxKey = key,
-                InboxGeneration = new InboxGeneration(key.Generation, guidGenerator.Create()),
+                InboxGeneration = new InboxGeneration(key.Generation, incarnationId),
+                LifecycleId = incarnationId,
                 InboxRetention = retention,
             };
 
@@ -1047,8 +1049,8 @@ internal sealed partial class InMemoryDataStorage(
                     if (row.InboxGeneration is { } generation)
                     {
                         var operationId = guidGenerator.Create();
-                        var actor = "headless.messaging.collector";
-                        var reason = "retention_expired";
+                        const string actor = "headless.messaging.collector";
+                        const string reason = "retention_expired";
                         var result = new InboxOperationResult(
                             operationId,
                             InboxOperationType.Cleanup,
@@ -1056,9 +1058,9 @@ internal sealed partial class InMemoryDataStorage(
                             generation.IncarnationId,
                             row.StatusName,
                             row.StorageId,
-                            null,
-                            null,
-                            null,
+                            ChildStorageId: null,
+                            ChildGeneration: null,
+                            ChildIncarnationId: null,
                             actor,
                             reason,
                             now
@@ -1278,8 +1280,19 @@ internal sealed partial class InMemoryDataStorage(
         // NOT leak into the dictionary entry when ChangeReceiveStateAsync's terminal guard rejects
         // the conditional UPDATE. The SQL providers naturally produce a snapshot because every column
         // comes back through deserialization; InMemory must do this explicitly.
+        //
+        // Claim in NextRetryAt order, as the relational providers do: unordered enumeration lets an
+        // earlier-scheduled row be starved indefinitely once the batch limit is reached. StorageId is
+        // only a deterministic tie-break — it is not byte-comparable with uuid/uniqueidentifier
+        // ordering, which matters to nothing, since no guarantee rests on rows sharing a NextRetryAt.
+        // Rows with no NextRetryAt sort last and are rejected below without consuming a slot. Reading
+        // the sort key outside the row lock is safe: eligibility is re-validated under it before leasing.
         var claimed = new List<MediumMessage>();
-        foreach (var candidate in source.Values)
+        var ordered = source
+            .Values.OrderBy(candidate => candidate.NextRetryAt ?? DateTimeOffset.MaxValue)
+            .ThenBy(candidate => candidate.StorageId);
+
+        foreach (var candidate in ordered)
         {
             if (claimed.Count >= retryBatchSize)
             {
@@ -1346,19 +1359,6 @@ internal sealed partial class InMemoryDataStorage(
     private static bool _IsSupportedLane(MessageLane lane)
     {
         return lane is MessageLane.Bus or MessageLane.Queue;
-    }
-
-    private static bool _IsEligibleRetryCandidate(MemoryMessage candidate, DateTimeOffset now, int maxPersistedRetries)
-    {
-        if ((candidate.StatusName is StatusName.Succeeded or StatusName.Failed) && candidate.NextRetryAt is null)
-        {
-            return false;
-        }
-
-        return candidate.Retries <= maxPersistedRetries
-            && candidate.NextRetryAt is not null
-            && candidate.NextRetryAt <= now
-            && (candidate.LockedUntil is null || candidate.LockedUntil <= now);
     }
 
     /// <summary>

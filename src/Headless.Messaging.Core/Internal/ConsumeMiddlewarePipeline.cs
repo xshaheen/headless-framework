@@ -14,6 +14,14 @@ namespace Headless.Messaging.Internal;
 
 internal interface IConsumeMiddlewarePipeline
 {
+    Task<ConsumerExecutedResult> ExecuteInScopeAsync(
+        ConsumerContext context,
+        object messageInstance,
+        Type messageType,
+        IServiceProvider provider,
+        CancellationToken cancellationToken = default
+    );
+
     Task<ConsumerExecutedResult> ExecuteAsync(
         ConsumerContext context,
         object messageInstance,
@@ -67,6 +75,25 @@ internal sealed class ConsumeMiddlewarePipeline(
         CancellationToken cancellationToken = default
     )
     {
+        await using var scope = serviceProvider.CreateAsyncScope();
+        return await ExecuteInScopeAsync(
+                context,
+                messageInstance,
+                messageType,
+                scope.ServiceProvider,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    public async Task<ConsumerExecutedResult> ExecuteInScopeAsync(
+        ConsumerContext context,
+        object messageInstance,
+        Type messageType,
+        IServiceProvider provider,
+        CancellationToken cancellationToken = default
+    )
+    {
         cancellationToken.ThrowIfCancellationRequested();
 
         var descriptor = context.ConsumerDescriptor;
@@ -93,11 +120,6 @@ internal sealed class ConsumeMiddlewarePipeline(
         {
             consumeContextAccessor?.Current = consumeContext;
 
-            // The scope is not elided on the zero-middleware path the way the publish pipeline elides its
-            // own: the inner ring resolves the handler (and the dispatcher) from this provider, so it is
-            // the consumer's scope, not just a middleware-resolution scope.
-            await using var scope = serviceProvider.CreateAsyncScope();
-            var provider = scope.ServiceProvider;
             var middleware = _ResolveMiddleware(provider, consumeContext, descriptor.GroupName);
 
             if (middleware.Length == 0)

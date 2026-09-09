@@ -22,6 +22,12 @@
   <data name="g:concurrency_failure" xml:space="preserve">
     <value>Optimistic concurrency failure, object has been modified. Can not perform two operations at the same time.</value>
   </data>
+  <data name="g:if_match_required" xml:space="preserve">
+    <value>A strong If-Match entity tag is required.</value>
+  </data>
+  <data name="g:if_match_invalid" xml:space="preserve">
+    <value>If-Match must contain exactly one strong entity tag.</value>
+  </data>
   <data name="g:feature_currently_unavailable" xml:space="preserve">
     <value>This feature currently unavailable.</value>
   </data>

@@ -15,6 +15,8 @@ internal sealed class MemoryMessage : MediumMessage
 
     public bool IsCurrentGeneration { get; set; } = true;
 
+    public Guid? LifecycleId { get; set; }
+
     public Guid? ReplayParentIncarnationId { get; set; }
 
     public Guid? ReplayOperationId { get; set; }

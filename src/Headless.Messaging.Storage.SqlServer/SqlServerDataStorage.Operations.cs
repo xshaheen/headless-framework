@@ -29,17 +29,29 @@ internal sealed partial class SqlServerDataStorage
         var pageSize = Math.Clamp(query.PageSize, 1, 200);
         var where = "[IsInboxRecord]=1";
         if (query.IncarnationId is not null)
+        {
             where += " AND [GenerationIncarnationId]=@IncarnationId";
+        }
         if (!string.IsNullOrEmpty(query.ConsumerIdentity))
+        {
             where += " AND [ConsumerIdentityOrdinal]=CONVERT(varbinary(400),@ConsumerIdentity)";
+        }
         if (query.Lane is not null)
+        {
             where += " AND [IntentType]=@IntentType";
+        }
         if (query.Status is not null)
+        {
             where += " AND [StatusName]=@StatusName";
+        }
         if (query.IsOrphaned is not null)
+        {
             where += " AND [IsInboxOrphaned]=@IsOrphaned";
+        }
         if (query.IsHeld is not null)
+        {
             where += " AND [IsHeld]=@IsHeld";
+        }
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
@@ -247,7 +259,9 @@ internal sealed partial class SqlServerDataStorage
     )
     {
         if (row is null || outcome is not InboxOperationOutcome.Applied)
+        {
             return;
+        }
         MessagingMetrics.RecordInbox(
             operationType is InboxOperationType.ForceReprocess ? InboxMetricKind.Replay : InboxMetricKind.Retention,
             row.ConsumerIdentity,
@@ -272,11 +286,17 @@ internal sealed partial class SqlServerDataStorage
     )
     {
         if (row is null)
+        {
             return InboxOperationOutcome.NotFound;
+        }
         if (row.Status != request.ExpectedStatus)
+        {
             return InboxOperationOutcome.StateConflict;
+        }
         if (row.Status is not (StatusName.Succeeded or StatusName.Failed) || row.NextRetryAt is not null)
+        {
             return InboxOperationOutcome.Active;
+        }
         return operationType switch
         {
             InboxOperationType.Hold when row.IsHeld => InboxOperationOutcome.StateConflict,
@@ -311,10 +331,10 @@ internal sealed partial class SqlServerDataStorage
                 InboxOperationOutcome.OperationConflict,
                 request.ExpectedIncarnationId,
                 request.ExpectedStatus,
-                null,
-                null,
-                null,
-                null,
+                StorageId: null,
+                ChildStorageId: null,
+                ChildGeneration: null,
+                ChildIncarnationId: null,
                 request.Actor,
                 request.Reason,
                 prior.CreatedAt,
@@ -388,7 +408,9 @@ internal sealed partial class SqlServerDataStorage
         );
         var result = (int)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false))!;
         if (result < 0)
+        {
             throw new TimeoutException("Could not acquire the inbox operation identity lock.");
+        }
     }
 
     private async ValueTask<SqlServerInboxOperationRow?> _ReadSqlServerInboxOperationRowAsync(
@@ -399,14 +421,16 @@ internal sealed partial class SqlServerDataStorage
     )
     {
         await using var command = new SqlCommand(
-            $"SELECT [Id],[StatusName],[NextRetryAt],[IsHeld],[IsCurrentGeneration],[Generation],[TenantPresent],[TenantId],[MessageId],[IntentType],[ContractIdentity],[ContractVersion],[ConsumerIdentity] FROM {_receivedTable} WITH (UPDLOCK,HOLDLOCK) WHERE [IsInboxRecord]=1 AND [GenerationIncarnationId]=@IncarnationId;",
+            $"SELECT [Id],[StatusName],[NextRetryAt],[IsHeld],[IsCurrentGeneration],[Generation],[TenantPresent],[TenantId],[MessageId],[IntentType],[ContractIdentity],[ContractVersion],[ConsumerIdentity],[LifecycleId] FROM {_receivedTable} WITH (UPDLOCK,HOLDLOCK) WHERE [IsInboxRecord]=1 AND [GenerationIncarnationId]=@IncarnationId;",
             connection,
             transaction
         );
         command.Parameters.Add(new SqlParameter("@IncarnationId", incarnationId));
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
             return null;
+        }
         var common = new InboxOperationRow(
             reader.GetGuid(0),
             Enum.Parse<StatusName>(reader.GetString(1)),
@@ -423,7 +447,8 @@ internal sealed partial class SqlServerDataStorage
             reader.GetInt16(9),
             reader.GetString(10),
             reader.GetString(11),
-            reader.GetString(12)
+            reader.GetString(12),
+            reader.GetGuid(13)
         );
     }
 
@@ -442,7 +467,9 @@ internal sealed partial class SqlServerDataStorage
         command.Parameters.Add(new SqlParameter("@OperationId", operationId));
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
             return null;
+        }
         return new InboxOperationResult(
             operationId,
             Enum.Parse<InboxOperationType>(reader.GetString(1)),
@@ -497,15 +524,16 @@ internal sealed partial class SqlServerDataStorage
             row.ContractIdentity,
             row.ContractVersion,
             row.ConsumerIdentity,
-            childGeneration
+            childGeneration,
+            row.LifecycleId
         );
         var (graceSeconds, graceNanoseconds) = _SplitLeaseDuration(
             messagingOptions.Value.RetryPolicy.InitialDispatchGrace
         );
         var sql = $"""
             UPDATE {_receivedTable} SET [IsCurrentGeneration]=0 WHERE [GenerationIncarnationId]=@ParentIncarnationId AND [IsCurrentGeneration]=1;
-            INSERT INTO {_receivedTable}([Id],[Version],[Name],[Group],[Content],[IntentType],[Retries],[InlineAttempts],[Added],[ExpiresAt],[NextRetryAt],[LockedUntil],[Owner],[StatusName],[MessageId],[ExceptionInfo],[IsInboxRecord],[TenantPresent],[TenantId],[ContractIdentity],[ContractVersion],[ConsumerIdentity],[Generation],[GenerationIncarnationId],[AttemptId],[IsInboxOrphaned],[IsCurrentGeneration],[ReplayParentIncarnationId],[ReplayOperationId],[TerminalAt],[EffectiveExpiresAt],[IsHeld],[HeldAt],[HeldBy],[HoldReason],[HoldOperationId],[InboxKeyHash],[InboxRetentionSeconds])
-            SELECT @ChildStorageId,[Version],[Name],[Group],[Content],[IntentType],0,0,@Now,NULL,DATEADD(nanosecond,@GraceNanoseconds,DATEADD(second,@GraceSeconds,@Now)),NULL,NULL,N'Scheduled',[MessageId],NULL,1,[TenantPresent],[TenantId],[ContractIdentity],[ContractVersion],[ConsumerIdentity],@ChildGeneration,@ChildIncarnationId,NULL,0,1,[GenerationIncarnationId],@OperationId,NULL,NULL,0,NULL,NULL,NULL,NULL,@InboxKeyHash,[InboxRetentionSeconds]
+            INSERT INTO {_receivedTable}([Id],[Version],[Name],[Group],[Content],[IntentType],[Retries],[InlineAttempts],[Added],[ExpiresAt],[NextRetryAt],[LockedUntil],[Owner],[StatusName],[MessageId],[ExceptionInfo],[IsInboxRecord],[TenantPresent],[TenantId],[ContractIdentity],[ContractVersion],[ConsumerIdentity],[Generation],[GenerationIncarnationId],[LifecycleId],[AttemptId],[IsInboxOrphaned],[IsCurrentGeneration],[ReplayParentIncarnationId],[ReplayOperationId],[TerminalAt],[EffectiveExpiresAt],[IsHeld],[HeldAt],[HeldBy],[HoldReason],[HoldOperationId],[InboxKeyHash],[InboxRetentionSeconds])
+            SELECT @ChildStorageId,[Version],[Name],[Group],[Content],[IntentType],0,0,@Now,NULL,DATEADD(nanosecond,@GraceNanoseconds,DATEADD(second,@GraceSeconds,@Now)),NULL,NULL,N'Scheduled',[MessageId],NULL,1,[TenantPresent],[TenantId],[ContractIdentity],[ContractVersion],[ConsumerIdentity],@ChildGeneration,@ChildIncarnationId,[LifecycleId],NULL,0,1,[GenerationIncarnationId],@OperationId,NULL,NULL,0,NULL,NULL,NULL,NULL,@InboxKeyHash,[InboxRetentionSeconds]
             FROM {_receivedTable} WHERE [GenerationIncarnationId]=@ParentIncarnationId;
             """;
         await using var command = new SqlCommand(sql, connection, transaction);
@@ -618,9 +646,9 @@ internal sealed partial class SqlServerDataStorage
         short IntentType,
         string ContractIdentity,
         string ContractVersion,
-        string ConsumerIdentity
+        string ConsumerIdentity,
+        Guid LifecycleId
     );
 }
 
-#pragma warning restore CA2100
-#pragma warning restore CA1849, VSTHRD103, AsyncFixer02, MA0042
+#pragma warning restore CA2100, CA1849, VSTHRD103, AsyncFixer02, MA0042

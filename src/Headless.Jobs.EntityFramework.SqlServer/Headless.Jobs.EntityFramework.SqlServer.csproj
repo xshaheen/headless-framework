@@ -16,6 +16,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
     <ProjectReference Include="..\Headless.Jobs.EntityFramework\Headless.Jobs.EntityFramework.csproj" />
     <ProjectReference Include="..\Headless.CommitCoordination.EntityFramework\Headless.CommitCoordination.EntityFramework.csproj" />
     <ProjectReference Include="..\Headless.Coordination.SqlServer\Headless.Coordination.SqlServer.csproj" />

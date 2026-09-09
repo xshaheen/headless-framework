@@ -15,7 +15,7 @@ namespace Headless.OpenApi.Nswag.OperationProcessors;
 
 /// <summary>
 /// NSwag operation processor that attaches typed <c>ProblemDetails</c> schemas and concrete examples
-/// to known error-status responses (400, 401, 403, 404, 409, 422, 429).
+/// to known error-status responses (400, 401, 403, 404, 409, 422, 428, 429).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -57,6 +57,7 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         _RegisterSchema(context, generator, typeof(UnauthorizedProblemDetails));
         _RegisterSchema(context, generator, typeof(ForbiddenProblemDetails));
         _RegisterSchema(context, generator, typeof(TooManyRequestsProblemDetails));
+        _RegisterSchema(context, generator, typeof(PreconditionRequiredProblemDetails));
 
         var operation = context.OperationDescription.Operation;
 
@@ -115,6 +116,14 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
                     response,
                     _Status429ProblemDetails,
                     nameof(TooManyRequestsProblemDetails)
+                );
+                break;
+            case OpenApiStatusCodes.PreconditionRequired:
+                _SetDefaultAndExample(
+                    context,
+                    response,
+                    _Status428ProblemDetails,
+                    nameof(PreconditionRequiredProblemDetails)
                 );
                 break;
         }
@@ -217,6 +226,20 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         CommitNumber = "<commit>",
         Timestamp = _ExampleTimestamp,
         Errors = [new("business_error", "Some business rule failed.")],
+    };
+
+    private static readonly PreconditionRequiredProblemDetails _Status428ProblemDetails = new()
+    {
+        Type = "about:blank",
+        Title = "Precondition Required",
+        Status = StatusCodes.Status428PreconditionRequired,
+        Detail = "A strong If-Match entity tag is required.",
+        Instance = "/public/some-endpoint",
+        TraceId = "<trace-id>",
+        BuildNumber = "<version>",
+        CommitNumber = "<commit>",
+        Timestamp = _ExampleTimestamp,
+        Error = new("g:if_match_required", "A strong If-Match entity tag is required."),
     };
 
     private static readonly UnprocessableEntityProblemDetails _Status422ProblemDetails = new()

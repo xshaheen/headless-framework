@@ -31,6 +31,9 @@ public sealed record ConsumerMetadata(
     string? HandlerId = null
 )
 {
+    /// <summary>Maximum supported consumer identity length for durable inbox storage.</summary>
+    public const int ConsumerIdentityMaxLength = 200;
+
     private static readonly IReadOnlyDictionary<Type, object> _EmptyProviderConfigs = new Dictionary<Type, object>();
 
     /// <summary>

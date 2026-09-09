@@ -815,6 +815,7 @@
           "Headless.Core": "[1.0.0, )",
           "Headless.DistributedLocks.Core": "[1.0.0, )",
           "Headless.DistributedLocks.Core.Database": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Npgsql": "[10.0.3, )"
         }

@@ -549,9 +549,17 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
     private async Task<JobResult<TTimeJob>> _DeleteTimeJobAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var affectedRows = await persistenceProvider
-            .RemoveTimeJobsAsync([id], cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
+        int affectedRows;
+        try
+        {
+            affectedRows = await persistenceProvider
+                .RemoveTimeJobsAsync([id], cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception e)
+        {
+            return new JobResult<TTimeJob>(e);
+        }
 
         if (affectedRows > 0 && _executionContext.Functions.Any(x => x.JobId == id))
         {
@@ -1480,9 +1488,17 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
-        var affectedRows = await persistenceProvider
-            .RemoveTimeJobsAsync([.. ids], cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
+        int affectedRows;
+        try
+        {
+            affectedRows = await persistenceProvider
+                .RemoveTimeJobsAsync([.. ids], cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception e)
+        {
+            return new JobResult<TTimeJob>(e);
+        }
 
         if (affectedRows > 0 && _executionContext.Functions.Any(x => ids.Contains(x.JobId)))
         {

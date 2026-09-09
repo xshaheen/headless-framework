@@ -96,6 +96,7 @@ public sealed class ApiResultExtensionsTests : TestBase
         // then
         httpResult.Should().BeOfType<ApiResultHttpResult<string>>();
         ((IStatusCodeHttpResult)httpResult).StatusCode.Should().Be(StatusCodes.Status200OK);
+        ((IValueHttpResult)httpResult).Value.Should().Be(expectedValue);
     }
 
     [Fact]

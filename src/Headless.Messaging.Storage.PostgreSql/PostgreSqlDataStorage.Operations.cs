@@ -29,17 +29,29 @@ internal sealed partial class PostgreSqlDataStorage
         var pageSize = Math.Clamp(query.PageSize, 1, 200);
         var where = "\"IsInboxRecord\"";
         if (query.IncarnationId is not null)
+        {
             where += " AND \"GenerationIncarnationId\"=@IncarnationId";
+        }
         if (!string.IsNullOrEmpty(query.ConsumerIdentity))
+        {
             where += " AND \"ConsumerIdentity\"=@ConsumerIdentity";
+        }
         if (query.Lane is not null)
+        {
             where += " AND \"IntentType\"=@IntentType";
+        }
         if (query.Status is not null)
+        {
             where += " AND \"StatusName\"=@StatusName";
+        }
         if (query.IsOrphaned is not null)
+        {
             where += " AND \"IsInboxOrphaned\"=@IsOrphaned";
+        }
         if (query.IsHeld is not null)
+        {
             where += " AND \"IsHeld\"=@IsHeld";
+        }
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
@@ -191,7 +203,6 @@ internal sealed partial class PostgreSqlDataStorage
                     await _CreatePostgreSqlChildAsync(
                             connection,
                             transaction,
-                            row,
                             request,
                             childStorageId.Value,
                             childIncarnationId.Value,
@@ -243,7 +254,9 @@ internal sealed partial class PostgreSqlDataStorage
     )
     {
         if (row is null || outcome is not InboxOperationOutcome.Applied)
+        {
             return;
+        }
         var kind =
             operationType is InboxOperationType.ForceReprocess ? InboxMetricKind.Replay : InboxMetricKind.Retention;
         var metricOutcome = operationType switch
@@ -271,11 +284,17 @@ internal sealed partial class PostgreSqlDataStorage
     )
     {
         if (row is null)
+        {
             return InboxOperationOutcome.NotFound;
+        }
         if (row.Status != request.ExpectedStatus)
+        {
             return InboxOperationOutcome.StateConflict;
+        }
         if (row.Status is not (StatusName.Succeeded or StatusName.Failed) || row.NextRetryAt is not null)
+        {
             return InboxOperationOutcome.Active;
+        }
         return operationType switch
         {
             InboxOperationType.Hold when row.IsHeld => InboxOperationOutcome.StateConflict,
@@ -310,10 +329,10 @@ internal sealed partial class PostgreSqlDataStorage
                 InboxOperationOutcome.OperationConflict,
                 request.ExpectedIncarnationId,
                 request.ExpectedStatus,
-                null,
-                null,
-                null,
-                null,
+                StorageId: null,
+                ChildStorageId: null,
+                ChildGeneration: null,
+                ChildIncarnationId: null,
                 request.Actor,
                 request.Reason,
                 prior.CreatedAt,
@@ -435,7 +454,9 @@ internal sealed partial class PostgreSqlDataStorage
         command.Parameters.AddWithValue("@OperationId", operationId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
             return null;
+        }
         return new InboxOperationResult(
             operationId,
             Enum.Parse<InboxOperationType>(reader.GetString(1)),
@@ -473,7 +494,6 @@ internal sealed partial class PostgreSqlDataStorage
     private async ValueTask _CreatePostgreSqlChildAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        InboxOperationRow row,
         InboxOperationRequest request,
         Guid childStorageId,
         Guid childIncarnationId,
@@ -484,8 +504,8 @@ internal sealed partial class PostgreSqlDataStorage
     {
         var sql = $"""
             UPDATE {_receivedTable} SET "IsCurrentGeneration"=FALSE WHERE "GenerationIncarnationId"=@ParentIncarnationId AND "IsCurrentGeneration";
-            INSERT INTO {_receivedTable}("Id","Version","Name","Group","Content","IntentType","Retries","InlineAttempts","Added","ExpiresAt","NextRetryAt","LockedUntil","Owner","StatusName","MessageId","ExceptionInfo","IsInboxRecord","TenantPresent","TenantId","ContractIdentity","ContractVersion","ConsumerIdentity","Generation","GenerationIncarnationId","AttemptId","IsInboxOrphaned","IsCurrentGeneration","ReplayParentIncarnationId","ReplayOperationId","TerminalAt","EffectiveExpiresAt","IsHeld","HeldAt","HeldBy","HoldReason","HoldOperationId","InboxRetentionSeconds")
-            SELECT @ChildStorageId,"Version","Name","Group","Content","IntentType",0,0,@Now,NULL,@Now + (@GraceSeconds * INTERVAL '1 second'),NULL,NULL,'Scheduled',"MessageId",NULL,TRUE,"TenantPresent","TenantId","ContractIdentity","ContractVersion","ConsumerIdentity",@ChildGeneration,@ChildIncarnationId,NULL,FALSE,TRUE,"GenerationIncarnationId",@OperationId,NULL,NULL,FALSE,NULL,NULL,NULL,NULL,"InboxRetentionSeconds"
+            INSERT INTO {_receivedTable}("Id","Version","Name","Group","Content","IntentType","Retries","InlineAttempts","Added","ExpiresAt","NextRetryAt","LockedUntil","Owner","StatusName","MessageId","ExceptionInfo","IsInboxRecord","TenantPresent","TenantId","ContractIdentity","ContractVersion","ConsumerIdentity","Generation","GenerationIncarnationId","LifecycleId","AttemptId","IsInboxOrphaned","IsCurrentGeneration","ReplayParentIncarnationId","ReplayOperationId","TerminalAt","EffectiveExpiresAt","IsHeld","HeldAt","HeldBy","HoldReason","HoldOperationId","InboxRetentionSeconds")
+            SELECT @ChildStorageId,"Version","Name","Group","Content","IntentType",0,0,@Now,NULL,@Now + (@GraceSeconds * INTERVAL '1 second'),NULL,NULL,'Scheduled',"MessageId",NULL,TRUE,"TenantPresent","TenantId","ContractIdentity","ContractVersion","ConsumerIdentity",@ChildGeneration,@ChildIncarnationId,"LifecycleId",NULL,FALSE,TRUE,"GenerationIncarnationId",@OperationId,NULL,NULL,FALSE,NULL,NULL,NULL,NULL,"InboxRetentionSeconds"
             FROM {_receivedTable} WHERE "GenerationIncarnationId"=@ParentIncarnationId;
             """;
         await using var command = new NpgsqlCommand(sql, connection, transaction);
@@ -583,5 +603,4 @@ internal sealed partial class PostgreSqlDataStorage
     );
 }
 
-#pragma warning restore CA2100
-#pragma warning restore CA1849, VSTHRD103, AsyncFixer02, MA0042
+#pragma warning restore CA2100, CA1849, VSTHRD103, AsyncFixer02, MA0042

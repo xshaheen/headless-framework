@@ -156,7 +156,11 @@ internal sealed partial class InMemoryDataStorage
 
     private void _RemoveFromIdentityIndex(MemoryMessage removed)
     {
-        if (removed.InboxKey is not null)
+        if (
+            removed.InboxKey is not null
+            && _inboxIdentityIndex.TryGetValue(removed.InboxKey, out var indexedId)
+            && indexedId == removed.StorageId
+        )
         {
             _inboxIdentityIndex.Remove(removed.InboxKey);
         }

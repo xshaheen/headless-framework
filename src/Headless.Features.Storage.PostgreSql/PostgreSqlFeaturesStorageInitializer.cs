@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Constants;
 using Headless.Features.Entities;
 using Headless.Hosting.Initialization;
 using Microsoft.Extensions.Logging;
@@ -63,7 +64,13 @@ internal sealed partial class PostgreSqlFeaturesStorageInitializer(
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (PostgresException ex) when (ex.SqlState is "42P06" or "42P07" or "42710" or "23505")
+        catch (PostgresException ex)
+            when (ex.SqlState
+                    is SqlErrorCodes.PostgreSql.DuplicateSchema
+                        or SqlErrorCodes.PostgreSql.DuplicateTable
+                        or SqlErrorCodes.PostgreSql.DuplicateObject
+                        or SqlErrorCodes.PostgreSql.UniqueViolation
+            )
         {
             await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
             LogSchemaRaceObserved(_logger, ex.SqlState, ex.MessageText);
@@ -86,7 +93,8 @@ internal sealed partial class PostgreSqlFeaturesStorageInitializer(
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (PostgresException ex) when (ex.SqlState is "42P07" or "42710")
+        catch (PostgresException ex)
+            when (ex.SqlState is SqlErrorCodes.PostgreSql.DuplicateTable or SqlErrorCodes.PostgreSql.DuplicateObject)
         {
             await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
             LogSchemaRaceObserved(_logger, ex.SqlState, ex.MessageText);

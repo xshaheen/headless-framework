@@ -31,6 +31,12 @@ namespace Tests;
 /// </remarks>
 public sealed class InMemoryDataStorageTests : DataStorageTestsBase
 {
+    [Theory]
+    [InlineData(MessageLane.Bus, 0L)]
+    [InlineData(MessageLane.Queue, 7L)]
+    public override Task should_isolate_replay_lifecycles_after_root_purge(MessageLane lane, long rootGeneration) =>
+        base.should_isolate_replay_lifecycles_after_root_purge(lane, rootGeneration);
+
     private InMemoryStorageInitializer? _initializer;
     private InMemoryDataStorage? _storage;
     private ISerializer? _serializer;
@@ -1416,6 +1422,12 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
     public override Task should_not_defer_terminal_received_retry_lease()
     {
         return base.should_not_defer_terminal_received_retry_lease();
+    }
+
+    [Fact]
+    public override Task should_reach_healthy_row_after_deferring_a_full_leading_open_batch()
+    {
+        return base.should_reach_healthy_row_after_deferring_a_full_leading_open_batch();
     }
 
     [Fact]
