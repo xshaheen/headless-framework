@@ -15,6 +15,7 @@ packages: MultiTenancy.Abstractions, MultiTenancy, MultiTenancy.Storage.EntityFr
 - [Skipping Tenant Resolution](#skipping-tenant-resolution)
 - [HTTP Failure Mapping](#http-failure-mapping)
 - [HTTP Authorization Requirement](#http-authorization-requirement)
+    - [Limitations](#limitations)
 - [Tenant Semantics](#tenant-semantics)
 - [Tenant Catalog](#tenant-catalog)
     - [Accessor-only setup](#accessor-only-setup)
@@ -24,11 +25,16 @@ packages: MultiTenancy.Abstractions, MultiTenancy, MultiTenancy.Storage.EntityFr
     - [Migration Guidance](#migration-guidance)
     - [DoS and rate limiting](#dos-and-rate-limiting)
 - [EF Core Integration](#ef-core-integration)
+    - [Entity Ownership](#entity-ownership)
+    - [EF Tenant Write Guard](#ef-tenant-write-guard)
+- [Messaging Exhausted Callbacks](#messaging-exhausted-callbacks)
+    - [Defense Layers and Known Gaps](#defense-layers-and-known-gaps)
 - [Permissions and Caching](#permissions-and-caching)
 - [Non-HTTP Execution Paths](#non-http-execution-paths)
     - [Background Jobs](#background-jobs)
     - [Message Consumers](#message-consumers)
     - [SignalR](#signalr)
+- [Testing host wiring](#testing-host-wiring)
 - [Failure Modes to Watch](#failure-modes-to-watch)
 - [Headless.MultiTenancy.Abstractions](#headlessmultitenancyabstractions)
     - [Problem Solved](#problem-solved)
@@ -126,6 +132,9 @@ app.UseAuthorization();
 - Register `UseHeadlessTenantCatalogResolution()` after `UseRouting()` and before `UseAuthentication()` — a different slot from `UseHeadlessTenancy()` (after `UseAuthentication()`, before `UseAuthorization()`). The two middlewares serve different resolution paths (identifier vs. claim) and both can be active in the same pipeline.
 - Register `UseStatusCodesRewriter()` so it wraps `UseAuthorization()` on any catalog-resolution host. It writes the R19 mismatch rejection the authorization tier only marks; omitting it fails startup (`CATALOG_RESOLUTION_WITHOUT_REWRITER`), and placing it after `UseAuthorization()` passes startup but still leaks the mismatch as a distinguishable bare 403.
 - Do not add per-tenant application configuration to `TenantInfo.ExtraProperties` or a queryable column just because it is convenient. If a value needs to be queried or indexed, it belongs in Settings/Features/Permissions keyed by the canonical tenant id, or in a typed column of your own `ITenantStore` implementation — never in the catalog's read-along bag.
+- Register a caching provider in any host that configures `.Catalog(...)`. `Headless.MultiTenancy` references only `Headless.Caching.Abstractions`, and the open-generic `ICache<>` implementation ships with a provider package, so `AddHeadlessCaching(caching => caching.UseInMemory())` (or `UseRedis` / `UseHybrid`) is a hard prerequisite rather than an optimization. The requirement is declared with `RequireRegisteredService` and fails host startup when unmet, in every environment. It applies to accessor-only hosts too, because `ICurrentTenantInfo` reads go through the same caches as identifier resolution.
+- Rate-limit the pre-authentication identifier path in the application or at the edge. Every unauthenticated request can reach `ITenantCatalogService.ResolveAsync`, and negative caching only blunts repeated probes of the *same* unknown identifier: rotating through distinct identifiers costs one store read each. The framework enforces no bound on that traffic class by design. See [DoS and rate limiting](#dos-and-rate-limiting).
+- Return `null` from `ITenantIdentifierSource.GetIdentifier` when a source has no identifier for the request, and keep the implementation synchronous and side-effect free. Empty and whitespace-only returns are treated the same as `null` so later registered sources still run, which matters because `Request.Headers["X-Tenant-Id"].ToString()` yields `""` rather than `null` when the header is absent. Do not normalize, trim, or shape-validate inside a source; the catalog service owns all of that, and duplicating it there produces a value the catalog will normalize again.
 
 ## Core Concepts
 
