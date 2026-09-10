@@ -43,6 +43,39 @@ public sealed class HeadlessRequiredServiceExtensionsTests : TestBase
     }
 
     [Fact]
+    public async Task should_not_throw_when_the_required_service_is_registered_after_the_requirement()
+    {
+        // given — the realistic bootstrap order: a feature declares its requirement, and the provider that
+        // satisfies it is registered further down. Declaration only appends to the registry; the probe runs
+        // against the built provider, so registration order cannot matter.
+        var services = new ServiceCollection();
+        services.RequireRegisteredService<IMarker>("the marker feature", _Remedy);
+        services.AddSingleton<IMarker, Marker>();
+
+        // when
+        var act = () => _RunStartingAsync(services);
+
+        // then
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task should_not_throw_when_the_open_generic_is_registered_after_the_requirement()
+    {
+        // given — the same ordering against the shape a caching provider actually uses, so
+        // AddHeadlessCaching(...) placed after AddHeadlessTenancy(...) is proven, not assumed
+        var services = new ServiceCollection();
+        services.RequireRegisteredService<IGenericMarker<Payload>>("the generic feature", _Remedy);
+        services.AddSingleton(typeof(IGenericMarker<>), typeof(GenericMarker<>));
+
+        // when
+        var act = () => _RunStartingAsync(services);
+
+        // then
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
     public async Task should_report_every_missing_service_in_a_single_exception()
     {
         // given — a host missing one shared provider would otherwise hit these one restart at a time
