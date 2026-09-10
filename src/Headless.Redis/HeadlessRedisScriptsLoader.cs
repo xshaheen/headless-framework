@@ -160,10 +160,7 @@ public sealed class HeadlessRedisScriptsLoader(
 
                 if (loadedEndpointCount == 0)
                 {
-                    throw new RedisConnectionException(
-                        ConnectionFailureType.UnableToConnect,
-                        "No writable Redis endpoints were available for Lua script loading."
-                    );
+                    throw _NoWritableEndpointsException();
                 }
 
                 if (!_TryPublishLoadedScripts(state, loadedScripts))
@@ -345,10 +342,7 @@ public sealed class HeadlessRedisScriptsLoader(
 
                 if (loadedEndpointCount == 0 || loadedScript is null)
                 {
-                    throw new RedisConnectionException(
-                        ConnectionFailureType.UnableToConnect,
-                        "No writable Redis endpoints were available for Lua script loading."
-                    );
+                    throw _NoWritableEndpointsException();
                 }
 
                 var loadedScripts = new Dictionary<Type, LoadedRedisScript>(state.LoadedScripts)
@@ -458,6 +452,17 @@ public sealed class HeadlessRedisScriptsLoader(
         }
 
         return definitions;
+    }
+
+    private static RedisConnectionException _NoWritableEndpointsException()
+    {
+        // The replacement overload changes CommandRetryNever to caller-selected flags; preserve the established retry contract.
+#pragma warning disable CS0618
+        return new RedisConnectionException(
+            ConnectionFailureType.UnableToConnect,
+            "No writable Redis endpoints were available for Lua script loading."
+        );
+#pragma warning restore CS0618
     }
 
     private static void _EnsureSameDefinitionInstance(

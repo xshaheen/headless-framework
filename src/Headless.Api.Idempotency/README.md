@@ -46,6 +46,8 @@ dotnet add package Headless.Api.Idempotency
 
 ## Quick Start
 
+> A caching provider is a hard prerequisite. This package references `Headless.Caching.Abstractions` only, so the `ICache` the middleware stores and replays responses through comes from `AddHeadlessCaching(...)` with a provider (`UseInMemory` / `UseRedis` / `UseHybrid`). `AddIdempotency` declares it via `Headless.Hosting`'s `RequireRegisteredService<T>`, so a host without one is refused at startup with a `MissingRequiredServiceException` rather than failing on the first idempotent request. Registration order does not matter — the check runs at host start.
+
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 

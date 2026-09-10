@@ -22,7 +22,7 @@ internal static class RetryHelper
     /// - QuotaExceeded (429): Rate limit hit → Retry with RateLimitDelay
     /// - Unavailable (503): Service temporarily down → Retry with exponential backoff
     /// - Internal (500): Server error → Retry with exponential backoff
-    /// - Unregistered: Invalid device token → Don't retry (caller should remove token)
+    /// - Unregistered: Invalid FID → Don't retry (caller should remove the FID)
     /// - InvalidArgument: Malformed request → Don't retry (code bug)
     /// - SenderIdMismatch: Wrong credentials → Don't retry (config error)
     /// - ThirdPartyAuthError: Bad APNs cert → Don't retry (config error)

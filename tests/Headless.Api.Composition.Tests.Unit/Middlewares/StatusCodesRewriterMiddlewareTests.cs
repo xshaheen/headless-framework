@@ -6,12 +6,14 @@ using Headless.Abstractions;
 using Headless.Api.Middlewares;
 using Headless.Api.MultiTenancy;
 using Headless.Constants;
+using Headless.MultiTenancy;
 using Headless.Primitives;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Tests.Middlewares;
 
@@ -20,7 +22,7 @@ public sealed class StatusCodesRewriterMiddlewareTests : TestBase
     private static StatusCodesRewriterMiddleware _CreateMiddleware(IProblemDetailsCreator? problemDetailsCreator = null)
     {
         problemDetailsCreator ??= _CreateProblemDetailsCreator();
-        return new StatusCodesRewriterMiddleware(problemDetailsCreator);
+        return new StatusCodesRewriterMiddleware(problemDetailsCreator, Options.Create(new TenantCatalogOptions()));
     }
 
     private static IProblemDetailsCreator _CreateProblemDetailsCreator()

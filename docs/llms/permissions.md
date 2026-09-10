@@ -325,6 +325,8 @@ dotnet add package Headless.Permissions.Core
 
 Register required services (`TimeProvider`, `ICache`, `IDistributedLock`, `IGuidGenerator`) first, then call `AddHeadlessPermissions`:
 
+> A caching provider is a hard prerequisite. This package references `Headless.Caching.Abstractions` only, so the root `ICache` that the tenant-scoped `ICache<PermissionGrantCacheItem>` wrapper delegates to comes from `AddHeadlessCaching(...)` with a provider (`UseInMemory` / `UseRedis` / `UseHybrid`). `AddHeadlessPermissions` declares it via `Headless.Hosting`'s `RequireRegisteredService<T>`, so a host without one is refused at startup with a `MissingRequiredServiceException` rather than failing on the first permission check. Registration order does not matter — the check runs at host start.
+
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 

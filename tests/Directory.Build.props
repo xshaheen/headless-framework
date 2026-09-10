@@ -21,6 +21,7 @@
     <PackageReference Include="DeepCloner" />
     <PackageReference Include="AwesomeAssertions" />
     <PackageReference Include="AwesomeAssertions.Json" />
+    <PackageReference Include="Microsoft.Testing.Extensions.GitHubActionsReport" PrivateAssets="all" />
     <PackageReference Include="NSubstitute" />
   </ItemGroup>
   <ItemGroup Label="Global Analyzers">

@@ -2,6 +2,7 @@
 
 using Headless.Abstractions;
 using Headless.Messaging.Messages;
+using Headless.MultiTenancy;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 

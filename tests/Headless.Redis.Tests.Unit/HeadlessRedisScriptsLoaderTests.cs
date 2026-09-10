@@ -84,7 +84,34 @@ public sealed class HeadlessRedisScriptsLoaderTests : TestBase
             sut.LoadAsync([CustomReturnOneScriptDefinition.Instance], cancellationToken: AbortToken).AsTask();
 
         // then
-        await act.Should().ThrowAsync<RedisConnectionException>().WithMessage("No writable Redis endpoints*");
+        var exception = await act.Should()
+            .ThrowAsync<RedisConnectionException>()
+            .WithMessage("No writable Redis endpoints*");
+        _AssertNoWritableEndpointMetadata(exception.Which);
+    }
+
+    [Fact]
+    public async Task should_preserve_failure_metadata_when_on_demand_load_has_no_writable_endpoint()
+    {
+        // given
+        var (multiplexer, _) = _CreateMultiplexerWithServer(isConnected: false, isReplica: false);
+        var db = Substitute.For<IDatabase>();
+        using var sut = new HeadlessRedisScriptsLoader(multiplexer);
+
+        // when
+        var act = () =>
+            sut.EvaluateAsync(
+                db,
+                CustomReturnOneScriptDefinition.Instance,
+                parameters: null,
+                cancellationToken: AbortToken
+            );
+
+        // then
+        var exception = await act.Should()
+            .ThrowAsync<RedisConnectionException>()
+            .WithMessage("No writable Redis endpoints*");
+        _AssertNoWritableEndpointMetadata(exception.Which);
     }
 
     [Fact]
@@ -388,6 +415,16 @@ public sealed class HeadlessRedisScriptsLoaderTests : TestBase
         server.IsReplica.Returns(isReplica);
 
         return server;
+    }
+
+    private static void _AssertNoWritableEndpointMetadata(RedisConnectionException exception)
+    {
+        exception.FailureType.Should().Be(ConnectionFailureType.UnableToConnect);
+        // This assertion intentionally verifies the legacy constructor's retry flag while the replacement API remains experimental.
+#pragma warning disable SER007
+        exception.Flags.Should().Be(CommandFlags.CommandRetryNever);
+#pragma warning restore SER007
+        exception.CommandStatus.Should().Be(CommandStatus.Unknown);
     }
 
     private static byte[] _CreateScriptHash(string source)

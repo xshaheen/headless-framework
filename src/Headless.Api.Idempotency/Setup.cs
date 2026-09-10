@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Caching;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -113,6 +114,14 @@ public static class SetupIdempotency
         private IServiceCollection _AddIdempotencyCore()
         {
             services.TryAddScoped<IdempotencyMiddleware>();
+
+            // IdempotencyMiddleware stores and replays responses through ICache, and this package
+            // references only Headless.Caching.Abstractions — the implementation ships in a caching
+            // provider package the host installs. Without one every idempotent request would fail.
+            services.RequireRegisteredService<ICache>(
+                requiredBy: "Headless API idempotency response replay",
+                remedy: "Call AddHeadlessCaching(...) with a provider (UseInMemory / UseRedis / UseHybrid)."
+            );
 
             services.TryAddEnumerable(
                 ServiceDescriptor.Singleton<IValidateOptions<IdempotencyOptions>, IdempotencyOptionsDiValidator>()

@@ -33,6 +33,9 @@ public sealed class RetryTestCaseRunner
     /// <param name="skipReason">Non-null causes an immediate skip result without executing.</param>
     /// <param name="explicitOption">Explicit-test opt-in setting.</param>
     /// <param name="constructorArguments">Arguments for the test class constructor.</param>
+    /// <param name="parallelMode">The active test-case parallelization mode.</param>
+    /// <param name="scheduler">The scheduler used for test execution.</param>
+    /// <param name="methodFixtureMappings">Fixtures attached to the test method.</param>
     /// <returns>A <see cref="RunSummary"/> reflecting the outcome of the final attempt.</returns>
     public async ValueTask<RunSummary> Run(
         int maxRetries,
@@ -43,7 +46,10 @@ public sealed class RetryTestCaseRunner
         string displayName,
         string? skipReason,
         ExplicitOption explicitOption,
-        object?[] constructorArguments
+        object?[] constructorArguments,
+        ParallelMode parallelMode,
+        ExecutionScheduler scheduler,
+        FixtureMappingManager methodFixtureMappings
     )
     {
         // This code comes from XunitRunnerHelper.RunXunitTestCase, and it's centralized
@@ -83,7 +89,10 @@ public sealed class RetryTestCaseRunner
             displayName,
             skipReason,
             explicitOption,
-            constructorArguments
+            constructorArguments,
+            parallelMode,
+            scheduler,
+            methodFixtureMappings
         );
 
         await ctx.InitializeAsync().ConfigureAwait(false);
@@ -116,7 +125,10 @@ public sealed class RetryTestCaseRunner
                     ctx.ExplicitOption,
                     aggregator,
                     ctx.CancellationTokenSource,
-                    ctx.BeforeAfterTestAttributes
+                    ctx.ParallelMode,
+                    ctx.Scheduler,
+                    ctx.BeforeAfterTestAttributes,
+                    ctx.CaseFixtureMappings
                 )
                 .ConfigureAwait(false);
 

@@ -2,7 +2,7 @@
 
 namespace Headless.PushNotifications.Firebase.Internals;
 
-/// <summary>The notification content sent to one or more device tokens.</summary>
+/// <summary>The notification content sent to one or more Firebase Installation IDs (FIDs).</summary>
 internal sealed record FcmMessageContent(string Title, string Body, IReadOnlyDictionary<string, string>? Data);
 
 /// <summary>
@@ -16,19 +16,19 @@ internal interface IFcmMessageSender
     /// <remarks>Propagates <see cref="OperationCanceledException"/> when <paramref name="cancellationToken"/> is cancelled.</remarks>
     Task<PushNotificationResponse> SendAsync(
         FcmMessageContent content,
-        string token,
+        string fid,
         CancellationToken cancellationToken
     );
 
     /// <summary>
-    /// Sends one batch of at most 500 tokens, retrying transient FCM failures, and returns one outcome per
-    /// token in the same order as <paramref name="tokens"/>. A whole-batch transport failure (after retries)
-    /// is reported as a failed outcome for every token rather than thrown.
+    /// Sends one batch of at most 500 FIDs, retrying transient FCM failures, and returns one outcome per
+    /// FID in the same order as <paramref name="fids"/>. A whole-batch transport failure (after retries)
+    /// is reported as a failed outcome for every FID rather than thrown.
     /// </summary>
     /// <remarks>Propagates <see cref="OperationCanceledException"/> when <paramref name="cancellationToken"/> is cancelled.</remarks>
     Task<IReadOnlyList<PushNotificationResponse>> SendBatchAsync(
         FcmMessageContent content,
-        IReadOnlyList<string> tokens,
+        IReadOnlyList<string> fids,
         CancellationToken cancellationToken
     );
 }

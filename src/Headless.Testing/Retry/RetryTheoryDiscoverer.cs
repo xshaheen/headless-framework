@@ -24,16 +24,20 @@ public sealed class RetryTheoryDiscoverer : TheoryDiscoverer
         IXunitTestMethod testMethod,
         ITheoryAttribute theoryAttribute,
         ITheoryDataRow dataRow,
-        object?[] testMethodArguments
+        object?[] testMethodArguments,
+        string? index
     )
     {
         var maxRetries = (theoryAttribute as RetryTheoryAttribute)?.MaxRetries ?? 3;
-        var details = TestIntrospectionHelper.GetTestCaseDetails(
+        var details = TestIntrospectionHelper.GetTestCaseDetailsForTheoryDataRow(
             discoveryOptions,
             testMethod,
             theoryAttribute,
-            testMethodArguments
+            dataRow,
+            testMethodArguments,
+            index
         );
+        var traits = TestIntrospectionHelper.GetTraits(testMethod, dataRow);
 
 #pragma warning disable CA2000 // testCase is returned to caller, who will dispose it
         var testCase = new RetryTestCase(
@@ -42,13 +46,17 @@ public sealed class RetryTheoryDiscoverer : TheoryDiscoverer
             details.TestCaseDisplayName,
             details.UniqueID,
             details.Explicit,
-            details.SkipExceptions,
-            details.SkipReason,
-            details.SkipType,
-            details.SkipUnless,
-            details.SkipWhen,
-            testMethod.Traits.ToReadWrite(StringComparer.OrdinalIgnoreCase),
-            testMethodArguments,
+            testLabel: dataRow.Label,
+            disableParallelization: dataRow.DisableParallelization ?? false,
+            skipExceptions: details.SkipExceptions,
+            skipReason: details.SkipReason,
+            skipType: details.SkipType,
+            skipUnless: details.SkipUnless,
+            skipWhen: details.SkipWhen,
+            traits: traits,
+            testMethodArguments: testMethodArguments,
+            sourceFilePath: details.SourceFilePath,
+            sourceLineNumber: details.SourceLineNumber,
             timeout: details.Timeout
         );
 #pragma warning restore CA2000
@@ -82,6 +90,8 @@ public sealed class RetryTheoryDiscoverer : TheoryDiscoverer
                     details.SkipUnless,
                     details.SkipWhen,
                     testMethod.Traits.ToReadWrite(StringComparer.OrdinalIgnoreCase),
+                    sourceFilePath: details.SourceFilePath,
+                    sourceLineNumber: details.SourceLineNumber,
                     timeout: details.Timeout
                 )
                 // Otherwise, return a test case which will enumerate the data later
@@ -98,6 +108,8 @@ public sealed class RetryTheoryDiscoverer : TheoryDiscoverer
                     details.SkipUnless,
                     details.SkipWhen,
                     testMethod.Traits.ToReadWrite(StringComparer.OrdinalIgnoreCase),
+                    sourceFilePath: details.SourceFilePath,
+                    sourceLineNumber: details.SourceLineNumber,
                     timeout: details.Timeout
                 );
 #pragma warning restore CA2000

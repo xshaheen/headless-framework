@@ -7,6 +7,7 @@ using Headless.Checks;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Registration;
+using Headless.MultiTenancy;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Internal;

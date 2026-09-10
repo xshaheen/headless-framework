@@ -104,8 +104,8 @@
       },
       "FSharp.Core": {
         "type": "Transitive",
-        "resolved": "10.1.204",
-        "contentHash": "f2HG4CIS+sfFuRY7DYnEa6P/qEW2g4b6O54jcDD9OkDewWlbk7sd2dbL+Enm3/tVSEsMrgQA7m1+smdizBC6fg=="
+        "resolved": "10.1.400",
+        "contentHash": "H9wlZ/tWgNp+Q4WQ5aUSi3XOBXrL6z+UkR0PNeyDFyoZR3c3PbtA21B9FqlthrhEwQ6f5AtQV0JLhBBDqjjscw=="
       },
       "FSharp.UMX": {
         "type": "Transitive",
@@ -246,6 +246,12 @@
         "resolved": "1.4.5",
         "contentHash": "fi9aP1QY3ZenIMUW1pxdSjku6lYAUjScrwfXSXT1qyKtTdLxOIzeBMe+w/hQm0vMsvQnjcFInByMrIT7AlXUHA=="
       },
+      "headless.caching.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Extensions": "[1.0.0, )"
+        }
+      },
       "headless.checks": {
         "type": "Project"
       },
@@ -275,6 +281,7 @@
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
+          "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
           "Headless.Serializer.Json": "[1.0.0, )",
           "Snappier": "[1.3.1, )"
         }
@@ -303,13 +310,13 @@
           "Headless.Primitives": "[1.0.0, )",
           "Headless.Urls": "[1.0.0, )",
           "Humanizer.Core": "[3.0.10, )",
-          "Microsoft.Bcl.TimeProvider": "[10.0.9, )",
+          "Microsoft.Bcl.TimeProvider": "[10.0.12, )",
           "Nito.AsyncEx": "[5.1.2, )",
           "Nito.Disposables": "[2.5.0, )",
           "Polly.Core": "[8.7.0, )",
           "System.Reactive": "[6.1.0, )",
           "TimeZoneConverter": "[7.2.0, )",
-          "libphonenumber-csharp": "[9.0.34, )",
+          "libphonenumber-csharp": "[9.0.39, )",
           "morelinq": "[4.4.0, )"
         }
       },
@@ -318,7 +325,7 @@
         "dependencies": {
           "FluentValidation": "[12.1.1, )",
           "Headless.Extensions": "[1.0.0, )",
-          "libphonenumber-csharp": "[9.0.34, )"
+          "libphonenumber-csharp": "[9.0.39, )"
         }
       },
       "headless.generator.primitives.abstractions": {
@@ -357,7 +364,7 @@
           "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
           "Headless.Messaging.Queue.Abstractions": "[1.0.0, )",
           "Headless.MultiTenancy": "[1.0.0, )",
-          "OpenTelemetry.Api": "[1.16.0, )",
+          "OpenTelemetry.Api": "[1.18.0, )",
           "Polly.Core": "[8.7.0, )"
         }
       },
@@ -375,7 +382,7 @@
           "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
           "Headless.Messaging.Core": "[1.0.0, )",
           "Headless.Messaging.Queue.Abstractions": "[1.0.0, )",
-          "Pulsar.Client": "[3.17.0, )"
+          "Pulsar.Client": "[3.19.1, )"
         }
       },
       "headless.messaging.queue.abstractions": {
@@ -393,7 +400,17 @@
       "headless.multitenancy": {
         "type": "Project",
         "dependencies": {
-          "Headless.Checks": "[1.0.0, )"
+          "Headless.Caching.Abstractions": "[1.0.0, )",
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
+          "Headless.MultiTenancy.Abstractions": "[1.0.0, )"
+        }
+      },
+      "headless.multitenancy.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Primitives": "[1.0.0, )"
         }
       },
       "headless.primitives": {
@@ -401,7 +418,7 @@
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Headless.Generator.Primitives.Abstractions": "[1.0.0, )",
-          "libphonenumber-csharp": "[9.0.34, )"
+          "libphonenumber-csharp": "[9.0.39, )"
         }
       },
       "headless.serializer.abstractions": {
@@ -454,15 +471,15 @@
       },
       "libphonenumber-csharp": {
         "type": "CentralTransitive",
-        "requested": "[9.0.34, )",
-        "resolved": "9.0.34",
-        "contentHash": "QmwQQk2ca/E3qyTTwmTnIoNj2sQ8daRWBQt4+6bkNkDyHgCjgggNGgvFqS6Gm9HQ1EbYkyKn58RjUC2jVM+RQw=="
+        "requested": "[9.0.39, )",
+        "resolved": "9.0.39",
+        "contentHash": "NiBrwzjHgtBj1XxTVQrWrxn+XOUmiDRcpqxBG5/DtZn8c2vm29FS9aBaCPG5+hBTDYXEid1r0SAZd7a063oGWg=="
       },
       "Microsoft.Bcl.TimeProvider": {
         "type": "CentralTransitive",
-        "requested": "[10.0.9, )",
-        "resolved": "10.0.9",
-        "contentHash": "jCmHpoCeNbyjj71mnex2+fsCWtQINKrv8IL5xnuskQN8vQb5UA8ac+rWbt/jHeiSoH5gVlA8o20+XmWRKJuJWQ=="
+        "requested": "[10.0.12, )",
+        "resolved": "10.0.12",
+        "contentHash": "YgZ5iXpo16E5nqvIqNiJXzyG8DiBsx3wg4jcwz8zxnxDV798izSzJn/PBg7s+xLU57+myilIxEg2RhQmNCcl0w=="
       },
       "morelinq": {
         "type": "CentralTransitive",
@@ -498,9 +515,9 @@
       },
       "OpenTelemetry.Api": {
         "type": "CentralTransitive",
-        "requested": "[1.16.0, )",
-        "resolved": "1.16.0",
-        "contentHash": "WZP8Eb6vZTeNqeV+fjBitc7iefBoTHIhaWorqg/h/YiQBlcQJu0bICuTqKV0XRyjiE0eWs80yLlnUtHAFSkFWA=="
+        "requested": "[1.18.0, )",
+        "resolved": "1.18.0",
+        "contentHash": "Dhzm5oughIY9EWckt2J1yXcEbXpki5WCL2q7prJoYxzH6C7jdkfGtPMTkUVZZ4AhjJKzQnlC+kLSIlmIVwC4Vw=="
       },
       "Polly.Core": {
         "type": "CentralTransitive",
@@ -510,13 +527,13 @@
       },
       "Pulsar.Client": {
         "type": "CentralTransitive",
-        "requested": "[3.17.0, )",
-        "resolved": "3.17.0",
-        "contentHash": "9M8/t5en7G/hMa821+AkSDeQUHQAjgOpPTW3wpNVvyQ52U53XVa8QWxX/ott9N80u0Qx8aRfMgaPCN+y802IVA==",
+        "requested": "[3.19.1, )",
+        "resolved": "3.19.1",
+        "contentHash": "EAauyrH3WYQPWcJlZCPyTjSTny+Js7Ll+2F4XEhPxPeZ5Dye67F2ENw8FscP2laSWqEdvP31mme6VIPjwG5SYw==",
         "dependencies": {
           "Apache.Avro": "1.12.1",
           "AvroSchemaGenerator": "2.9.2",
-          "FSharp.Core": "10.1.204",
+          "FSharp.Core": "10.1.400",
           "FSharp.UMX": "1.1.0",
           "K4os.Compression.LZ4": "1.3.6",
           "Microsoft.IO.RecyclableMemoryStream": "3.0.0",

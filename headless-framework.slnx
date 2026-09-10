@@ -251,7 +251,9 @@
         <Project Path="src\Headless.Domain.LocalEventBus\Headless.Domain.LocalEventBus.csproj" />
         <Project Path="src\Headless.Domain\Headless.Domain.csproj" />
         <Project Path="src\Headless.Hosting\Headless.Hosting.csproj" />
+        <Project Path="src\Headless.MultiTenancy.Abstractions\Headless.MultiTenancy.Abstractions.csproj" />
         <Project Path="src\Headless.MultiTenancy\Headless.MultiTenancy.csproj" />
+        <Project Path="src\Headless.MultiTenancy.Storage.EntityFramework\Headless.MultiTenancy.Storage.EntityFramework.csproj" />
         <Project Path="src\Headless.Security.Abstractions\Headless.Security.Abstractions.csproj" />
         <Project Path="src\Headless.Security\Headless.Security.csproj" />
         <Project Path="src\Headless.NetTopologySuite\Headless.NetTopologySuite.csproj" />
@@ -266,6 +268,9 @@
         <Project Path="tests\Headless.Domain.Tests.Unit\Headless.Domain.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Hosting.Tests.Unit\Headless.Hosting.Tests.Unit.csproj" />
         <Project Path="tests\Headless.MultiTenancy.Tests.Unit\Headless.MultiTenancy.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.MultiTenancy.Tests.Harness\Headless.MultiTenancy.Tests.Harness.csproj" />
+        <Project Path="tests\Headless.MultiTenancy.Storage.EntityFramework.Tests.Unit\Headless.MultiTenancy.Storage.EntityFramework.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.MultiTenancy.Storage.EntityFramework.Tests.Integration\Headless.MultiTenancy.Storage.EntityFramework.Tests.Integration.csproj" />
         <Project Path="tests\Headless.NetTopologySuite.Tests.Unit\Headless.NetTopologySuite.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Testing.AspNetCore.Tests.TestHost\Headless.Testing.AspNetCore.Tests.TestHost.csproj" />
         <Project Path="tests\Headless.Testing.AspNetCore.Tests.Unit\Headless.Testing.AspNetCore.Tests.Unit.csproj" />

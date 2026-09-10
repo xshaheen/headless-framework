@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Caching;
 using Headless.Checks;
 using Headless.Hosting.Initialization;
 using Headless.Security;
@@ -159,6 +160,15 @@ public static class SetupSettings
          * You need to provide a storage implementation for `ISettingValueRecordRepository`
          */
         services.TryAddSingleton<ISettingValueStore, SettingValueStore>();
+
+        // SettingValueStore reads through ICache<SettingValueCacheItem>, and this package references only
+        // Headless.Caching.Abstractions — the open-generic ICache<> behind it ships in a provider package
+        // the host installs. Without one the host starts clean and the first setting read throws.
+        services.RequireRegisteredService<ICache<SettingValueCacheItem>>(
+            requiredBy: "Headless settings value caching",
+            remedy: "Call AddHeadlessCaching(...) with a provider (UseInMemory / UseRedis / UseHybrid)."
+        );
+
         services.TryAddSingleton<ISettingValueProviderManager, SettingValueProviderManager>();
         services.TryAddSingleton<ISettingManager, SettingManager>();
 

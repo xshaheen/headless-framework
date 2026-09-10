@@ -14,7 +14,8 @@ namespace Headless.OpenApi.Nswag.SchemaProcessors.FluentValidation.Models;
 public sealed class RuleContext(
     SchemaProcessorContext processorContext,
     string propertyKey,
-    IPropertyValidator propertyValidator
+    IPropertyValidator propertyValidator,
+    bool isCollectionRule = false
 )
 {
     /// <summary>The NSwag schema processor context for the type that owns this property.</summary>
@@ -27,10 +28,33 @@ public sealed class RuleContext(
     public IPropertyValidator PropertyValidator { get; } = propertyValidator;
 
     /// <summary>
-    /// The <c>JsonSchema</c> for the individual property. When the parent schema is an object this is
-    /// <c>ProcessorContext.Schema.Properties[PropertyKey]</c>; otherwise it is the schema itself (for
-    /// types used as query-parameter shapes).
+    /// Whether the validator was declared with <c>RuleForEach</c> and therefore constrains the elements
+    /// of a collection property rather than the property itself.
     /// </summary>
-    public JsonSchema PropertySchema =>
-        ProcessorContext.Schema.IsObject ? ProcessorContext.Schema.Properties[PropertyKey] : ProcessorContext.Schema;
+    public bool IsCollectionRule { get; } = isCollectionRule;
+
+    /// <summary>
+    /// The <c>JsonSchema</c> a rule should mutate. When the parent schema is an object this is
+    /// <c>ProcessorContext.Schema.Properties[PropertyKey]</c>; otherwise it is the schema itself (for
+    /// types used as query-parameter shapes). For a collection rule it is the property's <c>items</c>
+    /// schema, because the constraint applies to each element.
+    /// </summary>
+    /// <remarks>
+    /// FluentValidation reports a <c>RuleForEach(x =&gt; x.Scores).GreaterThan(0)</c> rule under the
+    /// property name <c>Scores</c>, exactly like a non-collection rule. Without the redirect the bound
+    /// lands on the array schema, where <c>minimum</c>, <c>maxLength</c>, and <c>pattern</c> have no
+    /// meaning — JSON Schema constrains array size with <c>minItems</c>/<c>maxItems</c> instead — and
+    /// strict client generators reject the resulting document.
+    /// </remarks>
+    public JsonSchema PropertySchema
+    {
+        get
+        {
+            var schema = ProcessorContext.Schema.IsObject
+                ? ProcessorContext.Schema.Properties[PropertyKey]
+                : ProcessorContext.Schema;
+
+            return IsCollectionRule && schema.Item is not null ? schema.Item : schema;
+        }
+    }
 }

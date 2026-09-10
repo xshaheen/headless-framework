@@ -95,6 +95,50 @@ public sealed class ProblemDetailsOperationProcessorTests : TestBase
         context.Document.Definitions.Should().BeEmpty();
     }
 
+    // Each case declares its own status because the processor registers a problem schema only when the
+    // operation declares the matching response.
+    public static TheoryData<string, Type> SingleErrorProblemCases =>
+        new()
+        {
+            { "400", typeof(BadRequestProblemDetails) },
+            { "401", typeof(UnauthorizedProblemDetails) },
+            { "403", typeof(ForbiddenProblemDetails) },
+            { "404", typeof(EntityNotFoundProblemDetails) },
+            { "429", typeof(TooManyRequestsProblemDetails) },
+        };
+
+    [Theory]
+    [MemberData(nameof(SingleErrorProblemCases))]
+    public void should_declare_the_optional_error_descriptor_the_creator_writes(string statusCode, Type problemType)
+    {
+        // IProblemDetailsCreator writes an "error" member for every one of these responses, and the
+        // generated definition forbids additional properties. An undeclared error therefore makes the
+        // framework's own body fail validation against the schema the same framework published — the
+        // tenant-required 403 (g:tenant_required) is the case that occurs out of the box.
+        var context = _CreateContext((statusCode, new OpenApiResponse()));
+
+        new ProblemDetailsOperationProcessor().Process(context);
+
+        var definition = context.Document.Definitions[problemType.Name];
+        definition.AllowAdditionalProperties.Should().BeFalse();
+        definition.ActualProperties.Should().ContainKey(nameof(ForbiddenProblemDetails.Error));
+        definition.ActualProperties[nameof(ForbiddenProblemDetails.Error)].IsRequired.Should().BeFalse();
+    }
+
+    [Fact]
+    public void should_declare_the_retry_after_the_creator_writes_for_too_many_requests()
+    {
+        var context = _CreateContext(("429", new OpenApiResponse()));
+
+        new ProblemDetailsOperationProcessor().Process(context);
+
+        var definition = context.Document.Definitions[nameof(TooManyRequestsProblemDetails)];
+        var retryAfter = nameof(TooManyRequestsProblemDetails.RetryAfter);
+        definition.AllowAdditionalProperties.Should().BeFalse();
+        definition.ActualProperties.Should().ContainKey(retryAfter);
+        definition.ActualProperties[retryAfter].IsRequired.Should().BeTrue();
+    }
+
     private static OperationProcessorContext _CreateContext(
         params (string StatusCode, OpenApiResponse Response)[] responses
     )
@@ -113,6 +157,9 @@ public sealed class ProblemDetailsOperationProcessorTests : TestBase
             Method = "GET",
         };
         var settings = new AspNetCoreOpenApiDocumentGeneratorSettings();
+        // Mirrors SetupNswag: without it the derived problem types generate as an allOf against the base,
+        // where the base subschema still forbids additional properties and knows nothing of the derived
+        // members — a different (and more permissive) shape than any real document this package produces.
         settings.SchemaSettings.FlattenInheritanceHierarchy = true;
         var resolver = new OpenApiSchemaResolver(document, settings.SchemaSettings);
         var generator = new OpenApiDocumentGenerator(settings, resolver);

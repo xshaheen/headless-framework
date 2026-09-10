@@ -2,6 +2,7 @@
 
 using Headless.Abstractions;
 using Headless.Domain;
+using Headless.MultiTenancy;
 using Headless.Reflection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;

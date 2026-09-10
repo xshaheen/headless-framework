@@ -11,6 +11,29 @@ public sealed class FcmPushNotificationServiceTests : TestBase
 {
     private readonly IFcmMessageSender _sender = Substitute.For<IFcmMessageSender>();
 
+    [Fact]
+    public void should_target_fid_for_single_send()
+    {
+        // when
+        var message = FcmMessageSender.BuildMessage(new FcmMessageContent("title", "body", null), "fid-1");
+
+        // then
+        message.Fid.Should().Be("fid-1");
+    }
+
+    [Fact]
+    public void should_target_fids_for_multicast_send()
+    {
+        // when
+        var message = FcmMessageSender.BuildMulticastMessage(
+            new FcmMessageContent("title", "body", null),
+            ["fid-1", "fid-2"]
+        );
+
+        // then
+        message.Fids.Should().Equal("fid-1", "fid-2");
+    }
+
     private FcmPushNotificationService _CreateService()
     {
         return new(_sender);
@@ -35,11 +58,11 @@ public sealed class FcmPushNotificationServiceTests : TestBase
     {
         // given
         _sender
-            .SendAsync(Arg.Any<FcmMessageContent>(), "token", Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(PushNotificationResponse.Succeeded("token", "msg-1")));
+            .SendAsync(Arg.Any<FcmMessageContent>(), "fid", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(PushNotificationResponse.Succeeded("fid", "msg-1")));
 
         // when
-        var result = await _CreateService().SendToDeviceAsync("token", _Request(), AbortToken);
+        var result = await _CreateService().SendToDeviceAsync("fid", _Request(), AbortToken);
         // then
         result.IsSucceeded().Should().BeTrue();
         result.MessageId.Should().Be("msg-1");
@@ -48,10 +71,10 @@ public sealed class FcmPushNotificationServiceTests : TestBase
     [Theory]
     [InlineData("")]
     [InlineData("   ")]
-    public async Task should_throw_when_token_is_blank(string token)
+    public async Task should_throw_when_fid_is_blank(string fid)
     {
         // when
-        var action = async () => await _CreateService().SendToDeviceAsync(token, _Request(), AbortToken);
+        var action = async () => await _CreateService().SendToDeviceAsync(fid, _Request(), AbortToken);
         // then
         await action.Should().ThrowAsync<ArgumentException>();
     }
@@ -68,7 +91,7 @@ public sealed class FcmPushNotificationServiceTests : TestBase
         var data = new Dictionary<string, string>(StringComparer.Ordinal) { [reservedKey] = "value" };
 
         // when
-        var action = async () => await _CreateService().SendToDeviceAsync("token", _Request(data: data), AbortToken);
+        var action = async () => await _CreateService().SendToDeviceAsync("fid", _Request(data: data), AbortToken);
         // then
         await action.Should().ThrowAsync<ArgumentException>();
     }
@@ -78,7 +101,7 @@ public sealed class FcmPushNotificationServiceTests : TestBase
     {
         // when
         var action = async () =>
-            await _CreateService().SendToDeviceAsync("token", _Request(title: new string('a', 101)), AbortToken);
+            await _CreateService().SendToDeviceAsync("fid", _Request(title: new string('a', 101)), AbortToken);
         // then
         await action.Should().ThrowAsync<ArgumentException>();
     }
@@ -92,7 +115,7 @@ public sealed class FcmPushNotificationServiceTests : TestBase
             .Returns(Task.FromException<PushNotificationResponse>(new OperationCanceledException()));
 
         // when
-        var action = async () => await _CreateService().SendToDeviceAsync("token", _Request(), AbortToken);
+        var action = async () => await _CreateService().SendToDeviceAsync("fid", _Request(), AbortToken);
         // then
         await action.Should().ThrowAsync<OperationCanceledException>();
     }
@@ -109,17 +132,17 @@ public sealed class FcmPushNotificationServiceTests : TestBase
             )
             .Returns(ci =>
             {
-                var tokens = ci.Arg<IReadOnlyList<string>>();
+                var fids = ci.Arg<IReadOnlyList<string>>();
                 IReadOnlyList<PushNotificationResponse> outcomes =
                 [
-                    .. tokens.Select(t => PushNotificationResponse.Succeeded(t, "id")),
+                    .. fids.Select(fid => PushNotificationResponse.Succeeded(fid, "id")),
                 ];
                 return Task.FromResult(outcomes);
             });
-        var tokens = Enumerable.Range(0, 501).Select(i => $"t{i}").ToList();
+        var fids = Enumerable.Range(0, 501).Select(i => $"fid-{i}").ToList();
 
         // when
-        var result = await _CreateService().SendMulticastAsync(tokens, _Request(), AbortToken);
+        var result = await _CreateService().SendMulticastAsync(fids, _Request(), AbortToken);
         // then
         result.SuccessCount.Should().Be(501);
         result.FailureCount.Should().Be(0);
@@ -146,22 +169,22 @@ public sealed class FcmPushNotificationServiceTests : TestBase
             )
             .Returns(ci =>
             {
-                var tokens = ci.Arg<IReadOnlyList<string>>();
+                var fids = ci.Arg<IReadOnlyList<string>>();
                 var succeed = Interlocked.Increment(ref call) == 1;
                 IReadOnlyList<PushNotificationResponse> outcomes =
                 [
-                    .. tokens.Select(t =>
+                    .. fids.Select(fid =>
                         succeed
-                            ? PushNotificationResponse.Succeeded(t, "id")
-                            : PushNotificationResponse.Failed(t, "boom")
+                            ? PushNotificationResponse.Succeeded(fid, "id")
+                            : PushNotificationResponse.Failed(fid, "boom")
                     ),
                 ];
                 return Task.FromResult(outcomes);
             });
-        var tokens = Enumerable.Range(0, 501).Select(i => $"t{i}").ToList();
+        var fids = Enumerable.Range(0, 501).Select(i => $"fid-{i}").ToList();
 
         // when
-        var result = await _CreateService().SendMulticastAsync(tokens, _Request(), AbortToken);
+        var result = await _CreateService().SendMulticastAsync(fids, _Request(), AbortToken);
         // then
         result.Responses.Should().HaveCount(501);
         result.SuccessCount.Should().Be(500);
@@ -169,7 +192,7 @@ public sealed class FcmPushNotificationServiceTests : TestBase
     }
 
     [Fact]
-    public async Task should_throw_when_multicast_tokens_empty()
+    public async Task should_throw_when_multicast_fids_empty()
     {
         // when
         var action = async () => await _CreateService().SendMulticastAsync([], _Request(), AbortToken);
