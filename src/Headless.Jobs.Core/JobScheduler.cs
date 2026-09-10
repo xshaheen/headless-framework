@@ -333,15 +333,7 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
         CancellationToken cancellationToken
     )
     {
-        var policy = _policies.Resolve(
-            descriptor,
-            new JobOptions
-            {
-                Retries = options?.Retries,
-                RetryIntervals = options?.RetryIntervals,
-                OnNodeDeath = options?.OnNodeDeath,
-            }
-        );
+        var policy = _policies.ResolveRecurring(descriptor, options);
         if (policy.RequireAtomicEnlistment)
         {
             throw new NotSupportedException(

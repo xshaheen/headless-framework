@@ -1183,10 +1183,11 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                     var candidates = intent
                         .Select(values => (CronJobOccurrenceEntity<TCronJob>)values.ToObject())
                         .ToArray();
-                    var definitions = new Dictionary<Guid, TCronJob>();
-                    foreach (var definitionId in candidates.Select(x => x.CronJobId).Distinct().Order())
+                    var definitionIds = candidates.Select(x => x.CronJobId).Distinct().Order().ToArray();
+                    foreach (var definitionId in definitionIds)
                     {
                         // Serialize every materialization with definition edits, including payload-only changes.
+                        // A set update cannot guarantee the .NET Guid lock order shared with other definition writers.
                         var affected = await context
                             .Set<TCronJob>()
                             .Where(x => x.Id == definitionId)
@@ -1199,15 +1200,17 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                         {
                             throw new InvalidOperationException("A cron occurrence requires an existing definition.");
                         }
-                        definitions.Add(
-                            definitionId,
-                            await context
+                    }
+                    // All definitions stay protected from edits and deletion throughout this single snapshot read.
+                    Dictionary<Guid, TCronJob> definitions =
+                        definitionIds.Length == 0
+                            ? []
+                            : await context
                                 .Set<TCronJob>()
                                 .AsNoTracking()
-                                .SingleAsync(x => x.Id == definitionId, ct)
-                                .ConfigureAwait(false)
-                        );
-                    }
+                                .Where(x => definitionIds.Contains(x.Id))
+                                .ToDictionaryAsync(x => x.Id, ct)
+                                .ConfigureAwait(false);
                     foreach (var occurrence in candidates)
                     {
                         occurrence.SnapshotContract(definitions[occurrence.CronJobId]);

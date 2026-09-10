@@ -195,25 +195,74 @@ public sealed class JobSchedulingDefaultsTests : TestBase
     }
 
     [Fact]
-    public async Task recurring_facade_inherits_retries_but_rejects_required_atomic_policy()
+    public async Task recurring_facade_ignores_host_atomic_default_and_preserves_retry_precedence()
     {
         var policies = new JobSchedulingPolicies(
-            new JobOptions { Retries = 4, OnNodeDeath = NodeDeathPolicy.Skip },
-            [],
-            []
+            new JobOptions
+            {
+                Retries = 4,
+                RetryIntervals = [2, 5],
+                OnNodeDeath = NodeDeathPolicy.Skip,
+                RequireAtomicEnlistment = true,
+            },
+            new() { [typeof(Request)] = new JobOptions { Retries = 6 } },
+            new() { [_Requestless] = new JobOptions { Retries = 8 } }
         );
-        var (scheduler, _, cron) = _CreateScheduler(new FakeTimeProvider(), policies);
+        var (scheduler, time, cron) = _CreateScheduler(new FakeTimeProvider(), policies);
         await scheduler.ScheduleRecurringAsync(new Request(), "0 * * * * *", AbortToken);
         await cron.Received(1)
             .AddAsync(
-                Arg.Is<CronJobEntity>(job => job.Retries == 4 && job.OnNodeDeath == NodeDeathPolicy.Skip),
+                Arg.Is<CronJobEntity>(job =>
+                    job.Retries == 6
+                    && job.OnNodeDeath == NodeDeathPolicy.Skip
+                    && job.RetryIntervals!.SequenceEqual(new[] { 2, 5 })
+                ),
                 AbortToken
             );
-        var (atomicScheduler, _, atomicCron) = _CreateScheduler(
-            new FakeTimeProvider(),
-            new JobSchedulingPolicies(new JobOptions { RequireAtomicEnlistment = true }, [], [])
+        await scheduler.ScheduleRecurringAsync(_Requestless, "0 * * * * *", AbortToken);
+        await cron.Received(1).AddAsync(Arg.Is<CronJobEntity>(job => job.Retries == 8), AbortToken);
+        await scheduler.ScheduleRecurringAsync(
+            new Request(),
+            "0 * * * * *",
+            new RecurringJobOptions
+            {
+                Retries = 0,
+                RetryIntervals = [],
+                OnNodeDeath = NodeDeathPolicy.Retry,
+            },
+            AbortToken
         );
-        var schedule = () => atomicScheduler.ScheduleRecurringAsync(_Requestless, "0 * * * * *", AbortToken);
+        await cron.Received(1)
+            .AddAsync(
+                Arg.Is<CronJobEntity>(job =>
+                    job.Retries == 0 && job.RetryIntervals!.Length == 0 && job.OnNodeDeath == NodeDeathPolicy.Retry
+                ),
+                AbortToken
+            );
+        await scheduler.EnqueueAsync(new Request(), new JobOptions { RequireAtomicEnlistment = false }, AbortToken);
+        await time.Received(1).AddAsync(Arg.Is<TimeJobEntity>(job => job.RequireAtomicEnlistment), AbortToken);
+    }
+
+    [Theory]
+    [InlineData(false, "request")]
+    [InlineData(true, "request")]
+    [InlineData(false, "typed-descriptor")]
+    [InlineData(true, "typed-descriptor")]
+    [InlineData(false, "requestless-descriptor")]
+    [InlineData(true, "requestless-descriptor")]
+    public async Task recurring_facade_rejects_explicit_function_atomic_requirements(bool hostAtomic, string identity)
+    {
+        var required = new JobOptions { RequireAtomicEnlistment = true };
+        var policies = new JobSchedulingPolicies(
+            new JobOptions { RequireAtomicEnlistment = hostAtomic },
+            identity == "request" ? new() { [typeof(Request)] = required } : [],
+            identity == "request" ? [] : new() { [identity == "typed-descriptor" ? _Typed : _Requestless] = required }
+        );
+        var (atomicScheduler, _, atomicCron) = _CreateScheduler(new FakeTimeProvider(), policies);
+        var schedule = () =>
+            identity == "requestless-descriptor"
+                ? atomicScheduler.ScheduleRecurringAsync(_Requestless, "0 * * * * *", AbortToken)
+                : atomicScheduler.ScheduleRecurringAsync(new Request(), "0 * * * * *", AbortToken);
         await schedule.Should().ThrowAsync<NotSupportedException>();
         await atomicCron.DidNotReceive().AddAsync(Arg.Any<CronJobEntity>(), Arg.Any<CancellationToken>());
     }
@@ -513,6 +562,48 @@ public sealed class JobSchedulingDefaultsTests : TestBase
         {
             var configure = () => JobSchedulingPolicies.Snapshot(options);
             configure.Should().Throw<ArgumentException>();
+        }
+    }
+
+    [Theory]
+    [InlineData(-420, false)]
+    [InlineData(-420, true)]
+    [InlineData(330, false)]
+    [InlineData(330, true)]
+    public async Task explicit_offsets_survive_absolute_scheduling_and_every_chain_edge(
+        int offsetMinutes,
+        bool requestless
+    )
+    {
+        var instant = new DateTimeOffset(2030, 3, 4, 5, 6, 7, TimeSpan.FromMinutes(offsetMinutes));
+        var (scheduler, time, _) = _CreateScheduler(new FakeTimeProvider());
+        TimeJobEntity? captured = null;
+        time.AddAsync(Arg.Any<TimeJobEntity>(), AbortToken).Returns(call => captured = call.Arg<TimeJobEntity>());
+        await (
+            requestless
+                ? scheduler.ScheduleAsync(_Requestless, instant, AbortToken)
+                : scheduler.ScheduleAsync(new Request(), instant, AbortToken)
+        );
+        captured!.ExecutionTime.Should().Be(instant.UtcDateTime);
+        captured.ExecutionTime.Value.Kind.Should().Be(DateTimeKind.Utc);
+
+        var chain = requestless ? JobChain.Start(_Requestless, instant) : JobChain.Start(new Request(), instant);
+        if (requestless)
+        {
+            chain.Root.Then(_Requestless, instant);
+            chain.Root.Catch(_Requestless, instant);
+        }
+        else
+        {
+            chain.Root.Then(new Request(), instant);
+            chain.Root.Catch(new Request(), instant);
+        }
+        await scheduler.EnqueueAsync(chain.Build(), AbortToken);
+        captured!.Children.Should().HaveCount(2);
+        foreach (var node in captured.Children.Prepend(captured))
+        {
+            node.ExecutionTime.Should().Be(instant.UtcDateTime);
+            node.ExecutionTime.Value.Kind.Should().Be(DateTimeKind.Utc);
         }
     }
 

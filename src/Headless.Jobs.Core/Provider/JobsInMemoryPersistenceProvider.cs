@@ -171,7 +171,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                     updatedTicker.UpdatedAt = now;
                     updatedTicker.Status = JobStatus.Queued;
 
-                    if (_timeJobs.TryUpdate(timeJob.Id, updatedTicker, existingTicker))
+                    if (_TryUpdateTimeJob(timeJob.Id, updatedTicker, existingTicker))
                     {
                         _SyncReconcileCandidate(updatedTicker);
                         var claimedIds = _ClaimIdleDescendants(timeJob.Id, now);
@@ -238,7 +238,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             claimed.LockedUntil = now.UtcDateTime.Add(_leaseDuration);
             claimed.UpdatedAt = now;
 
-            if (_timeJobs.TryUpdate(jobId, claimed, existing))
+            if (_TryUpdateTimeJob(jobId, claimed, existing))
             {
                 _SyncReconcileCandidate(claimed);
                 return true;
@@ -290,7 +290,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                     updatedTicker.UpdatedAt = now;
                     updatedTicker.Status = JobStatus.Queued;
 
-                    if (_timeJobs.TryUpdate(job.Id, updatedTicker, existingTicker))
+                    if (_TryUpdateTimeJob(job.Id, updatedTicker, existingTicker))
                     {
                         _SyncReconcileCandidate(updatedTicker);
                         var claimedIds = _ClaimIdleDescendants(job.Id, now);
@@ -327,7 +327,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                     updatedTicker.Status = JobStatus.Idle;
                     updatedTicker.UpdatedAt = now;
 
-                    if (_timeJobs.TryUpdate(id, updatedTicker, job))
+                    if (_TryUpdateTimeJob(id, updatedTicker, job))
                     {
                         _SyncReconcileCandidate(updatedTicker);
                     }
@@ -411,7 +411,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             var updatedTicker = _CloneTicker(job);
             _ApplyFunctionContextToTicker(updatedTicker, functionContext);
 
-            if (_timeJobs.TryUpdate(functionContext.JobId, updatedTicker, job))
+            if (_TryUpdateTimeJob(functionContext.JobId, updatedTicker, job))
             {
                 _SyncReconcileCandidate(updatedTicker);
                 return Task.FromResult(1);
@@ -468,7 +468,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                     updated.LockedUntil = null;
                 }
 
-                if (!_timeJobs.TryUpdate(jobId, updated, job))
+                if (!_TryUpdateTimeJob(jobId, updated, job))
                 {
                     continue;
                 }
@@ -519,7 +519,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                     released.OwnerId = null;
                     released.LockedUntil = null;
                     released.UpdatedAt = now;
-                    if (!_timeJobs.TryUpdate(childId, released, child))
+                    if (!_TryUpdateTimeJob(childId, released, child))
                     {
                         continue;
                     }
@@ -570,7 +570,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             skipped.LockedUntil = null;
             skipped.SkippedReason = reason;
             skipped.UpdatedAt = now;
-            if (_timeJobs.TryUpdate(jobId, skipped, job))
+            if (_TryUpdateTimeJob(jobId, skipped, job))
             {
                 _SyncReconcileCandidate(skipped);
                 skippedCount++;
@@ -713,7 +713,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             released.OwnerId = null;
             released.LockedUntil = null;
             released.UpdatedAt = now;
-            if (_timeJobs.TryUpdate(childId, released, child))
+            if (_TryUpdateTimeJob(childId, released, child))
             {
                 _SyncReconcileCandidate(released);
                 return now.UtcDateTime;
@@ -749,7 +749,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 var updatedTicker = _CloneTicker(job);
                 _ApplyFunctionContextToTicker(updatedTicker, functionContext);
 
-                if (_timeJobs.TryUpdate(id, updatedTicker, job))
+                if (_TryUpdateTimeJob(id, updatedTicker, job))
                 {
                     _SyncReconcileCandidate(updatedTicker);
                     updatedIds.Add(id);
@@ -793,7 +793,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             updatedTicker.Status = JobStatus.InProgress;
             updatedTicker.UpdatedAt = now;
 
-            if (_timeJobs.TryUpdate(id, updatedTicker, job))
+            if (_TryUpdateTimeJob(id, updatedTicker, job))
             {
                 _SyncReconcileCandidate(updatedTicker);
 
@@ -835,7 +835,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             updatedTicker.LockedUntil = now.UtcDateTime.Add(_leaseDuration);
             updatedTicker.UpdatedAt = now;
 
-            if (_timeJobs.TryUpdate(jobId, updatedTicker, job))
+            if (_TryUpdateTimeJob(jobId, updatedTicker, job))
             {
                 _SyncReconcileCandidate(updatedTicker);
                 return Task.FromResult(1);
@@ -879,7 +879,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             var updated = _CloneTicker(current);
             mutate(updated);
             updated.UpdatedAt = now;
-            if (!_timeJobs.TryUpdate(id, updated, current))
+            if (!_TryUpdateTimeJob(id, updated, current))
             {
                 return false;
             }
@@ -1109,7 +1109,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             barrierRow.OwnerId = null;
             barrierRow.LockedUntil = barrierDeadline;
 
-            if (!_timeJobs.TryAdd(node.Id, barrierRow))
+            if (!_TryAddTimeJob(node.Id, barrierRow))
             {
                 // A concurrent add raced us on this id after the phase-1 pre-check; roll the whole batch back. Every
                 // installed row is still parked (unclaimable), so nothing can hold it — the conditional removes win.
@@ -1119,7 +1119,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
                     // Conditional (KeyValuePair) remove: pull the row ONLY while the map still holds the exact barrier
                     // instance we inserted. Unwind the child index only for the rows we actually removed.
-                    if (_timeJobs.TryRemove(new KeyValuePair<Guid, TTimeJob>(installedNode.Id, barriers[installed])))
+                    if (_TryRemoveTimeJob(new KeyValuePair<Guid, TTimeJob>(installedNode.Id, barriers[installed])))
                     {
                         if (installedNode.ParentId.HasValue)
                         {
@@ -1144,7 +1144,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             var node = flattened[index];
 
             // Nothing else can mutate a parked barrier row (every predicate excludes it), so this swap always wins.
-            _timeJobs.TryUpdate(node.Id, node, barriers[index]);
+            _TryUpdateTimeJob(node.Id, node, barriers[index]);
             _SyncReconcileCandidate(node);
         }
 
@@ -1211,7 +1211,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             job.CorrelationId = existing.CorrelationId;
             job.CausationId = existing.CausationId;
 
-            if (_timeJobs.TryUpdate(job.Id, job, existing))
+            if (_TryUpdateTimeJob(job.Id, job, existing))
             {
                 _SyncReconcileCandidate(job);
 
@@ -1284,7 +1284,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                     }
                 }
 
-                if (!_timeJobs.TryRemove(id, out var removed))
+                if (!_TryRemoveTimeJob(id, out var removed))
                 {
                     continue;
                 }
@@ -1321,7 +1321,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             var updated = _CloneTicker(current);
             mutate(updated);
             updated.UpdatedAt = now;
-            if (!_timeJobs.TryUpdate(id, updated, current))
+            if (!_TryUpdateTimeJob(id, updated, current))
             {
                 return false;
             }

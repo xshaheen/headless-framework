@@ -249,7 +249,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
 
         var now = timeProvider.GetUtcNow();
         var lockedUntil = now.UtcDateTime.Add(_leaseDuration);
-        var claimed = new List<CronJobOccurrenceEntity<TCronJob>>();
+        CronJobOccurrenceEntity<TCronJob>[] claimed = [];
 
         await using (
             var claimTransaction = await JobsClaimTransaction<TDbContext>.CreateAsync(
@@ -262,7 +262,9 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             var transaction = claimTransaction.Transaction;
             var mapping = CronOccurrenceRelationalMapping.Create<TDbContext, TCronJob>(dbContext);
             var definitionMapping = CronDefinitionRelationalMapping.Create<TDbContext, TCronJob>(dbContext);
-            foreach (var item in cronJobOccurrences.Items)
+            var activeItems = new HashSet<JobManagerDispatchContext>();
+            // All batches take definition locks in the same order, even when dispatch order differs.
+            foreach (var item in cronJobOccurrences.Items.OrderBy(x => x.Id))
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 if (
@@ -273,12 +275,30 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                     continue;
                 }
 
-                var occurrence = item.NextCronOccurrence is null
+                activeItems.Add(item);
+            }
+
+            // Read snapshots only after locking definitions so edits cannot race the batch read and insert.
+            var definitionIds = activeItems.Where(x => x.NextCronOccurrence is null).Select(x => x.Id).ToArray();
+            var definitions =
+                definitionIds.Length == 0
+                    ? new Dictionary<Guid, TCronJob>()
+                    : await dbContext
+                        .Set<TCronJob>()
+                        .AsNoTracking()
+                        .Where(x => definitionIds.Contains(x.Id))
+                        .ToDictionaryAsync(x => x.Id, cancellationToken)
+                        .ConfigureAwait(false);
+            var claimedIds = new List<Guid>();
+            foreach (var item in cronJobOccurrences.Items.Where(activeItems.Contains))
+            {
+                var occurrenceId = item.NextCronOccurrence is null
                     ? await _InsertCronOccurrenceAsync(
                             dbContext,
                             transaction,
                             mapping,
                             item,
+                            definitions[item.Id],
                             cronJobOccurrences.Key,
                             owner,
                             now,
@@ -299,30 +319,34 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                         )
                         .ConfigureAwait(false);
 
-                if (occurrence is not null)
+                if (occurrenceId is { } id)
                 {
-                    claimed.Add(occurrence);
+                    claimedIds.Add(id);
                 }
             }
 
-            if (claimed.Count > 0)
+            if (claimedIds.Count > 0)
             {
-                var refreshedAt = await _RefreshCronOccurrenceLeasesAsync(
+                await _RefreshCronOccurrenceLeasesAsync(
                         dbContext,
                         transaction,
                         mapping,
-                        [.. claimed.Select(x => x.Id)],
+                        [.. claimedIds],
                         owner,
                         _leaseDuration,
                         cancellationToken
                     )
                     .ConfigureAwait(false);
 
-                foreach (var occurrence in claimed)
-                {
-                    occurrence.UpdatedAt = refreshedAt;
-                    occurrence.LockedUntil = refreshedAt.UtcDateTime.Add(_leaseDuration);
-                }
+                // Hydrate once after the final write, preserving stored contracts, retry state and clock precision.
+                var occurrences = await dbContext
+                    .Set<CronJobOccurrenceEntity<TCronJob>>()
+                    .AsNoTracking()
+                    .Where(x => claimedIds.Contains(x.Id) && x.OwnerId == owner)
+                    .Include(x => x.CronJob)
+                    .ToDictionaryAsync(x => x.Id, cancellationToken)
+                    .ConfigureAwait(false);
+                claimed = [.. claimedIds.Select(id => occurrences[id])];
             }
 
             await claimTransaction.CommitAsync(cancellationToken).ConfigureAwait(false);
@@ -330,8 +354,6 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
 
         foreach (var occurrence in claimed)
         {
-            occurrence.OwnerId = owner;
-            occurrence.Status = JobStatus.Queued;
             yield return occurrence;
         }
     }
@@ -454,11 +476,12 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         return await reader.GetFieldValueAsync<DateTimeOffset>(0, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<CronJobOccurrenceEntity<TCronJob>?> _InsertCronOccurrenceAsync(
+    private async Task<Guid?> _InsertCronOccurrenceAsync(
         TDbContext dbContext,
         IDbContextTransaction transaction,
         CronOccurrenceRelationalMapping mapping,
         JobManagerDispatchContext item,
+        TCronJob definition,
         DateTime executionTime,
         string owner,
         DateTimeOffset now,
@@ -467,11 +490,6 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
     )
     {
         var id = guidGenerator.Create();
-        var definition = await dbContext
-            .Set<TCronJob>()
-            .AsNoTracking()
-            .SingleAsync(x => x.Id == item.Id, cancellationToken)
-            .ConfigureAwait(false);
         var snapshot = new CronJobOccurrenceEntity<TCronJob> { Id = id };
         snapshot.SnapshotContract(definition);
         await using var command = _CreateCommand(dbContext, transaction);
@@ -551,17 +569,10 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         command.Parameters.Add(new NpgsqlParameter("elapsedTime", NpgsqlDbType.Bigint) { Value = 0L });
         command.Parameters.Add(new NpgsqlParameter("retryCount", NpgsqlDbType.Integer) { Value = 0 });
         var inserted = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        return inserted is Guid
-            ? await dbContext
-                .Set<CronJobOccurrenceEntity<TCronJob>>()
-                .AsNoTracking()
-                .Include(x => x.CronJob)
-                .SingleAsync(x => x.Id == id, cancellationToken)
-                .ConfigureAwait(false)
-            : null;
+        return inserted is Guid insertedId ? insertedId : null;
     }
 
-    private static async Task<CronJobOccurrenceEntity<TCronJob>?> _ClaimExistingCronOccurrenceAsync(
+    private static async Task<Guid?> _ClaimExistingCronOccurrenceAsync(
         TDbContext dbContext,
         IDbContextTransaction transaction,
         CronOccurrenceRelationalMapping mapping,
@@ -612,14 +623,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         command.Parameters.Add(new NpgsqlParameter("onNodeDeath", item.OnNodeDeath.ToString()));
         var claimed = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
 
-        return claimed is not null
-            ? await dbContext
-                .Set<CronJobOccurrenceEntity<TCronJob>>()
-                .AsNoTracking()
-                .Include(x => x.CronJob)
-                .SingleAsync(x => x.Id == occurrence.Id, cancellationToken)
-                .ConfigureAwait(false)
-            : null;
+        return claimed is Guid claimedId ? claimedId : null;
     }
 
     private static async Task<Guid[]> _ClaimFallbackCronOccurrencesAsync(

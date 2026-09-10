@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces.Managers;
@@ -19,9 +20,9 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
         CancellationToken cancellationToken
     )
     {
-        ArgumentNullException.ThrowIfNull(key);
-        ArgumentNullException.ThrowIfNull(entity);
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(expectedGeneration ?? 1, nameof(expectedGeneration));
+        Argument.IsNotNull(key);
+        Argument.IsNotNull(entity);
+        Argument.IsPositive(expectedGeneration);
         JobIntentFingerprint.RejectOrdinaryMutation(entity);
         JobIntentFingerprint.Validate(entity);
         var coordinated = _TryCaptureCoordinatedContext(entity.RequireAtomicEnlistment, requireSavepoints: true);
@@ -77,9 +78,9 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
         CancellationToken cancellationToken
     )
     {
-        ArgumentNullException.ThrowIfNull(scope);
-        ArgumentNullException.ThrowIfNull(key);
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(expectedGeneration);
+        Argument.IsNotNull(scope);
+        Argument.IsNotNull(key);
+        Argument.IsPositive(expectedGeneration);
         var coordinated = _TryCaptureCoordinatedContext(requireAtomicEnlistment, requireSavepoints: true);
         if (scope.TenantId is null)
         {

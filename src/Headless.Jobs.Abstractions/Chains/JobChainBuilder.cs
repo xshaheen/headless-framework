@@ -6,7 +6,7 @@ using Headless.Jobs.Models;
 namespace Headless.Jobs;
 
 /// <summary>
-/// The mutable authoring surface for a <see cref="JobChain"/>, returned by the <see cref="JobChain.Start{TRequest}"/>
+/// The mutable authoring surface for a <see cref="JobChain"/>, returned by the <see cref="JobChain.Start{TRequest}(TRequest, JobOptions?)"/>
 /// factories. Extend the tree through <see cref="Root"/> (and the child handles it returns), then call
 /// <see cref="Build"/> once to freeze it into an immutable <see cref="JobChain"/>. After <see cref="Build"/> the
 /// builder and all of its node handles reject further authoring.

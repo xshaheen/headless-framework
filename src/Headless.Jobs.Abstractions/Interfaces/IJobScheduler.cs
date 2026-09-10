@@ -11,6 +11,168 @@ namespace Headless.Jobs.Interfaces;
 [PublicAPI]
 public interface IJobScheduler
 {
+    /// <summary>Rejects implicit DateTime conversion; supply an explicit DateTimeOffset instant.</summary>
+    [Obsolete(
+        "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset.",
+        error: true
+    )]
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    Task<Guid> ScheduleAsync<TArgs>(
+        TArgs request,
+        DateTime executionTime,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>Rejects implicit DateTime conversion; supply an explicit DateTimeOffset instant.</summary>
+    [Obsolete(
+        "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset.",
+        error: true
+    )]
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    Task<Guid> ScheduleAsync<TArgs>(
+        TArgs request,
+        DateTime executionTime,
+        JobOptions? options,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>Rejects implicit DateTime conversion; supply an explicit DateTimeOffset instant.</summary>
+    [Obsolete(
+        "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset.",
+        error: true
+    )]
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    Task<Guid> ScheduleAsync(
+        JobFunctionDescriptor descriptor,
+        DateTime executionTime,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>Rejects implicit DateTime conversion; supply an explicit DateTimeOffset instant.</summary>
+    [Obsolete(
+        "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset.",
+        error: true
+    )]
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    Task<Guid> ScheduleAsync(
+        JobFunctionDescriptor descriptor,
+        DateTime executionTime,
+        JobOptions? options,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>Rejects implicit DateTime conversion; supply an explicit DateTimeOffset instant.</summary>
+    [Obsolete(
+        "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset.",
+        error: true
+    )]
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    Task<JobScheduleResult> ScheduleKeyedAsync<TArgs>(
+        JobKey key,
+        TArgs request,
+        DateTime executionTime,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>Rejects implicit DateTime conversion; supply an explicit DateTimeOffset instant.</summary>
+    [Obsolete(
+        "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset.",
+        error: true
+    )]
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    Task<JobScheduleResult> ScheduleKeyedAsync<TArgs>(
+        JobKey key,
+        TArgs request,
+        DateTime executionTime,
+        JobOptions? options,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>Rejects implicit DateTime conversion; supply an explicit DateTimeOffset instant.</summary>
+    [Obsolete(
+        "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset.",
+        error: true
+    )]
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    Task<JobScheduleResult> ScheduleKeyedAsync(
+        JobKey key,
+        JobFunctionDescriptor descriptor,
+        DateTime executionTime,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>Rejects implicit DateTime conversion; supply an explicit DateTimeOffset instant.</summary>
+    [Obsolete(
+        "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset.",
+        error: true
+    )]
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    Task<JobScheduleResult> ScheduleKeyedAsync(
+        JobKey key,
+        JobFunctionDescriptor descriptor,
+        DateTime executionTime,
+        JobOptions? options,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>Rejects implicit DateTime conversion; supply an explicit DateTimeOffset instant.</summary>
+    [Obsolete(
+        "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset.",
+        error: true
+    )]
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    Task<JobScheduleResult> ReplaceKeyedAsync<TArgs>(
+        JobKey key,
+        long expectedGeneration,
+        TArgs request,
+        DateTime executionTime,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>Rejects implicit DateTime conversion; supply an explicit DateTimeOffset instant.</summary>
+    [Obsolete(
+        "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset.",
+        error: true
+    )]
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    Task<JobScheduleResult> ReplaceKeyedAsync<TArgs>(
+        JobKey key,
+        long expectedGeneration,
+        TArgs request,
+        DateTime executionTime,
+        JobOptions? options,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>Rejects implicit DateTime conversion; supply an explicit DateTimeOffset instant.</summary>
+    [Obsolete(
+        "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset.",
+        error: true
+    )]
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    Task<JobScheduleResult> ReplaceKeyedAsync(
+        JobKey key,
+        long expectedGeneration,
+        JobFunctionDescriptor descriptor,
+        DateTime executionTime,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>Rejects implicit DateTime conversion; supply an explicit DateTimeOffset instant.</summary>
+    [Obsolete(
+        "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset.",
+        error: true
+    )]
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    Task<JobScheduleResult> ReplaceKeyedAsync(
+        JobKey key,
+        long expectedGeneration,
+        JobFunctionDescriptor descriptor,
+        DateTime executionTime,
+        JobOptions? options,
+        CancellationToken cancellationToken = default
+    );
+
     /// <summary>Schedules one durable keyed intent at an absolute instant. Repeating the same intent observes its current run, including terminal runs.</summary>
     Task<JobScheduleResult> ScheduleKeyedAsync<TArgs>(
         JobKey key,

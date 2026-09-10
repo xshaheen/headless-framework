@@ -523,7 +523,10 @@ public sealed class JobSchedulerTests : TestBase
     [Fact]
     public void should_expose_ordinary_scheduling_and_generation_fenced_keyed_control()
     {
-        var methods = typeof(IJobScheduler).GetMethods(BindingFlags.Instance | BindingFlags.Public);
+        var methods = typeof(IJobScheduler)
+            .GetMethods(BindingFlags.Instance | BindingFlags.Public)
+            .Where(method => method.GetCustomAttribute<ObsoleteAttribute>() is null)
+            .ToArray();
 
         methods.Should().HaveCount(30);
         methods.Count(method => method.ReturnType == typeof(Task<JobScheduleResult>)).Should().Be(10);

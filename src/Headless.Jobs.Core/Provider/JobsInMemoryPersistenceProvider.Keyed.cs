@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Models;
@@ -19,12 +20,11 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         CancellationToken cancellationToken = default
     )
     {
-        ArgumentNullException.ThrowIfNull(job);
+        Argument.IsNotNull(job);
         JobAtomicity.RejectDirect([job]);
-        ArgumentNullException.ThrowIfNull(key);
-        ArgumentNullException.ThrowIfNull(job);
+        Argument.IsNotNull(key);
         cancellationToken.ThrowIfCancellationRequested();
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(expectedGeneration ?? 1, nameof(expectedGeneration));
+        Argument.IsPositive(expectedGeneration);
         JobIntentFingerprint.RejectOrdinaryMutation(job);
         JobIntentFingerprint.Normalize(job);
         lock (_keyedOperations)
@@ -96,7 +96,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             barrier.Status = JobStatus.InProgress;
             barrier.LockedUntil = _timeProvider.GetUtcNow().UtcDateTime.Add(_PublicationBarrierLease);
             barrier.IsCurrentGeneration = false;
-            if (!_timeJobs.TryAdd(row.Id, barrier))
+            if (!_TryAddTimeJob(row.Id, barrier))
             {
                 throw new InvalidOperationException("The candidate run ID collided with another insert.");
             }
@@ -109,9 +109,9 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 historical.SkippedReason = "Superseded by a newer keyed generation.";
                 historical.ExecutedAt = historical.UpdatedAt = row.CreatedAt;
                 // Claims use the same exact-instance CAS. A winning claim prevents replacement.
-                if (!_timeJobs.TryUpdate(current.Id, historical, current))
+                if (!_TryUpdateTimeJob(current.Id, historical, current))
                 {
-                    _timeJobs.TryRemove(new KeyValuePair<Guid, TTimeJob>(row.Id, barrier));
+                    _TryRemoveTimeJob(new KeyValuePair<Guid, TTimeJob>(row.Id, barrier));
                     return Task.FromResult(
                         JobIntentFingerprint.Result(
                             _FindCurrent(new JobKeyScope(job.Function, job.TenantId), key),
@@ -121,7 +121,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 }
             }
 
-            if (!_timeJobs.TryUpdate(row.Id, row, barrier))
+            if (!_TryUpdateTimeJob(row.Id, row, barrier))
             {
                 throw new InvalidOperationException(
                     "The provisional keyed row was unexpectedly modified before publication."
@@ -144,9 +144,9 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         CancellationToken cancellationToken = default
     )
     {
-        ArgumentNullException.ThrowIfNull(scope);
-        ArgumentNullException.ThrowIfNull(key);
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(expectedGeneration);
+        Argument.IsNotNull(scope);
+        Argument.IsNotNull(key);
+        Argument.IsPositive(expectedGeneration);
         cancellationToken.ThrowIfCancellationRequested();
         lock (_keyedOperations)
         {
@@ -183,7 +183,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                     updated.ExecutedAt = updated.UpdatedAt;
                 }
 
-                if (_timeJobs.TryUpdate(current.Id, updated, current))
+                if (_TryUpdateTimeJob(current.Id, updated, current))
                 {
                     return Task.FromResult(
                         JobIntentFingerprint.Result(
@@ -197,12 +197,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
     }
 
     private TTimeJob? _FindCurrent(JobKeyScope scope, JobKey key) =>
-        _timeJobs.Values.SingleOrDefault(job =>
-            job.IsCurrentGeneration == true
-            && string.Equals(job.BusinessKey, key.Value, StringComparison.Ordinal)
-            && string.Equals(job.Function, scope.Function, StringComparison.Ordinal)
-            && string.Equals(job.TenantId, scope.TenantId, StringComparison.Ordinal)
-        );
+        _currentTimeJobIds.TryGetValue((scope.TenantId, scope.Function, key.Value), out var id) ? _timeJobs[id] : null;
 
     private void _RejectKeyedParent(Guid? parentId)
     {

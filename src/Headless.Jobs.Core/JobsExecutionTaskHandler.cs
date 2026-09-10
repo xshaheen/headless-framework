@@ -461,16 +461,15 @@ internal sealed class JobsExecutionTaskHandler
                     return;
                 }
 
-                context
-                    .SetProperty(x => x.Status, JobStatus.Failed)
-                    .SetProperty(x => x.ExceptionDetails, context.ContractVersionError)
-                    .SetProperty(x => x.ExecutedAt, _timeProvider.GetUtcNow())
-                    .SetProperty(x => x.ReleaseLock, value: true);
+                // Registry versions can differ during a rolling deploy. Preserve the stored intent and retry budget
+                // so a compatible node can execute; a version absent from every node requires operator action.
+                context.SetProperty(x => x.Status, JobStatus.Idle).SetProperty(x => x.ReleaseLock, value: true);
+                _logger.LogJobContractVersionNotRegisteredOnNode(context.JobId, context.ContractVersionError);
                 jobActivity?.SetTag("headless.job.contract_version_error", context.ContractVersionError);
-                var versionFailureAffected = await _internalJobsManager
+                var versionReleaseAffected = await _internalJobsManager
                     .UpdateTickerAsync(context, CancellationToken.None)
                     .ConfigureAwait(false);
-                if (versionFailureAffected == 0)
+                if (versionReleaseAffected == 0)
                 {
                     context.LeaseLost = true;
                 }
@@ -1497,4 +1496,16 @@ internal static partial class JobsExecutionTaskHandlerLog
             + "function (AddJobsDiscovery), or expect claim churn until one does."
     )]
     public static partial void LogJobFunctionNotRegisteredOnNode(this ILogger logger, Guid jobId, string function);
+
+    [LoggerMessage(
+        EventId = 3115,
+        EventName = "JobContractVersionNotRegisteredOnNode",
+        Level = LogLevel.Error,
+        Message = "Job {JobId} cannot execute on this node; releasing it for a compatible node. {ContractVersionError}"
+    )]
+    public static partial void LogJobContractVersionNotRegisteredOnNode(
+        this ILogger logger,
+        Guid jobId,
+        string contractVersionError
+    );
 }

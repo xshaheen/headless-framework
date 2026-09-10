@@ -60,7 +60,22 @@ internal sealed class JobSchedulingPolicies
         }
     }
 
-    internal JobOptions Resolve(JobFunctionDescriptor descriptor, JobOptions? call)
+    internal JobOptions Resolve(JobFunctionDescriptor descriptor, JobOptions? call) =>
+        _Resolve(descriptor, call, includeHostAtomicRequirement: true);
+
+    internal JobOptions ResolveRecurring(JobFunctionDescriptor descriptor, RecurringJobOptions? call) =>
+        _Resolve(
+            descriptor,
+            new JobOptions
+            {
+                Retries = call?.Retries,
+                RetryIntervals = call?.RetryIntervals,
+                OnNodeDeath = call?.OnNodeDeath,
+            },
+            includeHostAtomicRequirement: false
+        );
+
+    private JobOptions _Resolve(JobFunctionDescriptor descriptor, JobOptions? call, bool includeHostAtomicRequirement)
     {
         var function =
             _byFunction.GetValueOrDefault(descriptor.FunctionName)
@@ -74,7 +89,7 @@ internal sealed class JobSchedulingPolicies
             RequireAtomicEnlistment =
                 (call?.RequireAtomicEnlistment ?? false)
                 || (function?.RequireAtomicEnlistment ?? false)
-                || _defaults.RequireAtomicEnlistment,
+                || (includeHostAtomicRequirement && _defaults.RequireAtomicEnlistment),
         };
         _ValidateOptions(result);
         return result;

@@ -316,6 +316,78 @@ public sealed class FluentOptionsConsumerCompilationTests : TestBase
         result.Success.Should().BeTrue(string.Join(Environment.NewLine, result.Diagnostics));
     }
 
+    [Theory]
+    [InlineData("DateTime")]
+    [InlineData("DateTime?")]
+    public void instant_entry_points_reject_datetime_consumers(string timeType)
+    {
+        var compilation = _Compile(_InstantConsumer(timeType));
+        var errors = _Errors(compilation);
+        // Nullable arguments can produce more than one conversion diagnostic for a single rejected invocation.
+        errors.Select(error => error.Location.GetLineSpan().StartLinePosition.Line).Distinct().Should().HaveCount(26);
+        if (string.Equals(timeType, "DateTime", StringComparison.Ordinal))
+        {
+            errors.Should().OnlyContain(error => error.Id == "CS0619");
+            errors
+                .Should()
+                .OnlyContain(error =>
+                    error.GetMessage().Contains("explicit DateTimeOffset instant", StringComparison.Ordinal)
+                );
+        }
+    }
+
+    [Fact]
+    public void instant_entry_points_accept_explicit_offsets_and_immediate_chain_steps()
+    {
+        var compilation = _Compile(_InstantConsumer("DateTimeOffset"));
+        _Errors(compilation).Should().BeEmpty();
+        using var image = new MemoryStream();
+        compilation.Emit(image, cancellationToken: AbortToken).Success.Should().BeTrue();
+    }
+
+    private static string _InstantConsumer(string timeType) =>
+        $$"""
+            {{_Imports}}
+            public sealed record Request;
+            public static class InstantConsumer
+            {
+                public static void Run(IJobScheduler scheduler, Request request, JobFunctionDescriptor descriptor,
+                    {{timeType}} executionTime, CancellationToken ct, Action<JobOptionsBuilder> configure)
+                {
+                    var node = JobChain.Start(request).Root;
+                    _ = JobChain.Start(descriptor, options: null);
+                    _ = node.Then(request, options: null);
+                    _ = node.Catch(descriptor);
+                    _ = scheduler.ScheduleAsync(request, executionTime, ct);
+                    _ = scheduler.ScheduleAsync(request, executionTime, new JobOptions(), ct);
+                    _ = scheduler.ScheduleKeyedAsync(new JobKey("key"), request, executionTime, ct);
+                    _ = scheduler.ScheduleKeyedAsync(new JobKey("key"), request, executionTime, new JobOptions(), ct);
+                    _ = scheduler.ReplaceKeyedAsync(new JobKey("key"), 1, request, executionTime, ct);
+                    _ = scheduler.ReplaceKeyedAsync(new JobKey("key"), 1, request, executionTime, new JobOptions(), ct);
+                    _ = scheduler.ScheduleAsync(request, executionTime, configure, ct);
+                    _ = JobChain.Start(request, executionTime);
+                    _ = JobChain.Start(request, executionTime: executionTime, options: new JobOptions());
+                    _ = node.Then(request, executionTime);
+                    _ = node.Then(request, executionTime: executionTime, options: new JobOptions());
+                    _ = node.Catch(request, executionTime);
+                    _ = node.Catch(request, executionTime: executionTime, options: new JobOptions());
+                    _ = scheduler.ScheduleAsync(descriptor, executionTime, ct);
+                    _ = scheduler.ScheduleAsync(descriptor, executionTime, new JobOptions(), ct);
+                    _ = scheduler.ScheduleKeyedAsync(new JobKey("key"), descriptor, executionTime, ct);
+                    _ = scheduler.ScheduleKeyedAsync(new JobKey("key"), descriptor, executionTime, new JobOptions(), ct);
+                    _ = scheduler.ReplaceKeyedAsync(new JobKey("key"), 1, descriptor, executionTime, ct);
+                    _ = scheduler.ReplaceKeyedAsync(new JobKey("key"), 1, descriptor, executionTime, new JobOptions(), ct);
+                    _ = scheduler.ScheduleAsync(descriptor, executionTime, configure, ct);
+                    _ = JobChain.Start(descriptor, executionTime);
+                    _ = JobChain.Start(descriptor, executionTime: executionTime, options: new JobOptions());
+                    _ = node.Then(descriptor, executionTime);
+                    _ = node.Then(descriptor, executionTime: executionTime, options: new JobOptions());
+                    _ = node.Catch(descriptor, executionTime);
+                    _ = node.Catch(descriptor, executionTime: executionTime, options: new JobOptions());
+                }
+            }
+            """;
+
     private static string _Arguments(string receiver, string verb, bool requestless, bool named = false)
     {
         var payload = requestless ? "descriptor" : "request";

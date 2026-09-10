@@ -285,7 +285,7 @@ public sealed class JobChainEnqueueTests : TestBase
         var chargeTime = new DateTimeOffset(2030, 3, 4, 5, 6, 7, TimeSpan.FromHours(3));
         var orderRequest = new OrderRequest(7);
         var builder = JobChain.Start(orderRequest, rootOptions);
-        builder.Root.Then(new ChargeRequest(8), chargeOptions, chargeTime);
+        builder.Root.Then(new ChargeRequest(8), chargeTime, chargeOptions);
         builder.Root.Catch(_Cleanup);
         var chain = builder.Build();
 

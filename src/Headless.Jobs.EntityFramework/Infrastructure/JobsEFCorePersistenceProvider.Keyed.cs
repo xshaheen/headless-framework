@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Runtime.ExceptionServices;
+using Headless.Checks;
 using Headless.Jobs.Configurations;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
@@ -21,7 +22,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         CancellationToken cancellationToken = default
     )
     {
-        ArgumentNullException.ThrowIfNull(job);
+        Argument.IsNotNull(job);
         JobAtomicity.RejectDirect([job]);
         var intent = job.Clone();
         var (result, persisted) = await _ExecuteKeyedTransactionAsync(
@@ -64,9 +65,9 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         CancellationToken cancellationToken
     )
     {
-        ArgumentNullException.ThrowIfNull(key);
-        ArgumentNullException.ThrowIfNull(job);
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(expectedGeneration ?? 1, nameof(expectedGeneration));
+        Argument.IsNotNull(key);
+        Argument.IsNotNull(job);
+        Argument.IsPositive(expectedGeneration);
         JobIntentFingerprint.RejectOrdinaryMutation(job);
         JobIntentFingerprint.Normalize(job);
         JobsKeyedModelConfiguration.ValidateOrdinalScope<TTimeJob>(context);
@@ -215,9 +216,9 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         CancellationToken cancellationToken
     )
     {
-        ArgumentNullException.ThrowIfNull(scope);
-        ArgumentNullException.ThrowIfNull(key);
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(expectedGeneration);
+        Argument.IsNotNull(scope);
+        Argument.IsNotNull(key);
+        Argument.IsPositive(expectedGeneration);
         JobsKeyedModelConfiguration.ValidateOrdinalScope<TTimeJob>(context);
         await JobsKeyLock.AcquireAsync(context, scope, key, cancellationToken).ConfigureAwait(false);
         var current = await _CurrentKey(context, scope, key)

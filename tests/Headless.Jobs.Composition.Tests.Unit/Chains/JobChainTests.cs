@@ -132,7 +132,7 @@ public sealed class JobChainTests
         var childTime = new DateTimeOffset(2030, 1, 2, 3, 4, 5, TimeSpan.FromHours(3));
 
         var builder = JobChain.Start(new OrderRequest(1), rootOptions);
-        builder.Root.Then(new ChargeRequest(2), childOptions, childTime);
+        builder.Root.Then(new ChargeRequest(2), childTime, childOptions);
 
         var chain = builder.Build();
 

@@ -147,7 +147,8 @@ public static class JobsCoordinationFixtureExtensions
         MembershipLostBehavior lostBehavior = MembershipLostBehavior.StopMembershipOnly,
         TimeProvider? timeProvider = null,
         TimeSpan? leaseDuration = null,
-        bool useNativeClaims = true
+        bool useNativeClaims = true,
+        IInterceptor? interceptor = null
     )
     {
         return _BuildHost<JobsDbContext>(
@@ -157,7 +158,8 @@ public static class JobsCoordinationFixtureExtensions
             lostBehavior,
             timeProvider,
             leaseDuration,
-            useNativeClaims
+            useNativeClaims,
+            interceptor
         );
     }
 

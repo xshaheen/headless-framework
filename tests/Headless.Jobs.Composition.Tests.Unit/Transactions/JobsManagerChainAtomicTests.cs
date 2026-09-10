@@ -106,7 +106,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
         var descriptor = registry.Descriptors[_FunctionName];
         var builder = JobChain.Start(
             descriptor,
-            new JobOptions { RequireAtomicEnlistment = requiredNode == "root" },
+            options: new JobOptions { RequireAtomicEnlistment = requiredNode == "root" },
             executionTime: DateTimeOffset.UtcNow.AddHours(1)
         );
         builder.Root.Then(descriptor, new JobOptions { RequireAtomicEnlistment = requiredNode == "success" });

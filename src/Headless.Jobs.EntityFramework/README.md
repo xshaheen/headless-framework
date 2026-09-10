@@ -119,6 +119,8 @@ builder
 
 Ordinary adds and updates also reject a child whose persisted parent reference targets any retained keyed generation, including inputs materialized or rebound through consumer EF APIs and coordinated writes. The row and parent checks share transaction-owned run locks with keyed insertion and replacement.
 
+Key and run locks use one database command per acquisition call. Bulk operations retain every guarded run and parent ID, deduplicate them, and acquire them in sorted order. Each call has one 30-second contention budget for the complete batch, with a 60-second command timeout. Contention raises `TimeoutException` without changing the caller's lock-timeout policy or aborting its transaction. Any locks already acquired remain owned by that transaction until commit or rollback.
+
 Standalone keyed schedule, replacement, and cancellation run their entire transaction through the configured EF execution strategy. Failures before commit can retry with a fresh context and scheduling candidate. Once commit starts, a failure propagates without automatic replay because the commit outcome may be unknown; inspect the retained key and generation before deciding how to recover. Coordinated operations remain under the caller's transaction and retry ownership.
 
 ## Dependencies

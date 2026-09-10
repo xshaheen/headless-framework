@@ -131,6 +131,10 @@ Custom `IJobPersistenceProvider` implementations accept `CronSeedDefinition[]` a
 
 Delayed and recurring scheduling keep time and cron expressions explicit:
 
+`ScheduleAsync`, `ScheduleKeyedAsync`, and `ReplaceKeyedAsync` require an explicit `DateTimeOffset` instant, including typed, requestless, and fluent callback forms. Passing a `DateTime` is a compile error through diagnostic-only `Obsolete(error: true)` overloads. Convert wall-clock values with an explicit time zone or offset before calling; no scheduler facade call interprets them in the machine-local zone. A known UTC value can use `new DateTimeOffset(utcDateTime, TimeSpan.Zero)`.
+
+`JobChain.Start(payload, options?)`, `Then(payload, options?)`, and `Catch(payload, options?)` author immediate steps. Timed steps use `Start(payload, executionTime, options?)`, `Then(payload, executionTime, options?)`, or `Catch(payload, executionTime, options?)`, with a non-null `DateTimeOffset`. The same forms accept requestless descriptors. `DateTime` arguments are compile errors; omit the instant for an immediate step.
+
 ```csharp
 var delayedId = await jobs.ScheduleAsync(
     new OrderReminderRequest(orderId),
@@ -229,6 +233,8 @@ have `IsRangeBoundary = true`, a zero count, and a status value that callers mus
 None.
 
 ## Commit Coordination (Atomic Enqueue)
+
+The host `ConfigureDefaults` atomic-enlistment requirement applies only to one-shot jobs, including keyed jobs and chain nodes. Recurring definitions ignore that host default while inheriting retry and node-death defaults. An explicit `RequireAtomicEnlistment` policy configured by request type or descriptor rejects recurring scheduling before persistence. One-shot calls cannot weaken host or function requirements.
 
 Set `JobOptions.RequireAtomicEnlistment = true` for an ordinary or keyed one-shot deadline that must commit with application state. Low-level callers can set the transient `TimeJobEntity.RequireAtomicEnlistment`; it is excluded from persisted columns, JSON, and intent fingerprints. Required calls reject missing/nonrelational/incompatible coordination before scheduling middleware. Direct persistence cannot satisfy this assertion. The default remains automatic: a compatible ambient transaction enlists the write, otherwise scheduling uses the existing direct path. Recurring scheduling retains its existing automatic routing. For chains, the existing `JobOptions` on `Start`, `Then`, and `Catch` carry the same assertion: if any node requires atomic enlistment, the whole tree must enlist before any scheduling middleware runs.
 

@@ -15,6 +15,38 @@ public static class JobSchedulerExtensions
 {
     extension(IJobScheduler scheduler)
     {
+        /// <summary>Rejects implicit DateTime conversion; supply an explicit DateTimeOffset instant.</summary>
+        [Obsolete(
+            "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset.",
+            error: true
+        )]
+        [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+        public Task<Guid> ScheduleAsync<TArgs>(
+            TArgs request,
+            DateTime executionTime,
+            Action<JobOptionsBuilder> configure,
+            CancellationToken cancellationToken = default
+        ) =>
+            throw new NotSupportedException(
+                "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset."
+            );
+
+        /// <summary>Rejects implicit DateTime conversion; supply an explicit DateTimeOffset instant.</summary>
+        [Obsolete(
+            "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset.",
+            error: true
+        )]
+        [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+        public Task<Guid> ScheduleAsync(
+            JobFunctionDescriptor descriptor,
+            DateTime executionTime,
+            Action<JobOptionsBuilder> configure,
+            CancellationToken cancellationToken = default
+        ) =>
+            throw new NotSupportedException(
+                "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset."
+            );
+
         /// <summary>Enqueues a typed job with a freshly built options snapshot.</summary>
         /// <exception cref="ArgumentNullException">The scheduler or configuration callback is null.</exception>
         public Task<Guid> EnqueueAsync<TArgs>(
