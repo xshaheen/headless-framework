@@ -33,7 +33,12 @@ internal sealed partial class PostgreSqlDataStorage(
     TimeProvider timeProvider,
     INodeMembership nodeMembership,
     ILogger<PostgreSqlDataStorage> logger
-) : IDataStorage, IDelayedMessageClaimStorage, IGracefulLeaseReleaseStorage, IDeliveryCoordinationResolver
+)
+    : IDataStorage,
+        IDelayedMessageClaimStorage,
+        IGracefulLeaseReleaseStorage,
+        ICircuitRetryDeferralStorage,
+        IDeliveryCoordinationResolver
 {
     /// <summary>
     /// Reusable WHERE-clause fragment that refuses updates to rows already in a terminal state
@@ -802,6 +807,46 @@ internal sealed partial class PostgreSqlDataStorage(
     )
     {
         return _ReleaseLeaseAsync(_receivedTable, identity, cancellationToken);
+    }
+
+    public async ValueTask<bool> DeferReceivedRetryAsync(
+        CircuitRetryDeferral deferral,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var sql = $"""
+            UPDATE {_receivedTable}
+            SET "NextRetryAt" = @NextRetryAt, "Owner" = NULL, "LockedUntil" = NULL
+            WHERE "Id" = @Id
+              AND "IntentType" = @IntentType
+              AND "Owner" IS NOT DISTINCT FROM @Owner
+              AND "LockedUntil" = @LockedUntil
+              AND "LockedUntil" > statement_timestamp()
+              AND {_TerminalRowGuardSimple};
+            """;
+        var identity = deferral.Identity;
+        object[] sqlParams =
+        [
+            new NpgsqlParameter("@Id", identity.StorageId),
+            new NpgsqlParameter("@IntentType", NpgsqlDbType.Smallint)
+            {
+                Value = MessageLaneCompatibility.ToPersistedValue(identity.Lane),
+            },
+            new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar) { Value = identity.Owner ?? (object)DBNull.Value },
+            new NpgsqlParameter("@LockedUntil", NpgsqlDbType.TimestampTz) { Value = identity.LockedUntil },
+            new NpgsqlParameter("@NextRetryAt", NpgsqlDbType.TimestampTz) { Value = deferral.NextRetryAt },
+        ];
+
+        await using var connection = postgreSqlOptions.Value.CreateConnection();
+        var changed = await connection
+            .ExecuteNonQueryAsync(
+                sql,
+                commandTimeout: messagingOptions.Value.CommandTimeout,
+                sqlParams: sqlParams,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
+        return changed == 1;
     }
 
     public ValueTask<int> ReleasePublishedLeasesAsync(

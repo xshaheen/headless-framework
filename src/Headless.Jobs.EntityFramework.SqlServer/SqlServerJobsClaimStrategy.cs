@@ -3,6 +3,7 @@
 using System.Data;
 using System.Runtime.CompilerServices;
 using Headless.Abstractions;
+using Headless.Constants;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Infrastructure;
@@ -13,6 +14,9 @@ using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Polly;
+using Polly.Retry;
 
 #pragma warning disable IDE0130 // Provider implementation intentionally lives in the shared Jobs infrastructure namespace.
 #pragma warning disable RCS1015 // SQL parameter names intentionally match lowercase placeholders in the command text.
@@ -21,14 +25,17 @@ namespace Headless.Jobs;
 internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>(
     IDbContextFactory<TDbContext> dbContextFactory,
     TimeProvider timeProvider,
-    [FromKeyedServices(SequentialGuidType.SqlServer)] IGuidGenerator guidGenerator,
+    [FromKeyedServices(SetupSqlServerJobsEntityFramework.GuidGeneratorKey)] IGuidGenerator guidGenerator,
     IJobsOwnerIdentity ownerIdentity,
-    SchedulerOptionsBuilder optionsBuilder
+    SchedulerOptionsBuilder optionsBuilder,
+    ILogger<SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>> logger
 ) : IJobsClaimStrategy<TTimeJob, TCronJob>
     where TDbContext : DbContext
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {
+    private const int _MaxDeadlockRetryAttempts = 2;
+    private readonly ResiliencePipeline _deadlockRetryPipeline = _BuildDeadlockRetryPipeline(timeProvider, logger);
     private readonly TimeSpan _leaseDuration = optionsBuilder.LeaseDuration;
 
     // R12/KTD2: the maximum number of nodes on a root-to-leaf path the tree claim leases (root = depth 1). A timed
@@ -50,59 +57,61 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             yield break;
         }
 
-        ClaimResult claim;
-        Guid[] leasedDescendantIds;
+        var (claim, leasedDescendantIds) = await _ExecuteWithDeadlockRetryAsync(
+                async ct =>
+                {
+                    await using var claimTransaction = await JobsClaimTransaction<TDbContext>.CreateAsync(
+                        dbContextFactory,
+                        ct
+                    );
+                    var dbContext = claimTransaction.DbContext;
+                    var transaction = claimTransaction.Transaction;
+                    var mapping = TimeJobRelationalMapping.Create<TDbContext, TTimeJob>(dbContext);
+                    var readPastHints = await _GetReadPastHintsAsync(ct).ConfigureAwait(false);
+                    var batch =
+                        timeJobs.Length <= JobsClaimStrategyDefaults.MaxCandidatePageSize
+                            ? timeJobs
+                            : [.. timeJobs.Take(JobsClaimStrategyDefaults.MaxCandidatePageSize)];
+                    var attemptClaim = await _ClaimRootsAsync(
+                            dbContext,
+                            transaction,
+                            mapping,
+                            _BuildDirectCandidates(batch, mapping, readPastHints),
+                            owner,
+                            _leaseDuration,
+                            ct,
+                            [
+                                .. batch.SelectMany(
+                                    (job, index) =>
+                                        new[]
+                                        {
+                                            new(_ParameterName("id", index), job.Id),
+                                            _DateTimeOffsetParameter(_ParameterName("updatedAt", index), job.UpdatedAt),
+                                        }
+                                ),
+                            ]
+                        )
+                        .ConfigureAwait(false);
 
-        await using (
-            var claimTransaction = await JobsClaimTransaction<TDbContext>.CreateAsync(
-                dbContextFactory,
+                    var attemptLeasedDescendantIds = await _StampDescendantsAsync(
+                            dbContext,
+                            transaction,
+                            mapping,
+                            attemptClaim.Ids,
+                            owner,
+                            attemptClaim.ClaimedAt,
+                            _leaseDuration,
+                            _maxChainDepth,
+                            ct
+                        )
+                        .ConfigureAwait(false);
+                    await claimTransaction.CommitAsync(ct).ConfigureAwait(false);
+
+                    return (attemptClaim, attemptLeasedDescendantIds);
+                },
                 cancellationToken
             )
-        )
-        {
-            var dbContext = claimTransaction.DbContext;
-            var transaction = claimTransaction.Transaction;
-            var mapping = TimeJobRelationalMapping.Create<TDbContext, TTimeJob>(dbContext);
-            var readPastHints = await _GetReadPastHintsAsync(cancellationToken).ConfigureAwait(false);
-            var batch =
-                timeJobs.Length <= JobsClaimStrategyDefaults.MaxCandidatePageSize
-                    ? timeJobs
-                    : [.. timeJobs.Take(JobsClaimStrategyDefaults.MaxCandidatePageSize)];
-            claim = await _ClaimRootsAsync(
-                    dbContext,
-                    transaction,
-                    mapping,
-                    _BuildDirectCandidates(batch, mapping, readPastHints),
-                    owner,
-                    _leaseDuration,
-                    cancellationToken,
-                    [
-                        .. batch.SelectMany(
-                            (job, index) =>
-                                new[]
-                                {
-                                    new(_ParameterName("id", index), job.Id),
-                                    _DateTimeOffsetParameter(_ParameterName("updatedAt", index), job.UpdatedAt),
-                                }
-                        ),
-                    ]
-                )
-                .ConfigureAwait(false);
-
-            leasedDescendantIds = await _StampDescendantsAsync(
-                    dbContext,
-                    transaction,
-                    mapping,
-                    claim.Ids,
-                    owner,
-                    claim.ClaimedAt,
-                    _leaseDuration,
-                    _maxChainDepth,
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-            await claimTransaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-        }
+            .ConfigureAwait(false);
 
         // KTD2: the peek-hydrated tree may include non-idle nodes (and their tails) the claim did not lease; prune to
         // the claimed set (root + leased non-timed descendants) so nothing runs unclaimed — parity with the CAS path.
@@ -133,65 +142,67 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             yield break;
         }
 
-        var now = timeProvider.GetUtcNow();
         TimeJobEntity[] claimed;
-        ClaimResult claim;
-        Guid[] leasedDescendantIds;
+        var (claim, leasedDescendantIds) = await _ExecuteWithDeadlockRetryAsync(
+                async ct =>
+                {
+                    await using var claimTransaction = await JobsClaimTransaction<TDbContext>.CreateAsync(
+                        dbContextFactory,
+                        ct
+                    );
+                    var dbContext = claimTransaction.DbContext;
+                    var transaction = claimTransaction.Transaction;
+                    var mapping = TimeJobRelationalMapping.Create<TDbContext, TTimeJob>(dbContext);
+                    var readPastHints = await _GetReadPastHintsAsync(ct).ConfigureAwait(false);
+                    // U5/KTD3: the fallback selects timed rows directly, so the parent gate is mirrored in its WHERE
+                    // clause — a timed descendant is a candidate only once its parent reached its matching terminal
+                    // state.
+                    var candidates = $"""
+                        SELECT TOP ({JobsClaimStrategyDefaults.MaxClaimBatchSize}) root.{mapping.Id}
+                        FROM {mapping.Table} AS root WITH ({readPastHints})
+                        WHERE root.{mapping.ExecutionTime} IS NOT NULL
+                          AND root.{mapping.ExecutionTime} <= DATEADD(second, -1, @claimNow)
+                          AND (root.{mapping.Status} = @idle
+                               OR (root.{mapping.Status} = @queued
+                                   AND (root.{mapping.LockedUntil} IS NULL
+                                        OR (root.{mapping.LockedUntil} <= @claimNow
+                                            AND root.{mapping.OnNodeDeath} = @retry))))
+                          {TimedChildGateSql.Build(mapping, "root")}
+                        ORDER BY root.{mapping.ExecutionTime}, root.{mapping.Id}
+                        """;
+                    var attemptClaim = await _ClaimRootsAsync(
+                            dbContext,
+                            transaction,
+                            mapping,
+                            candidates,
+                            owner,
+                            _leaseDuration,
+                            ct,
+                            new SqlParameter("idle", nameof(JobStatus.Idle)),
+                            new SqlParameter("queued", nameof(JobStatus.Queued)),
+                            new SqlParameter("retry", nameof(NodeDeathPolicy.Retry))
+                        )
+                        .ConfigureAwait(false);
 
-        await using (
-            var claimTransaction = await JobsClaimTransaction<TDbContext>.CreateAsync(
-                dbContextFactory,
+                    var attemptLeasedDescendantIds = await _StampDescendantsAsync(
+                            dbContext,
+                            transaction,
+                            mapping,
+                            attemptClaim.Ids,
+                            owner,
+                            attemptClaim.ClaimedAt,
+                            _leaseDuration,
+                            _maxChainDepth,
+                            ct
+                        )
+                        .ConfigureAwait(false);
+                    await claimTransaction.CommitAsync(ct).ConfigureAwait(false);
+
+                    return (attemptClaim, attemptLeasedDescendantIds);
+                },
                 cancellationToken
             )
-        )
-        {
-            var dbContext = claimTransaction.DbContext;
-            var transaction = claimTransaction.Transaction;
-            var mapping = TimeJobRelationalMapping.Create<TDbContext, TTimeJob>(dbContext);
-            var readPastHints = await _GetReadPastHintsAsync(cancellationToken).ConfigureAwait(false);
-            // U5/KTD3: the fallback selects timed rows directly, so the parent gate is mirrored in its WHERE clause —
-            // a timed descendant is a candidate only once its parent reached its matching terminal state.
-            var candidates = $"""
-                SELECT TOP ({JobsClaimStrategyDefaults.MaxClaimBatchSize}) root.{mapping.Id}
-                FROM {mapping.Table} AS root WITH ({readPastHints})
-                WHERE root.{mapping.ExecutionTime} IS NOT NULL
-                  AND root.{mapping.ExecutionTime} <= DATEADD(second, -1, @claimNow)
-                  AND (root.{mapping.Status} = @idle
-                       OR (root.{mapping.Status} = @queued
-                           AND (root.{mapping.LockedUntil} IS NULL
-                                OR (root.{mapping.LockedUntil} <= @claimNow
-                                    AND root.{mapping.OnNodeDeath} = @retry))))
-                  {TimedChildGateSql.Build(mapping, "root")}
-                ORDER BY root.{mapping.ExecutionTime}, root.{mapping.Id}
-                """;
-            claim = await _ClaimRootsAsync(
-                    dbContext,
-                    transaction,
-                    mapping,
-                    candidates,
-                    owner,
-                    _leaseDuration,
-                    cancellationToken,
-                    new SqlParameter("idle", nameof(JobStatus.Idle)),
-                    new SqlParameter("queued", nameof(JobStatus.Queued)),
-                    new SqlParameter("retry", nameof(NodeDeathPolicy.Retry))
-                )
-                .ConfigureAwait(false);
-
-            leasedDescendantIds = await _StampDescendantsAsync(
-                    dbContext,
-                    transaction,
-                    mapping,
-                    claim.Ids,
-                    owner,
-                    claim.ClaimedAt,
-                    _leaseDuration,
-                    _maxChainDepth,
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-            await claimTransaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-        }
+            .ConfigureAwait(false);
 
         if (claim.Ids.Length == 0)
         {
@@ -252,86 +263,89 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
 
         var now = timeProvider.GetUtcNow();
         var lockedUntil = now.UtcDateTime.Add(_leaseDuration);
-        var claimed = new List<CronJobOccurrenceEntity<TCronJob>>();
+        var claimed = await _ExecuteWithDeadlockRetryAsync(
+                async ct =>
+                {
+                    var attemptClaimed = new List<CronJobOccurrenceEntity<TCronJob>>();
+                    await using var claimTransaction = await JobsClaimTransaction<TDbContext>.CreateAsync(
+                        dbContextFactory,
+                        ct
+                    );
+                    var dbContext = claimTransaction.DbContext;
+                    var transaction = claimTransaction.Transaction;
+                    var mapping = CronOccurrenceRelationalMapping.Create<TDbContext, TCronJob>(dbContext);
+                    var definitionMapping = CronDefinitionRelationalMapping.Create<TDbContext, TCronJob>(dbContext);
+                    var readPastHints = await _GetReadPastHintsAsync(ct).ConfigureAwait(false);
+                    foreach (var item in cronJobOccurrences.Items)
+                    {
+                        ct.ThrowIfCancellationRequested();
+                        if (
+                            !await _LockActiveCronDefinitionAsync(transaction, definitionMapping, item, ct)
+                                .ConfigureAwait(false)
+                        )
+                        {
+                            continue;
+                        }
 
-        await using (
-            var claimTransaction = await JobsClaimTransaction<TDbContext>.CreateAsync(
-                dbContextFactory,
+                        var occurrence = item.NextCronOccurrence is null
+                            ? await _InsertCronOccurrenceAsync(
+                                    dbContext,
+                                    transaction,
+                                    mapping,
+                                    item,
+                                    cronJobOccurrences.Key,
+                                    owner,
+                                    now,
+                                    lockedUntil,
+                                    ct
+                                )
+                                .ConfigureAwait(false)
+                            : await _ClaimExistingCronOccurrenceAsync(
+                                    dbContext,
+                                    transaction,
+                                    mapping,
+                                    item,
+                                    cronJobOccurrences.Key,
+                                    owner,
+                                    now,
+                                    lockedUntil,
+                                    readPastHints,
+                                    ct
+                                )
+                                .ConfigureAwait(false);
+
+                        if (occurrence is not null)
+                        {
+                            attemptClaimed.Add(occurrence);
+                        }
+                    }
+
+                    if (attemptClaimed.Count > 0)
+                    {
+                        var refreshedAt = await _RefreshCronOccurrenceLeasesAsync(
+                                dbContext,
+                                transaction,
+                                mapping,
+                                [.. attemptClaimed.Select(x => x.Id)],
+                                owner,
+                                _leaseDuration,
+                                ct
+                            )
+                            .ConfigureAwait(false);
+
+                        foreach (var occurrence in attemptClaimed)
+                        {
+                            occurrence.UpdatedAt = refreshedAt;
+                            occurrence.LockedUntil = refreshedAt.UtcDateTime.Add(_leaseDuration);
+                        }
+                    }
+
+                    await claimTransaction.CommitAsync(ct).ConfigureAwait(false);
+                    return attemptClaimed;
+                },
                 cancellationToken
             )
-        )
-        {
-            var dbContext = claimTransaction.DbContext;
-            var transaction = claimTransaction.Transaction;
-            var mapping = CronOccurrenceRelationalMapping.Create<TDbContext, TCronJob>(dbContext);
-            var definitionMapping = CronDefinitionRelationalMapping.Create<TDbContext, TCronJob>(dbContext);
-            var readPastHints = await _GetReadPastHintsAsync(cancellationToken).ConfigureAwait(false);
-            foreach (var item in cronJobOccurrences.Items)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                if (
-                    !await _LockActiveCronDefinitionAsync(transaction, definitionMapping, item, cancellationToken)
-                        .ConfigureAwait(false)
-                )
-                {
-                    continue;
-                }
-
-                var occurrence = item.NextCronOccurrence is null
-                    ? await _InsertCronOccurrenceAsync(
-                            dbContext,
-                            transaction,
-                            mapping,
-                            item,
-                            cronJobOccurrences.Key,
-                            owner,
-                            now,
-                            lockedUntil,
-                            cancellationToken
-                        )
-                        .ConfigureAwait(false)
-                    : await _ClaimExistingCronOccurrenceAsync(
-                            dbContext,
-                            transaction,
-                            mapping,
-                            item,
-                            cronJobOccurrences.Key,
-                            owner,
-                            now,
-                            lockedUntil,
-                            readPastHints,
-                            cancellationToken
-                        )
-                        .ConfigureAwait(false);
-
-                if (occurrence is not null)
-                {
-                    claimed.Add(occurrence);
-                }
-            }
-
-            if (claimed.Count > 0)
-            {
-                var refreshedAt = await _RefreshCronOccurrenceLeasesAsync(
-                        dbContext,
-                        transaction,
-                        mapping,
-                        [.. claimed.Select(x => x.Id)],
-                        owner,
-                        _leaseDuration,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
-
-                foreach (var occurrence in claimed)
-                {
-                    occurrence.UpdatedAt = refreshedAt;
-                    occurrence.LockedUntil = refreshedAt.UtcDateTime.Add(_leaseDuration);
-                }
-            }
-
-            await claimTransaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-        }
+            .ConfigureAwait(false);
 
         foreach (var occurrence in claimed)
         {
@@ -382,32 +396,34 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         var now = timeProvider.GetUtcNow();
         var lockedUntil = now.UtcDateTime.Add(_leaseDuration);
         CronJobOccurrenceEntity<TCronJob>[] claimed;
-        Guid[] wonIds;
-
-        await using (
-            var claimTransaction = await JobsClaimTransaction<TDbContext>.CreateAsync(
-                dbContextFactory,
+        var wonIds = await _ExecuteWithDeadlockRetryAsync(
+                async ct =>
+                {
+                    await using var claimTransaction = await JobsClaimTransaction<TDbContext>.CreateAsync(
+                        dbContextFactory,
+                        ct
+                    );
+                    var dbContext = claimTransaction.DbContext;
+                    var transaction = claimTransaction.Transaction;
+                    var mapping = CronOccurrenceRelationalMapping.Create<TDbContext, TCronJob>(dbContext);
+                    var readPastHints = await _GetReadPastHintsAsync(ct).ConfigureAwait(false);
+                    var attemptWonIds = await _ClaimFallbackCronOccurrencesAsync(
+                            dbContext,
+                            transaction,
+                            mapping,
+                            owner,
+                            now,
+                            lockedUntil,
+                            readPastHints,
+                            ct
+                        )
+                        .ConfigureAwait(false);
+                    await claimTransaction.CommitAsync(ct).ConfigureAwait(false);
+                    return attemptWonIds;
+                },
                 cancellationToken
             )
-        )
-        {
-            var dbContext = claimTransaction.DbContext;
-            var transaction = claimTransaction.Transaction;
-            var mapping = CronOccurrenceRelationalMapping.Create<TDbContext, TCronJob>(dbContext);
-            var readPastHints = await _GetReadPastHintsAsync(cancellationToken).ConfigureAwait(false);
-            wonIds = await _ClaimFallbackCronOccurrencesAsync(
-                    dbContext,
-                    transaction,
-                    mapping,
-                    owner,
-                    now,
-                    lockedUntil,
-                    readPastHints,
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-            await claimTransaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-        }
+            .ConfigureAwait(false);
 
         if (wonIds.Length == 0)
         {
@@ -492,28 +508,35 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             INSERT INTO {mapping.Table}
                 ({mapping.Id}, {mapping.Status}, {mapping.OwnerId}, {mapping.ExecutionTime}, {mapping.CronJobId},
                  {mapping.LockedUntil}, {mapping.OnNodeDeath}, {mapping.ElapsedTime}, {mapping.RetryCount},
-                 {mapping.CreatedAt}, {mapping.UpdatedAt})
+                 {mapping.CreatedAt}, {mapping.UpdatedAt}, {mapping.Disposition})
             OUTPUT inserted.{mapping.Id}
             SELECT
                 @id, @status, @owner, @executionTime, @cronJobId,
                 {_LeaseDeadlineSql("@claimNow")}, @onNodeDeath, @elapsedTime, @retryCount,
-                @claimNow, @claimNow
+                @claimNow, @claimNow, @disposition
             WHERE NOT EXISTS (
                 SELECT 1
                 FROM {mapping.Table} WITH (UPDLOCK, HOLDLOCK, ROWLOCK)
                 WHERE {mapping.ExecutionTime} = @executionTime AND {mapping.CronJobId} = @cronJobId
-                  AND {mapping.Status} IN (@idle, @queued, @inProgress)
+                  AND {mapping.AccountsForInstantPredicate("@unaccountedStatus", "@unaccountedDisposition")}
             );
             """;
 #pragma warning restore CA2100
         command.Parameters.Add(new SqlParameter("id", id));
         command.Parameters.Add(new SqlParameter("status", nameof(JobStatus.Queued)));
-        // Only an ACTIVE occurrence blocks the insert, matching the filtered unique index and the PostgreSQL
-        // ON CONFLICT ... WHERE Status IN (...) sibling. A terminal row (e.g. the occurrence a cron-expression
-        // migration marked Skipped) must not suppress a fresh fire at the same execution time.
-        command.Parameters.Add(new SqlParameter("idle", nameof(JobStatus.Idle)));
-        command.Parameters.Add(new SqlParameter("queued", nameof(JobStatus.Queued)));
-        command.Parameters.Add(new SqlParameter("inProgress", nameof(JobStatus.InProgress)));
+        // KTD1: a row that ACCOUNTS for the instant blocks the insert — every live status, every terminal status,
+        // and any status this binary does not recognize (the predicate is a negation, so unknown values fall on the
+        // suppressing side). The single exception is the seeding migration's ReplacementOwed retirement, which
+        // retired the row without creating a replacement and therefore still owes the fire. Predicate and literals
+        // come from CronOccurrenceAccounting via the mapping, so this SQL cannot drift from the LINQ providers or
+        // from the PostgreSQL sibling. The lock hints stay: they are what make the read-then-insert atomic here.
+        command.Parameters.Add(
+            new SqlParameter("unaccountedStatus", CronOccurrenceRelationalMapping.UnaccountedStatusValue)
+        );
+        command.Parameters.Add(
+            new SqlParameter("unaccountedDisposition", CronOccurrenceRelationalMapping.UnaccountedDispositionValue)
+        );
+        command.Parameters.Add(new SqlParameter("disposition", nameof(CronOccurrenceDisposition.Accounted)));
         command.Parameters.Add(new SqlParameter("owner", owner));
         command.Parameters.Add(_DateTimeParameter("executionTime", executionTime));
         command.Parameters.Add(new SqlParameter("cronJobId", item.Id));
@@ -527,7 +550,11 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         {
             inserted = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (SqlException ex) when (ex.Number is 2601 or 2627)
+        catch (SqlException ex)
+            when (ex.Number
+                    is SqlErrorCodes.SqlServer.DuplicateKeyUniqueIndex
+                        or SqlErrorCodes.SqlServer.DuplicateKeyUniqueConstraint
+            )
         {
             return null;
         }
@@ -584,7 +611,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                 {mapping.UpdatedAt} = @claimNow,
                 {mapping.Status} = @queued,
                 {mapping.OnNodeDeath} = @onNodeDeath
-            OUTPUT inserted.{mapping.Id}
+            OUTPUT inserted.{mapping.Id}, inserted.{mapping.RecoveredFromUtc}
             FROM {mapping.Table} AS occurrence
             INNER JOIN candidate ON occurrence.{mapping.Id} = candidate.{mapping.Id};
             """;
@@ -597,8 +624,14 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         command.Parameters.Add(new SqlParameter("retry", nameof(NodeDeathPolicy.Retry)));
         _AddLeaseDurationParameters(command, lockedUntil - now.UtcDateTime);
         command.Parameters.Add(new SqlParameter("onNodeDeath", item.OnNodeDeath.ToString()));
-        var claimed = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        return claimed is Guid
+        // R23: read the recovery stamp back out of the row rather than trusting the dispatch context to carry it. The
+        // durable row is the only authority for what a coalesced run stands for, and a caller that reconstructed the
+        // context from an id alone would otherwise silently demote it to an ordinary run.
+        DateTime? claimedRecoveredFrom = null;
+        var claimed = await _ReadClaimedIdAsync(command, x => claimedRecoveredFrom = x, cancellationToken)
+            .ConfigureAwait(false);
+
+        return claimed is not null
             ? new CronJobOccurrenceEntity<TCronJob>
             {
                 Id = occurrence.Id,
@@ -610,6 +643,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                 OnNodeDeath = item.OnNodeDeath,
                 UpdatedAt = now,
                 CreatedAt = occurrence.CreatedAt,
+                RecoveredFromUtc = claimedRecoveredFrom,
                 CronJob = MappingExtensions.ProjectCronJob<TCronJob>(item, owner),
             }
             : null;
@@ -811,6 +845,50 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         return [.. leasedIds];
     }
 
+    private async Task<TResult> _ExecuteWithDeadlockRetryAsync<TResult>(
+        Func<CancellationToken, Task<TResult>> action,
+        CancellationToken cancellationToken
+    )
+    {
+        // SQL Server has rolled the victim transaction back before surfacing 1205. Retrying the whole scope
+        // preserves the root/descendant and definition/occurrence atomicity boundaries.
+        return await _deadlockRetryPipeline
+            .ExecuteAsync(static async (state, ct) => await state(ct).ConfigureAwait(false), action, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static ResiliencePipeline _BuildDeadlockRetryPipeline(TimeProvider timeProvider, ILogger logger)
+    {
+        // Jittered exponential backoff (mirroring the Coordination SQL Server membership store): retrying the losing
+        // scope immediately lets two nodes deadlocking on the same rows livelock into repeated mutual victimization.
+        return new ResiliencePipelineBuilder { TimeProvider = timeProvider }
+            .AddRetry(
+                new RetryStrategyOptions
+                {
+                    ShouldHandle = static args => new ValueTask<bool>(
+                        args.Outcome.Exception is SqlException { Number: SqlErrorCodes.SqlServer.DeadlockVictim }
+                    ),
+                    MaxRetryAttempts = _MaxDeadlockRetryAttempts,
+                    BackoffType = DelayBackoffType.Exponential,
+                    Delay = TimeSpan.FromMilliseconds(50),
+                    MaxDelay = TimeSpan.FromMilliseconds(500),
+                    UseJitter = true,
+                    OnRetry = args =>
+                    {
+                        logger.LogJobsClaimDeadlockRetry(
+                            args.AttemptNumber + 2,
+                            _MaxDeadlockRetryAttempts + 1,
+                            args.RetryDelay,
+                            args.Outcome.Exception
+                        );
+
+                        return default;
+                    },
+                }
+            )
+            .Build();
+    }
+
     private readonly record struct ClaimResult(Guid[] Ids, DateTimeOffset ClaimedAt);
 
     private static SqlCommand _CreateCommand(TDbContext dbContext, IDbContextTransaction transaction)
@@ -907,4 +985,45 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             ? "UPDLOCK, READPAST, ROWLOCK, READCOMMITTEDLOCK"
             : "UPDLOCK, READPAST, ROWLOCK";
     }
+
+    /// <summary>
+    /// Reads the claim's RETURNING row: the claimed id plus the durable recovery stamp. Replaces ExecuteScalar so the
+    /// stamp leaves the store with the claim rather than being reconstructed by the caller (R23).
+    /// </summary>
+    private static async Task<Guid?> _ReadClaimedIdAsync(
+        SqlCommand command,
+        Action<DateTime?> onRecoveredFrom,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        var id = reader.GetGuid(0);
+        var isNull = await reader.IsDBNullAsync(1, cancellationToken).ConfigureAwait(false);
+        onRecoveredFrom(isNull ? null : DateTime.SpecifyKind(reader.GetDateTime(1), DateTimeKind.Utc));
+
+        return id;
+    }
+}
+
+internal static partial class SqlServerJobsClaimStrategyLoggerExtensions
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "JobsClaimDeadlockRetry",
+        Level = LogLevel.Warning,
+        Message = "SQL Server Jobs claim hit deadlock victim error 1205; retrying attempt {AttemptNumber}/{MaxAttempts} after {Delay}."
+    )]
+    public static partial void LogJobsClaimDeadlockRetry(
+        this ILogger logger,
+        int attemptNumber,
+        int maxAttempts,
+        TimeSpan delay,
+        Exception? exception
+    );
 }

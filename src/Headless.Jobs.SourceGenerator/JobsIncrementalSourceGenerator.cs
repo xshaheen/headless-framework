@@ -233,6 +233,8 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
                 attributeValues.taskPriority,
                 attributeValues.maxConcurrency,
                 attributeValues.cronExpression,
+                attributeValues.onMissedRun,
+                attributeValues.missedRunGraceSeconds,
                 assemblyName ?? compilation.Assembly.Name,
                 typeNameConflicts
             );
@@ -250,6 +252,8 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
         int functionPriority,
         int maxConcurrency,
         string? cronExpression,
+        int? onMissedRun,
+        int? missedRunGraceSeconds,
         string assemblyName,
         HashSet<string>? typeNameConflicts = null
     )
@@ -266,6 +270,8 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
             functionPriority,
             maxConcurrency,
             cronExpression!,
+            onMissedRun,
+            missedRunGraceSeconds,
             assemblyName,
             typeNameConflicts
         );

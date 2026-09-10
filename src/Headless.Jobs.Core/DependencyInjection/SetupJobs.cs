@@ -9,6 +9,7 @@ using Headless.Jobs.BackgroundServices;
 using Headless.Jobs.Coordination;
 using Headless.Jobs.Dispatcher;
 using Headless.Jobs.Entities;
+using Headless.Jobs.Enums;
 using Headless.Jobs.Instrumentation;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
@@ -122,6 +123,32 @@ public static class SetupJobs
             schedulerOptionsBuilder.MaxLongRunningConcurrency > 0,
             "SchedulerOptionsBuilder.MaxLongRunningConcurrency must be greater than zero."
         );
+        Ensure.True(
+            schedulerOptionsBuilder.DefaultMissedRunPolicy is MissedRunPolicy.Coalesce or MissedRunPolicy.Skip,
+            "SchedulerOptionsBuilder.DefaultMissedRunPolicy must be a defined MissedRunPolicy value."
+        );
+        Ensure.True(
+            schedulerOptionsBuilder.DefaultMissedRunGraceSeconds > 0,
+            "SchedulerOptionsBuilder.DefaultMissedRunGraceSeconds must be greater than zero."
+        );
+        Ensure.True(
+            schedulerOptionsBuilder.FingerprintSweepInterval > TimeSpan.Zero,
+            "SchedulerOptionsBuilder.FingerprintSweepInterval must be greater than zero."
+        );
+        // The interval doubles as the INITIAL delay of the durable defer backoff, whose ceiling is
+        // MaximumStaleFingerprintDeferDelay. An initial delay above that ceiling makes the defer request itself
+        // invalid, so a deterministic definition error (undefined missed-run policy, unparseable expression) would
+        // throw out of the quarantine path instead of being deferred — and because startup activation is fail-closed,
+        // one invalid definition would then abort host startup. Reject the configuration here instead.
+        Ensure.True(
+            schedulerOptionsBuilder.FingerprintSweepInterval <= JobsRecoveryDefaults.MaximumStaleFingerprintDeferDelay,
+            $"SchedulerOptionsBuilder.FingerprintSweepInterval must not exceed {JobsRecoveryDefaults.MaximumStaleFingerprintDeferDelay}, "
+                + "the maximum backoff applied when a deterministically invalid cron definition is durably deferred."
+        );
+        Ensure.True(
+            schedulerOptionsBuilder.FingerprintSweepBatchSize > 0,
+            "SchedulerOptionsBuilder.FingerprintSweepBatchSize must be greater than zero."
+        );
         // The structural bound JobChainBuilder.Build() enforces doubles as the configuration ceiling, so the enqueue
         // guard and the structural guard can never contradict (and SqlServer's recursive-CTE MAXRECURSION stays reachable).
         Ensure.True(
@@ -185,7 +212,12 @@ public static class SetupJobs
         optionInstance.LockRegistrationAction?.Invoke(services);
         services.TryAddKeyedSingleton<IDistributedLock, NullDistributedLock>(JobsKeys.LockProvider);
 
-        // Core initialization — registered before background services to guarantee startup order
+        // The activation gate itself — registered before every service that signals or waits on it. Registration order
+        // of the hosted services below is a readability convention only; the barrier is the actual ordering guarantee,
+        // because HostOptions.ServicesStartConcurrently lets a consuming host start all of them at once.
+        services.AddSingleton<JobsActivationBarrier>();
+
+        // Core initialization — opens the activation barrier when its drain completes.
         services.AddHostedService<JobsInitializationHostedService>();
 
         // Only register background services if enabled (default is true)
@@ -198,6 +230,8 @@ public static class SetupJobs
             services.AddHostedService(provider => provider.GetRequiredService<JobsSchedulerBackgroundService>());
             services.AddHostedService(provider => provider.GetRequiredService<JobsFallbackBackgroundService>());
             services.AddSingleton<JobsFallbackBackgroundService>();
+            // KTD7: its own service, because it selects on staleness — the opposite criterion from dispatch.
+            services.AddHostedService<JobsFingerprintSweepBackgroundService>();
             services.AddSingleton<JobsExecutionTaskHandler>();
             services.AddSingleton<JobsExecutionCancellationRegistry>();
             services.AddSingleton<IJobsDispatcher, JobsDispatcher>();

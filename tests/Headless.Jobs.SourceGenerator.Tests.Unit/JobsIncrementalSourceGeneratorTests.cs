@@ -21,7 +21,7 @@ public sealed class JobsIncrementalSourceGeneratorTests
             .OfType<DiagnosticDescriptor>()
             .Select(descriptor => descriptor.Id);
 
-        diagnosticIds.Should().BeEquivalentTo(Enumerable.Range(1, 19).Select(number => $"HF{number:000}"));
+        diagnosticIds.Should().BeEquivalentTo(Enumerable.Range(1, 21).Select(number => $"HF{number:000}"));
     }
 
     [Fact]

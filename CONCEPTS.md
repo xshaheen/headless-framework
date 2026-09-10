@@ -172,6 +172,50 @@ The per-gate strictness setting: off (skip), warn (log and continue, recording d
 strict (throw and fail host startup). A gate resolves its mode from an explicit operator value when
 set, otherwise from an environment-aware default keyed to its tier.
 
+## Jobs (misfire recovery)
+
+### Schedule watermark
+
+The UTC instant through which one cron definition's schedule has been reconciled. Records what was
+*accounted for* rather than what was promised, which is why it stays true when a rule change
+invalidates a derived prediction and why a skip advances it without anything firing. Distinct from
+`ScheduleRevision`, which is definition-version metadata rather than a schedule position.
+
+### Dispatch projection
+
+The first occurrence after the watermark, persisted and indexed. It is the key the scheduler selects
+on, so deciding what is due costs an indexed read rather than evaluating every definition's
+expression on every node. Always derivable from the watermark and the definition, so it can be
+rebuilt whenever schedule interpretation changes.
+
+### Pending instant
+
+A scheduled instant at or before now that the watermark has not passed — whether or not an
+occurrence row exists for it. Row-independence is the point: a process that died mid-sleep left no
+row behind, so a row-based definition of "missed" is blind to exactly the case recovery exists for.
+
+### Misfire
+
+A backlog that warrants recovery rather than ordinary dispatch: more than one pending instant, or a
+single pending instant older than the definition's grace threshold.
+
+### Grace threshold
+
+Seconds of lateness tolerated before a single pending occurrence counts as a misfire. Resolved once
+at creation and persisted per definition, so no node's local configuration can decide whether an
+instant misfired.
+
+### Recovery run
+
+An occurrence materialized by recovery rather than normal dispatch, stamped with the earliest missed
+instant it stands in for. A coalesced run represents the whole missed window, not one instant.
+
+### Evaluation fingerprint
+
+An opaque hash of the rules a projection was derived under — cron-library semantics and the
+effective timezone's DST rules. Only equality is meaningful: a mismatch means an identical
+expression and timezone would now resolve to a different instant.
+
 ## Jobs (chains)
 
 ### Job chain

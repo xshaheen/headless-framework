@@ -17,6 +17,14 @@ public static class GeneralMessageDescriber
         return new(code: GeneralErrorCodes.ConcurrencyFailure, description: Messages.g_concurrency_failure);
     }
 
+    /// <summary>Returns a descriptor for a missing required <c>If-Match</c> header.</summary>
+    public static ErrorDescriptor IfMatchRequired() =>
+        new(GeneralErrorCodes.IfMatchRequired, Messages.g_if_match_required);
+
+    /// <summary>Returns a descriptor for an invalid <c>If-Match</c> header.</summary>
+    public static ErrorDescriptor IfMatchInvalid() =>
+        new(GeneralErrorCodes.IfMatchInvalid, Messages.g_if_match_invalid);
+
     /// <summary>Returns a descriptor for a duplicate or already-processed request (<c>g:duplicated_request</c>).</summary>
     public static ErrorDescriptor DuplicatedRequest()
     {

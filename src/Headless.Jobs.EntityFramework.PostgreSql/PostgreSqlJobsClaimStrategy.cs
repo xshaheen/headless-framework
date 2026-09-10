@@ -21,7 +21,7 @@ namespace Headless.Jobs;
 internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>(
     IDbContextFactory<TDbContext> dbContextFactory,
     TimeProvider timeProvider,
-    [FromKeyedServices(SequentialGuidType.Version7)] IGuidGenerator guidGenerator,
+    [FromKeyedServices(SetupPostgreSqlJobsEntityFramework.GuidGeneratorKey)] IGuidGenerator guidGenerator,
     IJobsOwnerIdentity ownerIdentity,
     SchedulerOptionsBuilder optionsBuilder
 ) : IJobsClaimStrategy<TTimeJob, TCronJob>
@@ -476,12 +476,18 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             INSERT INTO {mapping.Table}
                 ({mapping.Id}, {mapping.Status}, {mapping.OwnerId}, {mapping.ExecutionTime}, {mapping.CronJobId},
                  {mapping.LockedUntil}, {mapping.OnNodeDeath}, {mapping.ElapsedTime}, {mapping.RetryCount},
-                 {mapping.CreatedAt}, {mapping.UpdatedAt})
+                 {mapping.CreatedAt}, {mapping.UpdatedAt}, {mapping.Disposition})
             SELECT
                 @id, @status, @owner, @executionTime, @cronJobId,
                 claim_clock.now + (@leaseSeconds * INTERVAL '1 second'), @onNodeDeath,
-                @elapsedTime, @retryCount, claim_clock.now, claim_clock.now
+                @elapsedTime, @retryCount, claim_clock.now, claim_clock.now, @disposition
             FROM claim_clock
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM {mapping.Table}
+                WHERE {mapping.CronJobId} = @cronJobId AND {mapping.ExecutionTime} = @executionTime
+                  AND {mapping.AccountsForInstantPredicate("@unaccountedStatus", "@unaccountedDisposition")}
+            )
             ON CONFLICT ({mapping.ExecutionTime}, {mapping.CronJobId})
                 WHERE {mapping.Status} IN ('Idle', 'Queued', 'InProgress')
                 DO NOTHING
@@ -490,6 +496,20 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
 #pragma warning restore CA2100
         command.Parameters.Add(new NpgsqlParameter("id", id));
         command.Parameters.Add(new NpgsqlParameter("status", nameof(JobStatus.Queued)));
+        // KTD1: the occupied-instant ACCOUNTING matrix, not the live-only filter this statement used to carry. A
+        // terminal row at the instant means the instant ran (or was deliberately retired) and must not fire again;
+        // only the seeding migration's ReplacementOwed retirement still owes one, and only it falls through. The
+        // predicate and its two literals come from CronOccurrenceAccounting via the mapping, so this SQL cannot
+        // drift from the LINQ providers. ON CONFLICT stays: it arbitrates the concurrent-live race the NOT EXISTS
+        // read (unlocked under READ COMMITTED) cannot see, and every row starts live, so a row that turns terminal
+        // between the two was serialized by the filtered unique index first.
+        command.Parameters.Add(
+            new NpgsqlParameter("unaccountedStatus", CronOccurrenceRelationalMapping.UnaccountedStatusValue)
+        );
+        command.Parameters.Add(
+            new NpgsqlParameter("unaccountedDisposition", CronOccurrenceRelationalMapping.UnaccountedDispositionValue)
+        );
+        command.Parameters.Add(new NpgsqlParameter("disposition", nameof(CronOccurrenceDisposition.Accounted)));
         command.Parameters.Add(new NpgsqlParameter("owner", owner));
         command.Parameters.Add(new NpgsqlParameter("executionTime", executionTime));
         command.Parameters.Add(new NpgsqlParameter("cronJobId", item.Id));
@@ -553,7 +573,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                 {mapping.OnNodeDeath} = @onNodeDeath
             FROM candidate, claim_clock
             WHERE occurrence.{mapping.Id} = candidate.{mapping.Id}
-            RETURNING occurrence.{mapping.Id};
+            RETURNING occurrence.{mapping.Id}, occurrence.{mapping.RecoveredFromUtc};
             """;
 #pragma warning restore CA2100
         command.Parameters.Add(new NpgsqlParameter("id", occurrence.Id));
@@ -564,8 +584,14 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         command.Parameters.Add(new NpgsqlParameter("retry", nameof(NodeDeathPolicy.Retry)));
         command.Parameters.Add(new NpgsqlParameter("leaseSeconds", (lockedUntil - now.UtcDateTime).TotalSeconds));
         command.Parameters.Add(new NpgsqlParameter("onNodeDeath", item.OnNodeDeath.ToString()));
-        var claimed = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        return claimed is Guid
+        // R23: read the recovery stamp back out of the row rather than trusting the dispatch context to carry it. The
+        // durable row is the only authority for what a coalesced run stands for, and a caller that reconstructed the
+        // context from an id alone would otherwise silently demote it to an ordinary run.
+        DateTime? claimedRecoveredFrom = null;
+        var claimed = await _ReadClaimedIdAsync(command, x => claimedRecoveredFrom = x, cancellationToken)
+            .ConfigureAwait(false);
+
+        return claimed is not null
             ? new CronJobOccurrenceEntity<TCronJob>
             {
                 Id = occurrence.Id,
@@ -577,6 +603,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                 OnNodeDeath = item.OnNodeDeath,
                 UpdatedAt = now,
                 CreatedAt = occurrence.CreatedAt,
+                RecoveredFromUtc = claimedRecoveredFrom,
                 CronJob = MappingExtensions.ProjectCronJob<TCronJob>(item, owner),
             }
             : null;
@@ -788,5 +815,29 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
     private static string _ParameterName(string prefix, int index)
     {
         return string.Create(CultureInfo.InvariantCulture, $"{prefix}{index}");
+    }
+
+    /// <summary>
+    /// Reads the claim's RETURNING row: the claimed id plus the durable recovery stamp. Replaces ExecuteScalar so the
+    /// stamp leaves the store with the claim rather than being reconstructed by the caller (R23).
+    /// </summary>
+    private static async Task<Guid?> _ReadClaimedIdAsync(
+        NpgsqlCommand command,
+        Action<DateTime?> onRecoveredFrom,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        var id = reader.GetGuid(0);
+        var isNull = await reader.IsDBNullAsync(1, cancellationToken).ConfigureAwait(false);
+        onRecoveredFrom(isNull ? null : DateTime.SpecifyKind(reader.GetDateTime(1), DateTimeKind.Utc));
+
+        return id;
     }
 }

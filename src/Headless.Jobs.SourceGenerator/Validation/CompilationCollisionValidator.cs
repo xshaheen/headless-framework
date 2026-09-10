@@ -30,7 +30,7 @@ internal static class CompilationCollisionValidator
                 continue;
             }
 
-            var (functionName, _, _, _) = attribute.GetJobFunctionAttributeValues();
+            var (functionName, _, _, _, _, _) = attribute.GetJobFunctionAttributeValues();
             var location = _GetAttributeLocation(attribute, methodDeclaration);
             if (!string.IsNullOrWhiteSpace(functionName) && !functionNames.Add(functionName!))
             {

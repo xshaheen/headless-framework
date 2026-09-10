@@ -56,14 +56,42 @@ public class CronJobOccurrenceEntity<TCronJob>
     /// <summary>Serialized exception message when the occurrence ended in <c>Failed</c> status.</summary>
     public virtual string? ExceptionMessage { get; internal set; }
 
-    /// <summary>Human-readable reason when the occurrence was skipped.</summary>
+    /// <summary>Human-readable reason when the occurrence was skipped. Display text only — never read to decide
+    /// whether the row accounts for its instant; that is <see cref="Disposition" />'s job.</summary>
     public virtual string? SkippedReason { get; internal set; }
+
+    /// <summary>
+    /// Typed record of why this row left the live lifecycle, and the sole input to the occupied-instant accounting
+    /// rule (see <c>CronOccurrenceAccounting</c>). Defaults to <see cref="CronOccurrenceDisposition.Accounted" />,
+    /// so a row created or retired by any producer that does not stamp it keeps today's suppressing behaviour.
+    /// </summary>
+    public virtual CronOccurrenceDisposition Disposition { get; internal set; } = CronOccurrenceDisposition.Accounted;
 
     /// <summary>Wall-clock execution duration in milliseconds, set after the function completes.</summary>
     public virtual long ElapsedTime { get; internal set; }
 
     /// <summary>Number of retry attempts consumed so far for this occurrence.</summary>
     public virtual int RetryCount { get; internal set; }
+
+    /// <summary>
+    /// First unaccounted-for missed instant this run stands in for, or <see langword="null"/> when the occurrence was
+    /// dispatched normally. The instant is the first unresolved occurrence after the definition's watermark, so it
+    /// is exact however large the backlog was. Earlier missed instants already represented by terminal or occupied
+    /// rows are not reported again.
+    /// </summary>
+    /// <remarks>
+    /// Persisted on the occurrence rather than derived at execution time: the definition's watermark has already
+    /// advanced past the backlog by then, so a run reclaimed after a restart could not otherwise reconstruct it.
+    /// The missed count and the latest missed instant are emitted as telemetry at recovery time and deliberately
+    /// not persisted.
+    /// </remarks>
+    public virtual DateTime? RecoveredFromUtc { get; internal set; }
+
+    /// <summary>
+    /// Whether this occurrence was materialized by misfire recovery rather than normal dispatch. Derived from
+    /// <see cref="RecoveredFromUtc"/> so the two can never disagree; not mapped to a column.
+    /// </summary>
+    public bool IsRecoveryRun => RecoveredFromUtc is not null;
 
     /// <summary>UTC timestamp when this occurrence row was first created.</summary>
     public virtual DateTimeOffset CreatedAt { get; internal set; }

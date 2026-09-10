@@ -189,7 +189,7 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
     private async Task _RunCoordinatedCronJobSideEffectsAsync(
         ICoordinatedJobWriter<TTimeJob, TCronJob> writer,
         TCronJob entity,
-        DateTime nextOccurrence,
+        DateTime? persistedNextDueUtc,
         CancellationToken cancellationToken
     )
     {
@@ -197,7 +197,10 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
         // checked between steps) — symmetric with the time-job side-effect path.
         cancellationToken.ThrowIfCancellationRequested();
         await writer.InvalidateCronExpressionsCacheAsync().ConfigureAwait(false);
-        _jobsHostScheduler.RestartIfNeeded(nextOccurrence);
+
+        // The store-anchored position the write persisted, captured before the deferral. Recomputing it here from this
+        // node's clock would arm the wake against a projection the row does not carry.
+        _jobsHostScheduler.RestartIfNeeded(persistedNextDueUtc);
         cancellationToken.ThrowIfCancellationRequested();
         await notificationHubSender.AddCronJobNotifyAsync(entity).ConfigureAwait(false);
     }
@@ -206,7 +209,7 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
     private async Task _RunCoordinatedCronJobsBatchSideEffectsAsync(
         ICoordinatedJobWriter<TTimeJob, TCronJob> writer,
         List<TCronJob> validEntities,
-        List<DateTime> nextOccurrences,
+        DateTime? persistedEarliestNextDueUtc,
         CancellationToken cancellationToken
     )
     {
@@ -215,8 +218,7 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
 
         if (validEntities.Count != 0)
         {
-            var earliestOccurrence = nextOccurrences.Min();
-            _jobsHostScheduler.RestartIfNeeded(earliestOccurrence);
+            _jobsHostScheduler.RestartIfNeeded(persistedEarliestNextDueUtc);
 
             foreach (var entity in validEntities)
             {

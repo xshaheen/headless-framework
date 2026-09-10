@@ -32,7 +32,12 @@ internal sealed partial class SqlServerDataStorage(
     TimeProvider timeProvider,
     INodeMembership nodeMembership,
     ILogger<SqlServerDataStorage> logger
-) : IDataStorage, IDelayedMessageClaimStorage, IGracefulLeaseReleaseStorage, IDeliveryCoordinationResolver
+)
+    : IDataStorage,
+        IDelayedMessageClaimStorage,
+        IGracefulLeaseReleaseStorage,
+        ICircuitRetryDeferralStorage,
+        IDeliveryCoordinationResolver
 {
     /// <summary>
     /// Reusable WHERE-clause fragment that refuses updates to rows already in a terminal state
@@ -815,6 +820,49 @@ internal sealed partial class SqlServerDataStorage(
     )
     {
         return _ReleaseLeaseAsync(_receivedTable, identity, cancellationToken);
+    }
+
+    public async ValueTask<bool> DeferReceivedRetryAsync(
+        CircuitRetryDeferral deferral,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var sql = $"""
+            UPDATE {_receivedTable}
+            SET NextRetryAt = @NextRetryAt, Owner = NULL, LockedUntil = NULL
+            WHERE Id = @Id
+              AND IntentType = @IntentType
+              AND (Owner = @Owner OR (Owner IS NULL AND @Owner IS NULL))
+              AND LockedUntil = @LockedUntil
+              AND LockedUntil > SYSDATETIMEOFFSET()
+              AND {_TerminalRowGuardSimple};
+            """;
+        var identity = deferral.Identity;
+        object[] sqlParams =
+        [
+            new SqlParameter("@Id", identity.StorageId),
+            new SqlParameter("@IntentType", SqlDbType.SmallInt)
+            {
+                Value = MessageLaneCompatibility.ToPersistedValue(identity.Lane),
+            },
+            new SqlParameter("@Owner", SqlDbType.NVarChar, DataStorageConstants.OwnerColumnMaxLength)
+            {
+                Value = identity.Owner ?? (object)DBNull.Value,
+            },
+            new SqlParameter("@LockedUntil", SqlDbType.DateTimeOffset) { Value = identity.LockedUntil },
+            new SqlParameter("@NextRetryAt", SqlDbType.DateTimeOffset) { Value = deferral.NextRetryAt },
+        ];
+
+        await using var connection = new SqlConnection(options.Value.ConnectionString);
+        var changed = await connection
+            .ExecuteNonQueryAsync(
+                sql,
+                commandTimeout: messagingOptions.Value.CommandTimeout,
+                sqlParams: sqlParams,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
+        return changed == 1;
     }
 
     public ValueTask<int> ReleasePublishedLeasesAsync(

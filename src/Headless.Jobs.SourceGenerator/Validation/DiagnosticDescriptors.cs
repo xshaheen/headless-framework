@@ -166,6 +166,20 @@ internal static class DiagnosticDescriptors
         isEnabledByDefault: true
     );
 
+    public static readonly DiagnosticDescriptor InvalidMissedRunPolicy = _Create(
+        "HF020",
+        "InvalidMissedRunPolicyTitle",
+        "InvalidMissedRunPolicyMessage",
+        DiagnosticSeverity.Error
+    );
+
+    public static readonly DiagnosticDescriptor InvalidMissedRunGrace = _Create(
+        "HF021",
+        "InvalidMissedRunGraceTitle",
+        "InvalidMissedRunGraceMessage",
+        DiagnosticSeverity.Error
+    );
+
     private static DiagnosticDescriptor _Create(
         string id,
         string titleResourceName,

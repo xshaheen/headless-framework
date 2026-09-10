@@ -234,6 +234,85 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <inheritdoc />
+    public CircuitRetryDecision GetRetryDecision(MessageLane lane, string groupName)
+    {
+        var circuitGroup = CircuitBreakerGroupKeys.For(lane, groupName);
+        if (!_groups.TryGetValue(circuitGroup, out var state))
+        {
+            return CircuitRetryDecision.Closed;
+        }
+
+        var groupLock = state.SyncLock;
+        Func<ValueTask>? resumeCallback = null;
+        TaskCompletionSource? resumeTcs = null;
+        CircuitRetryDecision decision;
+        var transitionedToHalfOpen = false;
+
+        lock (groupLock)
+        {
+            if (state.State is CircuitBreakerState.Closed)
+            {
+                return CircuitRetryDecision.Closed;
+            }
+
+            if (state.State is CircuitBreakerState.Open)
+            {
+                var remaining = _GetRemainingOpenDuration(state);
+                if (remaining > TimeSpan.Zero)
+                {
+                    return new CircuitRetryDecision(
+                        CircuitRetryDecisionKind.Defer,
+                        _GetNextProbeAt(state),
+                        ProbeOutcome: null
+                    );
+                }
+
+                // The timer callback may be queued but not yet running. Advance the same generation
+                // under the group lock so a persisted retry can become the probe without waiting for
+                // a fresh broker delivery. The queued callback observes State != Open and exits.
+                state.State = CircuitBreakerState.HalfOpen;
+                transitionedToHalfOpen = true;
+                resumeCallback = state.OnResume;
+                if (resumeCallback is not null)
+                {
+                    resumeTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    state.ResumeTask = resumeTcs.Task;
+                }
+            }
+
+            state.RetryProbeOutcome ??= new TaskCompletionSource<CircuitRetryProbeOutcome>(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+
+            if (!state.ProbeAcquired)
+            {
+                state.ProbeAcquired = true;
+                decision = new CircuitRetryDecision(
+                    CircuitRetryDecisionKind.ProbeAcquired,
+                    NextProbeAt: null,
+                    state.RetryProbeOutcome.Task
+                );
+            }
+            else
+            {
+                decision = new CircuitRetryDecision(
+                    CircuitRetryDecisionKind.ProbePending,
+                    NextProbeAt: null,
+                    state.RetryProbeOutcome.Task
+                );
+            }
+        }
+
+        if (transitionedToHalfOpen)
+        {
+            logger.CircuitHalfOpen(circuitGroup);
+            _StartResumeCallback(circuitGroup, resumeCallback, resumeTcs);
+        }
+
+        return decision;
+    }
+
+    /// <inheritdoc />
     public bool TryAcquireHalfOpenProbe(string groupName)
     {
         if (!_groups.TryGetValue(groupName, out var state))
@@ -255,6 +334,9 @@ internal sealed class CircuitBreakerStateManager(
                 return false;
             }
 
+            state.RetryProbeOutcome ??= new TaskCompletionSource<CircuitRetryProbeOutcome>(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
             state.ProbeAcquired = true;
             return true;
         }
@@ -273,6 +355,7 @@ internal sealed class CircuitBreakerStateManager(
         lock (groupLock)
         {
             state.ProbeAcquired = false;
+            _CompleteRetryProbeOutcome(state, CircuitRetryProbeOutcomeKind.Uncertain, nextProbeAt: null);
         }
     }
 
@@ -364,6 +447,7 @@ internal sealed class CircuitBreakerStateManager(
         {
             state.OnPause = null;
             state.OnResume = null;
+            _CompleteRetryProbeOutcome(state, CircuitRetryProbeOutcomeKind.Uncertain, nextProbeAt: null);
             timerToDispose = state.OpenTimer;
             state.OpenTimer = null;
         }
@@ -402,11 +486,12 @@ internal sealed class CircuitBreakerStateManager(
             // not by a genuine failure. Use inline code instead of _TransitionToOpen
             // to avoid the unintended escalation bump.
             state.State = CircuitBreakerState.Open;
-            state.OpenedAt = Environment.TickCount64;
+            state.OpenedAt = timeProvider.GetTimestamp();
             state.OpenedAtUtc = timeProvider.GetUtcNow();
             state.TimerGeneration++;
             var gen = state.TimerGeneration;
             var openDuration = _GetOpenDuration(state);
+            _CompleteRetryProbeOutcome(state, CircuitRetryProbeOutcomeKind.Reopened, _GetNextProbeAt(state));
 
             // HalfOpen state normally has no OpenTimer (the timer already fired to get here),
             // but capture and clear it defensively.
@@ -500,11 +585,9 @@ internal sealed class CircuitBreakerStateManager(
             var effectiveOpenDuration = _GetOpenDuration(state);
             TimeSpan? remaining = null;
 
-            if (state.State is CircuitBreakerState.Open && state.OpenedAt > 0)
+            if (state.State is CircuitBreakerState.Open && state.OpenedAt.HasValue)
             {
-                var elapsed = TimeSpan.FromMilliseconds(Environment.TickCount64 - state.OpenedAt);
-                var diff = effectiveOpenDuration - elapsed;
-                remaining = diff > TimeSpan.Zero ? diff : TimeSpan.Zero;
+                remaining = _GetRemainingOpenDuration(state);
             }
 
             return new CircuitBreakerSnapshot
@@ -561,7 +644,8 @@ internal sealed class CircuitBreakerStateManager(
             state.EscalationLevel = 0;
             state.SuccessfulCyclesAfterClose = 0;
             state.ProbeAcquired = false;
-            state.OpenedAt = 0;
+            _CompleteRetryProbeOutcome(state, CircuitRetryProbeOutcomeKind.Closed, nextProbeAt: null);
+            state.OpenedAt = null;
             state.OpenedAtUtc = null;
             timerToDispose = state.OpenTimer;
             state.OpenTimer = null;
@@ -625,13 +709,14 @@ internal sealed class CircuitBreakerStateManager(
             // Force open without incrementing escalation — this is an operator action,
             // not a natural failure. Preserve existing escalation level.
             state.State = CircuitBreakerState.Open;
-            state.OpenedAt = Environment.TickCount64;
+            state.OpenedAt = timeProvider.GetTimestamp();
             state.OpenedAtUtc = timeProvider.GetUtcNow();
             state.ConsecutiveFailures = 0;
             state.SuccessfulCyclesAfterClose = 0;
             state.ProbeAcquired = false;
 
             var openDuration = _GetOpenDuration(state);
+            _CompleteRetryProbeOutcome(state, CircuitRetryProbeOutcomeKind.Reopened, _GetNextProbeAt(state));
 
             // Increment generation and dispose existing timer
             state.TimerGeneration++;
@@ -700,6 +785,7 @@ internal sealed class CircuitBreakerStateManager(
             {
                 state.OnPause = null;
                 state.OnResume = null;
+                _CompleteRetryProbeOutcome(state, CircuitRetryProbeOutcomeKind.Uncertain, nextProbeAt: null);
                 timerToDispose = state.OpenTimer;
                 state.OpenTimer = null;
                 resumeTask = state.ResumeTask;
@@ -754,6 +840,7 @@ internal sealed class CircuitBreakerStateManager(
             {
                 state.OnPause = null;
                 state.OnResume = null;
+                _CompleteRetryProbeOutcome(state, CircuitRetryProbeOutcomeKind.Uncertain, nextProbeAt: null);
                 timerToDispose = state.OpenTimer;
                 state.OpenTimer = null;
                 resumeTask = state.ResumeTask;
@@ -799,6 +886,39 @@ internal sealed class CircuitBreakerStateManager(
     /// </para>
     /// </summary>
     private const int _MaxTrackedGroups = 1000;
+
+    private TimeSpan _GetRemainingOpenDuration(GroupCircuitState state)
+    {
+        if (!state.OpenedAt.HasValue)
+        {
+            return TimeSpan.Zero;
+        }
+
+        var elapsed = timeProvider.GetElapsedTime(state.OpenedAt.Value);
+        var remaining = _GetOpenDuration(state) - elapsed;
+        return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
+    }
+
+    private DateTimeOffset _GetNextProbeAt(GroupCircuitState state)
+    {
+        // Derive from the injected clock plus the monotonic remaining duration. Reconstructing
+        // OpenedAtUtc + open duration would pin the persisted boundary to a stale wall-clock
+        // reading if the application clock jumped after the circuit opened (already-due rows
+        // get reclaimed and deferred in a loop; a backward jump over-defers the group).
+        // Every Reopened call site assigns OpenedAt first, so the remaining duration equals the
+        // full open duration at reopen time.
+        return timeProvider.GetUtcNow().Add(_GetRemainingOpenDuration(state));
+    }
+
+    private static void _CompleteRetryProbeOutcome(
+        GroupCircuitState state,
+        CircuitRetryProbeOutcomeKind kind,
+        DateTimeOffset? nextProbeAt
+    )
+    {
+        state.RetryProbeOutcome?.TrySetResult(new CircuitRetryProbeOutcome(kind, nextProbeAt));
+        state.RetryProbeOutcome = null;
+    }
 
     private GroupCircuitState _GetOrAddState(string groupName)
     {
@@ -860,12 +980,14 @@ internal sealed class CircuitBreakerStateManager(
     {
         var previousState = state.State;
         state.State = CircuitBreakerState.Open;
-        state.OpenedAt = Environment.TickCount64;
+        state.OpenedAt = timeProvider.GetTimestamp();
         state.OpenedAtUtc = timeProvider.GetUtcNow();
         state.SuccessfulCyclesAfterClose = 0;
 
         state.EscalationLevel = Math.Min(state.EscalationLevel + 1, 63);
         var openDuration = _GetOpenDuration(state);
+
+        _CompleteRetryProbeOutcome(state, CircuitRetryProbeOutcomeKind.Reopened, _GetNextProbeAt(state));
 
         // Increment generation before creating the new timer so that any in-flight callback
         // from the previous timer sees a stale generation and exits early.
@@ -916,6 +1038,7 @@ internal sealed class CircuitBreakerStateManager(
         bool probeSucceeded
     )
     {
+        _CompleteRetryProbeOutcome(state, CircuitRetryProbeOutcomeKind.Closed, nextProbeAt: null);
         state.State = CircuitBreakerState.Closed;
         state.ConsecutiveFailures = 0;
         var timerToDispose = state.OpenTimer;
@@ -939,10 +1062,10 @@ internal sealed class CircuitBreakerStateManager(
 
         TimeSpan? openDuration = null;
 
-        if (state.OpenedAt > 0)
+        if (state.OpenedAt.HasValue)
         {
-            openDuration = TimeSpan.FromMilliseconds(Environment.TickCount64 - state.OpenedAt);
-            state.OpenedAt = 0;
+            openDuration = timeProvider.GetElapsedTime(state.OpenedAt.Value);
+            state.OpenedAt = null;
             state.OpenedAtUtc = null;
         }
 
@@ -975,6 +1098,9 @@ internal sealed class CircuitBreakerStateManager(
             }
 
             state.State = CircuitBreakerState.HalfOpen;
+            state.RetryProbeOutcome = new TaskCompletionSource<CircuitRetryProbeOutcome>(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
             resumeCallback = state.OnResume;
 
             // Pre-assign ResumeTask BEFORE launching Task.Run so that DisposeAsync always
@@ -991,6 +1117,15 @@ internal sealed class CircuitBreakerStateManager(
 
         logger.CircuitHalfOpen(groupName);
 
+        _StartResumeCallback(groupName, resumeCallback, resumeTcs);
+    }
+
+    private void _StartResumeCallback(
+        string groupName,
+        Func<ValueTask>? resumeCallback,
+        TaskCompletionSource? resumeTcs
+    )
+    {
         if (resumeCallback is not null)
         {
             // Run on a thread-pool thread to avoid blocking the timer callback thread.
@@ -1188,9 +1323,9 @@ internal sealed class CircuitBreakerStateManager(
         public int SuccessfulCyclesAfterClose { get; set; }
 
         /// <summary>
-        /// Tick count when the circuit was opened, for duration tracking. 0 = not open.
+        /// Monotonic timestamp when the circuit was opened, for duration tracking.
         /// </summary>
-        public long OpenedAt { get; set; }
+        public long? OpenedAt { get; set; }
 
         /// <summary>
         /// Wall-clock timestamp when the circuit entered the Open state, for snapshot reporting.
@@ -1221,6 +1356,12 @@ internal sealed class CircuitBreakerStateManager(
         /// Must only be read/written while holding the group lock.
         /// </summary>
         public bool ProbeAcquired { get; set; }
+
+        /// <summary>
+        /// Shared completion for claims that joined the current HalfOpen probe generation.
+        /// Replaced only after the generation reaches a decided outcome or is abandoned.
+        /// </summary>
+        public TaskCompletionSource<CircuitRetryProbeOutcome>? RetryProbeOutcome { get; set; }
 
         /// <summary>
         /// The consumer group name this state belongs to. Used as timer callback state

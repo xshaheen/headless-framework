@@ -5,8 +5,11 @@ using Headless.Caching;
 using Headless.Jobs;
 using Headless.Jobs.DbContextFactory;
 using Headless.Jobs.Entities;
+using Headless.Jobs.Enums;
 using Headless.Jobs.Infrastructure;
 using Headless.Jobs.Interfaces;
+using Headless.Jobs.Internal;
+using Headless.Jobs.Models;
 using Headless.Testing.Tests;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -140,6 +143,7 @@ public sealed class CronExpressionCacheTests : TestBase
             dbContextFactory,
             coordinatedWriteOptions,
             TimeProvider.System,
+            new SequentialGuidGenerator(SequentialGuidType.Version7),
             ownerIdentity,
             schedulerOptions,
             cache,
@@ -228,6 +232,31 @@ public sealed class CronExpressionCacheTests : TestBase
         cache.RemoveCalls.Should().Be(1);
     }
 
+    [Fact]
+    public async Task cron_seed_migration_rethrows_a_non_provider_duplicate_failure()
+    {
+        await using var fixture = await CronCacheFixture.CreateAsync();
+        var conflicting = _Cron("different-function", "0 6 * * *");
+        conflicting.Id = JobsSeedId.ForCronSeed("new-seed");
+        await fixture.SeedCronJobsAsync(conflicting);
+        var sut = fixture.CreateProvider();
+
+        var act = () =>
+            sut.MigrateDefinedCronJobsAsync(
+                [
+                    new CronSeedDefinition(
+                        "new-seed",
+                        "0 7 * * *",
+                        MissedRunPolicy.Coalesce,
+                        JobsRecoveryDefaults.MissedRunGraceSeconds
+                    ),
+                ],
+                AbortToken
+            );
+
+        await act.Should().ThrowAsync<DbUpdateException>();
+    }
+
     private static CronJobEntity _Cron(string function, string expression)
     {
         return new()
@@ -291,6 +320,7 @@ public sealed class CronExpressionCacheTests : TestBase
                 dbContextFactory,
                 _options,
                 TimeProvider.System,
+                new SequentialGuidGenerator(SequentialGuidType.Version7),
                 ownerIdentity,
                 schedulerOptions,
                 cache,

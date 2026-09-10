@@ -24,11 +24,17 @@ internal sealed class JobsExecutionContext
     private JobExecutionState[] _functions = [];
     internal JobExecutionState[] Functions => Volatile.Read(ref _functions);
 
+    /// <summary>
+    /// Records the instant the scheduler loop is sleeping towards, <b>in the store's clock domain</b> (see
+    /// <see cref="JobsWakeSchedule"/>), so <c>RestartIfNeeded</c> can arbitrate incoming due times — which are store
+    /// instants — against it without either side converting.
+    /// </summary>
     public void SetNextPlannedOccurrence(DateTime? dt)
     {
         Interlocked.Exchange(ref _nextOccurrenceTicks, dt?.Ticks ?? -1);
     }
 
+    /// <summary>The store-domain instant the scheduler loop is sleeping towards, or <see langword="null"/> when idle.</summary>
     public DateTime? GetNextPlannedOccurrence()
     {
         var t = Interlocked.Read(ref _nextOccurrenceTicks);

@@ -12,7 +12,7 @@ Provides building blocks for implementing DDD patterns: entities with identity, 
 - **Aggregate Roots**: `IAggregateRoot`, `AggregateRoot` with built-in message emission
 - **Value Objects**: `ValueObject` base class with equality
 - **Auditing**: `ICreateAudit`, `IUpdateAudit`, `IDeleteAudit`, `ISuspendAudit`
-- **Concurrency**: `IHasConcurrencyStamp`, `IHasETag`
+- **Concurrency**: `IHasConcurrencyStamp`
 - **Multi-tenancy**: `IMultiTenant`
 - **Domain Events (in-process)**: `IDomainEvent`, `IDomainEventEmitter`, `IDomainEventHandler<T>`, `DomainEventHandlerOrderAttribute`. An aggregate raises its own events through the `protected AddDomainEvent`; the readers/clearers (`GetDomainEvents`, `ClearDomainEvents`) and the `IDomainEventEmitter` contract stay public for infrastructure that collects and dispatches them. Dispatch is provided by `Headless.Domain.LocalEventBus`.
 - **Integration Events (distributed)**: `IIntegrationEvent`, `IIntegrationEventEmitter`. An aggregate raises its own events through the `protected AddIntegrationEvent`; `GetIntegrationEvents`/`ClearIntegrationEvents` and the `IIntegrationEventEmitter` contract stay public for infrastructure. This package only defines the contract and the emitter — integration events are dispatched by the ORM/messaging layer (`Headless.EntityFramework.Messaging`), not from `Headless.Domain`.

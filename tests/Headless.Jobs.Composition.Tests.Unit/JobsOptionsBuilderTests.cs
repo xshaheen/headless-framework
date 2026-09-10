@@ -346,6 +346,100 @@ public sealed class JobsOptionsBuilderTests
     }
 
     [Fact]
+    public void add_headless_jobs_rejects_an_undefined_default_missed_run_policy()
+    {
+        var services = new ServiceCollection();
+
+        var act = () =>
+            services.AddHeadlessJobs(options =>
+                options.ConfigureScheduler(scheduler => scheduler.DefaultMissedRunPolicy = (MissedRunPolicy)999)
+            );
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*DefaultMissedRunPolicy*");
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void add_headless_jobs_rejects_non_positive_default_missed_run_grace(int graceSeconds)
+    {
+        var services = new ServiceCollection();
+
+        var act = () =>
+            services.AddHeadlessJobs(options =>
+                options.ConfigureScheduler(scheduler => scheduler.DefaultMissedRunGraceSeconds = graceSeconds)
+            );
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*DefaultMissedRunGraceSeconds*");
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void add_headless_jobs_rejects_non_positive_fingerprint_sweep_interval(int seconds)
+    {
+        var services = new ServiceCollection();
+
+        var act = () =>
+            services.AddHeadlessJobs(options =>
+                options.ConfigureScheduler(scheduler =>
+                    scheduler.FingerprintSweepInterval = TimeSpan.FromSeconds(seconds)
+                )
+            );
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*FingerprintSweepInterval*");
+    }
+
+    [Fact]
+    public void add_headless_jobs_rejects_fingerprint_sweep_interval_above_the_defer_backoff_cap()
+    {
+        // The interval doubles as the INITIAL delay of the durable defer backoff, whose ceiling is 24h. Accepting a
+        // longer interval makes the defer request itself invalid, so a deterministic definition error would throw out
+        // of the quarantine path and — because startup activation is fail-closed — abort host startup.
+        var services = new ServiceCollection();
+
+        var act = () =>
+            services.AddHeadlessJobs(options =>
+                options.ConfigureScheduler(scheduler =>
+                    scheduler.FingerprintSweepInterval =
+                        JobsRecoveryDefaults.MaximumStaleFingerprintDeferDelay + TimeSpan.FromSeconds(1)
+                )
+            );
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*FingerprintSweepInterval*");
+    }
+
+    [Fact]
+    public void add_headless_jobs_accepts_a_fingerprint_sweep_interval_exactly_at_the_defer_backoff_cap()
+    {
+        var services = new ServiceCollection();
+
+        var act = () =>
+            services.AddHeadlessJobs(options =>
+                options.ConfigureScheduler(scheduler =>
+                    scheduler.FingerprintSweepInterval = JobsRecoveryDefaults.MaximumStaleFingerprintDeferDelay
+                )
+            );
+
+        act.Should().NotThrow();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void add_headless_jobs_rejects_non_positive_fingerprint_sweep_batch_size(int batchSize)
+    {
+        var services = new ServiceCollection();
+
+        var act = () =>
+            services.AddHeadlessJobs(options =>
+                options.ConfigureScheduler(scheduler => scheduler.FingerprintSweepBatchSize = batchSize)
+            );
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*FingerprintSweepBatchSize*");
+    }
+
+    [Fact]
     public void explicit_node_id_is_preserved_verbatim()
     {
         var schedulerOptions = new SchedulerOptionsBuilder { NodeId = "explicit-node" };

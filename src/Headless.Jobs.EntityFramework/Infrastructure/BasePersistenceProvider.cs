@@ -1,6 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data.Common;
+using Headless.Abstractions;
 using Headless.Caching;
+using Headless.Checks;
+using Headless.Constants;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
@@ -15,6 +19,7 @@ namespace Headless.Jobs.Infrastructure;
 internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     IDbContextFactory<TDbContext> dbContextFactory,
     TimeProvider timeProvider,
+    IGuidGenerator guidGenerator,
     IJobsOwnerIdentity ownerIdentity,
     SchedulerOptionsBuilder optionsBuilder,
     ICache? cache,
@@ -41,6 +46,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     protected IJobsOwnerIdentity OwnerIdentity { get; } = ownerIdentity;
 
     protected TimeProvider TimeProvider { get; } = timeProvider;
+
+    protected IGuidGenerator GuidGenerator { get; } = guidGenerator;
 
     // Feature-namespaced (jobs:) so the cron entry never collides with another feature's key when the host shares
     // one default ICache across features — matches the permissions:/features:/settings: convention.
@@ -203,11 +210,11 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         return await updated.Select(x => x.Id).ToArrayAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<TimeJobEntity[]> GetEarliestTimeJobsAsync(CancellationToken cancellationToken)
+    public async Task<EarliestTimeJobs> GetEarliestTimeJobsAsync(CancellationToken cancellationToken)
     {
         if (!OwnerIdentity.TryGetStampOwner(out var owner))
         {
-            return [];
+            return EarliestTimeJobs.None;
         }
 
         await using var dbContext = await DbContextFactory
@@ -228,16 +235,31 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             // parent gate keeps it out of the peek until its parent reached its matching terminal state.
             .WhereClaimableUnderParentTerminalGate(dbContext.Set<TTimeJob>());
 
-        // Find the earliest job within our window
-        var minExecutionTime = await baseQuery
+        // Find the earliest job within our window. The store instant rides along on the same statement — no extra round
+        // trip, matching GetEarliestCronDispatchCandidatesAsync — because the caller derives its sleep from the
+        // difference between the two: measuring an execution time the STORE will arbitrate against THIS node's clock
+        // makes a lagging node oversleep by exactly its skew (#818).
+        var candidateQuery = baseQuery
             .OrderBy(x => x.ExecutionTime)
-            .Select(x => x.ExecutionTime)
-            .FirstOrDefaultAsync(cancellationToken)
+            .Select(x => new { x.ExecutionTime, StoreUtcNow = DateTime.UtcNow });
+
+        // Through the context's execution strategy, matching HeadlessSaveChangesPipeline and
+        // HeadlessDbContextTransactionExtensions: a SQL Server deadlock victim (1205) on this read is transient, and
+        // without a strategy it propagates straight into the scheduler loop. This deliberately honours whatever the
+        // consumer configured (EnableRetryOnFailure and friends) rather than inventing an always-on retry here — under
+        // the default non-retrying strategy it is a pass-through, which is the right trade for a read whose failure
+        // costs one delayed poll. The claim path keeps its own deadlock pipeline because a deadlock there is
+        // correctness-relevant, not just a missed poll.
+        var earliest = await dbContext
+            .Database.CreateExecutionStrategy()
+            .ExecuteAsync(candidateQuery, static (query, ct) => query.FirstOrDefaultAsync(ct), cancellationToken)
             .ConfigureAwait(false);
+
+        var minExecutionTime = earliest?.ExecutionTime;
 
         if (minExecutionTime == null)
         {
-            return [];
+            return EarliestTimeJobs.None;
         }
 
         // Round the minimum execution time down to its second
@@ -256,14 +278,24 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
         // R12/KTD2: load the flat roots, then rebuild the non-timed in-tree subtree to MaxChainDepth in memory (a
         // recursive .Select projection is not EF-translatable) instead of a fixed-depth nested projection.
-        return await _LoadWithDescendantsAsync(
-                baseQuery
-                    .Where(x => x.ExecutionTime >= minSecond && x.ExecutionTime < maxExecutionTime)
-                    .OrderBy(x => x.ExecutionTime),
-                dbContext,
+        // Same execution strategy as the minimum-instant read above: this is the second of the two frames a SQL Server
+        // deadlock victim was observed on, so wrapping only the first would close the symptom rather than the gap.
+        // Safe to retry because it is a pure read - a projection load plus an AsNoTracking descendant attach, with no
+        // SaveChanges, no ExecuteUpdate/Delete, and no transaction of its own.
+        var windowedQuery = baseQuery
+            .Where(x => x.ExecutionTime >= minSecond && x.ExecutionTime < maxExecutionTime)
+            .OrderBy(x => x.ExecutionTime);
+
+        var jobs = await dbContext
+            .Database.CreateExecutionStrategy()
+            .ExecuteAsync(
+                windowedQuery,
+                (query, ct) => _LoadWithDescendantsAsync(query, dbContext, ct),
                 cancellationToken
             )
             .ConfigureAwait(false);
+
+        return new EarliestTimeJobs { StoreUtcNow = earliest!.StoreUtcNow, Jobs = jobs };
     }
 
     // R12/KTD2: projects a prepared time-job query to flat roots and rebuilds their non-timed in-tree subtree to
@@ -1095,7 +1127,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
     #region Core_Cron_Ticker_Methods
     public async Task MigrateDefinedCronJobsAsync(
-        (string Function, string Expression)[] cronJobs,
+        CronSeedDefinition[] cronJobs,
         CancellationToken cancellationToken = default
     )
     {
@@ -1164,6 +1196,9 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 (
                     x.Function,
                     x.Expression,
+                    x.OnMissedRun,
+                    x.MissedRunGraceSeconds,
+                    x.EvaluationFingerprint,
                     Id: existingByFunction.TryGetValue(x.Function, out var existingDefinition)
                         ? existingDefinition.Id
                         : JobsSeedId.ForCronSeed(x.Function)
@@ -1171,8 +1206,13 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             )
             .OrderBy(x => x.Id)
             .ToArray();
+        var insertedSeeds = orderedCronJobs
+            .Where(x => !existingByFunction.ContainsKey(x.Function))
+            .ToDictionary(x => x.Id, x => x.Function);
 
-        foreach (var (function, expression, _) in orderedCronJobs)
+        foreach (
+            var (function, expression, onMissedRun, missedRunGraceSeconds, evaluationFingerprint, _) in orderedCronJobs
+        )
         {
             if (existingByFunction.TryGetValue(function, out var cron))
             {
@@ -1193,6 +1233,18 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         cron.Expression = expression;
                         cron.ScheduleRevision++;
                         cron.UpdatedAt = now;
+
+                        // R10: the stored projection was derived under the OLD expression; left standing it keeps
+                        // selecting (or hiding) the definition by the stale schedule — a yearly→minutes edit would
+                        // not fire until next year. Reset the position to the uninitialized sentinel so the next
+                        // wake re-derives it by the R9 creation rule under the new expression: anchored at the
+                        // store instant, no interval replayed, the edit effective on the next wake — matching the
+                        // runtime edit path's observable contract.
+                        cron.ReconciledThroughUtc = default;
+                        cron.NextDueUtc = default;
+                        cron.EvaluationFingerprint = evaluationFingerprint;
+                        cron.FingerprintFailureCount = 0;
+                        cron.FingerprintRetryAfterUtc = null;
                         changedDefinitionIds.Add(cron.Id);
                     }
                 }
@@ -1211,6 +1263,12 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                     CreatedAt = now,
                     UpdatedAt = now,
                     Request = [],
+                    // KTD6: seeded at CREATION only. The expression-changed branch above deliberately leaves these
+                    // alone, so a value set later through ICronJobManager survives every redeploy and is an operator
+                    // override by construction — which is why no provenance marker is persisted.
+                    OnMissedRun = onMissedRun,
+                    MissedRunGraceSeconds = missedRunGraceSeconds,
+                    EvaluationFingerprint = evaluationFingerprint,
                 };
                 await cronSet.AddAsync(entity, cancellationToken).ConfigureAwait(false);
             }
@@ -1235,6 +1293,12 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                                 .SetProperty(x => x.ExecutedAt, now)
                                 .SetProperty(x => x.UpdatedAt, now)
                                 .SetProperty(x => x.SkippedReason, "Cron definition updated")
+                                // KTD1a: THE producer that owes a re-fire. Seeding retires the old-expression rows
+                                // without creating a replacement and resets the projection to be re-derived, so the
+                                // instant is unaccounted for and must be materializable again. The runtime edit path
+                                // writes the identical SkippedReason but stamps Superseded, which is exactly why the
+                                // accounting rule reads this column and never that string.
+                                .SetProperty(x => x.Disposition, CronOccurrenceDisposition.ReplacementOwed)
                                 .SetProperty(x => x.OwnerId, _ => null)
                                 .SetProperty(x => x.LockedUntil, _ => null),
                         cancellationToken
@@ -1247,13 +1311,66 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         }
         catch (DbUpdateException ex)
         {
-            // Expected case: a concurrent first-boot lost the deterministic-id primary-key race — the winner's rows
-            // stand, so there is nothing to clean up; discard our now-redundant tracked inserts. Logged at Debug (the
-            // common trigger is the benign race) so a genuine, non-race failure that leaves this node's schedule
-            // unseeded until the next boot is still greppable rather than silently swallowed.
-            Logger.LogCronSeedConflictDiscarded(ex);
+            if (!_IsUniqueConstraintViolation(dbContext.Database.ProviderName, ex) || insertedSeeds.Count == 0)
+            {
+                throw;
+            }
+
+            await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
             dbContext.ChangeTracker.Clear();
+
+            await using var verificationContext = await DbContextFactory
+                .CreateDbContextAsync(CancellationToken.None)
+                .ConfigureAwait(false);
+            var winningSeeds = await verificationContext
+                .Set<TCronJob>()
+                .Where(x => ((IEnumerable<Guid>)insertedSeeds.Keys).Contains(x.Id))
+                .Select(x => new { x.Id, x.Function })
+                .ToDictionaryAsync(x => x.Id, x => x.Function, CancellationToken.None)
+                .ConfigureAwait(false);
+
+            if (
+                insertedSeeds.Any(expected =>
+                    !winningSeeds.TryGetValue(expected.Key, out var function)
+                    || !string.Equals(function, expected.Value, StringComparison.Ordinal)
+                )
+            )
+            {
+                throw;
+            }
+
+            // A concurrent first boot committed every deterministic seed we attempted. Only this verified race is
+            // benign; constraint, conversion, connectivity, and other update failures continue to fail startup.
+            Logger.LogCronSeedConflictDiscarded(ex);
+            await InvalidateCronExpressionsCacheAsync().ConfigureAwait(false);
         }
+    }
+
+    private static bool _IsUniqueConstraintViolation(string? providerName, DbUpdateException exception)
+    {
+        if (exception.GetBaseException() is not DbException databaseException)
+        {
+            return false;
+        }
+
+        if (string.Equals(providerName, "Npgsql.EntityFrameworkCore.PostgreSQL", StringComparison.Ordinal))
+        {
+            return string.Equals(
+                databaseException.SqlState,
+                SqlErrorCodes.PostgreSql.UniqueViolation,
+                StringComparison.Ordinal
+            );
+        }
+
+        if (string.Equals(providerName, "Microsoft.EntityFrameworkCore.SqlServer", StringComparison.Ordinal))
+        {
+            var number = databaseException.GetType().GetProperty("Number")?.GetValue(databaseException);
+            return number
+                is SqlErrorCodes.SqlServer.DuplicateKeyUniqueIndex
+                    or SqlErrorCodes.SqlServer.DuplicateKeyUniqueConstraint;
+        }
+
+        return false;
     }
 
     public async Task<CronJobEntity[]> GetAllCronJobExpressionsAsync(CancellationToken cancellationToken = default)
@@ -1362,6 +1479,750 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .Select(MappingExtensions.ForCronJobExpressions<CronJobEntity>())
             .ToArrayAsync(cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    public async Task<CronFingerprintSweepPage> GetStaleFingerprintDefinitionsAsync(
+        CronFingerprintSweepRequest request,
+        CancellationToken cancellationToken = default
+    )
+    {
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var known = request.CurrentFingerprints.ToArray();
+
+        // Selects on STALENESS, never on due-ness — a rule change that moves an occurrence earlier hides behind the
+        // stale later projection, so the definitions that most need rebasing are exactly the ones a due-ness query
+        // would skip. Backed by IX_CronJobs_EvaluationFingerprint. A null fingerprint is a definition positioned
+        // before fingerprinting existed and is swept in for the same treatment.
+        var stale = dbContext
+            .Set<TCronJob>()
+            .AsNoTracking()
+            .Where(x => !x.IsPaused)
+            .Where(x => x.EvaluationFingerprint == null || !known.Contains(x.EvaluationFingerprint));
+        var highWatermark =
+            request.ThroughId
+            ?? await stale
+                .OrderByDescending(x => x.Id)
+                .Select(x => (Guid?)x.Id)
+                .FirstOrDefaultAsync(cancellationToken)
+                .ConfigureAwait(false);
+        var eligible = stale
+            .Where(x => highWatermark == null || x.Id.CompareTo(highWatermark.Value) <= 0)
+            .Where(x => x.FingerprintRetryAfterUtc == null || x.FingerprintRetryAfterUtc <= DateTime.UtcNow);
+        var projected = eligible.Select(x => new
+        {
+            x.Id,
+            x.Function,
+            x.Expression,
+            x.TimeZoneId,
+            x.ScheduleRevision,
+            x.ReconciledThroughUtc,
+            x.NextDueUtc,
+            x.Retries,
+            x.RetryIntervals,
+            x.OnNodeDeath,
+            x.MissedRunGraceSeconds,
+            x.OnMissedRun,
+            x.EvaluationFingerprint,
+            x.FingerprintFailureCount,
+            x.FingerprintRetryAfterUtc,
+            StoreUtcNow = DateTime.UtcNow,
+        });
+        var forward = request.AfterId is null
+            ? projected
+            : projected.Where(x => x.Id.CompareTo(request.AfterId.Value) > 0);
+        var rows = await forward
+            .OrderBy(x => x.Id)
+            .Take(request.Limit + 1)
+            .ToArrayAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var hasMore = rows.Length > request.Limit;
+        var wrappedPage = false;
+        if (hasMore)
+        {
+            rows = rows[..request.Limit];
+        }
+        else if (request.AllowWrap && request.AfterId is not null)
+        {
+            // One bounded wrap prevents a newly-stale low id from waiting behind a long-lived cursor. The fill remains
+            // within the caller's page limit and the +1 lookahead preserves an exact continuation signal.
+            var remaining = request.Limit - rows.Length;
+            var wrapped = await projected
+                .Where(x => x.Id.CompareTo(request.AfterId.Value) <= 0)
+                .OrderBy(x => x.Id)
+                .Take(remaining + 1)
+                .ToArrayAsync(cancellationToken)
+                .ConfigureAwait(false);
+            hasMore = wrapped.Length > remaining;
+            rows = [.. rows, .. wrapped.Take(remaining)];
+            // With no remaining capacity this query is only a wrapped lookahead. The next page retains permission to
+            // perform the one bounded wrap and return the candidate instead of losing it behind the high-water mark.
+            wrappedPage = remaining > 0;
+        }
+
+        var storeUtcNow =
+            rows.Length > 0
+                ? rows[0].StoreUtcNow
+                : await stale.Select(_ => DateTime.UtcNow).FirstOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+
+        return new CronFingerprintSweepPage
+        {
+            StoreUtcNow = storeUtcNow,
+            SnapshotHighWatermarkId = highWatermark,
+            HasMore = hasMore,
+            Wrapped = wrappedPage,
+            Candidates =
+            [
+                .. rows.Select(x => new CronDispatchCandidate
+                {
+                    CronJobId = x.Id,
+                    FunctionName = x.Function,
+                    Expression = x.Expression,
+                    TimeZoneId = x.TimeZoneId,
+                    ScheduleRevision = x.ScheduleRevision,
+                    ReconciledThroughUtc = x.ReconciledThroughUtc,
+                    NextDueUtc = x.NextDueUtc,
+                    Retries = x.Retries,
+                    RetryIntervals = x.RetryIntervals,
+                    OnNodeDeath = x.OnNodeDeath,
+                    MissedRunGraceSeconds = x.MissedRunGraceSeconds,
+                    OnMissedRun = x.OnMissedRun,
+                    EvaluationFingerprint = x.EvaluationFingerprint,
+                    FingerprintFailureCount = x.FingerprintFailureCount,
+                    FingerprintRetryAfterUtc = x.FingerprintRetryAfterUtc,
+                }),
+            ],
+        };
+    }
+
+    public async Task<bool> DeferStaleFingerprintDefinitionAsync(
+        CronFingerprintDeferRequest request,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsPositive(request.InitialDelay);
+        Argument.IsGreaterThanOrEqualTo(request.MaximumDelay, request.InitialDelay);
+
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var definitions = dbContext.Set<TCronJob>();
+        var current = await definitions
+            .AsNoTracking()
+            .Where(x =>
+                x.Id == request.CronJobId
+                && !x.IsPaused
+                && x.ScheduleRevision == request.ExpectedScheduleRevision
+                && x.ReconciledThroughUtc == request.ObservedReconciledThroughUtc
+                && x.EvaluationFingerprint == request.ObservedEvaluationFingerprint
+            )
+            .Select(x => new { x.FingerprintFailureCount, StoreUtcNow = DateTime.UtcNow })
+            .SingleOrDefaultAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (current is null)
+        {
+            return false;
+        }
+
+        var nextFailureCount = checked(current.FingerprintFailureCount + 1);
+        var multiplier = Math.Pow(2, Math.Min(nextFailureCount - 1, 30));
+        var delayTicks = (long)Math.Min(request.MaximumDelay.Ticks, request.InitialDelay.Ticks * multiplier);
+        var retryAfterUtc = current.StoreUtcNow.AddTicks(delayTicks);
+        var affected = await definitions
+            .Where(x =>
+                x.Id == request.CronJobId
+                && !x.IsPaused
+                && x.ScheduleRevision == request.ExpectedScheduleRevision
+                && x.ReconciledThroughUtc == request.ObservedReconciledThroughUtc
+                && x.EvaluationFingerprint == request.ObservedEvaluationFingerprint
+                && x.FingerprintFailureCount == current.FingerprintFailureCount
+            )
+            .ExecuteUpdateAsync(
+                setter =>
+                    setter
+                        .SetProperty(x => x.FingerprintFailureCount, nextFailureCount)
+                        .SetProperty(x => x.FingerprintRetryAfterUtc, retryAfterUtc),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return affected == 1;
+    }
+
+    public async Task<CronRecoveryResult<TCronJob>?> ApplyCronRecoveryAsync(
+        CronRecoveryRequest request,
+        CancellationToken cancellationToken = default
+    )
+    {
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        // One transaction, unlike the ordinary advance. The occurrence resolution and the watermark move must not
+        // interleave: a crash between them would leave the backlog partly resolved with the watermark already past it,
+        // and nothing to re-derive the remainder from. Safe here precisely because the recovery instant is a
+        // caller-supplied store instant, so no database-clock expression is frozen at transaction open (KTD1 governs
+        // clock EXPRESSIONS inside transactions, not transactions as such).
+        await using var transaction = await dbContext
+            .Database.BeginTransactionAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var definitions = dbContext.Set<TCronJob>();
+        var recoveredThroughUtc = request.RecoveredThroughUtc;
+        var nextDueUtc = request.NextDueUtc;
+
+        var advanced = await definitions
+            .WhereScheduleAdvanceFenceHolds(
+                request.CronJobId,
+                request.ObservedReconciledThroughUtc,
+                request.ExpectedScheduleRevision
+            )
+            .ExecuteUpdateAsync(
+                setter =>
+                    setter
+                        .SetProperty(x => x.ReconciledThroughUtc, recoveredThroughUtc)
+                        .SetProperty(x => x.NextDueUtc, nextDueUtc),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (advanced == 0)
+        {
+            // Another node recovered this backlog first. Nothing was written; the transaction rolls back on dispose.
+            return null;
+        }
+
+        var occurrences = dbContext.Set<CronJobOccurrenceEntity<TCronJob>>();
+        var cronJobId = request.CronJobId;
+        var window = CronRecoveryPlanner.GetInspectionWindow(request);
+        var windowStart = window.StartExclusiveUtc;
+        var windowEnd = window.EndInclusiveUtc;
+
+        // Every row in the missed window, whatever its state: the non-terminal ones are the policy's to resolve, and
+        // the terminal ones still matter because a terminal row occupying the earliest missed instant means that
+        // instant already ran and must not be materialized a second time (R7).
+        //
+        // KTD1c: projected through the SHARED accounting selector, the same one MaterializeCronScheduleOccurrenceAsync
+        // uses. Reading bare Status here is what let the two paths disagree — recovery treated every non-live row as
+        // occupying the instant while the native claim path re-materialized the identical row. It also keeps the raw
+        // status out of materialization, so a value written by a newer binary cannot throw here.
+        var inWindow = await occurrences
+            .AsNoTracking()
+            .Where(x => x.CronJobId == cronJobId && x.ExecutionTime > windowStart && x.ExecutionTime <= windowEnd)
+            .Select(CronOccurrenceAccounting.InstantViewSelector<TCronJob>())
+            .ToArrayAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        // The decision itself is storage-agnostic and shared with every other provider (#834). What remains below is
+        // this backend's mechanics: fenced writes inside the transaction already open.
+        var plan = CronRecoveryPlanner.CreatePlan(request, inWindow);
+        CronJobOccurrenceEntity<TCronJob>? coalescedRun = null;
+        var preservedOccurrenceId = Guid.Empty;
+
+        foreach (var step in plan.RunSteps)
+        {
+            var stepInstant = step.ExecutionTimeUtc;
+
+            if (step.Kind is CronRecoveryRunStepKind.Create)
+            {
+                coalescedRun = new CronJobOccurrenceEntity<TCronJob>
+                {
+                    Id = step.OccurrenceId,
+                    CronJobId = cronJobId,
+                    Status = JobStatus.Idle,
+                    OwnerId = null,
+                    LockedUntil = null,
+                    ExecutionTime = stepInstant,
+                    RecoveredFromUtc = stepInstant,
+                    OnNodeDeath = request.OnNodeDeath,
+                    CreatedAt = request.OperationTimeUtc,
+                    UpdatedAt = request.OperationTimeUtc,
+                };
+
+                await occurrences.AddAsync(coalescedRun, cancellationToken).ConfigureAwait(false);
+                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                dbContext.Entry(coalescedRun).State = EntityState.Detached;
+                preservedOccurrenceId = coalescedRun.Id;
+                break;
+            }
+
+            // KTD5: revoking ownership is the whole mechanism. The claim path's in-progress transition already
+            // requires OwnerId == owner, so a prior owner that was holding this row simply fails that predicate and
+            // drops it — no new machinery, and no cost on the normal execution path.
+            //
+            // The status predicate makes this a CAS rather than a blind write: the window read above takes no lock,
+            // so the row can begin executing between the read and this statement. Zero rows affected means exactly
+            // that — the instant is now accounted for, and the walk moves on to the planner's next step.
+            var candidateId = step.OccurrenceId;
+            var repurposed = await occurrences
+                .Where(x => x.Id == candidateId && (x.Status == JobStatus.Idle || x.Status == JobStatus.Queued))
+                .ExecuteUpdateAsync(
+                    setter =>
+                        setter
+                            .SetProperty(x => x.Status, JobStatus.Idle)
+                            .SetProperty(x => x.OwnerId, _ => null)
+                            .SetProperty(x => x.LockedUntil, _ => null)
+                            .SetProperty(x => x.RecoveredFromUtc, stepInstant)
+                            .SetProperty(x => x.UpdatedAt, request.OperationTimeUtc),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            if (repurposed == 0)
+            {
+                continue;
+            }
+
+            preservedOccurrenceId = candidateId;
+            coalescedRun = new CronJobOccurrenceEntity<TCronJob>
+            {
+                Id = candidateId,
+                CronJobId = cronJobId,
+                Status = JobStatus.Idle,
+                OwnerId = null,
+                LockedUntil = null,
+                ExecutionTime = stepInstant,
+                RecoveredFromUtc = stepInstant,
+                OnNodeDeath = request.OnNodeDeath,
+                CreatedAt = step.ExistingCreatedAt!.Value,
+                UpdatedAt = request.OperationTimeUtc,
+            };
+            break;
+        }
+
+        // Everything else not yet executing in the window is retired: under skip because nothing may run, under
+        // coalesce because the single coalesced run already stands in for the whole backlog. Which window that is —
+        // the full recovery span, or only a saturated page's examined prefix — is the planner's call, not this
+        // provider's.
+        var resolution = coalescedRun is null ? plan.WhenNoRunEstablished : plan.WhenRunEstablished;
+        var resolutionStart = resolution.RetireFromExclusiveUtc;
+        var resolutionEnd = resolution.RetireThroughInclusiveUtc;
+        var toSkip = await occurrences
+            .AsNoTracking()
+            .Where(x =>
+                x.CronJobId == cronJobId
+                && x.ExecutionTime > resolutionStart
+                && x.ExecutionTime <= resolutionEnd
+                && x.Id != preservedOccurrenceId
+                && (x.Status == JobStatus.Idle || x.Status == JobStatus.Queued)
+            )
+            .Select(x => x.Id)
+            .ToArrayAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var skippedCount = 0;
+
+        if (toSkip.Length > 0)
+        {
+            // Same CAS discipline as the repurpose: a row that began executing since the unlocked window read fails
+            // the status predicate and is left alone rather than blindly stamped Skipped over a running execution.
+            skippedCount = await occurrences
+                .Where(x => toSkip.Contains(x.Id) && (x.Status == JobStatus.Idle || x.Status == JobStatus.Queued))
+                .ExecuteUpdateAsync(
+                    setter =>
+                        setter
+                            .SetProperty(x => x.Status, JobStatus.Skipped)
+                            .SetProperty(x => x.OwnerId, _ => null)
+                            .SetProperty(x => x.LockedUntil, _ => null)
+                            .SetProperty(x => x.ExecutedAt, request.OperationTimeUtc)
+                            .SetProperty(x => x.UpdatedAt, request.OperationTimeUtc)
+                            .SetProperty(x => x.SkippedReason, "Cron occurrence missed and resolved by recovery")
+                            // Recovery resolves the backlog: the single coalesced run (or, under Skip, deliberate
+                            // nothing) stands in for these instants, so they are accounted for.
+                            .SetProperty(x => x.Disposition, CronOccurrenceDisposition.Accounted),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+
+        // The fence above already wrote the full-recovery position, which is what WhenRunEstablished asks for. Only a
+        // resolution that differs from it — a saturated page confined to its examined prefix — needs a second write.
+        if (resolution.ReconciledThroughUtc != recoveredThroughUtc || resolution.NextDueUtc != nextDueUtc)
+        {
+            recoveredThroughUtc = resolution.ReconciledThroughUtc;
+            nextDueUtc = resolution.NextDueUtc;
+
+            await definitions
+                .Where(x => x.Id == cronJobId)
+                .ExecuteUpdateAsync(
+                    setter =>
+                        setter
+                            .SetProperty(x => x.ReconciledThroughUtc, recoveredThroughUtc)
+                            .SetProperty(x => x.NextDueUtc, nextDueUtc),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+
+        await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+
+        return new CronRecoveryResult<TCronJob>
+        {
+            CoalescedRun = coalescedRun,
+            SkippedOccurrenceCount = skippedCount,
+            ReconciledThroughUtc = recoveredThroughUtc,
+            NextDueUtc = nextDueUtc,
+        };
+    }
+
+    public async Task<CronDispatchCandidates?> GetEarliestCronDispatchCandidatesAsync(
+        int limit,
+        CronDispatchCandidateCursor? after = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var selectable = dbContext
+            .Set<TCronJob>()
+            .AsNoTracking()
+            .Where(x => !x.IsPaused && x.FingerprintRetryAfterUtc == null);
+
+        if (after is { } cursor)
+        {
+            var cursorNextDueUtc = cursor.NextDueUtc;
+            var cursorId = cursor.CronJobId;
+
+            // Seeks on the SAME (NextDueUtc, Id) ordering the scan is sorted by, so a resumed read continues exactly
+            // where the previous one stopped and the range scan is still indexed. Applied here — BEFORE Take — is the
+            // whole point: filtering the truncated page instead would let a page of definitions the caller cannot use
+            // hide every healthy definition behind it, forever (#830). Guid ordering is the database's, matching the
+            // ORDER BY, so the two agree even where that ordering differs from the CLR's.
+            selectable = selectable.Where(x =>
+                x.NextDueUtc > cursorNextDueUtc || (x.NextDueUtc == cursorNextDueUtc && x.Id.CompareTo(cursorId) > 0)
+            );
+        }
+
+        // One indexed range scan over (IsPaused, NextDueUtc). The store instant rides along in the same statement, so
+        // the caller's due-ness comparison is made against the server's clock rather than this node's, with no extra
+        // round trip. Uncached by construction — the schedule position moves on every advance.
+        var rows = await selectable
+            .OrderBy(x => x.NextDueUtc)
+            .ThenBy(x => x.Id)
+            .Take(limit)
+            .Select(x => new
+            {
+                x.Id,
+                x.Function,
+                x.Expression,
+                x.TimeZoneId,
+                x.ScheduleRevision,
+                x.ReconciledThroughUtc,
+                x.NextDueUtc,
+                x.Retries,
+                x.RetryIntervals,
+                x.OnNodeDeath,
+                x.MissedRunGraceSeconds,
+                x.OnMissedRun,
+                x.EvaluationFingerprint,
+                StoreUtcNow = DateTime.UtcNow,
+            })
+            .ToArrayAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (rows.Length == 0)
+        {
+            return null;
+        }
+
+        return new CronDispatchCandidates
+        {
+            StoreUtcNow = rows[0].StoreUtcNow,
+            Candidates =
+            [
+                .. rows.Select(x => new CronDispatchCandidate
+                {
+                    CronJobId = x.Id,
+                    FunctionName = x.Function,
+                    Expression = x.Expression,
+                    TimeZoneId = x.TimeZoneId,
+                    ScheduleRevision = x.ScheduleRevision,
+                    ReconciledThroughUtc = x.ReconciledThroughUtc,
+                    NextDueUtc = x.NextDueUtc,
+                    Retries = x.Retries,
+                    RetryIntervals = x.RetryIntervals,
+                    OnNodeDeath = x.OnNodeDeath,
+                    MissedRunGraceSeconds = x.MissedRunGraceSeconds,
+                    OnMissedRun = x.OnMissedRun,
+                    EvaluationFingerprint = x.EvaluationFingerprint,
+                }),
+            ],
+        };
+    }
+
+    public async Task<CronScheduleAdvanceResult?> AdvanceCronScheduleAsync(
+        CronScheduleAdvance advance,
+        CancellationToken cancellationToken = default
+    )
+    {
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var definitions = dbContext.Set<TCronJob>();
+
+        var fenced = definitions.WhereScheduleAdvanceFenceHolds(
+            advance.CronJobId,
+            advance.ObservedReconciledThroughUtc,
+            advance.ExpectedScheduleRevision
+        );
+
+        if (advance.RequireProjectionDue)
+        {
+            fenced = fenced.WhereProjectionIsDueUsingDatabaseClock();
+        }
+
+        // AUTOCOMMIT BY CONSTRUCTION — do not wrap this in an explicit transaction. The due-ness arm of the fence and
+        // the store instant returned below are both server-clock reads, and PostgreSQL's now() is TRANSACTION-START
+        // time: inside a transaction the comparison and the returned instant would both be stale by the transaction's
+        // age, so a definition would look due (or not) as of when the transaction opened rather than now. See the
+        // class-level lease-clock note above and docs/solutions/design-patterns/temporal-authority-standard.md.
+        //
+        // A single UPDATE needs no transaction to be atomic, and the watermark equality in the fence is a value CAS —
+        // so a losing racer matches zero rows, returns null, and leaves nothing to roll back. Atomicity with the
+        // occurrence work that accompanies an advance is provided by self-healing rather than by this statement: a
+        // crash in between leaves a watermark with no occurrence, and the next wake re-derives the projection from the
+        // persisted watermark and materializes it, idempotently against the filtered uniqueness index.
+        //
+        // The local copies exist so the ExecuteUpdate expression trees capture plain DateTime values; capturing
+        // `advance` would put a property access on the record inside the tree for EF to translate.
+        var reconciledThroughUtc = advance.ReconciledThroughUtc;
+        var nextDueUtc = advance.NextDueUtc;
+        var fingerprint = advance.EvaluationFingerprint;
+
+        var affected = await fenced
+            .ExecuteUpdateAsync(
+                setter =>
+                    setter
+                        .SetProperty(x => x.ReconciledThroughUtc, reconciledThroughUtc)
+                        .SetProperty(x => x.NextDueUtc, nextDueUtc)
+                        // Null leaves the persisted value alone, so an ordinary dispatch advance does not have to know
+                        // or restate the fingerprint just to move the watermark.
+                        .SetProperty(x => x.EvaluationFingerprint, x => fingerprint ?? x.EvaluationFingerprint)
+                        .SetProperty(
+                            x => x.FingerprintFailureCount,
+                            x => fingerprint == null ? x.FingerprintFailureCount : 0
+                        )
+                        .SetProperty(
+                            x => x.FingerprintRetryAfterUtc,
+                            x => fingerprint == null ? x.FingerprintRetryAfterUtc : null
+                        ),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (affected == 0)
+        {
+            return null;
+        }
+
+        // Read the committed values back instead of echoing the request (KTD4), so the caller sees exactly what the
+        // store decided: both providers truncate to their column precision. DateTime.UtcNow in this projection is
+        // translated to server time, which is how the store's clock reaches the caller without a scalar clock query
+        // and without hijacking UpdatedAt — that column is observational time and stays on the injected TimeProvider.
+        var committed = await definitions
+            .AsNoTracking()
+            .Where(x => x.Id == advance.CronJobId)
+            .Select(x => new
+            {
+                x.ReconciledThroughUtc,
+                x.NextDueUtc,
+                StoreUtcNow = DateTime.UtcNow,
+            })
+            .SingleOrDefaultAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        // The definition can be deleted between the advance and this read-back. That is the same "this advance no
+        // longer applies" outcome a lost fence produces, so report it the same way rather than throwing out of the
+        // scheduler's poll.
+        if (committed is null)
+        {
+            return null;
+        }
+
+        // Deliberately NOT invalidating the cron-expressions cache: its projection
+        // (MappingExtensions.ForCronJobExpressions) carries no schedule-position field, so it cannot serve a stale
+        // watermark, and dropping the entry on every advance would evict it on every scheduler tick — the opposite of
+        // why it exists. Any future field added to that projection must revisit this.
+        return new CronScheduleAdvanceResult
+        {
+            ReconciledThroughUtc = committed.ReconciledThroughUtc,
+            NextDueUtc = committed.NextDueUtc,
+            StoreUtcNow = committed.StoreUtcNow,
+        };
+    }
+
+    public async Task<CronScheduleMaterializationResult> MaterializeCronScheduleOccurrenceAsync(
+        CronScheduleMaterialization materialization,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var advance = materialization.Advance;
+
+        Argument.IsTrue(
+            materialization.ExecutionTimeUtc == advance.ReconciledThroughUtc,
+            "The occurrence instant must equal the schedule position's reconciled-through instant.",
+            nameof(materialization)
+        );
+
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var definitions = dbContext.Set<TCronJob>();
+
+        var executionTimeUtc = materialization.ExecutionTimeUtc;
+        // Authorize due-ness in autocommit before opening the atomic write transaction. PostgreSQL translates
+        // DateTime.UtcNow to now(), whose value is frozen at transaction start; evaluating it here gives the current
+        // statement clock and avoids a row-lock wait making a newly due projection look future. Time is monotonic, and
+        // the transaction below repeats every position/revision/projection fence, so an authorized projection cannot
+        // become "not due" while a competitor can only turn the later write into LostFence.
+        var eligibility = await definitions
+            .AsNoTracking()
+            .WhereScheduleAdvanceFenceHolds(
+                advance.CronJobId,
+                advance.ObservedReconciledThroughUtc,
+                advance.ExpectedScheduleRevision
+            )
+            .Where(x => x.NextDueUtc == executionTimeUtc)
+            .Select(x => new { IsDue = x.NextDueUtc <= DateTime.UtcNow, StoreUtcNow = DateTime.UtcNow })
+            .SingleOrDefaultAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (eligibility is null)
+        {
+            return new CronScheduleMaterializationResult { Outcome = CronScheduleMaterializationOutcome.LostFence };
+        }
+
+        if (!eligibility.IsDue)
+        {
+            return new CronScheduleMaterializationResult { Outcome = CronScheduleMaterializationOutcome.NotDue };
+        }
+
+        await using var transaction = await dbContext
+            .Database.BeginTransactionAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        // The fenced UPDATE is deliberately first: its row lock is held through commit and is the per-definition
+        // mutex for every conforming materializer. Read committed therefore gives one winner without PostgreSQL's
+        // expected serialization aborts, while occurrence arbitration and the position remain one transaction. The
+        // due decision above is safe to omit here because it was already true and the repeated exact-position fence
+        // rejects every intervening definition transition.
+
+        var fenced = definitions.WhereScheduleAdvanceFenceHolds(
+            advance.CronJobId,
+            advance.ObservedReconciledThroughUtc,
+            advance.ExpectedScheduleRevision
+        );
+        fenced = fenced.Where(x => x.NextDueUtc == executionTimeUtc);
+
+        var reconciledThroughUtc = advance.ReconciledThroughUtc;
+        var nextDueUtc = advance.NextDueUtc;
+        var affected = await fenced
+            .ExecuteUpdateAsync(
+                setter =>
+                    setter
+                        .SetProperty(x => x.ReconciledThroughUtc, reconciledThroughUtc)
+                        .SetProperty(x => x.NextDueUtc, nextDueUtc),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (affected == 0)
+        {
+            return new CronScheduleMaterializationResult { Outcome = CronScheduleMaterializationOutcome.LostFence };
+        }
+
+        var committedDefinition = await definitions
+            .AsNoTracking()
+            .Where(x => x.Id == advance.CronJobId)
+            .Select(x => new
+            {
+                x.ReconciledThroughUtc,
+                x.NextDueUtc,
+                x.OnNodeDeath,
+            })
+            .SingleAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var occurrences = dbContext.Set<CronJobOccurrenceEntity<TCronJob>>();
+
+        // KTD1c: every row at the instant, projected through the SHARED accounting selector that ApplyCronRecoveryAsync
+        // also uses, so the two paths cannot reach opposite verdicts about one row. All rows rather than the first,
+        // because accounting is an aggregate: several rows may share an instant (the filtered unique index constrains
+        // only the live ones), and any single accounting row takes it. The raw status is never materialized, so a
+        // value written by a newer binary fails closed instead of throwing.
+        var rowsAtInstant = await occurrences
+            .AsNoTracking()
+            .Where(x => x.CronJobId == advance.CronJobId && x.ExecutionTime == materialization.ExecutionTimeUtc)
+            .Select(CronOccurrenceAccounting.InstantViewSelector<TCronJob>())
+            .ToArrayAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        // R3a: live-first, THEN CreatedAt/Id. Ordering by CreatedAt alone lets an older terminal row mask a live one
+        // sharing the instant and report the wrong occurrence identity to the dispatcher.
+        var existing = rowsAtInstant
+            .OrderBy(CronOccurrenceAccounting.LiveFirstRank)
+            .ThenBy(x => x.CreatedAt)
+            .ThenBy(x => x.Id)
+            .FirstOrDefault();
+
+        Guid occurrenceId;
+        DateTimeOffset occurrenceCreatedAt;
+        CronScheduleMaterializationOutcome outcome;
+
+        if (!CronOccurrenceAccounting.IsInstantAccountedFor(rowsAtInstant))
+        {
+            // Nothing here accounts for the instant — either no row at all, or only rows a seeding migration retired
+            // without a replacement. Both owe the fire, so both materialize.
+            var now = TimeProvider.GetUtcNow();
+            var created = new CronJobOccurrenceEntity<TCronJob>
+            {
+                Id = GuidGenerator.Create(),
+                CronJobId = advance.CronJobId,
+                ExecutionTime = materialization.ExecutionTimeUtc,
+                Status = JobStatus.Idle,
+                OwnerId = null,
+                LockedUntil = null,
+                OnNodeDeath = committedDefinition.OnNodeDeath,
+                CreatedAt = now,
+                UpdatedAt = now,
+            };
+
+            await occurrences.AddAsync(created, cancellationToken).ConfigureAwait(false);
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            occurrenceId = created.Id;
+            occurrenceCreatedAt = created.CreatedAt;
+            outcome = CronScheduleMaterializationOutcome.OccurrenceCreated;
+        }
+        else
+        {
+            occurrenceId = existing!.Id;
+            occurrenceCreatedAt = existing.CreatedAt;
+            outcome = existing.IsLive
+                ? CronScheduleMaterializationOutcome.OccurrenceExists
+                : CronScheduleMaterializationOutcome.OccurrenceAlreadyTerminal;
+        }
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+        return new CronScheduleMaterializationResult
+        {
+            Outcome = outcome,
+            SchedulePosition = new CronScheduleAdvanceResult
+            {
+                ReconciledThroughUtc = committedDefinition.ReconciledThroughUtc,
+                NextDueUtc = committedDefinition.NextDueUtc,
+                StoreUtcNow = eligibility.StoreUtcNow,
+            },
+            OccurrenceId = occurrenceId,
+            OccurrenceCreatedAt = occurrenceCreatedAt,
+            OnNodeDeath = committedDefinition.OnNodeDeath,
+        };
     }
     #endregion
 
@@ -1490,6 +2351,10 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.Status, JobStatus.Skipped)
                         .SetProperty(x => x.LockedUntil, _ => null)
                         .SetProperty(x => x.SkippedReason, "Node is not alive!")
+                        // KTD1b: the occurrence never executed, but re-running it is the reclaim/recovery path's
+                        // job. Materializing a fresh row at the same instant would race that path, so the dead
+                        // owner's row still accounts for its instant.
+                        .SetProperty(x => x.Disposition, CronOccurrenceDisposition.Accounted)
                         .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
                         .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
                 CancellationToken.None
@@ -1601,6 +2466,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.Status, JobStatus.Skipped)
                         .SetProperty(x => x.LockedUntil, _ => null)
                         .SetProperty(x => x.SkippedReason, "Lease lapsed while running!")
+                        // An ordinary retirement: the instant is spent and nothing owes it a replacement.
+                        .SetProperty(x => x.Disposition, CronOccurrenceDisposition.Accounted)
                         .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
                         .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
                 CancellationToken.None
@@ -1682,7 +2549,11 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .Set<CronJobOccurrenceEntity<TCronJob>>()
             .AsNoTracking()
             .Include(x => x.CronJob)
-            .Where(x => ((IEnumerable<Guid>)ids).Contains(x.CronJobId))
+            // An empty id set searches every definition, per the interface contract and the in-memory provider. The
+            // scheduler relies on that: it no longer enumerates all definitions to build this filter, so passing the
+            // full id set would reintroduce exactly the load-everything read the projection path removed. The
+            // remaining predicates (window, pause, acquirability) plus OrderBy/FirstOrDefault already bound the scan.
+            .Where(x => ids.Length == 0 || ((IEnumerable<Guid>)ids).Contains(x.CronJobId))
             .Where(x => !x.CronJob.IsPaused)
             .Where(x => x.ExecutionTime >= mainSchedulerThreshold) // Only items within the 1-second main scheduler window
             .WhereCanAcquireUsingDatabaseClock(owner)

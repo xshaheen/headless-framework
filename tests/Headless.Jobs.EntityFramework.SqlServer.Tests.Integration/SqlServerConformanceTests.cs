@@ -170,6 +170,12 @@ public sealed class SqlServerConformanceTests(SqlServerJobsCoordinationFixture f
     }
 
     [Fact]
+    public override Task should_persist_the_store_anchor_used_for_resume_and_schedule_edit_under_node_skew()
+    {
+        return base.should_persist_the_store_anchor_used_for_resume_and_schedule_edit_under_node_skew();
+    }
+
+    [Fact]
     public override Task should_preserve_metadata_work_and_replace_pending_work_when_cron_schedule_changes()
     {
         return base.should_preserve_metadata_work_and_replace_pending_work_when_cron_schedule_changes();
@@ -185,6 +191,18 @@ public sealed class SqlServerConformanceTests(SqlServerJobsCoordinationFixture f
     public override Task should_retire_pending_seed_work_when_code_defined_expression_changes()
     {
         return base.should_retire_pending_seed_work_when_code_defined_expression_changes();
+    }
+
+    [Fact]
+    public override Task concurrent_seeders_accept_only_the_verified_deterministic_id_winner()
+    {
+        return base.concurrent_seeders_accept_only_the_verified_deterministic_id_winner();
+    }
+
+    [Fact]
+    public override Task seed_primary_key_conflict_rethrows_when_the_winner_is_not_the_intended_function()
+    {
+        return base.seed_primary_key_conflict_rethrows_when_the_winner_is_not_the_intended_function();
     }
 }
 
@@ -254,9 +272,9 @@ public sealed class SqlServerClaimConformanceTests(SqlServerJobsCoordinationFixt
     }
 
     [Fact]
-    public override Task a_terminal_occurrence_does_not_block_a_new_occurrence_at_the_same_execution_time()
+    public override Task a_migration_retired_occurrence_re_fires_while_an_edit_replaced_one_does_not()
     {
-        return base.a_terminal_occurrence_does_not_block_a_new_occurrence_at_the_same_execution_time();
+        return base.a_migration_retired_occurrence_re_fires_while_an_edit_replaced_one_does_not();
     }
 
     [Fact]

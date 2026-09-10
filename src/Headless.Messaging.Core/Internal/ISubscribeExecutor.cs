@@ -41,6 +41,14 @@ internal interface ISubscribeExecutor
         ConsumerExecutorDescriptor? descriptor = null,
         CancellationToken cancellationToken = default
     );
+
+    Task<OperateResult> ExecuteRetryAsync(
+        MediumMessage message,
+        IServiceProvider dispatchServices,
+        RetryExecutionState executionState,
+        ConsumerExecutorDescriptor? descriptor = null,
+        CancellationToken cancellationToken = default
+    );
 }
 
 internal sealed class SubscribeExecutor(
@@ -60,11 +68,33 @@ internal sealed class SubscribeExecutor(
     private readonly RetryPolicyOptions _retryPolicy = options.Value.RetryPolicy;
     private readonly MessagingRetryPipeline _retryPipeline = new(options.Value.RetryPolicy, timeProvider, logger);
 
-    public async Task<OperateResult> ExecuteAsync(
+    public Task<OperateResult> ExecuteAsync(
         MediumMessage message,
         IServiceProvider dispatchServices,
         ConsumerExecutorDescriptor? descriptor = null,
         CancellationToken cancellationToken = default
+    )
+    {
+        return _ExecuteAsync(message, dispatchServices, executionState: null, descriptor, cancellationToken);
+    }
+
+    public Task<OperateResult> ExecuteRetryAsync(
+        MediumMessage message,
+        IServiceProvider dispatchServices,
+        RetryExecutionState executionState,
+        ConsumerExecutorDescriptor? descriptor = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return _ExecuteAsync(message, dispatchServices, executionState, descriptor, cancellationToken);
+    }
+
+    private async Task<OperateResult> _ExecuteAsync(
+        MediumMessage message,
+        IServiceProvider dispatchServices,
+        RetryExecutionState? executionState,
+        ConsumerExecutorDescriptor? descriptor,
+        CancellationToken cancellationToken
     )
     {
         Argument.IsNotNull(dispatchServices);
@@ -98,6 +128,7 @@ internal sealed class SubscribeExecutor(
                         exception,
                         dispatchServices,
                         decision: MessagingRetryDecision.Stop,
+                        executionState: executionState,
                         cancellationToken: cancellationToken
                     )
                     .ConfigureAwait(false);
@@ -110,11 +141,20 @@ internal sealed class SubscribeExecutor(
 
         return await _retryPipeline
             .ExecuteAsync(
-                (_, ct) => _ExecuteWithoutRetryAsync(message, descriptor, ct),
+                (_, ct) => _ExecuteWithoutRetryAsync(message, descriptor, executionState, ct),
                 (inlineRetries, exception, delay, strategyFailed, ct) =>
-                    _HandleRetryAsync(message, exception, dispatchServices, inlineRetries, delay, strategyFailed, ct),
+                    _HandleRetryAsync(
+                        message,
+                        exception,
+                        dispatchServices,
+                        inlineRetries,
+                        delay,
+                        strategyFailed,
+                        executionState,
+                        ct
+                    ),
                 (inlineRetries, exception, ct) =>
-                    _HandleNonRetryableAsync(message, exception, dispatchServices, inlineRetries, ct),
+                    _HandleNonRetryableAsync(message, exception, dispatchServices, inlineRetries, executionState, ct),
                 message.StorageId,
                 cancellationToken
             )
@@ -124,6 +164,7 @@ internal sealed class SubscribeExecutor(
     private async Task<MessagingRetryAttempt> _ExecuteWithoutRetryAsync(
         MediumMessage message,
         ConsumerExecutorDescriptor descriptor,
+        RetryExecutionState? executionState,
         CancellationToken cancellationToken
     )
     {
@@ -176,7 +217,7 @@ internal sealed class SubscribeExecutor(
 
             sp.Stop();
 
-            await _SetSuccessfulState(message).ConfigureAwait(false);
+            await _SetSuccessfulState(message, executionState).ConfigureAwait(false);
 
             MessageEventCounterSource.Log.WriteInvokeTimeMetrics(sp.Elapsed.TotalMilliseconds);
             if (logger.IsEnabled(LogLevel.Information))
@@ -206,7 +247,7 @@ internal sealed class SubscribeExecutor(
         }
     }
 
-    private async ValueTask _SetSuccessfulState(MediumMessage message)
+    private async ValueTask _SetSuccessfulState(MediumMessage message, RetryExecutionState? executionState)
     {
         // R8 — the cancellation token parameter is unused since F30 switched the storage write
         // to CancellationToken.None below. The method is private; the parameter is removed
@@ -217,6 +258,7 @@ internal sealed class SubscribeExecutor(
         // the row is already terminal (typically Failed/NULL after a prior exhausted attempt),
         // surface the asymmetry for operators. Use CancellationToken.None so the must-complete
         // success-write semantics align with the publish-path's MessageSender._SetSuccessfulState.
+        DateTimeOffset? lockedUntil = null;
         var updated = await dataStorage
             .ChangeReceiveRetryStateAsync(
                 message,
@@ -226,12 +268,13 @@ internal sealed class SubscribeExecutor(
                 // row was stored. Preserving here would drop that stamp from the persisted envelope.
                 MessageContentWrite.Refresh,
                 nextRetryAt: null,
-                lockedUntil: null,
+                lockedUntil,
                 originalRetries: message.Retries,
                 originalInlineAttempts: message.InlineAttempts,
                 cancellationToken: CancellationToken.None
             )
             .ConfigureAwait(false);
+        executionState?.RecordLeaseTransition(updated, lockedUntil);
 
         if (!updated)
         {
@@ -252,6 +295,7 @@ internal sealed class SubscribeExecutor(
         int _,
         TimeSpan delay,
         bool strategyFailed,
+        RetryExecutionState? executionState,
         CancellationToken cancellationToken
     )
     {
@@ -267,6 +311,7 @@ internal sealed class SubscribeExecutor(
                 dispatchServices,
                 inlineRetries,
                 decision,
+                executionState,
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -278,6 +323,7 @@ internal sealed class SubscribeExecutor(
         Exception exception,
         IServiceProvider dispatchServices,
         int _,
+        RetryExecutionState? executionState,
         CancellationToken cancellationToken
     )
     {
@@ -288,6 +334,7 @@ internal sealed class SubscribeExecutor(
                 dispatchServices,
                 inlineRetries,
                 MessagingRetryDecision.Stop,
+                executionState,
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -299,6 +346,7 @@ internal sealed class SubscribeExecutor(
         IServiceProvider dispatchServices,
         int inlineRetries = 0,
         MessagingRetryDecision decision = default,
+        RetryExecutionState? executionState = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -352,6 +400,7 @@ internal sealed class SubscribeExecutor(
                     state,
                     originalRetries,
                     originalInlineAttempts,
+                    executionState,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -370,6 +419,7 @@ internal sealed class SubscribeExecutor(
                 state,
                 originalRetries: message.Retries,
                 originalInlineAttempts,
+                executionState,
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -383,6 +433,7 @@ internal sealed class SubscribeExecutor(
         RetryNextState state,
         int originalRetries,
         int originalInlineAttempts,
+        RetryExecutionState? executionState,
         CancellationToken cancellationToken
     )
     {
@@ -421,6 +472,7 @@ internal sealed class SubscribeExecutor(
                 CancellationToken.None
             )
             .ConfigureAwait(false);
+        executionState?.RecordLeaseTransition(affected, lockedUntil);
 
         if (affected && decision.Outcome == MessagingRetryDecision.Kind.Exhausted)
         {

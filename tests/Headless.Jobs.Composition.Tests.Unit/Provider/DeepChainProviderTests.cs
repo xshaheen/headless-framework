@@ -81,7 +81,7 @@ public sealed class DeepChainProviderTests : TestBase
         var (provider, _) = _Create();
         var chain = _LinearChain(depth: 5);
         await provider.AddTimeJobsAsync(chain, AbortToken);
-        var roots = await provider.GetEarliestTimeJobsAsync(AbortToken);
+        var roots = (await provider.GetEarliestTimeJobsAsync(AbortToken)).Jobs;
 
         TimeJobEntity? claimed = null;
         await foreach (var job in provider.QueueTimeJobsAsync(roots, AbortToken))
@@ -145,7 +145,7 @@ public sealed class DeepChainProviderTests : TestBase
         var (provider, _) = _Create(maxChainDepth: 2);
         var chain = _LinearChain(depth: 4);
         await provider.AddTimeJobsAsync(chain, AbortToken);
-        var roots = await provider.GetEarliestTimeJobsAsync(AbortToken);
+        var roots = (await provider.GetEarliestTimeJobsAsync(AbortToken)).Jobs;
 
         TimeJobEntity? claimed = null;
         await foreach (var job in provider.QueueTimeJobsAsync(roots, AbortToken))
@@ -203,7 +203,7 @@ public sealed class DeepChainProviderTests : TestBase
             ParentId = c2.Id,
         };
         await provider.AddTimeJobsAsync([root, c1, c2, c3], AbortToken);
-        var roots = await provider.GetEarliestTimeJobsAsync(AbortToken);
+        var roots = (await provider.GetEarliestTimeJobsAsync(AbortToken)).Jobs;
 
         TimeJobEntity? claimed = null;
         await foreach (var job in provider.QueueTimeJobsAsync(roots, AbortToken))

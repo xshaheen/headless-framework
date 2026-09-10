@@ -25,6 +25,7 @@ public sealed class InternalJobsManagerTests : TestBase
         var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();
         var sender = Substitute.For<IJobsNotificationHubSender>();
         var now = new DateTimeOffset(2026, 7, 17, 10, 30, 0, TimeSpan.Zero);
+        var scheduleAnchorUtc = now.UtcDateTime.AddHours(2);
         var timeProvider = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(now);
         var occurrenceId = Guid.Parse("01981a13-d9c0-7000-8000-000000000001");
         var guidGenerator = Substitute.For<IGuidGenerator>();
@@ -44,7 +45,7 @@ public sealed class InternalJobsManagerTests : TestBase
         {
             Id = Guid.NewGuid(),
             Function = "fn",
-            Expression = "0 31 10 * * *",
+            Expression = "0 * * * * *",
             IsPaused = true,
             ScheduleRevision = 4,
         };
@@ -54,15 +55,15 @@ public sealed class InternalJobsManagerTests : TestBase
             .ResumeCronJobAsync(
                 definition.Id,
                 definition.ScheduleRevision,
-                Arg.Any<CronJobOccurrenceEntity<FakeCronJob>>(),
+                Arg.Any<Func<DateTime, CronJobOccurrenceEntity<FakeCronJob>?>>(),
                 now,
                 AbortToken
             )
             .Returns(call =>
             {
-                var occurrence = call.Arg<CronJobOccurrenceEntity<FakeCronJob>>();
+                var occurrence = call.Arg<Func<DateTime, CronJobOccurrenceEntity<FakeCronJob>?>>()(scheduleAnchorUtc)!;
                 occurrence.Id.Should().Be(occurrenceId);
-                occurrence.ExecutionTime.Should().Be(now.UtcDateTime.AddMinutes(1));
+                occurrence.ExecutionTime.Should().Be(scheduleAnchorUtc.AddMinutes(1));
                 occurrence.Status.Should().Be(JobStatus.Idle);
                 definition.IsPaused = false;
                 return definition;
@@ -111,13 +112,15 @@ public sealed class InternalJobsManagerTests : TestBase
             .ResumeCronJobAsync(
                 definition.Id,
                 definition.ScheduleRevision,
-                Arg.Any<CronJobOccurrenceEntity<FakeCronJob>>(),
+                Arg.Any<Func<DateTime, CronJobOccurrenceEntity<FakeCronJob>?>>(),
                 resumeTime,
                 AbortToken
             )
             .Returns(call =>
             {
-                var occurrence = call.Arg<CronJobOccurrenceEntity<FakeCronJob>>();
+                var occurrence = call.Arg<Func<DateTime, CronJobOccurrenceEntity<FakeCronJob>?>>()(
+                    resumeTime.UtcDateTime
+                )!;
                 occurrence.ExecutionTime.Should().Be(expectedOccurrence);
                 occurrence.ExecutionTime.Kind.Should().Be(DateTimeKind.Utc);
                 return definition;
@@ -360,10 +363,12 @@ public sealed class InternalJobsManagerTests : TestBase
         );
 
         // Nothing due on either side, so each poll returns right after the safety net and the call count is the only
-        // thing under test. Without this stub the auto-substituted occurrence carries a null CronJob and NREs.
+        // thing under test. Without these stubs the auto-substituted occurrence carries a null CronJob and NREs, and
+        // the time-job peek hands back a null result instead of the empty one its contract requires.
         provider
             .GetEarliestAvailableCronOccurrenceAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())
             .Returns((CronJobOccurrenceEntity<FakeCronJob>)null!);
+        provider.GetEarliestTimeJobsAsync(Arg.Any<CancellationToken>()).Returns(EarliestTimeJobs.None);
 
         // First poll runs it: a host that starts with an already-stranded child must not wait out an interval.
         await manager.GetNextJobs(AbortToken);
@@ -477,7 +482,9 @@ public sealed class InternalJobsManagerTests : TestBase
         };
 
         // Route the cron side to empty so only the time-job pickup flows through GetNextJobs.
-        provider.GetEarliestTimeJobsAsync(Arg.Any<CancellationToken>()).Returns([root]);
+        provider
+            .GetEarliestTimeJobsAsync(Arg.Any<CancellationToken>())
+            .Returns(new EarliestTimeJobs { StoreUtcNow = DateTime.UtcNow, Jobs = [root] });
         provider.GetAllCronJobExpressionsAsync(Arg.Any<CancellationToken>()).Returns([]);
         provider
             .GetEarliestAvailableCronOccurrenceAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())
@@ -650,7 +657,9 @@ public sealed class InternalJobsManagerTests : TestBase
             ExecutionTime = DateTime.UtcNow.AddSeconds(30),
         };
 
-        provider.GetEarliestTimeJobsAsync(Arg.Any<CancellationToken>()).Returns([first, second]);
+        provider
+            .GetEarliestTimeJobsAsync(Arg.Any<CancellationToken>())
+            .Returns(new EarliestTimeJobs { StoreUtcNow = DateTime.UtcNow, Jobs = [first, second] });
         provider.GetAllCronJobExpressionsAsync(Arg.Any<CancellationToken>()).Returns([]);
         provider
             .GetEarliestAvailableCronOccurrenceAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())
@@ -696,7 +705,9 @@ public sealed class InternalJobsManagerTests : TestBase
             ExecutionTime = DateTime.UtcNow.AddSeconds(30),
         };
 
-        provider.GetEarliestTimeJobsAsync(Arg.Any<CancellationToken>()).Returns([claimed]);
+        provider
+            .GetEarliestTimeJobsAsync(Arg.Any<CancellationToken>())
+            .Returns(new EarliestTimeJobs { StoreUtcNow = DateTime.UtcNow, Jobs = [claimed] });
         provider.GetAllCronJobExpressionsAsync(Arg.Any<CancellationToken>()).Returns([]);
         provider
             .GetEarliestAvailableCronOccurrenceAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())
@@ -722,5 +733,45 @@ public sealed class InternalJobsManagerTests : TestBase
         await Task.Yield();
 
         throw new InvalidOperationException("claim batch failed");
+    }
+
+    [Fact]
+    public async Task run_timed_out_tickers_preserves_the_cron_recovery_stamp()
+    {
+        var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();
+        var sender = Substitute.For<IJobsNotificationHubSender>();
+        var manager = new InternalJobsManager<FakeTimeJob, FakeCronJob>(
+            provider,
+            TimeProvider.System,
+            sender,
+            new CronScheduleCache(TimeZoneInfo.Utc),
+            NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance,
+            JobsRequestSerializationOptions.Default,
+            Substitute.For<IGuidGenerator>(),
+            Substitute.For<IServiceProvider>(),
+            new SchedulerOptionsBuilder()
+        );
+        var earliestMissed = new DateTime(2026, 7, 26, 15, 0, 0, DateTimeKind.Utc);
+        var occurrence = new CronJobOccurrenceEntity<FakeCronJob>
+        {
+            Id = Guid.NewGuid(),
+            CronJobId = Guid.NewGuid(),
+            ExecutionTime = earliestMissed,
+            RecoveredFromUtc = earliestMissed,
+            CronJob = new FakeCronJob { Function = "reclaimed-recovery" },
+        };
+        provider
+            .QueueTimedOutTimeJobsAsync(Arg.Any<CancellationToken>())
+            .Returns(AsyncEnumerable.Empty<TimeJobEntity>());
+        provider
+            .QueueTimedOutCronJobOccurrencesAsync(Arg.Any<CancellationToken>())
+            .Returns(new[] { occurrence }.ToAsyncEnumerable());
+
+        var contexts = await manager.RunTimedOutTickers(AbortToken);
+
+        var context = contexts.Should().ContainSingle().Which;
+        context.JobId.Should().Be(occurrence.Id);
+        context.ExecutionTime.Should().Be(earliestMissed);
+        context.RecoveredFromUtc.Should().Be(earliestMissed);
     }
 }

@@ -21,6 +21,8 @@ HF016   | Headless.Jobs.SourceGenerator | Error | Method-level Jobs middleware i
 HF017   | Headless.Jobs.SourceGenerator | Error | Method-level Jobs middleware redundantly specifies Function
 HF018   | Headless.Jobs.SourceGenerator | Error | Assembly-level Function targets a function declared in the same assembly
 HF019   | Headless.Jobs.SourceGenerator | Error | Middleware type is inaccessible to generated registration code
+HF020   | Headless.Jobs.SourceGenerator | Error | Undefined missed-run policy on [JobFunction]
+HF021   | Headless.Jobs.SourceGenerator | Error | Non-positive missed-run grace on [JobFunction]
 
 ### Removed Rules
 

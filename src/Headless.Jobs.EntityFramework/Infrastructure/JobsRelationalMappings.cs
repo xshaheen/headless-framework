@@ -8,6 +8,9 @@ using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Headless.Jobs.Infrastructure;
 
+// Only the columns the native claim strategies actually name in raw SQL belong here. The schedule-position columns
+// are deliberately absent: the advance goes through EF's ExecuteUpdate, not this helper, and resolving a column here
+// costs an EF metadata lookup on every cron claim batch. Add one back when a native-SQL consumer needs it.
 internal sealed record CronDefinitionRelationalMapping(
     string Table,
     string Id,
@@ -61,9 +64,31 @@ internal sealed record CronOccurrenceRelationalMapping(
     string ElapsedTime,
     string RetryCount,
     string CreatedAt,
-    string UpdatedAt
+    string UpdatedAt,
+    string RecoveredFromUtc,
+    string Disposition
 )
 {
+    /// <summary>
+    /// The occupied-instant accounting rule (KTD1) as a SQL predicate over one occurrence row, in the SAME shape the
+    /// LINQ providers use via <see cref="CronOccurrenceAccounting.InstantViewSelector{TCronJob}" />: a row accounts
+    /// for its instant unless it is the one status/disposition pair that owes another fire. The status and
+    /// disposition literals are read off <see cref="CronOccurrenceAccounting" /> rather than spelled here, so the
+    /// natives cannot drift from the rule.
+    /// </summary>
+    /// <param name="statusParameter">Placeholder bound to the unaccounted status name.</param>
+    /// <param name="dispositionParameter">Placeholder bound to the unaccounted disposition name.</param>
+    public string AccountsForInstantPredicate(string statusParameter, string dispositionParameter)
+    {
+        return $"NOT ({Status} = {statusParameter} AND {Disposition} = {dispositionParameter})";
+    }
+
+    /// <summary>The status literal an unaccounted row carries, for binding to the accounting predicate.</summary>
+    public static string UnaccountedStatusValue => CronOccurrenceAccounting.UnaccountedStatus.ToString();
+
+    /// <summary>The disposition literal an unaccounted row carries, for binding to the accounting predicate.</summary>
+    public static string UnaccountedDispositionValue => CronOccurrenceAccounting.UnaccountedDisposition.ToString();
+
     public static CronOccurrenceRelationalMapping Create<TDbContext, TCronJob>(TDbContext dbContext)
         where TDbContext : DbContext
         where TCronJob : CronJobEntity
@@ -101,7 +126,11 @@ internal sealed record CronOccurrenceRelationalMapping(
             Column(nameof(CronJobOccurrenceEntity<>.ElapsedTime)),
             Column(nameof(CronJobOccurrenceEntity<>.RetryCount)),
             Column(nameof(CronJobOccurrenceEntity<>.CreatedAt)),
-            Column(nameof(CronJobOccurrenceEntity<>.UpdatedAt))
+            Column(nameof(CronJobOccurrenceEntity<>.UpdatedAt)),
+            // R23: the native claim RETURNs/OUTPUTs this so a claimed row carries its recovery stamp out of the store
+            // rather than trusting the caller to have supplied it.
+            Column(nameof(CronJobOccurrenceEntity<>.RecoveredFromUtc)),
+            Column(nameof(CronJobOccurrenceEntity<>.Disposition))
         );
     }
 }

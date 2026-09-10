@@ -14,7 +14,14 @@ internal static class AttributeValidator
     /// Validates all aspects of a JobFunction attribute and its usage.
     /// </summary>
     public static void ValidateJobFunctionAttribute(
-        (string? functionName, string? cronExpression, int taskPriority, int maxConcurrency) attributeValues,
+        (
+            string? functionName,
+            string? cronExpression,
+            int taskPriority,
+            int maxConcurrency,
+            int? onMissedRun,
+            int? missedRunGraceSeconds
+        ) attributeValues,
         MethodDeclarationSyntax methodDeclaration,
         string className,
         Location attributeLocation,
@@ -59,6 +66,28 @@ internal static class AttributeValidator
                     DiagnosticDescriptors.InvalidMaxConcurrency,
                     attributeLocation,
                     attributeValues.maxConcurrency
+                )
+            );
+        }
+
+        if (attributeValues.onMissedRun is not null and not 0 and not 1)
+        {
+            context.ReportDiagnostic(
+                Diagnostic.Create(
+                    DiagnosticDescriptors.InvalidMissedRunPolicy,
+                    attributeLocation,
+                    attributeValues.onMissedRun
+                )
+            );
+        }
+
+        if (attributeValues.missedRunGraceSeconds is <= 0)
+        {
+            context.ReportDiagnostic(
+                Diagnostic.Create(
+                    DiagnosticDescriptors.InvalidMissedRunGrace,
+                    attributeLocation,
+                    attributeValues.missedRunGraceSeconds
                 )
             );
         }

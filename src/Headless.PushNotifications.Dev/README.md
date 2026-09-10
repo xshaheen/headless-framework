@@ -11,7 +11,7 @@ Prevents real notifications from being sent during development or test runs. Use
 - Silent `IPushNotificationService` implementation (`NoopPushNotificationService`)
 - No network calls or external dependencies
 - Always returns `Success` responses with a generated GUID as the message id
-- Never validates input or throws (inert for any caller, including invalid tokens or empty titles)
+- Never validates input or throws (inert for any caller, including invalid client identifiers or empty titles)
 - Selectable as the default (`setup.UseNoop()`) or as a named instance (`setup.AddNamed("name", i => i.UseNoop())`)
 
 ## Installation

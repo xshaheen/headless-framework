@@ -65,6 +65,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>
                         RetryCount = occurrence.RetryCount,
                         RetryIntervals = occurrence.CronJob.RetryIntervals,
                         ExecutionTime = occurrence.ExecutionTime,
+                        RecoveredFromUtc = occurrence.RecoveredFromUtc,
                     }
                 );
 
@@ -124,6 +125,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>
                     RetryIntervals = timedOutCronJob.CronJob.RetryIntervals,
                     ParentId = timedOutCronJob.CronJobId,
                     ExecutionTime = timedOutCronJob.ExecutionTime,
+                    RecoveredFromUtc = timedOutCronJob.RecoveredFromUtc,
                 };
 
                 results.Add(functionContext);

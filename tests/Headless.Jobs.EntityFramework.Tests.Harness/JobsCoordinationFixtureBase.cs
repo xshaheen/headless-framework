@@ -63,6 +63,13 @@ public interface IJobsCoordinationFixture
     string UtcNowSqlExpression { get; }
 
     /// <summary>
+    /// Provider SQL expression for the store's UTC instant shifted by <paramref name="seconds"/>, which may be
+    /// negative. Lets a seed express "already due" or "not yet due" against the STORE's clock rather than the test
+    /// process's, so a seeded position never starts a skew away from what the advance itself would compare against.
+    /// </summary>
+    string UtcNowOffsetSqlExpression(int seconds);
+
+    /// <summary>
     /// The server-clock function EF Core emits when it translates a bare <c>DateTime.UtcNow</c> inside an
     /// expression tree (Postgres: <c>now()</c>; SqlServer: <c>GETUTCDATE()</c>). This is NOT
     /// <see cref="UtcNowSqlExpression" />: that one is what the harness itself writes in seed SQL, this one is
@@ -279,11 +286,18 @@ public static class JobsCoordinationFixtureExtensions
         this IJobsCoordinationFixture fixture,
         string nodeId,
         Action<DbContextOptionsBuilder>? configureOptions = null,
-        bool includeMessaging = false
+        bool includeMessaging = false,
+        TimeProvider? timeProvider = null
     )
         where TDbContext : JobsDbContext<TimeJobEntity, CronJobEntity>
     {
-        return _BuildCoordinatedEnqueueHost<TDbContext>(fixture, nodeId, configureOptions, includeMessaging);
+        return _BuildCoordinatedEnqueueHost<TDbContext>(
+            fixture,
+            nodeId,
+            configureOptions,
+            includeMessaging,
+            timeProvider: timeProvider
+        );
     }
 
     /// <summary>
@@ -303,7 +317,8 @@ public static class JobsCoordinationFixtureExtensions
         Action<DbContextOptionsBuilder>? configureOptions = null,
         bool includeMessaging = false,
         JobsSideEffectsProbe? sideEffectsProbe = null,
-        bool enableTenantPropagation = false
+        bool enableTenantPropagation = false,
+        TimeProvider? timeProvider = null
     )
         where TDbContext : JobsDbContext<TimeJobEntity, CronJobEntity>
     {
@@ -357,6 +372,13 @@ public static class JobsCoordinationFixtureExtensions
         // AddCommitCoordination wins over the Jobs null-coordinator fallback (AddSingleton over TryAddSingleton),
         // so ICurrentCommitCoordinator resolves to the real scope stack that EnlistCommitCoordination pushes onto.
         fixture.ConfigureCommitCoordination(builder.Services);
+
+        // Same purpose as on BuildHost: a deliberately skewed node clock, so a write that is supposed to be anchored
+        // on the STORE's instant cannot pass by accidentally agreeing with this process's clock.
+        if (timeProvider is not null)
+        {
+            builder.Services.AddSingleton(timeProvider);
+        }
 
         if (enableTenantPropagation)
         {
@@ -526,12 +548,70 @@ public static class JobsCoordinationFixtureExtensions
     }
 
     /// <summary>Inserts a CronJob row with an explicit node-death policy (FK target for seeded occurrences).</summary>
+    /// <param name="isPaused">Whether the definition is seeded paused — the advance fence rejects a paused row.</param>
+    /// <param name="scheduleRevision">The definition version the advance fence must be given to succeed.</param>
+    /// <param name="reconciledThroughOffsetSeconds">
+    /// The schedule watermark, as an offset from the STORE's current instant (negative = in the past). Defaults to the
+    /// store's instant, matching the rule that every definition carries a position from the moment it is created —
+    /// never a zero watermark, which would read as "infinitely behind" and manufacture a backlog nothing ever missed.
+    /// </param>
+    /// <param name="nextDueOffsetSeconds">
+    /// The dispatch projection, as an offset from the store's instant. Defaults to one minute out, so a definition
+    /// seeded by an unrelated test is not incidentally due. Pass a negative value to seed an already-due definition.
+    /// </param>
+    /// <remarks>
+    /// The position, grace, and policy columns are non-nullable and the harness builds its schema from the EF model
+    /// (<c>CreateTablesAsync</c>) rather than from migrations — so unlike the migrated path there is no column default
+    /// to fall back on and this explicit column list must carry them. Grace and policy are seeded at the entity's own
+    /// CLR defaults so a seeded row matches what inserting a fresh entity would persist.
+    /// <para>
+    /// The position is expressed as an offset evaluated by the STORE rather than as a bound instant: that keeps the
+    /// seed on the same clock the advance compares against, and sidesteps binding a <c>Kind</c>-bearing instant to a
+    /// <c>timestamptz</c> column. Read the resulting values back with <see cref="ReadCronSchedulePositionAsync"/>.
+    /// </para>
+    /// </remarks>
     public static async Task SeedCronJobAsync(
         this IJobsCoordinationFixture fixture,
         Guid id,
         string function,
         string expression,
         NodeDeathPolicy onNodeDeath,
+        CancellationToken cancellationToken,
+        bool isPaused = false,
+        long scheduleRevision = 0L,
+        int reconciledThroughOffsetSeconds = 0,
+        int nextDueOffsetSeconds = 60
+    )
+    {
+        await using var connection = fixture.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+
+        command.CommandText =
+            $"INSERT INTO {fixture.QualifiedCronJobsTable} ({_CronInsertColumns}) "
+            + $"VALUES (@id, @function, @function, @expression, @timeZoneId, @isPaused, @scheduleRevision, 0, "
+            + $"{fixture.UtcNowSqlExpression}, {fixture.UtcNowSqlExpression}, @onNodeDeath, "
+            + $"{fixture.UtcNowOffsetSqlExpression(reconciledThroughOffsetSeconds)}, "
+            + $"{fixture.UtcNowOffsetSqlExpression(nextDueOffsetSeconds)}, "
+            + $"@missedRunGraceSeconds, @onMissedRun);";
+
+        AddParameter(command, "@id", id);
+        AddParameter(command, "@function", function);
+        AddParameter(command, "@expression", expression);
+        AddParameter(command, "@timeZoneId", DBNull.Value);
+        AddParameter(command, "@isPaused", isPaused);
+        AddParameter(command, "@scheduleRevision", scheduleRevision);
+        AddParameter(command, "@onNodeDeath", onNodeDeath.ToString());
+        AddParameter(command, "@missedRunGraceSeconds", 0);
+        AddParameter(command, "@onMissedRun", nameof(MissedRunPolicy.Coalesce));
+
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>Reads back a definition's persisted schedule position, bypassing the entity's internal setters.</summary>
+    public static async Task<(DateTime ReconciledThroughUtc, DateTime NextDueUtc)> ReadCronSchedulePositionAsync(
+        this IJobsCoordinationFixture fixture,
+        Guid cronJobId,
         CancellationToken cancellationToken
     )
     {
@@ -539,24 +619,42 @@ public static class JobsCoordinationFixtureExtensions
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText =
-            $"INSERT INTO {fixture.QualifiedCronJobsTable} ({_CronInsertColumns}) "
-            + $"VALUES (@id, @function, @function, @expression, @timeZoneId, @isPaused, @scheduleRevision, 0, {fixture.UtcNowSqlExpression}, {fixture.UtcNowSqlExpression}, @onNodeDeath);";
+            $"SELECT \"ReconciledThroughUtc\", \"NextDueUtc\" FROM {fixture.QualifiedCronJobsTable} WHERE \"Id\" = @id;";
+        AddParameter(command, "@id", cronJobId);
 
-        AddParameter(command, "@id", id);
-        AddParameter(command, "@function", function);
-        AddParameter(command, "@expression", expression);
-        AddParameter(command, "@timeZoneId", DBNull.Value);
-        AddParameter(command, "@isPaused", false);
-        AddParameter(command, "@scheduleRevision", 0L);
-        AddParameter(command, "@onNodeDeath", onNodeDeath.ToString());
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        (await reader.ReadAsync(cancellationToken)).Should().BeTrue("the seeded cron definition must exist");
 
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        return (
+            DateTime.SpecifyKind(reader.GetDateTime(0), DateTimeKind.Utc),
+            DateTime.SpecifyKind(reader.GetDateTime(1), DateTimeKind.Utc)
+        );
     }
 
     /// <summary>
     /// Inserts a CronJobOccurrence row with an exact status/owner/lease — bypasses the entity's internal setters.
     /// Requires a parent CronJob (FK <c>CronJobId</c>) to already exist (seed it via <see cref="SeedCronJobAsync" />).
     /// </summary>
+    /// <param name="skippedReason">
+    /// The retirement reason a <see cref="JobStatus.Skipped" /> row carries. Display text only: two producers write
+    /// the identical string "Cron definition updated" yet owe opposite accounting answers, which is why the rule
+    /// reads <paramref name="disposition" /> instead. Seeded so a row still LOOKS like the production one.
+    /// </param>
+    /// <param name="disposition">
+    /// The typed accounting disposition — the sole input to the occupied-instant rule. Defaults to
+    /// <see cref="CronOccurrenceDisposition.Accounted" />, matching every ordinary producer.
+    /// </param>
+    /// <param name="rawStatus">
+    /// Writes this string into the Status column verbatim instead of <paramref name="status" />'s enum name. The
+    /// only way to seed a value a newer binary could have written, which the rule must fail closed on rather than
+    /// throw over — an enum parameter cannot express it.
+    /// </param>
+    /// <param name="createdAtOffsetSeconds">
+    /// Stamps <c>CreatedAt</c>/<c>UpdatedAt</c> at the store clock shifted by this many seconds instead of at the
+    /// store clock itself. Required whenever a test depends on the RELATIVE creation order of rows sharing an
+    /// instant: <c>SYSUTCDATETIME()</c> can return the same value for two consecutive inserts, and the tie then falls
+    /// to a random <c>Id</c>, which makes the read a coin flip rather than an assertion.
+    /// </param>
     public static async Task SeedCronOccurrenceAsync(
         this IJobsCoordinationFixture fixture,
         Guid id,
@@ -566,28 +664,59 @@ public static class JobsCoordinationFixtureExtensions
         NodeDeathPolicy onNodeDeath,
         DateTime? lockedUntil,
         DateTime executionTime,
+        CancellationToken cancellationToken,
+        string? skippedReason = null,
+        CronOccurrenceDisposition disposition = CronOccurrenceDisposition.Accounted,
+        string? rawStatus = null,
+        int? createdAtOffsetSeconds = null
+    )
+    {
+        await using var connection = fixture.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        var createdAtSql = createdAtOffsetSeconds is { } offset
+            ? fixture.UtcNowOffsetSqlExpression(offset)
+            : fixture.UtcNowSqlExpression;
+        // ExecutionTime is an explicit parameter, not now(): the (CronJobId, ExecutionTime) unique index requires
+        // distinct execution times when several occurrences of the same cron are seeded together.
+        command.CommandText =
+            $"INSERT INTO {fixture.QualifiedCronJobOccurrencesTable} ({_CronOccurrenceInsertColumns}, "
+            + "\"SkippedReason\", \"Disposition\") "
+            + "VALUES (@id, @cronJobId, @status, @ownerId, @executionTime, "
+            + $"{createdAtSql}, {createdAtSql}, 0, 0, @onNodeDeath, @lockedUntil, "
+            + "@skippedReason, @disposition);";
+
+        AddParameter(command, "@id", id);
+        AddParameter(command, "@cronJobId", cronJobId);
+        AddParameter(command, "@status", rawStatus ?? ((JobStatus)status).ToString());
+        AddParameter(command, "@ownerId", (object?)ownerId ?? DBNull.Value);
+        AddParameter(command, "@executionTime", executionTime);
+        AddParameter(command, "@onNodeDeath", onNodeDeath.ToString());
+        AddParameter(command, "@lockedUntil", (object?)lockedUntil ?? DBNull.Value);
+        AddParameter(command, "@skippedReason", (object?)skippedReason ?? DBNull.Value);
+        AddParameter(command, "@disposition", disposition.ToString());
+
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>Reads back a CronJobOccurrence's raw status string and typed disposition for assertions.</summary>
+    public static async Task<(string Status, string Disposition)> ReadCronOccurrenceDispositionAsync(
+        this IJobsCoordinationFixture fixture,
+        Guid id,
         CancellationToken cancellationToken
     )
     {
         await using var connection = fixture.CreateConnection();
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        // ExecutionTime is an explicit parameter, not now(): the (CronJobId, ExecutionTime) unique index requires
-        // distinct execution times when several occurrences of the same cron are seeded together.
         command.CommandText =
-            $"INSERT INTO {fixture.QualifiedCronJobOccurrencesTable} ({_CronOccurrenceInsertColumns}) "
-            + "VALUES (@id, @cronJobId, @status, @ownerId, @executionTime, "
-            + $"{fixture.UtcNowSqlExpression}, {fixture.UtcNowSqlExpression}, 0, 0, @onNodeDeath, @lockedUntil);";
-
+            $"SELECT \"Status\", \"Disposition\" FROM {fixture.QualifiedCronJobOccurrencesTable} WHERE \"Id\" = @id;";
         AddParameter(command, "@id", id);
-        AddParameter(command, "@cronJobId", cronJobId);
-        AddParameter(command, "@status", ((JobStatus)status).ToString());
-        AddParameter(command, "@ownerId", (object?)ownerId ?? DBNull.Value);
-        AddParameter(command, "@executionTime", executionTime);
-        AddParameter(command, "@onNodeDeath", onNodeDeath.ToString());
-        AddParameter(command, "@lockedUntil", (object?)lockedUntil ?? DBNull.Value);
 
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        (await reader.ReadAsync(cancellationToken)).Should().BeTrue("the seeded cron occurrence must exist");
+
+        return (reader.GetString(0), reader.GetString(1));
     }
 
     /// <summary>Reads back a CronJobOccurrence's status + owner for assertions.</summary>
@@ -785,7 +914,8 @@ public static class JobsCoordinationFixtureExtensions
 
     private const string _CronInsertColumns =
         "\"Id\", \"Function\", \"Description\", \"Expression\", \"TimeZoneId\", \"IsPaused\", \"ScheduleRevision\", "
-        + "\"Retries\", \"CreatedAt\", \"UpdatedAt\", \"OnNodeDeath\"";
+        + "\"Retries\", \"CreatedAt\", \"UpdatedAt\", \"OnNodeDeath\", "
+        + "\"ReconciledThroughUtc\", \"NextDueUtc\", \"MissedRunGraceSeconds\", \"OnMissedRun\"";
 
     private const string _CronOccurrenceInsertColumns =
         "\"Id\", \"CronJobId\", \"Status\", \"OwnerId\", \"ExecutionTime\", "

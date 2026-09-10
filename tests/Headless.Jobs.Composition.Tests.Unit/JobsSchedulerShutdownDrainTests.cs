@@ -19,6 +19,9 @@ public sealed class JobsSchedulerShutdownDrainTests : TestBase
 {
     private static readonly TimeSpan _waitBudget = TimeSpan.FromSeconds(10);
 
+    // Fixed store anchor for the stubbed wake schedules below; only the distance to the wake matters here.
+    private static readonly DateTime _StoreNow = new(2026, 8, 15, 12, 0, 0, DateTimeKind.Utc);
+
     [Fact]
     public async Task stop_waits_for_in_flight_work_to_complete_within_the_shutdown_budget()
     {
@@ -86,7 +89,7 @@ public sealed class JobsSchedulerShutdownDrainTests : TestBase
         var manager = Substitute.For<IInternalJobManager>();
         manager
             .GetNextJobs(Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult((Timeout.InfiniteTimeSpan, Array.Empty<JobExecutionState>())));
+            .Returns(Task.FromResult((JobsWakeSchedule.Idle, Array.Empty<JobExecutionState>())));
         manager
             .RunTimedOutTickers(Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(Array.Empty<JobExecutionState>()));
@@ -95,6 +98,24 @@ public sealed class JobsSchedulerShutdownDrainTests : TestBase
         manager
             .IsTimeJobCancellationRequestedAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<bool?>(false));
+        manager
+            .RebaseStaleFingerprintsAsync(
+                Arg.Any<int>(),
+                Arg.Any<Guid?>(),
+                Arg.Any<Guid?>(),
+                Arg.Any<bool>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(
+                new CronFingerprintSweepResult
+                {
+                    Scanned = 0,
+                    Rebased = 0,
+                    Deferred = 0,
+                    LostFence = 0,
+                    HasMore = false,
+                }
+            );
 
         JobStatus? persistedStatus = null;
         manager
@@ -171,7 +192,10 @@ public sealed class JobsSchedulerShutdownDrainTests : TestBase
             .GetNextJobs(Arg.Any<CancellationToken>())
             .Returns(
                 Task.FromResult(
-                    (TimeSpan.FromMilliseconds(100), new[] { new JobExecutionState { FunctionName = "drain-probe" } })
+                    (
+                        new JobsWakeSchedule(_StoreNow, _StoreNow.AddMilliseconds(100)),
+                        new[] { new JobExecutionState { FunctionName = "drain-probe" } }
+                    )
                 )
             );
         using var service = _Service(taskScheduler, manager);
@@ -246,6 +270,8 @@ public sealed class JobsSchedulerShutdownDrainTests : TestBase
             new JobFunctionConcurrencyGate(),
             TimeProvider.System,
             ownerIdentity,
+            new SchedulerOptionsBuilder(),
+            TestActivationBarrier.Opened(),
             NullLogger<JobsSchedulerBackgroundService>.Instance
         );
     }

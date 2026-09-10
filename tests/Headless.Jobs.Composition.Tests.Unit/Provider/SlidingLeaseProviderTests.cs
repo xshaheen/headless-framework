@@ -142,7 +142,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
         grandChild.ExecutionTime = null;
         grandChild.RetryCount = 4;
         await provider.AddTimeJobsAsync([root, child, grandChild], AbortToken);
-        var roots = await provider.GetEarliestTimeJobsAsync(AbortToken);
+        var roots = (await provider.GetEarliestTimeJobsAsync(AbortToken)).Jobs;
 
         TimeJobEntity? claimed = null;
         await foreach (var job in provider.QueueTimeJobsAsync(roots, AbortToken))

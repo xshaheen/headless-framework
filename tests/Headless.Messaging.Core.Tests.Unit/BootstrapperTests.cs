@@ -5,6 +5,7 @@ using Headless.DistributedLocks;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
+using Headless.Messaging.Persistence;
 using Headless.Messaging.Processor;
 using Headless.Messaging.Runtime;
 using Headless.Testing.Tests;
@@ -170,11 +171,13 @@ public sealed class BootstrapperTests : TestBase
     }
 
     [Fact]
-    public async Task expired_shutdown_deadline_still_initiates_later_bounded_processors()
+    public async Task shutdown_quiesces_all_processors_before_concurrent_drain_and_uses_one_deadline()
     {
         var timeProvider = new FakeTimeProvider();
-        await using var later = new DeadlineTrackingProcessingServer();
-        await using var first = new BlockingDisposeProcessingServer();
+        await using var later = new PhasedProcessingServer();
+        await using var first = new PhasedProcessingServer(blockDrain: true);
+        first.AllQuiesced = () => first.IsQuiesced && later.IsQuiesced;
+        later.AllQuiesced = first.AllQuiesced;
         await using var provider = _CreateProvider(
             beforeMessaging: later,
             afterMessaging: first,
@@ -185,19 +188,135 @@ public sealed class BootstrapperTests : TestBase
         await bootstrapper.BootstrapAsync(AbortToken);
 
         var stopTask = ((IHostedService)bootstrapper).StopAsync(CancellationToken.None);
-        await first.WaitUntilDisposeStartedAsync(AbortToken);
-        timeProvider.Advance(TimeSpan.FromSeconds(2));
+        await Task.WhenAll(first.WaitUntilStopStartedAsync(AbortToken), later.WaitUntilStopStartedAsync(AbortToken));
 
         try
         {
-            await later.WaitUntilStopStartedAsync(AbortToken);
-            later.Timeout.Should().Be(TimeSpan.Zero);
+            first.SawAllQuiescedAtDrain.Should().BeTrue();
+            later.SawAllQuiescedAtDrain.Should().BeTrue();
+            first.Timeout.Should().Be(TimeSpan.FromSeconds(2));
+            later.Timeout.Should().Be(TimeSpan.FromSeconds(2));
+
+            timeProvider.Advance(TimeSpan.FromSeconds(2));
             await stopTask.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
         }
         finally
         {
-            first.ReleaseDispose();
+            first.ReleaseDrain();
         }
+    }
+
+    [Fact]
+    public async Task blocking_third_party_teardown_starts_after_built_in_quiesce_without_starving_drain()
+    {
+        var timeProvider = new FakeTimeProvider();
+        await using var builtIn = new PhasedProcessingServer();
+        await using var thirdParty = new SynchronouslyBlockingDisposeProcessingServer
+        {
+            AllBuiltInsQuiesced = () => builtIn.IsQuiesced,
+        };
+        await using var provider = _CreateProvider(
+            beforeMessaging: builtIn,
+            afterMessaging: thirdParty,
+            configureOptions: options => options.ShutdownTimeout = TimeSpan.FromSeconds(2),
+            extraSetup: services => services.AddSingleton<TimeProvider>(timeProvider)
+        );
+        var bootstrapper = provider.GetRequiredService<IBootstrapper>();
+        await bootstrapper.BootstrapAsync(AbortToken);
+
+        var stopTask = ((IHostedService)bootstrapper).StopAsync(CancellationToken.None);
+        await Task.WhenAll(
+            thirdParty.WaitUntilDisposeEnteredAsync(AbortToken),
+            builtIn.WaitUntilStopStartedAsync(AbortToken)
+        );
+
+        try
+        {
+            thirdParty.SawAllBuiltInsQuiesced.Should().BeTrue();
+            builtIn.SawAllQuiescedAtDrain.Should().BeTrue();
+            timeProvider.Advance(TimeSpan.FromSeconds(2));
+            await stopTask.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+        }
+        finally
+        {
+            thirdParty.ReleaseDispose();
+        }
+    }
+
+    [Fact]
+    public async Task shutdown_quiesces_published_processors_while_storage_initialization_is_stuck()
+    {
+        var timeProvider = new FakeTimeProvider();
+        await using var processor = new PhasedProcessingServer();
+        var initializer = new BlockingStorageInitializer();
+        await using var provider = _CreateProvider(
+            beforeMessaging: processor,
+            configureOptions: options => options.ShutdownTimeout = TimeSpan.FromSeconds(2),
+            extraSetup: services =>
+            {
+                services.AddSingleton<TimeProvider>(timeProvider);
+                services.RemoveAll<IStorageInitializer>();
+                services.AddSingleton<IStorageInitializer>(initializer);
+            }
+        );
+        var bootstrapper = provider.GetRequiredService<IBootstrapper>();
+        var bootstrapTask = bootstrapper.BootstrapAsync(CancellationToken.None);
+        await initializer.WaitUntilStartedAsync(AbortToken);
+
+        try
+        {
+            var stopTask = ((IHostedService)bootstrapper).StopAsync(CancellationToken.None);
+            await processor.WaitUntilStopStartedAsync(AbortToken);
+
+            processor.IsQuiesced.Should().BeTrue();
+            processor.StartCount.Should().Be(0);
+
+            timeProvider.Advance(TimeSpan.FromSeconds(2));
+            await stopTask.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+        }
+        finally
+        {
+            initializer.Release();
+        }
+
+        try
+        {
+            await bootstrapTask;
+        }
+        catch (OperationCanceledException)
+        {
+            // Shutdown may cancel the initializer before or immediately after its release.
+        }
+        processor.StartCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task stop_should_aggregate_every_processor_stop_failure()
+    {
+        var firstFailure = new InvalidOperationException("first stop boom");
+        var secondFailure = new InvalidOperationException("second stop boom");
+        await using var first = new FailingStopProcessingServer(firstFailure);
+        await using var healthy = new TrackingProcessingServer();
+        await using var second = new FailingStopProcessingServer(secondFailure);
+        var provider = _CreateProvider(
+            beforeMessaging: first,
+            afterMessaging: second,
+            extraSetup: services => services.AddSingleton<IProcessingServer>(healthy)
+        );
+        var bootstrapper = provider.GetRequiredService<IBootstrapper>();
+        await bootstrapper.BootstrapAsync(AbortToken);
+
+        var act = async () => await ((IHostedService)bootstrapper).StopAsync(CancellationToken.None);
+
+        var thrown = await act.Should().ThrowAsync<AggregateException>();
+        thrown.Which.InnerExceptions.Should().BeEquivalentTo([firstFailure, secondFailure]);
+        healthy.DisposeCount.Should().Be(1, "a faulting sibling must not prevent the other processors from stopping");
+        bootstrapper.IsStarted.Should().BeFalse();
+
+        // Shutdown is one shared idempotent operation, so disposing the provider observes the same
+        // aggregated outcome instead of retrying the stop.
+        var dispose = async () => await provider.DisposeAsync();
+        await dispose.Should().ThrowAsync<AggregateException>();
     }
 
     [Fact]
@@ -632,6 +751,26 @@ public sealed class BootstrapperTests : TestBase
         }
     }
 
+    private sealed class FailingStopProcessingServer(Exception exception) : IProcessingServer, IProcessingServerShutdown
+    {
+        public ValueTask StartAsync(CancellationToken stoppingToken)
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        public void Quiesce() { }
+
+        public ValueTask StopAsync(TimeSpan timeout)
+        {
+            return ValueTask.FromException(exception);
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            return ValueTask.CompletedTask;
+        }
+    }
+
     private sealed class TrackingProcessingServer : IProcessingServer
     {
         public int DisposeCount => Volatile.Read(ref _disposeCount);
@@ -677,14 +816,61 @@ public sealed class BootstrapperTests : TestBase
         }
     }
 
-    private sealed class DeadlineTrackingProcessingServer : IProcessingServer, IProcessingServerShutdown
+    private sealed class SynchronouslyBlockingDisposeProcessingServer : IProcessingServer
     {
-        private readonly TaskCompletionSource _stopStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _disposeEntered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly ManualResetEventSlim _disposeRelease = new(initialState: false);
+        private int _disposed;
 
-        public TimeSpan? Timeout { get; private set; }
+        public required Func<bool> AllBuiltInsQuiesced { get; init; }
+        public bool SawAllBuiltInsQuiesced { get; private set; }
 
         public ValueTask StartAsync(CancellationToken stoppingToken)
         {
+            return ValueTask.CompletedTask;
+        }
+
+        public Task WaitUntilDisposeEnteredAsync(CancellationToken cancellationToken)
+        {
+            return _disposeEntered.Task.WaitAsync(TimeSpan.FromSeconds(2), cancellationToken);
+        }
+
+        public void ReleaseDispose()
+        {
+            _disposeRelease.Set();
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            {
+                return ValueTask.CompletedTask;
+            }
+
+            SawAllBuiltInsQuiesced = AllBuiltInsQuiesced();
+            _disposeEntered.TrySetResult();
+            _disposeRelease.Wait();
+            _disposeRelease.Dispose();
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class PhasedProcessingServer(bool blockDrain = false) : IProcessingServer, IProcessingServerShutdown
+    {
+        private readonly TaskCompletionSource _stopStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _stopRelease = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Func<bool>? AllQuiesced { get; set; }
+        public bool IsQuiesced => Volatile.Read(ref _isQuiesced) != 0;
+        public bool SawAllQuiescedAtDrain { get; private set; }
+        public int StartCount => Volatile.Read(ref _startCount);
+        public TimeSpan? Timeout { get; private set; }
+        private int _isQuiesced;
+        private int _startCount;
+
+        public ValueTask StartAsync(CancellationToken stoppingToken)
+        {
+            Interlocked.Increment(ref _startCount);
             return ValueTask.CompletedTask;
         }
 
@@ -693,16 +879,63 @@ public sealed class BootstrapperTests : TestBase
             return StopAsync(TimeSpan.MaxValue);
         }
 
-        public ValueTask StopAsync(TimeSpan timeout)
+        public void Quiesce()
+        {
+            Interlocked.Exchange(ref _isQuiesced, 1);
+        }
+
+        public async ValueTask StopAsync(TimeSpan timeout)
         {
             Timeout = timeout;
+            SawAllQuiescedAtDrain = AllQuiesced?.Invoke() ?? IsQuiesced;
             _stopStarted.TrySetResult();
-            return ValueTask.CompletedTask;
+            if (blockDrain)
+            {
+                await _stopRelease.Task.ConfigureAwait(false);
+            }
         }
 
         public Task WaitUntilStopStartedAsync(CancellationToken cancellationToken)
         {
             return _stopStarted.Task.WaitAsync(TimeSpan.FromSeconds(2), cancellationToken);
+        }
+
+        public void ReleaseDrain()
+        {
+            _stopRelease.TrySetResult();
+        }
+    }
+
+    private sealed class BlockingStorageInitializer : IStorageInitializer
+    {
+        private readonly TaskCompletionSource _started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task InitializeAsync(CancellationToken cancellationToken = default)
+        {
+            _started.TrySetResult();
+            await _release.Task.ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+
+        public string GetPublishedTableName()
+        {
+            return "published";
+        }
+
+        public string GetReceivedTableName()
+        {
+            return "received";
+        }
+
+        public Task WaitUntilStartedAsync(CancellationToken cancellationToken)
+        {
+            return _started.Task.WaitAsync(TimeSpan.FromSeconds(2), cancellationToken);
+        }
+
+        public void Release()
+        {
+            _release.TrySetResult();
         }
     }
 

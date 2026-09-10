@@ -10,6 +10,7 @@
     <PackageReference Include="Npgsql" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
     <ProjectReference Include="..\Headless.Serializer.Json\Headless.Serializer.Json.csproj" />
     <ProjectReference Include="..\Headless.Permissions.Core\Headless.Permissions.Core.csproj" />
   </ItemGroup>

@@ -19,6 +19,12 @@
   <data name="g:concurrency_failure" xml:space="preserve">
     <value>فشل التزامن لا يمكن إجراء عمليتين في نفس الوقت.</value>
   </data>
+  <data name="g:if_match_required" xml:space="preserve">
+    <value>يجب إرسال قيمة ETag الحالية باستخدام If-Match.</value>
+  </data>
+  <data name="g:if_match_invalid" xml:space="preserve">
+    <value>قيمة If-Match غير صالحة. أرسل ETag واحدة فقط، ويجب ألا تكون ضعيفة.</value>
+  </data>
   <data name="g:feature_currently_unavailable" xml:space="preserve">
     <value>هذه الميزة غير متوفرة حاليا.</value>
   </data>

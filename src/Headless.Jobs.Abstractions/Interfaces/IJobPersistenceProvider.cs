@@ -87,6 +87,22 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// The jobs this node actually won, streamed as each claim commits. Rows lost to a concurrent claimer or
     /// changed since they were read are silently omitted — the caller must execute only what is yielded.
     /// </returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The caller's entities are mutated in place.</b> The yielded items are the very instances passed in
+    /// <paramref name="timeJobs"/>, not copies: on a won row the provider stamps this node's owner id, the granted
+    /// lease, <c>Queued</c> status, and the post-claim concurrency token onto the caller's object, and prunes its
+    /// child collection to the descendants the claim actually leased. Lost rows are left untouched.
+    /// </para>
+    /// <para>
+    /// A candidate collection therefore belongs to exactly one claim: <b>never share one across concurrent claims
+    /// and never reuse one after a claim.</b> The optimistic gate matches on the token each candidate carried when
+    /// it was read, so a second claimant reading from a mutated collection would present the winner's refreshed
+    /// token and could re-acquire a row that node already owns. Each node peeks through its own
+    /// <see cref="GetEarliestTimeJobsAsync"/> call and holds its own instances, which is what makes the gate
+    /// arbitrate correctly; re-attempting a sweep requires a fresh peek, not the previous array.
+    /// </para>
+    /// </remarks>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     IAsyncEnumerable<TimeJobEntity> QueueTimeJobsAsync(
         TimeJobEntity[] timeJobs,
@@ -135,11 +151,22 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// <param name="cancellationToken">Token that aborts the query.</param>
     /// <returns>
     /// Every acquirable job whose execution time falls inside the earliest pending second, ordered by execution
-    /// time, with the child hierarchy attached; empty when nothing is due. No ownership or status is mutated, so
+    /// time, with the child hierarchy attached, together with the store instant the read observed;
+    /// <see cref="EarliestTimeJobs.Jobs"/> is empty when nothing is due. No ownership or status is mutated, so
     /// two nodes can observe the same batch — the claim step arbitrates.
     /// </returns>
+    /// <remarks>
+    /// The returned entities are the caller's to own and are consumed destructively by
+    /// <see cref="QueueTimeJobsAsync"/>, which mutates them in place. Peek once per claim attempt; do not share the
+    /// batch with another claimant or feed it to a second claim.
+    /// <para>
+    /// <see cref="EarliestTimeJobs.StoreUtcNow"/> must be read in the same statement as the peek, matching
+    /// <see cref="CronDispatchCandidates.StoreUtcNow"/>: the caller derives its sleep from it, so a node-clock value
+    /// here makes a skewed node oversleep past a job the store already considers due.
+    /// </para>
+    /// </remarks>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
-    Task<TimeJobEntity[]> GetEarliestTimeJobsAsync(CancellationToken cancellationToken = default);
+    Task<EarliestTimeJobs> GetEarliestTimeJobsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Writes a single time job's execution outcome — status, timings, retry count, exception or skip reason —
@@ -352,10 +379,7 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// application at runtime are not seeded rows and are never touched by this reconciliation.
     /// </remarks>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
-    Task MigrateDefinedCronJobsAsync(
-        (string Function, string Expression)[] cronJobs,
-        CancellationToken cancellationToken = default
-    );
+    Task MigrateDefinedCronJobsAsync(CronSeedDefinition[] cronJobs, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Loads every cron definition so the scheduler can compute the next occurrence for each expression. This is
@@ -371,6 +395,193 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// </remarks>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task<CronJobEntity[]> GetAllCronJobExpressionsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reads the earliest non-paused, activation-eligible cron definitions by dispatch projection, together with the
+    /// store's own instant. This is the scheduler's selection path: an indexed range scan replacing the
+    /// load-every-definition-and-evaluate-every-expression walk that previously ran on every node at every wake.
+    /// </summary>
+    /// <param name="limit">Maximum definitions to return. The caller needs the earliest instant and its ties, not a page.</param>
+    /// <param name="after">
+    /// Resume position from a previous read, or <see langword="null"/> to start at the earliest projection. Only
+    /// definitions ordering strictly after it are returned.
+    /// </param>
+    /// <param name="cancellationToken">Token that aborts the query.</param>
+    /// <returns>
+    /// The earliest definitions ordered by projection with the store instant they were read against, or
+    /// <see langword="null"/> when no selectable definition exists — the scheduler then has no cron work to wake for.
+    /// </returns>
+    /// <remarks>
+    /// Deliberately NOT filtered to due definitions: the scheduler also needs the earliest projection to know how long
+    /// to sleep when nothing is due yet. The caller decides due-ness by comparing against the returned store instant —
+    /// a store-side decision, since both values come from one server snapshot.
+    /// <para>
+    /// Unlike <see cref="GetAllCronJobExpressionsAsync"/> this must not be served from a cache. It carries the schedule
+    /// position, which every advance moves; a cached projection would hand the scheduler a watermark that has already
+    /// been superseded and make every advance lose its fence.
+    /// </para>
+    /// <para>
+    /// <paramref name="after"/> must be applied INSIDE the query, before the <paramref name="limit"/> truncation, and
+    /// against the same ordering the result is sorted by. A provider that instead truncates first and drops the
+    /// resumed rows afterwards satisfies the signature but not the contract: it returns a short page whose contents
+    /// never move past the definitions the caller already rejected, so a caller excluding more definitions than one
+    /// page holds would never reach a healthy later one (#830).
+    /// </para>
+    /// A non-null fingerprint retry boundary is a durable activation quarantine, even after its timestamp expires.
+    /// Only a successful sweep rebase or an explicit schedule correction clears it, so deferred invalid definitions
+    /// must never reach dispatch directly.
+    /// </remarks>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<CronDispatchCandidates?> GetEarliestCronDispatchCandidatesAsync(
+        int limit,
+        CronDispatchCandidateCursor? after = null,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Compare-and-advances one cron definition's schedule position: the watermark recording the instant through
+    /// which its schedule has been reconciled, and the projection of the first occurrence after it. Returns the
+    /// committed position and the store's own clock, or <see langword="null"/> when the advance lost its fence.
+    /// </summary>
+    /// <param name="advance">The observed position to advance from and the position to persist.</param>
+    /// <param name="cancellationToken">Token that aborts the advance.</param>
+    /// <returns>
+    /// The persisted watermark, the persisted projection, and the store instant; <see langword="null"/> when no row
+    /// matched — the definition was concurrently advanced, its revision moved, it is paused, or (when
+    /// <see cref="CronScheduleAdvance.RequireProjectionDue"/> is set) the store does not consider it due.
+    /// </returns>
+    /// <remarks>
+    /// This is the single write through which a definition's schedule position moves, and it is the mechanism that
+    /// makes missed occurrences detectable: the watermark states what was <i>accounted for</i>, so it stays true when
+    /// a rule change invalidates the derived projection, and a skip advances it without anything firing.
+    /// <para>
+    /// Losing the fence is ordinary, not exceptional. On an N-node cluster every node but one loses each race and
+    /// must complete without an exception and without a failed insert.
+    /// </para>
+    /// <para>
+    /// Relational providers must express this as a single atomic statement with the store's clock <i>inside</i> it,
+    /// never sampled into a parameter, and must not wrap it in an explicit transaction — PostgreSQL freezes
+    /// <c>now()</c> at transaction open, which would make the returned instant stale by the transaction's age. The
+    /// in-memory provider uses its injected <c>TimeProvider</c> as the coherent single-process authority. See
+    /// <c>docs/solutions/design-patterns/temporal-authority-standard.md</c>.
+    /// </para>
+    /// This position-only primitive is for initialization and rebase transitions that intentionally produce no
+    /// occurrence. Due dispatch must use <see cref="MaterializeCronScheduleOccurrenceAsync"/> so a position can never
+    /// commit without its durable occurrence outcome.
+    /// </remarks>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<CronScheduleAdvanceResult?> AdvanceCronScheduleAsync(
+        CronScheduleAdvance advance,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Atomically advances one due cron schedule position and materializes or recognizes the occurrence that accounts
+    /// for the reconciled instant.
+    /// </summary>
+    /// <param name="materialization">The expected position transition and its exact occurrence instant.</param>
+    /// <param name="cancellationToken">Token that aborts the transition before it commits.</param>
+    /// <returns>
+    /// An explicit durable outcome. A lost fence or future projection changes nothing; every successful position
+    /// advance is committed with either a new Idle occurrence or a recognized existing occurrence.
+    /// </returns>
+    /// <remarks>
+    /// The occurrence-key arbitration and position write are one provider-owned transaction or critical section.
+    /// New occurrences commit as Idle with no owner or lease. A later claim operation applies store-time ownership.
+    /// This operation always requires the persisted projection to equal the requested occurrence instant and be due
+    /// by the provider's time authority; <see cref="CronScheduleAdvance.RequireProjectionDue"/> cannot disable that
+    /// invariant for materialization.
+    /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// <see cref="CronScheduleMaterialization.ExecutionTimeUtc"/> does not equal the advance's reconciled instant.
+    /// </exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<CronScheduleMaterializationResult> MaterializeCronScheduleOccurrenceAsync(
+        CronScheduleMaterialization materialization,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Applies a recovery policy to a definition whose watermark fell behind: resolves the occurrences already sitting
+    /// in the missed window, materializes the policy's run or none, and carries the watermark to the recovery instant.
+    /// Returns <see langword="null"/> when the advance fence was lost and nothing was written.
+    /// </summary>
+    /// <param name="request">The observed position to recover from, the policy, and the recovery instant.</param>
+    /// <param name="cancellationToken">Token that aborts the recovery.</param>
+    /// <returns>What the recovery did, or <see langword="null"/> when another node recovered first.</returns>
+    /// <remarks>
+    /// Fenced by the same compare-and-advance as ordinary dispatch, so concurrent nodes recovering the same backlog
+    /// produce exactly one winner and the loser writes nothing.
+    /// <para>
+    /// Unlike the ordinary advance this is expected to be one <b>transaction</b>, not one statement: the occurrence
+    /// resolution and the watermark move must not interleave, or a crash between them leaves the backlog partly
+    /// resolved with the watermark already past it. That is safe here specifically because
+    /// <see cref="CronRecoveryRequest.RecoveredThroughUtc"/> is a caller-supplied store instant rather than a live
+    /// clock read, so no database-clock expression is frozen at transaction open.
+    /// </para>
+    /// <para>
+    /// Occurrence resolution follows the not-yet-executing boundary the pause path already uses. An <c>Idle</c> or
+    /// <c>Queued</c> row in the window is the policy's to resolve — repurposed as the coalesced run with its ownership
+    /// revoked so its former owner's in-progress stamp fails and it drops the row, or transitioned to skipped. An
+    /// <c>InProgress</c> or terminal row is stepped past untouched, and its instant is never duplicated: an occurrence
+    /// already running or already finished has accounted for that instant.
+    /// </para>
+    /// <para>
+    /// Bounded-prefix selection is part of the contract, not a provider detail. When
+    /// <see cref="CronRecoveryRequest.Policy"/> is <see cref="Enums.MissedRunPolicy.Coalesce"/>,
+    /// <see cref="CronRecoveryRequest.EvaluationSaturated"/> is <see langword="true"/>, and the coalesce walk over
+    /// <see cref="CronRecoveryRequest.MissedInstantsUtc"/> produces no run because every examined instant is already
+    /// accounted for, the provider MUST persist <see cref="CronRecoveryRequest.BoundedProgressThroughUtc"/> and
+    /// <see cref="CronRecoveryRequest.NextDueAfterBoundedProgressUtc"/> as the new watermark and projection, NOT
+    /// <see cref="CronRecoveryRequest.RecoveredThroughUtc"/> and <see cref="CronRecoveryRequest.NextDueUtc"/>. The
+    /// evaluation ceiling truncated the walk, so carrying the watermark to the full recovery instant would step past
+    /// a tail this pass never examined and nothing would revisit it; stopping at the examined prefix leaves that tail
+    /// for a later recovery pass. The <c>boundedPrefixOnly</c> branch of
+    /// <c>BasePersistenceProvider.ApplyCronRecoveryAsync</c> is the reference implementation.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<CronRecoveryResult<TCronJob>?> ApplyCronRecoveryAsync(
+        CronRecoveryRequest request,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Reads definitions whose persisted evaluation fingerprint differs from the fingerprints in <paramref name="request"/>,
+    /// independently of whether their projection is due.
+    /// </summary>
+    /// <param name="request">Known fingerprints and the bounded snapshot/keyset continuation to read.</param>
+    /// <param name="cancellationToken">Token that aborts the query.</param>
+    /// <returns>Candidate definitions with their store instant and continuation state; candidates are empty when none.</returns>
+    /// <remarks>
+    /// Selection is deliberately the OPPOSITE criterion from dispatch. A rule change that moves an occurrence
+    /// <i>earlier</i> is hidden behind the stale later projection, so a sweep keyed on due-ness would never see the
+    /// definitions that most need rebasing — which is why this is its own read and its own hosted service rather than
+    /// a branch inside the scheduler loop.
+    /// When <see cref="CronFingerprintSweepRequest.AllowWrap"/> is enabled, a provider may use remaining page capacity
+    /// for one bounded read from the beginning of the snapshot. It sets <see cref="CronFingerprintSweepPage.Wrapped"/>
+    /// only when that wrap opportunity was consumed; a full forward page that merely detects wrapped lookahead keeps
+    /// it <see langword="false"/> so the continuation page can return that candidate.
+    /// </remarks>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<CronFingerprintSweepPage> GetStaleFingerprintDefinitionsAsync(
+        CronFingerprintSweepRequest request,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Atomically records a deterministic fingerprint-evaluation failure and a provider-time exponential retry
+    /// boundary. Returns <see langword="false"/> when the definition position changed first; a lost fence changes no
+    /// defer fields.
+    /// </summary>
+    /// <param name="request">Observed definition state and the provider-time retry delay to record.</param>
+    /// <param name="cancellationToken">Token that aborts the fenced update.</param>
+    /// <returns><see langword="true"/> when the defer state was recorded; otherwise <see langword="false"/>.</returns>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<bool> DeferStaleFingerprintDefinitionAsync(
+        CronFingerprintDeferRequest request,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// Recovers the time jobs held by a node that coordination has declared dead, applying each row's
@@ -445,9 +656,9 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     );
 
     /// <summary>
-    /// Materializes and claims the occurrences due at one scheduled instant: creates the occurrence row for each
-    /// cron definition that does not yet have one for that instant, re-claims the row when it already exists, and
-    /// stamps this node's owner id, a fresh lease, and <c>Queued</c> status.
+    /// Claims occurrences due at one scheduled instant, reusing their durable identities and stamping this node's
+    /// owner id, a fresh lease, and <c>Queued</c> status. Direct SPI callers may omit an occurrence identity to retain
+    /// compatibility materialization behavior; the scheduler always materializes atomically with the position first.
     /// </summary>
     /// <param name="cronJobOccurrences">
     /// The scheduled instant (<c>Key</c>) and the cron definitions due at it (<c>Items</c>), each carrying the
@@ -744,14 +955,17 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// </summary>
     /// <param name="cronJobId">The cron-definition identifier.</param>
     /// <param name="expectedScheduleRevision">The exact durable revision the caller observed.</param>
-    /// <param name="nextOccurrence">The single first occurrence strictly after the resume instant.</param>
+    /// <param name="nextOccurrenceFactory">
+    /// Creates the single first occurrence strictly after the supplied store-authoritative resume instant. The
+    /// provider invokes it only after winning the revision/pause fence and inside the atomic transition.
+    /// </param>
     /// <param name="operationTimeUtc">The operation timestamp used for definition audit fields.</param>
     /// <param name="cancellationToken">Cancels the atomic resume operation.</param>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> is cancelled.</exception>
     Task<TCronJob?> ResumeCronJobAsync(
         Guid cronJobId,
         long expectedScheduleRevision,
-        CronJobOccurrenceEntity<TCronJob> nextOccurrence,
+        Func<DateTime, CronJobOccurrenceEntity<TCronJob>?> nextOccurrenceFactory,
         DateTimeOffset operationTimeUtc,
         CancellationToken cancellationToken = default
     );
@@ -760,7 +974,10 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// Atomically applies a definition batch. Schedule-changing edits retire pending occurrences and insert their
     /// replacement occurrence while metadata-only edits preserve both the schedule revision and pending work.
     /// </summary>
-    /// <param name="updates">The definitions, expected revisions, and optional replacement occurrences.</param>
+    /// <param name="updates">
+    /// The definitions, expected revisions, and optional factories that derive active schedule replacements from the
+    /// exact store anchors supplied by the provider inside the transaction.
+    /// </param>
     /// <param name="operationTimeUtc">The operation timestamp shared by every accepted update.</param>
     /// <param name="cancellationToken">Cancels the atomic batch operation.</param>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> is cancelled.</exception>
@@ -815,6 +1032,35 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// </remarks>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task<int> InsertCronJobsAsync(TCronJob[] jobs, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Inserts cron definitions and gives each one its initial schedule position in the same write, anchored on the
+    /// store's instant read inside the inserting transaction.
+    /// </summary>
+    /// <param name="jobs">The cron definitions to insert. Their position fields are overwritten by the seed.</param>
+    /// <param name="seeder">Derives one definition's position from the store anchor the provider supplies.</param>
+    /// <param name="cancellationToken">Token that aborts the write.</param>
+    /// <returns>The store anchor used, the rows written, and the earliest position persisted.</returns>
+    /// <remarks>
+    /// This is the runtime creation path; <see cref="InsertCronJobsAsync(TCronJob[],CancellationToken)"/> remains the
+    /// raw insert for callers that have already positioned their rows.
+    /// <para>
+    /// <b>The anchor must be the store's CURRENT STATEMENT clock</b> — PostgreSQL <c>clock_timestamp()</c>, SQL Server
+    /// <c>SYSUTCDATETIME()</c> — never a transaction-start clock. EF translates <c>DateTime.UtcNow</c> to PostgreSQL's
+    /// <c>now()</c>, which is frozen at transaction start, and the coordinated write path attaches to a caller
+    /// transaction that may have opened long before: seeding from that anchor would position a definition before it
+    /// existed and manufacture an immediate false backlog for its missed-run policy to process.
+    /// </para>
+    /// <para>
+    /// Implementations that cache <see cref="GetAllCronJobExpressionsAsync"/> must invalidate that entry here.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<CronSchedulePositionSeedResult> InsertCronJobsAsync(
+        TCronJob[] jobs,
+        CronSchedulePositionSeeder seeder,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// Overwrites existing cron definitions wholesale — the management edit path for changing an expression,

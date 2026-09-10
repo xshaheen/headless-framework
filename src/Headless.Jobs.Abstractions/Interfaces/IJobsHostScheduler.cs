@@ -28,11 +28,17 @@ public interface IJobsHostScheduler
     Task StopAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Restarts the scheduler only when the next scheduled occurrence at <paramref name="dateTime"/>
-    /// is earlier than the scheduler's current wake-up time, avoiding redundant restarts.
+    /// Restarts the scheduler only when the occurrence at <paramref name="dueAtStoreUtc"/> is due sooner than the
+    /// wake the loop is currently sleeping towards, avoiding redundant restarts.
     /// </summary>
-    /// <param name="dateTime">The candidate next occurrence, or <see langword="null"/> to skip.</param>
-    void RestartIfNeeded(DateTime? dateTime);
+    /// <param name="dueAtStoreUtc">
+    /// The candidate occurrence <b>in the store's clock domain</b>, or <see langword="null"/> to skip. This is the
+    /// same domain every due time in the subsystem lives in: a time job's execution time, a definition's persisted
+    /// <c>NextDueUtc</c>, a released child's re-stamped time. The scheduler converts to local time once, against the
+    /// node/store offset it observed on its last poll; callers must not convert, and must never pass an instant they
+    /// derived from this node's clock when the store's projection is available.
+    /// </param>
+    void RestartIfNeeded(DateTime? dueAtStoreUtc);
 
     /// <summary>Unconditionally restarts the scheduler loop immediately.</summary>
     void Restart();

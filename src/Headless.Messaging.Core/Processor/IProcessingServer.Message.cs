@@ -28,7 +28,9 @@ internal sealed class MessageProcessingServer(
     private Task? _compositeTask;
     private ProcessingContext? _context;
     private Task? _eventualCleanupTask;
-    private bool _disposed;
+    private Task? _quiesceTask;
+    private IReadOnlyCollection<Task>? _retryTasks;
+    internal Action? StartPublicationHookForTest { get; set; }
 
     public ValueTask StartAsync(CancellationToken stoppingToken)
     {
@@ -39,36 +41,30 @@ internal sealed class MessageProcessingServer(
                 throw new InvalidOperationException("Message processor shutdown is still in progress.");
             }
 
-            _eventualCleanupTask = null;
-        }
+            if (_quiesceTask is not null && _eventualCleanupTask is null)
+            {
+                throw new InvalidOperationException("Message processor shutdown is still in progress.");
+            }
 
-        // If already disposed and restarting, recreate the CancellationTokenSource so it's linked
-        // to the freshly supplied stoppingToken. The previous CTS (which may have already fired)
-        // is disposed first.
-        if (_disposed || _cts.IsCancellationRequested)
-        {
-            _cts.Dispose();
-            _cts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
-            _disposed = false;
-        }
-        else
-        {
-            // First start path: replace the parameterless CTS allocated at field init with a linked
-            // one so stoppingToken propagation does not depend on the discarded
-            // `stoppingToken.Register(...)` registration (which leaked the IDisposable). Linking the
-            // outer token at construction time is both leak-free and dispose-safe across restarts.
+            _eventualCleanupTask = null;
+            _quiesceTask = null;
+            _retryTasks = null;
+            StartPublicationHookForTest?.Invoke();
+
+            // Publish the complete generation while holding the same gate as Quiesce. Shutdown can
+            // therefore observe either the previous generation or this one, never a partially reset CTS.
             var prior = _cts;
             _cts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
             prior.Dispose();
+
+            _logger.ServerStarting();
+
+            _context = new ProcessingContext(provider, timeProvider, _cts.Token);
+            _retryProcessor.StartRun();
+
+            var processorTasks = _GetProcessors().Select(_InfiniteRetry).Select(p => p.ProcessAsync(_context));
+            _compositeTask = Task.WhenAll(processorTasks);
         }
-
-        _logger.ServerStarting();
-
-        _context = new ProcessingContext(provider, timeProvider, _cts.Token);
-        _retryProcessor.StartRun();
-
-        var processorTasks = _GetProcessors().Select(_InfiniteRetry).Select(p => p.ProcessAsync(_context));
-        _compositeTask = Task.WhenAll(processorTasks);
 
         return ValueTask.CompletedTask;
     }
@@ -94,6 +90,11 @@ internal sealed class MessageProcessingServer(
         return _StopAsync(_shutdownTimeout);
     }
 
+    void IProcessingServerShutdown.Quiesce()
+    {
+        _Quiesce();
+    }
+
     ValueTask IProcessingServerShutdown.StopAsync(TimeSpan timeout)
     {
         return _StopAsync(timeout);
@@ -101,15 +102,12 @@ internal sealed class MessageProcessingServer(
 
     private async ValueTask _StopAsync(TimeSpan timeout)
     {
+        _Quiesce();
+
         Task cleanupTask;
         lock (_lifecycleLock)
         {
-            if (_eventualCleanupTask is null)
-            {
-                _disposed = true;
-                var retryTasks = _retryProcessor.Quiesce();
-                _eventualCleanupTask = _CompleteShutdownAsync(retryTasks);
-            }
+            _eventualCleanupTask ??= _CompleteShutdownAsync(_retryTasks ?? [], _quiesceTask ?? Task.CompletedTask);
 
             cleanupTask = _eventualCleanupTask;
         }
@@ -136,12 +134,23 @@ internal sealed class MessageProcessingServer(
         }
     }
 
-    private async Task _CompleteShutdownAsync(IReadOnlyCollection<Task> retryTasks)
+    private void _Quiesce()
+    {
+        lock (_lifecycleLock)
+        {
+            _retryTasks ??= _retryProcessor.Quiesce();
+            _quiesceTask ??= _cts.CancelAsync();
+        }
+    }
+
+    private async Task _CompleteShutdownAsync(IReadOnlyCollection<Task> retryTasks, Task quiesceTask)
     {
         try
         {
             _logger.ServerShuttingDown();
-            await _cts.CancelAsync().ConfigureAwait(false);
+#pragma warning disable VSTHRD003 // Quiesce starts this generation-owned CancelAsync task before drain begins.
+            await quiesceTask.ConfigureAwait(false);
+#pragma warning restore VSTHRD003
 
             var tasks = new List<Task>(retryTasks.Count + 1);
             tasks.AddRange(retryTasks);

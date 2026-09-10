@@ -69,7 +69,9 @@ When multiple providers share a behavior contract, prefer a shared `*.Tests.Harn
 
 ## Pull Requests
 
+- Rebase your branch onto the latest `main` before opening a pull request. Stale branches create avoidable conflicts and waste a review round.
+- Open the description with a minimal, clear explanation of the problem, followed by how the change solves it.
 - Link the related issue when one exists.
-- Describe affected packages and whether the change is breaking.
-- Include the validation you ran, using the actual `make` commands.
+- Call out consumer impact and migration steps when the change is breaking.
 - Keep PRs reviewable. Separate refactors from behavior changes when possible.
+- Let CI report routine automated checks. Mention manual verification or known validation gaps only when they help the reviewer.

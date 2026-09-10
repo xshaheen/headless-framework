@@ -2,6 +2,7 @@
 
 using Headless.CommitCoordination;
 using Headless.Jobs.Entities;
+using Headless.Jobs.Models;
 
 namespace Headless.Jobs.Interfaces;
 
@@ -36,10 +37,18 @@ internal interface ICoordinatedJobWriter<in TTimeJob, in TCronJob>
 
     /// <summary>
     /// Writes the cron-job rows inside the transaction surfaced by <paramref name="relationalContext" />, preserving
-    /// insertion order. Does not invalidate the cron-expressions cache or notify — the manager defers those to commit.
+    /// insertion order, seeding each definition's schedule position from the store's instant read inside that same
+    /// transaction. Does not invalidate the cron-expressions cache or notify — the manager defers those to commit.
     /// </summary>
-    Task WriteCronJobsAsync(
+    /// <remarks>
+    /// The anchor must be the store's CURRENT STATEMENT clock, never a transaction-start clock: this write attaches to
+    /// a caller transaction that may have opened long before, so PostgreSQL's <c>now()</c> would position the
+    /// definition before it existed. The returned result is what the manager arms its deferred restart from — it must
+    /// never re-derive a projection from its own clock.
+    /// </remarks>
+    Task<CronSchedulePositionSeedResult> WriteCronJobsAsync(
         TCronJob[] jobs,
+        CronSchedulePositionSeeder seeder,
         IRelationalCommitContext relationalContext,
         CancellationToken cancellationToken = default
     );

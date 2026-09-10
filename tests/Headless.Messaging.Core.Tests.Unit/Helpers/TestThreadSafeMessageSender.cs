@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
+using Headless.Messaging.Retry;
 
 namespace Tests.Helpers;
 
@@ -23,6 +24,15 @@ public sealed class TestThreadSafeMessageSender : IMessageSender
     }
 
     public Task<OperateResult> SendAsync(MediumMessage message, IServiceProvider dispatchServices)
+    {
+        return SendAsync(message);
+    }
+
+    Task<OperateResult> IMessageSender.SendRetryAsync(
+        MediumMessage message,
+        IServiceProvider dispatchServices,
+        RetryExecutionState executionState
+    )
     {
         return SendAsync(message);
     }

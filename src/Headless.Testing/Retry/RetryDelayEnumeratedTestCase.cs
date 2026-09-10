@@ -14,43 +14,51 @@ namespace Headless.Testing.Retry;
 /// </summary>
 // This class is used when pre-enumeration is disabled, or when the theory data was not serializable.
 [EditorBrowsable(EditorBrowsableState.Never)]
-public sealed class RetryDelayEnumeratedTestCase(
-    int maxRetries,
-    IXunitTestMethod testMethod,
-    string testCaseDisplayName,
-    string uniqueId,
-    bool @explicit,
-    bool skipTestWithoutData,
-    Type[]? skipExceptions = null,
-    string? skipReason = null,
-    Type? skipType = null,
-    string? skipUnless = null,
-    string? skipWhen = null,
-    Dictionary<string, HashSet<string>>? traits = null,
-    string? sourceFilePath = null,
-    int? sourceLineNumber = null,
-    int? timeout = null
-)
-    : XunitDelayEnumeratedTheoryTestCase(
-        testMethod,
-        testCaseDisplayName,
-        uniqueId,
-        @explicit,
-        skipTestWithoutData,
-        skipExceptions,
-        skipReason,
-        skipType,
-        skipUnless,
-        skipWhen,
-        traits,
-        sourceFilePath,
-        sourceLineNumber,
-        timeout
-    ),
-        ISelfExecutingXunitTestCase
+public sealed class RetryDelayEnumeratedTestCase : XunitDelayEnumeratedTheoryTestCase, ISelfExecutingXunitTestCase
 {
+    /// <summary>Called by the xUnit deserializer.</summary>
+    [Obsolete("Called by the de-serializer; should only be called for de-serialization purposes")]
+    public RetryDelayEnumeratedTestCase() { }
+
+    public RetryDelayEnumeratedTestCase(
+        int maxRetries,
+        IXunitTestMethod testMethod,
+        string testCaseDisplayName,
+        string uniqueId,
+        bool @explicit,
+        bool skipTestWithoutData,
+        Type[]? skipExceptions = null,
+        string? skipReason = null,
+        Type? skipType = null,
+        string? skipUnless = null,
+        string? skipWhen = null,
+        Dictionary<string, HashSet<string>>? traits = null,
+        string? sourceFilePath = null,
+        int? sourceLineNumber = null,
+        int? timeout = null
+    )
+        : base(
+            testMethod,
+            testCaseDisplayName,
+            uniqueId,
+            @explicit,
+            skipTestWithoutData,
+            skipExceptions,
+            skipReason,
+            skipType,
+            skipUnless,
+            skipWhen,
+            traits,
+            sourceFilePath,
+            sourceLineNumber,
+            timeout
+        )
+    {
+        MaxRetries = maxRetries;
+    }
+
     /// <summary>Maximum number of total execution attempts (including the first run).</summary>
-    public int MaxRetries { get; private set; } = maxRetries;
+    public int MaxRetries { get; private set; }
 
     protected override void Deserialize(IXunitSerializationInfo info)
     {
@@ -68,7 +76,10 @@ public sealed class RetryDelayEnumeratedTestCase(
         IMessageBus messageBus,
         object?[] constructorArguments,
         ExceptionAggregator aggregator,
-        CancellationTokenSource cancellationTokenSource
+        CancellationTokenSource cancellationTokenSource,
+        ParallelMode parallelMode,
+        ExecutionScheduler scheduler,
+        FixtureMappingManager methodFixtureMappings
     )
     {
         return RetryTestCaseRunner.Instance.Run(
@@ -80,7 +91,10 @@ public sealed class RetryDelayEnumeratedTestCase(
             TestCaseDisplayName,
             SkipReason,
             explicitOption,
-            constructorArguments
+            constructorArguments,
+            parallelMode,
+            scheduler,
+            methodFixtureMappings
         );
     }
 

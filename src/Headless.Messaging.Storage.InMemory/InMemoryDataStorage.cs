@@ -21,7 +21,12 @@ internal sealed partial class InMemoryDataStorage(
     IGuidGenerator guidGenerator,
     TimeProvider timeProvider,
     INodeMembership nodeMembership
-) : IDataStorage, IDelayedMessageClaimStorage, IGracefulLeaseReleaseStorage, IDeliveryCoordinationResolver
+)
+    : IDataStorage,
+        IDelayedMessageClaimStorage,
+        IGracefulLeaseReleaseStorage,
+        ICircuitRetryDeferralStorage,
+        IDeliveryCoordinationResolver
 {
     public ConcurrentDictionary<Guid, MemoryMessage> PublishedMessages { get; } = new();
 
@@ -950,6 +955,40 @@ internal sealed partial class InMemoryDataStorage(
         return ValueTask.FromResult(_ReleaseLease(ReceivedMessages, identity, cancellationToken));
     }
 
+    public ValueTask<bool> DeferReceivedRetryAsync(
+        CircuitRetryDeferral deferral,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        _ = MessageLaneCompatibility.ToPersistedValue(deferral.Identity.Lane);
+
+        if (!ReceivedMessages.TryGetValue(deferral.Identity.StorageId, out var current))
+        {
+            return ValueTask.FromResult(false);
+        }
+
+        lock (current)
+        {
+            var identity = deferral.Identity;
+            if (
+                current.Lane != identity.Lane
+                || !string.Equals(current.Owner, identity.Owner, StringComparison.Ordinal)
+                || current.LockedUntil != identity.LockedUntil
+                || current.LockedUntil <= timeProvider.GetUtcNow()
+                || (current.StatusName is StatusName.Succeeded or StatusName.Failed && current.NextRetryAt is null)
+            )
+            {
+                return ValueTask.FromResult(false);
+            }
+
+            current.NextRetryAt = deferral.NextRetryAt;
+            current.Owner = null;
+            current.LockedUntil = null;
+            return ValueTask.FromResult(true);
+        }
+    }
+
     public ValueTask<int> ReleasePublishedLeasesAsync(
         IReadOnlyCollection<MessageLeaseIdentity> identities,
         CancellationToken cancellationToken = default
@@ -1041,8 +1080,19 @@ internal sealed partial class InMemoryDataStorage(
         // NOT leak into the dictionary entry when ChangeReceiveStateAsync's terminal guard rejects
         // the conditional UPDATE. The SQL providers naturally produce a snapshot because every column
         // comes back through deserialization; InMemory must do this explicitly.
+        //
+        // Claim in NextRetryAt order, as the relational providers do: unordered enumeration lets an
+        // earlier-scheduled row be starved indefinitely once the batch limit is reached. StorageId is
+        // only a deterministic tie-break — it is not byte-comparable with uuid/uniqueidentifier
+        // ordering, which matters to nothing, since no guarantee rests on rows sharing a NextRetryAt.
+        // Rows with no NextRetryAt sort last and are rejected below without consuming a slot. Reading
+        // the sort key outside the row lock is safe: eligibility is re-validated under it before leasing.
         var claimed = new List<MediumMessage>();
-        foreach (var candidate in source.Values)
+        var ordered = source
+            .Values.OrderBy(candidate => candidate.NextRetryAt ?? DateTimeOffset.MaxValue)
+            .ThenBy(candidate => candidate.StorageId);
+
+        foreach (var candidate in ordered)
         {
             if (claimed.Count >= retryBatchSize)
             {
@@ -1097,19 +1147,6 @@ internal sealed partial class InMemoryDataStorage(
     private static bool _IsSupportedLane(MessageLane lane)
     {
         return lane is MessageLane.Bus or MessageLane.Queue;
-    }
-
-    private static bool _IsEligibleRetryCandidate(MemoryMessage candidate, DateTimeOffset now, int maxPersistedRetries)
-    {
-        if ((candidate.StatusName is StatusName.Succeeded or StatusName.Failed) && candidate.NextRetryAt is null)
-        {
-            return false;
-        }
-
-        return candidate.Retries <= maxPersistedRetries
-            && candidate.NextRetryAt is not null
-            && candidate.NextRetryAt <= now
-            && (candidate.LockedUntil is null || candidate.LockedUntil <= now);
     }
 
     /// <summary>

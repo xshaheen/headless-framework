@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Jobs.Customizer;
 using Headless.Jobs.DbContextFactory;
@@ -22,10 +23,16 @@ public class JobsEfCoreOptionBuilder<TTimeJob, TCronJob>
 {
     internal Action<IServiceCollection> ConfigureServices { get; set; } = _ => { };
     internal Type? ClaimStrategyTypeDefinition { get; private set; }
+
+    // The installed backend's GUID ordering, declared once by the provider package that supplies the native claim
+    // strategy. Every row the EF store writes — occurrences materialized by the shared provider included — is keyed
+    // with the same generator the native strategy uses, so SQL Server clustered-key locality is not lost on the paths
+    // that do not go through the native strategy. Null on generic EF (no backend package installed): unkeyed default.
+    internal SequentialGuidType? GuidGeneratorKey { get; private set; }
     internal int PoolSize { get; set; } = 1024;
     internal string Schema { get; set; } = "jobs";
 
-    internal void UseClaimStrategy(Type openGenericStrategyType)
+    internal void UseClaimStrategy(Type openGenericStrategyType, SequentialGuidType guidGeneratorKey)
     {
         Argument.IsNotNull(openGenericStrategyType);
 
@@ -49,6 +56,7 @@ public class JobsEfCoreOptionBuilder<TTimeJob, TCronJob>
         }
 
         ClaimStrategyTypeDefinition = openGenericStrategyType;
+        GuidGeneratorKey = guidGeneratorKey;
     }
 
     /// <summary>

@@ -270,14 +270,92 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             throw new JobValidatorException($"Cannot find JobFunction with name {entity.Function}");
         }
 
+        _EnsureValidRecoverySettings(entity);
         _EnsureValidRetries(entity.Retries, entity.Function);
 
+        // Rejects an expression that can never fire. Deliberately NOT retained: the position this definition is
+        // persisted with, and the wake armed from it, both come back from the store-anchored seed below (#817). A
+        // node-clock projection kept alive alongside the persisted one is a second source of truth that disagrees with
+        // the row under clock skew.
+        _EnsureCronExpressionHasFutureOccurrence(entity, now.UtcDateTime);
+
+        entity.FingerprintFailureCount = 0;
+        entity.FingerprintRetryAfterUtc = null;
+
+        // Synchronous capture before the first await; dead-transaction / mis-wire / write faults propagate (KTD-2).
+        var coordinated = _TryCaptureCoordinatedContext();
+
+        if (coordinated is { } context)
+        {
+            var coordinatedSeed = await context
+                .Writer.WriteCronJobsAsync([entity], _SeedCronSchedulePosition, context.Relational, cancellationToken)
+                .ConfigureAwait(false);
+
+            // Cron has no immediate-dispatch branch; defer cache-invalidation + scheduler-restart + notify (KTD-4).
+            // The deferred closure captures the PERSISTED projection, not a pre-persistence guess.
+            _DeferSideEffects(
+                context.Coordinator,
+                entity.Id.ToString(),
+                ct =>
+                    _RunCoordinatedCronJobSideEffectsAsync(
+                        context.Writer,
+                        entity,
+                        coordinatedSeed.EarliestNextDueUtc,
+                        ct
+                    )
+            );
+
+            return entity;
+        }
+
+        var seed = await persistenceProvider
+            .InsertCronJobsAsync([entity], _SeedCronSchedulePosition, cancellationToken)
+            .ConfigureAwait(false);
+
+        _jobsHostScheduler.RestartIfNeeded(seed.EarliestNextDueUtc);
+
+        await notificationHubSender.AddCronJobNotifyAsync(entity).ConfigureAwait(false);
+
+        return entity;
+    }
+
+    /// <summary>
+    /// Derives a definition's initial schedule position from the anchor the STORE read inside the inserting
+    /// transaction, so the tick window between creation and the first scheduler poll belongs to the definition's
+    /// missed-run policy rather than being silently dropped (#817).
+    /// </summary>
+    /// <remarks>
+    /// Identical to the position a first scheduler encounter would install
+    /// (<c>InternalJobsManager._InitializeSchedulePositionAsync</c>) — same watermark rule, same projection, same
+    /// fingerprint — only anchored at creation instead of at first sight.
+    /// </remarks>
+    private CronSchedulePositionSeed _SeedCronSchedulePosition(CronJobEntity definition, DateTime storeUtcNow)
+    {
+        var nextOccurrence = _cronScheduleCache.GetNextOccurrenceOrDefault(
+            definition.Expression,
+            storeUtcNow,
+            definition.TimeZoneId
+        );
+
+        return new CronSchedulePositionSeed
+        {
+            ReconciledThroughUtc = storeUtcNow,
+            // DateTime.MaxValue is the "no further occurrence" projection the advance path already uses; validation
+            // above rejects an expression that has none at creation time.
+            NextDueUtc = nextOccurrence ?? DateTime.MaxValue,
+            EvaluationFingerprint = _cronScheduleCache.ComputeEvaluationFingerprint(definition.TimeZoneId),
+        };
+    }
+
+    private void _EnsureCronExpressionHasFutureOccurrence(CronJobEntity entity, DateTime validationAnchorUtc)
+    {
         DateTime? nextOccurrence;
+
         try
         {
             nextOccurrence = _cronScheduleCache.GetNextOccurrenceOrDefault(
                 entity.Expression,
-                now.UtcDateTime,
+                validationAnchorUtc,
                 entity.TimeZoneId
             );
         }
@@ -292,35 +370,6 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 $"Cron expression '{entity.Expression}' is invalid or has no future occurrence"
             );
         }
-
-        // Synchronous capture before the first await; dead-transaction / mis-wire / write faults propagate (KTD-2).
-        var coordinated = _TryCaptureCoordinatedContext();
-
-        if (coordinated is { } context)
-        {
-            await context
-                .Writer.WriteCronJobsAsync([entity], context.Relational, cancellationToken)
-                .ConfigureAwait(false);
-
-            // Cron has no immediate-dispatch branch; defer cache-invalidation + scheduler-restart + notify (KTD-4).
-            _DeferSideEffects(
-                context.Coordinator,
-                entity.Id.ToString(),
-                ct => _RunCoordinatedCronJobSideEffectsAsync(context.Writer, entity, nextOccurrence.Value, ct)
-            );
-
-            return entity;
-        }
-
-        await persistenceProvider
-            .InsertCronJobsAsync([entity], cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
-
-        _jobsHostScheduler.RestartIfNeeded(nextOccurrence.Value);
-
-        await notificationHubSender.AddCronJobNotifyAsync(entity).ConfigureAwait(false);
-
-        return entity;
     }
 
     private async Task<JobResult<TTimeJob>> _UpdateTimeJobAsync(TTimeJob timeJob, CancellationToken cancellationToken)
@@ -392,6 +441,15 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             return new JobResult<TCronJob>(new JobValidatorException(JobTenantValidation.CronSystemScopeMessage));
         }
 
+        try
+        {
+            _EnsureValidRecoverySettings(cronJob);
+        }
+        catch (JobValidatorException exception)
+        {
+            return new JobResult<TCronJob>(exception);
+        }
+
         var now = timeProvider.GetUtcNow();
         var nowUtc = now.UtcDateTime;
         DateTime? nextOccurrence;
@@ -417,6 +475,10 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             );
         }
 
+        cronJob.EvaluationFingerprint = _cronScheduleCache.ComputeEvaluationFingerprint(cronJob.TimeZoneId);
+        cronJob.FingerprintFailureCount = 0;
+        cronJob.FingerprintRetryAfterUtc = null;
+
         try
         {
             var current = await persistenceProvider
@@ -430,13 +492,21 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             var scheduleChanged =
                 !string.Equals(current.Expression, cronJob.Expression, StringComparison.Ordinal)
                 || !string.Equals(current.TimeZoneId, cronJob.TimeZoneId, StringComparison.Ordinal);
-            var replacement =
-                scheduleChanged && !current.IsPaused
-                    ? CronJobOccurrenceFactory.Create(cronJob, nextOccurrence.Value, now, guidGenerator)
-                    : null;
+            Func<DateTime, CronJobOccurrenceEntity<TCronJob>?>? nextOccurrenceFactory = null;
+
+            if (scheduleChanged && !current.IsPaused)
+            {
+                nextOccurrenceFactory = CronJobOccurrenceFactory.CreateStoreAnchored(
+                    cronJob,
+                    _cronScheduleCache,
+                    now,
+                    guidGenerator
+                );
+            }
+
             var updated = await persistenceProvider
                 .UpdateCronJobsAtomicallyAsync(
-                    [new CronJobAtomicUpdate<TCronJob>(cronJob, current.ScheduleRevision, replacement)],
+                    [new CronJobAtomicUpdate<TCronJob>(cronJob, current.ScheduleRevision, nextOccurrenceFactory)],
                     now,
                     cancellationToken
                 )
@@ -479,9 +549,17 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
     private async Task<JobResult<TTimeJob>> _DeleteTimeJobAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var affectedRows = await persistenceProvider
-            .RemoveTimeJobsAsync([id], cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
+        int affectedRows;
+        try
+        {
+            affectedRows = await persistenceProvider
+                .RemoveTimeJobsAsync([id], cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception e)
+        {
+            return new JobResult<TTimeJob>(e);
+        }
 
         if (affectedRows > 0 && _executionContext.Functions.Any(x => x.JobId == id))
         {
@@ -580,6 +658,45 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 )
             );
         }
+    }
+
+    private static void _EnsureValidRecoverySettings(CronJobEntity cronJob)
+    {
+        var errors = new List<string>();
+
+        if (cronJob.OnMissedRun is not MissedRunPolicy.Coalesce and not MissedRunPolicy.Skip)
+        {
+            errors.Add(
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Missed-run policy value '{(int)cronJob.OnMissedRun}' is not defined for function '{cronJob.Function}'."
+                )
+            );
+        }
+
+        if (cronJob.MissedRunGraceSeconds <= 0)
+        {
+            errors.Add(
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Missed-run grace must be greater than zero seconds for function '{cronJob.Function}' but was {cronJob.MissedRunGraceSeconds}."
+                )
+            );
+        }
+
+        if (errors.Count != 0)
+        {
+            throw new JobValidatorException(errors);
+        }
+    }
+
+    private static JobValidatorException _AggregateValidationErrors(IEnumerable<Exception> errors)
+    {
+        var messages = errors
+            .SelectMany(error => error is JobValidatorException validation ? validation.Errors : [error.Message])
+            .ToArray();
+
+        return new JobValidatorException(messages);
     }
 
     private static void _EnsureValidRetries(TTimeJob root)
@@ -845,7 +962,6 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     {
         var validEntities = new List<TCronJob>();
         List<string>? errors = null;
-        var nextOccurrences = new List<DateTime>();
         var now = timeProvider.GetUtcNow();
 
         foreach (var entity in entities)
@@ -861,6 +977,17 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             await _RunSchedulePipelineAsync(entity, cancellationToken).ConfigureAwait(false);
             _StampJob(entity, now, assignId: false);
 
+            var entityIsInvalid = false;
+            try
+            {
+                _EnsureValidRecoverySettings(entity);
+            }
+            catch (JobValidatorException ex)
+            {
+                (errors ??= []).AddRange(ex.Errors.Count > 0 ? ex.Errors : [ex.Message]);
+                entityIsInvalid = true;
+            }
+
             try
             {
                 _EnsureValidRetries(entity.Retries, entity.Function);
@@ -868,32 +995,29 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             catch (JobValidatorException ex)
             {
                 (errors ??= []).AddRange(ex.Errors.Count > 0 ? ex.Errors : [ex.Message]);
+                entityIsInvalid = true;
+            }
+
+            if (entityIsInvalid)
+            {
                 continue;
             }
 
-            DateTime? nextOccurrence;
+            // Validation only — the persisted projection comes from the store-anchored seed below, exactly as on the
+            // single-add path.
             try
             {
-                nextOccurrence = _cronScheduleCache.GetNextOccurrenceOrDefault(
-                    entity.Expression,
-                    now.UtcDateTime,
-                    entity.TimeZoneId
-                );
+                _EnsureCronExpressionHasFutureOccurrence(entity, now.UtcDateTime);
             }
-            catch (ArgumentException exception)
+            catch (JobValidatorException exception)
             {
-                (errors ??= []).Add(exception.Message);
+                (errors ??= []).AddRange(exception.Errors.Count > 0 ? exception.Errors : [exception.Message]);
                 continue;
             }
 
-            if (nextOccurrence is null)
-            {
-                (errors ??= []).Add($"Cron expression '{entity.Expression}' is invalid or has no future occurrence");
-                continue;
-            }
-
+            entity.FingerprintFailureCount = 0;
+            entity.FingerprintRetryAfterUtc = null;
             validEntities.Add(entity);
-            nextOccurrences.Add(nextOccurrence.Value);
         }
 
         // Batch is all-or-nothing: any invalid entity aggregates here and throws, writing nothing.
@@ -907,28 +1031,38 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
         if (coordinated is { } context)
         {
-            await context
-                .Writer.WriteCronJobsAsync([.. validEntities], context.Relational, cancellationToken)
+            var coordinatedSeed = await context
+                .Writer.WriteCronJobsAsync(
+                    [.. validEntities],
+                    _SeedCronSchedulePosition,
+                    context.Relational,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
 
             _DeferSideEffects(
                 context.Coordinator,
                 $"cron batch ({validEntities.Count})",
-                ct => _RunCoordinatedCronJobsBatchSideEffectsAsync(context.Writer, validEntities, nextOccurrences, ct)
+                ct =>
+                    _RunCoordinatedCronJobsBatchSideEffectsAsync(
+                        context.Writer,
+                        validEntities,
+                        coordinatedSeed.EarliestNextDueUtc,
+                        ct
+                    )
             );
 
             return validEntities;
         }
 
-        await persistenceProvider
-            .InsertCronJobsAsync([.. validEntities], cancellationToken: cancellationToken)
+        var seed = await persistenceProvider
+            .InsertCronJobsAsync([.. validEntities], _SeedCronSchedulePosition, cancellationToken)
             .ConfigureAwait(false);
 
         if (validEntities.Count != 0)
         {
-            // Restart scheduler for earliest occurrence
-            var earliestOccurrence = nextOccurrences.Min();
-            _jobsHostScheduler.RestartIfNeeded(earliestOccurrence);
+            // Restart for the earliest position the STORE persisted, never a locally recomputed one.
+            _jobsHostScheduler.RestartIfNeeded(seed.EarliestNextDueUtc);
 
             // Send notifications for all
             foreach (var entity in validEntities)
@@ -1207,6 +1341,16 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 continue;
             }
 
+            try
+            {
+                _EnsureValidRecoverySettings(cronJob);
+            }
+            catch (JobValidatorException exception)
+            {
+                errors.Add(exception);
+                continue;
+            }
+
             DateTime? nextOccurrence;
             try
             {
@@ -1232,12 +1376,16 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 continue;
             }
 
+            cronJob.EvaluationFingerprint = _cronScheduleCache.ComputeEvaluationFingerprint(cronJob.TimeZoneId);
+            cronJob.FingerprintFailureCount = 0;
+            cronJob.FingerprintRetryAfterUtc = null;
+
             candidates.Add((cronJob, nextOccurrence.Value));
         }
 
         if (errors.Count != 0)
         {
-            return new JobResult<List<TCronJob>>(errors[0]);
+            return new JobResult<List<TCronJob>>(_AggregateValidationErrors(errors));
         }
 
         var definitionIds = candidates.Select(x => x.Definition.Id).Distinct().ToArray();
@@ -1246,8 +1394,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 .GetCronJobsAsync(x => definitionIds.Contains(x.Id), cancellationToken)
                 .ConfigureAwait(false)
         ).ToDictionary(x => x.Id);
-
-        foreach (var (cronJob, nextOccurrence) in candidates)
+        foreach (var (cronJob, _) in candidates)
         {
             if (!currentById.TryGetValue(cronJob.Id, out var current))
             {
@@ -1258,17 +1405,25 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             var scheduleChanged =
                 !string.Equals(current.Expression, cronJob.Expression, StringComparison.Ordinal)
                 || !string.Equals(current.TimeZoneId, cronJob.TimeZoneId, StringComparison.Ordinal);
-            var replacement =
-                scheduleChanged && !current.IsPaused
-                    ? CronJobOccurrenceFactory.Create(cronJob, nextOccurrence, now, guidGenerator)
-                    : null;
-            updates.Add(new CronJobAtomicUpdate<TCronJob>(cronJob, current.ScheduleRevision, replacement));
+            Func<DateTime, CronJobOccurrenceEntity<TCronJob>?>? nextOccurrenceFactory = null;
+
+            if (scheduleChanged && !current.IsPaused)
+            {
+                nextOccurrenceFactory = CronJobOccurrenceFactory.CreateStoreAnchored(
+                    cronJob,
+                    _cronScheduleCache,
+                    now,
+                    guidGenerator
+                );
+            }
+
+            updates.Add(new CronJobAtomicUpdate<TCronJob>(cronJob, current.ScheduleRevision, nextOccurrenceFactory));
             needsRestart |= scheduleChanged;
         }
 
         if (errors.Count != 0)
         {
-            return new JobResult<List<TCronJob>>(errors[0]);
+            return new JobResult<List<TCronJob>>(_AggregateValidationErrors(errors));
         }
 
         try
@@ -1318,9 +1473,17 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
-        var affectedRows = await persistenceProvider
-            .RemoveTimeJobsAsync([.. ids], cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
+        int affectedRows;
+        try
+        {
+            affectedRows = await persistenceProvider
+                .RemoveTimeJobsAsync([.. ids], cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception e)
+        {
+            return new JobResult<TTimeJob>(e);
+        }
 
         if (affectedRows > 0 && _executionContext.Functions.Any(x => ids.Contains(x.JobId)))
         {

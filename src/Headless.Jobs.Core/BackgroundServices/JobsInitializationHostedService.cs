@@ -1,10 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Globalization;
 using Headless.DistributedLocks;
 using Headless.Jobs.Enums;
+using Headless.Jobs.Exceptions;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Internal;
+using Headless.Jobs.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -13,11 +16,13 @@ namespace Headless.Jobs.BackgroundServices;
 
 /// <summary>
 /// Handles Jobs core initialization (function building, seeding, notification wiring, external provider init).
-/// Registered before the scheduler to guarantee correct startup order.
+/// Signals <see cref="JobsActivationBarrier"/> when it finishes, which is what actually orders the scheduler behind
+/// it — registration order alone does not survive <c>HostOptions.ServicesStartConcurrently</c>.
 /// </summary>
 internal sealed class JobsInitializationHostedService(
     IServiceProvider serviceProvider,
     JobFunctionRegistry functionRegistry,
+    JobsActivationBarrier activationBarrier,
     ILogger<JobsInitializationHostedService> logger
 ) : IHostedService
 {
@@ -25,6 +30,25 @@ internal sealed class JobsInitializationHostedService(
     private JobsExecutionContext? _executionContext;
 
     public async Task StartAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _StartCoreAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            // Fail closed. Publish the failure to every loop parked on the barrier — including loops already running
+            // under a concurrent start — so none of them proceeds to select work under an unverified schedule
+            // interpretation, then let the original exception abort host startup as before.
+            activationBarrier.MarkFailed(exception);
+
+            throw;
+        }
+
+        activationBarrier.MarkCompleted();
+    }
+
+    private async Task _StartCoreAsync(CancellationToken cancellationToken)
     {
         var executionContext = serviceProvider.GetRequiredService<JobsExecutionContext>();
         var notificationHubSender = serviceProvider.GetRequiredService<IJobsNotificationHubSender>();
@@ -47,12 +71,14 @@ internal sealed class JobsInitializationHostedService(
         // letting a running job's lease lapse. Throws InvalidOperationException; no-op for the derived default.
         schedulerOptions.ResolveLeaseRenewalInterval();
 
-        // Configure scheduler start mode
+        // Probe for the background scheduler: its presence is what tells this initializer whether background services
+        // were registered at all, gating both the notification wiring below and the fingerprint drain further down.
+        // JobsStartMode.Manual is deliberately NOT pushed onto it from here — the scheduler consumes its own configured
+        // start mode, because a push only lands in time when this initializer starts first, which
+        // HostOptions.ServicesStartConcurrently does not guarantee.
         var backgroundScheduler = serviceProvider.GetService<JobsSchedulerBackgroundService>();
         if (backgroundScheduler is not null)
         {
-            backgroundScheduler.SkipFirstRun = schedulerOptions.StartMode == JobsStartMode.Manual;
-
             _executionContext = executionContext;
             _notifyCoreHandler = (value, type) =>
             {
@@ -109,6 +135,17 @@ internal sealed class JobsInitializationHostedService(
             executionContext.ExternalProviderApplicationAction(serviceProvider);
             executionContext.ExternalProviderApplicationAction = null;
         }
+
+        // Drain one stable store snapshot here, before the caller opens the activation barrier and therefore before any
+        // loop can pick up a legacy/null or stale-fingerprint row. The BARRIER is the ordering guarantee, not hosted-
+        // service registration order: a host that sets HostOptions.ServicesStartConcurrently starts the scheduler at
+        // the same time as this initializer. Deterministically invalid definitions are durably deferred by the manager;
+        // storage/infrastructure failures propagate, leave the barrier closed-with-failure, and fail closed instead of
+        // allowing dispatch under an unverified interpretation.
+        if (backgroundScheduler is not null)
+        {
+            await DrainFingerprintSnapshotAsync(schedulerOptions, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     public Task StopAsync(CancellationToken cancellationToken)
@@ -119,6 +156,54 @@ internal sealed class JobsInitializationHostedService(
         }
 
         return Task.CompletedTask;
+    }
+
+    internal async Task DrainFingerprintSnapshotAsync(
+        SchedulerOptionsBuilder schedulerOptions,
+        CancellationToken cancellationToken
+    )
+    {
+        var manager = serviceProvider.GetRequiredService<IInternalJobManager>();
+        Guid? cursor = null;
+        Guid? highWatermark = null;
+        var scanned = 0;
+        var rebased = 0;
+        var deferred = 0;
+        var lostFence = 0;
+        CronFingerprintSweepResult result;
+        while (true)
+        {
+            result = await manager
+                .RebaseStaleFingerprintsAsync(
+                    schedulerOptions.FingerprintSweepBatchSize,
+                    afterId: cursor,
+                    throughId: highWatermark,
+                    cancellationToken: cancellationToken
+                )
+                .ConfigureAwait(false);
+            scanned += result.Scanned;
+            rebased += result.Rebased;
+            deferred += result.Deferred;
+            lostFence += result.LostFence;
+            cursor = result.NextCursorId;
+            highWatermark ??= result.SnapshotHighWatermarkId;
+
+            if (result.HasMore)
+            {
+                if (cursor is null)
+                {
+                    throw new InvalidOperationException(
+                        "Fingerprint sweep reported more rows without a continuation cursor."
+                    );
+                }
+
+                continue;
+            }
+
+            break;
+        }
+
+        logger.CronFingerprintActivationCompleted(scanned, rebased, deferred, lostFence);
     }
 
     // Instance method (not static) so the lock + logger come from constructor injection rather than a mid-body
@@ -132,9 +217,22 @@ internal sealed class JobsInitializationHostedService(
     {
         var internalJobsManager = serviceProvider.GetRequiredService<IInternalJobManager>();
 
+        // Resolve the recovery knobs HERE rather than in the provider: attribute value, else the scheduler-wide
+        // setting, else the framework default. The threshold has to be identical on every node — if each provider
+        // resolved it from local configuration, two nodes could disagree about whether the same instant misfired.
         var functionsToSeed = functionRegistry
             .Functions.Where(x => !string.IsNullOrEmpty(x.Value.CronExpression))
-            .Select(x => (x.Key, x.Value.CronExpression))
+            .Select(x => new CronSeedDefinition(
+                x.Key,
+                x.Value.CronExpression,
+                _ResolveMissedRunPolicy(x.Key, x.Value.OnMissedRun, schedulerOptions.DefaultMissedRunPolicy),
+                _ResolveGraceSeconds(
+                    x.Key,
+                    x.Value.MissedRunGraceSeconds,
+                    schedulerOptions.DefaultMissedRunGraceSeconds
+                ),
+                serviceProvider.GetRequiredService<CronScheduleCache>().ComputeEvaluationFingerprint(timeZoneId: null)
+            ))
             .ToArray();
 
         // No lock configured (default): run the seed directly. Seeded rows carry a DETERMINISTIC primary key derived
@@ -185,10 +283,61 @@ internal sealed class JobsInitializationHostedService(
             await internalJobsManager.MigrateDefinedCronJobs(functionsToSeed, cancellationToken).ConfigureAwait(false);
         }
     }
+
+    private static MissedRunPolicy _ResolveMissedRunPolicy(
+        string function,
+        MissedRunPolicy? fromAttribute,
+        MissedRunPolicy schedulerWide
+    )
+    {
+        var resolved = fromAttribute ?? schedulerWide;
+        if (resolved is MissedRunPolicy.Coalesce or MissedRunPolicy.Skip)
+        {
+            return resolved;
+        }
+
+        throw new JobValidatorException(
+            string.Create(
+                CultureInfo.InvariantCulture,
+                $"Missed-run policy value '{(int)resolved}' is not defined for function '{function}'."
+            )
+        );
+    }
+
+    private static int _ResolveGraceSeconds(string function, int? fromAttribute, int schedulerWide)
+    {
+        var resolved = fromAttribute ?? schedulerWide;
+        if (resolved > 0)
+        {
+            return resolved;
+        }
+
+        throw new JobValidatorException(
+            string.Create(
+                CultureInfo.InvariantCulture,
+                $"Missed-run grace must be greater than zero seconds for function '{function}' but was {resolved}."
+            )
+        );
+    }
 }
 
 internal static partial class JobsInitializationLog
 {
+    [LoggerMessage(
+        EventId = 5,
+        EventName = "CronFingerprintActivationCompleted",
+        Level = LogLevel.Information,
+        Message = "Cron fingerprint activation gate completed: scanned={Scanned}, rebased={Rebased}, "
+            + "deferred={Deferred}, lostFence={LostFence}."
+    )]
+    public static partial void CronFingerprintActivationCompleted(
+        this ILogger logger,
+        int scanned,
+        int rebased,
+        int deferred,
+        int lostFence
+    );
+
     [LoggerMessage(
         EventId = 1,
         EventName = "LeaseDurationShorterThanFallback",

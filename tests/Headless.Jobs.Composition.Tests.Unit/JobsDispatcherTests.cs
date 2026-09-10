@@ -26,6 +26,14 @@ public sealed class JobsDispatcherTests : TestBase
         // the delegate nor cancel it mid-run — the row would otherwise sit out its whole lease and be resolved
         // by OnNodeDeath as if the node had died.
         var manager = _HealthyManager();
+        var persisted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        manager
+            .UpdateTickerAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                persisted.TrySetResult();
+                return Task.FromResult(1);
+            });
         var services = new ServiceCollection();
         services.AddSingleton(manager);
         await using var serviceProvider = services.BuildServiceProvider();
