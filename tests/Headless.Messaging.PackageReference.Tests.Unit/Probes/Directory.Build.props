@@ -1,0 +1,3 @@
+<Project>
+  <!-- Keep package-family probes isolated from repository test/analyzer references. -->
+</Project>

@@ -37,12 +37,14 @@ public sealed class RetryFactDiscoverer : IXunitTestCaseDiscoverer
             details.TestCaseDisplayName,
             details.UniqueID,
             details.Explicit,
-            details.SkipExceptions,
-            details.SkipReason,
-            details.SkipType,
-            details.SkipUnless,
-            details.SkipWhen,
-            testMethod.Traits.ToReadWrite(StringComparer.OrdinalIgnoreCase),
+            skipExceptions: details.SkipExceptions,
+            skipReason: details.SkipReason,
+            skipType: details.SkipType,
+            skipUnless: details.SkipUnless,
+            skipWhen: details.SkipWhen,
+            traits: testMethod.Traits.ToReadWrite(StringComparer.OrdinalIgnoreCase),
+            sourceFilePath: details.SourceFilePath,
+            sourceLineNumber: details.SourceLineNumber,
             timeout: details.Timeout
         );
 #pragma warning restore CA2000

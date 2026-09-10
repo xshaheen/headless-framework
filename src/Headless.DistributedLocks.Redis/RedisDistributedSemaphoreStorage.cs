@@ -250,7 +250,10 @@ internal sealed class RedisDistributedSemaphoreStorage(
 
         if (values is null || values.Length == 0)
         {
+            // The replacement constructor depends on experimental RedisErrorKind; keep the stable API until it exits preview.
+#pragma warning disable CS0618
             throw new RedisServerException("Unexpected acquire semaphore script result.");
+#pragma warning restore CS0618
         }
 
         if ((int)values[0] <= 0)
@@ -260,7 +263,10 @@ internal sealed class RedisDistributedSemaphoreStorage(
 
         if (values.Length < 2)
         {
+            // The replacement constructor depends on experimental RedisErrorKind; keep the stable API until it exits preview.
+#pragma warning disable CS0618
             throw new RedisServerException("Acquire semaphore script reported success without a fencing token.");
+#pragma warning restore CS0618
         }
 
         return (true, (long)values[1]);
