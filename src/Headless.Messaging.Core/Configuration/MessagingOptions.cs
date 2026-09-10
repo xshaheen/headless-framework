@@ -6,6 +6,7 @@ using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Registration;
+using Headless.MultiTenancy;
 
 namespace Headless.Messaging.Configuration;
 

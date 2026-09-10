@@ -3,6 +3,7 @@
 using Headless.Abstractions;
 using Headless.Api.Abstractions;
 using Headless.Constants;
+using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Time.Testing;

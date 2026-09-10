@@ -238,7 +238,7 @@ Fetch only what's relevant to the task. Each file documents the domain's package
 - [audit-log.md](audit-log.md) — Property-level audit logging for entity mutations and explicit business events with EF Core persistence.
 - [core.md](core.md) — DDD building blocks, guard clauses, cross-cutting abstractions, string encryption/hashing, domain events.
 - [extensions.md](extensions.md) — Base utility library (`Headless.Extensions`) plus the `Headless.Primitives` (result pattern, domain primitives, value objects, paging) and `Headless.Urls` (URL builder) packages it re-exports.
-- [multi-tenancy.md](multi-tenancy.md) — Tenant context across HTTP, EF Core filters, permission caching, background processing.
+- [multi-tenancy.md](multi-tenancy.md) — Tenant context across HTTP, EF Core filters, permission caching, background processing, plus an opt-in tenant catalog (identifier resolution and tenant metadata).
 - [blobs.md](blobs.md) — Unified blob storage (AWS S3, Azure, file system, Redis, SFTP).
 - [caching.md](caching.md) — Memory, Redis, and Hybrid (L1+L2) caching with fail-safe, refresh, tagging, and distributed factory locks.
 - [captcha.md](captcha.md) — CAPTCHA verification (Google reCAPTCHA v2/v3, Cloudflare Turnstile) behind one pass/fail abstraction.
@@ -294,7 +294,9 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Domain.LocalEventBus` — DI-based `ILocalEventBus` for in-process domain events.
 
 ### Multi-Tenancy
-- `Headless.MultiTenancy` — Tenancy composition root: `AddHeadlessTenancy(...)` builder, `UseHeadlessTenancy()` middleware, posture manifest, and startup validation. Seam packages (API, EF Core, messaging) contribute resolution strategies.
+- `Headless.MultiTenancy.Abstractions` — Tenant-context contracts (`ICurrentTenant`, `ICurrentTenantAccessor`, write-guard types and exceptions) and the opt-in tenant catalog's store SPI and models (`TenantInfo`, `ITenantStore`, `ITenantDirectory`, `ICurrentTenantInfo`).
+- `Headless.MultiTenancy` — Tenancy composition root: `AddHeadlessTenancy(...)` builder, `UseHeadlessTenancy()` middleware, posture manifest, startup validation, and the opt-in tenant catalog service (in-memory and configuration stores). Seam packages (API, EF Core, messaging) contribute resolution strategies.
+- `Headless.MultiTenancy.Storage.EntityFramework` — EF Core-backed `ITenantStore` for the opt-in tenant catalog, with app-owned schema and migrations.
 
 ### Mediator
 - `Headless.Mediator` — In-process request/handler dispatch with cross-cutting pipeline behaviors (validation, logging). Deliberately narrow: boundary concerns (auth, tenancy enforcement, idempotency, HTTP shaping) stay out of the pipeline.

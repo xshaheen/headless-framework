@@ -63,11 +63,11 @@ internal sealed class FcmMessageSender : IFcmMessageSender, IDisposable
 
     public async Task<PushNotificationResponse> SendAsync(
         FcmMessageContent content,
-        string token,
+        string fid,
         CancellationToken cancellationToken
     )
     {
-        var message = _BuildMessage(content, token);
+        var message = BuildMessage(content, fid);
 
         try
         {
@@ -80,27 +80,27 @@ internal sealed class FcmMessageSender : IFcmMessageSender, IDisposable
                 )
                 .ConfigureAwait(false);
 
-            return PushNotificationResponse.Succeeded(token, messageId);
+            return PushNotificationResponse.Succeeded(fid, messageId);
         }
         catch (FirebaseMessagingException e) when (e.MessagingErrorCode is MessagingErrorCode.Unregistered)
         {
-            return PushNotificationResponse.Unregistered(token);
+            return PushNotificationResponse.Unregistered(fid);
         }
         catch (FirebaseMessagingException e)
         {
-            _logger.FailedToSendPushNotification(e, _Mask(token));
+            _logger.FailedToSendPushNotification(e, _Mask(fid));
 
-            return PushNotificationResponse.Failed(token, _Describe(e));
+            return PushNotificationResponse.Failed(fid, _Describe(e));
         }
     }
 
     public async Task<IReadOnlyList<PushNotificationResponse>> SendBatchAsync(
         FcmMessageContent content,
-        IReadOnlyList<string> tokens,
+        IReadOnlyList<string> fids,
         CancellationToken cancellationToken
     )
     {
-        var message = _BuildMulticastMessage(content, tokens);
+        var message = BuildMulticastMessage(content, fids);
 
         BatchResponse batchResponse;
 
@@ -117,55 +117,55 @@ internal sealed class FcmMessageSender : IFcmMessageSender, IDisposable
         }
         catch (FirebaseMessagingException e)
         {
-            // Whole-batch transport failure after retries: report every token as failed so the caller still
+            // Whole-batch transport failure after retries: report every FID as failed so the caller still
             // receives a complete result set and earlier batches are not discarded.
-            _logger.FailedToSendPushNotification(e, $"multicast:{tokens.Count}");
+            _logger.FailedToSendPushNotification(e, $"multicast:{fids.Count}");
 
             var error = _Describe(e);
-            var failed = new List<PushNotificationResponse>(tokens.Count);
-            foreach (var token in tokens)
+            var failed = new List<PushNotificationResponse>(fids.Count);
+            foreach (var fid in fids)
             {
-                failed.Add(PushNotificationResponse.Failed(token, error));
+                failed.Add(PushNotificationResponse.Failed(fid, error));
             }
 
             return failed;
         }
 
-        if (batchResponse.Responses.Count != tokens.Count)
+        if (batchResponse.Responses.Count != fids.Count)
         {
             throw new InvalidOperationException(
-                $"Firebase response count ({batchResponse.Responses.Count}) does not match token count ({tokens.Count})."
+                $"Firebase response count ({batchResponse.Responses.Count}) does not match FID count ({fids.Count})."
             );
         }
 
-        var results = new List<PushNotificationResponse>(tokens.Count);
-        for (var i = 0; i < tokens.Count; i++)
+        var results = new List<PushNotificationResponse>(fids.Count);
+        for (var i = 0; i < fids.Count; i++)
         {
             var response = batchResponse.Responses[i];
-            var token = tokens[i];
+            var fid = fids[i];
 
             if (response.IsSuccess)
             {
-                results.Add(PushNotificationResponse.Succeeded(token, response.MessageId));
+                results.Add(PushNotificationResponse.Succeeded(fid, response.MessageId));
             }
             else if (response.Exception?.MessagingErrorCode == MessagingErrorCode.Unregistered)
             {
-                results.Add(PushNotificationResponse.Unregistered(token));
+                results.Add(PushNotificationResponse.Unregistered(fid));
             }
             else
             {
-                results.Add(PushNotificationResponse.Failed(token, _Describe(response.Exception)));
+                results.Add(PushNotificationResponse.Failed(fid, _Describe(response.Exception)));
             }
         }
 
         return results;
     }
 
-    private static Message _BuildMessage(FcmMessageContent content, string token)
+    internal static Message BuildMessage(FcmMessageContent content, string fid)
     {
         return new Message
         {
-            Token = token,
+            Fid = fid,
             Data = content.Data,
             Notification = new Notification { Title = content.Title, Body = content.Body },
             Android = new AndroidConfig { Priority = Priority.High },
@@ -173,11 +173,11 @@ internal sealed class FcmMessageSender : IFcmMessageSender, IDisposable
         };
     }
 
-    private static MulticastMessage _BuildMulticastMessage(FcmMessageContent content, IReadOnlyList<string> tokens)
+    internal static MulticastMessage BuildMulticastMessage(FcmMessageContent content, IReadOnlyList<string> fids)
     {
         return new MulticastMessage
         {
-            Tokens = [.. tokens],
+            Fids = [.. fids],
             Data = content.Data,
             Notification = new Notification { Title = content.Title, Body = content.Body },
             Android = new AndroidConfig { Priority = Priority.High },
@@ -190,9 +190,9 @@ internal sealed class FcmMessageSender : IFcmMessageSender, IDisposable
         return exception is null ? "Unknown error" : $"{exception.MessagingErrorCode}: {exception.Message}";
     }
 
-    private static string _Mask(string token)
+    private static string _Mask(string clientIdentifier)
     {
-        return token.Length > 8 ? token[..8] + "***" : "***";
+        return clientIdentifier.Length > 8 ? clientIdentifier[..8] + "***" : "***";
     }
 
     public void Dispose()

@@ -331,7 +331,7 @@ The schedule middleware (`TenantPropagationScheduleMiddleware`, priority `JobMid
 2. **System-job bypass.** When `IsSystemJob = true`, the job is deliberately tenantless. It is rejected with `JobValidatorException` if it also carries an explicit `TenantId` (contradiction) or if an ambient tenant is present (escalation — tenant code cannot promote itself to system scope). Otherwise `TenantId` stays null and the decision is logged. `IsSystemJob` is transient — a schedule-time authorization flag with no execution-time meaning, never persisted.
 3. **Explicit tenant wins.** A supplied `TenantId` (from `EnqueueOptions.TenantId` or the entity) is used as-is after structural validation, even when it differs from a present ambient tenant.
 4. **Ambient capture.** With no explicit tenant and `PropagateTenant()` enabled, the ambient `ICurrentTenant.Id` is captured onto the row in the same atomic write. This is the only step that reads ambient state, and it never recaptures after commit.
-5. **Strict rejection.** Still tenantless, not a system job, and `RequireTenantOnEnqueue()` active → rejected with `Headless.Abstractions.MissingTenantContextException`. Without strict mode, `TenantId` stays null (system scope).
+5. **Strict rejection.** Still tenantless, not a system job, and `RequireTenantOnEnqueue()` active → rejected with `Headless.MultiTenancy.MissingTenantContextException`. Without strict mode, `TenantId` stays null (system scope).
 
 **Structural validation always runs; capture and strict mode are options-gated.** Cron-scope rejection, the system-job contradictions, and blank / over-length bounds on explicitly supplied values are enforced whenever the middleware dispatches — independent of `PropagateTenant()` / `RequireTenantOnEnqueue()`. Only ambient capture and missing-tenant rejection are gated by the seam flags, which keeps tenant-to-system escalation (R7) and tenant-scoped cron (R8) unconditional. Values fail closed: a present-but-blank or over-length **ambient** tenant rejects the enqueue exactly like an over-length explicit value rather than silently downgrading the job to system scope, and the diagnostic logs only the length, never the value.
 
@@ -395,7 +395,7 @@ public static async Task FanOutAsync(IServiceProvider sp, CancellationToken ct)
 }
 ```
 
-The framework owns no tenant enumeration, `ITenantStore`, per-tenant cron rows, or per-tenant cron expressions — fan-out is application code by design (`IReportService` and `IAppTenantDirectory` above are application-owned).
+The framework ships no per-tenant cron rows or per-tenant cron expressions — cron itself always stays system-scope, and fan-out orchestration (scheduling, batching, cron-to-tenant mapping) is application code by design. Tenant *enumeration* is different: the framework now ships an optional `Headless.MultiTenancy.ITenantDirectory.GetAllAsync()` capability, implemented by all v1 tenant-catalog stores (in-memory, configuration, EF Core), available only when a catalog is configured via `.Catalog(...)`. The example above uses `IAppTenantDirectory`, an application-owned enumeration abstraction for hosts that have not configured a catalog (or want a different enumeration source) — do not confuse it with the framework's `ITenantDirectory`; swap in the framework capability directly when a catalog is already configured. See [multi-tenancy.md#cron-fan-out](multi-tenancy.md#cron-fan-out) for the catalog-backed enumeration example.
 
 ## Misfire recovery
 

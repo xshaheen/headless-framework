@@ -4,14 +4,15 @@ Firebase Cloud Messaging (FCM) implementation of `IPushNotificationService` for 
 
 ## Problem Solved
 
-Delivers push notifications to Android (FCM), iOS (via FCM-to-APNs bridge), and Web clients using the FCM v1 API. Handles multicast batching, transient-error retry with exponential backoff, and per-token outcome mapping behind the `IPushNotificationService` interface.
+Delivers push notifications to Android (FCM), iOS (via FCM-to-APNs bridge), and Web clients using the FCM v1 API. Handles multicast batching, transient-error retry with exponential backoff, and per-FID outcome mapping behind the `IPushNotificationService` interface.
 
 ## Key Features
 
 - FCM-backed `IPushNotificationService` implementation (`FcmPushNotificationService`)
 - Selectable as the default (`setup.UseFirebase(…)`) or as a named instance (`setup.AddNamed("name", i => i.UseFirebase(…))`), each isolating its own options, retry pipeline, and `FirebaseApp`
 - Single-device (`SendToDeviceAsync`) and multicast (`SendMulticastAsync`) delivery
-- Automatic chunking of multicast sends into batches of ≤ 500 tokens (FCM hard limit)
+- Targets devices by Firebase Installation ID (FID), as required by FirebaseAdmin 3.6's supported send API
+- Automatic chunking of multicast sends into batches of ≤ 500 FIDs (FCM hard limit)
 - Custom data payload support (with reserved-key enforcement)
 - Input validation: title ≤ 100 characters, body ≤ 4 000 characters
 - **Automatic retry** for transient failures: exponential backoff with jitter, Retry-After header support for rate limits
@@ -29,6 +30,8 @@ The Firebase Admin SDK `FirebaseApp` is created **lazily on the first send**, no
 Each named instance reads its own options snapshot (`IOptionsMonitor<FirebaseOptions>.Get(name)`) and its own retry pipeline (keyed `Headless:FcmRetry:{name}`); the default reads the unnamed options and the `Headless:FcmRetry` pipeline. Keyed DI does not cascade the key to constructor dependencies, so a keyed sender never reads `CurrentValue` (which binds the default) — the sender is registered through an explicit factory that passes its own name.
 
 Android messages are sent with `Priority.High`; iOS messages include an APNs badge count of 1. These are hardcoded defaults — the `data` payload provides the only customization surface exposed by this abstraction.
+
+Clients must register with the current FCM client SDK and upload the FID received by its registration callback. Legacy FCM registration tokens are not accepted by this provider.
 
 ## Installation
 
@@ -56,7 +59,7 @@ Sending:
 
 ```csharp
 var response = await pushService.SendToDeviceAsync(
-    deviceToken,
+    firebaseInstallationId,
     new PushNotificationRequest
     {
         Title = "Order shipped",
@@ -67,7 +70,7 @@ var response = await pushService.SendToDeviceAsync(
 );
 
 if (response.IsUnregistered())
-    await tokenStore.RemoveAsync(deviceToken, ct);
+    await installationStore.RemoveAsync(firebaseInstallationId, ct);
 ```
 
 ## Configuration
@@ -140,7 +143,7 @@ builder.Services.AddHeadlessPushNotifications(setup =>
 
 | Error | Meaning | Caller action |
 |---|---|---|
-| `Unregistered` | Token invalid | Returns `PushNotificationResponseStatus.Unregistered`; remove token |
+| `Unregistered` | FID is no longer registered | Returns `PushNotificationResponseStatus.Unregistered`; remove FID |
 | `InvalidArgument` | Malformed request | Code bug; fix the payload |
 | `SenderIdMismatch` | Wrong credentials | Configuration error |
 | `ThirdPartyAuthError` | Bad APNs certificate | Configuration error |

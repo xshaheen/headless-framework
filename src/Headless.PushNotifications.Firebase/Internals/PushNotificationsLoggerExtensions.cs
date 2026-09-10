@@ -10,12 +10,12 @@ internal static partial class PushNotificationsLoggerExtensions
         EventId = 1,
         EventName = "FcmFailedToSendPushNotification",
         Level = LogLevel.Error,
-        Message = "FCM: Failed to send notification to device. Token prefix: {ClientTokenPrefix}"
+        Message = "FCM: Failed to send notification to device. Identifier prefix: {ClientIdentifierPrefix}"
     )]
     public static partial void FailedToSendPushNotification(
         this ILogger logger,
         Exception exception,
-        string clientTokenPrefix
+        string clientIdentifierPrefix
     );
 
     [LoggerMessage(

@@ -395,6 +395,7 @@ Provides essential DI extensions, configuration helpers, options validation, and
 ### Key Features
 
 - DI extensions: `AddIf`, `AddIfElse`, `AddOrReplace*`, `Unregister<T>`
+- Required-service declarations (`RequireRegisteredService<T>`) that fail the host at startup instead of at first use
 - Options validation with FluentValidation
 - Configuration binding extensions
 - Environment detection extensions
@@ -474,6 +475,23 @@ services.AddOrReplaceSingleton<IService>(sp => new Impl(sp.GetRequired<IDep>()))
 // package wants to swap only those defaults.
 services.AddOrReplaceFallbackSingleton<IService, NullFallback, DefaultImpl>();
 ```
+
+#### Required Services
+
+The abstraction-plus-provider split lets a package register cleanly against a contract whose only implementation ships in a *provider* package the host must choose — `Headless.Settings.Core` consumes `ICache<SettingValueCacheItem>` while referencing only `Headless.Caching.Abstractions`, for example. Without a declared prerequisite such a host starts green and throws on the first request that touches the feature.
+
+```csharp
+services.RequireRegisteredService<ICache<SettingValueCacheItem>>(
+    requiredBy: "Headless settings value caching",
+    remedy: "Call AddHeadlessCaching(...) with a provider (UseInMemory / UseRedis / UseHybrid)."
+);
+```
+
+- **Checked at startup, not at declaration.** The requirement is usually satisfied by a sibling `Add…` call that has not run yet, so inspecting the collection at declaration time would reject valid registration orders. The check runs as an `IHostedLifecycleService.StartingAsync`, ahead of every hosted service's `StartAsync`, so a broken host never lets background workers or consumers start under an assumption the container cannot honour.
+- **Probed, never resolved.** It asks `IServiceProviderIsService` rather than resolving the contract, so validation never constructs the service under test (a Redis-backed cache would reach into its connection options and turn a provider misconfiguration into an opaque failure from the guard). MS.DI's probe answers a *constructed* generic from an *open*-generic registration, so `ICache<Foo>` reports present when only `typeof(ICache<>)` was registered — which is exactly how the caching providers register. A container that does not expose the probe falls back to a null-returning resolve.
+- **Aggregated.** Requirements from every feature in the host are collected and reported in one `MissingRequiredServiceException` (`Headless.Hosting.DependencyInjection`), each line naming its `requiredBy` and `remedy`. A host missing one shared provider sees every affected feature at once instead of one failure per restart. Identical declarations collapse to a single line, and the startup check itself is registered once no matter how many features declare requirements.
+
+`Headless.MultiTenancy`, `Headless.Settings.Core`, `Headless.Permissions.Core`, `Headless.Features.Core`, and `Headless.Api.Idempotency` all use this to require a caching provider.
 
 ### Configuration
 

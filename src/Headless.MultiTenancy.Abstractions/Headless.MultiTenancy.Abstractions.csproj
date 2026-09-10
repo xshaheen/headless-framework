@@ -1,0 +1,11 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>Contracts and shared abstractions for Headless multi-tenancy packages.</Description>
+    <PackageTags>headless;multi-tenancy;dotnet</PackageTags>
+    <RootNamespace>Headless.MultiTenancy</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Primitives\Headless.Primitives.csproj" />
+  </ItemGroup>
+</Project>
