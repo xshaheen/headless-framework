@@ -152,66 +152,91 @@ public sealed class MessagingCapabilityModelTests : TestBase
         act.Should().Throw<MessagingConfigurationException>().WithMessage("*exactly one storage provider*");
     }
 
-    [Fact]
-    public void should_reject_durable_dedupe_only_storage_when_transactional_inbox_is_required()
+    [Theory]
+    [InlineData(MessagingInboxCapabilityTier.ProcessLocal, MessagingInboxCapabilityTier.DurableDedupeOnly)]
+    [InlineData(MessagingInboxCapabilityTier.ProcessLocal, MessagingInboxCapabilityTier.Transactional)]
+    [InlineData(MessagingInboxCapabilityTier.DurableDedupeOnly, MessagingInboxCapabilityTier.Transactional)]
+    public void should_reject_storage_weaker_than_required_inbox_tier(
+        MessagingInboxCapabilityTier available,
+        MessagingInboxCapabilityTier required
+    )
     {
         var model = MessagingCapabilityModel.Compose([
             _Transport("Transport", [MessageLane.Bus], independentLaneTopology: true),
-            _Storage("PostgreSql", MessagingInboxCapabilityTier.DurableDedupeOnly),
+            _Storage("TestStorage", available),
         ]);
 
         var act = () =>
             model.ValidateStartup(
                 [new MessageRouteKey(typeof(SharedContract), "orders.changed", MessageLane.Bus)],
                 hasDurableConsumers: true,
-                requiredInboxCapability: MessagingInboxCapabilityTier.Transactional
+                requiredInboxCapability: required
             );
 
         act.Should()
             .Throw<MessagingConfigurationException>()
-            .WithMessage("*Transactional*PostgreSql*DurableDedupeOnly*explicitly*");
+            .WithMessage($"*{required}*TestStorage*{available}*explicitly*");
+        model.InboxCapability.Should().Be(available);
     }
 
-    [Fact]
-    public void should_accept_explicit_durable_dedupe_only_opt_down_and_expose_provider_tier()
+    [Theory]
+    [InlineData(MessagingInboxCapabilityTier.ProcessLocal, MessagingInboxCapabilityTier.ProcessLocal)]
+    [InlineData(MessagingInboxCapabilityTier.DurableDedupeOnly, MessagingInboxCapabilityTier.ProcessLocal)]
+    [InlineData(MessagingInboxCapabilityTier.Transactional, MessagingInboxCapabilityTier.ProcessLocal)]
+    [InlineData(MessagingInboxCapabilityTier.DurableDedupeOnly, MessagingInboxCapabilityTier.DurableDedupeOnly)]
+    [InlineData(MessagingInboxCapabilityTier.Transactional, MessagingInboxCapabilityTier.DurableDedupeOnly)]
+    [InlineData(MessagingInboxCapabilityTier.Transactional, MessagingInboxCapabilityTier.Transactional)]
+    public void should_accept_storage_at_or_above_required_inbox_tier_and_preserve_declared_capability(
+        MessagingInboxCapabilityTier available,
+        MessagingInboxCapabilityTier required
+    )
     {
         var model = MessagingCapabilityModel.Compose([
             _Transport("Transport", [MessageLane.Bus], independentLaneTopology: true),
-            _Storage("PostgreSql", MessagingInboxCapabilityTier.DurableDedupeOnly),
+            _Storage("TestStorage", available),
         ]);
 
         model.ValidateStartup(
             [new MessageRouteKey(typeof(SharedContract), "orders.changed", MessageLane.Bus)],
             hasDurableConsumers: true,
-            requiredInboxCapability: MessagingInboxCapabilityTier.DurableDedupeOnly
+            requiredInboxCapability: required
         );
 
-        model.InboxCapability.Should().Be(MessagingInboxCapabilityTier.DurableDedupeOnly);
+        model.InboxCapability.Should().Be(available);
     }
 
-    [Fact]
-    public void process_local_storage_never_satisfies_a_durable_transactional_requirement()
+    [Theory]
+    [InlineData(-1, false)]
+    [InlineData(-1, true)]
+    [InlineData(3, false)]
+    [InlineData(3, true)]
+    [InlineData(int.MaxValue, true)]
+    public void should_reject_undefined_required_inbox_tier(int required, bool hasDurableConsumers)
     {
         var model = MessagingCapabilityModel.Compose([
-            _Transport("InMemory", [MessageLane.Bus], independentLaneTopology: true),
-            _Storage("InMemory", MessagingInboxCapabilityTier.ProcessLocal),
+            _Transport("Transport", [MessageLane.Bus], independentLaneTopology: true),
+            _Storage("TestStorage", MessagingInboxCapabilityTier.Transactional),
         ]);
 
         var act = () =>
             model.ValidateStartup(
                 [new MessageRouteKey(typeof(SharedContract), "orders.changed", MessageLane.Bus)],
-                hasDurableConsumers: true,
-                requiredInboxCapability: MessagingInboxCapabilityTier.Transactional
+                hasDurableConsumers: hasDurableConsumers,
+                requiredInboxCapability: (MessagingInboxCapabilityTier)required
             );
 
-        act.Should().Throw<MessagingConfigurationException>().WithMessage("*Transactional*InMemory*ProcessLocal*");
-        model.InboxCapability.Should().Be(MessagingInboxCapabilityTier.ProcessLocal);
+        act.Should().Throw<ArgumentException>().WithMessage("*requiredInboxCapability*");
+    }
 
-        model.ValidateStartup(
-            [new MessageRouteKey(typeof(SharedContract), "orders.changed", MessageLane.Bus)],
-            hasDurableConsumers: true,
-            requiredInboxCapability: MessagingInboxCapabilityTier.ProcessLocal
-        );
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(3)]
+    [InlineData(int.MaxValue)]
+    public void should_reject_undefined_declared_inbox_tier(int available)
+    {
+        var act = () => _Storage("TestStorage", (MessagingInboxCapabilityTier)available);
+
+        act.Should().Throw<ArgumentException>();
     }
 
     [Fact]

@@ -12,8 +12,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
-using InboxScopeDbContext = Tests.TransactionalInboxScopeConformanceTests.InboxScopeDbContext;
-using InboxScopeEffect = Tests.TransactionalInboxScopeConformanceTests.InboxScopeEffect;
 
 namespace Tests;
 
@@ -39,7 +37,7 @@ public abstract class TransactionalInboxRetryConformanceTests : TestBase
         var fault = new FaultState(failurePoint);
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddDbContext<InboxScopeDbContext>(options =>
+        services.AddDbContext<InboxRetryDbContext>(options =>
         {
             ConfigureContext(options);
             options.ReplaceService<IExecutionStrategyFactory, OneShotRetryExecutionStrategyFactory>();
@@ -60,7 +58,7 @@ public abstract class TransactionalInboxRetryConformanceTests : TestBase
         await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
         await using (var setupScope = provider.CreateAsyncScope())
         {
-            var db = setupScope.ServiceProvider.GetRequiredService<InboxScopeDbContext>();
+            var db = setupScope.ServiceProvider.GetRequiredService<InboxRetryDbContext>();
             await db.Database.ExecuteSqlRawAsync(CreateEffectsTableSql, AbortToken);
         }
 
@@ -109,7 +107,7 @@ public abstract class TransactionalInboxRetryConformanceTests : TestBase
         fault.Armed = true;
         await using (var attemptScope = provider.CreateAsyncScope())
         {
-            var db = attemptScope.ServiceProvider.GetRequiredService<InboxScopeDbContext>();
+            var db = attemptScope.ServiceProvider.GetRequiredService<InboxRetryDbContext>();
             error = await Record.ExceptionAsync(() =>
                 attemptScope
                     .ServiceProvider.GetRequiredService<IInboxTransactionRunner>()
@@ -118,7 +116,7 @@ public abstract class TransactionalInboxRetryConformanceTests : TestBase
                         async ct =>
                         {
                             handlerEntries++;
-                            await db.Effects.AddAsync(new InboxScopeEffect { Id = id }, ct);
+                            await db.Effects.AddAsync(new InboxRetryEffect { Id = id }, ct);
                             fault.ThrowOnce(FailurePoint.Handler);
                             if (failurePoint is FailurePoint.Disposal)
                             {
@@ -146,7 +144,7 @@ public abstract class TransactionalInboxRetryConformanceTests : TestBase
 
         await using (var verificationScope = provider.CreateAsyncScope())
         {
-            var db = verificationScope.ServiceProvider.GetRequiredService<InboxScopeDbContext>();
+            var db = verificationScope.ServiceProvider.GetRequiredService<InboxRetryDbContext>();
             (await db.Effects.AnyAsync(effect => effect.Id == id, AbortToken)).Should().Be(committed);
         }
         (await admit())
@@ -185,7 +183,7 @@ public abstract class TransactionalInboxRetryConformanceTests : TestBase
         (await storage.ReserveReceiveAttemptAsync(recovered, originalInlineAttempts, AbortToken)).Should().BeTrue();
         await using (var recoveryScope = provider.CreateAsyncScope())
         {
-            var db = recoveryScope.ServiceProvider.GetRequiredService<InboxScopeDbContext>();
+            var db = recoveryScope.ServiceProvider.GetRequiredService<InboxRetryDbContext>();
             await recoveryScope
                 .ServiceProvider.GetRequiredService<IInboxTransactionRunner>()
                 .ExecuteAsync(
@@ -193,7 +191,7 @@ public abstract class TransactionalInboxRetryConformanceTests : TestBase
                     async ct =>
                     {
                         handlerEntries++;
-                        await db.Effects.AddAsync(new InboxScopeEffect { Id = id }, ct);
+                        await db.Effects.AddAsync(new InboxRetryEffect { Id = id }, ct);
                     },
                     AbortToken
                 );
@@ -203,7 +201,7 @@ public abstract class TransactionalInboxRetryConformanceTests : TestBase
         await using var finalScope = provider.CreateAsyncScope();
         (
             await finalScope
-                .ServiceProvider.GetRequiredService<InboxScopeDbContext>()
+                .ServiceProvider.GetRequiredService<InboxRetryDbContext>()
                 .Effects.CountAsync(effect => effect.Id == id, AbortToken)
         )
             .Should()
@@ -222,6 +220,20 @@ public abstract class TransactionalInboxRetryConformanceTests : TestBase
     }
 
     public sealed class RetryableInboxException() : Exception("Injected transient inbox failure.");
+
+    public sealed class InboxRetryEffect
+    {
+        public Guid Id { get; set; }
+    }
+
+    // Retry fault injection needs a plain context, independent of the tenant-scope suite's service graph.
+    public sealed class InboxRetryDbContext(DbContextOptions<InboxRetryDbContext> options) : DbContext(options)
+    {
+        public DbSet<InboxRetryEffect> Effects => Set<InboxRetryEffect>();
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder) =>
+            modelBuilder.Entity<InboxRetryEffect>().ToTable("InboxScopeEffects").HasKey(effect => effect.Id);
+    }
 
     private sealed class FaultState(FailurePoint failurePoint)
     {

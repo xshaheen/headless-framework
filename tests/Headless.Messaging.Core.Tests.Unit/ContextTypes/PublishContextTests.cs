@@ -15,8 +15,10 @@ public sealed class PublishContextTests : TestBase
         var context = new PublishContext<OrderPlaced>(
             new OrderPlaced("order-1"),
             MessageLane.Bus,
-            new PublishOptions { CorrelationId = "corr-1" },
-            TimeSpan.FromSeconds(1)
+            new PublishOptions { CorrelationId = "corr-1", Delay = TimeSpan.FromSeconds(1) },
+            defaultDeliveryMode: DeliveryMode.Auto,
+            now: DateTimeOffset.UnixEpoch,
+            cancellationToken: AbortToken
         );
 
         // when
@@ -39,8 +41,10 @@ public sealed class PublishContextTests : TestBase
         var context = new PublishContext<OrderPlaced>(
             new OrderPlaced("order-1"),
             MessageLane.Bus,
-            new PublishOptions { TenantId = "tenant-1" },
-            TimeSpan.FromSeconds(1)
+            new PublishOptions { TenantId = "tenant-1", Delay = TimeSpan.FromSeconds(1) },
+            defaultDeliveryMode: DeliveryMode.Auto,
+            now: DateTimeOffset.UnixEpoch,
+            cancellationToken: AbortToken
         );
 
         // when
@@ -65,7 +69,8 @@ public sealed class PublishContextTests : TestBase
             new OrderPlaced("order-1"),
             MessageLane.Bus,
             options: null,
-            delayTime: null,
+            defaultDeliveryMode: DeliveryMode.Auto,
+            now: DateTimeOffset.UnixEpoch,
             cancellationToken: first.Token
         );
 
@@ -98,7 +103,8 @@ public sealed class PublishContextTests : TestBase
             new OrderPlaced("order-1"),
             MessageLane.Bus,
             options,
-            delayTime: null,
+            defaultDeliveryMode: DeliveryMode.Auto,
+            now: DateTimeOffset.UnixEpoch,
             isTransactional: true,
             cancellationToken: cts.Token
         );
@@ -126,7 +132,9 @@ public sealed class PublishContextTests : TestBase
             new OrderPlaced("order-1"),
             MessageLane.Bus,
             options,
-            delayTime: null
+            defaultDeliveryMode: DeliveryMode.Auto,
+            now: DateTimeOffset.UnixEpoch,
+            cancellationToken: AbortToken
         );
         headers["x-feature"] = "disabled";
         headers["x-new"] = "new";
@@ -196,6 +204,162 @@ public sealed class PublishContextTests : TestBase
         context.DelayTime.Should().Be(delay);
     }
 
+    [Theory]
+    [InlineData(DeliveryMode.Auto, DeliveryMode.Direct, true)]
+    [InlineData(DeliveryMode.Auto, DeliveryMode.Direct, false)]
+    [InlineData(DeliveryMode.Durable, DeliveryMode.Durable, true)]
+    [InlineData(DeliveryMode.Durable, DeliveryMode.Durable, false)]
+    [InlineData(DeliveryMode.Direct, DeliveryMode.Direct, true)]
+    [InlineData(DeliveryMode.Direct, DeliveryMode.Direct, false)]
+    public void should_inherit_explicit_host_default_when_constructed_without_delivery_override(
+        DeliveryMode hostDefault,
+        DeliveryMode expectedMode,
+        bool nullOptions
+    )
+    {
+        var context = new PublishContext<OrderPlaced>(
+            new OrderPlaced("order-1"),
+            MessageLane.Bus,
+            nullOptions ? null : new PublishOptions(),
+            hostDefault,
+            DateTimeOffset.UnixEpoch,
+            cancellationToken: AbortToken
+        );
+
+        context.RequestedDeliveryMode.Should().Be(hostDefault);
+        context.ResolvedDeliveryMode.Should().Be(expectedMode);
+        context.IsTransactional.Should().BeFalse();
+        context.DelayTime.Should().BeNull();
+        context.PublishAt.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(DeliveryMode.Auto, false, DeliveryMode.Direct, false)]
+    [InlineData(DeliveryMode.Auto, true, DeliveryMode.Durable, true)]
+    [InlineData(DeliveryMode.Durable, false, DeliveryMode.Durable, false)]
+    [InlineData(DeliveryMode.Durable, true, DeliveryMode.Durable, true)]
+    [InlineData(DeliveryMode.Direct, false, DeliveryMode.Direct, false)]
+    [InlineData(DeliveryMode.Direct, true, DeliveryMode.Direct, false)]
+    public void should_resolve_explicit_mode_against_compatible_coordination(
+        DeliveryMode requestedMode,
+        bool isTransactional,
+        DeliveryMode expectedMode,
+        bool expectedTransactional
+    )
+    {
+        var context = new PublishContext<OrderPlaced>(
+            new OrderPlaced("order-1"),
+            MessageLane.Queue,
+            new QueueOptions { DeliveryMode = requestedMode },
+            defaultDeliveryMode: DeliveryMode.Durable,
+            now: DateTimeOffset.UnixEpoch,
+            isTransactional: isTransactional,
+            cancellationToken: AbortToken
+        );
+
+        context.RequestedDeliveryMode.Should().Be(requestedMode);
+        context.ResolvedDeliveryMode.Should().Be(expectedMode);
+        context.IsTransactional.Should().Be(expectedTransactional);
+    }
+
+    [Theory]
+    [InlineData(MessageLane.Bus, false)]
+    [InlineData(MessageLane.Bus, true)]
+    [InlineData(MessageLane.Queue, false)]
+    [InlineData(MessageLane.Queue, true)]
+    public void should_calculate_utc_publish_at_from_option_delay(MessageLane lane, bool isTransactional)
+    {
+        var now = new DateTimeOffset(2026, 9, 10, 12, 0, 0, TimeSpan.FromHours(3));
+        var delay = TimeSpan.FromMinutes(5);
+        MessageOptions options =
+            lane == MessageLane.Bus ? new PublishOptions { Delay = delay } : new QueueOptions { Delay = delay };
+        var context = new PublishContext<OrderPlaced>(
+            new OrderPlaced("order-1"),
+            lane,
+            options,
+            defaultDeliveryMode: DeliveryMode.Auto,
+            now: now,
+            isTransactional: isTransactional,
+            cancellationToken: AbortToken
+        );
+
+        context.RequestedDeliveryMode.Should().Be(DeliveryMode.Auto);
+        context.ResolvedDeliveryMode.Should().Be(DeliveryMode.Durable);
+        context.DelayTime.Should().Be(delay);
+        context.PublishAt.Should().Be(new DateTimeOffset(2026, 9, 10, 9, 5, 0, TimeSpan.Zero));
+        context.PublishAt!.Value.Offset.Should().Be(TimeSpan.Zero);
+        context.IsTransactional.Should().Be(isTransactional);
+    }
+
+    [Theory]
+    [InlineData(MessageLane.Bus, null)]
+    [InlineData(MessageLane.Bus, DeliveryMode.Direct)]
+    [InlineData(MessageLane.Queue, null)]
+    [InlineData(MessageLane.Queue, DeliveryMode.Direct)]
+    public void should_reject_delayed_direct_delivery_from_host_or_option(MessageLane lane, DeliveryMode? mode)
+    {
+        MessageOptions options =
+            lane == MessageLane.Bus
+                ? new PublishOptions { Delay = TimeSpan.FromSeconds(1), DeliveryMode = mode }
+                : new QueueOptions { Delay = TimeSpan.FromSeconds(1), DeliveryMode = mode };
+
+        var act = () =>
+            new PublishContext<OrderPlaced>(
+                new OrderPlaced("order-1"),
+                lane,
+                options,
+                defaultDeliveryMode: DeliveryMode.Direct,
+                now: DateTimeOffset.UnixEpoch,
+                isTransactional: true,
+                cancellationToken: AbortToken
+            );
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*Direct*delay*");
+    }
+
+    [Theory]
+    [InlineData(0L)]
+    [InlineData(-1L)]
+    [InlineData(long.MaxValue)]
+    public void should_reject_invalid_delay_during_public_construction(long delayTicks)
+    {
+        var act = () =>
+            new PublishContext<OrderPlaced>(
+                new OrderPlaced("order-1"),
+                MessageLane.Bus,
+                new PublishOptions { Delay = TimeSpan.FromTicks(delayTicks) },
+                defaultDeliveryMode: DeliveryMode.Auto,
+                now: DateTimeOffset.UnixEpoch,
+                cancellationToken: AbortToken
+            );
+
+        act.Should().Throw<ArgumentOutOfRangeException>().WithParameterName("delay");
+    }
+
+    [Theory]
+    [InlineData((MessageLane)99, DeliveryMode.Auto, null, "lane")]
+    [InlineData(MessageLane.Bus, (DeliveryMode)99, null, "requestedMode")]
+    [InlineData(MessageLane.Bus, DeliveryMode.Auto, (DeliveryMode)99, "requestedMode")]
+    public void should_reject_invalid_lane_or_effective_mode_during_public_construction(
+        MessageLane lane,
+        DeliveryMode hostDefault,
+        DeliveryMode? requestedMode,
+        string parameter
+    )
+    {
+        var act = () =>
+            new PublishContext<OrderPlaced>(
+                new OrderPlaced("order-1"),
+                lane,
+                new PublishOptions { DeliveryMode = requestedMode },
+                hostDefault,
+                DateTimeOffset.UnixEpoch,
+                cancellationToken: AbortToken
+            );
+
+        act.Should().Throw<ArgumentOutOfRangeException>().WithParameterName(parameter);
+    }
+
     private static PublishContext<OrderPlaced> _CreateFrozenContext(PublishOptions options)
     {
         var decision = DeliveryDecisionResolver.Resolve(
@@ -211,7 +375,7 @@ public sealed class PublishContextTests : TestBase
             MessageLane.Bus,
             options,
             decision,
-            CancellationToken.None
+            AbortToken
         );
     }
 

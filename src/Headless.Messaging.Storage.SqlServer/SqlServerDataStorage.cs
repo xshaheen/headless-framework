@@ -863,15 +863,26 @@ internal sealed partial class SqlServerDataStorage(
                     $"""
                     SET NOCOUNT ON;
                     SET XACT_ABORT ON;
+                    -- Inbox admission can leave Serializable isolation on this pooled session; READPAST requires ReadCommitted.
+                    SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
                     BEGIN TRANSACTION;
                     DECLARE @Now datetimeoffset(7)=SYSDATETIMEOFFSET();
                     DECLARE @Candidates TABLE(Id uniqueidentifier PRIMARY KEY,IsInboxRecord bit,GenerationIncarnationId uniqueidentifier NULL,StatusName nvarchar(50),OperationId uniqueidentifier NULL,AuditId uniqueidentifier NULL);
                     INSERT INTO @Candidates
                     SELECT TOP (@batchCount) Id,IsInboxRecord,GenerationIncarnationId,StatusName,
                            CASE WHEN IsInboxRecord=1 THEN NEWID() END,CASE WHEN IsInboxRecord=1 THEN NEWID() END
-                    FROM {_receivedTable} WITH (UPDLOCK,ROWLOCK)
-                    WHERE ((IsInboxRecord=0 AND ExpiresAt < @timeout) OR (IsInboxRecord=1 AND IsHeld=0 AND EffectiveExpiresAt < @Now))
-                      AND StatusName IN(N'Succeeded',N'Failed') AND NextRetryAt IS NULL AND IntentType IN(0,1)
+                    FROM (
+                        -- Separate expiry predicates let each branch use its own retention index.
+                        SELECT Id,IsInboxRecord,GenerationIncarnationId,StatusName,EffectiveExpiresAt
+                        FROM {_receivedTable} WITH (UPDLOCK,READPAST,READCOMMITTEDLOCK,ROWLOCK)
+                        WHERE IsInboxRecord=0 AND ExpiresAt < @timeout
+                          AND StatusName IN(N'Succeeded',N'Failed') AND NextRetryAt IS NULL AND IntentType IN(0,1)
+                        UNION ALL
+                        SELECT Id,IsInboxRecord,GenerationIncarnationId,StatusName,EffectiveExpiresAt
+                        FROM {_receivedTable} WITH (UPDLOCK,READPAST,READCOMMITTEDLOCK,ROWLOCK)
+                        WHERE IsInboxRecord=1 AND IsHeld=0 AND EffectiveExpiresAt < @Now
+                          AND StatusName IN(N'Succeeded',N'Failed') AND NextRetryAt IS NULL AND IntentType IN(0,1)
+                    ) eligible
                     ORDER BY EffectiveExpiresAt,Id;
                     INSERT INTO {InboxReceiptsTable}(OperationId,GenerationIncarnationId,OperationType,ExpectedStatus,Actor,Reason,Outcome,StorageId,CreatedAt)
                     SELECT OperationId,GenerationIncarnationId,N'Cleanup',StatusName,N'headless.messaging.collector',N'retention_expired',N'Applied',Id,@Now FROM @Candidates WHERE IsInboxRecord=1;
@@ -1465,7 +1476,7 @@ internal sealed partial class SqlServerDataStorage(
     {
         var isReceivedTable = string.Equals(tableName, _receivedTable, StringComparison.Ordinal);
         var inboxGuard = isReceivedTable
-            ? " AND (IsInboxRecord=0 OR (IntentType=@InboxIntentType AND Generation=@InboxGeneration AND GenerationIncarnationId=@InboxGenerationIncarnationId AND AttemptId=@InboxAttemptId))"
+            ? " AND (IsInboxRecord=0 OR (IntentType=@InboxIntentType AND Generation=@InboxGeneration AND GenerationIncarnationId=@InboxGenerationIncarnationId AND AttemptId=@InboxAttemptId AND Id=@InboxStorageId AND (Owner=@InboxOwner OR (Owner IS NULL AND @InboxOwner IS NULL)) AND LockedUntil=@InboxLockedUntil))"
             : string.Empty;
         var sql =
             $"DECLARE @LeaseNow datetime2(7) = SYSUTCDATETIME(); UPDATE {tableName} SET InlineAttempts=@InlineAttempts WHERE Id=@Id AND {_TerminalRowGuardWithRetries} AND ((LockedUntil IS NULL AND @LockedUntil IS NULL) OR LockedUntil=@LockedUntil) AND ((Owner IS NULL AND @CurrentOwner IS NULL) OR Owner=@CurrentOwner) AND LockedUntil>@LeaseNow{inboxGuard}";
@@ -1501,6 +1512,18 @@ internal sealed partial class SqlServerDataStorage(
             new SqlParameter("@InboxAttemptId", SqlDbType.UniqueIdentifier)
             {
                 Value = inboxFence?.AttemptId ?? (object)DBNull.Value,
+            },
+            new SqlParameter("@InboxStorageId", SqlDbType.UniqueIdentifier)
+            {
+                Value = inboxFence?.StorageId ?? (object)DBNull.Value,
+            },
+            new SqlParameter("@InboxOwner", SqlDbType.NVarChar, options.Value.OwnerColumnMaxLength)
+            {
+                Value = inboxFence?.Owner ?? (object)DBNull.Value,
+            },
+            new SqlParameter("@InboxLockedUntil", SqlDbType.DateTimeOffset)
+            {
+                Value = inboxFence?.LockedUntil ?? (object)DBNull.Value,
             },
         ];
         await using var connection = new SqlConnection(options.Value.ConnectionString);

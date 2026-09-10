@@ -25,6 +25,8 @@ Inbox operations are generation-fenced and audited. Terminal identity is retaine
 
 Inbox query and operation JSON uses camelCase properties and named string enum values, such as `"Failed"`, `"Succeeded"`, and `"Queue"`, independently of the host's JSON configuration. Operation requests must send `expectedStatus` as a string; responses use the same format for status, lane, operation type, and outcome, including conflict and not-found results.
 
+Inbox operations require an authenticated principal and a stable audit actor. The primary identity's name is used first, then its `NameIdentifier` or `sub` claim, then the authenticated dashboard username. The shared `host-user` placeholder cannot identify an operator. Authorization retains the host's claims and role mappings. Operation bodies require a JSON content type; unsupported media types return HTTP 415 and malformed JSON returns HTTP 422.
+
 ## Installation
 
 ```bash

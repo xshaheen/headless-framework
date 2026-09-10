@@ -257,6 +257,16 @@ internal sealed class SqlServerStorageInitializer(
             END CATCH;
 
             BEGIN TRY
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_InboxRetention' AND object_id = OBJECT_ID(N'{GetReceivedTableName()}'))
+                    EXEC(N'CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_InboxRetention]
+                        ON {GetReceivedTableName()} ([EffectiveExpiresAt],[Id])
+                        INCLUDE ([StatusName],[NextRetryAt],[IntentType],[IsInboxRecord],[GenerationIncarnationId]) WHERE [IsInboxRecord]=1 AND [IsHeld]=0');
+            END TRY
+            BEGIN CATCH
+                IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
+            END CATCH;
+
+            BEGIN TRY
                 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_Version_ExpiresAt_StatusName' AND object_id = OBJECT_ID(N'{GetReceivedTableName()}'))
                     CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_Version_ExpiresAt_StatusName] ON {GetReceivedTableName()} ([Version] ASC,[ExpiresAt] ASC,[StatusName] ASC);
             END TRY

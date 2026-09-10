@@ -148,6 +148,20 @@ public sealed class SqlServerPooledIsolationTests(SqlServerTestFixture fixture) 
             (await monitoring.GetPublishedMessageAsync(lockedId, AbortToken)).Should().NotBeNull();
 
             await _AdmitOnPooledSessionAsync(storage, connectionOptions.ConnectionString, sessionId);
+            await using (var connection = new SqlConnection(connectionOptions.ConnectionString))
+            {
+                await connection.ExecuteAsync(
+                    new CommandDefinition(
+                        "UPDATE messaging.Received SET StatusName=N'Succeeded',NextRetryAt=NULL,EffectiveExpiresAt=DATEADD(minute,-1,SYSUTCDATETIME()) WHERE Id=@Id;",
+                        new { Id = received.Message.StorageId },
+                        cancellationToken: AbortToken
+                    )
+                );
+            }
+            (await storage.DeleteExpiresAsync(initializer.GetReceivedTableName(), now, 10, AbortToken)).Should().Be(1);
+            (await monitoring.GetReceivedMessageAsync(received.Message.StorageId, AbortToken)).Should().BeNull();
+
+            await _AdmitOnPooledSessionAsync(storage, connectionOptions.ConnectionString, sessionId);
             var scheduled = new List<MediumMessage>();
             await storage.ScheduleMessagesOfDelayedAsync(
                 (_, messages) =>

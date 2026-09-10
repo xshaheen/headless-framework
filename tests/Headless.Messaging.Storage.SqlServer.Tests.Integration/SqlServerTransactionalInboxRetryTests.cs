@@ -3,7 +3,6 @@
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Microsoft.EntityFrameworkCore;
-using InboxScopeDbContext = Tests.TransactionalInboxScopeConformanceTests.InboxScopeDbContext;
 
 namespace Tests;
 
@@ -17,7 +16,7 @@ public sealed class SqlServerTransactionalInboxRetryTests(SqlServerTestFixture f
         options.UseSqlServer(fixture.ConnectionString);
 
     protected override void ConfigureStorage(MessagingSetupBuilder setup) =>
-        setup.UseEntityFramework<InboxScopeDbContext>(options => options.Schema = _Schema);
+        setup.UseEntityFramework<InboxRetryDbContext>(options => options.Schema = _Schema);
 
     protected override string CreateEffectsTableSql =>
         "IF OBJECT_ID(N'InboxScopeEffects', N'U') IS NULL CREATE TABLE [InboxScopeEffects] ([Id] uniqueidentifier PRIMARY KEY);";

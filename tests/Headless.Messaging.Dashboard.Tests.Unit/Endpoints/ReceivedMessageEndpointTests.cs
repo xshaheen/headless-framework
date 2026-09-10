@@ -613,12 +613,231 @@ public sealed class ReceivedMessageEndpointTests : TestBase
             );
     }
 
+    [Theory]
+    [InlineData(ClaimTypes.NameIdentifier, ClaimTypes.Name, null)]
+    [InlineData("sub", ClaimTypes.Name, null)]
+    [InlineData("sub", "display_name", " ")]
+    [InlineData(ClaimTypes.NameIdentifier, "display_name", " ")]
+    public async Task should_attribute_host_inbox_queries_and_mutations_to_stable_identity(
+        string identifierClaimType,
+        string nameClaimType,
+        string? name
+    )
+    {
+        var identity = new ClaimsIdentity(
+            [
+                new Claim(identifierClaimType, "operator-42"),
+                new Claim("tenant", "tenant-7"),
+                new Claim("permission", "inbox.manage"),
+                new Claim("host_role", "operator"),
+            ],
+            "test",
+            nameClaimType,
+            "host_role"
+        );
+        if (name is not null)
+        {
+            identity.AddClaim(new Claim(nameClaimType, name));
+        }
+        // NameIdentifier wins when a token exposes both identifier forms.
+        identity.AddClaim(new Claim("sub", "secondary-subject"));
+        var principal = new ClaimsPrincipal(identity);
+        principal.AddIdentity(new ClaimsIdentity([new Claim("extra", "preserved")], "secondary"));
+        var operations = Substitute.For<IInboxOperationsApi>();
+        InboxAuthorizationContext? queryAuthority = null;
+        InboxOperationRequest? mutationRequest = null;
+        operations
+            .QueryAsync(
+                Arg.Any<InboxGenerationQuery>(),
+                Arg.Any<InboxAuthorizationContext>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(call =>
+            {
+                queryAuthority = call.Arg<InboxAuthorizationContext>();
+                queryAuthority.Validate();
+                return ValueTask.FromResult(new IndexPage<InboxGenerationView>([], 0, 20, 0));
+            });
+        operations
+            .HoldAsync(Arg.Any<InboxOperationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                mutationRequest = call.Arg<InboxOperationRequest>();
+                mutationRequest.Validate();
+                return ValueTask.FromResult(
+                    new InboxOperationResult(
+                        mutationRequest.OperationId,
+                        InboxOperationType.Hold,
+                        InboxOperationOutcome.Applied,
+                        mutationRequest.ExpectedIncarnationId,
+                        mutationRequest.ExpectedStatus,
+                        null,
+                        null,
+                        null,
+                        null,
+                        mutationRequest.Actor,
+                        mutationRequest.Reason,
+                        DateTimeOffset.UtcNow
+                    )
+                );
+            });
+        _dataStorage.GetInboxOperationsApi().Returns(operations);
+        await using var app = _CreateTestApp(
+            _dataStorage,
+            config: new MessagingDashboardOptionsBuilder().WithHostAuthentication("InboxOperator"),
+            useAuthenticationMiddleware: true,
+            principal: principal
+        );
+        await app.StartAsync(AbortToken);
+        using var client = app.GetTestClient();
+
+        using var query = await client.GetAsync("/api/inbox", AbortToken);
+        using var mutation = await client.PostAsJsonAsync(
+            "/api/inbox/hold",
+            new
+            {
+                operationId = Guid.NewGuid(),
+                expectedIncarnationId = Guid.NewGuid(),
+                expectedStatus = nameof(StatusName.Failed),
+                reason = "investigation",
+            },
+            AbortToken
+        );
+
+        query.StatusCode.Should().Be(HttpStatusCode.OK);
+        mutation.StatusCode.Should().Be(HttpStatusCode.OK);
+        foreach (var authority in new[] { queryAuthority!, mutationRequest!.Authorization })
+        {
+            authority.Actor.Should().Be("operator-42");
+            authority.Principal.IsInRole("operator").Should().BeTrue();
+            authority.Principal.HasClaim("tenant", "tenant-7").Should().BeTrue();
+            authority.Principal.HasClaim("permission", "inbox.manage").Should().BeTrue();
+            authority.Principal.HasClaim("extra", "preserved").Should().BeTrue();
+            authority.Principal.Should().NotBeSameAs(principal);
+        }
+        identity.Name.Should().Be(name);
+        principal.Identities.Should().HaveCount(2);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task should_reject_inbox_actor_without_authenticated_stable_identity(bool authenticated)
+    {
+        var principal = new ClaimsPrincipal(
+            new ClaimsIdentity(
+                [
+                    new Claim("host_role", "operator"),
+                    new Claim("tenant", "tenant-7"),
+                    new Claim("permission", "inbox.manage"),
+                ],
+                authenticated ? "test" : null,
+                ClaimTypes.Name,
+                "host_role"
+            )
+        );
+        principal.AddIdentity(new ClaimsIdentity([new Claim("sub", "untrusted-subject")]));
+        await using var app = _CreateTestApp(
+            _dataStorage,
+            config: authenticated
+                ? new MessagingDashboardOptionsBuilder().WithHostAuthentication("InboxOperator")
+                : null,
+            useAuthenticationMiddleware: authenticated,
+            principal: principal
+        );
+        await app.StartAsync(AbortToken);
+        using var client = app.GetTestClient();
+
+        using var query = await client.GetAsync("/api/inbox", AbortToken);
+        using var content = new StringContent("{}", Encoding.UTF8, "text/plain");
+        using var mutation = await client.PostAsync("/api/inbox/hold", content, AbortToken);
+
+        query.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        mutation.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        _dataStorage.DidNotReceive().GetInboxOperationsApi();
+    }
+
+    [Theory]
+    [InlineData("host_role", "viewer")]
+    [InlineData("tenant", "tenant-8")]
+    [InlineData("permission", "inbox.read")]
+    public async Task should_preserve_host_inbox_policy_for_unnamed_identity(string claimType, string value)
+    {
+        var identity = new ClaimsIdentity(
+            [
+                new Claim("sub", "operator-42"),
+                new Claim("host_role", "operator"),
+                new Claim("tenant", "tenant-7"),
+                new Claim("permission", "inbox.manage"),
+            ],
+            "test",
+            ClaimTypes.Name,
+            "host_role"
+        );
+        identity.RemoveClaim(identity.FindFirst(claimType)!);
+        identity.AddClaim(new Claim(claimType, value));
+        await using var app = _CreateTestApp(
+            _dataStorage,
+            config: new MessagingDashboardOptionsBuilder().WithHostAuthentication("InboxOperator"),
+            useAuthenticationMiddleware: true,
+            principal: new ClaimsPrincipal(identity)
+        );
+        await app.StartAsync(AbortToken);
+        using var client = app.GetTestClient();
+
+        using var query = await client.GetAsync("/api/inbox", AbortToken);
+        using var mutation = await client.PostAsJsonAsync("/api/inbox/hold", new { }, AbortToken);
+
+        query.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        mutation.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        _dataStorage.DidNotReceive().GetInboxOperationsApi();
+    }
+
+    [Theory]
+    [InlineData("/api/inbox/hold", "text/plain")]
+    [InlineData("/api/inbox/release", "application/x-www-form-urlencoded")]
+    [InlineData("/api/received/delete", "application/xml")]
+    [InlineData("/api/received/reexecute", "text/plain")]
+    [InlineData("/api/inbox/hold", null)]
+    public async Task should_return_415_for_non_json_inbox_mutations(string path, string? contentType)
+    {
+        await using var app = _CreateTestApp(_dataStorage);
+        await app.StartAsync(AbortToken);
+        using var client = app.GetTestClient();
+        using var content = new StringContent("{}", Encoding.UTF8);
+        content.Headers.ContentType = contentType is null ? null : new MediaTypeHeaderValue(contentType);
+
+        using var response = await client.PostAsync(path, content, AbortToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
+        _dataStorage.DidNotReceive().GetInboxOperationsApi();
+    }
+
+    [Theory]
+    [InlineData("/api/inbox/hold")]
+    [InlineData("/api/inbox/release")]
+    [InlineData("/api/received/delete")]
+    [InlineData("/api/received/reexecute")]
+    public async Task should_return_422_for_malformed_json_inbox_mutations(string path)
+    {
+        await using var app = _CreateTestApp(_dataStorage);
+        await app.StartAsync(AbortToken);
+        using var client = app.GetTestClient();
+        using var content = new StringContent("{", Encoding.UTF8, "application/json");
+
+        using var response = await client.PostAsync(path, content, AbortToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        _dataStorage.DidNotReceive().GetInboxOperationsApi();
+    }
+
     private static WebApplication _CreateTestApp(
         IDataStorage dataStorage,
         bool authenticate = true,
         MessagingDashboardOptionsBuilder? config = null,
         bool useAuthenticationMiddleware = false,
-        bool customizeHostJson = false
+        bool customizeHostJson = false,
+        ClaimsPrincipal? principal = null
     )
     {
         config ??= new MessagingDashboardOptionsBuilder().WithNoAuth();
@@ -650,15 +869,52 @@ public sealed class ReceivedMessageEndpointTests : TestBase
 
         appBuilder.Services.AddRouting();
         appBuilder.Services.AddAuthorization();
+        if (config.Auth.Mode == AuthMode.Host)
+        {
+            appBuilder
+                .Services.AddAuthentication("test")
+                .AddCookie(
+                    "test",
+                    options =>
+                    {
+                        options.Events.OnRedirectToAccessDenied = context =>
+                        {
+                            context.Response.StatusCode = 403;
+                            return Task.CompletedTask;
+                        };
+                    }
+                );
+            appBuilder
+                .Services.AddAuthorizationBuilder()
+                .AddPolicy(
+                    "InboxOperator",
+                    policy =>
+                        policy
+                            .RequireAuthenticatedUser()
+                            .RequireRole("operator")
+                            .RequireClaim("tenant", "tenant-7")
+                            .RequireClaim("permission", "inbox.manage")
+                );
+        }
         appBuilder.Services.AddCors(o => o.AddPolicy("HeadlessMessagingDashboardCORS", p => p.AllowAnyOrigin()));
 
         var app = appBuilder.Build();
         app.UseRouting();
+        if (principal is not null)
+        {
+            app.Use(
+                (context, next) =>
+                {
+                    context.User = principal;
+                    return next(context);
+                }
+            );
+        }
         if (useAuthenticationMiddleware)
         {
             app.UseMiddleware<AuthMiddleware>();
         }
-        else if (authenticate)
+        else if (authenticate && principal is null)
         {
             app.Use(
                 (context, next) =>
@@ -674,6 +930,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
             );
         }
         app.UseCors("HeadlessMessagingDashboardCORS");
+        app.UseAuthorization();
         app.MapMessagingDashboardEndpoints(config);
 
         return app;

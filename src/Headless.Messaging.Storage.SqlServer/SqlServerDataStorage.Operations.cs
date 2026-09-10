@@ -170,7 +170,7 @@ internal sealed partial class SqlServerDataStorage
                 cancellationToken
             )
             .ConfigureAwait(false);
-        var outcome = _EvaluateRelationalOperation(operationType, request, row?.Common);
+        var outcome = InboxOperationEvaluator.Evaluate(operationType, request.ExpectedStatus, row?.State);
         Guid? childStorageId = null;
         long? childGeneration = null;
         Guid? childIncarnationId = null;
@@ -203,7 +203,7 @@ internal sealed partial class SqlServerDataStorage
                 case InboxOperationType.ForceReprocess:
                     childStorageId = guidGenerator.Create();
                     childIncarnationId = guidGenerator.Create();
-                    childGeneration = checked(row.Common.Generation + 1);
+                    childGeneration = checked(row.State.Generation + 1);
                     await _CreateSqlServerChildAsync(
                             connection,
                             transaction,
@@ -237,7 +237,7 @@ internal sealed partial class SqlServerDataStorage
             outcome,
             request.ExpectedIncarnationId,
             request.ExpectedStatus,
-            row?.Common.StorageId,
+            row?.StorageId,
             childStorageId,
             childGeneration,
             childIncarnationId,
@@ -277,35 +277,6 @@ internal sealed partial class SqlServerDataStorage
             messagingOptions.Value.RequiredInboxCapability,
             "SqlServer"
         );
-    }
-
-    private static InboxOperationOutcome _EvaluateRelationalOperation(
-        InboxOperationType operationType,
-        InboxOperationRequest request,
-        InboxOperationRow? row
-    )
-    {
-        if (row is null)
-        {
-            return InboxOperationOutcome.NotFound;
-        }
-        if (row.Status != request.ExpectedStatus)
-        {
-            return InboxOperationOutcome.StateConflict;
-        }
-        if (row.Status is not (StatusName.Succeeded or StatusName.Failed) || row.NextRetryAt is not null)
-        {
-            return InboxOperationOutcome.Active;
-        }
-        return operationType switch
-        {
-            InboxOperationType.Hold when row.IsHeld => InboxOperationOutcome.StateConflict,
-            InboxOperationType.ReleaseHold when !row.IsHeld => InboxOperationOutcome.StateConflict,
-            InboxOperationType.ForceReprocess when !row.IsCurrent || row.Generation == long.MaxValue =>
-                InboxOperationOutcome.StateConflict,
-            InboxOperationType.Purge when row.IsHeld => InboxOperationOutcome.Held,
-            _ => InboxOperationOutcome.Applied,
-        };
     }
 
     private static InboxOperationResult _ReplayOrConflict(
@@ -384,7 +355,11 @@ internal sealed partial class SqlServerDataStorage
         CancellationToken cancellationToken
     )
     {
-        await using var command = new SqlCommand("SELECT SYSDATETIMEOFFSET();", connection, transaction);
+        await using var command = new SqlCommand(
+            "SELECT CONVERT(datetimeoffset(7), SYSUTCDATETIME());",
+            connection,
+            transaction
+        );
         return (DateTimeOffset)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false))!;
     }
 
@@ -431,16 +406,15 @@ internal sealed partial class SqlServerDataStorage
         {
             return null;
         }
-        var common = new InboxOperationRow(
-            reader.GetGuid(0),
-            Enum.Parse<StatusName>(reader.GetString(1)),
-            reader.IsDBNull(2) ? null : reader.GetFieldValue<DateTimeOffset>(2),
-            reader.GetBoolean(3),
-            reader.GetBoolean(4),
-            reader.GetInt64(5)
-        );
         return new SqlServerInboxOperationRow(
-            common,
+            reader.GetGuid(0),
+            new InboxOperationState(
+                Enum.Parse<StatusName>(reader.GetString(1)),
+                !reader.IsDBNull(2),
+                reader.GetBoolean(3),
+                reader.GetBoolean(4),
+                reader.GetInt64(5)
+            ),
             reader.GetBoolean(6),
             reader.GetString(7),
             reader.GetString(8),
@@ -611,7 +585,7 @@ internal sealed partial class SqlServerDataStorage
     )
     {
         await using var command = new SqlCommand(
-            $"INSERT INTO {InboxAuditTable}([AuditId],[OperationId],[GenerationIncarnationId],[OperationType],[Actor],[Reason],[Outcome],[CreatedAt]) VALUES (@AuditId,@OperationId,@IncarnationId,@OperationType,@Actor,@Reason,@Outcome,SYSDATETIMEOFFSET());",
+            $"INSERT INTO {InboxAuditTable}([AuditId],[OperationId],[GenerationIncarnationId],[OperationType],[Actor],[Reason],[Outcome],[CreatedAt]) VALUES (@AuditId,@OperationId,@IncarnationId,@OperationType,@Actor,@Reason,@Outcome,CONVERT(datetimeoffset(7), SYSUTCDATETIME()));",
             connection,
             transaction
         );
@@ -629,17 +603,9 @@ internal sealed partial class SqlServerDataStorage
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private sealed record InboxOperationRow(
-        Guid StorageId,
-        StatusName Status,
-        DateTimeOffset? NextRetryAt,
-        bool IsHeld,
-        bool IsCurrent,
-        long Generation
-    );
-
     private sealed record SqlServerInboxOperationRow(
-        InboxOperationRow Common,
+        Guid StorageId,
+        InboxOperationState State,
         bool TenantPresent,
         string TenantId,
         string MessageId,

@@ -75,7 +75,7 @@ public sealed class MessagingTelemetryTests : TestBase
         publish.GetTagItem(MessagingTags.Lane).Should().Be("bus");
         publish.GetTagItem(MessagingTags.TenantId).Should().Be("tenant-7");
         publish.GetTagItem(MessagingTags.RequestedDeliveryMode).Should().Be("auto");
-        publish.GetTagItem(MessagingTags.ResolvedDeliveryMode).Should().Be("transport_direct");
+        publish.GetTagItem(MessagingTags.ResolvedDeliveryMode).Should().Be("direct");
         MessagingTelemetry.PublishStop(publish, publishMessage, _Broker, 200, 260);
 
         // consume
@@ -110,21 +110,22 @@ public sealed class MessagingTelemetryTests : TestBase
     [Fact]
     public void should_record_expected_instrument_names_when_full_flow()
     {
-        var measurements = new ConcurrentBag<(string Name, string[] TagKeys)>();
+        var measurements = new ConcurrentBag<(string Name, KeyValuePair<string, object?>[] Tags)>();
         using var listener = _StartMeterListener(measurements);
         var telemetry = MessagingTelemetry.Default;
+        var broker = new BrokerAddress(Guid.NewGuid().ToString(), "broker.local:5672");
 
         var publishMessage = _CreateTransportMessage(
             "orders.placed",
             new Dictionary<string, string?>(StringComparer.Ordinal)
             {
-                [Headers.RequestedDeliveryMode] = nameof(DeliveryMode.Auto),
+                [Headers.RequestedDeliveryMode] = nameof(DeliveryMode.Direct),
                 [Headers.ResolvedDeliveryMode] = nameof(DeliveryMode.Direct),
             }
         );
-        var publish = telemetry.PublishStart(publishMessage, MessageLane.Bus, _Broker, 200);
-        MessagingTelemetry.PublishStop(publish, publishMessage, _Broker, 200, 260);
-        MessagingTelemetry.PublishError(publish, publishMessage, _Broker, new InvalidOperationException("boom"));
+        var publish = telemetry.PublishStart(publishMessage, MessageLane.Bus, broker, 200);
+        MessagingTelemetry.PublishStop(publish, publishMessage, broker, 200, 260);
+        MessagingTelemetry.PublishError(publish, publishMessage, broker, new InvalidOperationException("boom"));
 
         var consumeMessage = _CreateTransportMessage("orders.placed");
         var consume = telemetry.ConsumeStart(consumeMessage, MessageLane.Queue, _Broker, 300);
@@ -165,10 +166,12 @@ public sealed class MessagingTelemetryTests : TestBase
                 "messaging.subscriber.errors",
             ]);
 
-        var (_, publishTagKeys) = measurements.First(m =>
+        var (_, publishTags) = measurements.First(m =>
             string.Equals(m.Name, "messaging.publish.messages", StringComparison.Ordinal)
+            && m.Tags.Any(tag => tag.Key == "messaging.system" && Equals(tag.Value, broker.Name))
         );
-        publishTagKeys
+        publishTags
+            .Select(tag => tag.Key)
             .Should()
             .Contain([
                 "messaging.operation",
@@ -178,10 +181,22 @@ public sealed class MessagingTelemetryTests : TestBase
                 MessagingTags.ResolvedDeliveryMode,
             ]);
 
-        var (_, consumeErrorTagKeys) = measurements.First(m =>
+        publishTags
+            .Should()
+            .ContainSingle(tag => tag.Key == MessagingTags.RequestedDeliveryMode)
+            .Which.Value.Should()
+            .Be("direct");
+        publishTags
+            .Should()
+            .ContainSingle(tag => tag.Key == MessagingTags.ResolvedDeliveryMode)
+            .Which.Value.Should()
+            .Be("direct");
+
+        var (_, consumeErrorTags) = measurements.First(m =>
             string.Equals(m.Name, "messaging.consume.errors", StringComparison.Ordinal)
         );
-        consumeErrorTagKeys
+        consumeErrorTags
+            .Select(tag => tag.Key)
             .Should()
             .Contain(["messaging.operation", "messaging.system", "error.type", "messaging.consumer.group"]);
     }
@@ -362,7 +377,9 @@ public sealed class MessagingTelemetryTests : TestBase
         return listener;
     }
 
-    private static MeterListener _StartMeterListener(ConcurrentBag<(string Name, string[] TagKeys)> captured)
+    private static MeterListener _StartMeterListener(
+        ConcurrentBag<(string Name, KeyValuePair<string, object?>[] Tags)> captured
+    )
     {
         var listener = new MeterListener
         {
@@ -376,10 +393,10 @@ public sealed class MessagingTelemetryTests : TestBase
         };
 
         listener.SetMeasurementEventCallback<long>(
-            (instrument, _, tags, _) => captured.Add((instrument.Name, _Keys(tags)))
+            (instrument, _, tags, _) => captured.Add((instrument.Name, tags.ToArray()))
         );
         listener.SetMeasurementEventCallback<double>(
-            (instrument, _, tags, _) => captured.Add((instrument.Name, _Keys(tags)))
+            (instrument, _, tags, _) => captured.Add((instrument.Name, tags.ToArray()))
         );
 
         listener.Start();
@@ -438,17 +455,6 @@ public sealed class MessagingTelemetryTests : TestBase
                 || key.Contains("payload", StringComparison.OrdinalIgnoreCase)
                 || key.Contains("header", StringComparison.OrdinalIgnoreCase)
             );
-    }
-
-    private static string[] _Keys(ReadOnlySpan<KeyValuePair<string, object?>> tags)
-    {
-        var keys = new string[tags.Length];
-        for (var i = 0; i < tags.Length; i++)
-        {
-            keys[i] = tags[i].Key;
-        }
-
-        return keys;
     }
 
     private static string[] _TagKeys(Activity activity)

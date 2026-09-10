@@ -168,7 +168,16 @@ internal sealed partial class InMemoryDataStorage
                 message.InboxGeneration?.IncarnationId == request.ExpectedIncarnationId
             );
             var now = timeProvider.GetUtcNow();
-            var outcome = _EvaluateOperation(operationType, request, row);
+            InboxOperationState? state = row is null
+                ? null
+                : new InboxOperationState(
+                    row.StatusName,
+                    row.NextRetryAt is not null,
+                    row.IsHeld,
+                    row.IsCurrentGeneration,
+                    row.InboxKey!.Generation
+                );
+            var outcome = InboxOperationEvaluator.Evaluate(operationType, request.ExpectedStatus, state);
             Guid? childStorageId = null;
             long? childGeneration = null;
             Guid? childIncarnationId = null;
@@ -255,39 +264,6 @@ internal sealed partial class InMemoryDataStorage
             }
             return ValueTask.FromResult(result);
         }
-    }
-
-    private static InboxOperationOutcome _EvaluateOperation(
-        InboxOperationType operationType,
-        InboxOperationRequest request,
-        MemoryMessage? row
-    )
-    {
-        if (row is null)
-        {
-            return InboxOperationOutcome.NotFound;
-        }
-
-        if (row.StatusName != request.ExpectedStatus)
-        {
-            return InboxOperationOutcome.StateConflict;
-        }
-
-        if (row.StatusName is not (StatusName.Succeeded or StatusName.Failed) || row.NextRetryAt is not null)
-        {
-            return InboxOperationOutcome.Active;
-        }
-
-        return operationType switch
-        {
-            InboxOperationType.Hold when row.IsHeld => InboxOperationOutcome.StateConflict,
-            InboxOperationType.ReleaseHold when !row.IsHeld => InboxOperationOutcome.StateConflict,
-            InboxOperationType.ForceReprocess
-                when !row.IsCurrentGeneration || row.InboxKey!.Generation == long.MaxValue =>
-                InboxOperationOutcome.StateConflict,
-            InboxOperationType.Purge when row.IsHeld => InboxOperationOutcome.Held,
-            _ => InboxOperationOutcome.Applied,
-        };
     }
 
     private MemoryMessage _CreateForcedChild(MemoryMessage parent, Guid operationId, DateTimeOffset now)

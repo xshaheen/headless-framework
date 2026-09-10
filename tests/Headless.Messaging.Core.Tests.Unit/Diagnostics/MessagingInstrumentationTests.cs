@@ -67,8 +67,13 @@ public sealed class MessagingInstrumentationTests : TestBase
         noRetry.GetTagItem(MessagingTags.RetryCount).Should().BeNull();
     }
 
-    [Fact]
-    public void should_tag_only_finite_requested_and_resolved_delivery_modes()
+    [Theory]
+    [InlineData(DeliveryMode.Auto, "auto")]
+    [InlineData(DeliveryMode.Direct, "direct")]
+    public void should_tag_only_finite_requested_and_resolved_delivery_modes(
+        DeliveryMode requestedMode,
+        string requestedTag
+    )
     {
         using var activity = new Activity("delivery");
 
@@ -76,13 +81,13 @@ public sealed class MessagingInstrumentationTests : TestBase
             activity,
             new MessagingEnrichmentContext
             {
-                RequestedDeliveryMode = DeliveryMode.Auto,
+                RequestedDeliveryMode = requestedMode,
                 ResolvedDeliveryMode = DeliveryMode.Direct,
             }
         );
 
-        activity.GetTagItem(MessagingTags.RequestedDeliveryMode).Should().Be("auto");
-        activity.GetTagItem(MessagingTags.ResolvedDeliveryMode).Should().Be("transport_direct");
+        activity.GetTagItem(MessagingTags.RequestedDeliveryMode).Should().Be(requestedTag);
+        activity.GetTagItem(MessagingTags.ResolvedDeliveryMode).Should().Be("direct");
     }
 
     // --- Composition / suppression --------------------------------------------------------------------------

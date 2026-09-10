@@ -226,7 +226,7 @@ services.AddHeadlessMessaging(setup =>
 - **Inbox telemetry is bounded**: inbox counters use registered consumer identity plus finite lane, outcome, tier, and provider dimensions. Message/replay IDs, payloads, and headers are never metric labels. `setup.Instrumentation.IncludeTenantIdInMetricTags` is an explicit, default-off cardinality opt-in.
 - **Retention resets identity after purge or expiry**: terminal generations are retained for 30 days by default; configure `InboxRetention(...)` per consumer. Direct admission suppresses duplicates while its root is retained. Once that root expires or is purged, readmission creates a fresh lifecycle, even if older replay descendants remain held. Replay generation numbers are local to their lifecycle; explicit admission generations remain independent. Holds, mutations, and operation receipts target immutable generation incarnations. Relational inbox schema v4 requires lifecycle identity and separate admission/replay uniqueness; startup rejects retained older inbox rows whose lifecycle identity cannot be reconstructed safely.
 - **Poison inbox retention**: recovery of an unreadable inbox envelope records a terminal failure and clears the attempt fence in the claim transaction. Terminal retention starts from the database clock using the row's persisted retention duration. Terminal redeliveries are suppressed without deserializing or replacing the retained payload; expiry then allows fresh admission.
-- **SQL Server pooled isolation**: monitoring, expiry cleanup, and delayed scheduling preserve skip-locked behavior with `READ_COMMITTED_SNAPSHOT` on or off, even after pooled Serializable inbox admission. Delayed scheduling opens explicit ReadCommitted transactions without weakening inbox admission.
+- **SQL Server pooled isolation**: monitoring, expiry cleanup, and delayed scheduling preserve skip-locked behavior with `READ_COMMITTED_SNAPSHOT` on or off, even after pooled Serializable inbox admission. Received-message cleanup and delayed scheduling explicitly use ReadCommitted transactions without weakening inbox admission.
 - **Consumer lifecycle semantics**: `IConsumerLifecycle` runs per delivery on the scoped consumer instance. Do not treat it as application startup or shutdown.
 - **Consumer startup is host-cancellable**: consumer factory creation, metadata provisioning, and subscription receive the host-stopping token. Provider implementations preserve `OperationCanceledException`; do not wrap shutdown cancellation as a broker failure.
 - **Core handles outbox automatically** when paired with EF Core -- messages are stored in database before being dispatched to transport.
@@ -651,7 +651,7 @@ services.AddHeadlessMessaging(setup =>
 
 - `MessagingOptions.DefaultGroupName`, `GroupNamePrefix`, `MessageNamePrefix`, and `Version` control naming and isolation. `Version` is validated non-empty and at most 20 characters — the SQL storage providers persist it as a literal into a `VARCHAR(20)`/`nvarchar(20)` column, so an over-long value is rejected at startup instead of failing every outbox insert.
 - `MessagingOptions.DefaultDeliveryMode` defaults to `DeliveryMode.Auto` for both lanes. Null per-call modes inherit it; explicit modes override it. Metadata-only records and fluent callbacks inherit the same setting. Invalid global values fail options validation.
-- `MessagingOptions.RequiredInboxCapability` defaults to `MessagingInboxCapabilityTier.Transactional`. Set `DurableDedupeOnly` only when the application accepts that inbox outcome and business state cannot commit atomically, or `ProcessLocal` for the in-process development provider. The configured storage must declare the selected tier before durable consumers can start.
+- `MessagingOptions.RequiredInboxCapability` defaults to `MessagingInboxCapabilityTier.Transactional` and sets the minimum inbox guarantee required by durable consumers. The tier order is `ProcessLocal` < `DurableDedupeOnly` < `Transactional`; the configured storage must declare the selected tier or a stronger one. Selecting a weaker requirement is an explicit opt-down and does not change the provider's actual guarantees. Undefined tier values are rejected.
 - `MessagingInstrumentationOptions.IncludeTenantIdInMetricTags` defaults to `false`. Enable it only when the metrics backend and tenant population have an explicit cardinality budget; traces retain their separate tenant-tag policy.
 - `ConsumerThreadCount`, `SubscriberParallelExecuteThreadCount`, and `SubscriberParallelExecuteBufferFactor` accept 1 through 1,024; the subscriber thread-count × buffer-factor product must not exceed 100,000.
 - Retry configuration lives under `RetryPolicy`, publish/receive retry processors, and storage cleanup options. `RetryBatchSize` (default 200) and `SchedulerBatchSize` (default 1,000) accept 1 through 100,000. `SchedulerBatchSize` also bounds the in-memory near-term scheduler queue; overflow remains durable as `Delayed` work.
@@ -674,6 +674,10 @@ Registers messaging services, hosted processors, publishers, consumers, storage 
 `RetryStrategy.MaxRetryAttempts` excludes the original execution and controls inline retries through a reusable Polly `ResiliencePipeline`. Once the inline budget is exhausted, Messaging persists `NextRetryAt` and `MessageNeedToRetryProcessor` performs up to `MaxPersistedRetries` pickups. `InlineAttempts` is reserved atomically before each invocation, so process recovery cannot reset the current burst.
 
 `NextRetryAt` remains application-scheduled through the injected `TimeProvider`, while lease ownership is store-authoritative for fresh dispatch and retry pickup. The public `IDataStorage` SPI accepts a `DispatchTimeout` duration; PostgreSQL and SQL Server compare and stamp leases from one database-clock snapshot, and InMemoryStorage uses its injected `TimeProvider`. A successful call returns the persisted `(LockedUntil, Owner)` identity on the message for fenced attempt and state writes. This eliminates client-clock skew from relational ownership, not duplicate delivery: genuine `DispatchTimeout` expiry permits a successor, and a process paused beyond its lease can resume already-running work alongside it. Delivery remains at-least-once.
+
+Inbox lease release and retry deferral also require the complete stored inbox attempt fence, including generation, incarnation, and attempt ID. Missing or mismatched fences leave the row unchanged. Admission uses the same identity validation as PostgreSQL and SQL Server: nonblank contract names, consumer identities, and message IDs up to 200 characters; contract versions up to 100 characters; nonnegative generations; and nonblank tenant IDs up to 200 characters. Blank tenant headers normalize to no tenant.
+
+Inline inbox reservations verify the complete active attempt fence before advancing the counter and preserve its attempt ID within the lease. Acquiring a fresh lease or claiming a due retry allocates a new attempt ID.
 
 For circuit-open received retries, built-in storage providers atomically advance `NextRetryAt` to the circuit's authoritative next eligible probe time while clearing only the exact live `(row, lane, Owner, LockedUntil)` lease generation. A stale generation is a no-op. Providers without the internal capability retain the claim for ordinary lease-expiry recovery instead of clearing the lease without advancing the schedule.
 
@@ -967,7 +971,9 @@ builder.Services.AddHeadlessMessaging(options => { /* ... */ })
 - `OperationCanceledException` whose token matches `context.CancellationToken` is never silently swallowed, including recursive `AggregateException` cases.
 - After middleware returns normally, the pipeline rechecks `context.CancellationToken.IsCancellationRequested` and throws OCE if the current context token is canceled.
 
-**Publish context rules:** `PublishContext<T>.Options` and `DelayTime` are mutable before `await next()`. After the inner publisher completes, the context is marked read-only and setters throw `InvalidOperationException`; reads still work. `PublishContext<T>.IsTransactional` is `true` only when the publish was buffered into the outbox under an ambient commit coordinator carrying a relational transaction, whose commit is the caller's responsibility.
+**Publish context rules:** Production publish contexts freeze the delivery mode and delay before middleware runs. Middleware can change other options before `await next()`; all mutations throw after the inner publisher completes. Reads, including `IsTransactional`, remain valid. `IsTransactional` is true only when durable delivery uses a compatible ambient commit boundary, whose commit is the caller's responsibility.
+
+For middleware tests and tooling, `new PublishContext<T>(content, lane, options, defaultDeliveryMode, now, isTransactional, cancellationToken)` requires the host default and resolution timestamp explicitly. The constructor uses the canonical delivery resolver with `options?.DeliveryMode ?? defaultDeliveryMode` and `options?.Delay`. It rejects Direct delivery with a delay and invalid lanes, effective modes, or delays. Delayed contexts calculate `PublishAt` in UTC from `now` plus the delay. `isTransactional` models a compatible ambient commit boundary; `IsTransactional` is true only when the resolved delivery uses that boundary. Manually constructed contexts remain mutable until `MarkCompleted()` and do not own a live transaction.
 
 **Cancellation token swaps:** middleware that creates per-attempt or per-operation tokens must call `context.WithCancellationToken(...)` before `await next()`. Downstream middleware must re-read `context.CancellationToken` at each await boundary; do not capture it once at method entry.
 
@@ -1159,6 +1165,8 @@ The dashboard exposes operational endpoints for inspecting, retrying, re-executi
 
 Inbox query and operation JSON uses camelCase properties and named string enum values, such as `"Failed"`, `"Succeeded"`, and `"Queue"`, independently of the host's JSON configuration. Operation requests must send `expectedStatus` as a string; responses use the same format for status, lane, operation type, and outcome, including conflict and not-found results.
 
+Inbox operations require an authenticated principal and a stable audit actor. The primary identity's name is used first, then its `NameIdentifier` or `sub` claim, then the authenticated dashboard username. The shared `host-user` placeholder cannot identify an operator. Authorization retains the host's claims and role mappings. Operation bodies require a JSON content type; unsupported media types return HTTP 415 and malformed JSON returns HTTP 422.
+
 ### Installation
 
 ```bash
@@ -1266,6 +1274,7 @@ Spans and metrics for messaging publish, persist, consume, and subscriber-invoke
 
 ### Design Notes
 
+- Delivery mode tags use lowercase values on spans and metrics. `headless.messaging.delivery.requested` emits `auto`, `durable`, or `direct`; `headless.messaging.delivery.resolved` emits `durable` or `direct`. Queries and alerts must use `direct` for `DeliveryMode.Direct`. The former `transport_direct` value has no compatibility alias.
 - Metrics are always registered; **subscribing a meter is the toggle** — there is no `EnableMetrics` flag. Emission is near-free when unobserved (`ActivitySource.HasListeners()` / `Counter.Enabled` early-outs).
 - Enricher registration and the built-in suppression toggles live on the **messaging setup builder** (`setup.Instrumentation`), not at OpenTelemetry-registration time. This is what fixes the old bridge's fire-and-forget async-enricher wart: enrichers run synchronously, so every tag they add is attached before the span can end.
 - **PII guardrails.** Enrichers must not write the reserved namespaces `messaging.*`, `server.*`, `headless.messaging.*`, `exception.*` (the framework/SDK overwrite them). `headless.messaging.tenant_id` is suppressible. Never serialize raw `context.Headers` onto tags — they may carry tokens/PII.
@@ -1790,7 +1799,7 @@ Provides PostgreSQL durable storage for messaging publish/receive state, retries
 - `setup.UsePostgreSql(...)` — connection string, `IConfiguration` binding, `Action<PostgreSqlOptions>`, or `Action<PostgreSqlOptions, IServiceProvider>`.
 - PostgreSQL schema/table configuration.
 - Raw ADO.NET integration and startup initialization.
-- Declares `MessagingInboxCapabilityTier.DurableDedupeOnly`; applications with durable consumers must explicitly select that degraded tier until a compatible transaction runner is configured.
+- Declares `MessagingInboxCapabilityTier.DurableDedupeOnly`; durable consumers can require `DurableDedupeOnly` or `ProcessLocal`. The default `Transactional` requirement is rejected unless the configured provider declares that stronger guarantee.
 - **GUID Row IDs**: Message storage identifiers come from the `Version7` keyed `IGuidGenerator` and are persisted as PostgreSQL `UUID` columns.
 
 Fresh dispatch, retry pickup, and delayed scheduling atomically compare and stamp ownership from one PostgreSQL clock snapshot. Delayed scheduling uses ordered `FOR UPDATE SKIP LOCKED` claiming, commits the transition to `Queued`, and only then returns winner messages for local enqueue. Circuit-open received retries atomically advance `NextRetryAt` and clear only the exact live `(lane, Owner, LockedUntil)` lease generation using PostgreSQL's authoritative clock and null-safe owner matching.
@@ -1842,7 +1851,7 @@ Provides SQL Server durable storage for messaging publish/receive state, retries
 - `setup.UseSqlServer(...)` — connection string, `IConfiguration` binding, `Action<SqlServerOptions>`, or `Action<SqlServerOptions, IServiceProvider>`.
 - SQL Server schema/table configuration.
 - Raw ADO.NET integration and startup initialization.
-- Declares `MessagingInboxCapabilityTier.DurableDedupeOnly`; applications with durable consumers must explicitly select that degraded tier until a compatible transaction runner is configured.
+- Declares `MessagingInboxCapabilityTier.DurableDedupeOnly`; durable consumers can require `DurableDedupeOnly` or `ProcessLocal`. The default `Transactional` requirement is rejected unless the configured provider declares that stronger guarantee.
 - **GUID Row IDs**: Message storage identifiers come from the `SqlServer` keyed `IGuidGenerator` and are persisted as SQL Server `uniqueidentifier` columns.
 
 Fresh dispatch, retry pickup, and delayed scheduling atomically compare and stamp ownership from one SQL Server clock snapshot. Delayed scheduling uses ordered `UPDLOCK, READPAST` claiming, commits the transition to `Queued`, and only then returns winner messages for local enqueue. Circuit-open received retries atomically advance `NextRetryAt` and clear only the exact live `(lane, Owner, LockedUntil)` lease generation using SQL Server's authoritative clock and null-safe owner matching.

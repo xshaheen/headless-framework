@@ -565,6 +565,8 @@ internal sealed class PostgreSqlStorageInitializer(
                 WHERE "GenerationIncarnationId" IS NOT NULL;
             CREATE UNIQUE INDEX IF NOT EXISTS "uq_received_non_inbox_transport_identity" ON {GetReceivedTableName()}
                 ("Version","MessageId",(COALESCE("Group",'')),"IntentType") WHERE NOT "IsInboxRecord";
+            CREATE INDEX IF NOT EXISTS "idx_received_inbox_retention" ON {GetReceivedTableName()} ("EffectiveExpiresAt","Id")
+                INCLUDE ("StatusName","NextRetryAt","IntentType") WHERE "IsInboxRecord" AND NOT "IsHeld";
             CREATE INDEX IF NOT EXISTS "idx_received_ExpiresAt_StatusName" ON {GetReceivedTableName()} ("ExpiresAt","StatusName");
             CREATE INDEX IF NOT EXISTS "idx_received_Version_ExpiresAt_StatusName" ON {GetReceivedTableName()} ("Version","ExpiresAt","StatusName");
             -- #8 — The partial retry-pickup index (idx_received_Version_NextRetryAt) is created

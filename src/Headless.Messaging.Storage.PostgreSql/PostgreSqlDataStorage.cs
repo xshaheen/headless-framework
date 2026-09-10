@@ -1405,7 +1405,7 @@ internal sealed partial class PostgreSqlDataStorage(
     {
         var isReceivedTable = string.Equals(tableName, _receivedTable, StringComparison.Ordinal);
         var inboxGuard = isReceivedTable
-            ? " AND (NOT \"IsInboxRecord\" OR (\"IntentType\"=@InboxIntentType AND \"Generation\"=@InboxGeneration AND \"GenerationIncarnationId\"=@InboxGenerationIncarnationId AND \"AttemptId\"=@InboxAttemptId))"
+            ? " AND (NOT \"IsInboxRecord\" OR (\"IntentType\"=@InboxIntentType AND \"Generation\"=@InboxGeneration AND \"GenerationIncarnationId\"=@InboxGenerationIncarnationId AND \"AttemptId\"=@InboxAttemptId AND \"Id\"=@InboxStorageId AND \"Owner\" IS NOT DISTINCT FROM @InboxOwner AND \"LockedUntil\"=@InboxLockedUntil))"
             : string.Empty;
         var sql =
             $"UPDATE {tableName} SET \"InlineAttempts\"=@InlineAttempts WHERE \"Id\"=@Id AND {_TerminalRowGuardWithRetries} AND \"LockedUntil\" IS NOT DISTINCT FROM @LockedUntil AND \"Owner\" IS NOT DISTINCT FROM @CurrentOwner AND \"LockedUntil\">statement_timestamp(){inboxGuard}";
@@ -1438,6 +1438,18 @@ internal sealed partial class PostgreSqlDataStorage(
             new NpgsqlParameter("@InboxAttemptId", NpgsqlDbType.Uuid)
             {
                 Value = inboxFence?.AttemptId ?? (object)DBNull.Value,
+            },
+            new NpgsqlParameter("@InboxStorageId", NpgsqlDbType.Uuid)
+            {
+                Value = inboxFence?.StorageId ?? (object)DBNull.Value,
+            },
+            new NpgsqlParameter("@InboxOwner", NpgsqlDbType.Varchar)
+            {
+                Value = inboxFence?.Owner ?? (object)DBNull.Value,
+            },
+            new NpgsqlParameter("@InboxLockedUntil", NpgsqlDbType.TimestampTz)
+            {
+                Value = inboxFence?.LockedUntil ?? (object)DBNull.Value,
             },
         ];
         await using var connection = postgreSqlOptions.Value.CreateConnection();

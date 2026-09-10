@@ -182,7 +182,10 @@ public sealed class MessagingCapabilityModel : IMessagingCapabilityModel, IMessa
 
         var isSupported = requiredInboxCapability switch
         {
-            MessagingInboxCapabilityTier.ProcessLocal => available is MessagingInboxCapabilityTier.ProcessLocal,
+            MessagingInboxCapabilityTier.ProcessLocal => available
+                is MessagingInboxCapabilityTier.ProcessLocal
+                    or MessagingInboxCapabilityTier.DurableDedupeOnly
+                    or MessagingInboxCapabilityTier.Transactional,
             MessagingInboxCapabilityTier.DurableDedupeOnly => available
                 is MessagingInboxCapabilityTier.DurableDedupeOnly
                     or MessagingInboxCapabilityTier.Transactional,

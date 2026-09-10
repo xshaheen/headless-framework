@@ -15,9 +15,6 @@ namespace Headless.Messaging.Storage.SqlServer;
 
 internal sealed partial class SqlServerDataStorage
 {
-    private const int _InboxIdentityMaxLength = 200;
-    private const int _InboxContractVersionMaxLength = 100;
-
     private static async Task<(DateTimeOffset LockedUntil, string? Owner, Guid? AttemptId)?> _ReadInboxLeaseAsync(
         DbDataReader reader,
         CancellationToken cancellationToken
@@ -69,7 +66,7 @@ internal sealed partial class SqlServerDataStorage
         CancellationToken cancellationToken = default
     )
     {
-        var tenantId = _ValidateInboxAdmission(name, consumerIdentity, contractVersion, message, generation);
+        var tenantId = InboxAdmissionValidation.Validate(name, consumerIdentity, contractVersion, message, generation);
         var tenantPresent = tenantId is not null;
         var normalizedTenantId = tenantId ?? string.Empty;
         var storageId = guidGenerator.Create();
@@ -267,66 +264,6 @@ internal sealed partial class SqlServerDataStorage
         }
 
         return changed == 1;
-    }
-
-    private string? _ValidateInboxAdmission(
-        string name,
-        string consumerIdentity,
-        string contractVersion,
-        MediumMessage message,
-        long generation
-    )
-    {
-        _ValidateInboxIdentity(name, _InboxIdentityMaxLength, nameof(name));
-        _ValidateInboxIdentity(consumerIdentity, ConsumerMetadata.ConsumerIdentityMaxLength, nameof(consumerIdentity));
-        _ValidateInboxIdentity(contractVersion, _InboxContractVersionMaxLength, nameof(contractVersion));
-        _ValidateInboxIdentity(message.Origin.Id, MessageOptions.MessageIdMaxLength, "message.Origin.Id");
-        if (generation < 0)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(generation),
-                generation,
-                "Inbox generation cannot be negative."
-            );
-        }
-
-        _ = MessageLaneCompatibility.ToPersistedValue(message.Lane);
-        if (
-            !message.Origin.Headers.TryGetValue(Headers.TenantId, out var rawTenant)
-            || string.IsNullOrWhiteSpace(rawTenant)
-        )
-        {
-            return null;
-        }
-
-        if (rawTenant.Length > MessageOptions.TenantIdMaxLength)
-        {
-            throw new ArgumentException(
-                $"Inbox tenant identity must be {MessageOptions.TenantIdMaxLength} characters or fewer.",
-                nameof(message)
-            );
-        }
-
-        return TenantContextScope.ResolveTenantId(message.Origin.Headers, logger);
-    }
-
-    private static void _ValidateInboxIdentity(string value, int maximumLength, string parameterName)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            throw new ArgumentException("Inbox identity values cannot be null or whitespace.", parameterName);
-        }
-
-        if (value.Length > maximumLength)
-        {
-            throw new ArgumentException(
-                string.Create(
-                    CultureInfo.InvariantCulture,
-                    $"Inbox identity value must be {maximumLength} characters or fewer."
-                ),
-                parameterName
-            );
-        }
     }
 
     private static byte[] _CreateInboxKeyHash(

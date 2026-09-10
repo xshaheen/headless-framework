@@ -31,6 +31,16 @@ internal static class DeliveryDecisionResolver
         TimeSpan? delay,
         DeliveryCoordination coordination,
         DateTimeOffset now
+    ) => Resolve(lane, requestedMode, delay, coordination.Status, now, coordination);
+
+    // Manually constructed middleware contexts need delivery semantics without live transaction resources.
+    internal static DeliveryDecision Resolve(
+        MessageLane lane,
+        DeliveryMode requestedMode,
+        TimeSpan? delay,
+        DeliveryCoordinationStatus coordinationStatus,
+        DateTimeOffset now,
+        DeliveryCoordination coordination = default
     )
     {
         // Explicit range checks rather than Enum.IsDefined: these run on every publish, and IsDefined
@@ -50,7 +60,7 @@ internal static class DeliveryDecisionResolver
         }
 
         if (
-            coordination.Status
+            coordinationStatus
             is not (
                 DeliveryCoordinationStatus.None
                 or DeliveryCoordinationStatus.Compatible
@@ -59,13 +69,13 @@ internal static class DeliveryDecisionResolver
         )
         {
             throw new ArgumentOutOfRangeException(
-                nameof(coordination),
-                coordination.Status,
+                nameof(coordinationStatus),
+                coordinationStatus,
                 "Invalid coordination status."
             );
         }
 
-        if (coordination.Status is DeliveryCoordinationStatus.Incompatible && requestedMode is not DeliveryMode.Direct)
+        if (coordinationStatus is DeliveryCoordinationStatus.Incompatible && requestedMode is not DeliveryMode.Direct)
         {
             throw new InvalidOperationException(
                 $"The active coordination boundary is incompatible with messaging storage ({coordination.Mismatch})."
@@ -104,7 +114,7 @@ internal static class DeliveryDecisionResolver
             DeliveryMode.Direct => DeliveryMode.Direct,
             DeliveryMode.Durable => DeliveryMode.Durable,
             DeliveryMode.Auto when delay is not null => DeliveryMode.Durable,
-            DeliveryMode.Auto when coordination.Status is DeliveryCoordinationStatus.Compatible => DeliveryMode.Durable,
+            DeliveryMode.Auto when coordinationStatus is DeliveryCoordinationStatus.Compatible => DeliveryMode.Durable,
             DeliveryMode.Auto => DeliveryMode.Direct,
             _ => throw new UnreachableException(),
         };
@@ -112,7 +122,7 @@ internal static class DeliveryDecisionResolver
         var path = resolvedMode switch
         {
             DeliveryMode.Direct => DeliveryPath.Direct,
-            DeliveryMode.Durable when coordination.Status is DeliveryCoordinationStatus.Compatible =>
+            DeliveryMode.Durable when coordinationStatus is DeliveryCoordinationStatus.Compatible =>
                 DeliveryPath.DurableCoordinated,
             DeliveryMode.Durable => DeliveryPath.DurableStandalone,
             _ => throw new UnreachableException(),

@@ -20,7 +20,14 @@ public sealed class TenantPropagationPublishMiddlewareTests : TestBase
             lane == MessageLane.Bus
                 ? new PublishOptions { SuppressAmbientBusinessContext = true }
                 : new QueueOptions { SuppressAmbientBusinessContext = true };
-        var context = new PublishContext<Payload>(new Payload("captured"), lane, options, delayTime: null);
+        var context = new PublishContext<Payload>(
+            new Payload("captured"),
+            lane,
+            options,
+            defaultDeliveryMode: DeliveryMode.Auto,
+            now: DateTimeOffset.UnixEpoch,
+            cancellationToken: AbortToken
+        );
         var nextCalled = false;
 
         await middleware.InvokeAsync(
@@ -48,7 +55,9 @@ public sealed class TenantPropagationPublishMiddlewareTests : TestBase
             new Payload("hello"),
             MessageLane.Bus,
             options: null,
-            delayTime: null
+            defaultDeliveryMode: DeliveryMode.Auto,
+            now: DateTimeOffset.UnixEpoch,
+            cancellationToken: AbortToken
         );
         string? observedDuringNext = null;
 
@@ -77,7 +86,9 @@ public sealed class TenantPropagationPublishMiddlewareTests : TestBase
             new Payload("hello"),
             MessageLane.Bus,
             new PublishOptions { TenantId = "system" },
-            delayTime: null
+            defaultDeliveryMode: DeliveryMode.Auto,
+            now: DateTimeOffset.UnixEpoch,
+            cancellationToken: AbortToken
         );
 
         // when
@@ -97,7 +108,9 @@ public sealed class TenantPropagationPublishMiddlewareTests : TestBase
             new Payload("hello"),
             MessageLane.Bus,
             new PublishOptions { CorrelationId = "corr-1", MessageId = "msg-1" },
-            delayTime: null
+            defaultDeliveryMode: DeliveryMode.Auto,
+            now: DateTimeOffset.UnixEpoch,
+            cancellationToken: AbortToken
         );
 
         // when
@@ -119,13 +132,17 @@ public sealed class TenantPropagationPublishMiddlewareTests : TestBase
             new Payload("hello"),
             MessageLane.Bus,
             options: null,
-            delayTime: null
+            defaultDeliveryMode: DeliveryMode.Auto,
+            now: DateTimeOffset.UnixEpoch,
+            cancellationToken: AbortToken
         );
         var whitespaceContext = new PublishContext<Payload>(
             new Payload("hello"),
             MessageLane.Bus,
             options: null,
-            delayTime: null
+            defaultDeliveryMode: DeliveryMode.Auto,
+            now: DateTimeOffset.UnixEpoch,
+            cancellationToken: AbortToken
         );
 
         // when
@@ -148,7 +165,9 @@ public sealed class TenantPropagationPublishMiddlewareTests : TestBase
             new Payload("hello"),
             MessageLane.Bus,
             options: null,
-            delayTime: null
+            defaultDeliveryMode: DeliveryMode.Auto,
+            now: DateTimeOffset.UnixEpoch,
+            cancellationToken: AbortToken
         );
 
         // when
@@ -169,7 +188,9 @@ public sealed class TenantPropagationPublishMiddlewareTests : TestBase
             new Payload("hello"),
             MessageLane.Bus,
             options: null,
-            delayTime: null
+            defaultDeliveryMode: DeliveryMode.Auto,
+            now: DateTimeOffset.UnixEpoch,
+            cancellationToken: AbortToken
         );
 
         // when

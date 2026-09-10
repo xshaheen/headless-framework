@@ -2,6 +2,7 @@
 
 using System.Diagnostics;
 using System.Net;
+using System.Security.Claims;
 using System.Text.Json.Serialization;
 using Headless.Dashboard.Authentication;
 using Headless.Messaging.Configuration;
@@ -610,6 +611,11 @@ public static class MessagingDashboardEndpoints
         {
             return Results.Unauthorized();
         }
+        if (!httpContext.Request.HasJsonContentType())
+        {
+            return Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+        }
+
         InboxDashboardOperationRequest? payload;
         try
         {
@@ -665,8 +671,48 @@ public static class MessagingDashboardEndpoints
     private static bool _TryCreateInboxAuthority(HttpContext httpContext, out InboxAuthorizationContext authorization)
     {
         authorization = new InboxAuthorizationContext(httpContext.User);
-        return httpContext.User.Identity is { IsAuthenticated: true }
-            && !string.IsNullOrWhiteSpace(httpContext.User.Identity.Name);
+        if (httpContext.User.Identity is not { IsAuthenticated: true } identity)
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(identity.Name))
+        {
+            return true;
+        }
+
+        if (identity is not ClaimsIdentity claimsIdentity)
+        {
+            return false;
+        }
+
+        var actor =
+            claimsIdentity
+                .FindFirst(claim => claim.Type == ClaimTypes.NameIdentifier && !string.IsNullOrWhiteSpace(claim.Value))
+                ?.Value
+            ?? claimsIdentity.FindFirst(claim => claim.Type == "sub" && !string.IsNullOrWhiteSpace(claim.Value))?.Value;
+        if (string.IsNullOrWhiteSpace(actor))
+        {
+            actor = httpContext.Items[AuthMiddleware.AuthenticatedKey] is true
+                ? httpContext.Items[AuthMiddleware.UsernameKey] as string
+                : null;
+            // Host authentication's shared placeholder cannot identify an operator in the audit trail.
+            if (string.IsNullOrWhiteSpace(actor) || string.Equals(actor, "host-user", StringComparison.Ordinal))
+            {
+                return false;
+            }
+        }
+
+        // Preserve host claims and role mappings without changing the request's principal.
+        var principal = new ClaimsPrincipal(httpContext.User.Identities.Select(static identity => identity.Clone()));
+        var auditIdentity = (ClaimsIdentity)principal.Identity!;
+        foreach (var claim in auditIdentity.FindAll(auditIdentity.NameClaimType).ToArray())
+        {
+            auditIdentity.RemoveClaim(claim);
+        }
+        auditIdentity.AddClaim(new Claim(auditIdentity.NameClaimType, actor));
+        authorization = new InboxAuthorizationContext(principal);
+        return true;
     }
 
     private sealed class InboxDashboardOperationRequest

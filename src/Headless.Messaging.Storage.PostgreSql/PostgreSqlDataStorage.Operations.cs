@@ -165,7 +165,7 @@ internal sealed partial class PostgreSqlDataStorage
                 cancellationToken
             )
             .ConfigureAwait(false);
-        var outcome = _EvaluateRelationalOperation(operationType, request, row);
+        var outcome = InboxOperationEvaluator.Evaluate(operationType, request.ExpectedStatus, row?.State);
         Guid? childStorageId = null;
         long? childGeneration = null;
         Guid? childIncarnationId = null;
@@ -199,7 +199,7 @@ internal sealed partial class PostgreSqlDataStorage
                 case InboxOperationType.ForceReprocess:
                     childStorageId = guidGenerator.Create();
                     childIncarnationId = guidGenerator.Create();
-                    childGeneration = checked(row.Generation + 1);
+                    childGeneration = checked(row.State.Generation + 1);
                     await _CreatePostgreSqlChildAsync(
                             connection,
                             transaction,
@@ -275,35 +275,6 @@ internal sealed partial class PostgreSqlDataStorage
             messagingOptions.Value.RequiredInboxCapability,
             "PostgreSql"
         );
-    }
-
-    private static InboxOperationOutcome _EvaluateRelationalOperation(
-        InboxOperationType operationType,
-        InboxOperationRequest request,
-        InboxOperationRow? row
-    )
-    {
-        if (row is null)
-        {
-            return InboxOperationOutcome.NotFound;
-        }
-        if (row.Status != request.ExpectedStatus)
-        {
-            return InboxOperationOutcome.StateConflict;
-        }
-        if (row.Status is not (StatusName.Succeeded or StatusName.Failed) || row.NextRetryAt is not null)
-        {
-            return InboxOperationOutcome.Active;
-        }
-        return operationType switch
-        {
-            InboxOperationType.Hold when row.IsHeld => InboxOperationOutcome.StateConflict,
-            InboxOperationType.ReleaseHold when !row.IsHeld => InboxOperationOutcome.StateConflict,
-            InboxOperationType.ForceReprocess when !row.IsCurrent || row.Generation == long.MaxValue =>
-                InboxOperationOutcome.StateConflict,
-            InboxOperationType.Purge when row.IsHeld => InboxOperationOutcome.Held,
-            _ => InboxOperationOutcome.Applied,
-        };
     }
 
     private static InboxOperationResult _ReplayOrConflict(
@@ -428,11 +399,13 @@ internal sealed partial class PostgreSqlDataStorage
         return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
             ? new InboxOperationRow(
                 reader.GetGuid(0),
-                Enum.Parse<StatusName>(reader.GetString(1)),
-                reader.IsDBNull(2) ? null : reader.GetFieldValue<DateTimeOffset>(2),
-                reader.GetBoolean(3),
-                reader.GetBoolean(4),
-                reader.GetInt64(5),
+                new InboxOperationState(
+                    Enum.Parse<StatusName>(reader.GetString(1)),
+                    !reader.IsDBNull(2),
+                    reader.GetBoolean(3),
+                    reader.GetBoolean(4),
+                    reader.GetInt64(5)
+                ),
                 MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(6)),
                 reader.GetString(7)
             )
@@ -593,11 +566,7 @@ internal sealed partial class PostgreSqlDataStorage
 
     private sealed record InboxOperationRow(
         Guid StorageId,
-        StatusName Status,
-        DateTimeOffset? NextRetryAt,
-        bool IsHeld,
-        bool IsCurrent,
-        long Generation,
+        InboxOperationState State,
         MessageLane Lane,
         string ConsumerIdentity
     );

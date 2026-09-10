@@ -16,7 +16,6 @@ internal sealed partial class InMemoryDataStorage
         MediumMessage message,
         int originalInlineAttempts,
         TimeProvider timeProvider,
-        IGuidGenerator? fenceGenerator,
         CancellationToken cancellationToken
     )
     {
@@ -32,6 +31,7 @@ internal sealed partial class InMemoryDataStorage
                 ((current.StatusName is StatusName.Succeeded or StatusName.Failed) && current.NextRetryAt is null)
                 || current.Retries != message.Retries
                 || current.InlineAttempts != originalInlineAttempts
+                || (current.InboxGeneration is not null && !_MatchesInboxFence(current, message.InboxAttemptFence))
                 || current.LockedUntil != message.LockedUntil
                 || !string.Equals(current.Owner, message.Owner, StringComparison.Ordinal)
                 || current.LockedUntil is null
@@ -42,7 +42,6 @@ internal sealed partial class InMemoryDataStorage
             }
 
             current.InlineAttempts = message.InlineAttempts;
-            _AllocateInboxFence(current, message, fenceGenerator);
             return ValueTask.FromResult(true);
         }
     }

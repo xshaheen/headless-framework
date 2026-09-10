@@ -172,8 +172,7 @@ internal sealed partial class InMemoryDataStorage(
             message,
             originalInlineAttempts,
             timeProvider,
-            fenceGenerator: null,
-            cancellationToken: cancellationToken
+            cancellationToken
         );
     }
 
@@ -354,14 +353,7 @@ internal sealed partial class InMemoryDataStorage(
         CancellationToken cancellationToken = default
     )
     {
-        return _ReserveAttemptAsync(
-            ReceivedMessages,
-            message,
-            originalInlineAttempts,
-            timeProvider,
-            guidGenerator,
-            cancellationToken
-        );
+        return _ReserveAttemptAsync(ReceivedMessages, message, originalInlineAttempts, timeProvider, cancellationToken);
     }
 
     private ValueTask<bool> _ChangeReceiveStateAsync(
@@ -496,8 +488,8 @@ internal sealed partial class InMemoryDataStorage(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        var tenantId = InboxAdmissionValidation.Validate(name, consumerIdentity, contractVersion, message, generation);
         var messageId = message.Origin.Id;
-        var tenantId = TenantContextScope.ResolveTenantId(message.Origin.Headers, logger: null);
         var key = new InboxKey(tenantId, messageId, message.Lane, name, contractVersion, consumerIdentity, generation);
         var retention = inboxRetention ?? TimeSpan.FromDays(30);
         if (
@@ -1175,6 +1167,7 @@ internal sealed partial class InMemoryDataStorage(
                 current.Lane != identity.Lane
                 || !string.Equals(current.Owner, identity.Owner, StringComparison.Ordinal)
                 || current.LockedUntil != identity.LockedUntil
+                || (current.InboxGeneration is not null && !_MatchesInboxFence(current, identity.InboxAttemptFence))
                 || current.LockedUntil <= timeProvider.GetUtcNow()
                 || (current.StatusName is StatusName.Succeeded or StatusName.Failed && current.NextRetryAt is null)
             )
@@ -1243,6 +1236,7 @@ internal sealed partial class InMemoryDataStorage(
                 current.Lane != identity.Lane
                 || !string.Equals(current.Owner, identity.Owner, StringComparison.Ordinal)
                 || current.LockedUntil != identity.LockedUntil
+                || (current.InboxGeneration is not null && !_MatchesInboxFence(current, identity.InboxAttemptFence))
                 || (current.StatusName is StatusName.Succeeded or StatusName.Failed && current.NextRetryAt is null)
             )
             {

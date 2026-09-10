@@ -81,7 +81,7 @@ The transactional-outbox auto-wiring applies only to the `UseEntityFramework<TCo
 
 Dead-owner retry recovery binds live Coordination owners as ordinary SQL parameters and does not require `OPENJSON` or SQL Server compatibility level 130. Older SQL Server-compatible engines still recover through the per-row `LockedUntil` floor if reclaim fails.
 
-Monitoring, expiry cleanup, and delayed scheduling preserve skip-locked behavior with `READ_COMMITTED_SNAPSHOT` enabled or disabled, including when pooled connections retain Serializable isolation after inbox admission. Delayed scheduling explicitly opens ReadCommitted transactions; inbox admission retains its Serializable boundary.
+Monitoring, expiry cleanup, and delayed scheduling preserve skip-locked behavior with `READ_COMMITTED_SNAPSHOT` enabled or disabled, including when pooled connections retain Serializable isolation after inbox admission. Received-message cleanup and delayed scheduling explicitly use ReadCommitted transactions; inbox admission retains its Serializable boundary.
 
 ## Side Effects
 

@@ -120,6 +120,8 @@ await serviceProvider.GetRequiredService<IBus>()
 
 For durable infrastructure, replace the in-memory providers with exactly one storage provider and one transport provider:
 
+`RequiredInboxCapability` sets a minimum guarantee and defaults to `Transactional`. The order is `ProcessLocal` < `DurableDedupeOnly` < `Transactional`; a stronger provider satisfies a weaker requirement. Selecting a weaker requirement does not change the provider's actual guarantees. Undefined tier values are rejected.
+
 ```csharp
 using Polly;
 using Polly.Retry;
@@ -356,7 +358,9 @@ Registration scopes:
 - `AddConsumeMiddlewareFor<TMiddleware, TMessage>(group)`: typed consume middleware for one message type and consumer group.
 - `.WithPriority(int)`: lower values run first; ties use registration order. Framework tenant propagation middleware uses priority `-1000`, so user middleware defaults (`0`) run after tenant restoration/stamping.
 
-Middleware can short-circuit by returning without calling `next`. Use ordinary `try/catch` around `await next()` for compensation and error policy. The framework still guards two runtime invariants: post-success middleware failures are logged and suppressed only after the inner ring completed, and cancellation matching `context.CancellationToken` is never silently swallowed. `PublishContext<T>.Options` and `DelayTime` are mutable before `await next()` and throw after `next()` returns; reads, including `IsTransactional`, remain valid.
+Middleware can short-circuit by returning without calling `next`. Use ordinary `try/catch` around `await next()` for compensation and error policy. The framework still guards two runtime invariants: post-success middleware failures are logged and suppressed only after the inner ring completed, and cancellation matching `context.CancellationToken` is never silently swallowed. Production publish contexts freeze the delivery mode and delay before middleware runs. Middleware can change other options before `await next()`; all mutations throw after `next()` returns. Reads, including `IsTransactional`, remain valid.
+
+For middleware tests and tooling, `new PublishContext<T>(content, lane, options, defaultDeliveryMode, now, isTransactional, cancellationToken)` requires the host default and resolution timestamp explicitly. The constructor uses the canonical delivery resolver with `options?.DeliveryMode ?? defaultDeliveryMode` and `options?.Delay`. It rejects Direct delivery with a delay and invalid lanes, effective modes, or delays. Delayed contexts calculate `PublishAt` in UTC from `now` plus the delay. `isTransactional` models a compatible ambient commit boundary; `IsTransactional` is true only when the resolved delivery uses that boundary. Manually constructed contexts remain mutable until `MarkCompleted()` and do not own a live transaction.
 
 ### Multi-Tenancy Propagation
 
@@ -658,6 +662,8 @@ Operational invariant: set Coordination's dead threshold no lower than the large
 ## Observability
 
 Emits OpenTelemetry metrics and traces natively under a single instrumentation name, `Headless.Messaging` (both `Meter` and `ActivitySource`), exposed as `MessagingDiagnostics.SourceName`. Register with `TracerProviderBuilder.AddMessagingInstrumentation()` / `MeterProviderBuilder.AddMessagingInstrumentation()` (typed helpers, `OpenTelemetry.Api` only — no SDK dependency), or subscribe by name. Standard instruments follow the OTel messaging semantic conventions. Inbox lifecycle counters cover duplicate, attempt, recovery, terminal, replay, retention, and capability events with bounded consumer/lane/outcome/tier/provider tags. Framework-specific attributes are namespaced `headless.messaging.*`. W3C `traceparent`/baggage propagation is built into publish/consume. Custom span enrichers implement `IActivityTagEnricher` (synchronous) and register via `setup.Instrumentation` inside `AddHeadlessMessaging(...)`. See [docs/llms/messaging.md](../../docs/llms/messaging.md) for the full instrument table.
+
+Delivery mode tags use lowercase values on spans and metrics. `headless.messaging.delivery.requested` emits `auto`, `durable`, or `direct`; `headless.messaging.delivery.resolved` emits `durable` or `direct`. Queries and alerts must use `direct` for `DeliveryMode.Direct`. The former `transport_direct` value has no compatibility alias.
 
 ## Dependencies
 
