@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.MultiTenancy;
+
 namespace Headless.Abstractions;
 
 /// <summary>AsyncLocal-backed tenant write guard bypass.</summary>

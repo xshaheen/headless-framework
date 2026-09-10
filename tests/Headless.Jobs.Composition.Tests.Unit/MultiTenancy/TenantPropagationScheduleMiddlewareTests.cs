@@ -8,6 +8,7 @@ using Headless.Jobs.Enums;
 using Headless.Jobs.Exceptions;
 using Headless.Jobs.Models;
 using Headless.Jobs.MultiTenancy;
+using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Options;
 

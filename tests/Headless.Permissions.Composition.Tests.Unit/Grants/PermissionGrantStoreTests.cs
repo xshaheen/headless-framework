@@ -2,6 +2,7 @@
 
 using Headless.Abstractions;
 using Headless.Caching;
+using Headless.MultiTenancy;
 using Headless.Permissions.Definitions;
 using Headless.Permissions.Entities;
 using Headless.Permissions.Grants;

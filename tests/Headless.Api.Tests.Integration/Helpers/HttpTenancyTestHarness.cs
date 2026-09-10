@@ -56,9 +56,16 @@ internal static class HttpTenancyTestHarness
             .AddScheme<AuthenticationSchemeOptions, TestAuthenticationHandler>(Scheme, _ => { });
     }
 
-    public static HttpClient CreateClient(WebApplication app)
+    public static HttpClient CreateClient(WebApplication app, bool allowAutoRedirect = true)
     {
-        return new HttpClient { BaseAddress = new Uri(app.Urls.Single()) };
+        // Redirect following has to be disabled for assertions on a scheme that forbids with a 302 —
+        // otherwise the handler follows the redirect and the asserted response is the redirect target.
+        return allowAutoRedirect
+            ? new HttpClient { BaseAddress = new Uri(app.Urls.Single()) }
+            : new HttpClient(new HttpClientHandler { AllowAutoRedirect = false, CheckCertificateRevocationList = true })
+            {
+                BaseAddress = new Uri(app.Urls.Single()),
+            };
     }
 
     public static HttpRequestMessage CreateRequest(

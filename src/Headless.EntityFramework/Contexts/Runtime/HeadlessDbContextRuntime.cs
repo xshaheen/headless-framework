@@ -4,6 +4,7 @@ using System.Reflection;
 using Headless.Domain;
 using Headless.EntityFramework.ChangeTrackers;
 using Headless.EntityFramework.Configurations;
+using Headless.MultiTenancy;
 using Headless.Reflection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;

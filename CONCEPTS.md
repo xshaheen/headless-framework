@@ -257,6 +257,33 @@ The strengthen-only status a seam records in the posture manifest — precedence
 Propagating < Guarded < Enforcing — describing how strongly that seam handles tenant context.
 A later registration can raise a seam's posture but never lower it.
 
+### Tenant identifier
+
+The public, resolution-facing name of a tenant — a host label (`acme` from `acme.example.com`), a
+route value, or a header value. It may change over a tenant's life (rebrands, custom domains) and is
+normalized (trim, lowercase invariant) before any lookup. Distinct from the canonical tenant id;
+never used to key persistence or authorization. *Avoid:* tenant name (`Name` is display metadata);
+also avoid "identifier" for the canonical id — legacy xmldoc uses it loosely for
+`ICurrentTenant.Id`, but new code and docs reserve "identifier" for this public name.
+
+### Canonical tenant id
+
+The stable id that keys everything tenant-owned: ambient `ICurrentTenant.Id`, EF filters and write
+guards, Jobs/Messaging propagation, and per-tenant Settings/Features/Permissions state. The JWT
+tenant claim carries it directly; identifier-based resolution must map to it before ambient context
+is set.
+
+### Tenant catalog
+
+The opt-in read surface (`Headless.MultiTenancy.Abstractions`/`Headless.MultiTenancy`, issue #253)
+that maps tenant identifiers to canonical tenant ids and serves tenant metadata (`TenantInfo`)
+through a minimal, read-only `ITenantStore` — shipped with in-memory, configuration, and Entity
+Framework Core (`Headless.MultiTenancy.Storage.EntityFramework`) implementations. Owns identity,
+routing, and lifecycle (`IsEnabled`) only — per-tenant configuration stays in
+Settings/Features/Permissions keyed by the canonical id. See
+[docs/llms/multi-tenancy.md](docs/llms/multi-tenancy.md#tenant-catalog) for setup, the extension
+tiers, and staleness bounds.
+
 ## Jobs (tenancy)
 
 ### System job
@@ -269,4 +296,6 @@ tenant scope. It can only be created outside tenant context — an ambient tenan
 
 The pattern for tenant-scoped recurring work: cron definitions and occurrences stay system-scope,
 and the cron function enumerates tenants in application code, scheduling one tenant-scoped time job
-per tenant. The framework never enumerates tenants.
+per tenant. The framework ships an optional `ITenantDirectory` enumeration capability (implemented
+by all v1 tenant-catalog stores) that an app can call for this enumeration step, but builds no
+fan-out orchestration on top of it — the fan-out loop itself is still application code.

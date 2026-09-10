@@ -7,6 +7,7 @@ using Headless.Caching;
 using Headless.Constants;
 using Headless.DistributedLocks;
 using Headless.IO;
+using Headless.MultiTenancy;
 using Headless.Primitives;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;

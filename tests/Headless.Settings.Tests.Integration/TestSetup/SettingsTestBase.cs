@@ -3,6 +3,7 @@ using Headless.Caching;
 using Headless.DistributedLocks;
 using Headless.Domain;
 using Headless.Messaging;
+using Headless.MultiTenancy;
 using Headless.Security;
 using Headless.Settings;
 using Headless.Testing.Tests;

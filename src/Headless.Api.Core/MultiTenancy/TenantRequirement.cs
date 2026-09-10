@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.MultiTenancy;
 using Microsoft.AspNetCore.Authorization;
 
 namespace Headless.Api.MultiTenancy;
@@ -16,7 +17,7 @@ namespace Headless.Api.MultiTenancy;
 /// </code>
 /// </summary>
 /// <remarks>
-/// Handled by <c>TenantRequirementHandler</c>, which checks <see cref="Headless.Abstractions.ICurrentTenant.Id"/>.
+/// Handled by <c>TenantRequirementHandler</c>, which checks <see cref="Headless.MultiTenancy.ICurrentTenant.Id"/>.
 /// On failure it stashes <c>TenantContextRequiredFeature</c> on the request so
 /// <c>StatusCodesRewriterMiddleware</c> can emit the structured <c>g:tenant_required</c> 403 body.
 /// Named-policy placement (<c>options.AddPolicy("name", ...)</c>) is NOT detected by the startup

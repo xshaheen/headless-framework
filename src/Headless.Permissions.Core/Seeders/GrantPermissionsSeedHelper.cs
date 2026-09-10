@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
+using Headless.MultiTenancy;
 using Headless.Permissions.Definitions;
 using Headless.Permissions.Entities;
 using Headless.Permissions.GrantProviders;
