@@ -40,6 +40,8 @@ dotnet add package Headless.Settings.Core
 
 Register the required services (`TimeProvider`, `ICache`, `IDistributedLock`, `IStringEncryptionService`) first, then call `AddHeadlessSettings`:
 
+> A caching provider is a hard prerequisite. This package references `Headless.Caching.Abstractions` only, so the `ICache<SettingValueCacheItem>` that `SettingValueStore` reads through comes from `AddHeadlessCaching(...)` with a provider (`UseInMemory` / `UseRedis` / `UseHybrid`). `AddHeadlessSettings` declares it via `Headless.Hosting`'s `RequireRegisteredService<T>`, so a host without one is refused at startup with a `MissingRequiredServiceException` rather than failing on the first setting read. Registration order does not matter — the check runs at host start.
+
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 

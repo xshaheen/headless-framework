@@ -2,6 +2,7 @@
 
 using Headless.Abstractions;
 using Headless.Caching;
+using Headless.Hosting.DependencyInjection;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -179,6 +180,51 @@ public sealed class SetupHeadlessTenancyCatalogTests : TestBase
 
         // then
         act.Should().Throw<OptionsValidationException>().WithMessage("*normalize to the same identifier*");
+    }
+
+    [Fact]
+    public async Task should_fail_startup_when_an_accessor_only_catalog_has_no_caching_provider()
+    {
+        // given — a store is configured but the host never called AddHeadlessCaching(...). Accessor-only
+        // posture is deliberately not exempt: ICurrentTenantInfo reads go through the same
+        // TenantCatalogService and its two ICache<T> dependencies.
+        var builder = Host.CreateApplicationBuilder();
+        builder.AddHeadlessTenancy(tenancy => tenancy.Catalog(catalog => catalog.UseInMemory(_ => { })));
+
+        await using var provider = builder.Services.BuildServiceProvider();
+
+        // when — the shared Headless.Hosting check runs in StartingAsync, before any StartAsync
+        var act = () => _RunStartingAsync(provider);
+
+        // then
+        (await act.Should().ThrowAsync<MissingRequiredServiceException>())
+            .Which.MissingServices.Should()
+            .OnlyContain(missing => missing.Remedy.Contains("AddHeadlessCaching(...)", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task should_start_when_a_catalog_host_registers_a_caching_provider()
+    {
+        // given
+        var builder = Host.CreateApplicationBuilder();
+        builder.AddHeadlessTenancy(tenancy => tenancy.Catalog(catalog => catalog.UseInMemory(_ => { })));
+        builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
+
+        await using var provider = builder.Services.BuildServiceProvider();
+
+        // when
+        var act = () => _RunStartingAsync(provider);
+
+        // then — the open-generic ICache<> the provider registers satisfies both closed requirements
+        await act.Should().NotThrowAsync();
+    }
+
+    private static async Task _RunStartingAsync(IServiceProvider provider)
+    {
+        foreach (var service in provider.GetServices<IHostedService>().OfType<IHostedLifecycleService>())
+        {
+            await service.StartingAsync(AbortToken);
+        }
     }
 
     [Fact]

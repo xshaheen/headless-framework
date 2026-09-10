@@ -163,6 +163,15 @@ public static class SetupPermissions
             () => $"t:{sp.GetRequiredService<ICurrentTenant>().Id}"
         ));
 
+        // The requirement is the root ICache the tenant-scoped wrapper above delegates to, not
+        // ICache<PermissionGrantCacheItem> — that closed generic is registered right here, so probing it
+        // would always succeed. This package references only Headless.Caching.Abstractions; ICache itself
+        // comes from a caching provider package the host installs.
+        services.RequireRegisteredService<ICache>(
+            requiredBy: "Headless permissions grant caching",
+            remedy: "Call AddHeadlessCaching(...) with a provider (UseInMemory / UseRedis / UseHybrid)."
+        );
+
         services.TryAddSingleton<IPermissionGrantStore, PermissionGrantStore>();
         services.TryAddSingleton<IPermissionGrantProviderManager, PermissionGrantProviderManager>();
         services.TryAddSingleton<IPermissionManager, PermissionManager>();

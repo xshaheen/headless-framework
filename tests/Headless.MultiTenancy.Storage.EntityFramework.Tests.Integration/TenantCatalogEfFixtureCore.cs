@@ -96,8 +96,8 @@ internal sealed class TenantCatalogEfFixtureCore(
         var builder = Host.CreateApplicationBuilder();
         builder.Logging.ClearProviders();
         builder.Services.AddDbContextFactory<TenantCatalogDbContext>(options => configureProvider(options, connection));
-        // The catalog resolves its read-through caches as ICache<T>; without a caching provider the tenancy
-        // posture validator fails host startup with CATALOG_WITHOUT_CACHING_PROVIDER.
+        // The catalog resolves its read-through caches as ICache<T>; without a caching provider the shared
+        // required-service check fails host startup with MissingRequiredServiceException.
         builder.Services.AddHeadlessCaching(caching => caching.UseInMemory());
         builder.AddHeadlessTenancy(tenancy =>
             tenancy.Catalog(catalog => catalog.UseEntityFramework<TenantCatalogDbContext>())

@@ -169,6 +169,16 @@ public static class SetupFeatures
                 cache
             );
         });
+
+        // FeatureValueStore reads through the root ICache (or, when FeatureValueCacheName is set, a named
+        // cache from the same provider's ICacheProvider). This package references only
+        // Headless.Caching.Abstractions, so both come from a caching provider package the host installs;
+        // without one the host starts clean and the first feature check throws.
+        services.RequireRegisteredService<ICache>(
+            requiredBy: "Headless feature management value caching",
+            remedy: "Call AddHeadlessCaching(...) with a provider (UseInMemory / UseRedis / UseHybrid)."
+        );
+
         services.TryAddSingleton<IFeatureValueProviderManager, FeatureValueProviderManager>();
         services.TryAddTransient<IFeatureManager, FeatureManager>();
 

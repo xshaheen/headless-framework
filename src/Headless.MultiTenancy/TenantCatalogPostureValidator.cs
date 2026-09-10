@@ -1,8 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Caching;
-using Microsoft.Extensions.DependencyInjection;
-
 namespace Headless.MultiTenancy;
 
 /// <summary>
@@ -54,10 +51,15 @@ public static class TenantCatalogPosture
 /// <summary>
 /// Validates that the <see cref="TenantCatalogPosture.Seam"/> posture is internally consistent (R18):
 /// resolution-capable without a configured store, without a registered pipeline, or without the
-/// status-codes rewriter that writes the R19 rejection are all startup-blocking, as is a configured
-/// store with no caching provider to back the catalog's read-through caches. Accessor-only posture
+/// status-codes rewriter that writes the R19 rejection are all startup-blocking. Accessor-only posture
 /// (store configured, no resolution) is otherwise valid and never flagged — R18's explicit
 /// accessor-only carve-out.
+/// <para>
+/// The catalog's other hard prerequisite — a caching provider behind the read-through caches — is not
+/// checked here. It is declared with <c>RequireRegisteredService</c> in <c>Catalog(...)</c> and enforced
+/// by the shared <c>Headless.Hosting</c> startup check, which every cache-consuming Headless feature uses,
+/// so a host missing the provider entirely gets one message naming all affected features.
+/// </para>
 /// </summary>
 internal sealed class TenantCatalogPostureValidator : IHeadlessTenancyValidator
 {
@@ -76,23 +78,6 @@ internal sealed class TenantCatalogPostureValidator : IHeadlessTenancyValidator
             TenantCatalogPosture.ResolutionCapability,
             StringComparer.Ordinal
         );
-
-        // Gated on the accessor capability rather than on resolution: that label is recorded exactly when
-        // Catalog(...) configured a store, which is exactly when TenantCatalogService — and its two
-        // ICache<T> constructor dependencies — is registered. Accessor-only hosts need the caches just as
-        // much, because ICurrentTenantInfo reads go through the same service. Headless.MultiTenancy
-        // references only Headless.Caching.Abstractions, so the open-generic ICache<> implementation comes
-        // from a caching provider package; without one the host starts clean and every catalog read throws.
-        if (hasAccessor && !_HasCachingProvider(context.Services))
-        {
-            yield return HeadlessTenancyDiagnostic.Error(
-                TenantCatalogPosture.Seam,
-                "CATALOG_WITHOUT_CACHING_PROVIDER",
-                "A tenant catalog store is configured but no caching provider is registered, so the catalog's "
-                    + "read-through caches cannot be resolved and every tenant lookup would fail at runtime. "
-                    + "Call AddHeadlessCaching(...) with a provider (UseInMemory / UseRedis / UseHybrid)."
-            );
-        }
 
         if (!hasResolution)
         {
@@ -123,9 +108,9 @@ internal sealed class TenantCatalogPostureValidator : IHeadlessTenancyValidator
             );
         }
 
-        // Gated on resolution rather than on the accessor capability (unlike the caching check above):
-        // the rewriter only matters for identifier-resolved requests, since R19's authorization tier
-        // exists only for them. An accessor-only host has no mismatch path and needs nothing here.
+        // Gated on resolution rather than on the accessor capability: the rewriter only matters for
+        // identifier-resolved requests, since R19's authorization tier exists only for them. An
+        // accessor-only host has no mismatch path and needs nothing here.
         if (
             !seam.RuntimeMarkers.Contains(TenantCatalogPosture.StatusCodesRewriterRuntimeMarker, StringComparer.Ordinal)
         )
@@ -142,23 +127,5 @@ internal sealed class TenantCatalogPostureValidator : IHeadlessTenancyValidator
                     + "(or UseHeadless() from Headless.Api.ServiceDefaults) so that it wraps UseAuthorization()."
             );
         }
-    }
-
-    /// <summary>
-    /// Reports whether a closed <see cref="ICache{T}"/> is registered, asking
-    /// <see cref="IServiceProviderIsService"/> in preference to actually resolving one: every provider
-    /// registers the open-generic <c>ICache&lt;&gt;</c> over the root <c>ICache</c> singleton, so a resolve
-    /// here would build the backing cache during startup validation (for Redis, reaching into its connection
-    /// options) and would turn a caching misconfiguration into this validator's synthetic
-    /// <c>VALIDATOR_THREW</c> diagnostic instead of the actionable one above. Falls back to a null-returning
-    /// resolve for a container that does not expose the probe.
-    /// </summary>
-    private static bool _HasCachingProvider(IServiceProvider services)
-    {
-        var probe = services.GetService<IServiceProviderIsService>();
-
-        return probe is not null
-            ? probe.IsService(typeof(ICache<TenantIdentifierCacheItem>))
-            : services.GetService<ICache<TenantIdentifierCacheItem>>() is not null;
     }
 }

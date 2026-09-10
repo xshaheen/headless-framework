@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Caching;
 using Headless.Checks;
 using Headless.Hosting.Initialization;
 using Microsoft.Extensions.DependencyInjection;
@@ -67,6 +68,16 @@ public static class SetupHeadlessTenancyCatalog
 
         services.AddScoped<TenantCatalogService>();
         services.AddScoped<ITenantCatalogService>(sp => sp.GetRequiredService<TenantCatalogService>());
+
+        // Headless.MultiTenancy references only Headless.Caching.Abstractions, so the open-generic ICache<>
+        // that backs both read-through caches comes from a caching provider package the host must install.
+        // Declared here rather than under the resolution capability because accessor-only hosts need them
+        // just as much: ICurrentTenantInfo reads go through the same TenantCatalogService.
+        const string catalogRequiredBy = "Headless multi-tenancy tenant catalog";
+        const string catalogRemedy =
+            "Call AddHeadlessCaching(...) with a provider (UseInMemory / UseRedis / UseHybrid).";
+
+        services.RequireRegisteredService<ICache<TenantInfoCacheItem>>(catalogRequiredBy, catalogRemedy);
 
         // Overrides the NullCurrentTenantInfo default that AddHeadlessTenancyCore registered — Catalog(...)
         // always runs after that registration since it is only reachable through the AddHeadlessTenancy
