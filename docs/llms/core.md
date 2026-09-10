@@ -65,7 +65,7 @@ packages: Base, BuildingBlocks, Checks, Domain, Domain.LocalEventBus, Security.A
 ## Quick Orientation
 
 - **`Headless.Extensions`** — the framework's base utility library (result pattern, domain primitives, value objects, collections, IO, threading, reflection helpers, constants, validators). Almost every other `Headless.*` package depends on it. Documented separately — see [extensions.md](extensions.md).
-- **`Headless.Core`** — cross-cutting abstractions: `ICurrentUser`, `ICurrentTenant`, `ICurrentLocale`, `ICurrentTimeZone`, `ITimezoneProvider`, `ICurrentPrincipalAccessor`, plus utilities (`SnappyCompressor`, `LogState` structured logging) and `AddHeadlessGuidGenerator()` for keyed GUID strategy registration.
+- **`Headless.Core`** — cross-cutting abstractions: `ICurrentUser`, `ICurrentLocale`, `ICurrentTimeZone`, `ITimezoneProvider`, `ICurrentPrincipalAccessor`, plus utilities (`SnappyCompressor`, `LogState` structured logging) and `AddHeadlessGuidGenerator()` for keyed GUID strategy registration. It also supplies the default `AsyncLocal`-backed implementations of the tenant-context contracts (`CurrentTenant`, `AsyncLocalCurrentTenantAccessor`, `NullCurrentTenant`, `TenantWriteGuardBypass`) — the contracts themselves (`ICurrentTenant`, `ICurrentTenantAccessor`, `ITenantWriteGuardBypass`, `CrossTenantWriteException`, `MissingTenantContextException`) live in `Headless.MultiTenancy.Abstractions` under the `Headless.MultiTenancy` namespace, which `Headless.Core` references. See [multi-tenancy.md](multi-tenancy.md) for the full tenancy surface, including the opt-in tenant catalog.
 - **`Headless.Security.Abstractions`** — security contracts and options in the `Headless.Security` namespace: `IStringEncryptionService`, `IStringHashService`, `StringEncryptionOptions`, and `StringHashOptions`. `IStringHashService.Create(...)` supports an optional salt and can fall back to `StringHashOptions.DefaultSalt` or an empty salt when no default is configured.
 - **`Headless.Security`** — default implementations and DI helpers for string encryption and hashing. `AddStringEncryptionService(...)` and `AddStringHashService(...)` are idempotent: the first registration wins.
 - **`Headless.Checks`** — guard clause library with `Argument` (preconditions) and `Ensure` (runtime assertions).
@@ -107,9 +107,6 @@ Provides standardized interfaces for common cross-cutting concerns (user, tenant
 
 - **Abstractions**:
     - `ICurrentUser` - Current authenticated user context; `UserId` and `Roles` are exposed only for authenticated principals
-    - `ICurrentTenant` - Multi-tenancy support with scoped tenant switching
-    - `ITenantWriteGuardBypass` - Explicit bypass scope for audited host/admin tenant writes
-    - `CrossTenantWriteException` / `MissingTenantContextException` - tenant write-guard exceptions (non-transient; exclude from retry)
     - `ICorrelationIdProvider` / `ActivityCorrelationIdProvider` - correlation ID for tracing, audit, and structured logging
     - `ICurrentLocale` - Localization context (language, locale, culture)
     - `ICurrentTimeZone` - Timezone handling
@@ -119,6 +116,12 @@ Provides standardized interfaces for common cross-cutting concerns (user, tenant
     - `ITimezoneProvider` - Windows/IANA timezone conversion and listing
     - `IApplicationInformationAccessor` / `IBuildInformationAccessor` - Application metadata and build info
     - `IEnumLocaleAccessor` - Localized enum display values
+
+- **Multi-tenancy implementations** (contracts live in `Headless.MultiTenancy.Abstractions`, namespace `Headless.MultiTenancy` — see [multi-tenancy.md](multi-tenancy.md)):
+    - `CurrentTenant` / `AsyncLocalCurrentTenantAccessor` - default `ICurrentTenant` / `ICurrentTenantAccessor` implementations, `AsyncLocal`-scoped
+    - `NullCurrentTenant` - fallback `ICurrentTenant` registered until a real tenant source (HTTP claim resolution, `AddHeadlessDbContextServices()`, ...) replaces it
+    - `TenantWriteGuardBypass` - default `ITenantWriteGuardBypass` implementation; explicit bypass scope for audited host/admin tenant writes
+    - `CrossTenantWriteException` / `MissingTenantContextException` - tenant write-guard exception types (defined in `Headless.MultiTenancy.Abstractions`; non-transient, exclude from retry)
 
 - **Utilities**:
     - `SnappyCompressor` - Snappy compression/decompression with JSON serialization (AOT-compatible)

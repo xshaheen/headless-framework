@@ -4,6 +4,7 @@ using System.IO.Compression;
 using Headless.Abstractions;
 using Headless.Api.Abstractions;
 using Headless.Constants;
+using Headless.MultiTenancy;
 using Headless.Serializer;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics;
@@ -75,8 +76,8 @@ public static class SetupApiServices
         /// <item><description><see cref="Headless.Exceptions.UnauthorizedException"/> → 401</description></item>
         /// <item><description><see cref="Headless.Exceptions.ConflictException"/> → 409</description></item>
         /// <item><description><see cref="Headless.Exceptions.EntityNotFoundException"/> → 404</description></item>
-        /// <item><description><see cref="Headless.Abstractions.CrossTenantWriteException"/> → 409 with <c>g:cross_tenant_write</c></description></item>
-        /// <item><description><see cref="Headless.Abstractions.MissingTenantContextException"/> → 403 with <c>g:tenant_required</c></description></item>
+        /// <item><description><see cref="Headless.MultiTenancy.CrossTenantWriteException"/> → 409 with <c>g:cross_tenant_write</c></description></item>
+        /// <item><description><see cref="Headless.MultiTenancy.MissingTenantContextException"/> → 403 with <c>g:tenant_required</c></description></item>
         /// <item><description><c>FluentValidation.ValidationException</c> → 422</description></item>
         /// <item><description><c>Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException</c> (matched by name) → 409</description></item>
         /// <item><description><see cref="TimeoutException"/> → 408</description></item>

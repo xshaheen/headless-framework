@@ -54,6 +54,7 @@ DEPENDENCY_SECURITY_AUDIT_ARGS ?= --timeout-seconds "$(DEPENDENCY_SECURITY_AUDIT
 NUGET_ADVISORY_AUDIT_ARGS ?= --timeout-seconds "$(NUGET_ADVISORY_AUDIT_TIMEOUT)" --output-dir "$(DEPENDENCY_AUDIT_DIR)/nuget-advisories" --scan vulnerable --include-transitive
 
 COVERAGE_ARGS ?= -p:EnableCodeCoverage=true --coverage-output-format cobertura
+CI_REPORT_ARGS ?= $(if $(GITHUB_ACTIONS),--report-gh,)
 CI_TEST_ARGS ?= --report-trx --coverage --coverage-output-format cobertura
 
 .PHONY: help
@@ -223,13 +224,13 @@ ci-test: ## Run prebuilt unit tests with CI coverage output. Requires existing $
 		echo "Unable to resolve HeadlessCoverageSettingsPath from $(COVERAGE_SETTINGS_PROJECT)." >&2; \
 		exit 1; \
 	fi; \
-	$(DOTNET) test --test-modules "$(UNIT_TEST_MODULES)" --root-directory "$(CURDIR)" --results-directory "$(TEST_RESULTS_DIR)" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER) $(CI_TEST_ARGS) --coverage-settings "$$coverage_settings"
+	$(DOTNET) test --test-modules "$(UNIT_TEST_MODULES)" --root-directory "$(CURDIR)" --results-directory "$(TEST_RESULTS_DIR)" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER) $(CI_REPORT_ARGS) $(CI_TEST_ARGS) --coverage-settings "$$coverage_settings"
 
 .PHONY: ci-messaging-conformance-evidence
 ci-messaging-conformance-evidence: ## Execute every supported local-broker messaging conformance scenario (Azure uses its protected workflow).
 	@mkdir -p "$(TEST_RESULTS_DIR)/messaging-conformance-evidence"
 	@set -eu; for module in $(MESSAGING_CONFORMANCE_EVIDENCE_MODULES); do \
-		$(DOTNET) test --test-modules "$$module" --root-directory "$(CURDIR)" --results-directory "$(TEST_RESULTS_DIR)/messaging-conformance-evidence" --max-parallel-test-modules 1 $(TEST_ARGS) --filter-class '*ProviderConformanceEvidenceTests'; \
+		$(DOTNET) test --test-modules "$$module" --root-directory "$(CURDIR)" --results-directory "$(TEST_RESULTS_DIR)/messaging-conformance-evidence" --max-parallel-test-modules 1 $(TEST_ARGS) $(CI_REPORT_ARGS) --filter-class '*ProviderConformanceEvidenceTests'; \
 	done
 
 .PHONY: test-modules

@@ -21,18 +21,24 @@ public sealed class RetryTestCaseRunnerContext(
     string displayName,
     string? skipReason,
     ExplicitOption explicitOption,
-    object?[] constructorArguments
+    object?[] constructorArguments,
+    ParallelMode parallelMode,
+    ExecutionScheduler scheduler,
+    FixtureMappingManager methodFixtureMappings
 )
     : XunitTestCaseRunnerBaseContext<IXunitTestCase, IXunitTest>(
         testCase,
         tests,
+        explicitOption,
         messageBus,
         aggregator,
-        cancellationTokenSource,
         displayName,
         skipReason,
-        explicitOption,
-        constructorArguments
+        cancellationTokenSource,
+        parallelMode,
+        scheduler,
+        constructorArguments,
+        methodFixtureMappings
     )
 {
     /// <summary>Maximum total execution attempts for the test in this context.</summary>

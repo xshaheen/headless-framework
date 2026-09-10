@@ -1,0 +1,17 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>Entity Framework storage provider for the Headless tenant catalog.</Description>
+    <PackageTags>headless;multi-tenancy;tenant-catalog;storage;entity-framework;dotnet</PackageTags>
+    <RootNamespace>Headless.MultiTenancy</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.EntityFramework\Headless.EntityFramework.csproj" />
+    <ProjectReference Include="..\Headless.MultiTenancy\Headless.MultiTenancy.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Headless.MultiTenancy.Storage.EntityFramework.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.MultiTenancy.Storage.EntityFramework.Tests.Integration" />
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
+  </ItemGroup>
+</Project>

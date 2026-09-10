@@ -7,7 +7,7 @@ namespace Headless.PushNotifications;
 /// Describes a single push notification to deliver via <see cref="IPushNotificationService"/>.
 /// </summary>
 /// <remarks>
-/// The same request is used for single-device and multicast sends; only the target token(s) differ.
+/// The same request is used for single-device and multicast sends; only the target client identifiers differ.
 /// New delivery options (image, sound, badge, priority, TTL, collapse key, click action, …) are added as
 /// optional <c>init</c> properties so the contract can grow without changing the method signatures.
 /// </remarks>

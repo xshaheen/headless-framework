@@ -6,13 +6,13 @@ using Headless.Checks;
 namespace Headless.PushNotifications;
 
 /// <summary>
-/// Describes the delivery outcome for a single device token.
+/// Describes the delivery outcome for a single provider-issued client identifier.
 /// </summary>
 /// <remarks>
 /// Exactly one of three states applies, distinguished by <see cref="Status"/>: a successful send carries
 /// a non-null <see cref="MessageId"/>; a failed send carries a non-null <see cref="FailureError"/>; an
-/// unregistered token carries neither and signals that the token should be removed from your store. Note
-/// that for an unregistered token both <see cref="IsSucceeded"/> and <see cref="IsFailed"/> return
+/// unregistered identifier carries neither and signals that the identifier should be removed from your store. Note
+/// that for an unregistered identifier both <see cref="IsSucceeded"/> and <see cref="IsFailed"/> return
 /// <see langword="false"/>.
 /// </remarks>
 [PublicAPI]
@@ -20,8 +20,8 @@ public sealed record PushNotificationResponse
 {
     private PushNotificationResponse() { }
 
-    /// <summary>The device registration token this response refers to.</summary>
-    public string Token { get; private init; } = null!;
+    /// <summary>The provider-issued client identifier this response refers to.</summary>
+    public string ClientIdentifier { get; private init; } = null!;
 
     /// <summary>
     /// Provider-assigned identifier for the accepted message. Non-null only when <see cref="Status"/> is
@@ -50,7 +50,7 @@ public sealed record PushNotificationResponse
 
     /// <summary>
     /// Returns <see langword="true"/> only for an explicit delivery failure, in which case
-    /// <see cref="FailureError"/> is non-null. Returns <see langword="false"/> for an unregistered token —
+    /// <see cref="FailureError"/> is non-null. Returns <see langword="false"/> for an unregistered identifier —
     /// inspect <see cref="Status"/> to distinguish that case.
     /// </summary>
     [MemberNotNullWhen(true, nameof(FailureError))]
@@ -60,8 +60,8 @@ public sealed record PushNotificationResponse
     }
 
     /// <summary>
-    /// Returns <see langword="true"/> when the device token is no longer registered with the provider and
-    /// should be removed from the caller's token store. Exactly one of <see cref="IsSucceeded"/>,
+    /// Returns <see langword="true"/> when the client identifier is no longer registered with the provider and
+    /// should be removed from the caller's identifier store. Exactly one of <see cref="IsSucceeded"/>,
     /// <see cref="IsFailed"/>, and <see cref="IsUnregistered"/> returns <see langword="true"/> for any response.
     /// </summary>
     public bool IsUnregistered()
@@ -70,14 +70,14 @@ public sealed record PushNotificationResponse
     }
 
     /// <summary>Creates a response indicating the notification was accepted for delivery.</summary>
-    /// <exception cref="ArgumentNullException"><paramref name="token"/> or <paramref name="messageId"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentException"><paramref name="token"/> or <paramref name="messageId"/> is empty or white space.</exception>
-    public static PushNotificationResponse Succeeded(string token, string messageId)
+    /// <exception cref="ArgumentNullException"><paramref name="clientIdentifier"/> or <paramref name="messageId"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="clientIdentifier"/> or <paramref name="messageId"/> is empty or white space.</exception>
+    public static PushNotificationResponse Succeeded(string clientIdentifier, string messageId)
     {
         return new PushNotificationResponse
         {
             Status = PushNotificationResponseStatus.Success,
-            Token = Argument.IsNotNullOrWhiteSpace(token),
+            ClientIdentifier = Argument.IsNotNullOrWhiteSpace(clientIdentifier),
             MessageId = Argument.IsNotNullOrWhiteSpace(messageId),
         };
     }
@@ -86,42 +86,42 @@ public sealed record PushNotificationResponse
     /// Builds a success response without validating the arguments. Intended only for the no-op development
     /// provider, which must never throw on inputs that a real provider would reject.
     /// </summary>
-    internal static PushNotificationResponse SucceededUnchecked(string token, string messageId)
+    internal static PushNotificationResponse SucceededUnchecked(string clientIdentifier, string messageId)
     {
         return new PushNotificationResponse
         {
             Status = PushNotificationResponseStatus.Success,
-            Token = token,
+            ClientIdentifier = clientIdentifier,
             MessageId = messageId,
         };
     }
 
     /// <summary>Creates a response indicating the provider rejected the notification.</summary>
-    /// <exception cref="ArgumentNullException"><paramref name="token"/> or <paramref name="failureError"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentException"><paramref name="token"/> or <paramref name="failureError"/> is empty or white space.</exception>
-    public static PushNotificationResponse Failed(string token, string failureError)
+    /// <exception cref="ArgumentNullException"><paramref name="clientIdentifier"/> or <paramref name="failureError"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="clientIdentifier"/> or <paramref name="failureError"/> is empty or white space.</exception>
+    public static PushNotificationResponse Failed(string clientIdentifier, string failureError)
     {
         return new PushNotificationResponse
         {
             Status = PushNotificationResponseStatus.Failure,
-            Token = Argument.IsNotNullOrWhiteSpace(token),
+            ClientIdentifier = Argument.IsNotNullOrWhiteSpace(clientIdentifier),
             FailureError = Argument.IsNotNullOrWhiteSpace(failureError),
             MessageId = null,
         };
     }
 
     /// <summary>
-    /// Creates a response indicating the token is no longer registered with the provider. Callers should
-    /// delete such tokens from their store.
+    /// Creates a response indicating the client identifier is no longer registered with the provider. Callers should
+    /// delete such identifiers from their store.
     /// </summary>
-    /// <exception cref="ArgumentNullException"><paramref name="token"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentException"><paramref name="token"/> is empty or white space.</exception>
-    public static PushNotificationResponse Unregistered(string token)
+    /// <exception cref="ArgumentNullException"><paramref name="clientIdentifier"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="clientIdentifier"/> is empty or white space.</exception>
+    public static PushNotificationResponse Unregistered(string clientIdentifier)
     {
         return new PushNotificationResponse
         {
             Status = PushNotificationResponseStatus.Unregistered,
-            Token = Argument.IsNotNullOrWhiteSpace(token),
+            ClientIdentifier = Argument.IsNotNullOrWhiteSpace(clientIdentifier),
             MessageId = null,
         };
     }
@@ -139,7 +139,7 @@ public sealed record PushNotificationResponse
 public enum PushNotificationResponseStatus
 {
     /// <summary>
-    /// The device token is no longer valid (for example the app was uninstalled or the token expired).
+    /// The client identifier is no longer valid (for example the app was uninstalled or the identifier expired).
     /// The caller should remove it from their store. This is neither a success nor a failure.
     /// </summary>
     Unregistered = 0,
@@ -147,6 +147,6 @@ public enum PushNotificationResponseStatus
     /// <summary>The notification was accepted by the provider for delivery.</summary>
     Success = 1,
 
-    /// <summary>The provider rejected the notification for a reason other than an unregistered token.</summary>
+    /// <summary>The provider rejected the notification for a reason other than an unregistered identifier.</summary>
     Failure = 2,
 }

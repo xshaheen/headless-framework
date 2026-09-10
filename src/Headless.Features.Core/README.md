@@ -38,6 +38,8 @@ dotnet add package Headless.Features.Core
 
 Register the required services (`TimeProvider`, `ICache`, `IDistributedLock`, `IGuidGenerator`) first, then call `AddHeadlessFeatures`:
 
+> A caching provider is a hard prerequisite. This package references `Headless.Caching.Abstractions` only, so the `ICache` that `FeatureValueStore` reads through — or the named cache it takes from `ICacheProvider` when `FeatureValueCacheName` is set — comes from `AddHeadlessCaching(...)` with a provider (`UseInMemory` / `UseRedis` / `UseHybrid`). `AddHeadlessFeatures` declares it via `Headless.Hosting`'s `RequireRegisteredService<T>`, so a host without one is refused at startup with a `MissingRequiredServiceException` rather than failing on the first feature check. Registration order does not matter — the check runs at host start.
+
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 

@@ -42,7 +42,7 @@ public sealed class HeadlessRedisScriptsLoaderRecoveryTests : TestBase
         // missing the script after a failover.
         db.ScriptEvaluateAsync(Arg.Any<LoadedLuaScript>(), Arg.Any<object>())
             .Returns<Task<RedisResult>>(_ =>
-                throw new RedisServerException("NOSCRIPT No matching script. Please use SCRIPT LOAD.")
+                throw _RedisServerException("NOSCRIPT No matching script. Please use SCRIPT LOAD.")
             );
 
         // The recovery path re-runs the full body via EVAL (LuaScript overload), which succeeds.
@@ -82,11 +82,11 @@ public sealed class HeadlessRedisScriptsLoaderRecoveryTests : TestBase
         using var sut = new HeadlessRedisScriptsLoader(multiplexer);
 
         db.ScriptEvaluateAsync(Arg.Any<LoadedLuaScript>(), Arg.Any<object>())
-            .Returns<Task<RedisResult>>(_ => throw new RedisServerException("NOSCRIPT No matching script."));
+            .Returns<Task<RedisResult>>(_ => throw _RedisServerException("NOSCRIPT No matching script."));
 
         // Even the EVAL recovery fails (e.g. the connection drops mid-recovery).
         db.ScriptEvaluateAsync(Arg.Any<LuaScript>(), Arg.Any<object>(), Arg.Any<CommandFlags>())
-            .Returns<Task<RedisResult>>(_ => throw new RedisServerException("LOADING Redis is loading the dataset."));
+            .Returns<Task<RedisResult>>(_ => throw _RedisServerException("LOADING Redis is loading the dataset."));
 
         // when
         var act = () => sut.EvaluateAsync(db, SampleScriptDefinition.Instance, SampleParameters, AbortToken);
@@ -115,7 +115,7 @@ public sealed class HeadlessRedisScriptsLoaderRecoveryTests : TestBase
         using var sut = new HeadlessRedisScriptsLoader(multiplexer);
 
         db.ScriptEvaluateAsync(Arg.Any<LoadedLuaScript>(), Arg.Any<object>())
-            .Returns<Task<RedisResult>>(_ => throw new RedisServerException("WRONGTYPE Operation against a key."));
+            .Returns<Task<RedisResult>>(_ => throw _RedisServerException("WRONGTYPE Operation against a key."));
 
         // when
         var act = () => sut.EvaluateAsync(db, SampleScriptDefinition.Instance, SampleParameters, AbortToken);
@@ -123,6 +123,14 @@ public sealed class HeadlessRedisScriptsLoaderRecoveryTests : TestBase
         // then — a non-NOSCRIPT error propagates immediately; the EVAL recovery path is never entered.
         await act.Should().ThrowAsync<RedisServerException>().WithMessage("WRONGTYPE*");
         await db.DidNotReceive().ScriptEvaluateAsync(Arg.Any<LuaScript>(), Arg.Any<object>(), Arg.Any<CommandFlags>());
+    }
+
+    private static RedisServerException _RedisServerException(string message)
+    {
+        // The replacement constructor depends on experimental RedisErrorKind; keep the stable API until it exits preview.
+#pragma warning disable CS0618
+        return new RedisServerException(message);
+#pragma warning restore CS0618
     }
 
     // Arbitrary definition for driving the loader against a mocked database; the script body never

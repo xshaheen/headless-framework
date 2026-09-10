@@ -5,6 +5,7 @@ using Headless.Abstractions;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Testing;
+using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;

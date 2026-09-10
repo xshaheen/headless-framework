@@ -3,9 +3,9 @@
 using Headless.Abstractions;
 using Headless.Api.MultiTenancy;
 using Headless.Constants;
+using Headless.MultiTenancy;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Headless.Api.Middlewares;
 
@@ -17,10 +17,18 @@ namespace Headless.Api.Middlewares;
 /// For 403 responses that carry a <c>TenantContextRequiredFeature</c> on the request, the middleware
 /// clears any partial response and writes a <c>g:tenant_required</c> discriminator body, overriding
 /// any <c>Content-Type</c> or <c>Content-Length</c> set by upstream authorization middleware.
+/// A request carrying a <c>TenantIdentifierMismatchFeature</c> (R19) is rewritten whatever status the
+/// authorization pipeline produced — not only a bare 403, since a cookie-style scheme forbids with a
+/// 302 — because the secure-by-default mismatch rejection must stay byte-identical to the generic
+/// unknown/disabled rejection (<see cref="TenantCatalogRejectionWriter.BuildMismatch"/>). Both the
+/// status and the body are overridden.
 /// All writes are routed through <see cref="Microsoft.AspNetCore.Http.IProblemDetailsService"/> when
 /// registered, falling back to <c>Results.Problem</c> for minimal-host scenarios.
 /// </remarks>
-internal sealed class StatusCodesRewriterMiddleware(IProblemDetailsCreator problemDetailsCreator) : IMiddleware
+internal sealed class StatusCodesRewriterMiddleware(
+    IProblemDetailsCreator problemDetailsCreator,
+    IOptions<TenantCatalogOptions> catalogOptions
+) : IMiddleware
 {
     /// <summary>Executes the middleware, rewriting qualifying error responses as ProblemDetails.</summary>
     /// <param name="context">The current HTTP context.</param>
@@ -29,9 +37,36 @@ internal sealed class StatusCodesRewriterMiddleware(IProblemDetailsCreator probl
     {
         await next(context).ConfigureAwait(false);
 
+        if (context.Response.HasStarted)
+        {
+            return;
+        }
+
+        // TenantIdentifierIntegrityHandler stashes this marker on an R19 mismatch. The secure-by-default
+        // rejection must be byte-identical to the generic unknown/disabled rejection, so it is evaluated
+        // before — and independently of — the status-code switch below: the status the authorization
+        // pipeline produced is not necessarily a bare 403 (a cookie-style scheme forbids with a 302), and
+        // any surviving difference is exactly the enumeration signal R11/KTD9 exists to remove. Both the
+        // status and the body are overridden here, not just the body.
+        if (context.Features.Get<TenantIdentifierMismatchFeature>() is not null)
+        {
+            context.Response.Clear();
+
+            var (mismatchStatusCode, mismatchProblemDetails) = TenantCatalogRejectionWriter.BuildMismatch(
+                problemDetailsCreator,
+                catalogOptions.Value.DetailedResolutionErrors
+            );
+
+            await TenantCatalogRejectionWriter
+                .WriteAsync(context, mismatchStatusCode, mismatchProblemDetails)
+                .ConfigureAwait(false);
+
+            return;
+        }
+
         var isNonError = context.Response.StatusCode is < 400 or >= 600;
 
-        if (isNonError || context.Response.HasStarted)
+        if (isNonError)
         {
             return;
         }
@@ -53,12 +88,18 @@ internal sealed class StatusCodesRewriterMiddleware(IProblemDetailsCreator probl
             return;
         }
 
+        // Every branch below writes through TenantCatalogRejectionWriter.WriteAsync, which assigns the
+        // status code it is handed before writing. The status is already the one being rewritten here, so
+        // passing context.Response.StatusCode re-asserts it rather than changing it.
         switch (context.Response.StatusCode)
         {
             case StatusCodes.Status401Unauthorized:
             {
                 var problemDetails = problemDetailsCreator.Unauthorized();
-                await _WriteAsync(context, problemDetails).ConfigureAwait(false);
+
+                await TenantCatalogRejectionWriter
+                    .WriteAsync(context, context.Response.StatusCode, problemDetails)
+                    .ConfigureAwait(false);
 
                 break;
             }
@@ -82,39 +123,23 @@ internal sealed class StatusCodesRewriterMiddleware(IProblemDetailsCreator probl
                         error: HeadlessProblemDetailsConstants.Errors.TenantContextRequired
                     )
                     : problemDetailsCreator.Forbidden();
-                await _WriteAsync(context, problemDetails).ConfigureAwait(false);
+
+                await TenantCatalogRejectionWriter
+                    .WriteAsync(context, context.Response.StatusCode, problemDetails)
+                    .ConfigureAwait(false);
 
                 break;
             }
             case StatusCodes.Status404NotFound:
             {
                 var problemDetails = problemDetailsCreator.EndpointNotFound();
-                await _WriteAsync(context, problemDetails).ConfigureAwait(false);
+
+                await TenantCatalogRejectionWriter
+                    .WriteAsync(context, context.Response.StatusCode, problemDetails)
+                    .ConfigureAwait(false);
 
                 break;
             }
         }
-    }
-
-    // Routes writes through IProblemDetailsService so consumer CustomizeProblemDetails hooks run.
-    // Falls back to Results.Problem when the service is not registered or declines to write
-    // (TryWriteAsync returns false), ensuring structured output even in minimal-host scenarios.
-    private static async Task _WriteAsync(HttpContext context, ProblemDetails problemDetails)
-    {
-        var service = context.RequestServices.GetService<IProblemDetailsService>();
-
-        if (service is not null)
-        {
-            var written = await service
-                .TryWriteAsync(new ProblemDetailsContext { HttpContext = context, ProblemDetails = problemDetails })
-                .ConfigureAwait(false);
-
-            if (written)
-            {
-                return;
-            }
-        }
-
-        await Results.Problem(problemDetails).ExecuteAsync(context).ConfigureAwait(false);
     }
 }

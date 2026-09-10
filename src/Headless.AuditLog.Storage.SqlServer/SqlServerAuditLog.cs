@@ -2,6 +2,7 @@
 
 using Headless.Abstractions;
 using Headless.Checks;
+using Headless.MultiTenancy;
 using Microsoft.Extensions.Options;
 
 namespace Headless.AuditLog.SqlServer;

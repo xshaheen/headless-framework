@@ -158,6 +158,7 @@ jobs:
           path: |
             artifacts/test-results/**/*.trx
             artifacts/test-results/**/*.dmp
+            artifacts/test-results/**/*.crash.sequence.log
           if-no-files-found: warn
           retention-days: 14
 

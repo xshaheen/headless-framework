@@ -13,26 +13,26 @@ public sealed class NoopPushNotificationServiceTests : TestBase
     private readonly NoopPushNotificationService _service = new();
 
     [Theory]
-    [InlineData("token")]
+    [InlineData("client-id")]
     [InlineData("")]
     [InlineData("   ")]
-    public async Task should_stay_inert_and_report_success_for_single_send(string token)
+    public async Task should_stay_inert_and_report_success_for_single_send(string clientIdentifier)
     {
         // when
-        var result = await _service.SendToDeviceAsync(token, _Request, AbortToken);
+        var result = await _service.SendToDeviceAsync(clientIdentifier, _Request, AbortToken);
         // then
         result.IsSucceeded().Should().BeTrue();
         result.MessageId.Should().NotBeNullOrEmpty();
     }
 
     [Fact]
-    public async Task should_report_success_for_every_multicast_token()
+    public async Task should_report_success_for_every_multicast_client_identifier()
     {
         // given
-        var tokens = new[] { "a", "b", "c" };
+        var clientIdentifiers = new[] { "a", "b", "c" };
 
         // when
-        var result = await _service.SendMulticastAsync(tokens, _Request, AbortToken);
+        var result = await _service.SendMulticastAsync(clientIdentifiers, _Request, AbortToken);
         // then
         result.SuccessCount.Should().Be(3);
         result.FailureCount.Should().Be(0);

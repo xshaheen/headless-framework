@@ -2,6 +2,7 @@
 
 using Headless.Abstractions;
 using Headless.Hosting.Initialization;
+using Headless.MultiTenancy;
 using Headless.Permissions;
 using Headless.Permissions.Entities;
 using Headless.Permissions.Repositories;

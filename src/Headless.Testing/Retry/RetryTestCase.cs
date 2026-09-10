@@ -13,43 +13,55 @@ namespace Headless.Testing.Retry;
 /// </summary>
 // This class is used for facts, and for serializable pre-enumerated individual data rows in theories.
 [EditorBrowsable(EditorBrowsableState.Never)]
-public sealed class RetryTestCase(
-    int maxRetries,
-    IXunitTestMethod testMethod,
-    string testCaseDisplayName,
-    string uniqueId,
-    bool @explicit,
-    Type[]? skipExceptions = null,
-    string? skipReason = null,
-    Type? skipType = null,
-    string? skipUnless = null,
-    string? skipWhen = null,
-    Dictionary<string, HashSet<string>>? traits = null,
-    object?[]? testMethodArguments = null,
-    string? sourceFilePath = null,
-    int? sourceLineNumber = null,
-    int? timeout = null
-)
-    : XunitTestCase(
-        testMethod,
-        testCaseDisplayName,
-        uniqueId,
-        @explicit,
-        skipExceptions,
-        skipReason,
-        skipType,
-        skipUnless,
-        skipWhen,
-        traits,
-        testMethodArguments,
-        sourceFilePath,
-        sourceLineNumber,
-        timeout
-    ),
-        ISelfExecutingXunitTestCase
+public sealed class RetryTestCase : XunitTestCase, ISelfExecutingXunitTestCase
 {
+    /// <summary>Called by the xUnit deserializer.</summary>
+    [Obsolete("Called by the de-serializer; should only be called for de-serialization purposes")]
+    public RetryTestCase() { }
+
+    public RetryTestCase(
+        int maxRetries,
+        IXunitTestMethod testMethod,
+        string testCaseDisplayName,
+        string uniqueId,
+        bool @explicit,
+        string? testLabel = null,
+        bool disableParallelization = false,
+        Type[]? skipExceptions = null,
+        string? skipReason = null,
+        Type? skipType = null,
+        string? skipUnless = null,
+        string? skipWhen = null,
+        Dictionary<string, HashSet<string>>? traits = null,
+        object?[]? testMethodArguments = null,
+        string? sourceFilePath = null,
+        int? sourceLineNumber = null,
+        int? timeout = null
+    )
+        : base(
+            testMethod,
+            testCaseDisplayName,
+            uniqueId,
+            @explicit,
+            testLabel,
+            disableParallelization,
+            skipExceptions,
+            skipReason,
+            skipType,
+            skipUnless,
+            skipWhen,
+            traits,
+            testMethodArguments,
+            sourceFilePath,
+            sourceLineNumber,
+            timeout
+        )
+    {
+        MaxRetries = maxRetries;
+    }
+
     /// <summary>Maximum number of total execution attempts (including the first run).</summary>
-    public int MaxRetries { get; private set; } = maxRetries;
+    public int MaxRetries { get; private set; }
 
     protected override void Deserialize(IXunitSerializationInfo info)
     {
@@ -62,27 +74,31 @@ public sealed class RetryTestCase(
     /// Executes the test via <see cref="RetryTestCaseRunner"/>, retrying up to
     /// <see cref="MaxRetries"/> times on failure.
     /// </summary>
-    public async ValueTask<RunSummary> Run(
+    public ValueTask<RunSummary> Run(
         ExplicitOption explicitOption,
         IMessageBus messageBus,
         object?[] constructorArguments,
         ExceptionAggregator aggregator,
-        CancellationTokenSource cancellationTokenSource
+        CancellationTokenSource cancellationTokenSource,
+        ParallelMode parallelMode,
+        ExecutionScheduler scheduler,
+        FixtureMappingManager methodFixtureMappings
     )
     {
-        return await RetryTestCaseRunner
-            .Instance.Run(
-                MaxRetries,
-                this,
-                messageBus,
-                aggregator.Clone(),
-                cancellationTokenSource,
-                TestCaseDisplayName,
-                SkipReason,
-                explicitOption,
-                constructorArguments
-            )
-            .ConfigureAwait(false);
+        return RetryTestCaseRunner.Instance.Run(
+            MaxRetries,
+            this,
+            messageBus,
+            aggregator.Clone(),
+            cancellationTokenSource,
+            TestCaseDisplayName,
+            SkipReason,
+            explicitOption,
+            constructorArguments,
+            parallelMode,
+            scheduler,
+            methodFixtureMappings
+        );
     }
 
     protected override void Serialize(IXunitSerializationInfo info)

@@ -3534,7 +3534,10 @@ public sealed class RedisCache(
 
         if (valuesResult is null || valuesResult.Length < 2)
         {
+            // The replacement constructor depends on experimental RedisErrorKind; keep the stable API until it exits preview.
+#pragma warning disable CS0618
             throw new RedisServerException("Unexpected set mutation script result.");
+#pragma warning restore CS0618
         }
 
         var changed = (long)valuesResult[0];

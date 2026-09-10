@@ -3,6 +3,7 @@
 using System.ComponentModel;
 using Headless.Abstractions;
 using Headless.EntityFramework.Contexts.Runtime;
+using Headless.MultiTenancy;
 using Microsoft.Extensions.Options;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace

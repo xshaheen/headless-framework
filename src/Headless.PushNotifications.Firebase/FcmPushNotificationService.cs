@@ -7,46 +7,46 @@ namespace Headless.PushNotifications.Firebase;
 
 /// <summary>
 /// Firebase Cloud Messaging (FCM) push notification service. Validates input, splits multicast sends into
-/// FCM-sized batches, and aggregates per-token outcomes. All FCM interaction and transient-failure retry is
+/// FCM-sized batches, and aggregates per-FID outcomes. All FCM interaction and transient-failure retry is
 /// delegated to <see cref="IFcmMessageSender"/>.
 /// </summary>
 internal sealed class FcmPushNotificationService(IFcmMessageSender sender) : IPushNotificationService
 {
     private const int _MaxTitleLength = 100;
     private const int _MaxBodyLength = 4000;
-    private const int _MaxTokensPerBatch = 500;
+    private const int _MaxFidsPerBatch = 500;
 
     public async ValueTask<PushNotificationResponse> SendToDeviceAsync(
-        string clientToken,
+        string clientIdentifier,
         PushNotificationRequest request,
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNullOrWhiteSpace(clientToken);
+        Argument.IsNotNullOrWhiteSpace(clientIdentifier);
         Argument.IsNotNull(request);
         _ValidateContent(request);
 
         var content = new FcmMessageContent(request.Title, request.Body, request.Data);
 
-        return await sender.SendAsync(content, clientToken, cancellationToken).ConfigureAwait(false);
+        return await sender.SendAsync(content, clientIdentifier, cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask<BatchPushNotificationResponse> SendMulticastAsync(
-        IReadOnlyList<string> clientTokens,
+        IReadOnlyList<string> clientIdentifiers,
         PushNotificationRequest request,
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNullOrEmpty(clientTokens);
+        Argument.IsNotNullOrEmpty(clientIdentifiers);
         Argument.IsNotNull(request);
         _ValidateContent(request);
 
         var content = new FcmMessageContent(request.Title, request.Body, request.Data);
-        var responses = new List<PushNotificationResponse>(clientTokens.Count);
+        var responses = new List<PushNotificationResponse>(clientIdentifiers.Count);
         var successCount = 0;
         var failureCount = 0;
 
-        foreach (var batch in clientTokens.Chunk(_MaxTokensPerBatch))
+        foreach (var batch in clientIdentifiers.Chunk(_MaxFidsPerBatch))
         {
             var batchResponses = await sender.SendBatchAsync(content, batch, cancellationToken).ConfigureAwait(false);
 

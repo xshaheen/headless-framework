@@ -10,7 +10,7 @@ public sealed class PushNotificationResponseTests
     public void should_report_success_state_for_succeeded()
     {
         // when
-        var response = PushNotificationResponse.Succeeded("token", "msg-1");
+        var response = PushNotificationResponse.Succeeded("client-id", "msg-1");
 
         // then
         response.Status.Should().Be(PushNotificationResponseStatus.Success);
@@ -19,14 +19,14 @@ public sealed class PushNotificationResponseTests
         response.IsUnregistered().Should().BeFalse();
         response.MessageId.Should().Be("msg-1");
         response.FailureError.Should().BeNull();
-        response.Token.Should().Be("token");
+        response.ClientIdentifier.Should().Be("client-id");
     }
 
     [Fact]
     public void should_report_failure_state_for_failed()
     {
         // when
-        var response = PushNotificationResponse.Failed("token", "boom");
+        var response = PushNotificationResponse.Failed("client-id", "boom");
 
         // then
         response.Status.Should().Be(PushNotificationResponseStatus.Failure);
@@ -41,7 +41,7 @@ public sealed class PushNotificationResponseTests
     public void should_report_unregistered_state_for_unregistered()
     {
         // when
-        var response = PushNotificationResponse.Unregistered("token");
+        var response = PushNotificationResponse.Unregistered("client-id");
 
         // then
         response.Status.Should().Be(PushNotificationResponseStatus.Unregistered);
@@ -54,10 +54,10 @@ public sealed class PushNotificationResponseTests
     [InlineData("")]
     [InlineData("   ")]
     [InlineData(null)]
-    public void should_throw_when_succeeded_token_is_blank(string? token)
+    public void should_throw_when_succeeded_client_identifier_is_blank(string? clientIdentifier)
     {
         // when
-        var action = () => PushNotificationResponse.Succeeded(token!, "msg");
+        var action = () => PushNotificationResponse.Succeeded(clientIdentifier!, "msg");
 
         // then
         action.Should().Throw<ArgumentException>();
@@ -67,7 +67,7 @@ public sealed class PushNotificationResponseTests
     public void should_throw_when_succeeded_message_id_is_blank()
     {
         // when
-        var action = () => PushNotificationResponse.Succeeded("token", "");
+        var action = () => PushNotificationResponse.Succeeded("client-id", "");
 
         // then
         action.Should().Throw<ArgumentException>();

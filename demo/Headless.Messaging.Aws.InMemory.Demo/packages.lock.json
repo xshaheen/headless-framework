@@ -82,8 +82,8 @@
       },
       "AWSSDK.Core": {
         "type": "Transitive",
-        "resolved": "4.0.100.2",
-        "contentHash": "1hz6lB2Meymkv9rdOy30p5pIbGpYLK0H4O8XUMGwEMmXUB4FJhyTNk69dLWIFdDUrY66h0NyKy9maHKXMRTwJA=="
+        "resolved": "4.0.102.4",
+        "contentHash": "cFMZnb05RV290HDdybtgR5b/ypkLekeaoHde4tiQHLmgegGLMmcEKsvThnLm1PJOeWSNFcBxzC5fomOvWiW24A=="
       },
       "Nito.AsyncEx.Context": {
         "type": "Transitive",
@@ -139,6 +139,12 @@
         "resolved": "1.1.1",
         "contentHash": "CU0/Iuv5VDynK8I8pDLwkgF0rZhbQoZahtodfL0M3x2gFkpBRApKs8RyMyNlAi1mwExE4gsmqQXk4aFVvW9a4Q=="
       },
+      "headless.caching.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Extensions": "[1.0.0, )"
+        }
+      },
       "headless.checks": {
         "type": "Project"
       },
@@ -168,6 +174,7 @@
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
+          "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
           "Headless.Serializer.Json": "[1.0.0, )",
           "Snappier": "[1.3.1, )"
         }
@@ -196,13 +203,13 @@
           "Headless.Primitives": "[1.0.0, )",
           "Headless.Urls": "[1.0.0, )",
           "Humanizer.Core": "[3.0.10, )",
-          "Microsoft.Bcl.TimeProvider": "[10.0.9, )",
+          "Microsoft.Bcl.TimeProvider": "[10.0.12, )",
           "Nito.AsyncEx": "[5.1.2, )",
           "Nito.Disposables": "[2.5.0, )",
           "Polly.Core": "[8.7.0, )",
           "System.Reactive": "[6.1.0, )",
           "TimeZoneConverter": "[7.2.0, )",
-          "libphonenumber-csharp": "[9.0.34, )",
+          "libphonenumber-csharp": "[9.0.39, )",
           "morelinq": "[4.4.0, )"
         }
       },
@@ -211,7 +218,7 @@
         "dependencies": {
           "FluentValidation": "[12.1.1, )",
           "Headless.Extensions": "[1.0.0, )",
-          "libphonenumber-csharp": "[9.0.34, )"
+          "libphonenumber-csharp": "[9.0.39, )"
         }
       },
       "headless.generator.primitives.abstractions": {
@@ -232,8 +239,8 @@
       "headless.messaging.aws": {
         "type": "Project",
         "dependencies": {
-          "AWSSDK.SQS": "[4.0.100.2, )",
-          "AWSSDK.SimpleNotificationService": "[4.0.100.2, )",
+          "AWSSDK.SQS": "[4.0.100.13, )",
+          "AWSSDK.SimpleNotificationService": "[4.0.100.13, )",
           "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
           "Headless.Messaging.Core": "[1.0.0, )",
           "Headless.Messaging.Queue.Abstractions": "[1.0.0, )"
@@ -260,7 +267,7 @@
           "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
           "Headless.Messaging.Queue.Abstractions": "[1.0.0, )",
           "Headless.MultiTenancy": "[1.0.0, )",
-          "OpenTelemetry.Api": "[1.16.0, )",
+          "OpenTelemetry.Api": "[1.18.0, )",
           "Polly.Core": "[8.7.0, )"
         }
       },
@@ -287,7 +294,17 @@
       "headless.multitenancy": {
         "type": "Project",
         "dependencies": {
-          "Headless.Checks": "[1.0.0, )"
+          "Headless.Caching.Abstractions": "[1.0.0, )",
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
+          "Headless.MultiTenancy.Abstractions": "[1.0.0, )"
+        }
+      },
+      "headless.multitenancy.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Primitives": "[1.0.0, )"
         }
       },
       "headless.primitives": {
@@ -295,7 +312,7 @@
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Headless.Generator.Primitives.Abstractions": "[1.0.0, )",
-          "libphonenumber-csharp": "[9.0.34, )"
+          "libphonenumber-csharp": "[9.0.39, )"
         }
       },
       "headless.serializer.abstractions": {
@@ -315,20 +332,20 @@
       },
       "AWSSDK.SimpleNotificationService": {
         "type": "CentralTransitive",
-        "requested": "[4.0.100.2, )",
-        "resolved": "4.0.100.2",
-        "contentHash": "+MyA2cEfvl3g8vGhDBdYFyxjSnM5opYsfgBPb2riO2B6PLOl149ZnjCrQuFpgfl0ciLn+MZBXwISyQ06mkAxUQ==",
+        "requested": "[4.0.100.13, )",
+        "resolved": "4.0.100.13",
+        "contentHash": "/rj6SAkxct3jch6tu97b7VT6xHVC5PtoEq96MFaQvhfGAZgKmcQC3dblfA2WUO3DhhxHhTbnGnTje3n0tTfktg==",
         "dependencies": {
-          "AWSSDK.Core": "[4.0.100.2, 5.0.0)"
+          "AWSSDK.Core": "[4.0.102.4, 5.0.0)"
         }
       },
       "AWSSDK.SQS": {
         "type": "CentralTransitive",
-        "requested": "[4.0.100.2, )",
-        "resolved": "4.0.100.2",
-        "contentHash": "7PQ7V1q2mL7ghsg3+Pc+EiPKmQn5PjqMXbQvvTInvDS/2brIXTAkkwAFu3MhNVGV2IKy3poTmCW5D1UOIG2R3A==",
+        "requested": "[4.0.100.13, )",
+        "resolved": "4.0.100.13",
+        "contentHash": "Ts2Ee5cZ7X1VwefwVNrLvoi+QC8HidMbimmZiY+wn0gddX1qau4y5PMyN/0R25JrTICEUn2Ik7WKB/xQhkseTQ==",
         "dependencies": {
-          "AWSSDK.Core": "[4.0.100.2, 5.0.0)"
+          "AWSSDK.Core": "[4.0.102.4, 5.0.0)"
         }
       },
       "CommunityToolkit.HighPerformance": {
@@ -366,15 +383,15 @@
       },
       "libphonenumber-csharp": {
         "type": "CentralTransitive",
-        "requested": "[9.0.34, )",
-        "resolved": "9.0.34",
-        "contentHash": "QmwQQk2ca/E3qyTTwmTnIoNj2sQ8daRWBQt4+6bkNkDyHgCjgggNGgvFqS6Gm9HQ1EbYkyKn58RjUC2jVM+RQw=="
+        "requested": "[9.0.39, )",
+        "resolved": "9.0.39",
+        "contentHash": "NiBrwzjHgtBj1XxTVQrWrxn+XOUmiDRcpqxBG5/DtZn8c2vm29FS9aBaCPG5+hBTDYXEid1r0SAZd7a063oGWg=="
       },
       "Microsoft.Bcl.TimeProvider": {
         "type": "CentralTransitive",
-        "requested": "[10.0.9, )",
-        "resolved": "10.0.9",
-        "contentHash": "jCmHpoCeNbyjj71mnex2+fsCWtQINKrv8IL5xnuskQN8vQb5UA8ac+rWbt/jHeiSoH5gVlA8o20+XmWRKJuJWQ=="
+        "requested": "[10.0.12, )",
+        "resolved": "10.0.12",
+        "contentHash": "YgZ5iXpo16E5nqvIqNiJXzyG8DiBsx3wg4jcwz8zxnxDV798izSzJn/PBg7s+xLU57+myilIxEg2RhQmNCcl0w=="
       },
       "morelinq": {
         "type": "CentralTransitive",
@@ -410,9 +427,9 @@
       },
       "OpenTelemetry.Api": {
         "type": "CentralTransitive",
-        "requested": "[1.16.0, )",
-        "resolved": "1.16.0",
-        "contentHash": "WZP8Eb6vZTeNqeV+fjBitc7iefBoTHIhaWorqg/h/YiQBlcQJu0bICuTqKV0XRyjiE0eWs80yLlnUtHAFSkFWA=="
+        "requested": "[1.18.0, )",
+        "resolved": "1.18.0",
+        "contentHash": "Dhzm5oughIY9EWckt2J1yXcEbXpki5WCL2q7prJoYxzH6C7jdkfGtPMTkUVZZ4AhjJKzQnlC+kLSIlmIVwC4Vw=="
       },
       "Polly.Core": {
         "type": "CentralTransitive",
