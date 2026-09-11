@@ -38,6 +38,9 @@ MESSAGING_CONFORMANCE_EVIDENCE_MODULES ?= $(foreach provider,$(MESSAGING_CONFORM
 DASHBOARD_BUILD_SCRIPT ?= build
 PACK_PROJECT ?= eng/pack.proj
 MSBUILD_ARGS ?=
+# Static-graph restore evaluates each project once through MSBuild's project graph instead of recursively walking
+# references per project; a forced solution restore measured ~5s versus ~8s locally.
+RESTORE_ARGS ?= -p:RestoreUseStaticGraphEvaluation=true
 DEPENDENCY_AUDIT_IDLE_TIMEOUT ?= 120
 DEPENDENCY_SECURITY_AUDIT_TIMEOUT ?= 120
 NUGET_ADVISORY_AUDIT_TIMEOUT ?= 90
@@ -79,12 +82,12 @@ tools: ## Restore repo-pinned .NET tools.
 
 .PHONY: restore
 restore: ## Restore NuGet packages.
-	$(DOTNET) restore "$(SOLUTION)" -p:Configuration="$(CONFIGURATION)"
+	$(DOTNET) restore "$(SOLUTION)" -p:Configuration="$(CONFIGURATION)" $(RESTORE_ARGS)
 
 .PHONY: restore-project
 restore-project: ## Restore one project; preferred for focused project work.
 	@test -n "$(PROJECT)" || (echo "PROJECT is required. Example: make restore-project PROJECT=src/Headless.Api/Headless.Api.csproj" && exit 2)
-	$(DOTNET) restore "$(PROJECT)" -p:Configuration="$(CONFIGURATION)"
+	$(DOTNET) restore "$(PROJECT)" -p:Configuration="$(CONFIGURATION)" $(RESTORE_ARGS)
 
 .PHONY: hooks
 hooks: ## Point git at the committed hooks (per clone/worktree).

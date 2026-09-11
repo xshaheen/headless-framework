@@ -83,6 +83,57 @@ jobs:
       - name: "Check C# formatting (CSharpier)"
         run: make format-check
 
+  # The analyzer quality gate. Roslyn analyzers are over half of the compiler's CPU on this 4-vCPU runner, so the
+  # test job builds with -p:RunAnalyzers=false (source generators still run; compiler output is unaffected) and this
+  # job builds the same solution with every analyzer in parallel. CI treats warnings as errors in both builds.
+  analyzers:
+    name: "Lint · .NET analyzers"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: "Check out repository"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: false
+          # MinVer derives the version from tags and commit height.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: "Set up .NET SDK"
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: "./global.json"
+
+      - name: "Set up Node.js"
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            src/Headless.Jobs.Dashboard/wwwroot/package-lock.json
+            src/Headless.Messaging.Dashboard/wwwroot/package-lock.json
+
+      - name: "Restore NuGet cache"
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json', 'global.json', 'dotnet-tools.json') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      # Same token isolation as the build job: npm lifecycle scripts run before the NuGet token exists.
+      - name: "Build dashboard SPAs"
+        run: make -j2 --output-sync=target dashboards DASHBOARD_BUILD_SCRIPT=build-only
+
+      - name: "Build solution with analyzers"
+        env:
+          BuildDashboardSpa: "false"
+          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: make rebuild
+
   dashboards:
     name: "Frontend · ${{ matrix.name }} dashboard"
     runs-on: ubuntu-latest
@@ -161,7 +212,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # UTC is the primary leg: it collects coverage, is the only NuGet cache writer, and packs on release.
+        # UTC is the primary leg: it is the only NuGet cache writer, packs on release, and collects coverage except on
+        # pull requests. Coverage instrumentation adds start-up cost to every test module (~0.4s each serially,
+        # roughly a minute per run on this runner) and nothing on a pull request gates on it; main and releases keep
+        # the report.
         #
         # Africa/Cairo is a release-only leg. GitHub runners are UTC, so a UTC-only pipeline structurally cannot
         # catch a local-offset bug: code that trusts DateTime.Kind, calls ToUniversalTime() on an Unspecified
@@ -175,6 +229,7 @@ jobs:
         tz: ${{ fromJSON((github.event_name == 'release' || inputs.release_checks) && '["UTC", "Africa/Cairo"]' || '["UTC"]') }}
     env:
       PRIMARY: ${{ matrix.tz == 'UTC' }}
+      COVERAGE: ${{ matrix.tz == 'UTC' && github.event_name != 'pull_request' }}
     steps:
       - name: "Check out repository"
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -217,12 +272,13 @@ jobs:
         run: make -j2 --output-sync=target dashboards DASHBOARD_BUILD_SCRIPT=build-only
 
       - name: "Build solution"
+        # Analyzers run in the parallel "Lint · .NET analyzers" job, so they are skipped on the path to the tests.
         # GITHUB_PACKAGES_TOKEN is scoped to this restore/build step only and is expanded from nuget.config's
         # %GITHUB_PACKAGES_TOKEN% credential entry.
         env:
           BuildDashboardSpa: "false"
           GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: make rebuild
+        run: make rebuild MSBUILD_ARGS=-p:RunAnalyzers=false
 
       - name: "Save NuGet cache"
         if: env.PRIMARY == 'true' && steps.nuget-cache.outputs.cache-hit != 'true'
@@ -235,11 +291,11 @@ jobs:
       - name: "Run unit tests"
         env:
           TZ: ${{ matrix.tz }}
-          CI_COVERAGE: ${{ env.PRIMARY }}
+          CI_COVERAGE: ${{ env.COVERAGE }}
         run: make ci-test
 
       - name: "Generate coverage report"
-        if: always() && env.PRIMARY == 'true'
+        if: always() && env.COVERAGE == 'true'
         run: |
           set -euo pipefail
 
@@ -277,7 +333,7 @@ jobs:
           retention-days: 14
 
       - name: "Upload coverage report"
-        if: always() && env.PRIMARY == 'true'
+        if: always() && env.COVERAGE == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage-results
@@ -329,7 +385,8 @@ jobs:
       - name: "Build broker conformance suites"
         env:
           GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: make build-messaging-conformance-evidence
+        # Analyzer coverage comes from the "Lint · .NET analyzers" job.
+        run: make build-messaging-conformance-evidence MSBUILD_ARGS=-p:RunAnalyzers=false
 
       - name: "Run broker conformance scenarios"
         run: make ci-messaging-conformance-evidence
@@ -361,7 +418,7 @@ jobs:
   ci-status:
     name: "CI status"
     if: always()
-    needs: [ format, dashboards, tus-demo, build, messaging-conformance, r2-conformance ]
+    needs: [ format, analyzers, dashboards, tus-demo, build, messaging-conformance, r2-conformance ]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
