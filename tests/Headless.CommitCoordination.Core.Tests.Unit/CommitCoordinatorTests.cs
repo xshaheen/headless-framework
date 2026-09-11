@@ -250,9 +250,11 @@ public sealed class CommitCoordinatorTests : TestBase
 
             var tasks = new Task[enlisters + 1];
 
+            // Every participant runs on a dedicated thread: 25 participants blocked in the barrier on pool threads
+            // starve the pool (~1 thread injected per second), which stretched these 150 iterations to ~18s.
             for (var i = 0; i < enlisters; i++)
             {
-                tasks[i] = Task.Run(
+                tasks[i] = Task.Factory.StartNew(
                     () =>
                     {
                         barrier.SignalAndWait();
@@ -275,19 +277,25 @@ public sealed class CommitCoordinatorTests : TestBase
                             // Lost the race to the terminal transition: enlist-after-terminal throws (never a strand).
                         }
                     },
-                    AbortToken
+                    AbortToken,
+                    TaskCreationOptions.DenyChildAttach | TaskCreationOptions.LongRunning,
+                    TaskScheduler.Default
                 );
             }
 
-            tasks[enlisters] = Task.Run(
-                async () =>
-                {
-                    barrier.SignalAndWait();
+            tasks[enlisters] = Task
+                .Factory.StartNew(
+                    async () =>
+                    {
+                        barrier.SignalAndWait();
 
-                    await coordinator.SignalAsync(CommitOutcome.Committed, new EmptyServiceProvider());
-                },
-                AbortToken
-            );
+                        await coordinator.SignalAsync(CommitOutcome.Committed, new EmptyServiceProvider());
+                    },
+                    AbortToken,
+                    TaskCreationOptions.DenyChildAttach | TaskCreationOptions.LongRunning,
+                    TaskScheduler.Default
+                )
+                .Unwrap();
 
             await Task.WhenAll(tasks);
 

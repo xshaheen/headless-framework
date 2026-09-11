@@ -71,21 +71,31 @@ public sealed class JobFunctionConcurrencyGateTests
     }
 
     [Fact]
-    public void get_semaphore_or_null_is_thread_safe()
+    public async Task get_semaphore_or_null_is_thread_safe()
     {
         const int threadCount = 50;
         var semaphores = new SemaphoreSlim?[threadCount];
         using var barrier = new Barrier(threadCount);
 
-        Parallel.For(
-            0,
-            threadCount,
-            i =>
-            {
-                barrier.SignalAndWait();
-                semaphores[i] = _sut.GetSemaphoreOrNull("fn-concurrent", 3);
-            }
-        );
+        // Dedicated threads, not pool threads: 50 participants blocked in the barrier starve the thread pool, which
+        // injects roughly one thread per second, stalling this test (~26s) and every test running beside it.
+        var threads = Enumerable
+            .Range(0, threadCount)
+            .Select(i =>
+                Task.Factory.StartNew(
+                    () =>
+                    {
+                        barrier.SignalAndWait();
+                        semaphores[i] = _sut.GetSemaphoreOrNull("fn-concurrent", 3);
+                    },
+                    CancellationToken.None,
+                    TaskCreationOptions.DenyChildAttach | TaskCreationOptions.LongRunning,
+                    TaskScheduler.Default
+                )
+            )
+            .ToArray();
+
+        await Task.WhenAll(threads);
 
         var distinct = semaphores.Distinct().ToArray();
         distinct.Should().ContainSingle();
