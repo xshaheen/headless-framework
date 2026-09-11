@@ -16,6 +16,7 @@ namespace Tests.Instrumentation;
 /// <see cref="JobsDiagnostics.SourceName"/> — no separate swap-implementation registration exists anymore.
 /// A consumer-registered <c>IJobsInstrumentation</c> must still take priority over the default.
 /// </summary>
+[Collection<JobsInstrumentationCollection>]
 public sealed class JobsInstrumentationDiTests
 {
     [Fact]

@@ -18,6 +18,7 @@ namespace Tests.Instrumentation;
 /// (no separate swap-implementation step exists anymore, per #695), and it must keep logging unconditionally
 /// regardless of listener presence.
 /// </summary>
+[Collection<JobsInstrumentationCollection>]
 public sealed class LoggerInstrumentationTests : TestBase
 {
     [Fact]

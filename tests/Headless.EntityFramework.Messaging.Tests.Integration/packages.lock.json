@@ -960,7 +960,7 @@
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Headless.CommitCoordination.Abstractions": "[1.0.0, )",
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.9, )"
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )"
         }
       },
       "headless.jobs.core": {
@@ -972,20 +972,20 @@
           "Headless.Jobs.Abstractions": "[1.0.0, )",
           "Headless.MultiTenancy": "[1.0.0, )",
           "NCrontab.Signed": "[3.4.0, )",
-          "OpenTelemetry.Api": "[1.16.0, )",
+          "OpenTelemetry.Api": "[1.18.0, )",
           "Polly.Core": "[8.7.0, )"
         }
       },
       "headless.jobs.entityframework": {
         "type": "Project",
         "dependencies": {
-          "FlexLabs.EntityFrameworkCore.Upsert": "[10.0.0, )",
+          "FlexLabs.EntityFrameworkCore.Upsert": "[10.1.0, )",
           "Headless.Caching.Abstractions": "[1.0.0, )",
           "Headless.EntityFramework.Core": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
           "Headless.Jobs.Abstractions": "[1.0.0, )",
           "Headless.Jobs.Core": "[1.0.0, )",
-          "Microsoft.EntityFrameworkCore.Relational": "[10.0.9, )",
+          "Microsoft.EntityFrameworkCore.Relational": "[10.0.12, )",
           "Polly.Core": "[8.7.0, )"
         }
       },
@@ -1141,9 +1141,9 @@
       },
       "FlexLabs.EntityFrameworkCore.Upsert": {
         "type": "CentralTransitive",
-        "requested": "[10.0.0, )",
-        "resolved": "10.0.0",
-        "contentHash": "qFVp1j1yZFApE4uXplTodeSybz/pfjGM/zBfwgtnkZqw7ZV1YFmF0AEebQmmNsndANQmv+aNi7aXdOhOVFfs7Q==",
+        "requested": "[10.1.0, )",
+        "resolved": "10.1.0",
+        "contentHash": "LNjNOxtfl/GI3PR/M0dvf6i3bq3RRh4eDZmc7A6xXLaDC8UoiT/Fky32lCppimjHOEdl5Z9eCsMez92ZVZjI8A==",
         "dependencies": {
           "Microsoft.EntityFrameworkCore.Relational": "[10.0.0, 11.0.0)"
         }

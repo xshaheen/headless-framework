@@ -133,12 +133,12 @@ public sealed class EndToEndTests : TestBase
         recorded.MessageName.Should().NotBeNullOrWhiteSpace();
         recorded.MessageType.Should().Be<OrderCreatedEvent>();
         recorded.Message.Should().BeOfType<OrderCreatedEvent>().Which.OrderId.Should().Be("ORD-001");
-        recorded.RequestedDeliveryMode.Should().Be(DeliveryMode.Durable);
-        recorded.ResolvedDeliveryMode.Should().Be(DeliveryMode.Durable);
+        recorded.RequestedDeliveryMode.Should().Be(DeliveryMode.Auto);
+        recorded.ResolvedDeliveryMode.Should().Be(DeliveryMode.Direct);
 
         harness.Published.Should().ContainSingle();
-        harness.Published.Single().RequestedDeliveryMode.Should().Be(DeliveryMode.Durable);
-        harness.Published.Single().ResolvedDeliveryMode.Should().Be(DeliveryMode.Durable);
+        harness.Published.Single().RequestedDeliveryMode.Should().Be(DeliveryMode.Auto);
+        harness.Published.Single().ResolvedDeliveryMode.Should().Be(DeliveryMode.Direct);
         harness.Consumed.Should().ContainSingle();
         harness.Faulted.Should().BeEmpty();
     }
