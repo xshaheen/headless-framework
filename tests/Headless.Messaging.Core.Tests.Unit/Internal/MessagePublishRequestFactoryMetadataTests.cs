@@ -26,6 +26,7 @@ public sealed class MessagePublishRequestFactoryMetadataTests
         // then
         prepared.MessageName.Should().Be("orders.event");
         prepared.Message.Headers[Headers.MessageName].Should().Be("orders.event");
+        prepared.Message.Headers[Headers.ContractVersion].Should().Be("2");
         prepared.Message.Headers[Headers.Type].Should().Be(nameof(IOrderEvent));
     }
 
@@ -71,7 +72,15 @@ public sealed class MessagePublishRequestFactoryMetadataTests
     {
         var registrations = new[]
         {
-            new MessageRegistration(metadataType, MessageLane.Bus, null, null, new Dictionary<Type, object>(), []),
+            new MessageRegistration(
+                metadataType,
+                MessageLane.Bus,
+                MessageName: null,
+                CorrelationSelector: null,
+                ProviderConfigs: new Dictionary<Type, object>(),
+                Consumers: [],
+                ContractVersion: "2"
+            ),
         };
 
         return new MessagePublishRequestFactory(

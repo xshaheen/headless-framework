@@ -6,6 +6,7 @@ using Headless.DistributedLocks;
 using Headless.EntityFramework.Migrations.Startup;
 using Headless.Features;
 using Headless.Messaging;
+using Headless.Messaging.Configuration;
 using Headless.Permissions;
 using Headless.Settings;
 using Microsoft.EntityFrameworkCore;
@@ -45,6 +46,7 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer
 builder.Services.AddHeadlessMessaging(setup =>
 {
     setup.UseInMemory();
+    setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
     setup.UseInMemoryStorage();
 });
 

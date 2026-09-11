@@ -8,11 +8,11 @@ namespace Headless.Messaging;
 /// <remarks>
 /// <para>
 /// The <see cref="IQueue"/> contract is point-to-point intent: exactly one competing worker
-/// receives each enqueued message. The <c>DeliveryMode</c> on <see cref="EnqueueOptions"/> selects automatic,
+/// receives each enqueued message. The <c>DeliveryMode</c> on <see cref="QueueOptions"/> selects automatic,
 /// durable, or transport-direct delivery without changing the Queue lane.
 /// </para>
 /// <para>
-/// Delayed delivery is durable and cannot be combined with <c>TransportDirect</c> delivery.
+/// Delayed delivery is durable and cannot be combined with <c>Direct</c> delivery.
 /// </para>
 /// <para>
 /// At least one <see cref="IQueueTransport"/> must be registered in DI for direct queue publishing.
@@ -45,5 +45,13 @@ public interface IQueue
     /// supplied with disagreeing values, or when any outbound header name/value contains control
     /// characters.
     /// </exception>
-    Task EnqueueAsync<T>(T? contentObj, EnqueueOptions? options = null, CancellationToken cancellationToken = default);
+    Task EnqueueAsync<T>(T? contentObj, QueueOptions? options, CancellationToken cancellationToken = default);
+
+    /// <summary>Publishes a message using the configured contract and host delivery mode, which defaults to Auto.</summary>
+    /// <typeparam name="T">The message type.</typeparam>
+    /// <param name="contentObj">The message payload. Can be <see langword="null"/>.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>A task representing transport acceptance or durable capture, not consumer completion.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when the selected delivery mode requires unavailable storage or an active commit boundary is incompatible.</exception>
+    Task EnqueueAsync<T>(T? contentObj, CancellationToken cancellationToken = default);
 }

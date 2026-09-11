@@ -2,6 +2,7 @@
 
 using Headless.CommitCoordination;
 using Headless.Messaging;
+using Headless.Messaging.Configuration;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -16,8 +17,10 @@ public sealed class SetupTests : TestBase
         services.AddLogging();
 
         services.AddHeadlessMessaging(setup =>
-            setup.UseSqlServer("Server=localhost;Database=test;TrustServerCertificate=True")
-        );
+        {
+            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
+            setup.UseSqlServer("Server=localhost;Database=test;TrustServerCertificate=True");
+        });
 
         await using var provider = services.BuildServiceProvider();
 

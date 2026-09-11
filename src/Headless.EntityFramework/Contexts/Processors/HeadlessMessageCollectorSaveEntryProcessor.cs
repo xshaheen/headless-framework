@@ -35,9 +35,18 @@ public sealed class HeadlessMessageCollectorSaveEntryProcessor : IHeadlessSaveEn
 
         if (entry.Entity is IIntegrationEventEmitter integrationEmitter)
         {
-            var events = integrationEmitter.GetIntegrationEvents();
+            if (!context.CapturedIntegrationIdsByEmitter.TryGetValue(integrationEmitter, out var captured))
+            {
+                captured = new(StringComparer.Ordinal);
+                context.CapturedIntegrationIdsByEmitter.Add(integrationEmitter, captured);
+            }
 
-            if (events.Count > 0)
+            var events = integrationEmitter
+                .GetIntegrationEvents()
+                .Where(occurrence => captured.Add(occurrence.EventId))
+                .ToArray();
+
+            if (events.Length > 0)
             {
                 context.IntegrationEventEmitters.Add(new(integrationEmitter, events));
             }
@@ -45,11 +54,24 @@ public sealed class HeadlessMessageCollectorSaveEntryProcessor : IHeadlessSaveEn
 
         if (entry.Entity is IDomainEventEmitter domainEmitter)
         {
-            var events = domainEmitter.GetDomainEvents();
+            if (!context.CapturedDomainIdsByEmitter.TryGetValue(domainEmitter, out var captured))
+            {
+                captured = new(StringComparer.Ordinal);
+                context.CapturedDomainIdsByEmitter.Add(domainEmitter, captured);
+            }
 
-            if (events.Count > 0)
+            var events = domainEmitter
+                .GetDomainEvents()
+                .Where(occurrence => captured.Add(occurrence.EventId))
+                .ToArray();
+
+            if (events.Length > 0)
             {
                 context.DomainEventEmitters.Add(new(domainEmitter, events));
+                // Every emitter retains its saved membership, while one shared occurrence is dispatched only once.
+                context.PendingDomainEvents.AddRange(
+                    events.Where(occurrence => context.QueuedDomainIds.Add(occurrence.EventId))
+                );
             }
         }
     }

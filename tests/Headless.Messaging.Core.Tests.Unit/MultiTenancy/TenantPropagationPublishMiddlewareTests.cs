@@ -9,6 +9,42 @@ namespace Tests.MultiTenancy;
 
 public sealed class TenantPropagationPublishMiddlewareTests : TestBase
 {
+    [Theory]
+    [InlineData(MessageLane.Bus)]
+    [InlineData(MessageLane.Queue)]
+    public async Task should_preserve_captured_system_scope_without_replacing_it_with_ambient_tenant(MessageLane lane)
+    {
+        var tenant = new TestCurrentTenant { Id = "unrelated-tenant" };
+        var middleware = new TenantPropagationPublishMiddleware(tenant);
+        MessageOptions options =
+            lane == MessageLane.Bus
+                ? new PublishOptions { SuppressAmbientBusinessContext = true }
+                : new QueueOptions { SuppressAmbientBusinessContext = true };
+        var context = new PublishContext<Payload>(
+            new Payload("captured"),
+            lane,
+            options,
+            defaultDeliveryMode: DeliveryMode.Auto,
+            now: DateTimeOffset.UnixEpoch,
+            cancellationToken: AbortToken
+        );
+        var nextCalled = false;
+
+        await middleware.InvokeAsync(
+            context,
+            () =>
+            {
+                nextCalled = true;
+                context.Options!.TenantId.Should().BeNull();
+                return ValueTask.CompletedTask;
+            }
+        );
+
+        nextCalled.Should().BeTrue();
+        context.Options.Should().BeSameAs(options);
+        tenant.Id.Should().Be("unrelated-tenant");
+    }
+
     [Fact]
     public async Task should_stamp_tenant_id_from_ambient_before_next()
     {
@@ -19,7 +55,9 @@ public sealed class TenantPropagationPublishMiddlewareTests : TestBase
             new Payload("hello"),
             MessageLane.Bus,
             options: null,
-            delayTime: null
+            defaultDeliveryMode: DeliveryMode.Auto,
+            now: DateTimeOffset.UnixEpoch,
+            cancellationToken: AbortToken
         );
         string? observedDuringNext = null;
 
@@ -48,7 +86,9 @@ public sealed class TenantPropagationPublishMiddlewareTests : TestBase
             new Payload("hello"),
             MessageLane.Bus,
             new PublishOptions { TenantId = "system" },
-            delayTime: null
+            defaultDeliveryMode: DeliveryMode.Auto,
+            now: DateTimeOffset.UnixEpoch,
+            cancellationToken: AbortToken
         );
 
         // when
@@ -68,7 +108,9 @@ public sealed class TenantPropagationPublishMiddlewareTests : TestBase
             new Payload("hello"),
             MessageLane.Bus,
             new PublishOptions { CorrelationId = "corr-1", MessageId = "msg-1" },
-            delayTime: null
+            defaultDeliveryMode: DeliveryMode.Auto,
+            now: DateTimeOffset.UnixEpoch,
+            cancellationToken: AbortToken
         );
 
         // when
@@ -90,13 +132,17 @@ public sealed class TenantPropagationPublishMiddlewareTests : TestBase
             new Payload("hello"),
             MessageLane.Bus,
             options: null,
-            delayTime: null
+            defaultDeliveryMode: DeliveryMode.Auto,
+            now: DateTimeOffset.UnixEpoch,
+            cancellationToken: AbortToken
         );
         var whitespaceContext = new PublishContext<Payload>(
             new Payload("hello"),
             MessageLane.Bus,
             options: null,
-            delayTime: null
+            defaultDeliveryMode: DeliveryMode.Auto,
+            now: DateTimeOffset.UnixEpoch,
+            cancellationToken: AbortToken
         );
 
         // when
@@ -119,7 +165,9 @@ public sealed class TenantPropagationPublishMiddlewareTests : TestBase
             new Payload("hello"),
             MessageLane.Bus,
             options: null,
-            delayTime: null
+            defaultDeliveryMode: DeliveryMode.Auto,
+            now: DateTimeOffset.UnixEpoch,
+            cancellationToken: AbortToken
         );
 
         // when
@@ -140,7 +188,9 @@ public sealed class TenantPropagationPublishMiddlewareTests : TestBase
             new Payload("hello"),
             MessageLane.Bus,
             options: null,
-            delayTime: null
+            defaultDeliveryMode: DeliveryMode.Auto,
+            now: DateTimeOffset.UnixEpoch,
+            cancellationToken: AbortToken
         );
 
         // when

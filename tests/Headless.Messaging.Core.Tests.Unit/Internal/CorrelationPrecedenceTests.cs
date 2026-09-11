@@ -5,12 +5,88 @@ using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Registration;
+using Headless.MultiTenancy;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.Options;
 
 namespace Tests.Internal;
 
-public sealed class CorrelationPrecedenceTests
+public sealed class CorrelationPrecedenceTests : TestBase
 {
+    [Fact]
+    public void should_preserve_captured_root_without_mutating_ambient_business_context()
+    {
+        var ambient = _ConsumeContext("unrelated-root");
+        var accessor = new AsyncLocalConsumeContextAccessor { Current = ambient };
+        var tenant = Substitute.For<ICurrentTenant>();
+        tenant.Id.Returns("unrelated-tenant");
+        var factory = _CreateFactory(accessor: accessor, tenant: tenant);
+        const string traceParent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00";
+
+        var prepared = factory.Create(
+            new TestMessage(null),
+            new PublishOptions
+            {
+                MessageId = "captured-root",
+                SuppressAmbientBusinessContext = true,
+                Headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    [Headers.TraceParent] = traceParent,
+                },
+            }
+        );
+
+        prepared.Message.Headers[Headers.CorrelationId].Should().Be("captured-root");
+        prepared.Message.Headers.Should().NotContainKey(Headers.CausationId);
+        prepared.Message.Headers.Should().NotContainKey(Headers.TenantId);
+        prepared.Message.Headers[Headers.TraceParent].Should().Be(traceParent);
+        accessor.Current.Should().BeSameAs(ambient);
+        tenant.Id.Should().Be("unrelated-tenant");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void should_preserve_explicit_business_context_and_registered_contract_when_ambient_suppression_changes(
+        bool suppress
+    )
+    {
+        var accessor = new AsyncLocalConsumeContextAccessor { Current = _ConsumeContext("unrelated-root") };
+        var factory = _CreateFactory(accessor: accessor, requireTenant: true);
+
+        var prepared = factory.Create(
+            new TestMessage(null),
+            new PublishOptions
+            {
+                MessageId = "captured-id",
+                CorrelationId = "captured-root",
+                CausationId = "captured-parent",
+                TenantId = "captured-tenant",
+                SuppressAmbientBusinessContext = suppress,
+            }
+        );
+
+        prepared.Message.Headers[Headers.MessageId].Should().Be("captured-id");
+        prepared.Message.Headers[Headers.CorrelationId].Should().Be("captured-root");
+        prepared.Message.Headers[Headers.CausationId].Should().Be("captured-parent");
+        prepared.Message.Headers[Headers.TenantId].Should().Be("captured-tenant");
+        prepared.Message.Headers[Headers.MessageName].Should().Be("test.message");
+    }
+
+    [Fact]
+    public void should_reject_captured_system_scope_under_required_tenancy_instead_of_borrowing_current_tenant()
+    {
+        var tenant = Substitute.For<ICurrentTenant>();
+        tenant.Id.Returns("unrelated-tenant");
+        var factory = _CreateFactory(tenant: tenant, requireTenant: true);
+
+        factory.Create(new TestMessage(null)).Message.Headers[Headers.TenantId].Should().Be("unrelated-tenant");
+        var act = () =>
+            factory.Create(new TestMessage(null), new PublishOptions { SuppressAmbientBusinessContext = true });
+
+        act.Should().Throw<MissingTenantContextException>();
+    }
+
     [Fact]
     public void should_prefer_explicit_correlation_over_selector()
     {
@@ -106,6 +182,52 @@ public sealed class CorrelationPrecedenceTests
     }
 
     [Fact]
+    public void should_use_ambient_message_id_as_causation_without_changing_root_correlation()
+    {
+        // given
+        var accessor = new AsyncLocalConsumeContextAccessor { Current = _ConsumeContext("root-correlation") };
+        var factory = _CreateFactory(accessor: accessor);
+
+        // when
+        var prepared = factory.Create(new TestMessage(null));
+
+        // then
+        prepared.Message.Headers[Headers.CorrelationId].Should().Be("root-correlation");
+        prepared.Message.Headers[Headers.CausationId].Should().Be("source-message");
+    }
+
+    [Fact]
+    public void should_prefer_explicit_causation_over_ambient_message_id()
+    {
+        // given
+        var accessor = new AsyncLocalConsumeContextAccessor { Current = _ConsumeContext("root-correlation") };
+        var factory = _CreateFactory(accessor: accessor);
+
+        // when
+        var prepared = factory.Create(new TestMessage(null), new PublishOptions { CausationId = "explicit-cause" });
+
+        // then
+        prepared.Message.Headers[Headers.CausationId].Should().Be("explicit-cause");
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData("v 2")]
+    [InlineData("2\r\ninvalid")]
+    public void should_reject_invalid_explicit_message_contract_versions(string version)
+    {
+        // given
+        var factory = _CreateFactory();
+
+        // when
+        var act = () => factory.Create(new TestMessage(null), new PublishOptions { ContractVersion = version });
+
+        // then
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
     public void should_not_invoke_selector_for_null_payload()
     {
         // given
@@ -179,7 +301,9 @@ public sealed class CorrelationPrecedenceTests
 
     private static MessagePublishRequestFactory _CreateFactory(
         Func<TestMessage, string?>? selector = null,
-        IConsumeContextAccessor? accessor = null
+        IConsumeContextAccessor? accessor = null,
+        ICurrentTenant? tenant = null,
+        bool requireTenant = false
     )
     {
         var registry = new ConsumerRegistry();
@@ -201,9 +325,9 @@ public sealed class CorrelationPrecedenceTests
         return new MessagePublishRequestFactory(
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             TimeProvider.System,
-            Options.Create(new MessagingOptions()),
+            Options.Create(new MessagingOptions { TenantContextRequired = requireTenant }),
             registry,
-            new NullCurrentTenant(),
+            tenant ?? new NullCurrentTenant(),
             new MessageMetadataRegistry(registrations),
             accessor
         );

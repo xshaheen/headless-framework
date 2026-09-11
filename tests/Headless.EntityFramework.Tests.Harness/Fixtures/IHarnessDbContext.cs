@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Domain;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Tests.Entities;
@@ -25,12 +24,12 @@ public interface IHarnessDbContext : IDisposable, IAsyncDisposable
     /// <summary>
     /// Captured distributed messages emitted during SaveChanges for test verification.
     /// </summary>
-    List<IIntegrationEvent> EmittedDistributedMessages { get; }
+    List<object> EmittedDistributedMessages { get; }
 
     /// <summary>
     /// Captured local messages emitted during SaveChanges for test verification.
     /// </summary>
-    List<IDomainEvent> EmittedLocalMessages { get; }
+    List<object> EmittedLocalMessages { get; }
 
     /// <summary>
     /// Saves all changes made in this context to the database.

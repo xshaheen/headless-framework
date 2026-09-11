@@ -799,7 +799,7 @@ On reads, Hybrid promotes L2 entries into L1 only when they are logically fresh.
 
 The coordinator's `ConcurrencyStamp` compare-and-set (a late factory must not resurrect a removed key) applies to Hybrid too, scoped to the tier the snapshot came from. A stamp is opaque and store-local, and a read is served by one tier, so Hybrid tags the stamp it returns with its tier of origin and enforces the CAS against that tier alone; that tier is also written **first**, so a lost compare aborts the whole write and neither tier takes the stale value. The other tier is still written unconditionally, which leaves one narrow gap: a concurrent write that touched only the unguarded tier is not detected. Removes and upserts go to both tiers, so this affects only per-tier writes (`SkipMemoryCacheWrite`/`SkipDistributedCacheWrite`) racing a factory. Queued auto-recovery replays drop the stamp entirely — they replay long after the snapshot was read, and the queued item's L1 stamp guard is what keeps a superseded replay from landing.
 
-Initial and replayed invalidations use `DeliveryMode.TransportDirect`, so an ambient commit-coordination boundary never captures or delays the backplane signal. Publish failures are non-fatal. Other instances may keep their L1 value until TTL or the next successful invalidation, while the local instance still observes the write result.
+Initial and replayed invalidations use `DeliveryMode.Direct`, so an ambient commit-coordination boundary never captures or delays the backplane signal. Publish failures are non-fatal. Other instances may keep their L1 value until TTL or the next successful invalidation, while the local instance still observes the write result.
 
 ### Installation
 

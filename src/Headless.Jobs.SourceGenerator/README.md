@@ -8,6 +8,7 @@ Without the source generator, every job class or method must be manually registe
 
 ## Key Features
 
+- **Versioned descriptors**: `JobFunctionAttribute.ContractVersion` (default `"1"`) is emitted into assembly metadata and immutable runtime descriptors. Explicit function name and version remain stable through CLR class/method renames and source/reference reordering. Duplicate function names remain invalid even when their versions differ; versioning does not create a second dispatch registry.
 - **Zero reflection**: all dispatch delegates are generated as strongly-typed lambdas.
 - **Auto-registration**: a `[ModuleInitializer]` in the generated file (`JobsInstanceFactory.g.cs`) registers job delegates before any host startup code runs.
 - **Descriptor indexes**: generates delegate-free `JobFunctionDescriptor` values for every typed and requestless function; `JobFunctionProvider` exposes frozen indexes by durable name and, for typed functions, request `Type`.
@@ -63,6 +64,8 @@ public static Task ExecuteAsync(IServiceProvider sp, CancellationToken ct) => Ta
 ```
 
 ## Configuration
+
+The generator also emits a public static `AppJobs` catalog for requestless functions in the same assembly namespace as its registration class. Each getter returns the immutable canonical descriptor used during module registration. Alphanumeric contract names preserve their spelling (`Cleanup`); keywords are escaped (`@class`). Underscores, punctuation, non-ASCII characters, leading digits, and the first character of reserved member names are encoded as `_uXXXX_` UTF-16 code units. For example, `invoice.send` becomes `AppJobs.invoice_u002E_send`; literal underscores are encoded too, preventing escape-lookalike collisions. The catalog is sorted by ordinal contract name and is independent of CLR handler names and source ordering.
 
 Attributes are the sole authoring interface; there is no runtime middleware discovery configuration. Middleware implementations must still be registered with DI because generated dispatch resolves them from the bounded scheduling or execution scope. Generated output file: `JobsInstanceFactory.g.cs` (a `[ModuleInitializer]` in the consuming assembly).
 

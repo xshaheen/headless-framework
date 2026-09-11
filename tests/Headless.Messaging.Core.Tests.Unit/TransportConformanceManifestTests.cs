@@ -227,7 +227,6 @@ public sealed class TransportConformanceManifestTests : TestBase
                 TransportConformanceScenario.SameNameLaneIsolation,
                 TransportConformanceScenario.StartupRejectionBeforeSideEffects,
                 TransportConformanceScenario.MalformedEnvelopeTerminalSettlement,
-                TransportConformanceScenario.LegacyCutoverRecovery,
             ]);
     }
 

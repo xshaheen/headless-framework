@@ -14,6 +14,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests.CircuitBreaker;
 
@@ -43,7 +44,8 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         int failureThreshold = 3,
         TimeSpan? openDuration = null,
         TimeSpan? maxOpenDuration = null,
-        int successfulCyclesToResetEscalation = 3
+        int successfulCyclesToResetEscalation = 3,
+        TimeProvider? timeProvider = null
     )
     {
         var opts = new CircuitBreakerOptions
@@ -63,7 +65,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
             new ConsumerCircuitBreakerRegistry(),
             new NullLogger<CircuitBreakerStateManager>(),
             new CircuitBreakerMetrics(meterFactory),
-            TimeProvider.System
+            timeProvider ?? TimeProvider.System
         );
     }
 
@@ -308,12 +310,14 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
     {
         // given — a circuit breaker and a retry processor sharing the same state manager
         const string group = "integration.group.lifecycle";
+        var timeProvider = new FakeTimeProvider();
         var circuitGroup = _CircuitKey(group);
         var halfOpenTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         await using var stateManager = _CreateStateManager(
             failureThreshold: 2,
-            openDuration: TimeSpan.FromMilliseconds(30)
+            openDuration: TimeSpan.FromMilliseconds(30),
+            timeProvider: timeProvider
         );
 
         stateManager.RegisterGroupCallbacks(
@@ -355,9 +359,11 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
             new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider()
         );
         await retryProcessor.ProcessAsync(context1);
+        await retryProcessor.WaitForQuadrantIdleForTestAsync(MessageType.Subscribe, MessageLane.Bus);
         await dispatcher.DidNotReceive().EnqueueToExecute(msg1, null, Arg.Any<CancellationToken>());
 
         // --- Phase 3: Wait for HalfOpen transition ---
+        timeProvider.Advance(TimeSpan.FromMilliseconds(30));
         await halfOpenTcs.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         stateManager.GetState(circuitGroup).Should().Be(CircuitBreakerState.HalfOpen);
 
@@ -373,7 +379,9 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         await using var context2 = _CreateContext(
             new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider()
         );
+        retryProcessor.MarkQuadrantDueForTest(MessageType.Subscribe, MessageLane.Bus);
         await retryProcessor.ProcessAsync(context2);
+        await retryProcessor.WaitForQuadrantIdleForTestAsync(MessageType.Subscribe, MessageLane.Bus);
         await dispatcher.Received(1).EnqueueToExecute(msg2, null, Arg.Any<CancellationToken>());
     }
 

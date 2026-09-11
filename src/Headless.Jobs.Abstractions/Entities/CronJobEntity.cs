@@ -53,7 +53,7 @@ public class CronJobEntity : BaseJobEntity
     /// </summary>
     /// <remarks>
     /// Two values are reserved sentinels rather than real occurrence instants. <see langword="default"/> means the
-    /// position has not been initialized yet — a definition seeded before this field existed, or created by a path
+    /// position has not been initialized yet — a definition created by a path
     /// that did not set it; the scheduler initializes it from the store's instant on the next wake rather than from
     /// occurrence history, so no backlog is replayed. <see cref="DateTime.MaxValue"/> means the schedule has no
     /// further occurrence (an exhausted or unparseable expression) and parks the definition beyond any wake instead
@@ -80,7 +80,7 @@ public class CronJobEntity : BaseJobEntity
     /// no node's local configuration can decide whether an instant misfired.
     /// </summary>
     /// <remarks>
-    /// New values must be greater than zero. A persisted zero is the migration sentinel and resolves to the framework
+    /// New values must be greater than zero. A persisted zero is the default-value sentinel and resolves to the framework
     /// default; negative durable values are invalid and fail evaluation instead of being silently normalized.
     /// </remarks>
     public virtual int MissedRunGraceSeconds { get; set; } = JobsRecoveryDefaults.MissedRunGraceSeconds;

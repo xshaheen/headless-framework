@@ -618,6 +618,10 @@ const headersWithSelection = computed(() => {
   // For now, define headers manually since paginated response might not have headers
   const headers = [
     { title: 'Function', key: 'function', sortable: true, visibility: true },
+    { title: 'Contract version', key: 'contractVersion', sortable: false, visibility: true },
+    { title: 'Correlation', key: 'correlationId', sortable: false, visibility: true },
+    { title: 'Causation', key: 'causationId', sortable: false, visibility: true },
+    { title: 'Tenant', key: 'tenantId', sortable: false, visibility: true },
     { title: 'Status', key: 'status', sortable: true, visibility: true },
     { title: 'Request Type', key: 'RequestType', sortable: false, visibility: true },
     { title: 'Description', key: 'description', sortable: true, visibility: true },

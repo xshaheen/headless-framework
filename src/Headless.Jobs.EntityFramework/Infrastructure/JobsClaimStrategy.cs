@@ -516,6 +516,12 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                     UpdatedAt = now,
                 };
 
+                var definition = await dbContext
+                    .Set<TCronJob>()
+                    .AsNoTracking()
+                    .SingleAsync(x => x.Id == item.Id, cancellationToken)
+                    .ConfigureAwait(false);
+                itemToAdd.SnapshotContract(definition);
                 await context.AddAsync(itemToAdd, cancellationToken).ConfigureAwait(false);
                 try
                 {
@@ -553,20 +559,11 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                 continue;
             }
 
-            claimResults[index] = new CronJobOccurrenceEntity<TCronJob>
-            {
-                Id = item.NextCronOccurrence.Id,
-                CronJobId = item.Id,
-                ExecutionTime = executionTime,
-                Status = JobStatus.Queued,
-                OwnerId = owner,
-                OnNodeDeath = item.OnNodeDeath,
-                CreatedAt = item.NextCronOccurrence.CreatedAt,
-                // R23: this reconstructs a row the store already holds, so the recovery stamp has to be carried in
-                // rather than re-read. Dropping it here demotes a coalesced run to an ordinary one at execution.
-                RecoveredFromUtc = item.NextCronOccurrence.RecoveredFromUtc,
-                CronJob = MappingExtensions.ProjectCronJob<TCronJob>(item, owner),
-            };
+            claimResults[index] = await context
+                .AsNoTracking()
+                .Include(x => x.CronJob)
+                .SingleAsync(x => x.Id == item.NextCronOccurrence.Id, cancellationToken)
+                .ConfigureAwait(false);
             claimableOccurrenceIds.Add(item.NextCronOccurrence.Id);
         }
 
@@ -612,6 +609,8 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                 continue;
             }
 
+            result.Status = JobStatus.Queued;
+            result.OwnerId = owner;
             result.LockedUntil = timestamps.LockedUntil;
             result.UpdatedAt = timestamps.UpdatedAt;
             yield return result;

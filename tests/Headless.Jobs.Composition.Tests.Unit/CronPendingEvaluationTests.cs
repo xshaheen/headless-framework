@@ -138,7 +138,7 @@ public sealed class CronPendingEvaluationTests : TestBase
             .EvaluatePending(_Hourly, timeZoneId: null, _Now.AddMinutes(-30), _Now.AddSeconds(1), graceSeconds: 0);
 
         result.PendingCount.Should().Be(1);
-        result.IsRecovery.Should().BeFalse("zero is the legacy migration sentinel and uses the framework default");
+        result.IsRecovery.Should().BeFalse("zero selects the framework default");
     }
 
     [Fact]

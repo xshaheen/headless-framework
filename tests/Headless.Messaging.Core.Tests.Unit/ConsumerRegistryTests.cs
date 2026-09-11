@@ -17,7 +17,9 @@ public sealed class ConsumerRegistryTests : TestBase
             "test.messageName",
             "test.group",
             2,
-            Lane: MessageLane.Bus
+            Lane: MessageLane.Bus,
+            ConsumerIdentity: "tests.registry.register",
+            MessageContractVersion: "v1"
         );
 
         // when
@@ -35,14 +37,32 @@ public sealed class ConsumerRegistryTests : TestBase
         // given
         var registry = new ConsumerRegistry();
         registry.Register(
-            new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "test", null, 1, Lane: MessageLane.Bus)
+            new ConsumerMetadata(
+                typeof(TestMessage),
+                typeof(TestConsumer),
+                "test",
+                null,
+                1,
+                MessageLane.Bus,
+                "tests.registry.freeze",
+                "v1"
+            )
         );
 
         // when
         _ = registry.GetAll(); // Freeze
         var act = () =>
             registry.Register(
-                new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "test2", null, 1, Lane: MessageLane.Bus)
+                new ConsumerMetadata(
+                    typeof(TestMessage),
+                    typeof(TestConsumer),
+                    "test2",
+                    null,
+                    1,
+                    MessageLane.Bus,
+                    "tests.registry.freeze-late",
+                    "v1"
+                )
             );
 
         // then
@@ -62,7 +82,9 @@ public sealed class ConsumerRegistryTests : TestBase
             "original",
             null,
             1,
-            Lane: MessageLane.Bus
+            Lane: MessageLane.Bus,
+            ConsumerIdentity: "tests.registry.update",
+            MessageContractVersion: "v1"
         );
         var updated = new ConsumerMetadata(
             typeof(TestMessage),
@@ -70,7 +92,9 @@ public sealed class ConsumerRegistryTests : TestBase
             "updated",
             "group1",
             5,
-            Lane: MessageLane.Bus
+            Lane: MessageLane.Bus,
+            ConsumerIdentity: "tests.registry.update",
+            MessageContractVersion: "v1"
         );
         registry.Register(original);
 
@@ -97,14 +121,25 @@ public sealed class ConsumerRegistryTests : TestBase
             "original",
             null,
             1,
-            Lane: MessageLane.Bus
+            Lane: MessageLane.Bus,
+            ConsumerIdentity: "tests.registry.no-match-original",
+            MessageContractVersion: "v1"
         );
         registry.Register(original);
 
         // when
         registry.Update(
             m => m.ConsumerType == typeof(OtherConsumer),
-            new ConsumerMetadata(typeof(TestMessage), typeof(OtherConsumer), "new", null, 1, Lane: MessageLane.Bus)
+            new ConsumerMetadata(
+                typeof(TestMessage),
+                typeof(OtherConsumer),
+                "new",
+                null,
+                1,
+                MessageLane.Bus,
+                "tests.registry.no-match",
+                "v1"
+            )
         );
         var all = registry.GetAll();
 
@@ -119,7 +154,16 @@ public sealed class ConsumerRegistryTests : TestBase
         // given
         var registry = new ConsumerRegistry();
         registry.Register(
-            new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "test", null, 1, Lane: MessageLane.Bus)
+            new ConsumerMetadata(
+                typeof(TestMessage),
+                typeof(TestConsumer),
+                "test",
+                null,
+                1,
+                MessageLane.Bus,
+                "tests.registry.frozen-update",
+                "v1"
+            )
         );
         _ = registry.GetAll(); // Freeze
 
@@ -133,7 +177,9 @@ public sealed class ConsumerRegistryTests : TestBase
                     "updated",
                     null,
                     1,
-                    Lane: MessageLane.Bus
+                    Lane: MessageLane.Bus,
+                    ConsumerIdentity: "tests.registry.frozen-update-new",
+                    MessageContractVersion: "v1"
                 )
             );
 
@@ -149,7 +195,16 @@ public sealed class ConsumerRegistryTests : TestBase
         // given
         var registry = new ConsumerRegistry();
         registry.Register(
-            new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "test", null, 1, Lane: MessageLane.Bus)
+            new ConsumerMetadata(
+                typeof(TestMessage),
+                typeof(TestConsumer),
+                "test",
+                null,
+                1,
+                MessageLane.Bus,
+                "tests.registry.readonly",
+                "v1"
+            )
         );
 
         // when
@@ -177,7 +232,9 @@ public sealed class ConsumerRegistryTests : TestBase
                     $"messageName.{i}",
                     $"group.{i}",
                     (byte)((i % 10) + 1),
-                    MessageLane.Bus
+                    MessageLane.Bus,
+                    $"tests.registry.sequential-registration.{i}",
+                    "v1"
                 )
             );
         }
@@ -205,7 +262,9 @@ public sealed class ConsumerRegistryTests : TestBase
                 "billing",
                 1,
                 Lane: MessageLane.Bus,
-                "Tests.ConsumerA"
+                ConsumerIdentity: "tests.registry.topic-collision.first",
+                MessageContractVersion: "v1",
+                HandlerId: "Tests.ConsumerA"
             )
         );
 
@@ -219,7 +278,9 @@ public sealed class ConsumerRegistryTests : TestBase
                     "billing",
                     1,
                     Lane: MessageLane.Bus,
-                    "Tests.ConsumerB"
+                    ConsumerIdentity: "tests.registry.topic-collision.second",
+                    MessageContractVersion: "v1",
+                    HandlerId: "Tests.ConsumerB"
                 )
             );
 
@@ -242,7 +303,9 @@ public sealed class ConsumerRegistryTests : TestBase
                 "billing",
                 1,
                 Lane: MessageLane.Bus,
-                "Tests.ConsumerA"
+                ConsumerIdentity: "tests.registry.update-collision.first",
+                MessageContractVersion: "v1",
+                HandlerId: "Tests.ConsumerA"
             )
         );
         registry.Register(
@@ -253,7 +316,9 @@ public sealed class ConsumerRegistryTests : TestBase
                 "analytics",
                 1,
                 Lane: MessageLane.Bus,
-                "Tests.ConsumerB"
+                ConsumerIdentity: "tests.registry.update-collision.second",
+                MessageContractVersion: "v1",
+                HandlerId: "Tests.ConsumerB"
             )
         );
 
@@ -268,7 +333,9 @@ public sealed class ConsumerRegistryTests : TestBase
                     "billing",
                     1,
                     Lane: MessageLane.Bus,
-                    "Tests.ConsumerB"
+                    ConsumerIdentity: "tests.registry.update-collision.second",
+                    MessageContractVersion: "v1",
+                    HandlerId: "Tests.ConsumerB"
                 )
             );
 
@@ -284,7 +351,16 @@ public sealed class ConsumerRegistryTests : TestBase
         // given
         var registry = new ConsumerRegistry();
         registry.Register(
-            new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "test", null, 1, Lane: MessageLane.Bus)
+            new ConsumerMetadata(
+                typeof(TestMessage),
+                typeof(TestConsumer),
+                "test",
+                null,
+                1,
+                MessageLane.Bus,
+                "tests.registry.concurrent-freeze",
+                "v1"
+            )
         );
 
         var freezeTask = Task.Run(() => registry.GetAll());
@@ -303,7 +379,9 @@ public sealed class ConsumerRegistryTests : TestBase
                             "test2",
                             null,
                             1,
-                            Lane: MessageLane.Bus
+                            Lane: MessageLane.Bus,
+                            ConsumerIdentity: "tests.registry.concurrent-freeze-late",
+                            MessageContractVersion: "v1"
                         )
                     );
                 }
@@ -329,7 +407,16 @@ public sealed class ConsumerRegistryTests : TestBase
         // given
         var registry = new ConsumerRegistry();
         registry.Register(
-            new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "original", null, 1, Lane: MessageLane.Bus)
+            new ConsumerMetadata(
+                typeof(TestMessage),
+                typeof(TestConsumer),
+                "original",
+                null,
+                1,
+                MessageLane.Bus,
+                "tests.registry.sequential-update",
+                "v1"
+            )
         );
         const int updateCount = 50;
 
@@ -344,7 +431,9 @@ public sealed class ConsumerRegistryTests : TestBase
                     $"messageName.{i}",
                     $"group.{i}",
                     (byte)((i % 10) + 1),
-                    MessageLane.Bus
+                    MessageLane.Bus,
+                    "tests.registry.sequential-update",
+                    "v1"
                 )
             );
         }
@@ -391,7 +480,9 @@ public sealed class ConsumerRegistryTests : TestBase
                                         $"messageName.{index}",
                                         $"group.{index}",
                                         1,
-                                        Lane: MessageLane.Bus
+                                        Lane: MessageLane.Bus,
+                                        ConsumerIdentity: $"tests.registry.concurrent-registration.{index}",
+                                        MessageContractVersion: "v1"
                                     )
                                 );
                             }
@@ -454,7 +545,9 @@ public sealed class ConsumerRegistryTests : TestBase
                     "original",
                     null,
                     1,
-                    Lane: MessageLane.Bus
+                    Lane: MessageLane.Bus,
+                    ConsumerIdentity: "tests.registry.concurrent-update",
+                    MessageContractVersion: "v1"
                 )
             );
             using var barrier = new Barrier(2);
@@ -473,7 +566,9 @@ public sealed class ConsumerRegistryTests : TestBase
                                 "updated",
                                 "group1",
                                 5,
-                                Lane: MessageLane.Bus
+                                Lane: MessageLane.Bus,
+                                ConsumerIdentity: "tests.registry.concurrent-update",
+                                MessageContractVersion: "v1"
                             )
                         );
                     }
@@ -544,7 +639,9 @@ public sealed class ConsumerRegistryTests : TestBase
             "test.messageName",
             null,
             2,
-            Lane: MessageLane.Bus
+            Lane: MessageLane.Bus,
+            ConsumerIdentity: "tests.registry.find-topic",
+            MessageContractVersion: "v1"
         );
         registry.Register(metadata);
 
@@ -567,7 +664,9 @@ public sealed class ConsumerRegistryTests : TestBase
             "test.messageName",
             "group1",
             2,
-            Lane: MessageLane.Bus
+            Lane: MessageLane.Bus,
+            ConsumerIdentity: "tests.registry.find-group.first",
+            MessageContractVersion: "v1"
         );
         var metadata2 = new ConsumerMetadata(
             typeof(TestMessage),
@@ -575,7 +674,9 @@ public sealed class ConsumerRegistryTests : TestBase
             "test.messageName",
             "group2",
             3,
-            Lane: MessageLane.Bus
+            Lane: MessageLane.Bus,
+            ConsumerIdentity: "tests.registry.find-group.second",
+            MessageContractVersion: "v1"
         );
         registry.Register(metadata1);
         registry.Register(metadata2);
@@ -601,7 +702,9 @@ public sealed class ConsumerRegistryTests : TestBase
                 "test.messageName",
                 null,
                 1,
-                Lane: MessageLane.Bus
+                Lane: MessageLane.Bus,
+                ConsumerIdentity: "tests.registry.topic-not-found",
+                MessageContractVersion: "v1"
             )
         );
 
@@ -624,7 +727,9 @@ public sealed class ConsumerRegistryTests : TestBase
                 "test.messageName",
                 "group1",
                 1,
-                Lane: MessageLane.Bus
+                Lane: MessageLane.Bus,
+                ConsumerIdentity: "tests.registry.group-not-found",
+                MessageContractVersion: "v1"
             )
         );
 
@@ -646,7 +751,9 @@ public sealed class ConsumerRegistryTests : TestBase
             "topic1",
             null,
             1,
-            Lane: MessageLane.Bus
+            Lane: MessageLane.Bus,
+            ConsumerIdentity: "tests.registry.type-generic.first",
+            MessageContractVersion: "v1"
         );
         var metadata2 = new ConsumerMetadata(
             typeof(TestMessage),
@@ -654,7 +761,9 @@ public sealed class ConsumerRegistryTests : TestBase
             "topic2",
             null,
             2,
-            Lane: MessageLane.Bus
+            Lane: MessageLane.Bus,
+            ConsumerIdentity: "tests.registry.type-generic.second",
+            MessageContractVersion: "v1"
         );
         var metadata3 = new ConsumerMetadata(
             typeof(OtherMessage),
@@ -662,7 +771,9 @@ public sealed class ConsumerRegistryTests : TestBase
             "topic3",
             null,
             3,
-            Lane: MessageLane.Bus
+            Lane: MessageLane.Bus,
+            ConsumerIdentity: "tests.registry.type-generic.third",
+            MessageContractVersion: "v1"
         );
         registry.Register(metadata1);
         registry.Register(metadata2);
@@ -689,7 +800,9 @@ public sealed class ConsumerRegistryTests : TestBase
             "topic1",
             null,
             1,
-            Lane: MessageLane.Bus
+            Lane: MessageLane.Bus,
+            ConsumerIdentity: "tests.registry.type-non-generic.first",
+            MessageContractVersion: "v1"
         );
         var metadata2 = new ConsumerMetadata(
             typeof(OtherMessage),
@@ -697,7 +810,9 @@ public sealed class ConsumerRegistryTests : TestBase
             "topic2",
             null,
             2,
-            Lane: MessageLane.Bus
+            Lane: MessageLane.Bus,
+            ConsumerIdentity: "tests.registry.type-non-generic.second",
+            MessageContractVersion: "v1"
         );
         registry.Register(metadata1);
         registry.Register(metadata2);
@@ -716,7 +831,16 @@ public sealed class ConsumerRegistryTests : TestBase
         // given
         var registry = new ConsumerRegistry();
         registry.Register(
-            new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "topic1", null, 1, Lane: MessageLane.Bus)
+            new ConsumerMetadata(
+                typeof(TestMessage),
+                typeof(TestConsumer),
+                "topic1",
+                null,
+                1,
+                MessageLane.Bus,
+                "tests.registry.missing-type",
+                "v1"
+            )
         );
 
         // when
@@ -846,6 +970,118 @@ public sealed class ConsumerRegistryTests : TestBase
         sameLaneConflict.Should().Throw<InvalidOperationException>();
         registry.TryGetRawMessageName(typeof(TestMessage), MessageLane.Queue, out var queueName).Should().BeTrue();
         queueName.Should().Be("orders.queue");
+    }
+
+    [Fact]
+    public void same_durable_identity_and_contract_version_are_independent_across_lanes()
+    {
+        var registry = new ConsumerRegistry();
+        registry.Register(_DurableMetadata(MessageLane.Bus, "orders.bus", "bus-group"));
+
+        var act = () => registry.Register(_DurableMetadata(MessageLane.Queue, "orders.queue", "queue-group"));
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void same_lane_durable_identity_and_contract_version_collide_independent_of_topology()
+    {
+        var registry = new ConsumerRegistry();
+        registry.Register(_DurableMetadata(MessageLane.Bus, "orders.created", "group-a"));
+
+        var act = () => registry.Register(_DurableMetadata(MessageLane.Bus, "orders.renamed", "group-b"));
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*durable consumer identity*orders-projection*Bus*v1*");
+    }
+
+    [Fact]
+    public void same_lane_durable_identity_is_independent_across_contract_versions()
+    {
+        var registry = new ConsumerRegistry();
+        registry.Register(_DurableMetadata(MessageLane.Bus, "orders.v1", "group-v1"));
+
+        var act = () =>
+            registry.Register(_DurableMetadata(MessageLane.Bus, "orders.v2", "group-v2", contractVersion: "v2"));
+
+        act.Should().NotThrow();
+    }
+
+    [Theory]
+    [InlineData("", "v1", "*Consumer identity*")]
+    [InlineData(" ", "v1", "*Consumer identity*")]
+    [InlineData("orders-projection", "", "*contractVersion*")]
+    [InlineData("orders-projection", " ", "*contractVersion*")]
+    public void register_rejects_blank_durable_contract_values(
+        string consumerIdentity,
+        string contractVersion,
+        string expectedMessage
+    )
+    {
+        var registry = new ConsumerRegistry();
+        var metadata = new ConsumerMetadata(
+            typeof(TestMessage),
+            typeof(TestConsumer),
+            "orders.invalid",
+            "invalid",
+            1,
+            MessageLane.Bus,
+            consumerIdentity,
+            contractVersion
+        );
+
+        var act = () => registry.Register(metadata);
+
+        act.Should().Throw<ArgumentException>().WithMessage(expectedMessage);
+    }
+
+    [Theory]
+    [InlineData("", "v1", "*Consumer identity*")]
+    [InlineData(" ", "v1", "*Consumer identity*")]
+    [InlineData("orders-projection", "", "*contractVersion*")]
+    [InlineData("orders-projection", " ", "*contractVersion*")]
+    public void update_rejects_blank_durable_contract_values(
+        string consumerIdentity,
+        string contractVersion,
+        string expectedMessage
+    )
+    {
+        var registry = new ConsumerRegistry();
+        registry.Register(_DurableMetadata(MessageLane.Bus, "orders.original", "original"));
+        var metadata = new ConsumerMetadata(
+            typeof(TestMessage),
+            typeof(TestConsumer),
+            "orders.invalid",
+            "invalid",
+            1,
+            MessageLane.Bus,
+            consumerIdentity,
+            contractVersion
+        );
+
+        var act = () => registry.Update(static _ => true, metadata);
+
+        act.Should().Throw<ArgumentException>().WithMessage(expectedMessage);
+    }
+
+    private static ConsumerMetadata _DurableMetadata(
+        MessageLane lane,
+        string messageName,
+        string group,
+        string contractVersion = "v1"
+    )
+    {
+        return new ConsumerMetadata(
+            typeof(TestMessage),
+            typeof(TestConsumer),
+            messageName,
+            group,
+            1,
+            lane,
+            ConsumerIdentity: "orders-projection",
+            MessageContractVersion: contractVersion
+        );
     }
 
     private sealed class OtherMessage;

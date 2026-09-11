@@ -134,6 +134,7 @@ const deleteTimeJobsBatch = () => {
 }
 
 const addTimeJob = () => {
+    const functionNamesStore = useFunctionNameStore();
     const baseHttp = useBaseHttpService<AddTimeJobRequest, object>('single');
 
     const requestAsync = async (data: AddTimeJobRequest, timeZoneId?: string | null) => {
@@ -141,7 +142,7 @@ const addTimeJob = () => {
         if (timeZoneId) {
             paramData.timeZoneId = timeZoneId;
         }
-        return await baseHttp.sendAsync("POST", "time-job/add", { bodyData: data, paramData });
+        return await baseHttp.sendAsync("POST", "time-job/add", { bodyData: { ...data, contractVersion: functionNamesStore.getContractVersion(data.function) }, paramData });
     };
 
     return {
@@ -151,6 +152,7 @@ const addTimeJob = () => {
 }
 
 const updateTimeJob = () => {
+    const functionNamesStore = useFunctionNameStore();
     const baseHttp = useBaseHttpService<UpdateTimeJobRequest, object>('single');
 
     const requestAsync = async (id: string, data: UpdateTimeJobRequest, timeZoneId?: string | null) => {
@@ -158,7 +160,7 @@ const updateTimeJob = () => {
         if (timeZoneId) {
             paramData.timeZoneId = timeZoneId;
         }
-        return await baseHttp.sendAsync("PUT", "time-job/update", { bodyData: data, paramData });
+        return await baseHttp.sendAsync("PUT", "time-job/update", { bodyData: { ...data, contractVersion: functionNamesStore.getContractVersion(data.function) }, paramData });
     };
 
     return {
@@ -168,9 +170,15 @@ const updateTimeJob = () => {
 }
 
 const addChainJobs = () => {
+    const functionNamesStore = useFunctionNameStore();
   const baseHttp = useBaseHttpService<AddChainJobsRequest, object>('single');
 
-  const requestAsync = async (data: AddChainJobsRequest) => (await baseHttp.sendAsync("POST", "time-job/add", { bodyData: data }));
+  const versionTree = (job: AddChainJobsRequest): AddChainJobsRequest => ({
+    ...job,
+    contractVersion: functionNamesStore.getContractVersion(job.function),
+    children: job.children?.map(versionTree),
+  });
+  const requestAsync = async (data: AddChainJobsRequest) => (await baseHttp.sendAsync("POST", "time-job/add", { bodyData: versionTree(data) }));
 
   return {
     ...baseHttp,

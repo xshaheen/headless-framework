@@ -72,7 +72,7 @@ public abstract class PublishContext
 
     /// <summary>
     /// Gets the current publish options for this operation.
-    /// Cast to <see cref="PublishOptions"/> for bus operations or <see cref="EnqueueOptions"/> for queue operations.
+    /// Cast to <see cref="PublishOptions"/> for bus operations or <see cref="QueueOptions"/> for queue operations.
     /// </summary>
     public MessageOptions? Options => OptionsCore;
 
@@ -111,7 +111,7 @@ public abstract class PublishContext
     public void WithOptions(MessageOptions? options)
     {
         ThrowIfCompleted();
-        if (DeliveryFrozen && (options?.DeliveryMode ?? DeliveryMode.Auto) != RequestedDeliveryMode)
+        if (DeliveryFrozen && (options?.DeliveryMode ?? RequestedDeliveryMode) != RequestedDeliveryMode)
         {
             throw new InvalidOperationException("Publish middleware cannot change the resolved delivery mode.");
         }
@@ -125,7 +125,7 @@ public abstract class PublishContext
         RefreshOptionSnapshot(options);
     }
 
-    /// <summary>Replaces the delay on a manually-created legacy context.</summary>
+    /// <summary>Replaces the delay on a manually constructed context.</summary>
     public void WithDelayTime(TimeSpan? delayTime)
     {
         ThrowIfCompleted();
@@ -171,11 +171,23 @@ public abstract class PublishContext
 public sealed class PublishContext<TMessage> : PublishContext, ICompletablePublishContext
 {
     /// <summary>Initializes a publish context for direct construction by middleware tests and tooling.</summary>
+    /// <param name="content">The message payload.</param>
+    /// <param name="lane">The publish lane.</param>
+    /// <param name="options">The message options, including the delivery mode override and delay.</param>
+    /// <param name="defaultDeliveryMode">The host delivery mode inherited when the options do not specify one.</param>
+    /// <param name="now">The resolution timestamp used to calculate <see cref="PublishContext.PublishAt"/> in UTC.</param>
+    /// <param name="isTransactional">Whether to resolve delivery against a compatible ambient commit boundary.</param>
+    /// <param name="cancellationToken">The token forwarded to middleware.</param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// The lane or effective delivery mode is undefined, or the delay is nonpositive or overflows the timestamp range.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">Direct delivery specifies a delay.</exception>
     public PublishContext(
         TMessage? content,
         MessageLane lane,
         MessageOptions? options,
-        TimeSpan? delayTime,
+        DeliveryMode defaultDeliveryMode,
+        DateTimeOffset now,
         bool isTransactional = false,
         CancellationToken cancellationToken = default
     )
@@ -185,42 +197,16 @@ public sealed class PublishContext<TMessage> : PublishContext, ICompletablePubli
             content?.GetType() ?? typeof(TMessage),
             lane,
             options,
-            _CreateLegacyDecision(options, delayTime, isTransactional),
+            DeliveryDecisionResolver.Resolve(
+                lane,
+                options?.DeliveryMode ?? defaultDeliveryMode,
+                options?.Delay,
+                isTransactional ? DeliveryCoordinationStatus.Compatible : DeliveryCoordinationStatus.None,
+                now.ToUniversalTime()
+            ),
             deliveryFrozen: false,
             cancellationToken
         ) { }
-
-    private static DeliveryDecision _CreateLegacyDecision(
-        MessageOptions? options,
-        TimeSpan? delayTime,
-        bool isTransactional
-    )
-    {
-        var requestedMode = options?.DeliveryMode ?? DeliveryMode.Auto;
-        var resolvedMode = requestedMode switch
-        {
-            DeliveryMode.Durable => DeliveryMode.Durable,
-            DeliveryMode.TransportDirect => DeliveryMode.TransportDirect,
-            DeliveryMode.Auto when isTransactional || delayTime is not null => DeliveryMode.Durable,
-            DeliveryMode.Auto => DeliveryMode.TransportDirect,
-            _ => requestedMode,
-        };
-        var path = resolvedMode switch
-        {
-            DeliveryMode.Durable when isTransactional => DeliveryPath.DurableCoordinated,
-            DeliveryMode.Durable => DeliveryPath.DurableStandalone,
-            _ => DeliveryPath.TransportDirect,
-        };
-
-        return new DeliveryDecision(
-            requestedMode,
-            resolvedMode,
-            path,
-            delayTime,
-            PublishAt: null,
-            DeliveryCoordination.None
-        );
-    }
 
     internal PublishContext(
         TMessage? content,
@@ -264,7 +250,7 @@ public sealed class PublishContext<TMessage> : PublishContext, ICompletablePubli
 
     /// <summary>
     /// Gets or sets the current publish options before the inner publisher runs.
-    /// Cast to <see cref="PublishOptions"/> for bus operations or <see cref="EnqueueOptions"/> for queue operations.
+    /// Cast to <see cref="PublishOptions"/> for bus operations or <see cref="QueueOptions"/> for queue operations.
     /// </summary>
     public new MessageOptions? Options
     {
@@ -272,7 +258,7 @@ public sealed class PublishContext<TMessage> : PublishContext, ICompletablePubli
         set { WithOptions(value); }
     }
 
-    /// <summary>Gets or sets the delay on a manually-created legacy context.</summary>
+    /// <summary>Gets or sets the delay on a manually constructed context.</summary>
     public new TimeSpan? DelayTime
     {
         get => base.DelayTime;

@@ -15,17 +15,17 @@ public sealed class PublishOptionsTests : TestBase
             .Should()
             .Be(0);
         ((int)DeliveryMode.Durable).Should().Be(1);
-        ((int)DeliveryMode.TransportDirect).Should().Be(2);
+        ((int)DeliveryMode.Direct).Should().Be(2);
     }
 
     [Fact]
-    public void should_default_delivery_mode_to_auto()
+    public void should_default_delivery_mode_to_durable()
     {
         // when
         var options = new PublishOptions();
 
         // then
-        options.DeliveryMode.Should().Be(DeliveryMode.Auto);
+        options.DeliveryMode.Should().BeNull();
     }
 
     [Fact]
@@ -161,9 +161,9 @@ public sealed class PublishOptionsTests : TestBase
     public void should_compare_enqueue_options_by_message_name()
     {
         // given
-        var left = new EnqueueOptions { MessageName = "orders.placed" };
-        var matching = new EnqueueOptions { MessageName = "orders.placed" };
-        var different = new EnqueueOptions { MessageName = "orders.cancelled" };
+        var left = new QueueOptions { MessageName = "orders.placed" };
+        var matching = new QueueOptions { MessageName = "orders.placed" };
+        var different = new QueueOptions { MessageName = "orders.cancelled" };
 
         // then
         left.Should().Be(matching);

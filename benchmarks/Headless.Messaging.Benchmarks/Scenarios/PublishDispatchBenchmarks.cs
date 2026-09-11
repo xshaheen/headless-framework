@@ -43,7 +43,7 @@ public class PublishDispatchBenchmarks
         _options = _CreateOptions(HeaderCount);
         _decision = DeliveryDecisionResolver.Resolve(
             MessageLane.Bus,
-            _options.DeliveryMode,
+            _options.DeliveryMode ?? DeliveryMode.Auto,
             _options.Delay,
             DeliveryCoordination.None,
             DateTimeOffset.UnixEpoch

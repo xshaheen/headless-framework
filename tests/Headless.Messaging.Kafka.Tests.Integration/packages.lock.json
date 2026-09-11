@@ -336,6 +336,16 @@
         "resolved": "2.2.9",
         "contentHash": "WLbDc/W9XkHpGVtd1L6Vml8W6+PaaYZZTJASHjHF7W2WX/hld6bfNK102Ui+I3a6zIdx4+oKRJtMgHz44JmBfw=="
       },
+      "Microsoft.EntityFrameworkCore.Abstractions": {
+        "type": "Transitive",
+        "resolved": "10.0.9",
+        "contentHash": "GRMaiPkqYna/gCsyDffYDWmefGPC3hDrdMw+2rrGcQwhs6uZOsaMQXMJnoXQ35tx9SkBV2ieRRU9N/jLOO6BZw=="
+      },
+      "Microsoft.EntityFrameworkCore.Analyzers": {
+        "type": "Transitive",
+        "resolved": "10.0.9",
+        "contentHash": "aiEFB+C5EsZGqxvMPazE07hbWsp4iPaufJpanGt5O+lrwv7mJLrqma5haVIgFAPCyhQkmk75XSCEubT1zUjxtA=="
+      },
       "Microsoft.Extensions.Configuration": {
         "type": "Transitive",
         "resolved": "10.0.12",
@@ -748,6 +758,12 @@
           "Headless.Extensions": "[1.0.0, )"
         }
       },
+      "headless.auditlog.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Extensions": "[1.0.0, )"
+        }
+      },
       "headless.checks": {
         "type": "Project"
       },
@@ -793,6 +809,49 @@
           "Headless.Checks": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )"
+        }
+      },
+      "headless.domain": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )"
+        }
+      },
+      "headless.domain.localeventbus": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Domain": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )"
+        }
+      },
+      "headless.entityframework": {
+        "type": "Project",
+        "dependencies": {
+          "EFCore.CheckConstraints": "[10.0.0, )",
+          "Headless.AuditLog.Abstractions": "[1.0.0, )",
+          "Headless.Core": "[1.0.0, )",
+          "Headless.Domain": "[1.0.0, )",
+          "Headless.Domain.LocalEventBus": "[1.0.0, )",
+          "Headless.EntityFramework.Core": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
+          "Headless.MultiTenancy": "[1.0.0, )",
+          "Microsoft.EntityFrameworkCore": "[10.0.9, )",
+          "Microsoft.EntityFrameworkCore.Relational": "[10.0.9, )",
+          "Microsoft.Extensions.Hosting.Abstractions": "[10.0.9, )"
+        }
+      },
+      "headless.entityframework.core": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Domain": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Generator.Primitives.Abstractions": "[1.0.0, )",
+          "Headless.Primitives": "[1.0.0, )",
+          "Headless.Serializer.Json": "[1.0.0, )",
+          "Microsoft.EntityFrameworkCore": "[10.0.9, )",
+          "Microsoft.EntityFrameworkCore.Relational": "[10.0.9, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.9, )"
         }
       },
       "headless.extensions": {
@@ -875,13 +934,25 @@
           "AwesomeAssertions.Json": "[9.0.0, )",
           "Bogus": "[35.6.5, )",
           "DeepCloner": "[0.10.4, )",
+          "Headless.EntityFramework": "[1.0.0, )",
           "Headless.Messaging.Abstractions": "[1.0.0, )",
           "Headless.Messaging.Core": "[1.0.0, )",
+          "Headless.Messaging.InMemory": "[1.0.0, )",
+          "Headless.Messaging.Storage.InMemory": "[1.0.0, )",
           "Headless.Testing": "[1.0.0, )",
+          "Microsoft.EntityFrameworkCore.Relational": "[10.0.9, )",
           "NSubstitute": "[5.3.0, )",
           "Testcontainers": "[4.15.0, )",
           "xunit.v3.assert": "[4.0.0, )",
           "xunit.v3.extensibility.core": "[4.0.0, )"
+        }
+      },
+      "headless.messaging.inmemory": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
+          "Headless.Messaging.Core": "[1.0.0, )",
+          "Headless.Messaging.Queue.Abstractions": "[1.0.0, )"
         }
       },
       "headless.messaging.kafka": {
@@ -896,6 +967,12 @@
         "type": "Project",
         "dependencies": {
           "Headless.Messaging.Abstractions": "[1.0.0, )"
+        }
+      },
+      "headless.messaging.storage.inmemory": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Messaging.Core": "[1.0.0, )"
         }
       },
       "headless.multitenancy": {
@@ -987,6 +1064,17 @@
           "librdkafka.redist": "2.15.1"
         }
       },
+      "EFCore.CheckConstraints": {
+        "type": "CentralTransitive",
+        "requested": "[10.0.0, )",
+        "resolved": "10.0.0",
+        "contentHash": "O6dAN5TlBvn0NKZ/At9iE3fMBZ89N83nlqnROSuH6W3EIoYIiXohklsIWfTh2iHomPAC9IKGi34D3FpdNbCXxg==",
+        "dependencies": {
+          "Microsoft.EntityFrameworkCore": "[10.0.0, 11.0.0)",
+          "Microsoft.EntityFrameworkCore.Relational": "[10.0.0, 11.0.0)",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.0"
+        }
+      },
       "FastExpressionCompiler": {
         "type": "CentralTransitive",
         "requested": "[5.4.1, )",
@@ -1043,6 +1131,30 @@
           "Microsoft.SqlServer.Server": "[1.0.0, 2.0.0)",
           "System.Configuration.ConfigurationManager": "9.0.13",
           "System.Security.Cryptography.Pkcs": "9.0.13"
+        }
+      },
+      "Microsoft.EntityFrameworkCore": {
+        "type": "CentralTransitive",
+        "requested": "[10.0.9, )",
+        "resolved": "10.0.9",
+        "contentHash": "tu85SRzOT021V7EQlViCiAE7TqldVn469Y6lt5TEn/+XC4/MeNCHgMRSxqYuWqvF4zAQZUhCmtNEZuM3ss4LeA==",
+        "dependencies": {
+          "Microsoft.EntityFrameworkCore.Abstractions": "10.0.9",
+          "Microsoft.EntityFrameworkCore.Analyzers": "10.0.9",
+          "Microsoft.Extensions.Caching.Memory": "10.0.9",
+          "Microsoft.Extensions.Logging": "10.0.9"
+        }
+      },
+      "Microsoft.EntityFrameworkCore.Relational": {
+        "type": "CentralTransitive",
+        "requested": "[10.0.9, )",
+        "resolved": "10.0.9",
+        "contentHash": "dEoyYKgiaZHHgOFm1WMWm1sFEsEuhPWufX4L9PekKtqd/RaIcPjkCjvbrVvJtApErb5wPSJhYvnTlxhH+p9h2g==",
+        "dependencies": {
+          "Microsoft.EntityFrameworkCore": "10.0.9",
+          "Microsoft.Extensions.Caching.Memory": "10.0.9",
+          "Microsoft.Extensions.Configuration.Abstractions": "10.0.9",
+          "Microsoft.Extensions.Logging": "10.0.9"
         }
       },
       "Microsoft.Extensions.Caching.Abstractions": {

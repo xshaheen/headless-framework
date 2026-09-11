@@ -67,8 +67,8 @@ public record ConsumeContext
     /// — or the success-mark write transiently fails — after the response is written to the outbox but before the
     /// request is marked succeeded, the request is redelivered and the response is published again. Make response
     /// consumers idempotent (e.g. dedupe on
-    /// <c>(CorrelationId, CorrelationSequence)</c> — <c>CorrelationId</c> alone is ambiguous across hops because
-    /// it is set to the immediate parent message id per hop, not the chain root); the framework does not
+    /// <c>(CausationId, CorrelationSequence)</c> — <c>CorrelationId</c> identifies the chain root while
+    /// <c>CausationId</c> identifies the immediate parent); the framework does not
     /// deduplicate callback deliveries.
     /// </remarks>
     public void SetResponse<TResponse>(TResponse value)
@@ -161,8 +161,8 @@ public record ConsumeContext
     /// </list>
     /// </para>
     /// <para>
-    /// If this message was published from within another message handler, the CorrelationId should
-    /// typically be set to the parent message's MessageId or CorrelationId to maintain the trace.
+    /// Messages published from within a handler preserve this root correlation identifier. Their
+    /// <see cref="CausationId"/> identifies the immediate parent message.
     /// </para>
     /// </remarks>
     public required string? CorrelationId
@@ -181,6 +181,12 @@ public record ConsumeContext
             field = value;
         }
     }
+
+    /// <summary>Gets the identifier of the message that directly caused this message, when available.</summary>
+    public string? CausationId { get; init; }
+
+    /// <summary>Gets the schema version of the logical message contract.</summary>
+    public string ContractVersion { get; init; } = MessageOptions.InitialContractVersion;
 
     /// <summary>
     /// Gets the multi-tenancy identifier for this message.

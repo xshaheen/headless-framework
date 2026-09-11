@@ -266,7 +266,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         var claimed = await _ExecuteWithDeadlockRetryAsync(
                 async ct =>
                 {
-                    var attemptClaimed = new List<CronJobOccurrenceEntity<TCronJob>>();
+                    CronJobOccurrenceEntity<TCronJob>[] attemptClaimed = [];
                     await using var claimTransaction = await JobsClaimTransaction<TDbContext>.CreateAsync(
                         dbContextFactory,
                         ct
@@ -276,7 +276,9 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                     var mapping = CronOccurrenceRelationalMapping.Create<TDbContext, TCronJob>(dbContext);
                     var definitionMapping = CronDefinitionRelationalMapping.Create<TDbContext, TCronJob>(dbContext);
                     var readPastHints = await _GetReadPastHintsAsync(ct).ConfigureAwait(false);
-                    foreach (var item in cronJobOccurrences.Items)
+                    var activeItems = new HashSet<JobManagerDispatchContext>();
+                    // All batches take definition locks in the same order, even when dispatch order differs.
+                    foreach (var item in cronJobOccurrences.Items.OrderBy(x => x.Id))
                     {
                         ct.ThrowIfCancellationRequested();
                         if (
@@ -287,12 +289,33 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                             continue;
                         }
 
-                        var occurrence = item.NextCronOccurrence is null
+                        activeItems.Add(item);
+                    }
+
+                    // Read snapshots only after locking definitions so edits cannot race the batch read and insert.
+                    var definitionIds = activeItems
+                        .Where(x => x.NextCronOccurrence is null)
+                        .Select(x => x.Id)
+                        .ToArray();
+                    var definitions =
+                        definitionIds.Length == 0
+                            ? new Dictionary<Guid, TCronJob>()
+                            : await dbContext
+                                .Set<TCronJob>()
+                                .AsNoTracking()
+                                .Where(x => definitionIds.Contains(x.Id))
+                                .ToDictionaryAsync(x => x.Id, ct)
+                                .ConfigureAwait(false);
+                    var claimedIds = new List<Guid>();
+                    foreach (var item in cronJobOccurrences.Items.Where(activeItems.Contains))
+                    {
+                        var occurrenceId = item.NextCronOccurrence is null
                             ? await _InsertCronOccurrenceAsync(
                                     dbContext,
                                     transaction,
                                     mapping,
                                     item,
+                                    definitions[item.Id],
                                     cronJobOccurrences.Key,
                                     owner,
                                     now,
@@ -314,30 +337,34 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                                 )
                                 .ConfigureAwait(false);
 
-                        if (occurrence is not null)
+                        if (occurrenceId is { } id)
                         {
-                            attemptClaimed.Add(occurrence);
+                            claimedIds.Add(id);
                         }
                     }
 
-                    if (attemptClaimed.Count > 0)
+                    if (claimedIds.Count > 0)
                     {
-                        var refreshedAt = await _RefreshCronOccurrenceLeasesAsync(
+                        await _RefreshCronOccurrenceLeasesAsync(
                                 dbContext,
                                 transaction,
                                 mapping,
-                                [.. attemptClaimed.Select(x => x.Id)],
+                                [.. claimedIds],
                                 owner,
                                 _leaseDuration,
                                 ct
                             )
                             .ConfigureAwait(false);
 
-                        foreach (var occurrence in attemptClaimed)
-                        {
-                            occurrence.UpdatedAt = refreshedAt;
-                            occurrence.LockedUntil = refreshedAt.UtcDateTime.Add(_leaseDuration);
-                        }
+                        // Hydrate once after the final write, preserving stored contracts, retry state and clock precision.
+                        var occurrences = await dbContext
+                            .Set<CronJobOccurrenceEntity<TCronJob>>()
+                            .AsNoTracking()
+                            .Where(x => claimedIds.Contains(x.Id) && x.OwnerId == owner)
+                            .Include(x => x.CronJob)
+                            .ToDictionaryAsync(x => x.Id, ct)
+                            .ConfigureAwait(false);
+                        attemptClaimed = [.. claimedIds.Select(id => occurrences[id])];
                     }
 
                     await claimTransaction.CommitAsync(ct).ConfigureAwait(false);
@@ -349,8 +376,6 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
 
         foreach (var occurrence in claimed)
         {
-            occurrence.OwnerId = owner;
-            occurrence.Status = JobStatus.Queued;
             yield return occurrence;
         }
     }
@@ -487,11 +512,12 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         return await reader.GetFieldValueAsync<DateTimeOffset>(0, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<CronJobOccurrenceEntity<TCronJob>?> _InsertCronOccurrenceAsync(
+    private async Task<Guid?> _InsertCronOccurrenceAsync(
         TDbContext dbContext,
         IDbContextTransaction transaction,
         CronOccurrenceRelationalMapping mapping,
         JobManagerDispatchContext item,
+        TCronJob definition,
         DateTime executionTime,
         string owner,
         DateTimeOffset now,
@@ -500,6 +526,8 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
     )
     {
         var id = guidGenerator.Create();
+        var snapshot = new CronJobOccurrenceEntity<TCronJob> { Id = id };
+        snapshot.SnapshotContract(definition);
         await using var command = _CreateCommand(dbContext, transaction);
 #pragma warning disable CA2100
         command.CommandText = $"""
@@ -508,12 +536,14 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             INSERT INTO {mapping.Table}
                 ({mapping.Id}, {mapping.Status}, {mapping.OwnerId}, {mapping.ExecutionTime}, {mapping.CronJobId},
                  {mapping.LockedUntil}, {mapping.OnNodeDeath}, {mapping.ElapsedTime}, {mapping.RetryCount},
-                 {mapping.CreatedAt}, {mapping.UpdatedAt}, {mapping.Disposition})
+                 {mapping.CreatedAt}, {mapping.UpdatedAt}, {mapping.Disposition},
+                 {mapping.Function}, {mapping.ContractVersion}, {mapping.Request}, {mapping.CorrelationId}, {mapping.CausationId})
             OUTPUT inserted.{mapping.Id}
             SELECT
                 @id, @status, @owner, @executionTime, @cronJobId,
                 {_LeaseDeadlineSql("@claimNow")}, @onNodeDeath, @elapsedTime, @retryCount,
-                @claimNow, @claimNow, @disposition
+                @claimNow, @claimNow, @disposition,
+                @function, @contractVersion, @request, @correlationId, @causationId
             WHERE NOT EXISTS (
                 SELECT 1
                 FROM {mapping.Table} WITH (UPDLOCK, HOLDLOCK, ROWLOCK)
@@ -523,6 +553,30 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             """;
 #pragma warning restore CA2100
         command.Parameters.Add(new SqlParameter("id", id));
+        command.Parameters.Add(
+            new SqlParameter("function", SqlDbType.NVarChar) { Value = (object?)snapshot.Function ?? DBNull.Value }
+        );
+        command.Parameters.Add(
+            new SqlParameter("contractVersion", SqlDbType.NVarChar)
+            {
+                Value = (object?)snapshot.ContractVersion ?? DBNull.Value,
+            }
+        );
+        command.Parameters.Add(
+            new SqlParameter("request", SqlDbType.VarBinary) { Value = (object?)snapshot.Request ?? DBNull.Value }
+        );
+        command.Parameters.Add(
+            new SqlParameter("correlationId", SqlDbType.NVarChar)
+            {
+                Value = (object?)snapshot.CorrelationId ?? DBNull.Value,
+            }
+        );
+        command.Parameters.Add(
+            new SqlParameter("causationId", SqlDbType.NVarChar)
+            {
+                Value = (object?)snapshot.CausationId ?? DBNull.Value,
+            }
+        );
         command.Parameters.Add(new SqlParameter("status", nameof(JobStatus.Queued)));
         // KTD1: a row that ACCOUNTS for the instant blocks the insert — every live status, every terminal status,
         // and any status this binary does not recognize (the predicate is a negation, so unknown values fall on the
@@ -558,24 +612,10 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         {
             return null;
         }
-        return inserted is Guid
-            ? new CronJobOccurrenceEntity<TCronJob>
-            {
-                Id = id,
-                Status = JobStatus.Queued,
-                OwnerId = owner,
-                ExecutionTime = executionTime,
-                CronJobId = item.Id,
-                LockedUntil = lockedUntil,
-                OnNodeDeath = item.OnNodeDeath,
-                CreatedAt = now,
-                UpdatedAt = now,
-                CronJob = MappingExtensions.ProjectCronJob<TCronJob>(item, owner),
-            }
-            : null;
+        return inserted is Guid insertedId ? insertedId : null;
     }
 
-    private static async Task<CronJobOccurrenceEntity<TCronJob>?> _ClaimExistingCronOccurrenceAsync(
+    private static async Task<Guid?> _ClaimExistingCronOccurrenceAsync(
         TDbContext dbContext,
         IDbContextTransaction transaction,
         CronOccurrenceRelationalMapping mapping,
@@ -611,7 +651,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                 {mapping.UpdatedAt} = @claimNow,
                 {mapping.Status} = @queued,
                 {mapping.OnNodeDeath} = @onNodeDeath
-            OUTPUT inserted.{mapping.Id}, inserted.{mapping.RecoveredFromUtc}
+            OUTPUT inserted.{mapping.Id}
             FROM {mapping.Table} AS occurrence
             INNER JOIN candidate ON occurrence.{mapping.Id} = candidate.{mapping.Id};
             """;
@@ -624,29 +664,9 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         command.Parameters.Add(new SqlParameter("retry", nameof(NodeDeathPolicy.Retry)));
         _AddLeaseDurationParameters(command, lockedUntil - now.UtcDateTime);
         command.Parameters.Add(new SqlParameter("onNodeDeath", item.OnNodeDeath.ToString()));
-        // R23: read the recovery stamp back out of the row rather than trusting the dispatch context to carry it. The
-        // durable row is the only authority for what a coalesced run stands for, and a caller that reconstructed the
-        // context from an id alone would otherwise silently demote it to an ordinary run.
-        DateTime? claimedRecoveredFrom = null;
-        var claimed = await _ReadClaimedIdAsync(command, x => claimedRecoveredFrom = x, cancellationToken)
-            .ConfigureAwait(false);
+        var claimed = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
 
-        return claimed is not null
-            ? new CronJobOccurrenceEntity<TCronJob>
-            {
-                Id = occurrence.Id,
-                CronJobId = item.Id,
-                ExecutionTime = executionTime,
-                Status = JobStatus.Queued,
-                OwnerId = owner,
-                LockedUntil = lockedUntil,
-                OnNodeDeath = item.OnNodeDeath,
-                UpdatedAt = now,
-                CreatedAt = occurrence.CreatedAt,
-                RecoveredFromUtc = claimedRecoveredFrom,
-                CronJob = MappingExtensions.ProjectCronJob<TCronJob>(item, owner),
-            }
-            : null;
+        return claimed is Guid claimedId ? claimedId : null;
     }
 
     private static async Task<Guid[]> _ClaimFallbackCronOccurrencesAsync(
@@ -984,30 +1004,6 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         return readCommittedSnapshotEnabled
             ? "UPDLOCK, READPAST, ROWLOCK, READCOMMITTEDLOCK"
             : "UPDLOCK, READPAST, ROWLOCK";
-    }
-
-    /// <summary>
-    /// Reads the claim's RETURNING row: the claimed id plus the durable recovery stamp. Replaces ExecuteScalar so the
-    /// stamp leaves the store with the claim rather than being reconstructed by the caller (R23).
-    /// </summary>
-    private static async Task<Guid?> _ReadClaimedIdAsync(
-        SqlCommand command,
-        Action<DateTime?> onRecoveredFrom,
-        CancellationToken cancellationToken
-    )
-    {
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-
-        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            return null;
-        }
-
-        var id = reader.GetGuid(0);
-        var isNull = await reader.IsDBNullAsync(1, cancellationToken).ConfigureAwait(false);
-        onRecoveredFrom(isNull ? null : DateTime.SpecifyKind(reader.GetDateTime(1), DateTimeKind.Utc));
-
-        return id;
     }
 }
 

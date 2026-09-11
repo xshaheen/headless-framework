@@ -29,6 +29,7 @@ internal sealed class RabbitMqTransport : IBusTransport, IQueueTransport
 
     public async Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
     {
+        Configuration.MessagingRoutingAffinityMapping.RejectUnsupported(message, "RabbitMq");
         cancellationToken.ThrowIfCancellationRequested();
         RabbitMqValidation.ValidateMessageName(message.Name);
         var routingKey = RabbitMqPhysicalAddress.RoutingKey(_lane, message.Name);

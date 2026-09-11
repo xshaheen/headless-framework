@@ -27,7 +27,12 @@ dotnet add package Headless.Messaging.RabbitMq
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
-    options.Bus.ForConsumersFromAssemblyContaining<Program>();
+    options.Bus.ForMessage<OrderPlaced>(message =>
+        message.Consumer<OrderPlacedConsumer>(consumer =>
+            consumer.ConsumerIdentity("orders.order-placed")
+        )
+    );
+    options.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
     options.UsePostgreSql("connection_string");
 
     options.UseRabbitMq(rmq =>
@@ -44,6 +49,8 @@ builder.Services.AddHeadlessMessaging(options =>
 > **Security Note:** Username and password must be configured explicitly. The default RabbitMQ credentials (`guest`/`guest`) are rejected to prevent accidental production deployments with insecure settings.
 
 ## Configuration
+
+The current RabbitMQ exchange and binding topology does not provide the provider-neutral routing-affinity contract. `RequireRoutingAffinity()` fails during startup; a supplied `RoutingAffinityKey` is rejected before persistence or transport effects. Hash-exchange topology is not inferred or provisioned. Unkeyed routing remains unchanged.
 
 ```csharp
 options.UseRabbitMq(rmq =>
@@ -64,7 +71,7 @@ options.UseRabbitMq(rmq =>
 
 options.Bus.ForMessage<OrderEvent>(message =>
     message
-        .MessageName("orders.events")
+        .Contract("orders.events")
         .Consumer<OrderProjection>(consumer =>
             consumer.Group("orders-projection").UseRabbitMq(rabbit => rabbit.PrefetchCount(20))
         )
@@ -82,8 +89,6 @@ options.Bus.ForMessage<OrderEvent>(message =>
 ```
 
 RabbitMQ supports the same contract and logical name on both lanes without cross-delivery. For a configured base exchange such as `myapp.events`, the provider creates `myapp.events.bus` (topic) and `myapp.events.queue` (direct), publishes with `bus.{logical-name}` / `queue.{logical-name}` routing keys, and owns `bus.{subscriber-group}` / `queue.{logical-name}` queues.
-
-This topology replaces the pre-cutover shared topic exchange. Before deployment, stop old and new publishers, inventory producer/consumer versions and auto-provision permissions, drain every legacy exchange-bound queue to a measured zero-ready/zero-unacknowledged signal, then deploy consumers before publishers. Aborting is safe only before the first lane-qualified publication. After that point recovery is roll-forward-only: restore the new consumers, reconcile legacy and lane-qualified queue counts, and do not delete legacy entities until the deployment owner signs off.
 
 ### Security Best Practices
 

@@ -6,7 +6,7 @@ namespace Headless.Messaging.Internal;
 
 internal enum DeliveryPath
 {
-    TransportDirect = 0,
+    Direct = 0,
     DurableStandalone = 1,
     DurableCoordinated = 2,
 }
@@ -31,6 +31,16 @@ internal static class DeliveryDecisionResolver
         TimeSpan? delay,
         DeliveryCoordination coordination,
         DateTimeOffset now
+    ) => Resolve(lane, requestedMode, delay, coordination.Status, now, coordination);
+
+    // Manually constructed middleware contexts need delivery semantics without live transaction resources.
+    internal static DeliveryDecision Resolve(
+        MessageLane lane,
+        DeliveryMode requestedMode,
+        TimeSpan? delay,
+        DeliveryCoordinationStatus coordinationStatus,
+        DateTimeOffset now,
+        DeliveryCoordination coordination = default
     )
     {
         // Explicit range checks rather than Enum.IsDefined: these run on every publish, and IsDefined
@@ -40,7 +50,7 @@ internal static class DeliveryDecisionResolver
             throw new ArgumentOutOfRangeException(nameof(lane), lane, "A defined messaging lane is required.");
         }
 
-        if (requestedMode is not (DeliveryMode.Auto or DeliveryMode.Durable or DeliveryMode.TransportDirect))
+        if (requestedMode is not (DeliveryMode.Auto or DeliveryMode.Durable or DeliveryMode.Direct))
         {
             throw new ArgumentOutOfRangeException(
                 nameof(requestedMode),
@@ -50,7 +60,7 @@ internal static class DeliveryDecisionResolver
         }
 
         if (
-            coordination.Status
+            coordinationStatus
             is not (
                 DeliveryCoordinationStatus.None
                 or DeliveryCoordinationStatus.Compatible
@@ -59,16 +69,13 @@ internal static class DeliveryDecisionResolver
         )
         {
             throw new ArgumentOutOfRangeException(
-                nameof(coordination),
-                coordination.Status,
+                nameof(coordinationStatus),
+                coordinationStatus,
                 "Invalid coordination status."
             );
         }
 
-        if (
-            coordination.Status is DeliveryCoordinationStatus.Incompatible
-            && requestedMode is not DeliveryMode.TransportDirect
-        )
+        if (coordinationStatus is DeliveryCoordinationStatus.Incompatible && requestedMode is not DeliveryMode.Direct)
         {
             throw new InvalidOperationException(
                 $"The active coordination boundary is incompatible with messaging storage ({coordination.Mismatch})."
@@ -97,25 +104,25 @@ internal static class DeliveryDecisionResolver
             }
         }
 
-        if (requestedMode is DeliveryMode.TransportDirect && delay is not null)
+        if (requestedMode is DeliveryMode.Direct && delay is not null)
         {
-            throw new InvalidOperationException("TransportDirect delivery cannot specify a delay.");
+            throw new InvalidOperationException("Direct delivery cannot specify a delay.");
         }
 
         var resolvedMode = requestedMode switch
         {
-            DeliveryMode.TransportDirect => DeliveryMode.TransportDirect,
+            DeliveryMode.Direct => DeliveryMode.Direct,
             DeliveryMode.Durable => DeliveryMode.Durable,
             DeliveryMode.Auto when delay is not null => DeliveryMode.Durable,
-            DeliveryMode.Auto when coordination.Status is DeliveryCoordinationStatus.Compatible => DeliveryMode.Durable,
-            DeliveryMode.Auto => DeliveryMode.TransportDirect,
+            DeliveryMode.Auto when coordinationStatus is DeliveryCoordinationStatus.Compatible => DeliveryMode.Durable,
+            DeliveryMode.Auto => DeliveryMode.Direct,
             _ => throw new UnreachableException(),
         };
 
         var path = resolvedMode switch
         {
-            DeliveryMode.TransportDirect => DeliveryPath.TransportDirect,
-            DeliveryMode.Durable when coordination.Status is DeliveryCoordinationStatus.Compatible =>
+            DeliveryMode.Direct => DeliveryPath.Direct,
+            DeliveryMode.Durable when coordinationStatus is DeliveryCoordinationStatus.Compatible =>
                 DeliveryPath.DurableCoordinated,
             DeliveryMode.Durable => DeliveryPath.DurableStandalone,
             _ => throw new UnreachableException(),

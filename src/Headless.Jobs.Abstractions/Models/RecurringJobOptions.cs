@@ -11,18 +11,24 @@ namespace Headless.Jobs.Models;
 [PublicAPI]
 public sealed record RecurringJobOptions
 {
+    /// <summary>Optional root business correlation captured by each materialized occurrence.</summary>
+    public string? CorrelationId { get; init; }
+
+    /// <summary>Optional immediate business cause captured by each materialized occurrence.</summary>
+    public string? CausationId { get; init; }
+
     /// <summary>Optional IANA timezone identifier. A <see langword="null"/> value uses the scheduler-global timezone.</summary>
     public string? TimeZoneId { get; init; }
 
     /// <summary>Optional human-readable description displayed by operational tooling.</summary>
     public string? Description { get; init; }
 
-    /// <summary>Maximum number of durable retry attempts for each occurrence.</summary>
-    public int Retries { get; init; }
+    /// <summary>Maximum durable retries per occurrence; null inherits configured defaults.</summary>
+    public int? Retries { get; init; }
 
     /// <summary>Optional per-retry delay intervals in seconds.</summary>
     public int[]? RetryIntervals { get; init; }
 
-    /// <summary>Policy applied when the node executing an occurrence dies.</summary>
-    public NodeDeathPolicy OnNodeDeath { get; init; } = NodeDeathPolicy.Retry;
+    /// <summary>Policy applied when the node executing an occurrence dies; null inherits configured defaults.</summary>
+    public NodeDeathPolicy? OnNodeDeath { get; init; }
 }

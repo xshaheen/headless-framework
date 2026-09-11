@@ -107,7 +107,7 @@ public sealed class DistributedSemaphoreProviderTests : TestBase
                 Arg.Is<DistributedLockReleased>(message =>
                     message.Resource == resource && message.LeaseId == slot.LeaseId
                 ),
-                Arg.Is<PublishOptions?>(options => options!.DeliveryMode == DeliveryMode.TransportDirect),
+                Arg.Is<PublishOptions?>(options => options!.DeliveryMode == DeliveryMode.Direct),
                 Arg.Any<CancellationToken>()
             );
     }

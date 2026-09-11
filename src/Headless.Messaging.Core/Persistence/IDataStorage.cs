@@ -12,6 +12,38 @@ public interface IDataStorage
     /// <summary>Returns the monitoring API for this storage provider, used by the dashboard and operator tooling.</summary>
     IMonitoringApi GetMonitoringApi();
 
+    /// <summary>Returns the audited, provider-neutral inbox administration API.</summary>
+    IInboxOperationsApi GetInboxOperationsApi();
+
+    /// <summary>
+    /// Atomically converges a complete received envelope on its logical inbox key before transport settlement.
+    /// Only <see cref="InboxAdmissionDisposition.Winner"/> may be dispatched by the caller.
+    /// </summary>
+    async ValueTask<InboxAdmissionResult> AdmitReceivedMessageAsync(
+        string name,
+        string group,
+        string consumerIdentity,
+        string contractVersion,
+        MediumMessage message,
+        long generation = 0,
+        TimeSpan? inboxRetention = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var stored = await StoreReceivedMessageAsync(name, group, message, cancellationToken).ConfigureAwait(false);
+        return new InboxAdmissionResult(InboxAdmissionDisposition.Winner, stored);
+    }
+
+    /// <summary>
+    /// Marks a claimed inbox generation as orphaned or resolved. Implementations must condition the mutation on
+    /// the exact row, lane, owner, and <c>LockedUntil</c> claim returned by pickup.
+    /// </summary>
+    ValueTask<bool> MarkReceivedInboxOrphanedAsync(
+        MediumMessage message,
+        bool orphaned,
+        CancellationToken cancellationToken = default
+    ) => ValueTask.FromResult(false);
+
     /// <summary>
     /// Transitions the specified published message rows to the <c>Delayed</c> state for deferred dispatch.
     /// </summary>

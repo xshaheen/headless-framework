@@ -40,13 +40,20 @@ dotnet add package Headless.Messaging.InMemory
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
-    options.Bus.ForConsumersFromAssemblyContaining<Program>();
+    options.Bus.ForMessage<OrderPlaced>(message =>
+        message.Consumer<OrderPlacedConsumer>(consumer =>
+            consumer.ConsumerIdentity("orders.order-placed")
+        )
+    );
+    options.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
     options.UseInMemoryStorage();
     options.UseInMemory();
 });
 ```
 
 ## Configuration
+
+The in-memory transport declares no native routing-affinity mapping. `RequireRoutingAffinity()` fails during startup; a supplied `RoutingAffinityKey` is rejected before persistence or transport effects. This is separate from in-memory storage, which preserves the key when paired with a supported transport.
 
 No configuration required. Just call `UseInMemory()`.
 

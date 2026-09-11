@@ -39,6 +39,15 @@ public sealed class ConsumerExecutorDescriptor
     /// </summary>
     public string? HandlerId { get; init; }
 
+    /// <summary>The operator-stable identity used to route persisted inbox recovery.</summary>
+    public string? ConsumerIdentity { get; init; }
+
+    /// <summary>The schema version of the message contract used to isolate inbox generations.</summary>
+    public string? MessageContractVersion { get; init; }
+
+    /// <summary>Terminal retention captured when this consumer admits a new inbox generation.</summary>
+    public TimeSpan InboxRetention { get; init; } = TimeSpan.FromDays(30);
+
     /// <summary>
     /// Delivery intent used to subscribe this consumer.
     /// </summary>

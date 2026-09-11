@@ -15,7 +15,10 @@ internal interface IHeadlessTransactionCoordinator
     );
 }
 
-internal interface IHeadlessTransactionScope : IDisposable, IAsyncDisposable;
+internal interface IHeadlessTransactionScope : IDisposable, IAsyncDisposable
+{
+    bool IsRetryPrevented { get; }
+}
 
 internal sealed class NullHeadlessTransactionCoordinator : IHeadlessTransactionCoordinator
 {
@@ -40,6 +43,8 @@ internal sealed class NullHeadlessTransactionCoordinator : IHeadlessTransactionC
         public static readonly NullHeadlessTransactionScope NullInstance = new();
 
         private NullHeadlessTransactionScope() { }
+
+        public bool IsRetryPrevented => false;
 
         public void Dispose() { }
 

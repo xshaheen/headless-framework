@@ -11,7 +11,9 @@ namespace Headless.Messaging;
 /// <param name="Group">The consumer group name (Kafka group.id or RabbitMQ queue name).</param>
 /// <param name="Concurrency">The maximum number of messages to process concurrently.</param>
 /// <param name="Lane">The delivery lane used to subscribe this consumer.</param>
-/// <param name="HandlerId">The deterministic handler identity used for duplicate detection and diagnostics.</param>
+/// <param name="ConsumerIdentity">The operator-stable identity used by durable inbox state.</param>
+/// <param name="MessageContractVersion">The schema version of the message contract.</param>
+/// <param name="HandlerId">The deterministic handler identity used for diagnostics and default group generation.</param>
 /// <remarks>
 /// This record stores the configuration metadata for a consumer registered via
 /// <c>ForMessage&lt;TMessage&gt;(...)</c> or assembly scanning.
@@ -24,9 +26,14 @@ public sealed record ConsumerMetadata(
     string? Group,
     byte Concurrency,
     MessageLane Lane,
+    string ConsumerIdentity,
+    string MessageContractVersion,
     string? HandlerId = null
 )
 {
+    /// <summary>Maximum supported consumer identity length for durable inbox storage.</summary>
+    public const int ConsumerIdentityMaxLength = 200;
+
     private static readonly IReadOnlyDictionary<Type, object> _EmptyProviderConfigs = new Dictionary<Type, object>();
 
     /// <summary>
@@ -48,4 +55,7 @@ public sealed record ConsumerMetadata(
     /// Provider-specific consumer configuration registered through provider escape hatches.
     /// </summary>
     internal IReadOnlyDictionary<Type, object> ProviderConfigs { get; init; } = _EmptyProviderConfigs;
+
+    /// <summary>Terminal retention captured into each newly admitted inbox generation.</summary>
+    public TimeSpan InboxRetention { get; init; } = TimeSpan.FromDays(30);
 }

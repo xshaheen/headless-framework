@@ -2,20 +2,235 @@
 
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using Headless.Abstractions;
 using Headless.Jobs;
+using Headless.Jobs.Base;
+using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Exceptions;
 using Headless.Jobs.Instrumentation;
+using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
+using Headless.Jobs.Managers;
 using Headless.Jobs.Models;
+using Headless.Jobs.Provider;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
 
 public sealed class JobExecutionTaskHandlerTests : TestBase
 {
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(1, false)]
+    [InlineData(0, true)]
+    [InlineData(1, true)]
+    public async Task unsupported_version_releases_before_delegate_and_preserves_descendants(
+        int affected,
+        bool cachedMismatch
+    )
+    {
+        var manager = _HealthyManager();
+        manager
+            .UpdateTickerAsync(
+                Arg.Is<JobExecutionState>(x => x.Status == JobStatus.Idle && x.ReleaseLock),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(Task.FromResult(affected));
+        await using var services = new ServiceCollection().AddSingleton(manager).BuildServiceProvider();
+        var ran = false;
+        var childRan = false;
+        var root = _Node("stable", () => ran = true);
+        root.ContractVersion = "1";
+        root.RetryCount = 3;
+        root.Retries = 1;
+        root.TimeJobChildren.Add(_Node("child", () => childRan = true, RunCondition.OnFailure));
+        var registry = JobFunctionRegistryBuilder.Build(
+            [],
+            [],
+            [
+                new KeyValuePair<string, JobFunctionDescriptor>(
+                    "stable",
+                    new("stable", null, "", JobPriority.Normal, 0, "2")
+                ),
+            ]
+        );
+        if (cachedMismatch)
+        {
+            JobsExecutionContext.CacheFunctionReferences(root, registry);
+        }
+        var exhausted = false;
+        var handler = new JobsExecutionTaskHandler(
+            services,
+            TimeProvider.System,
+            Substitute.For<IJobsInstrumentation>(),
+            manager,
+            registry,
+            new JobsExecutionCancellationRegistry(),
+            new SchedulerOptionsBuilder(),
+            NullLogger<JobsExecutionTaskHandler>.Instance,
+            new JobsRetryOptions
+            {
+                OnExhausted = (_, _) =>
+                {
+                    exhausted = true;
+                    return Task.CompletedTask;
+                },
+            }
+        );
+
+        await handler.ExecuteTaskAsync(root, isDue: false, cancellationToken: AbortToken);
+
+        ran.Should().BeFalse("unsupported versions must be rejected before request deserialization in the delegate");
+        root.ContractVersionError.Should().Contain("Unsupported stored Jobs contract");
+        root.ExceptionDetails.Should().BeNull();
+        root.ExecutedAt.Should().Be(default);
+        root.ContractVersion.Should().Be("1");
+        root.RetryCount.Should().Be(3);
+        root.Status.Should().Be(JobStatus.Idle);
+        root.ReleaseLock.Should().BeTrue();
+        exhausted.Should().BeFalse("a node-local version gap must not exhaust the job's retry budget");
+        root.LeaseLost.Should().Be(affected == 0);
+        childRan.Should().BeFalse();
+        await manager
+            .Received(1)
+            .UpdateTickerAsync(
+                Arg.Is<JobExecutionState>(x => x.Status == JobStatus.Idle && x.ReleaseLock),
+                CancellationToken.None
+            );
+        await manager.DidNotReceive().ApplyParentTerminalRunConditionsAsync(root.JobId, Arg.Any<CancellationToken>());
+        await manager
+            .DidNotReceive()
+            .UpdateSkipTimeJobsWithUnifiedContextAsync(Arg.Any<JobExecutionState[]>(), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData("1", "2")]
+    [InlineData("2", "1")]
+    public async Task incompatible_registry_preserves_stored_job_until_compatible_registry_executes(
+        string storedVersion,
+        string incompatibleVersion
+    )
+    {
+        var time = new FakeTimeProvider();
+        var registrations = new ServiceCollection();
+        registrations.AddSingleton<TimeProvider>(time);
+        registrations.AddHeadlessGuidGenerator();
+        await using var services = registrations.BuildServiceProvider();
+        var store = new JobsInMemoryPersistenceProvider<TimeJobEntity, CronJobEntity>(services);
+        var options = new SchedulerOptionsBuilder();
+        var manager = new InternalJobsManager<TimeJobEntity, CronJobEntity>(
+            store,
+            time,
+            Substitute.For<IJobsNotificationHubSender>(),
+            new CronScheduleCache(TimeZoneInfo.Utc),
+            NullLogger<InternalJobsManager<TimeJobEntity, CronJobEntity>>.Instance,
+            JobsRequestSerializationOptions.Default,
+            services.GetRequiredService<IGuidGenerator>(),
+            services,
+            options
+        );
+        var job = JobsKeyedSchedulingScenarios.Candidate();
+        job.ContractVersion = storedVersion;
+        job.Retries = 0;
+        (await store.AddTimeJobsAsync([job], AbortToken)).Should().Be(1);
+        var invocations = 0;
+        var exhausted = false;
+        var retryOptions = new JobsRetryOptions
+        {
+            OnExhausted = (_, _) =>
+            {
+                exhausted = true;
+                return Task.CompletedTask;
+            },
+        };
+
+        async Task executeOnVersion(string version)
+        {
+            var claimed = (await store.AcquireImmediateTimeJobsAsync([job.Id], AbortToken)).Single();
+            var context = new JobExecutionState
+            {
+                JobId = claimed.Id,
+                FunctionName = claimed.Function,
+                ContractVersion = claimed.ContractVersion,
+                Type = JobType.TimeJob,
+                ExecutionTime = claimed.ExecutionTime!.Value,
+                Status = claimed.Status,
+                RetryCount = claimed.RetryCount,
+                Retries = claimed.Retries,
+            };
+            var registry = JobFunctionRegistryBuilder.Build(
+                [
+                    new KeyValuePair<string, JobFunctionRegistration>(
+                        job.Function,
+                        new()
+                        {
+                            CronExpression = "",
+                            Priority = JobPriority.Normal,
+                            MaxConcurrency = 0,
+                            Delegate = (_, execution, _) =>
+                            {
+                                version.Should().Be(storedVersion);
+                                execution.ContractVersion.Should().Be(storedVersion);
+                                invocations++;
+                                return Task.CompletedTask;
+                            },
+                        }
+                    ),
+                ],
+                [],
+                [
+                    new KeyValuePair<string, JobFunctionDescriptor>(
+                        job.Function,
+                        new(job.Function, null, "", JobPriority.Normal, 0, version)
+                    ),
+                ]
+            );
+            JobsExecutionContext.CacheFunctionReferences(context, registry);
+            var handler = new JobsExecutionTaskHandler(
+                services,
+                time,
+                Substitute.For<IJobsInstrumentation>(),
+                manager,
+                registry,
+                new JobsExecutionCancellationRegistry(),
+                options,
+                NullLogger<JobsExecutionTaskHandler>.Instance,
+                retryOptions
+            );
+            await handler.ExecuteTaskAsync(context, isDue: false, cancellationToken: AbortToken);
+            context.LeaseLost.Should().BeFalse();
+        }
+
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            await executeOnVersion(incompatibleVersion);
+            var pending = (await store.GetTimeJobByIdAsync(job.Id, AbortToken))!;
+            pending.Status.Should().Be(JobStatus.Idle);
+            pending.OwnerId.Should().BeNull();
+            pending.LockedUntil.Should().BeNull();
+            pending.ContractVersion.Should().Be(storedVersion);
+            pending.Request.Should().Equal(job.Request!);
+            pending.RetryCount.Should().Be(0);
+            pending.ExecutedAt.Should().BeNull();
+            pending.ExceptionMessage.Should().BeNull();
+            invocations.Should().Be(0);
+            exhausted.Should().BeFalse();
+        }
+
+        await executeOnVersion(storedVersion);
+        var completed = (await store.GetTimeJobByIdAsync(job.Id, AbortToken))!;
+        completed.Status.Should().Be(JobStatus.Succeeded);
+        completed.ContractVersion.Should().Be(storedVersion);
+        completed.Request.Should().Equal(job.Request!);
+        completed.RetryCount.Should().Be(0);
+        invocations.Should().Be(1);
+        exhausted.Should().BeFalse();
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

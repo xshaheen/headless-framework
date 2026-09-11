@@ -478,7 +478,11 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
             var context = new JobExecutionState
             {
                 ParentId = occurrence.CronJobId,
-                FunctionName = occurrence.CronJob.Function,
+                FunctionName = occurrence.Function,
+                ContractVersion = occurrence.ContractVersion,
+                CorrelationId = occurrence.CorrelationId,
+                CausationId = occurrence.CausationId,
+                TenantId = occurrence.TenantId,
                 JobId = occurrence.Id,
                 Type = JobType.CronJobOccurrence,
                 Retries = occurrence.CronJob.Retries,
@@ -581,6 +585,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
     {
         byte[]? jsonRequestBytes;
         string functionName;
+        string contractVersion;
 
         if (jobType == JobType.TimeJob)
         {
@@ -595,6 +600,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
 
             jsonRequestBytes = timeJob.Request;
             functionName = timeJob.Function;
+            contractVersion = timeJob.ContractVersion;
         }
         else
         {
@@ -609,6 +615,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
 
             jsonRequestBytes = cronJob.Request;
             functionName = cronJob.Function;
+            contractVersion = cronJob.ContractVersion;
         }
 
         if (jsonRequestBytes == null)
@@ -616,6 +623,16 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
             return (string.Empty, 0);
         }
 
+        if (
+            _functionRegistry.Descriptors.TryGetValue(functionName, out var descriptor)
+            && !string.Equals(contractVersion, descriptor.ContractVersion, StringComparison.Ordinal)
+        )
+        {
+            return (
+                $"Unsupported stored Jobs contract '{functionName}' version '{contractVersion}'; this node registers '{descriptor.ContractVersion}'. Request was not deserialized.",
+                2
+            );
+        }
         var jsonRequest = JobsHelper.ReadJobRequestAsString(jsonRequestBytes, _serializationOptions);
 
         if (!_functionRegistry.RequestTypes.TryGetValue(functionName, out var functionTypeContext))

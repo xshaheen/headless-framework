@@ -6,8 +6,8 @@ using Headless.Jobs.Models;
 namespace Headless.Jobs;
 
 /// <summary>
-/// A mutable handle to a single node while a <see cref="JobChain"/> is being authored. Use <see cref="Then{TRequest}"/>
-/// / <see cref="Catch{TRequest}"/> to attach a single on-success / on-failure continuation; each returns the new child
+/// A mutable handle to a single node while a <see cref="JobChain"/> is being authored. Use <see cref="Then{TRequest}(TRequest, JobOptions?)"/>
+/// / <see cref="Catch{TRequest}(TRequest, JobOptions?)"/> to attach a single on-success / on-failure continuation; each returns the new child
 /// handle so the branch can be extended further. Once <see cref="JobChainBuilder.Build"/> has been called the owning
 /// chain is frozen and every authoring method on its handles throws.
 /// </summary>
@@ -21,8 +21,8 @@ public sealed class JobChainNodeBuilder
         JobFunctionDescriptor? descriptor,
         object? payload,
         Type? payloadType,
-        EnqueueOptions? options,
-        DateTime? executionTime
+        JobOptions? options,
+        DateTimeOffset? executionTime
     )
     {
         _owner = owner;
@@ -40,16 +40,24 @@ public sealed class JobChainNodeBuilder
     /// <typeparam name="TRequest">The request payload type used to resolve the generated descriptor.</typeparam>
     /// <param name="payload">The request payload to run when this node succeeds.</param>
     /// <param name="options">Optional per-step options.</param>
-    /// <param name="executionTime">Optional explicit UTC execution time for the child step.</param>
     /// <returns>The new child handle so the success branch can be extended.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="payload"/> is <see langword="null"/>.</exception>
     /// <exception cref="InvalidOperationException">
     /// A success edge already exists on this node, or the owning chain has already been built.
     /// </exception>
+    public JobChainNodeBuilder Then<TRequest>(TRequest payload, JobOptions? options = null)
+        where TRequest : notnull
+    {
+        ArgumentNullException.ThrowIfNull(payload);
+
+        return _AddSuccess(descriptor: null, payload, typeof(TRequest), options, executionTime: null);
+    }
+
+    /// <summary>Authors this step at an explicit execution instant.</summary>
     public JobChainNodeBuilder Then<TRequest>(
         TRequest payload,
-        EnqueueOptions? options = null,
-        DateTime? executionTime = null
+        DateTimeOffset executionTime,
+        JobOptions? options = null
     )
         where TRequest : notnull
     {
@@ -58,25 +66,59 @@ public sealed class JobChainNodeBuilder
         return _AddSuccess(descriptor: null, payload, typeof(TRequest), options, executionTime);
     }
 
+    /// <summary>Rejects implicit DateTime conversion; supply an explicit DateTimeOffset instant.</summary>
+    [Obsolete(
+        "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset.",
+        error: true
+    )]
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    public JobChainNodeBuilder Then<TRequest>(TRequest payload, DateTime executionTime, JobOptions? options = null)
+        where TRequest : notnull =>
+        throw new NotSupportedException(
+            "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset."
+        );
+
     /// <summary>Attaches the on-success continuation for this node using an explicit generated descriptor.</summary>
     /// <param name="descriptor">The generated descriptor of the requestless step to run when this node succeeds.</param>
     /// <param name="options">Optional per-step options.</param>
-    /// <param name="executionTime">Optional explicit UTC execution time for the child step.</param>
     /// <returns>The new child handle so the success branch can be extended.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="descriptor"/> is <see langword="null"/>.</exception>
     /// <exception cref="InvalidOperationException">
     /// A success edge already exists on this node, or the owning chain has already been built.
     /// </exception>
+    public JobChainNodeBuilder Then(JobFunctionDescriptor descriptor, JobOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(descriptor);
+
+        return _AddSuccess(descriptor, payload: null, payloadType: null, options, executionTime: null);
+    }
+
+    /// <summary>Authors this step at an explicit execution instant.</summary>
     public JobChainNodeBuilder Then(
         JobFunctionDescriptor descriptor,
-        EnqueueOptions? options = null,
-        DateTime? executionTime = null
+        DateTimeOffset executionTime,
+        JobOptions? options = null
     )
     {
         ArgumentNullException.ThrowIfNull(descriptor);
 
         return _AddSuccess(descriptor, payload: null, payloadType: null, options, executionTime);
     }
+
+    /// <summary>Rejects implicit DateTime conversion; supply an explicit DateTimeOffset instant.</summary>
+    [Obsolete(
+        "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset.",
+        error: true
+    )]
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    public JobChainNodeBuilder Then(
+        JobFunctionDescriptor descriptor,
+        DateTime executionTime,
+        JobOptions? options = null
+    ) =>
+        throw new NotSupportedException(
+            "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset."
+        );
 
     /// <summary>
     /// Attaches the on-failure continuation for this node using a request payload whose descriptor is resolved at
@@ -85,16 +127,24 @@ public sealed class JobChainNodeBuilder
     /// <typeparam name="TRequest">The request payload type used to resolve the generated descriptor.</typeparam>
     /// <param name="payload">The request payload to run when this node fails.</param>
     /// <param name="options">Optional per-step options.</param>
-    /// <param name="executionTime">Optional explicit UTC execution time for the child step.</param>
     /// <returns>The new child handle so the failure branch can be extended.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="payload"/> is <see langword="null"/>.</exception>
     /// <exception cref="InvalidOperationException">
     /// A failure edge already exists on this node, or the owning chain has already been built.
     /// </exception>
+    public JobChainNodeBuilder Catch<TRequest>(TRequest payload, JobOptions? options = null)
+        where TRequest : notnull
+    {
+        ArgumentNullException.ThrowIfNull(payload);
+
+        return _AddFailure(descriptor: null, payload, typeof(TRequest), options, executionTime: null);
+    }
+
+    /// <summary>Authors this step at an explicit execution instant.</summary>
     public JobChainNodeBuilder Catch<TRequest>(
         TRequest payload,
-        EnqueueOptions? options = null,
-        DateTime? executionTime = null
+        DateTimeOffset executionTime,
+        JobOptions? options = null
     )
         where TRequest : notnull
     {
@@ -103,19 +153,38 @@ public sealed class JobChainNodeBuilder
         return _AddFailure(descriptor: null, payload, typeof(TRequest), options, executionTime);
     }
 
+    /// <summary>Rejects implicit DateTime conversion; supply an explicit DateTimeOffset instant.</summary>
+    [Obsolete(
+        "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset.",
+        error: true
+    )]
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    public JobChainNodeBuilder Catch<TRequest>(TRequest payload, DateTime executionTime, JobOptions? options = null)
+        where TRequest : notnull =>
+        throw new NotSupportedException(
+            "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset."
+        );
+
     /// <summary>Attaches the on-failure continuation for this node using an explicit generated descriptor.</summary>
     /// <param name="descriptor">The generated descriptor of the requestless step to run when this node fails.</param>
     /// <param name="options">Optional per-step options.</param>
-    /// <param name="executionTime">Optional explicit UTC execution time for the child step.</param>
     /// <returns>The new child handle so the failure branch can be extended.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="descriptor"/> is <see langword="null"/>.</exception>
     /// <exception cref="InvalidOperationException">
     /// A failure edge already exists on this node, or the owning chain has already been built.
     /// </exception>
+    public JobChainNodeBuilder Catch(JobFunctionDescriptor descriptor, JobOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(descriptor);
+
+        return _AddFailure(descriptor, payload: null, payloadType: null, options, executionTime: null);
+    }
+
+    /// <summary>Authors this step at an explicit execution instant.</summary>
     public JobChainNodeBuilder Catch(
         JobFunctionDescriptor descriptor,
-        EnqueueOptions? options = null,
-        DateTime? executionTime = null
+        DateTimeOffset executionTime,
+        JobOptions? options = null
     )
     {
         ArgumentNullException.ThrowIfNull(descriptor);
@@ -123,15 +192,30 @@ public sealed class JobChainNodeBuilder
         return _AddFailure(descriptor, payload: null, payloadType: null, options, executionTime);
     }
 
+    /// <summary>Rejects implicit DateTime conversion; supply an explicit DateTimeOffset instant.</summary>
+    [Obsolete(
+        "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset.",
+        error: true
+    )]
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    public JobChainNodeBuilder Catch(
+        JobFunctionDescriptor descriptor,
+        DateTime executionTime,
+        JobOptions? options = null
+    ) =>
+        throw new NotSupportedException(
+            "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset."
+        );
+
     internal JobFunctionDescriptor? Descriptor { get; }
 
     internal object? Payload { get; }
 
     internal Type? PayloadType { get; }
 
-    internal EnqueueOptions? Options { get; }
+    internal JobOptions? Options { get; }
 
-    internal DateTime? ExecutionTime { get; }
+    internal DateTimeOffset? ExecutionTime { get; }
 
     internal JobChainNodeBuilder? OnSuccessNode { get; private set; }
 
@@ -141,8 +225,8 @@ public sealed class JobChainNodeBuilder
         JobFunctionDescriptor? descriptor,
         object? payload,
         Type? payloadType,
-        EnqueueOptions? options,
-        DateTime? executionTime
+        JobOptions? options,
+        DateTimeOffset? executionTime
     )
     {
         _owner.EnsureNotBuilt();
@@ -164,8 +248,8 @@ public sealed class JobChainNodeBuilder
         JobFunctionDescriptor? descriptor,
         object? payload,
         Type? payloadType,
-        EnqueueOptions? options,
-        DateTime? executionTime
+        JobOptions? options,
+        DateTimeOffset? executionTime
     )
     {
         _owner.EnsureNotBuilt();

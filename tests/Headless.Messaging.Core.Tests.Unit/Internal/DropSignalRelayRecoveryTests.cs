@@ -38,7 +38,7 @@ public sealed class DropSignalRelayRecoveryTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.UseInMemory();
-            setup.UseInMemoryStorage();
+            setup.UseProcessLocalInMemoryStorage();
         });
 
         await using var provider = services.BuildServiceProvider();

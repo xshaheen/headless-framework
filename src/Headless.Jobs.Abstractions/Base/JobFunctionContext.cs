@@ -55,10 +55,26 @@ public class JobFunctionContext
         RecoveredFromUtc = other.RecoveredFromUtc;
         Lateness = other.Lateness;
         FunctionName = other.FunctionName;
+        ContractVersion = other.ContractVersion;
+        CorrelationId = other.CorrelationId;
+        CausationId = other.CausationId;
+        TenantId = other.TenantId;
         CronOccurrenceOperations = other.CronOccurrenceOperations;
     }
 
     internal AsyncServiceScope ServiceScope { get; set; }
+
+    /// <summary>Payload schema version selected before deserialization.</summary>
+    public string ContractVersion { get; internal set; } = JobContract.InitialVersion;
+
+    /// <summary>Root business correlation, independent of trace and attempt identities.</summary>
+    public string? CorrelationId { get; internal set; }
+
+    /// <summary>Immediate business cause of this execution.</summary>
+    public string? CausationId { get; internal set; }
+
+    /// <summary>Persisted tenant restored around this execution; null denotes system scope.</summary>
+    public string? TenantId { get; internal set; }
 
     /// <summary>Unique identifier of the job row (time job or cron occurrence) being executed.</summary>
     public Guid Id { get; internal set; }

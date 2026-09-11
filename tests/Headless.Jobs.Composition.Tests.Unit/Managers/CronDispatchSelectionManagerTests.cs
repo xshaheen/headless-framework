@@ -197,23 +197,23 @@ public sealed class CronDispatchSelectionManagerTests : TestBase
     }
 
     /// <summary>
-    /// A definition carrying no position (seeded before the field existed, or created by a path that did not set it)
-    /// must be initialized from the store's instant, never from its occurrence history — otherwise an upgrade replays
+    /// A definition created without a position must be initialized from the store's instant,
+    /// never from its occurrence history — otherwise initialization replays
     /// every instant back to year one as a backlog.
     /// </summary>
     [Fact]
     public async Task should_initialize_a_positionless_definition_without_replaying_a_backlog()
     {
         var (manager, provider) = _Create();
-        var legacy = _Definition(nextDue: default);
-        legacy.ReconciledThroughUtc = default;
-        await provider.InsertCronJobsAsync([legacy], AbortToken);
+        var uninitialized = _Definition(nextDue: default);
+        uninitialized.ReconciledThroughUtc = default;
+        await provider.InsertCronJobsAsync([uninitialized], AbortToken);
 
         var (_, functions) = await manager.GetNextJobs(AbortToken);
 
         functions.Should().BeEmpty("initialization claims responsibility for nothing; the next wake dispatches");
 
-        var after = (await provider.GetCronJobByIdAsync(legacy.Id, AbortToken))!;
+        var after = (await provider.GetCronJobByIdAsync(uninitialized.Id, AbortToken))!;
         after
             .ReconciledThroughUtc.Should()
             .Be(_Now, "the watermark anchors at the store's instant, so nothing before now counts as missed");
@@ -221,7 +221,10 @@ public sealed class CronDispatchSelectionManagerTests : TestBase
 
         // The decisive anti-backlog assertion: no occurrence was materialized for any of the instants between year one
         // and now, which is what a history-derived initialization would have produced.
-        var occurrences = await provider.GetAllCronJobOccurrencesAsync(x => x.CronJobId == legacy.Id, AbortToken);
+        var occurrences = await provider.GetAllCronJobOccurrencesAsync(
+            x => x.CronJobId == uninitialized.Id,
+            AbortToken
+        );
         occurrences.Should().BeEmpty();
     }
 
@@ -265,7 +268,7 @@ public sealed class CronDispatchSelectionManagerTests : TestBase
         var (manager, provider) = _Create();
         var invalid = _Definition(nextDue: _Now.AddHours(-1));
         invalid.Expression = "not-a-cron-expression";
-        invalid.EvaluationFingerprint = "legacy";
+        invalid.EvaluationFingerprint = "superseded";
         var healthy = _Definition(nextDue: _Now);
         healthy.EvaluationFingerprint = new CronScheduleCache(TimeZoneInfo.Utc).ComputeEvaluationFingerprint(null);
         await provider.InsertCronJobsAsync([invalid, healthy], AbortToken);

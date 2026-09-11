@@ -20,7 +20,11 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.Bus.ForMessage<InvokerTestMessage>(message =>
-                message.MessageName("test.messageName").Consumer<InvokerTestConsumer>()
+                message
+                    .Contract("test.messageName")
+                    .Consumer<InvokerTestConsumer>(consumer =>
+                        consumer.StableContract("tests.subscribe-invoker.primary")
+                    )
             );
         });
 
@@ -49,7 +53,11 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.Bus.ForMessage<InvokerTestMessage>(message =>
-                message.MessageName("test.messageName").Consumer<InvokerTestConsumer>()
+                message
+                    .Contract("test.messageName")
+                    .Consumer<InvokerTestConsumer>(consumer =>
+                        consumer.StableContract("tests.subscribe-invoker.primary")
+                    )
             );
         });
 
@@ -79,7 +87,11 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.Bus.ForMessage<InvokerTestMessage>(message =>
-                message.MessageName("test.messageName").Consumer<InvokerTestConsumer>()
+                message
+                    .Contract("test.messageName")
+                    .Consumer<InvokerTestConsumer>(consumer =>
+                        consumer.StableContract("tests.subscribe-invoker.primary")
+                    )
             );
         });
 
@@ -89,7 +101,14 @@ public sealed class SubscribeInvokerTests : TestBase
         var message = new InvokerTestMessage("test-789");
         var messageId = Guid.NewGuid().ToString();
         var correlationId = Guid.NewGuid();
-        var mediumMessage = _CreateMediumMessage(message, "test.messageName", messageId, correlationId);
+        var mediumMessage = _CreateMediumMessage(
+            message,
+            "test.messageName",
+            messageId,
+            correlationId,
+            causationId: "parent-message",
+            contractVersion: "2"
+        );
         var descriptor = _CreateDescriptor<InvokerTestMessage>();
         var context = new ConsumerContext(descriptor, mediumMessage);
 
@@ -101,6 +120,8 @@ public sealed class SubscribeInvokerTests : TestBase
         consumed.Should().NotBeNull();
         consumed.MessageId.Should().Be(messageId);
         consumed.CorrelationId.Should().Be(correlationId.ToString());
+        consumed.CausationId.Should().Be("parent-message");
+        consumed.ContractVersion.Should().Be("2");
         consumed.MessageName.Should().Be("test.messageName");
         consumed.Headers.Should().NotBeNull();
     }
@@ -114,7 +135,11 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.Bus.ForMessage<InvokerTestMessage>(message =>
-                message.MessageName("test.messageName").Consumer<InvokerTestConsumer>()
+                message
+                    .Contract("test.messageName")
+                    .Consumer<InvokerTestConsumer>(consumer =>
+                        consumer.StableContract("tests.subscribe-invoker.primary")
+                    )
             );
         });
 
@@ -156,7 +181,11 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.Bus.ForMessage<InvokerTestMessage>(message =>
-                message.MessageName("test.messageName").Consumer<InvokerTestConsumer>()
+                message
+                    .Contract("test.messageName")
+                    .Consumer<InvokerTestConsumer>(consumer =>
+                        consumer.StableContract("tests.subscribe-invoker.primary")
+                    )
             );
         });
 
@@ -204,7 +233,11 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.Bus.ForMessage<InvokerTestMessage>(message =>
-                message.MessageName("test.messageName").Consumer<CancellableConsumer>()
+                message
+                    .Contract("test.messageName")
+                    .Consumer<CancellableConsumer>(consumer =>
+                        consumer.StableContract("tests.subscribe-invoker.cancellable")
+                    )
             );
         });
 
@@ -235,7 +268,11 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.Bus.ForMessage<InvokerTestMessage>(message =>
-                message.MessageName("test.messageName").Consumer<InvokerTestConsumer>()
+                message
+                    .Contract("test.messageName")
+                    .Consumer<InvokerTestConsumer>(consumer =>
+                        consumer.StableContract("tests.subscribe-invoker.primary")
+                    )
             );
         });
 
@@ -265,7 +302,11 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.Bus.ForMessage<InvokerTestMessage>(message =>
-                message.MessageName("test.messageName").Consumer<ResponseHeaderConsumer>()
+                message
+                    .Contract("test.messageName")
+                    .Consumer<ResponseHeaderConsumer>(consumer =>
+                        consumer.StableContract("tests.subscribe-invoker.response-header")
+                    )
             );
         });
 
@@ -298,7 +339,11 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.Bus.ForMessage<InvokerTestMessage>(message =>
-                message.MessageName("test.messageName").Consumer<ResponseBodyConsumer>()
+                message
+                    .Contract("test.messageName")
+                    .Consumer<ResponseBodyConsumer>(consumer =>
+                        consumer.StableContract("tests.subscribe-invoker.response-body")
+                    )
             );
         });
 
@@ -331,7 +376,11 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.Bus.ForMessage<InvokerTestMessage>(message =>
-                message.MessageName("test.messageName").Consumer<ResponseHeaderConsumer>()
+                message
+                    .Contract("test.messageName")
+                    .Consumer<ResponseHeaderConsumer>(consumer =>
+                        consumer.StableContract("tests.subscribe-invoker.response-header")
+                    )
             );
         });
 
@@ -364,7 +413,11 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.Bus.ForMessage<InvokerTestMessage>(message =>
-                message.MessageName("test.messageName").Consumer<ResponseBodyConsumer>()
+                message
+                    .Contract("test.messageName")
+                    .Consumer<ResponseBodyConsumer>(consumer =>
+                        consumer.StableContract("tests.subscribe-invoker.response-body")
+                    )
             );
         });
 
@@ -393,7 +446,11 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.Bus.ForMessage<InvokerTestMessage>(message =>
-                message.MessageName("test.messageName").Consumer<ResponseBodyAndHeaderConsumer>()
+                message
+                    .Contract("test.messageName")
+                    .Consumer<ResponseBodyAndHeaderConsumer>(consumer =>
+                        consumer.StableContract("tests.subscribe-invoker.response-body-header")
+                    )
             );
         });
 
@@ -427,7 +484,11 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.Bus.ForMessage<InvokerTestMessage>(message =>
-                message.MessageName("test.messageName").Consumer<RewriteCallbackConsumer>()
+                message
+                    .Contract("test.messageName")
+                    .Consumer<RewriteCallbackConsumer>(consumer =>
+                        consumer.StableContract("tests.subscribe-invoker.rewrite-callback")
+                    )
             );
         });
 
@@ -459,7 +520,11 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.Bus.ForMessage<InvokerTestMessage>(message =>
-                message.MessageName("test.messageName").Consumer<RemoveCallbackConsumer>()
+                message
+                    .Contract("test.messageName")
+                    .Consumer<RemoveCallbackConsumer>(consumer =>
+                        consumer.StableContract("tests.subscribe-invoker.remove-callback")
+                    )
             );
         });
 
@@ -491,7 +556,11 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.Bus.ForMessage<InvokerTestMessage>(message =>
-                message.MessageName("test.messageName").Consumer<NextCallbackConsumer>()
+                message
+                    .Contract("test.messageName")
+                    .Consumer<NextCallbackConsumer>(consumer =>
+                        consumer.StableContract("tests.subscribe-invoker.next-callback")
+                    )
             );
         });
 
@@ -522,7 +591,11 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.Bus.ForMessage<InvokerTestMessage>(message =>
-                message.MessageName("test.messageName").Consumer<ResponseBodyConsumer>()
+                message
+                    .Contract("test.messageName")
+                    .Consumer<ResponseBodyConsumer>(consumer =>
+                        consumer.StableContract("tests.subscribe-invoker.response-body")
+                    )
             );
         });
 
@@ -553,7 +626,11 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.Bus.ForMessage<InvokerTestMessage>(message =>
-                message.MessageName("test.messageName").Consumer<InvokerTestConsumer>()
+                message
+                    .Contract("test.messageName")
+                    .Consumer<InvokerTestConsumer>(consumer =>
+                        consumer.StableContract("tests.subscribe-invoker.primary")
+                    )
             );
         });
 
@@ -586,7 +663,11 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.Bus.ForMessage<InvokerTestMessage>(message =>
-                message.MessageName("test.messageName").Consumer<InvokerTestConsumer>()
+                message
+                    .Contract("test.messageName")
+                    .Consumer<InvokerTestConsumer>(consumer =>
+                        consumer.StableContract("tests.subscribe-invoker.primary")
+                    )
             );
         });
 
@@ -618,7 +699,11 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.Bus.ForMessage<InvokerTestMessage>(message =>
-                message.MessageName("test.messageName").Consumer<InvokerTestConsumer>()
+                message
+                    .Contract("test.messageName")
+                    .Consumer<InvokerTestConsumer>(consumer =>
+                        consumer.StableContract("tests.subscribe-invoker.primary")
+                    )
             );
         });
 
@@ -651,7 +736,11 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.Bus.ForMessage<InvokerTestMessage>(message =>
-                message.MessageName("test.messageName").Consumer<InvokerTestConsumer>()
+                message
+                    .Contract("test.messageName")
+                    .Consumer<InvokerTestConsumer>(consumer =>
+                        consumer.StableContract("tests.subscribe-invoker.primary")
+                    )
             );
         });
 
@@ -682,7 +771,9 @@ public sealed class SubscribeInvokerTests : TestBase
         Guid? correlationId = null,
         string? callbackName = null,
         DateTimeOffset? sentTime = null,
-        string? tenantId = null
+        string? tenantId = null,
+        string? causationId = null,
+        string? contractVersion = null
     )
     {
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -694,6 +785,16 @@ public sealed class SubscribeInvokerTests : TestBase
         if (correlationId.HasValue)
         {
             headers[Headers.CorrelationId] = correlationId.Value.ToString();
+        }
+
+        if (causationId is not null)
+        {
+            headers[Headers.CausationId] = causationId;
+        }
+
+        if (contractVersion is not null)
+        {
+            headers[Headers.ContractVersion] = contractVersion;
         }
 
         if (!string.IsNullOrWhiteSpace(callbackName))

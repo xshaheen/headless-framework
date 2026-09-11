@@ -297,6 +297,7 @@ public sealed class InternalJobsManagerTests : TestBase
             Id = Guid.NewGuid(),
             CronJobId = cron.Id,
             CronJob = cron,
+            Function = cron.Function,
             ExecutionTime = new DateTime(2026, 8, 8, 5, 0, 0, DateTimeKind.Utc),
             RetryCount = 1,
         };
@@ -305,6 +306,7 @@ public sealed class InternalJobsManagerTests : TestBase
             Id = Guid.NewGuid(),
             CronJobId = cron.Id,
             CronJob = cron,
+            Function = cron.Function,
             ExecutionTime = occurrence.ExecutionTime.AddMinutes(1),
         };
         provider

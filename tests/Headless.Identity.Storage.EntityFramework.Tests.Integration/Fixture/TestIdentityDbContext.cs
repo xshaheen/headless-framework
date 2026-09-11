@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Domain;
 using Headless.EntityFramework;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -34,9 +33,9 @@ public sealed class TestIdentityDbContext(
 
     public DbSet<HarnessBasicEntity> BasicEntities { get; set; } = null!;
 
-    public List<IIntegrationEvent> EmittedDistributedMessages => messageDispatcher.EmittedDistributedMessages;
+    public List<object> EmittedDistributedMessages => messageDispatcher.EmittedDistributedMessages;
 
-    public List<IDomainEvent> EmittedLocalMessages => messageDispatcher.EmittedLocalMessages;
+    public List<object> EmittedLocalMessages => messageDispatcher.EmittedLocalMessages;
 
     public override string DefaultSchema => "";
 

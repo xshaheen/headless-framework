@@ -17,6 +17,31 @@ namespace Headless.Jobs.Interfaces.Managers;
 public interface ITimeJobManager<TTimeJob>
     where TTimeJob : TimeJobEntity<TTimeJob>
 {
+    /// <summary>Applies scheduling policy, then atomically creates, observes, or replaces a standalone keyed job.</summary>
+    Task<JobScheduleResult> ScheduleKeyedAsync(
+        JobKey key,
+        TTimeJob entity,
+        long? expectedGeneration = null,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>Requests cancellation of exactly the observed current keyed generation.</summary>
+    Task<JobScheduleResult> CancelKeyedAsync(
+        JobKeyScope scope,
+        JobKey key,
+        long expectedGeneration,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>Requests cancellation with an explicit required-atomic assertion.</summary>
+    Task<JobScheduleResult> CancelKeyedAsync(
+        JobKeyScope scope,
+        JobKey key,
+        long expectedGeneration,
+        bool requireAtomicEnlistment,
+        CancellationToken cancellationToken = default
+    );
+
     /// <summary>Enqueues a time job and returns the persisted entity.</summary>
     /// <remarks>
     /// When a relational commit coordinator is active, the row is written inside the caller's ambient transaction and

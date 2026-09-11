@@ -16,14 +16,32 @@ internal interface ISubscribeInvoker
     /// <param name="context">consumer execute context</param>
     /// <param name="cancellationToken">The object of <see cref="CancellationToken" />.</param>
     Task<ConsumerExecutedResult> InvokeAsync(ConsumerContext context, CancellationToken cancellationToken = default);
+
+    Task<ConsumerExecutedResult> InvokeInScopeAsync(
+        ConsumerContext context,
+        IServiceProvider services,
+        CancellationToken cancellationToken = default
+    );
 }
 
 internal sealed class SubscribeInvoker(ISerializer serializer, IConsumeMiddlewarePipeline executionPipeline)
     : ISubscribeInvoker
 {
-    public async Task<ConsumerExecutedResult> InvokeAsync(
+    public Task<ConsumerExecutedResult> InvokeAsync(
         ConsumerContext context,
         CancellationToken cancellationToken = default
+    ) => _InvokeAsync(context, services: null, cancellationToken);
+
+    public Task<ConsumerExecutedResult> InvokeInScopeAsync(
+        ConsumerContext context,
+        IServiceProvider services,
+        CancellationToken cancellationToken = default
+    ) => _InvokeAsync(context, services, cancellationToken);
+
+    private async Task<ConsumerExecutedResult> _InvokeAsync(
+        ConsumerContext context,
+        IServiceProvider? services,
+        CancellationToken cancellationToken
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -74,8 +92,12 @@ internal sealed class SubscribeInvoker(ISerializer serializer, IConsumeMiddlewar
             throw new InvalidOperationException($"Failed to deserialize message of type {messageType.Name}");
         }
 
-        return await executionPipeline
-            .ExecuteAsync(context, messageInstance, messageType, cancellationToken)
-            .ConfigureAwait(false);
+        return services is null
+            ? await executionPipeline
+                .ExecuteAsync(context, messageInstance, messageType, cancellationToken)
+                .ConfigureAwait(false)
+            : await executionPipeline
+                .ExecuteInScopeAsync(context, messageInstance, messageType, services, cancellationToken)
+                .ConfigureAwait(false);
     }
 }

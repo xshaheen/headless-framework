@@ -36,9 +36,12 @@ public sealed class FakeBackplaneBus : IBus
         _subscribers.Add(cache);
     }
 
+    public Task PublishAsync<T>(T? contentObj, CancellationToken cancellationToken = default) =>
+        PublishAsync(contentObj, options: null, cancellationToken);
+
     public async Task PublishAsync<T>(
         T? contentObj,
-        PublishOptions? options = null,
+        PublishOptions? options,
         CancellationToken cancellationToken = default
     )
     {

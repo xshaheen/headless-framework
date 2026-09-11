@@ -47,8 +47,8 @@ internal sealed class MessageSender : IMessageSender
     private readonly ILogger _logger;
     private readonly MessagingOptions _options;
     private readonly ISerializer _serializer;
-    private readonly IBusTransport? _busTransport;
-    private readonly IQueueTransport? _queueTransport;
+    private readonly Lazy<IBusTransport?> _busTransport;
+    private readonly Lazy<IQueueTransport?> _queueTransport;
     private readonly TimeProvider _timeProvider;
     private readonly MessagingTelemetry _telemetry;
     private readonly RetryPolicyOptions _retryPolicy;
@@ -61,8 +61,8 @@ internal sealed class MessageSender : IMessageSender
         _logger = logger;
         _dataStorage = serviceProvider.GetRequiredService<IDataStorage>();
         _serializer = serviceProvider.GetRequiredService<ISerializer>();
-        _busTransport = serviceProvider.GetService<IBusTransport>();
-        _queueTransport = serviceProvider.GetService<IQueueTransport>();
+        _busTransport = new Lazy<IBusTransport?>(serviceProvider.GetService<IBusTransport>);
+        _queueTransport = new Lazy<IQueueTransport?>(serviceProvider.GetService<IQueueTransport>);
         _timeProvider = serviceProvider.GetRequiredService<TimeProvider>();
         _telemetry = serviceProvider.GetService<MessagingTelemetry>() ?? MessagingTelemetry.Default;
         var opts = serviceProvider.GetRequiredService<IOptions<MessagingOptions>>().Value;
@@ -103,6 +103,18 @@ internal sealed class MessageSender : IMessageSender
     )
     {
         Argument.IsNotNull(dispatchServices);
+
+        if (message.RoutingAffinityKey is { } key)
+        {
+            // Persisted envelopes may outlive their original topology configuration. Revalidate before reserving
+            // an attempt or resolving a native client so a deployment cannot silently degrade keyed backlog.
+            var capabilities =
+                _serviceProvider.GetService<IMessageCapabilityGate>()
+                ?? throw new MessagingConfigurationException(
+                    "Stored routing affinity requires a frozen capability mapping."
+                );
+            capabilities.EnsureRoutingAffinitySupported(message.Origin.Name, message.Lane, key, message.Origin.Headers);
+        }
 
         // Outbox sender doesn't propagate user cancellation; messages should be delivered.
         // We DO honor host shutdown (_shutdownToken from IHostApplicationLifetime.ApplicationStopping)
@@ -257,8 +269,8 @@ internal sealed class MessageSender : IMessageSender
 
         return message.Lane switch
         {
-            MessageLane.Bus when _busTransport is not null => (_busTransport, null),
-            MessageLane.Queue when _queueTransport is not null => (_queueTransport, null),
+            MessageLane.Bus when _busTransport.Value is { } busTransport => (busTransport, null),
+            MessageLane.Queue when _queueTransport.Value is { } queueTransport => (queueTransport, null),
             MessageLane.Bus => await _MissingTransportAsync(message, nameof(IBusTransport), executionState)
                 .ConfigureAwait(false),
             MessageLane.Queue => await _MissingTransportAsync(message, nameof(IQueueTransport), executionState)

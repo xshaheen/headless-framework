@@ -20,8 +20,10 @@ public sealed class IConsumeIntegrationTests
         {
             messaging.Bus.ForMessage<OrderPlaced>(message =>
                 message
-                    .MessageName("orders.placed")
-                    .Consumer<OrderPlacedConsumer>(consumer => consumer.Group("order-service"))
+                    .Contract("orders.placed")
+                    .Consumer<OrderPlacedConsumer>(consumer =>
+                        consumer.StableContract("tests.integration.orders-primary").Group("order-service")
+                    )
             );
             messaging.Options.DefaultGroupName = "default";
             messaging.Options.Version = "v1";
@@ -54,7 +56,11 @@ public sealed class IConsumeIntegrationTests
         services.AddHeadlessMessaging(messaging =>
         {
             messaging.Bus.ForMessage<OrderPlaced>(message =>
-                message.MessageName("orders.placed").Consumer<OrderPlacedConsumer>()
+                message
+                    .Contract("orders.placed")
+                    .Consumer<OrderPlacedConsumer>(consumer =>
+                        consumer.StableContract("tests.integration.orders-primary")
+                    )
             );
             messaging.Options.DefaultGroupName = "default";
             messaging.Options.Version = "v1";
@@ -96,9 +102,13 @@ public sealed class IConsumeIntegrationTests
         {
             messaging.Bus.ForMessage<OrderPlaced>(message =>
             {
-                message.MessageName("orders.placed");
-                message.Consumer<OrderPlacedConsumer>(consumer => consumer.Group("order-service"));
-                message.Consumer<OrderAnalyticsConsumer>(consumer => consumer.Group("analytics-service"));
+                message.Contract("orders.placed");
+                message.Consumer<OrderPlacedConsumer>(consumer =>
+                    consumer.StableContract("tests.integration.orders-primary").Group("order-service")
+                );
+                message.Consumer<OrderAnalyticsConsumer>(consumer =>
+                    consumer.StableContract("tests.integration.orders-analytics").Group("analytics-service")
+                );
             });
             messaging.Options.DefaultGroupName = "default";
             messaging.Options.Version = "v1";
@@ -130,8 +140,11 @@ public sealed class IConsumeIntegrationTests
         services.AddLogging();
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.Bus.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed"));
-            messaging.Bus.ForConsumersFromAssembly(typeof(IConsumeIntegrationTests).Assembly);
+            messaging.Bus.ForMessage<OrderPlaced>(message => message.Contract("orders.placed"));
+            messaging.Bus.ForConsumersFromAssembly(
+                typeof(IConsumeIntegrationTests).Assembly,
+                StableConsumerTestContracts.ConfigureKnownScannedConsumer
+            );
             messaging.Options.Version = "v1";
         });
 
@@ -159,7 +172,10 @@ public sealed class IConsumeIntegrationTests
 
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.Bus.ForConsumersFromAssembly(typeof(IConsumeIntegrationTests).Assembly);
+            messaging.Bus.ForConsumersFromAssembly(
+                typeof(IConsumeIntegrationTests).Assembly,
+                StableConsumerTestContracts.ConfigureKnownScannedConsumer
+            );
             messaging.Options.Version = "v1";
         });
 
@@ -191,7 +207,11 @@ public sealed class IConsumeIntegrationTests
 
         services.AddHeadlessMessaging(setup =>
             setup.Bus.ForMessage<OrderPlaced>(message =>
-                message.MessageName("orders.placed").Consumer<OrderPlacedConsumer>()
+                message
+                    .Contract("orders.placed")
+                    .Consumer<OrderPlacedConsumer>(consumer =>
+                        consumer.StableContract("tests.integration.orders-primary")
+                    )
             )
         );
 
@@ -215,10 +235,18 @@ public sealed class IConsumeIntegrationTests
         services.AddHeadlessMessaging(setup =>
         {
             setup.Bus.ForMessage<OrderPlaced>(message =>
-                message.MessageName("orders.placed").Consumer<OrderPlacedConsumer>()
+                message
+                    .Contract("orders.placed")
+                    .Consumer<OrderPlacedConsumer>(consumer =>
+                        consumer.StableContract("tests.integration.orders-primary")
+                    )
             );
             setup.Bus.ForMessage<OrderCancelled>(message =>
-                message.MessageName("orders.cancelled").Consumer<OrderCancelledConsumer>()
+                message
+                    .Contract("orders.cancelled")
+                    .Consumer<OrderCancelledConsumer>(consumer =>
+                        consumer.StableContract("tests.integration.orders-cancelled")
+                    )
             );
         });
 

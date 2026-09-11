@@ -22,6 +22,7 @@ export class GetFunctionDataRequest{
 
 export class GetFunctionDataResponse{
     functionName!:string;
+    contractVersion!:string;
     functionRequestNamespace!:string;
     functionRequestType!:string;
     priority!:number

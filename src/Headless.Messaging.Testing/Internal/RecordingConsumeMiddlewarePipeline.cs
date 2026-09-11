@@ -10,18 +10,43 @@ internal sealed class RecordingConsumeMiddlewarePipeline(
     MessageObservationStore store
 ) : IConsumeMiddlewarePipeline
 {
-    public async Task<ConsumerExecutedResult> ExecuteAsync(
+    public Task<ConsumerExecutedResult> ExecuteAsync(
         ConsumerContext context,
         object messageInstance,
         Type messageType,
         CancellationToken cancellationToken = default
+    ) =>
+        _ExecuteAndRecordAsync(
+            context,
+            messageInstance,
+            messageType,
+            () => inner.ExecuteAsync(context, messageInstance, messageType, cancellationToken)
+        );
+
+    public Task<ConsumerExecutedResult> ExecuteInScopeAsync(
+        ConsumerContext context,
+        object messageInstance,
+        Type messageType,
+        IServiceProvider provider,
+        CancellationToken cancellationToken = default
+    ) =>
+        _ExecuteAndRecordAsync(
+            context,
+            messageInstance,
+            messageType,
+            () => inner.ExecuteInScopeAsync(context, messageInstance, messageType, provider, cancellationToken)
+        );
+
+    private async Task<ConsumerExecutedResult> _ExecuteAndRecordAsync(
+        ConsumerContext context,
+        object messageInstance,
+        Type messageType,
+        Func<Task<ConsumerExecutedResult>> execute
     )
     {
         try
         {
-            var result = await inner
-                .ExecuteAsync(context, messageInstance, messageType, cancellationToken)
-                .ConfigureAwait(false);
+            var result = await execute().ConfigureAwait(false);
             store.Record(
                 _CreateRecordedMessage(context, messageInstance, messageType),
                 MessageObservationType.Consumed

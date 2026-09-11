@@ -27,6 +27,44 @@ public sealed class AmazonSnsBusTransportTests : TestBase
         );
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("order-42")]
+    public async Task should_map_typed_affinity_to_native_sns_fifo_group(string? raw)
+    {
+        await using var transport = new AmazonSnsBusTransport(
+            Substitute.For<ILogger<AmazonSnsBusTransport>>(),
+            _CreateOptions()
+        );
+        var client = Substitute.For<IAmazonSimpleNotificationService>();
+        _SetSnsClient(
+            transport,
+            client,
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["bus-orders.fifo"] = "arn:aws:sns:us-east-1:123456789:bus-orders.fifo",
+            }
+        );
+        client.PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>()).Returns(new PublishResponse());
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [Headers.MessageId] = "message-1",
+            [Headers.MessageName] = "orders.fifo",
+            [Headers.RoutingAffinityKey] = "order-42",
+        };
+        if (raw is not null)
+        {
+            headers[AwsMessagingHeaders.MessageGroupId] = raw;
+        }
+
+        var result = await transport.SendAsync(new TransportMessage(headers, "payload"u8.ToArray()), AbortToken);
+
+        result.Succeeded.Should().BeTrue();
+        await client
+            .Received(1)
+            .PublishAsync(Arg.Is<PublishRequest>(request => request.MessageGroupId == "order-42"), AbortToken);
+    }
+
     [Fact]
     public async Task should_return_correct_broker_address()
     {

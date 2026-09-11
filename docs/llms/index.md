@@ -185,7 +185,7 @@ public sealed class DocumentService(
         // Hand processing (virus scan, thumbnailing, ...) to a background job.
         await jobs.EnqueueAsync(
             new ProcessDocumentRequest(id),
-            new Headless.Jobs.Models.EnqueueOptions
+            new Headless.Jobs.Models.JobOptions
             {
                 Description = $"process-{id}",
                 Retries = 3,
@@ -291,7 +291,7 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Security` — String encryption and hashing services.
 - `Headless.Checks` — Guard clauses (`Argument.*`, `Ensure.*`).
 - `Headless.Domain` — DDD entities, aggregate roots, value objects, auditing.
-- `Headless.Domain.LocalEventBus` — DI-based `ILocalEventBus` for in-process domain events.
+- `Headless.Domain.LocalEventBus` — DI-based `IDomainEventDispatcher` for in-process domain events.
 
 ### Multi-Tenancy
 - `Headless.MultiTenancy.Abstractions` — Tenant-context contracts (`ICurrentTenant`, `ICurrentTenantAccessor`, write-guard types and exceptions) and the opt-in tenant catalog's store SPI and models (`TenantInfo`, `ITenantStore`, `ITenantDirectory`, `ICurrentTenantInfo`).

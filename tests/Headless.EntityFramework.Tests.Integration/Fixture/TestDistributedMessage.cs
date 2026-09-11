@@ -1,8 +1,6 @@
-using Headless.Domain;
-
 namespace Tests.Fixture;
 
-public sealed record TestDistributedMessage(string Text) : IIntegrationEvent
+public sealed record TestDistributedMessage(string Text)
 {
     public string UniqueId { get; } = Guid.NewGuid().ToString();
 

@@ -68,7 +68,13 @@ internal sealed class RetryDispatchAttempt
         return new RetryDispatchAttempt(
             releaser,
             direction,
-            new MessageLeaseIdentity(message.StorageId, message.Owner, lockedUntil, message.Lane),
+            new MessageLeaseIdentity(
+                message.StorageId,
+                message.Owner,
+                lockedUntil,
+                message.Lane,
+                message.InboxAttemptFence
+            ),
             onAbandonedBeforeExecution
         );
     }
@@ -90,7 +96,8 @@ internal sealed class RetryDispatchAttempt
                 message.StorageId,
                 message.Owner,
                 message.LockedUntil!.Value,
-                message.Lane
+                message.Lane,
+                message.InboxAttemptFence
             ))
             .ToArray();
         if (identities.Length == 0)

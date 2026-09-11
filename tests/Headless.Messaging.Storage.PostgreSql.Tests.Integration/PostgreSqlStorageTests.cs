@@ -4,6 +4,7 @@ using Dapper;
 using Headless.Abstractions;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
+using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
@@ -24,6 +25,63 @@ namespace Tests;
 [Collection<PostgreSqlTestFixture>]
 public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : DataStorageTestsBase
 {
+    [Theory]
+    [InlineData(MessageLane.Bus, 0L)]
+    [InlineData(MessageLane.Queue, 7L)]
+    public override Task should_isolate_replay_lifecycles_after_root_purge(MessageLane lane, long rootGeneration) =>
+        base.should_isolate_replay_lifecycles_after_root_purge(lane, rootGeneration);
+
+    [Theory]
+    [InlineData(MessageLane.Bus)]
+    [InlineData(MessageLane.Queue)]
+    public override Task should_expire_terminal_poison_inbox_and_allow_readmission(MessageLane lane) =>
+        base.should_expire_terminal_poison_inbox_and_allow_readmission(lane);
+
+    protected override async Task PreparePoisonInboxRecoveryAsync(Guid storageId, CancellationToken cancellationToken)
+    {
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                """
+                UPDATE messaging.received SET "Content"='not-json',"NextRetryAt"=statement_timestamp()-INTERVAL '1 minute',"LockedUntil"=statement_timestamp()-INTERVAL '1 minute' WHERE "Id"=@Id;
+                """,
+                new { Id = storageId },
+                cancellationToken: cancellationToken
+            )
+        );
+    }
+
+    protected override async Task<PersistedInboxPoisonState> ReadInboxPoisonStateAsync(
+        Guid storageId,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        return await connection.QuerySingleAsync<PersistedInboxPoisonState>(
+            new CommandDefinition(
+                """
+                SELECT statement_timestamp() AS "DatabaseNow","StatusName","TerminalAt","EffectiveExpiresAt","AttemptId","NextRetryAt","LockedUntil","Owner","Content" FROM messaging.received WHERE "Id"=@Id;
+                """,
+                new { Id = storageId },
+                cancellationToken: cancellationToken
+            )
+        );
+    }
+
+    protected override async Task ExpirePoisonInboxAsync(Guid storageId, CancellationToken cancellationToken)
+    {
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                """
+                UPDATE messaging.received SET "EffectiveExpiresAt"=statement_timestamp()-INTERVAL '1 minute' WHERE "Id"=@Id;
+                """,
+                new { Id = storageId },
+                cancellationToken: cancellationToken
+            )
+        );
+    }
+
     private IStorageInitializer? _initializer;
     private IDataStorage? _storage;
     private ISerializer? _serializer;
@@ -307,6 +365,150 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     public override Task should_get_table_names()
     {
         return base.should_get_table_names();
+    }
+
+    [Fact]
+    public override Task should_converge_inbox_admission_and_require_exact_fence()
+    {
+        return base.should_converge_inbox_admission_and_require_exact_fence();
+    }
+
+    [Fact]
+    public override Task should_converge_n_way_inbox_admission_on_one_generation()
+    {
+        return base.should_converge_n_way_inbox_admission_on_one_generation();
+    }
+
+    [Fact]
+    public override Task should_isolate_every_persisted_inbox_key_component()
+    {
+        return base.should_isolate_every_persisted_inbox_key_component();
+    }
+
+    [Fact]
+    public override Task should_enforce_inbox_key_length_boundaries_without_truncation()
+    {
+        return base.should_enforce_inbox_key_length_boundaries_without_truncation();
+    }
+
+    [Fact]
+    public override Task should_suppress_terminal_inbox_redelivery_independent_of_topology_group()
+    {
+        return base.should_suppress_terminal_inbox_redelivery_independent_of_topology_group();
+    }
+
+    [Fact]
+    public override Task should_apply_audited_inbox_operations_once_and_reject_operation_identity_reuse() =>
+        base.should_apply_audited_inbox_operations_once_and_reject_operation_identity_reuse();
+
+    [Fact]
+    public async Task should_publish_final_inbox_schema_marker_and_key_index()
+    {
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        var (schemaVersion, indexCount, constraintCount, receiptColumnCount) = await connection.QuerySingleAsync<(
+            int SchemaVersion,
+            long IndexCount,
+            long ConstraintCount,
+            long ReceiptColumnCount
+        )>(
+            """
+            SELECT state."SchemaVersion", (
+                SELECT COUNT(*) FROM pg_indexes
+                WHERE schemaname='messaging' AND indexname IN ('uq_received_inbox_root_key','uq_received_inbox_lifecycle_generation')
+            ) AS "IndexCount", (
+                SELECT COUNT(*) FROM pg_constraint WHERE conname IN ('ck_received_inbox_retention_v3','ck_received_inbox_lifecycle_v4')
+                  AND conrelid='messaging.received'::regclass
+            ) AS "ConstraintCount", (
+                SELECT COUNT(*) FROM information_schema.columns
+                WHERE table_schema='messaging' AND table_name='inbox_operation_receipts'
+                  AND column_name IN ('ExpectedStatus','Outcome','ChildIncarnationId')
+            ) AS "ReceiptColumnCount"
+            FROM messaging.schema_state AS state
+            WHERE state."Component"='inbox';
+            """
+        );
+
+        schemaVersion.Should().Be(4);
+        indexCount.Should().Be(2);
+        constraintCount.Should().Be(2);
+        receiptColumnCount.Should().Be(3);
+    }
+
+    [Fact]
+    public async Task should_preserve_cleanup_receipt_and_audit_after_inbox_row_deletion()
+    {
+        var storage = _storage!;
+        var admitted = await storage.AdmitReceivedMessageAsync(
+            "orders.created",
+            "orders-group",
+            "orders.cleanup",
+            "v1",
+            new MediumMessage
+            {
+                StorageId = Guid.Empty,
+                Origin = CreateMessage($"cleanup-{Guid.NewGuid():N}", "orders.created"),
+                Content = string.Empty,
+                Lane = MessageLane.Bus,
+            },
+            cancellationToken: AbortToken
+        );
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.ExecuteAsync(
+            """
+            UPDATE messaging.received SET "StatusName"='Failed',"NextRetryAt"=NULL,"TerminalAt"=statement_timestamp()-INTERVAL '2 days',"EffectiveExpiresAt"=statement_timestamp()-INTERVAL '1 day'
+            WHERE "Id"=@Id;
+            """,
+            new { Id = admitted.Message.StorageId }
+        );
+
+        (
+            await storage.DeleteExpiresAsync(
+                _initializer!.GetReceivedTableName(),
+                DateTimeOffset.UtcNow,
+                cancellationToken: AbortToken
+            )
+        )
+            .Should()
+            .Be(1);
+        var persisted = await connection.QuerySingleAsync<(long Rows, long Receipts, long Audits)>(
+            """
+            SELECT
+              (SELECT COUNT(*) FROM messaging.received WHERE "Id"=@Id) AS "Rows",
+              (SELECT COUNT(*) FROM messaging.inbox_operation_receipts WHERE "StorageId"=@Id AND "OperationType"='Cleanup') AS "Receipts",
+              (SELECT COUNT(*) FROM messaging.inbox_audit a JOIN messaging.inbox_operation_receipts r ON r."OperationId"=a."OperationId" WHERE r."StorageId"=@Id AND a."OperationType"='Cleanup') AS "Audits";
+            """,
+            new { Id = admitted.Message.StorageId }
+        );
+        persisted.Should().Be((0, 1, 1));
+    }
+
+    [Fact]
+    public async Task should_fail_closed_when_inbox_schema_is_newer_than_supported()
+    {
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.ExecuteAsync(
+            "UPDATE messaging.schema_state SET \"SchemaVersion\"=5 WHERE \"Component\"='inbox';"
+        );
+
+        try
+        {
+            var act = async () => await GetInitializer().InitializeAsync(AbortToken);
+
+            await act.Should().ThrowAsync<PostgresException>().WithMessage("*newer than supported version 4*");
+            (
+                await connection.ExecuteScalarAsync<int>(
+                    "SELECT \"SchemaVersion\" FROM messaging.schema_state WHERE \"Component\"='inbox';"
+                )
+            )
+                .Should()
+                .Be(5, "a rejected older binary must not rewrite the newer readiness marker");
+        }
+        finally
+        {
+            await connection.ExecuteAsync(
+                "UPDATE messaging.schema_state SET \"SchemaVersion\"=4 WHERE \"Component\"='inbox';"
+            );
+        }
     }
 
     [Fact]
@@ -1013,6 +1215,68 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
         result.Should().Be("messaging");
     }
 
+    [Fact]
+    public async Task transactional_inbox_completion_should_disappear_when_provider_transaction_rolls_back()
+    {
+        var storage = GetStorage();
+        var origin = CreateMessage($"transactional-rollback-{Guid.NewGuid():N}", "orders.created");
+        var admission = await storage.AdmitReceivedMessageAsync(
+            "orders.created",
+            "orders-topology-a",
+            "orders.consumer",
+            "v1",
+            new MediumMessage
+            {
+                StorageId = Guid.NewGuid(),
+                Origin = origin,
+                Content = string.Empty,
+                Lane = MessageLane.Bus,
+            },
+            generation: 0,
+            cancellationToken: AbortToken
+        );
+        var message = admission.Message;
+        var originalInlineAttempts = message.InlineAttempts++;
+        NodeMembership.SetIdentity("postgresql-transactional-inbox");
+        (
+            await storage.LeaseReceiveAndReserveAttemptAsync(
+                message,
+                TimeSpan.FromMinutes(1),
+                originalInlineAttempts,
+                AbortToken
+            )
+        )
+            .Should()
+            .BeTrue();
+
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        await using var transaction = await connection.BeginTransactionAsync(AbortToken);
+        (await ((ITransactionalInboxStorage)storage).CompleteReceivedInboxAsync(message, transaction, AbortToken))
+            .Should()
+            .BeTrue();
+        var succeededInside = await connection.ExecuteScalarAsync<bool>(
+            new CommandDefinition(
+                """SELECT "StatusName"='Succeeded' FROM messaging.received WHERE "Id"=@Id""",
+                new { Id = message.StorageId },
+                transaction,
+                cancellationToken: AbortToken
+            )
+        );
+        succeededInside.Should().BeTrue();
+
+        await transaction.RollbackAsync(AbortToken);
+
+        var succeededOutside = await connection.ExecuteScalarAsync<bool>(
+            new CommandDefinition(
+                """SELECT "StatusName"='Succeeded' FROM messaging.received WHERE "Id"=@Id""",
+                new { Id = message.StorageId },
+                cancellationToken: AbortToken
+            )
+        );
+        succeededOutside.Should().BeFalse();
+    }
+
     [Theory]
     [InlineData("messaging.published")]
     [InlineData("messaging.received")]
@@ -1489,14 +1753,7 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
 
-        await connection.ExecuteAsync(
-            $"""
-            DROP INDEX IF EXISTS messaging."{indexName}";
-            CREATE INDEX "{indexName}" ON messaging."{(
-                indexName.StartsWith("idx_received", StringComparison.Ordinal) ? "received" : "published"
-            )}" ("Version","NextRetryAt") INCLUDE ("Retries","LockedUntil") WHERE "NextRetryAt" IS NOT NULL;
-            """
-        );
+        await connection.ExecuteAsync($"DROP INDEX IF EXISTS messaging.\"{indexName}\";");
         await _CreateInitializer(fixture.ConnectionString).InitializeAsync(AbortToken);
 
         var columns = (
@@ -1532,6 +1789,52 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
             new { IndexName = indexName }
         );
         predicate.Should().NotBeNull().And.Contain("NextRetryAt").And.Contain("IS NOT NULL");
+    }
+
+    [Fact]
+    public async Task should_recover_failed_concurrent_retry_index_build()
+    {
+        const string indexName = "idx_received_Version_NextRetryAt";
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        await connection.ExecuteAsync(
+            """
+            INSERT INTO messaging.received ("Id","Version","Name","IntentType","Retries","Added","StatusName","MessageId")
+            SELECT gen_random_uuid(), 'v1', 'retry-index-recovery', 0, 0, NOW(), 'Failed', gen_random_uuid()::text
+            FROM generate_series(1, 2);
+            DROP INDEX IF EXISTS messaging."idx_received_Version_NextRetryAt";
+            """
+        );
+
+        // A failed concurrent build leaves a real invalid catalog entry that IF NOT EXISTS alone cannot repair.
+        var createInvalidIndex = async () =>
+            await connection.ExecuteAsync(
+                """
+                CREATE UNIQUE INDEX CONCURRENTLY "idx_received_Version_NextRetryAt" ON messaging.received ((true));
+                """
+            );
+        (await createInvalidIndex.Should().ThrowAsync<PostgresException>())
+            .Which.SqlState.Should()
+            .Be(PostgresErrorCodes.UniqueViolation);
+        const string validitySql = """
+            SELECT i.indisvalid
+            FROM pg_index i
+            JOIN pg_class c ON c.oid = i.indexrelid
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'messaging' AND c.relname = @IndexName;
+            """;
+        (await connection.QuerySingleAsync<bool>(validitySql, new { IndexName = indexName })).Should().BeFalse();
+
+        await _CreateInitializer(fixture.ConnectionString).InitializeAsync(AbortToken);
+
+        (await connection.QuerySingleAsync<bool>(validitySql, new { IndexName = indexName })).Should().BeTrue();
+        (
+            await connection.QuerySingleAsync<int>(
+                "SELECT COUNT(*) FROM messaging.received WHERE \"Name\" = 'retry-index-recovery';"
+            )
+        )
+            .Should()
+            .Be(2);
     }
 
     [Theory]
@@ -1664,11 +1967,37 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
             );
     }
 
-    private PostgreSqlStorageInitializer _CreateInitializer(string connectionString)
+    [Fact]
+    public async Task should_create_inbox_constraints_for_each_application_schema()
+    {
+        await _CreateInitializer(fixture.ConnectionString).InitializeAsync(AbortToken);
+        var schema = $"inbox_{Guid.NewGuid():N}";
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        try
+        {
+            await _CreateInitializer(fixture.ConnectionString, schema).InitializeAsync(AbortToken);
+            var constraints = await connection.QueryAsync<string>(
+                """
+                SELECT conname FROM pg_constraint
+                WHERE conrelid = format('%I.received', @Schema)::regclass
+                  AND conname IN ('ck_received_inbox_identity', 'ck_received_inbox_retention_v3');
+                """,
+                new { Schema = schema }
+            );
+            constraints.Should().BeEquivalentTo("ck_received_inbox_identity", "ck_received_inbox_retention_v3");
+        }
+        finally
+        {
+            await connection.ExecuteAsync($"DROP SCHEMA IF EXISTS \"{schema}\" CASCADE;");
+        }
+    }
+
+    private PostgreSqlStorageInitializer _CreateInitializer(string connectionString, string schema = "messaging")
     {
         return new PostgreSqlStorageInitializer(
             NullLogger<PostgreSqlStorageInitializer>.Instance,
-            Options.Create(new PostgreSqlOptions { ConnectionString = connectionString }),
+            Options.Create(new PostgreSqlOptions { ConnectionString = connectionString, Schema = schema }),
             Options.Create(new MessagingOptions())
         );
     }

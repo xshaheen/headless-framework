@@ -255,7 +255,7 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
             .AddHeadlessMessaging(options =>
             {
                 options.UseInMemory();
-                options.UseInMemoryStorage();
+                options.UseProcessLocalInMemoryStorage();
                 options.UseConventions(c =>
                 {
                     c.UseApplicationId("runtime-tests");

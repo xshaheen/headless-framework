@@ -46,13 +46,17 @@ internal sealed class MessagePublishRequestFactory(
     IConsumerRegistry consumerRegistry,
     ICurrentTenant currentTenant,
     IMessageMetadataRegistry? metadataRegistry = null,
-    IConsumeContextAccessor? consumeContextAccessor = null
+    IConsumeContextAccessor? consumeContextAccessor = null,
+    IMessageCapabilityGate? capabilityGate = null
 ) : IMessagePublishRequestFactory
 {
     private static readonly HashSet<string> _ReservedHeaders = new(StringComparer.Ordinal)
     {
         Headers.MessageId,
+        Headers.ContractVersion,
+        Headers.RoutingAffinityKey,
         Headers.CorrelationId,
+        Headers.CausationId,
         Headers.CorrelationSequence,
         Headers.CallbackName,
         Headers.MessageName,
@@ -133,10 +137,29 @@ internal sealed class MessagePublishRequestFactory(
             messageName,
             options,
             delayTime,
+            options?.ContractVersion ?? metadata?.ContractVersion ?? MessageOptions.InitialContractVersion,
             _ResolveCorrelationFromSelector(metadata, contentObj, declaredMessageType),
-            consumeContextAccessor?.Current?.CorrelationId
+            options?.SuppressAmbientBusinessContext == true ? null : consumeContextAccessor?.Current?.CorrelationId,
+            options?.SuppressAmbientBusinessContext == true ? null : consumeContextAccessor?.Current?.MessageId
         );
+        if (options?.RoutingAffinityKey is { } affinityKey)
+        {
+            if (metadata is null || capabilityGate is null)
+            {
+                throw new MessagingConfigurationException(
+                    $"Routing affinity requires a registered, verified destination: '{messageName}' ({lane})."
+                );
+            }
+
+            capabilityGate.EnsureRoutingAffinitySupported(messageName, lane, affinityKey, headers);
+            headers[Headers.RoutingAffinityKey] = affinityKey;
+        }
+
         _ApplyProviderHeaderContributions(headers, metadata, contentObj, declaredMessageType);
+        if (options?.RoutingAffinityKey is { } contributedAffinityKey)
+        {
+            capabilityGate!.EnsureRoutingAffinitySupported(messageName, lane, contributedAffinityKey, headers);
+        }
 
         headers[Headers.SentTime] = publishAt.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
         headers[Headers.Intent] = MessageLaneCompatibility.ToWireValue(lane);
@@ -164,8 +187,10 @@ internal sealed class MessagePublishRequestFactory(
         string messageName,
         MessageOptions? options,
         TimeSpan? delayTime,
+        string contractVersion,
         string? selectorCorrelationId,
-        string? ambientCorrelationId
+        string? ambientCorrelationId,
+        string? ambientMessageId
     )
     {
         var headers =
@@ -181,6 +206,7 @@ internal sealed class MessagePublishRequestFactory(
             : _ValidateMessageId(options.MessageId);
 
         headers[Headers.MessageId] = messageId;
+        headers[Headers.ContractVersion] = _ValidateContractVersion(contractVersion);
         var correlationId = _ResolveCorrelationId(
             options?.CorrelationId,
             selectorCorrelationId,
@@ -189,6 +215,11 @@ internal sealed class MessagePublishRequestFactory(
         );
 
         headers[Headers.CorrelationId] = correlationId;
+        var causationId = !string.IsNullOrWhiteSpace(options?.CausationId) ? options.CausationId : ambientMessageId;
+        if (!string.IsNullOrWhiteSpace(causationId))
+        {
+            headers[Headers.CausationId] = causationId;
+        }
         headers[Headers.CorrelationSequence] = (options?.CorrelationSequence ?? 0).ToString(
             CultureInfo.InvariantCulture
         );
@@ -206,6 +237,13 @@ internal sealed class MessagePublishRequestFactory(
         }
 
         return headers;
+    }
+
+    private static string _ValidateContractVersion(string contractVersion)
+    {
+        MessagingOptions.ValidateContractVersion(contractVersion);
+        _ValidateHeaderValue(Headers.ContractVersion, contractVersion);
+        return contractVersion;
     }
 
     private static string _ResolveCorrelationId(
@@ -432,14 +470,17 @@ internal sealed class MessagePublishRequestFactory(
         // tenant when strict tenancy is required.
         if (typed is null && _options.TenantContextRequired)
         {
-            typed = currentTenant.Id;
+            typed = options?.SuppressAmbientBusinessContext == true ? null : currentTenant.Id;
             if (string.IsNullOrWhiteSpace(typed))
             {
                 var ex = new MissingTenantContextException(
-                    "Publish requires an ambient tenant context but none was set. "
-                        + "Set TenantId on your publish options explicitly, or wrap the publish in "
-                        + "ICurrentTenant.Change(tenantId) to scope the AsyncLocal accessor "
-                        + "(common pattern for background workers and IHostedService callers)."
+                    options?.SuppressAmbientBusinessContext == true
+                        ? "Publish requires an explicit TenantId when SuppressAmbientBusinessContext is enabled. "
+                            + "Set TenantId on your publish options; a captured system scope cannot satisfy required tenancy."
+                        : "Publish requires an ambient tenant context but none was set. "
+                            + "Set TenantId on your publish options explicitly, or wrap the publish in "
+                            + "ICurrentTenant.Change(tenantId) to scope the AsyncLocal accessor "
+                            + "(common pattern for background workers and IHostedService callers)."
                 );
                 throw ex;
             }

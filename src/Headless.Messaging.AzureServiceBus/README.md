@@ -27,7 +27,12 @@ dotnet add package Headless.Messaging.AzureServiceBus
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
-    options.Bus.ForConsumersFromAssemblyContaining<Program>();
+    options.Bus.ForMessage<OrderPlaced>(message =>
+        message.Consumer<OrderPlacedConsumer>(consumer =>
+            consumer.ConsumerIdentity("orders.order-placed")
+        )
+    );
+    options.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
     options.UseSqlServer("connection_string");
 
     options.UseAzureServiceBus(asb =>
@@ -40,6 +45,8 @@ builder.Services.AddHeadlessMessaging(options =>
 
 ## Configuration
 
+`RoutingAffinityKey` maps to native `SessionId` on registered session-enabled routes, with a 128 UTF-16-code-unit maximum. Queue routes require `EnableSessions`; Bus routes may use global sessions or a matching custom producer with sessions. Raw `SessionId` and `PartitionKey` must both agree with a supplied typed key. A non-session partition key alone is insufficient configuration evidence. Local startup validation does not query the broker: the actual queue/subscription must also require sessions. Affinity does not promise application-handler exclusivity or whole-pipeline FIFO.
+
 ```csharp
 options.UseAzureServiceBus(asb =>
 {
@@ -51,7 +58,7 @@ options.UseAzureServiceBus(asb =>
 
 options.Bus.ForMessage<OrderEvent>(message =>
     message
-        .MessageName("orders.events")
+        .Contract("orders.events")
         .UseAzureServiceBus(asb => asb.PartitionKey(order => order.CustomerId.ToString()))
 );
 ```

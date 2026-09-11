@@ -91,7 +91,11 @@ internal static class ServiceBuilder
     {
         builder.ConfigureServices = services =>
         {
-            services.AddDbContext<TContext>(optionsAction);
+            services.AddDbContext<TContext>(options =>
+            {
+                optionsAction(options);
+                options.ReplaceService<IModelCustomizer, JobsModelCustomizer<TTimeJob, TCronJob>>();
+            });
 
             // Builds the options template the way the pooled factory does (apply the consumer's options action, then
             // bind the app service provider). Shared by the pooled factory and the coordinated-write path, which
@@ -100,6 +104,7 @@ internal static class ServiceBuilder
             {
                 var optionsBuilder = new DbContextOptionsBuilder<TContext>();
                 optionsAction.Invoke(optionsBuilder);
+                optionsBuilder.ReplaceService<IModelCustomizer, JobsModelCustomizer<TTimeJob, TCronJob>>();
                 optionsBuilder.UseApplicationServiceProvider(sp);
                 return optionsBuilder.Options;
             }

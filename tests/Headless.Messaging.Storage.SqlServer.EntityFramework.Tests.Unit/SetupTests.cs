@@ -3,6 +3,7 @@
 using System.Reflection;
 using Headless.CommitCoordination;
 using Headless.Messaging;
+using Headless.Messaging.Configuration;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -45,6 +46,17 @@ public sealed class SetupTests : TestBase
             .GetServices<IDbContextOptionsConfiguration<TestMessagingDbContext>>()
             .Should()
             .NotBeEmpty("the EF-context path auto-registers the commit-interceptor options configuration");
+        services
+            .Should()
+            .ContainSingle(descriptor =>
+                descriptor.ServiceType.Name == "IInboxTransactionRunner"
+                && descriptor.Lifetime == ServiceLifetime.Scoped
+            );
+        provider
+            .GetServices<MessagingProviderCapabilities>()
+            .Single(capability => capability.Provider == "SqlServer")
+            .InboxCapability.Should()
+            .Be(MessagingInboxCapabilityTier.Transactional);
     }
 
     [Fact]
@@ -69,6 +81,12 @@ public sealed class SetupTests : TestBase
             .Name.Should()
             .Be("MessagingNullCommitCoordinator");
         provider.GetServices<IDbContextOptionsConfiguration<TestMessagingDbContext>>().Should().BeEmpty();
+        services.Should().NotContain(descriptor => descriptor.ServiceType.Name == "IInboxTransactionRunner");
+        provider
+            .GetServices<MessagingProviderCapabilities>()
+            .Single(capability => capability.Provider == "SqlServer")
+            .InboxCapability.Should()
+            .Be(MessagingInboxCapabilityTier.DurableDedupeOnly);
     }
 
     private sealed class TestMessagingDbContext(DbContextOptions<TestMessagingDbContext> options) : DbContext(options);

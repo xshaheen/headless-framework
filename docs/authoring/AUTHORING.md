@@ -148,6 +148,12 @@ A code change does **not** require a README update for the same exclusions liste
 3. Verify `Side Effects` matches what `Setup<Provider>.Add<Feature>(...)` actually registers.
 4. Confirm the matching `## Headless.<Package>` section in `docs/llms/<domain>.md` says the same things — fix whichever side is wrong, or both.
 
+## Observability and operations safety
+
+- Metric examples must use bounded dimensions. Never use message, replay, operation, payload, header, or free-form tenant values as metric labels. Tenant labels require a documented default-off cardinality opt-in.
+- Operations UI examples must identify the authorization boundary and use safe lifecycle projections. Payloads and raw headers do not belong in inbox generation, retention, replay, or recovery views.
+- Reliability claims must distinguish atomic commit of enlisted state from handler entry and effects outside that transaction; neither direct transport nor external effects are exactly once.
+
 ## Provider SDK types in options — policy
 
 A provider options class may expose a property whose type comes straight from the backend SDK (`AWSSDK.S3`, `Azure.Storage.Blobs`, `Azure.Core`, `MailKit`, `SixLabors.ImageSharp`, `SSH.NET`, `StackExchange.Redis`, …). This is **deliberate and allowed** — do not "abstract it away" reflexively. Decide by fidelity:

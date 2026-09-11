@@ -236,7 +236,7 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
             var manager = host.Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
             var scheduler = host.Services.GetRequiredService<IJobScheduler>();
             var request = new CoordinatedFacadeRequest(Guid.NewGuid(), "facade commit");
-            var options = new Headless.Jobs.Models.EnqueueOptions
+            var options = new Headless.Jobs.Models.JobOptions
             {
                 Description = "facade coordinated enqueue",
                 Retries = 3,

@@ -3,6 +3,7 @@
 using System.Data.Common;
 using Headless.Checks;
 using Headless.CommitCoordination;
+using Headless.Messaging.Messages;
 
 namespace Headless.Messaging.Internal;
 
@@ -21,6 +22,54 @@ internal enum DeliveryCoordinationMismatch
     Database = 3,
     InactiveTransaction = 4,
 }
+
+internal enum InboxCommitProbe
+{
+    Indeterminate = 0,
+    Committed = 1,
+}
+
+internal interface ITransactionalInboxStorage
+{
+    ValueTask<bool> CompleteReceivedInboxAsync(
+        MediumMessage message,
+        DbTransaction transaction,
+        CancellationToken cancellationToken
+    );
+
+    ValueTask<InboxCommitProbe> ProbeReceivedInboxCommitAsync(
+        MediumMessage message,
+        CancellationToken cancellationToken
+    );
+}
+
+internal interface IInboxTransactionRunner
+{
+    Task ExecuteAsync(
+        MediumMessage message,
+        Func<CancellationToken, Task> handler,
+        CancellationToken cancellationToken
+    );
+}
+
+internal sealed class StaleInboxAttemptException(Guid storageId)
+    : InvalidOperationException($"Inbox attempt '{storageId}' lost its generation fence before completion.");
+
+internal sealed class UncommittedInboxCommitException(Guid storageId, Exception commitException)
+    : InvalidOperationException(
+        $"The coordinated commit for inbox attempt '{storageId}' was rolled back; persisted lease recovery must reserve the next attempt.",
+        commitException
+    );
+
+internal sealed class IndeterminateInboxCommitException(
+    Guid storageId,
+    Exception commitException,
+    Exception probeException
+)
+    : InvalidOperationException(
+        $"The coordinated commit outcome for inbox attempt '{storageId}' is indeterminate; persisted recovery must resolve it before handler re-entry.",
+        new AggregateException(commitException, probeException)
+    );
 
 internal readonly record struct DeliveryCoordination
 {

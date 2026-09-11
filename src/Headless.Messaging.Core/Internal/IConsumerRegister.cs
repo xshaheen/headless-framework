@@ -42,6 +42,10 @@ internal sealed class ConsumerRegister(
     private readonly TimeProvider _timeProvider = serviceProvider.GetRequiredService<TimeProvider>();
     private readonly MessagingTelemetry _telemetry =
         serviceProvider.GetService<MessagingTelemetry>() ?? MessagingTelemetry.Default;
+    private readonly InboxMetricPolicy _inboxMetricPolicy =
+        serviceProvider.GetService<InboxMetricPolicy>() ?? new InboxMetricPolicy(IncludeTenantId: false);
+    private readonly IMessagingCapabilityModel _capabilityModel =
+        serviceProvider.GetRequiredService<IMessagingCapabilityModel>();
     private readonly TimeSpan _pollingDelay = TimeSpan.FromSeconds(1);
 
     private ICircuitBreakerStateManager? _circuitBreakerStateManager;
@@ -875,6 +879,7 @@ internal sealed class ConsumerRegister(
         {
             var probeAcquired = false;
             var probeOutcomeTransferred = false;
+            var transportSettled = false;
             MessagingTraceHandle traceHandle = default;
 
             // Exactly one consume outcome (success or error) may be recorded per message: the trace handle is an
@@ -934,6 +939,8 @@ internal sealed class ConsumerRegister(
                     // For IConsume<T>.Consume(ConsumeContext<T>, CancellationToken), we need T, not ConsumeContext<T>.
                     // Cached on the descriptor - recomputing it per message is pure reflection overhead.
                     var messageValueType = executor!.MessageValueType;
+
+                    _ValidateMessageContractVersion(transportMessage.Headers, executor);
 
                     message = await _serializer
                         .DeserializeAsync(transportMessage, messageValueType, hostShutdownToken)
@@ -1004,6 +1011,7 @@ internal sealed class ConsumerRegister(
 
                     // Settlement is must-complete: never abandon a commit on host shutdown.
                     await client.CommitAsync(sender, CancellationToken.None).ConfigureAwait(false);
+                    transportSettled = true;
 
                     var bypassCallback = _options.RetryPolicy.OnExhausted;
 
@@ -1075,10 +1083,50 @@ internal sealed class ConsumerRegister(
                 }
                 else
                 {
-                    var mediumMessage = await _storage
-                        .StoreReceivedMessageAsync(
+                    var consumerIdentity = executor!.ConsumerIdentity;
+                    var messageContractVersion = executor.MessageContractVersion;
+                    if (
+                        string.IsNullOrWhiteSpace(consumerIdentity) || string.IsNullOrWhiteSpace(messageContractVersion)
+                    )
+                    {
+                        // Runtime subscriptions are intentionally process-local and have no durable identity.
+                        // Preserve their legacy delivery path; bootstrap validation prevents configured durable
+                        // consumers from reaching this branch without a stable identity and contract version.
+                        var runtimeMessage = await _storage
+                            .StoreReceivedMessageAsync(
+                                name,
+                                group,
+                                new MediumMessage
+                                {
+                                    StorageId = Guid.Empty,
+                                    Origin = message,
+                                    Content = string.Empty,
+                                    Lane = lane,
+                                },
+                                CancellationToken.None
+                            )
+                            .ConfigureAwait(false);
+
+                        runtimeMessage.Origin = message;
+                        _TracingAfter(traceHandle, transportMessage, _serverAddress);
+                        consumeOutcomeRecorded = true;
+
+                        await _dispatcher
+                            .EnqueueToExecute(runtimeMessage, executor, CancellationToken.None)
+                            .ConfigureAwait(false);
+                        probeOutcomeTransferred = true;
+
+                        await client.CommitAsync(sender, CancellationToken.None).ConfigureAwait(false);
+                        transportSettled = true;
+                        return;
+                    }
+
+                    var admission = await _storage
+                        .AdmitReceivedMessageAsync(
                             name,
                             group,
+                            consumerIdentity,
+                            message.Headers[Headers.ContractVersion]!,
                             new MediumMessage
                             {
                                 StorageId = Guid.Empty,
@@ -1086,31 +1134,68 @@ internal sealed class ConsumerRegister(
                                 Content = string.Empty,
                                 Lane = lane,
                             },
-                            CancellationToken.None
+                            inboxRetention: executor.InboxRetention,
+                            cancellationToken: CancellationToken.None
                         )
                         .ConfigureAwait(false);
 
-                    mediumMessage.Origin = message;
+                    admission.Message.Origin = message;
+
+                    var storageCapability = _capabilityModel.Providers.FirstOrDefault(capability =>
+                        capability.Role is MessagingProviderRole.Storage
+                    );
+                    if (storageCapability?.InboxCapability is { } inboxTier)
+                    {
+                        MessagingMetrics.RecordInbox(
+                            admission.Disposition is InboxAdmissionDisposition.Winner
+                                ? InboxMetricKind.Capability
+                                : InboxMetricKind.Duplicate,
+                            consumerIdentity,
+                            lane,
+                            admission.Disposition switch
+                            {
+                                InboxAdmissionDisposition.Winner => InboxMetricOutcome.Winner,
+                                InboxAdmissionDisposition.InFlightDuplicate => InboxMetricOutcome.InFlightDuplicate,
+                                InboxAdmissionDisposition.SucceededDuplicate => InboxMetricOutcome.SucceededDuplicate,
+                                InboxAdmissionDisposition.TerminalFailedDuplicate =>
+                                    InboxMetricOutcome.TerminalFailedDuplicate,
+                                _ => throw new InvalidOperationException(
+                                    $"Unsupported inbox admission disposition '{admission.Disposition}'."
+                                ),
+                            },
+                            inboxTier,
+                            storageCapability.Provider,
+                            message.Headers.TryGetValue(Headers.TenantId, out var tenantId) ? tenantId : null,
+                            _inboxMetricPolicy.IncludeTenantId
+                        );
+                    }
 
                     _TracingAfter(traceHandle, transportMessage, _serverAddress);
                     consumeOutcomeRecorded = true;
 
-                    await _dispatcher
-                        .EnqueueToExecute(mediumMessage, executor, CancellationToken.None)
-                        .ConfigureAwait(false);
-
-                    probeOutcomeTransferred = true;
-
                     // Settlement is must-complete: never abandon a commit on host shutdown.
                     await client.CommitAsync(sender, CancellationToken.None).ConfigureAwait(false);
+                    transportSettled = true;
+
+                    if (admission.ShouldDispatch)
+                    {
+                        await _dispatcher
+                            .EnqueueToExecute(admission.Message, executor, CancellationToken.None)
+                            .ConfigureAwait(false);
+
+                        probeOutcomeTransferred = true;
+                    }
                 }
             }
             catch (Exception e)
             {
                 _logger.LogProcessReceivedMessageFailed(e, transportMessage);
 
-                // Settlement is must-complete: never abandon a reject on host shutdown.
-                await client.RejectAsync(sender, CancellationToken.None).ConfigureAwait(false);
+                if (!transportSettled)
+                {
+                    // Settlement is must-complete: never abandon a reject on host shutdown.
+                    await client.RejectAsync(sender, CancellationToken.None).ConfigureAwait(false);
+                }
 
                 if (e is OperationCanceledException)
                 {
@@ -1133,6 +1218,29 @@ internal sealed class ConsumerRegister(
         }
 
         client.AttachCallbacks(onMessageCallback, _WriteLog);
+    }
+
+    private static void _ValidateMessageContractVersion(
+        IDictionary<string, string?> headers,
+        ConsumerExecutorDescriptor executor
+    )
+    {
+        var receivedVersion = headers.TryGetValue(Headers.ContractVersion, out var value)
+            ? MessagingOptions.ValidateContractVersion(value ?? string.Empty)
+            : MessageOptions.InitialContractVersion;
+
+        headers[Headers.ContractVersion] = receivedVersion;
+
+        if (
+            !string.IsNullOrWhiteSpace(executor.MessageContractVersion)
+            && !string.Equals(executor.MessageContractVersion, receivedVersion, StringComparison.Ordinal)
+        )
+        {
+            throw new InvalidOperationException(
+                $"Message contract version '{receivedVersion}' does not match registered message contract version "
+                    + $"'{executor.MessageContractVersion}' for '{executor.MessageName}'."
+            );
+        }
     }
 
     private void _WriteLog(LogMessageEventArgs logMessage)

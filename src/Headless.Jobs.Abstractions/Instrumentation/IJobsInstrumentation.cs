@@ -57,7 +57,7 @@ internal interface IJobsInstrumentation
     /// </summary>
     /// <param name="cronJobId">The rebased definition.</param>
     /// <param name="functionName">Its registered function name.</param>
-    /// <param name="previousFingerprint">The superseded fingerprint, or <see langword="null"/> for legacy rows.</param>
+    /// <param name="previousFingerprint">The superseded fingerprint, or <see langword="null"/> for uninitialized definitions.</param>
     /// <param name="currentFingerprint">The fingerprint derived from the running evaluator.</param>
     /// <param name="previousReconciledThroughUtc">The durable watermark observed before rebasing.</param>
     /// <param name="rebaseAnchorUtc">The provider-time anchor used for the non-replay rebase.</param>

@@ -21,7 +21,7 @@ public sealed class MessageProcessingServerTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.UseInMemory();
-            setup.UseInMemoryStorage();
+            setup.UseProcessLocalInMemoryStorage();
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -74,7 +74,7 @@ public sealed class MessageProcessingServerTests : TestBase
         {
             setup.Options.ShutdownTimeout = TimeSpan.FromSeconds(2);
             setup.UseInMemory();
-            setup.UseInMemoryStorage();
+            setup.UseProcessLocalInMemoryStorage();
         });
         services.AddSingleton<TimeProvider>(fakeTime);
 

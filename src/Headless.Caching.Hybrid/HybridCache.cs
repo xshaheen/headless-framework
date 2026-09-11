@@ -48,10 +48,7 @@ public sealed partial class HybridCache(
     CacheEventsConfig? eventsConfig = null
 ) : ICache, IFactoryCacheStore, IBufferCache, IAsyncDisposable
 {
-    private static readonly PublishOptions _InvalidationPublishOptions = new()
-    {
-        DeliveryMode = DeliveryMode.TransportDirect,
-    };
+    private static readonly PublishOptions _InvalidationPublishOptions = new() { DeliveryMode = DeliveryMode.Direct };
 
     private readonly ILogger _logger = logger ?? NullLogger<HybridCache>.Instance;
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;

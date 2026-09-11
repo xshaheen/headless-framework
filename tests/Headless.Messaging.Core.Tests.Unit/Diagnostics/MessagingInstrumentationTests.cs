@@ -67,8 +67,13 @@ public sealed class MessagingInstrumentationTests : TestBase
         noRetry.GetTagItem(MessagingTags.RetryCount).Should().BeNull();
     }
 
-    [Fact]
-    public void should_tag_only_finite_requested_and_resolved_delivery_modes()
+    [Theory]
+    [InlineData(DeliveryMode.Auto, "auto")]
+    [InlineData(DeliveryMode.Direct, "direct")]
+    public void should_tag_only_finite_requested_and_resolved_delivery_modes(
+        DeliveryMode requestedMode,
+        string requestedTag
+    )
     {
         using var activity = new Activity("delivery");
 
@@ -76,13 +81,13 @@ public sealed class MessagingInstrumentationTests : TestBase
             activity,
             new MessagingEnrichmentContext
             {
-                RequestedDeliveryMode = DeliveryMode.Auto,
-                ResolvedDeliveryMode = DeliveryMode.TransportDirect,
+                RequestedDeliveryMode = requestedMode,
+                ResolvedDeliveryMode = DeliveryMode.Direct,
             }
         );
 
-        activity.GetTagItem(MessagingTags.RequestedDeliveryMode).Should().Be("auto");
-        activity.GetTagItem(MessagingTags.ResolvedDeliveryMode).Should().Be("transport_direct");
+        activity.GetTagItem(MessagingTags.RequestedDeliveryMode).Should().Be(requestedTag);
+        activity.GetTagItem(MessagingTags.ResolvedDeliveryMode).Should().Be("direct");
     }
 
     // --- Composition / suppression --------------------------------------------------------------------------
@@ -131,6 +136,16 @@ public sealed class MessagingInstrumentationTests : TestBase
             .Should()
             .Equal(typeof(LaneTagEnricher), typeof(DeliveryModeTagEnricher), typeof(StubEnricher));
         options.BuildEnrichers()[^1].Should().BeSameAs(custom);
+    }
+
+    [Fact]
+    public void should_require_explicit_tenant_metric_cardinality_opt_in()
+    {
+        new MessagingInstrumentationOptions().IncludeTenantIdInMetricTags.Should().BeFalse();
+
+        var options = new MessagingInstrumentationOptions { IncludeTenantIdInMetricTags = true };
+
+        options.IncludeTenantIdInMetricTags.Should().BeTrue();
     }
 
     // --- AE4: typed registration helpers --------------------------------------------------------------------

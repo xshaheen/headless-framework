@@ -14,10 +14,13 @@ public static class TestServiceCollectionExtensions
             services.AddLogging(x => x.AddTestLogging(testOutput));
             services.AddHeadlessMessaging(setup =>
             {
-                setup.Bus.ForConsumersFromAssembly(typeof(TestServiceCollectionExtensions).Assembly);
+                setup.Bus.ForConsumersFromAssembly(
+                    typeof(TestServiceCollectionExtensions).Assembly,
+                    StableConsumerTestContracts.ConfigureKnownScannedConsumer
+                );
                 setup.Options.DefaultGroupName = TestGroupName;
                 setup.UseInMemory();
-                setup.UseInMemoryStorage();
+                setup.UseProcessLocalInMemoryStorage();
             });
         }
 
