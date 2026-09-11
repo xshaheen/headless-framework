@@ -24,7 +24,8 @@ env:
 
 jobs:
   r2-conformance:
-    name: "R2 conformance"
+    # Under CI this renders as "Release · R2 conformance / Cloudflare R2 suite".
+    name: "Cloudflare R2 suite"
     runs-on: ubuntu-latest
 
     permissions:
@@ -36,13 +37,13 @@ jobs:
       name: "R2 Conformance"
 
     steps:
-      - name: "Checkout"
+      - name: "Check out repository"
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: "Setup .NET SDK"
+      - name: "Set up .NET SDK"
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           global-json-file: "./global.json"
@@ -56,12 +57,12 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
-      - name: "Restore"
+      - name: "Restore test project"
         env:
           GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: make restore-project PROJECT=tests/Headless.Blobs.CloudflareR2.Tests.Integration/Headless.Blobs.CloudflareR2.Tests.Integration.csproj
 
-      - name: "Build"
+      - name: "Build test project"
         run: make build-project-no-restore PROJECT=tests/Headless.Blobs.CloudflareR2.Tests.Integration/Headless.Blobs.CloudflareR2.Tests.Integration.csproj
 
       - name: "Run R2 conformance suite"

@@ -65,17 +65,17 @@ env:
 
 jobs:
   format:
-    name: "Format"
+    name: "Lint · C# formatting"
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: "Checkout"
+      - name: "Check out repository"
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           lfs: false
           persist-credentials: false
 
-      - name: "Setup .NET SDK"
+      - name: "Set up .NET SDK"
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           global-json-file: "./global.json"
@@ -84,7 +84,7 @@ jobs:
         run: make format-check
 
   dashboards:
-    name: "Dashboard · ${{ matrix.name }}"
+    name: "Frontend · ${{ matrix.name }} dashboard"
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
@@ -99,13 +99,13 @@ jobs:
       run:
         working-directory: ${{ matrix.path }}
     steps:
-      - name: "Checkout"
+      - name: "Check out repository"
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           lfs: false
           persist-credentials: false
 
-      - name: "Setup Node"
+      - name: "Set up Node.js"
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
@@ -118,27 +118,27 @@ jobs:
       - name: "Type-check and build"
         run: npm run build
 
-      - name: "Unit tests (vitest)"
+      - name: "Run unit tests (Vitest)"
         run: npm run test:unit
 
-      - name: "Lint (eslint)"
+      - name: "Lint (ESLint)"
         run: npm run lint:check
 
   tus-demo:
-    name: "Tus demo frontend"
+    name: "Frontend · Tus demo"
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
       run:
         working-directory: demo/Headless.Tus.Demo/frontend
     steps:
-      - name: "Checkout"
+      - name: "Check out repository"
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           lfs: false
           persist-credentials: false
 
-      - name: "Setup Node"
+      - name: "Set up Node.js"
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
@@ -148,11 +148,11 @@ jobs:
       - name: "Install dependencies"
         run: npm ci --no-audit --no-fund
 
-      - name: "Build"
+      - name: "Build frontend"
         run: npm run build
 
   build:
-    name: "Build & test · ${{ matrix.tz }}"
+    name: ".NET · Build & unit tests (${{ matrix.tz }})"
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -176,7 +176,7 @@ jobs:
     env:
       PRIMARY: ${{ matrix.tz == 'UTC' }}
     steps:
-      - name: "Checkout"
+      - name: "Check out repository"
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           lfs: false
@@ -184,12 +184,12 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: "Setup .NET SDK"
+      - name: "Set up .NET SDK"
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           global-json-file: "./global.json"
 
-      - name: "Setup Node"
+      - name: "Set up Node.js"
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
@@ -231,13 +231,14 @@ jobs:
           path: ~/.nuget/packages
           key: ${{ steps.nuget-cache.outputs.cache-primary-key }}
 
-      - name: ${{ env.PRIMARY == 'true' && 'Unit tests with coverage' || 'Unit tests' }}
+      # A static name: GitHub shows a step-name expression unevaluated until the step starts.
+      - name: "Run unit tests"
         env:
           TZ: ${{ matrix.tz }}
           CI_COVERAGE: ${{ env.PRIMARY }}
         run: make ci-test
 
-      - name: "Coverage report"
+      - name: "Generate coverage report"
         if: always() && env.PRIMARY == 'true'
         run: |
           set -euo pipefail
@@ -275,7 +276,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-      - name: "Upload coverage results"
+      - name: "Upload coverage report"
         if: always() && env.PRIMARY == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -296,7 +297,7 @@ jobs:
           if-no-files-found: error
 
   messaging-conformance:
-    name: "Messaging conformance"
+    name: "Release · Messaging conformance"
     if: github.event_name == 'release' || inputs.release_checks
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -304,7 +305,7 @@ jobs:
       contents: read
       packages: read
     steps:
-      - name: "Checkout"
+      - name: "Check out repository"
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           lfs: false
@@ -312,7 +313,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: "Setup .NET SDK"
+      - name: "Set up .NET SDK"
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           global-json-file: "./global.json"
@@ -325,7 +326,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
-      - name: "Build conformance suites"
+      - name: "Build broker conformance suites"
         env:
           GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: make build-messaging-conformance-evidence
@@ -346,7 +347,7 @@ jobs:
           retention-days: 14
 
   r2-conformance:
-    name: "R2 conformance"
+    name: "Release · R2 conformance"
     if: github.event_name == 'release' || inputs.release_checks
     permissions:
       contents: read
@@ -382,7 +383,7 @@ jobs:
           fi
 
   publish-github-packages:
-    name: "Publish · GitHub Packages"
+    name: "Release · Publish to GitHub Packages"
     needs: ci-status
     runs-on: ubuntu-latest
     # Publishing a GitHub Release is the explicit package-release gate.
@@ -399,14 +400,14 @@ jobs:
       url: https://github.com/xshaheen/headless-framework/packages
 
     steps:
-      - name: "Checkout"
+      - name: "Check out repository"
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           lfs: false
           fetch-depth: 0
           persist-credentials: false
 
-      - name: "Setup .NET SDK"
+      - name: "Set up .NET SDK"
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           global-json-file: "./global.json"
@@ -426,10 +427,10 @@ jobs:
           subject-path: "${{ env.PACKAGES_DIR }}/*.nupkg"
 
       # Advisory preflight only. A publish race still fails because push does not use --skip-duplicate.
-      - name: "NuGet.org immutable-version preflight"
+      - name: "Check versions are not yet on NuGet.org"
         run: make nuget-publish-preflight
 
-      - name: "Push packages"
+      - name: "Push to GitHub Packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -450,7 +451,7 @@ jobs:
           done
 
   publish-nuget-packages:
-    name: "Publish · NuGet.org"
+    name: "Release · Publish to NuGet.org"
     needs: publish-github-packages
     runs-on: ubuntu-latest
     if: github.event_name == 'release'
@@ -464,14 +465,14 @@ jobs:
       url: https://www.nuget.org/packages?q=Headless.
 
     steps:
-      - name: "Checkout"
+      - name: "Check out repository"
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           lfs: false
           fetch-depth: 0
           persist-credentials: false
 
-      - name: "Setup .NET SDK"
+      - name: "Set up .NET SDK"
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           global-json-file: "./global.json"
@@ -489,13 +490,13 @@ jobs:
       # Requires a Trusted Publishing policy on nuget.org bound to this repo, the workflow file (ci.yml), and
       # the "NuGet Release" environment, plus a NUGET_USER secret holding the nuget.org account (profile) name.
       # No long-lived publishing secret is stored.
-      - name: "NuGet login (OIDC -> temporary API key)"
+      - name: "Log in to NuGet.org (OIDC → short-lived API key)"
         id: nuget-login
         uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1
         with:
           user: ${{ secrets.NUGET_USER }}
 
-      - name: "Push packages"
+      - name: "Push to NuGet.org"
         env:
           NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
         run: |
