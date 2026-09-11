@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Threading.Channels;
 using Headless.Coordination;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -14,16 +15,18 @@ public sealed class MembershipHeartbeatBackgroundServiceTests : TestBase
     {
         // given
         var store = new FakeMembershipStore { ThrowOnRegister = true };
-        var (sut, timeProvider, _) = _CreateSut(store);
+        var timeProvider = new RetryTimeProvider();
+        var (sut, _, _) = _CreateSut(store, timeProvider: timeProvider);
+        using var serviceLifetime = sut;
 
         // when
         await sut.StartAsync(AbortToken);
-        await _AdvanceUntilAttemptsAsync(sut, store, timeProvider, expectedAttempts: 5);
+        await _AdvanceRegistrationRetriesAsync(timeProvider);
 
         // then
-        store.AllocateIncarnationCalls.Should().Be(5);
         var act = () => sut.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("registration unavailable");
+        store.AllocateIncarnationCalls.Should().Be(5);
     }
 
     [Fact]
@@ -32,11 +35,13 @@ public sealed class MembershipHeartbeatBackgroundServiceTests : TestBase
         // given
         var store = new FakeMembershipStore { ThrowOnRegister = true };
         var options = new CoordinationOptions { MembershipLostBehavior = MembershipLostBehavior.StopMembershipOnly };
-        var (sut, timeProvider, membership) = _CreateSut(store, options);
+        var timeProvider = new RetryTimeProvider();
+        var (sut, _, membership) = _CreateSut(store, options, timeProvider);
+        using var serviceLifetime = sut;
 
         // when
         await sut.StartAsync(AbortToken);
-        await _AdvanceUntilAttemptsAsync(sut, store, timeProvider, expectedAttempts: 5);
+        await _AdvanceRegistrationRetriesAsync(timeProvider);
         await sut.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         // then
@@ -237,11 +242,11 @@ public sealed class MembershipHeartbeatBackgroundServiceTests : TestBase
         MembershipHeartbeatBackgroundService Sut,
         FakeTimeProvider TimeProvider,
         MembershipService Membership
-    ) _CreateSut(FakeMembershipStore store, CoordinationOptions? options = null)
+    ) _CreateSut(FakeMembershipStore store, CoordinationOptions? options = null, FakeTimeProvider? timeProvider = null)
     {
         var coordinationOptions = options ?? new CoordinationOptions();
         var source = new MembershipEventSource(NullLogger<MembershipEventSource>.Instance);
-        var timeProvider = new FakeTimeProvider();
+        timeProvider ??= new FakeTimeProvider();
         var membership = new MembershipService(
             store,
             new StaticNodeIdProvider(new NodeId("local")),
@@ -261,20 +266,29 @@ public sealed class MembershipHeartbeatBackgroundServiceTests : TestBase
         return (sut, timeProvider, membership);
     }
 
-    private static async Task _AdvanceUntilAttemptsAsync(
-        MembershipHeartbeatBackgroundService sut,
-        FakeMembershipStore store,
-        FakeTimeProvider timeProvider,
-        int expectedAttempts
-    )
+    private static async Task _AdvanceRegistrationRetriesAsync(RetryTimeProvider timeProvider)
     {
-        for (var i = 0; i < 20 && store.AllocateIncarnationCalls < expectedAttempts; i++)
+        // Wait for each retry timer to exist before advancing; background startup may be delayed on CI.
+        for (var i = 0; i < 4; i++)
         {
-            timeProvider.Advance(TimeSpan.FromSeconds(10));
-            await Task.Delay(10, AbortToken);
+            var delay = await timeProvider
+                .RetryDelays.Reader.ReadAsync(AbortToken)
+                .AsTask()
+                .WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+            timeProvider.Advance(delay);
         }
+    }
 
-        sut.ExecuteTask.Should().NotBeNull();
+    private sealed class RetryTimeProvider : FakeTimeProvider
+    {
+        public Channel<TimeSpan> RetryDelays { get; } = Channel.CreateUnbounded<TimeSpan>();
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            var timer = base.CreateTimer(callback, state, dueTime, period);
+            RetryDelays.Writer.TryWrite(dueTime);
+            return timer;
+        }
     }
 
     private sealed class StaticNodeIdProvider(NodeId nodeId) : INodeIdProvider
