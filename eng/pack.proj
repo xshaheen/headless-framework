@@ -1,0 +1,18 @@
+<Project>
+  <!--
+    Packs every src/*/*.csproj in one MSBuild invocation. Packing projects one `dotnet pack` process at a
+    time paid a process start, a fresh evaluation, and a serial SBOM scan per package (~4.4s x 171 packages,
+    ~12.5 min in CI); BuildInParallel spreads that work across the MSBuild nodes instead. Each package's SBOM
+    step unzips into its own GUID-suffixed temp folder, so concurrent packs do not share scratch space.
+
+    Invoke through `dotnet pack eng/pack.proj ...` (see the Makefile pack targets) so the CLI supplies the
+    usual pack globals (NoBuild, PackageOutputPath, Configuration) to every child project.
+  -->
+  <ItemGroup>
+    <PackProject Include="$(MSBuildThisFileDirectory)../src/*/*.csproj" />
+  </ItemGroup>
+
+  <Target Name="Pack">
+    <MSBuild Projects="@(PackProject)" Targets="Pack" BuildInParallel="true" />
+  </Target>
+</Project>

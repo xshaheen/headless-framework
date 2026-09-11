@@ -4,13 +4,17 @@ on:
   push:
     branches: [ "main" ]
     paths:
-      - '.github/workflows/**'
+      - '.github/**'
       - '.husky/**'
-      - 'Makefile'
+      - 'demo/**'
       - 'eng/**'
+      - 'scripts/**'
       - 'src/**'
+      - 'test-assets/**'
       - 'tests/**'
       - 'Directory.*'
+      - 'Makefile'
+      - 'dotnet-tools.json'
       - 'global.json'
       - 'headless-framework.slnx'
       - 'nuget.config'
@@ -20,6 +24,11 @@ on:
     types:
       - published
   workflow_dispatch:
+    inputs:
+      release_checks:
+        description: "Also run the release-only checks (pack + SBOM, messaging and R2 conformance) without publishing"
+        type: boolean
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
@@ -27,6 +36,10 @@ concurrency:
 
 permissions:
   contents: read
+
+defaults:
+  run:
+    shell: bash
 
 env:
   # Disable the .NET logo in the console output.
@@ -36,30 +49,138 @@ env:
   # Disable sending .NET CLI telemetry to Microsoft.
   DOTNET_CLI_TELEMETRY_OPTOUT: true
   # Set the build number in MinVer.
-  MINVERBUILDMETADATA: build.${{github.run_number}}
+  MINVERBUILDMETADATA: build.${{ github.run_number }}
   # Build Configuration
   CONFIGURATION: Release
   # Packages Directory
   PACKAGES_DIR: ./artifacts/packages-results
   # Test Results Directory
   TEST_RESULTS_DIR: ./artifacts/test-results
-  # Set the NuGet packages restore cache directory.
-  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
   # Disable the Husky pre-commit hooks.
   HUSKY: 0
+  # Pack + SBOM and the conformance suites run only for a published release, or for a manual dispatch that
+  # opts in to rehearse the release path without publishing. Job-level `if:` cannot read `env`, so the jobs
+  # below repeat this expression.
+  RELEASE_CHECKS: ${{ github.event_name == 'release' || inputs.release_checks == true }}
 
 jobs:
-  build:
-    name: Build and pack
+  format:
+    name: "Format"
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: read
+    timeout-minutes: 10
     steps:
       - name: "Checkout"
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           lfs: false
+          persist-credentials: false
+
+      - name: "Setup .NET SDK"
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: "./global.json"
+
+      - name: "Check C# formatting (CSharpier)"
+        run: make format-check
+
+  dashboards:
+    name: "Dashboard · ${{ matrix.name }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Jobs
+            path: src/Headless.Jobs.Dashboard/wwwroot
+          - name: Messaging
+            path: src/Headless.Messaging.Dashboard/wwwroot
+    defaults:
+      run:
+        working-directory: ${{ matrix.path }}
+    steps:
+      - name: "Checkout"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: false
+          persist-credentials: false
+
+      - name: "Setup Node"
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ${{ matrix.path }}/package-lock.json
+
+      - name: "Install dependencies"
+        run: npm ci --no-audit --no-fund
+
+      - name: "Type-check and build"
+        run: npm run build
+
+      - name: "Unit tests (vitest)"
+        run: npm run test:unit
+
+      - name: "Lint (eslint)"
+        run: npm run lint:check
+
+  tus-demo:
+    name: "Tus demo frontend"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: demo/Headless.Tus.Demo/frontend
+    steps:
+      - name: "Checkout"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: false
+          persist-credentials: false
+
+      - name: "Setup Node"
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: demo/Headless.Tus.Demo/frontend/package-lock.json
+
+      - name: "Install dependencies"
+        run: npm ci --no-audit --no-fund
+
+      - name: "Build"
+        run: npm run build
+
+  build:
+    name: "Build & test · ${{ matrix.tz }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # UTC is the primary leg: it collects coverage, is the only NuGet cache writer, and packs on release.
+        #
+        # Africa/Cairo is a release-only leg. GitHub runners are UTC, so a UTC-only pipeline structurally cannot
+        # catch a local-offset bug: code that trusts DateTime.Kind, calls ToUniversalTime() on an Unspecified
+        # value, or builds a DateTimeOffset from a bare DateTime behaves identically on a UTC box and silently
+        # shifts by the offset everywhere else. That is exactly how the AWS LastModified defect survived. Cairo
+        # (UTC+2/+3) is also DST-observing. Keeping it off pull requests trades PR time for catching such a
+        # regression at release (or on a release_checks dispatch) instead of before merge.
+        #
+        # The axis itself is computed because `include` cannot drop a leg: an include entry that matches no
+        # combination is added as a new one.
+        tz: ${{ fromJSON((github.event_name == 'release' || inputs.release_checks) && '["UTC", "Africa/Cairo"]' || '["UTC"]') }}
+    env:
+      PRIMARY: ${{ matrix.tz == 'UTC' }}
+    steps:
+      - name: "Checkout"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: false
+          # MinVer derives the version from tags and commit height.
           fetch-depth: 0
           persist-credentials: false
 
@@ -68,10 +189,6 @@ jobs:
         with:
           global-json-file: "./global.json"
 
-      # Required: the dashboard SPAs are pre-built in the "Build dashboard SPAs"
-      # step below (before the NuGet token is present), so the token-bearing
-      # solution build runs with BuildDashboardSpa=false and never executes npm
-      # lifecycle scripts while the credential is available in the environment.
       - name: "Setup Node"
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -81,80 +198,76 @@ jobs:
             src/Headless.Jobs.Dashboard/wwwroot/package-lock.json
             src/Headless.Messaging.Dashboard/wwwroot/package-lock.json
 
-      - name: "Setup nuget cache"
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+      # Restore and save are split so there is no post-job cache step (the combined action spent ~15s there
+      # even on a primary-key hit) and only the primary leg writes. The cache lives outside the workspace and
+      # is keyed on the lock files, which pin the exact package set.
+      - name: "Restore NuGet cache"
+        id: nuget-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
         with:
-          path: ${{ env.NUGET_PACKAGES }}
-          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/*.props', '**/*.targets', 'global.json', 'nuget.config') }}
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json', 'global.json', 'dotnet-tools.json') }}
           restore-keys: |
             ${{ runner.os }}-nuget-
 
-      # Build the dashboard SPAs BEFORE the NuGet token is present, so a malicious
-      # dependency lifecycle script run by `npm ci` cannot read it. The token is
-      # injected only on the "Format, build, and pack" step below, which runs with
-      # BuildDashboardSpa=false and only embeds the already-built wwwroot/dist.
+      # Build the dashboard SPAs BEFORE the NuGet token is present, so a malicious dependency lifecycle script
+      # run by `npm ci` cannot read it. The token-bearing build below runs with BuildDashboardSpa=false and
+      # only embeds the already-built wwwroot/dist.
       - name: "Build dashboard SPAs"
-        run: make dashboards
-        shell: bash
+        run: make -j2 --output-sync=target dashboards DASHBOARD_BUILD_SCRIPT=build-only
 
-      - name: "Format check"
-        run: make format-check
-
-      - name: "Build"
-        # Dashboards are already built above (before the token is present), so the
-        # solution build runs with BuildDashboardSpa=false and no lifecycle scripts
-        # run while the credential is available. GITHUB_PACKAGES_TOKEN is scoped to
-        # this restore/build step only and is expanded from nuget.config's
+      - name: "Build solution"
+        # GITHUB_PACKAGES_TOKEN is scoped to this restore/build step only and is expanded from nuget.config's
         # %GITHUB_PACKAGES_TOKEN% credential entry.
         env:
           BuildDashboardSpa: "false"
           GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: make rebuild
 
-      - name: "Unit tests with coverage"
-        run: make ci-test
+      - name: "Save NuGet cache"
+        if: env.PRIMARY == 'true' && steps.nuget-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        with:
+          path: ~/.nuget/packages
+          key: ${{ steps.nuget-cache.outputs.cache-primary-key }}
 
-      - name: "Messaging conformance scenarios"
-        run: make ci-messaging-conformance-evidence
-
-      # Re-run the unit suite under a non-UTC zone. GitHub runners are UTC, so a UTC-only pipeline
-      # structurally cannot catch a local-offset bug: code that trusts DateTime.Kind, calls
-      # ToUniversalTime() on an Unspecified value, or builds a DateTimeOffset from a bare DateTime
-      # behaves identically on a UTC box and silently shifts by the offset everywhere else. That is
-      # exactly how the AWS LastModified defect survived. Cairo (UTC+2/+3) is also DST-observing.
-      # Reuses the binaries built above.
-      - name: "Unit tests under a non-UTC timezone"
+      - name: ${{ env.PRIMARY == 'true' && 'Unit tests with coverage' || 'Unit tests' }}
         env:
-          TZ: Africa/Cairo
+          TZ: ${{ matrix.tz }}
+          CI_COVERAGE: ${{ env.PRIMARY }}
         run: make ci-test
 
-      - name: "Generate coverage summary"
-        if: always()
+      - name: "Coverage report"
+        if: always() && env.PRIMARY == 'true'
         run: |
           set -euo pipefail
 
-          if [ -d "${TEST_RESULTS_DIR}" ] && find "${TEST_RESULTS_DIR}" -name '*.cobertura.xml' -print -quit | grep -q .; then
-            dotnet reportgenerator \
-              -reports:"${TEST_RESULTS_DIR}/**/*.cobertura.xml" \
-              -targetdir:"./artifacts/coverage/report" \
-              -reporttypes:"Html;JsonSummary"
-          else
+          if [ -z "$(find "${TEST_RESULTS_DIR}" -name '*.cobertura.xml' -print -quit 2>/dev/null)" ]; then
             echo "::warning::No Cobertura coverage files were found under ${TEST_RESULTS_DIR}."
+            exit 0
           fi
-        shell: bash
 
-      - name: "Pack"
+          dotnet tool restore
+          dotnet reportgenerator \
+            -reports:"${TEST_RESULTS_DIR}/**/*.cobertura.xml" \
+            -targetdir:"./artifacts/coverage/report" \
+            -reporttypes:"Html;JsonSummary;MarkdownAssembliesSummary"
+          # MarkdownAssembliesSummary writes Summary.md: one line/branch row per assembly (~8 KB).
+          cat ./artifacts/coverage/report/Summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: "Pack NuGet packages with SBOMs"
+        if: env.PRIMARY == 'true' && env.RELEASE_CHECKS == 'true'
         run: make pack-built
 
-      - name: "Verify package artifacts"
+      - name: "Verify packages"
+        if: env.PRIMARY == 'true' && env.RELEASE_CHECKS == 'true'
         run: make verify-packages
-        shell: bash
 
       - name: "Upload test results"
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: test-results
+          name: test-results-${{ env.PRIMARY == 'true' && 'utc' || 'africa-cairo' }}
           path: |
             artifacts/test-results/**/*.trx
             artifacts/test-results/**/*.dmp
@@ -163,7 +276,7 @@ jobs:
           retention-days: 14
 
       - name: "Upload coverage results"
-        if: always()
+        if: always() && env.PRIMARY == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage-results
@@ -174,16 +287,103 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-      - name: "Publish Artifacts"
+      - name: "Upload packages"
+        if: env.PRIMARY == 'true' && env.RELEASE_CHECKS == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: packages-results
           path: ${{ env.PACKAGES_DIR }}
           if-no-files-found: error
 
-  push-github-packages:
-    name: "Push GitHub Packages"
-    needs: build
+  messaging-conformance:
+    name: "Messaging conformance"
+    if: github.event_name == 'release' || inputs.release_checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: "Checkout"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: false
+          # MinVer derives the version from tags and commit height.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: "Setup .NET SDK"
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: "./global.json"
+
+      - name: "Restore NuGet cache"
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json', 'global.json', 'dotnet-tools.json') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: "Build conformance suites"
+        env:
+          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: make build-messaging-conformance-evidence
+
+      - name: "Run broker conformance scenarios"
+        run: make ci-messaging-conformance-evidence
+
+      - name: "Upload test results"
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-results-messaging-conformance
+          path: |
+            artifacts/test-results/**/*.trx
+            artifacts/test-results/**/*.dmp
+            artifacts/test-results/**/*.crash.sequence.log
+          if-no-files-found: warn
+          retention-days: 14
+
+  r2-conformance:
+    name: "R2 conformance"
+    if: github.event_name == 'release' || inputs.release_checks
+    permissions:
+      contents: read
+      packages: read
+    uses: ./.github/workflows/r2-conformance.yml
+    secrets: inherit
+
+  # The single required status check for `main`. Release-only jobs report "skipped" on pull requests, which
+  # passes; any failed or cancelled job fails the gate. Adding or renaming a job therefore never requires a
+  # branch-protection change.
+  ci-status:
+    name: "CI status"
+    if: always()
+    needs: [ format, dashboards, tus-demo, build, messaging-conformance, r2-conformance ]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: "Check job results"
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+
+          {
+            echo "| Job | Result |"
+            echo "|---|---|"
+            jq -r 'to_entries[] | "| \(.key) | \(.value.result) |"' <<<"$NEEDS"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if jq -e 'any(.[]; .result == "failure" or .result == "cancelled")' <<<"$NEEDS" >/dev/null; then
+            echo "::error::At least one CI job failed or was cancelled."
+            exit 1
+          fi
+
+  publish-github-packages:
+    name: "Publish · GitHub Packages"
+    needs: ci-status
     runs-on: ubuntu-latest
     # Publishing a GitHub Release is the explicit package-release gate.
     if: github.event_name == 'release'
@@ -211,15 +411,14 @@ jobs:
         with:
           global-json-file: "./global.json"
 
-      - name: "Download Artifacts"
+      - name: "Download packages"
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: packages-results
           path: ${{ env.PACKAGES_DIR }}
 
-      - name: "Verify package artifacts"
+      - name: "Verify packages"
         run: make verify-packages
-        shell: bash
 
       - name: "Attest package provenance"
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
@@ -229,9 +428,8 @@ jobs:
       # Advisory preflight only. A publish race still fails because push does not use --skip-duplicate.
       - name: "NuGet.org immutable-version preflight"
         run: make nuget-publish-preflight
-        shell: bash
 
-      - name: "Push Packages"
+      - name: "Push packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -250,11 +448,10 @@ jobs:
               --source "https://nuget.pkg.github.com/xshaheen/index.json" \
               --api-key "$GITHUB_TOKEN"
           done
-        shell: bash
 
-  push-nuget-packages:
-    name: "Push nuget.org packages"
-    needs: push-github-packages
+  publish-nuget-packages:
+    name: "Publish · NuGet.org"
+    needs: publish-github-packages
     runs-on: ubuntu-latest
     if: github.event_name == 'release'
 
@@ -279,15 +476,14 @@ jobs:
         with:
           global-json-file: "./global.json"
 
-      - name: "Download Artifacts"
+      - name: "Download packages"
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: packages-results
           path: ${{ env.PACKAGES_DIR }}
 
-      - name: "Verify package artifacts"
+      - name: "Verify packages"
         run: make verify-packages
-        shell: bash
 
       # Exchange the workflow OIDC token for a temporary nuget.org API key (valid ~1h, one key per token).
       # Requires a Trusted Publishing policy on nuget.org bound to this repo, the workflow file (ci.yml), and
@@ -299,7 +495,7 @@ jobs:
         with:
           user: ${{ secrets.NUGET_USER }}
 
-      - name: "Push Packages"
+      - name: "Push packages"
         env:
           NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
         run: |
@@ -318,4 +514,3 @@ jobs:
               --source "https://api.nuget.org/v3/index.json" \
               --api-key "$NUGET_API_KEY"
           done
-        shell: bash
