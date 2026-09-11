@@ -166,9 +166,10 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
         for (var i = 0; i < events.Count; i++)
         {
             bus.Published[i].Payload.Should().BeSameAs(events[i].Payload);
+            // Compare the public publish contract; record equality also includes internal transaction replay state.
             bus.Published[i]
                 .Options.Should()
-                .Be(
+                .BeEquivalentTo(
                     new PublishOptions
                     {
                         DeliveryMode = DeliveryMode.Durable,
