@@ -14,13 +14,17 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Tests.MultiTenancy;
 
 [Collection<JobsHelperCollection>]
-public sealed class JobsTenancyRegistrationTests : TestBase, IDisposable
+public sealed class JobsTenancyRegistrationTests : TestBase
 {
     private static readonly JobFunctionDescriptor _Descriptor = new("any-fn", null, "", JobPriority.Normal, 0);
 
     public JobsTenancyRegistrationTests() => JobFunctionProvider.ResetForTests(discoveryComplete: false);
 
-    public void Dispose() => JobFunctionProvider.ResetForTests();
+    protected override ValueTask DisposeAsyncCore()
+    {
+        JobFunctionProvider.ResetForTests();
+        return base.DisposeAsyncCore();
+    }
 
     [Fact]
     public void the_tenancy_registration_is_reserved_once_per_generation_and_reset_rearms_it()

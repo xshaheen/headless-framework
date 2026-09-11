@@ -143,7 +143,8 @@ public sealed class InMemoryKeyedStorageTests : TestBase
                 .GetValue(store)!;
         var held = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using var release = new ManualResetEventSlim();
-        var holder = Task.Run(
+        // A blocking lock holder must not depend on thread-pool availability on small CI runners.
+        var holder = Task.Factory.StartNew(
             () =>
             {
                 lock (gate)
@@ -152,7 +153,9 @@ public sealed class InMemoryKeyedStorageTests : TestBase
                     release.Wait(TimeSpan.FromSeconds(15), AbortToken).Should().BeTrue();
                 }
             },
-            AbortToken
+            AbortToken,
+            TaskCreationOptions.LongRunning,
+            TaskScheduler.Default
         );
 
         Task updates = Task.CompletedTask;

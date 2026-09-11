@@ -26,7 +26,7 @@ namespace Tests.Transactions;
 /// discarding with the caller's transaction) is integration-only — see the EF harness conformance suite.
 /// </summary>
 [Collection<JobsHelperCollection>]
-public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase, IDisposable
+public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
 {
     private const string _FunctionName = "routing-test-fn";
 
@@ -35,7 +35,11 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase, IDisp
         _BuildProvider();
     }
 
-    public void Dispose() => JobFunctionProvider.ResetForTests();
+    protected override ValueTask DisposeAsyncCore()
+    {
+        JobFunctionProvider.ResetForTests();
+        return base.DisposeAsyncCore();
+    }
 
     [Fact]
     public async Task time_job_without_coordinator_takes_direct_path()
