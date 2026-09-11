@@ -17,13 +17,17 @@ using Microsoft.Extensions.Options;
 namespace Tests.MultiTenancy;
 
 [Collection<JobsHelperCollection>]
-public sealed class JobsTenancyChainPropagationTests : TestBase, IDisposable
+public sealed class JobsTenancyChainPropagationTests : TestBase
 {
     private const string _Function = "chain-tenancy-fn";
 
     public JobsTenancyChainPropagationTests() => _RegisterFunction();
 
-    public void Dispose() => JobFunctionProvider.ResetForTests();
+    protected override ValueTask DisposeAsyncCore()
+    {
+        JobFunctionProvider.ResetForTests();
+        return base.DisposeAsyncCore();
+    }
 
     [Fact]
     public async Task two_level_chain_inherits_the_resolved_root_tenant()

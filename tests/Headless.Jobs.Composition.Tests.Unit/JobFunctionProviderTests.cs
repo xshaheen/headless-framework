@@ -12,11 +12,15 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Tests;
 
 [Collection<JobsHelperCollection>]
-public sealed class JobFunctionProviderTests : TestBase, IDisposable
+public sealed class JobFunctionProviderTests : TestBase
 {
     public JobFunctionProviderTests() => JobFunctionProvider.ResetForTests(discoveryComplete: false);
 
-    public void Dispose() => JobFunctionProvider.ResetForTests();
+    protected override ValueTask DisposeAsyncCore()
+    {
+        JobFunctionProvider.ResetForTests();
+        return base.DisposeAsyncCore();
+    }
 
     [Fact]
     public void should_reject_build_before_discovery_is_complete()
