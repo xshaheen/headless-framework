@@ -884,17 +884,23 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
         await halfOpenTcs.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
-        // when — launch N parallel tasks all racing to acquire the probe
+        // when — launch N parallel tasks all racing to acquire the probe. Each runs on a dedicated thread: N
+        // participants blocked in the barrier on pool threads starve the pool (~1 thread injected per second).
         using var barrier = new Barrier(parallelTasks);
         var results = new bool[parallelTasks];
         var tasks = Enumerable
             .Range(0, parallelTasks)
             .Select(i =>
-                Task.Run(() =>
-                {
-                    barrier.SignalAndWait(); // maximize contention
-                    results[i] = sut.TryAcquireHalfOpenProbe(_Group);
-                })
+                Task.Factory.StartNew(
+                    () =>
+                    {
+                        barrier.SignalAndWait(); // maximize contention
+                        results[i] = sut.TryAcquireHalfOpenProbe(_Group);
+                    },
+                    AbortToken,
+                    TaskCreationOptions.DenyChildAttach | TaskCreationOptions.LongRunning,
+                    TaskScheduler.Default
+                )
             )
             .ToArray();
 

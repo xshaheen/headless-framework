@@ -462,12 +462,14 @@ public sealed class ConsumerRegistryTests : TestBase
 
             var tasks = new List<Task>();
 
+            // Every participant runs on a dedicated thread: 11 participants blocked in the barrier on pool threads
+            // starve the pool (~1 thread injected per second), which stretched these 100 iterations to ~8s.
             // Spawn registration tasks
             for (var i = 0; i < registrationsPerIteration; i++)
             {
                 var index = i;
                 tasks.Add(
-                    Task.Run(
+                    Task.Factory.StartNew(
                         () =>
                         {
                             try
@@ -491,14 +493,16 @@ public sealed class ConsumerRegistryTests : TestBase
                                 exceptions.Add(ex);
                             }
                         },
-                        AbortToken
+                        AbortToken,
+                        TaskCreationOptions.DenyChildAttach | TaskCreationOptions.LongRunning,
+                        TaskScheduler.Default
                     )
                 );
             }
 
             // Spawn freeze task
             tasks.Add(
-                Task.Run(
+                Task.Factory.StartNew(
                     () =>
                     {
                         try
@@ -511,7 +515,9 @@ public sealed class ConsumerRegistryTests : TestBase
                             exceptions.Add(ex);
                         }
                     },
-                    AbortToken
+                    AbortToken,
+                    TaskCreationOptions.DenyChildAttach | TaskCreationOptions.LongRunning,
+                    TaskScheduler.Default
                 )
             );
 
