@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics.Metrics;
-using System.Threading.Channels;
 using Headless.Abstractions;
 using Headless.DistributedLocks;
 using Headless.DistributedLocks.InMemory;
@@ -221,17 +220,10 @@ public sealed class DistributedSemaphoreProviderTests : TestBase
         // Wait for each scheduled tick so fake time cannot outrun the background renewal loop.
         for (var i = 0; i < 4; i++)
         {
-            await timeProvider
-                .CadenceTicks.Reader.ReadAsync(AbortToken)
-                .AsTask()
-                .WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
-            timeProvider.Advance(TimeSpan.FromSeconds(1));
+            await timeProvider.AdvanceCadenceAsync(cancellationToken: AbortToken);
         }
 
-        await timeProvider
-            .CadenceTicks.Reader.ReadAsync(AbortToken)
-            .AsTask()
-            .WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        await timeProvider.WaitForCadenceTickAsync(AbortToken);
 
         // then
         slot!.RenewalCount.Should().Be(4);
@@ -466,23 +458,5 @@ public sealed class DistributedSemaphoreProviderTests : TestBase
             timeProvider ?? _timeProvider,
             LoggerFactory.CreateLogger<DistributedSemaphoreProvider>()
         );
-    }
-
-    private sealed class CadenceTimeProvider : FakeTimeProvider
-    {
-        public Channel<bool> CadenceTicks { get; } = Channel.CreateUnbounded<bool>();
-
-        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
-        {
-            var timer = base.CreateTimer(callback, state, dueTime, period);
-
-            // In-memory probes complete synchronously; the one-second timer is the monitor cadence.
-            if (dueTime == TimeSpan.FromSeconds(1))
-            {
-                CadenceTicks.Writer.TryWrite(true);
-            }
-
-            return timer;
-        }
     }
 }

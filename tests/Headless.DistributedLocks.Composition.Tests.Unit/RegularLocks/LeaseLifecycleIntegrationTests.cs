@@ -223,7 +223,8 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
     {
         // given - auto-extend mode renews via RenewAsync each cadence tick; storage row stays.
         var options = new DistributedLockOptions();
-        var provider = _CreateProvider(options);
+        var timeProvider = new CadenceTimeProvider();
+        var provider = _CreateProvider(options, timeProvider: timeProvider);
         var resource = Faker.Random.AlphaNumeric(10);
         await using var handle = await provider.TryAcquireAsync(
             resource,
@@ -239,9 +240,10 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         // when - advance past TTL multiple cadence intervals.
         for (var i = 0; i < 4; i++)
         {
-            _timeProvider.Advance(TimeSpan.FromSeconds(1));
-            await DistributedLockTestSupport.DrainUntilAsync(() => handle!.RenewalCount >= i + 1, AbortToken);
+            await timeProvider.AdvanceCadenceAsync(cancellationToken: AbortToken);
         }
+
+        await timeProvider.WaitForCadenceTickAsync(AbortToken);
 
         // then - LostToken still not fired (auto-extend kept storage row alive).
         handle!.LostToken.IsCancellationRequested.Should().BeFalse();
@@ -252,7 +254,8 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
     {
         // given - auto-extend handle: each cadence tick that succeeds calls RenewAsync.
         var options = new DistributedLockOptions();
-        var provider = _CreateProvider(options);
+        var timeProvider = new CadenceTimeProvider();
+        var provider = _CreateProvider(options, timeProvider: timeProvider);
         var resource = Faker.Random.AlphaNumeric(10);
         await using var handle = await provider.TryAcquireAsync(
             resource,
@@ -268,9 +271,10 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         // when - drive several cadence intervals; background loop should renew.
         for (var i = 0; i < 5; i++)
         {
-            _timeProvider.Advance(TimeSpan.FromSeconds(1));
-            await DistributedLockTestSupport.DrainUntilAsync(() => handle!.RenewalCount >= i + 1, AbortToken);
+            await timeProvider.AdvanceCadenceAsync(cancellationToken: AbortToken);
         }
+
+        await timeProvider.WaitForCadenceTickAsync(AbortToken);
 
         // then - background renewals were recorded.
         handle!.RenewalCount.Should().BeGreaterThanOrEqualTo(3);
@@ -473,21 +477,29 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         handle!.LostToken.IsCancellationRequested.Should().BeTrue();
     }
 
-    private DistributedLock _CreateProvider(DistributedLockOptions? options = null)
+    private DistributedLock _CreateProvider(
+        DistributedLockOptions? options = null,
+        FakeTimeProvider? timeProvider = null
+    )
     {
-        return _CreateProvider(options, Substitute.For<IBus>());
+        return _CreateProvider(options, Substitute.For<IBus>(), timeProvider);
     }
 
-    private DistributedLock _CreateProvider(DistributedLockOptions? options, IBus? bus)
+    private DistributedLock _CreateProvider(
+        DistributedLockOptions? options,
+        IBus? bus,
+        FakeTimeProvider? timeProvider = null
+    )
     {
         _guidGenerator.Create().Returns(_ => Guid.NewGuid());
 
+        var effectiveTimeProvider = timeProvider ?? _timeProvider;
         return new DistributedLock(
-            _storage,
+            timeProvider is null ? _storage : new InMemoryDistributedLockStorage(effectiveTimeProvider),
             bus,
             options ?? new DistributedLockOptions(),
             _guidGenerator,
-            _timeProvider,
+            effectiveTimeProvider,
             LoggerFactory.CreateLogger<DistributedLock>()
         );
     }
