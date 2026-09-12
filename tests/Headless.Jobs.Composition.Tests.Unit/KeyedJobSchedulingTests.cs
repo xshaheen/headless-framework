@@ -67,7 +67,8 @@ public sealed class KeyedJobSchedulingTests : TestBase
     [InlineData("retries")]
     [InlineData("intervals")]
     [InlineData("node-death")]
-    public void fingerprint_changes_only_for_behavioral_intent(string changed)
+    [InlineData("all-policy")]
+    public void fingerprint_changes_only_for_business_identity(string changed)
     {
         var original = JobsKeyedSchedulingScenarios.Candidate();
         var modified = JobsKeyedSchedulingScenarios.Candidate();
@@ -91,11 +92,25 @@ public sealed class KeyedJobSchedulingTests : TestBase
             case "node-death":
                 modified.OnNodeDeath = NodeDeathPolicy.Skip;
                 break;
+            case "all-policy":
+                modified.Retries = 4;
+                modified.RetryIntervals = [1, 3];
+                modified.OnNodeDeath = NodeDeathPolicy.MarkFailed;
+                break;
         }
 
         JobIntentFingerprint.Normalize(original);
         JobIntentFingerprint.Normalize(modified);
-        JobIntentFingerprint.Compute(original, "v1").Should().NotBe(JobIntentFingerprint.Compute(modified, "v1"));
+        var originalFingerprint = JobIntentFingerprint.Compute(original, JobIntentFingerprint.Algorithm);
+        var modifiedFingerprint = JobIntentFingerprint.Compute(modified, JobIntentFingerprint.Algorithm);
+        if (changed is "retries" or "intervals" or "node-death" or "all-policy")
+        {
+            modifiedFingerprint.Should().Be(originalFingerprint);
+        }
+        else
+        {
+            modifiedFingerprint.Should().NotBe(originalFingerprint);
+        }
     }
 
     [Fact]
@@ -115,12 +130,111 @@ public sealed class KeyedJobSchedulingTests : TestBase
             .Should()
             .Be("caa4a313cae19b0fe80623b8f440a4c20bd7749c2384aa61e9019770fdcca86f");
         one.ExecutionTime.Should().Be(two.ExecutionTime);
-        JobIntentFingerprint.Compute(one, "v1").Should().Be(JobIntentFingerprint.Compute(two, "v1"));
+        // Independently packed length-prefixed UTF-8 tag/version, payload, and ticks (640290528000000000), hashed with shasum.
+        JobIntentFingerprint.Algorithm.Should().Be("v2");
+        JobIntentFingerprint
+            .Compute(one, JobIntentFingerprint.Algorithm)
+            .Should()
+            .Be("064c4814cd31579b8ba62b562fccedf3d69dcc70f9eabd4535cfa0dc384da120");
+        JobIntentFingerprint
+            .Compute(one, JobIntentFingerprint.Algorithm)
+            .Should()
+            .Be(JobIntentFingerprint.Compute(two, JobIntentFingerprint.Algorithm));
         one.Request = null;
         two.Request = [];
-        JobIntentFingerprint.Compute(one, "v1").Should().NotBe(JobIntentFingerprint.Compute(two, "v1"));
+        JobIntentFingerprint
+            .Compute(one, JobIntentFingerprint.Algorithm)
+            .Should()
+            .NotBe(JobIntentFingerprint.Compute(two, JobIntentFingerprint.Algorithm));
         var unknown = () => JobIntentFingerprint.Compute(one, "v99");
         unknown.Should().Throw<NotSupportedException>();
+    }
+
+    [Theory]
+    [InlineData("v1", JobStatus.InProgress)]
+    [InlineData("v1", JobStatus.Succeeded)]
+    [InlineData("v2", JobStatus.InProgress)]
+    [InlineData("v2", JobStatus.Succeeded)]
+    public void comparison_uses_captured_policy_without_mutating_either_row(string algorithm, JobStatus status)
+    {
+        var current = JobsKeyedSchedulingScenarios.Candidate();
+        current.Retries = 3;
+        current.RetryIntervals = [2, 5];
+        current.OnNodeDeath = NodeDeathPolicy.Skip;
+        JobIntentFingerprint.Normalize(current);
+        current.FingerprintAlgorithm = algorithm;
+        // Independent hashes also pin legacy policy field order and interval encoding.
+        current.IntentFingerprint = string.Equals(algorithm, "v1", StringComparison.Ordinal)
+            ? "2f640274c7be4eae59888815835ff49caf08c86980a7af3201d6edd307e29aff"
+            : "064c4814cd31579b8ba62b562fccedf3d69dcc70f9eabd4535cfa0dc384da120";
+        JobIntentFingerprint.Compute(current, algorithm).Should().Be(current.IntentFingerprint);
+        current.Status = status;
+        current.OwnerId = "node@incarnation";
+        current.RetryCount = 2;
+        current.ExecutionTime = current.ExecutionTime!.Value.AddHours(1);
+        current.Request = [9];
+
+        var candidate = JobsKeyedSchedulingScenarios.Candidate();
+        candidate.Retries = 7;
+        candidate.RetryIntervals = [8, 13];
+        candidate.OnNodeDeath = NodeDeathPolicy.MarkFailed;
+        JobIntentFingerprint.Normalize(candidate);
+        var currentSnapshot = current.Clone();
+        var candidateSnapshot = candidate.Clone();
+        var currentIntervals = current.RetryIntervals;
+        var candidateIntervals = candidate.RetryIntervals;
+        var currentRequest = current.Request;
+        var candidateRequest = candidate.Request;
+
+        JobIntentFingerprint.Matches(candidate, current).Should().BeTrue();
+
+        current.Should().BeEquivalentTo(currentSnapshot);
+        candidate.Should().BeEquivalentTo(candidateSnapshot);
+        current.RetryIntervals.Should().BeSameAs(currentIntervals);
+        candidate.RetryIntervals.Should().BeSameAs(candidateIntervals);
+        current.Request.Should().BeSameAs(currentRequest);
+        candidate.Request.Should().BeSameAs(candidateRequest);
+    }
+
+    [Theory]
+    [InlineData("version")]
+    [InlineData("payload")]
+    [InlineData("due")]
+    public void legacy_comparison_rejects_changed_business_identity(string changed)
+    {
+        var current = JobsKeyedSchedulingScenarios.Candidate();
+        current.Retries = 3;
+        current.RetryIntervals = [2, 5];
+        JobIntentFingerprint.Normalize(current);
+        current.FingerprintAlgorithm = "v1";
+        current.IntentFingerprint = JobIntentFingerprint.Compute(current, "v1");
+        var candidate = JobsKeyedSchedulingScenarios.Candidate();
+        switch (changed)
+        {
+            case "version":
+                candidate.ContractVersion = "2";
+                break;
+            case "payload":
+                candidate.Request = [1, 2, 4];
+                break;
+            case "due":
+                candidate.ExecutionTime = candidate.ExecutionTime!.Value.AddTicks(10);
+                break;
+        }
+
+        JobIntentFingerprint.Normalize(candidate);
+        JobIntentFingerprint.Matches(candidate, current).Should().BeFalse();
+    }
+
+    [Fact]
+    public void comparison_rejects_unknown_stored_algorithms()
+    {
+        var candidate = JobsKeyedSchedulingScenarios.Candidate();
+        JobIntentFingerprint.Normalize(candidate);
+        var current = candidate.Clone();
+        current.FingerprintAlgorithm = "v99";
+        var compare = () => JobIntentFingerprint.Matches(candidate, current);
+        compare.Should().Throw<NotSupportedException>();
     }
 
     [Fact]
@@ -207,7 +321,7 @@ public sealed class KeyedJobSchedulingTests : TestBase
     }
 
     [Fact]
-    public async Task schedule_policy_changes_are_fingerprinted_after_the_pipeline()
+    public async Task schedule_policy_changes_preserve_captured_policy_after_the_pipeline()
     {
         JobFunctionProvider.ResetForTests(discoveryComplete: false);
         var retryPolicy = 2;
@@ -260,7 +374,12 @@ public sealed class KeyedJobSchedulingTests : TestBase
             retryPolicy = 3;
             (await scheduler.ScheduleKeyedAsync(key, descriptor, due, cancellationToken: AbortToken))
                 .Disposition.Should()
-                .Be(JobScheduleDisposition.Conflict);
+                .Be(JobScheduleDisposition.Existing);
+            var observed = await store.GetTimeJobByIdAsync(created.RunId.Value, AbortToken);
+            observed!.Retries.Should().Be(2);
+            observed.IntentFingerprint.Should().Be(persisted.IntentFingerprint);
+            observed.FingerprintAlgorithm.Should().Be("v2");
+            observed.Generation.Should().Be(created.Generation);
         }
         finally
         {

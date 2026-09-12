@@ -88,7 +88,7 @@ public abstract partial class JobsKeyedSchedulingConformanceTests<TFixture>(TFix
         var reopened = restarted.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
         var result = await reopened.ScheduleKeyedTimeJobAsync(
             new JobKey("invoice-42"),
-            JobsKeyedSchedulingScenarios.Candidate([4]),
+            JobsKeyedSchedulingScenarios.Candidate(),
             cancellationToken: AbortToken
         );
         result.Disposition.Should().Be(JobScheduleDisposition.Existing);

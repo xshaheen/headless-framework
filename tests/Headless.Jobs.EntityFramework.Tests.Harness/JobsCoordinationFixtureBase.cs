@@ -148,7 +148,8 @@ public static class JobsCoordinationFixtureExtensions
         TimeProvider? timeProvider = null,
         TimeSpan? leaseDuration = null,
         bool useNativeClaims = true,
-        IInterceptor? interceptor = null
+        IInterceptor? interceptor = null,
+        Action<JobsOptionsBuilder<TimeJobEntity, CronJobEntity>>? configureJobs = null
     )
     {
         return _BuildHost<JobsDbContext>(
@@ -159,7 +160,8 @@ public static class JobsCoordinationFixtureExtensions
             timeProvider,
             leaseDuration,
             useNativeClaims,
-            interceptor
+            interceptor,
+            configureJobs
         );
     }
 
@@ -204,7 +206,8 @@ public static class JobsCoordinationFixtureExtensions
         TimeProvider? timeProvider,
         TimeSpan? leaseDuration = null,
         bool useNativeClaims = true,
-        IInterceptor? interceptor = null
+        IInterceptor? interceptor = null,
+        Action<JobsOptionsBuilder<TimeJobEntity, CronJobEntity>>? configureJobs = null
     )
         where TDbContext : JobsDbContext<TimeJobEntity, CronJobEntity>
     {
@@ -233,6 +236,7 @@ public static class JobsCoordinationFixtureExtensions
             // The scheduler is disabled so it never races the tests' direct persistence calls. Dead-node recovery
             // is driven by the MembershipRecoveryBridge + coordination heartbeat, both of which still run.
             options.DisableBackgroundServices();
+            configureJobs?.Invoke(options);
             if (leaseDuration is not null)
             {
                 options.ConfigureScheduler(scheduler => scheduler.LeaseDuration = leaseDuration.Value);

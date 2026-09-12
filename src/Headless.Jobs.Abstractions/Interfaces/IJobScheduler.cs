@@ -174,6 +174,12 @@ public interface IJobScheduler
     );
 
     /// <summary>Schedules one durable keyed intent at an absolute instant. Repeating the same intent observes its current run, including terminal runs.</summary>
+    /// <remarks>
+    /// Within the key scope, intent consists of contract version, exact durable request bytes after middleware,
+    /// and the UTC due instant truncated to microseconds. Retry and node-death policy differences, including
+    /// explicit overrides, observe the existing generation without changing its captured policy.
+    /// Options validation and required atomic enlistment still apply.
+    /// </remarks>
     Task<JobScheduleResult> ScheduleKeyedAsync<TArgs>(
         JobKey key,
         TArgs request,
@@ -181,6 +187,7 @@ public interface IJobScheduler
         CancellationToken cancellationToken = default
     );
 
+    /// <inheritdoc cref="ScheduleKeyedAsync{TArgs}(JobKey, TArgs, DateTimeOffset, CancellationToken)"/>
     Task<JobScheduleResult> ScheduleKeyedAsync<TArgs>(
         JobKey key,
         TArgs request,
@@ -190,6 +197,12 @@ public interface IJobScheduler
     );
 
     /// <summary>Schedules a requestless durable keyed intent at an absolute instant.</summary>
+    /// <remarks>
+    /// Within the key scope, intent consists of contract version, exact durable request bytes after middleware,
+    /// and the UTC due instant truncated to microseconds.
+    /// Retry and node-death policy differences, including explicit overrides, preserve the existing generation's
+    /// captured policy. Options validation and required atomic enlistment still apply.
+    /// </remarks>
     Task<JobScheduleResult> ScheduleKeyedAsync(
         JobKey key,
         JobFunctionDescriptor descriptor,
@@ -197,6 +210,7 @@ public interface IJobScheduler
         CancellationToken cancellationToken = default
     );
 
+    /// <inheritdoc cref="ScheduleKeyedAsync(JobKey, JobFunctionDescriptor, DateTimeOffset, CancellationToken)"/>
     Task<JobScheduleResult> ScheduleKeyedAsync(
         JobKey key,
         JobFunctionDescriptor descriptor,
@@ -206,6 +220,7 @@ public interface IJobScheduler
     );
 
     /// <summary>Replaces or reschedules only a pending, unclaimed observed generation. A replay cannot advance another generation.</summary>
+    /// <remarks>A successful replacement captures the call's resolved execution policy in generation N+1, even when its intent equals generation N.</remarks>
     Task<JobScheduleResult> ReplaceKeyedAsync<TArgs>(
         JobKey key,
         long expectedGeneration,
@@ -214,6 +229,7 @@ public interface IJobScheduler
         CancellationToken cancellationToken = default
     );
 
+    /// <inheritdoc cref="ReplaceKeyedAsync{TArgs}(JobKey, long, TArgs, DateTimeOffset, CancellationToken)"/>
     Task<JobScheduleResult> ReplaceKeyedAsync<TArgs>(
         JobKey key,
         long expectedGeneration,
@@ -224,6 +240,7 @@ public interface IJobScheduler
     );
 
     /// <summary>Replaces or reschedules a requestless pending, unclaimed observed generation.</summary>
+    /// <remarks>A successful replacement captures the call's resolved execution policy in generation N+1, even when its intent equals generation N.</remarks>
     Task<JobScheduleResult> ReplaceKeyedAsync(
         JobKey key,
         long expectedGeneration,
@@ -232,6 +249,7 @@ public interface IJobScheduler
         CancellationToken cancellationToken = default
     );
 
+    /// <inheritdoc cref="ReplaceKeyedAsync(JobKey, long, JobFunctionDescriptor, DateTimeOffset, CancellationToken)"/>
     Task<JobScheduleResult> ReplaceKeyedAsync(
         JobKey key,
         long expectedGeneration,
