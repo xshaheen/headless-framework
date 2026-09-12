@@ -37,7 +37,7 @@ public static class JobsKeyedSchedulingScenarios
             Array.FindIndex(creates, result => result.Disposition == JobScheduleDisposition.Created)
         ];
         _AssertPolicy(original!, winner);
-        original!.FingerprintAlgorithm.Should().Be("v2");
+        original!.FingerprintAlgorithm.Should().Be("v1");
         var fingerprintBeforeRead = original!.IntentFingerprint;
         var detachedBytes = await store.GetTimeJobRequestAsync(originalId, cancellationToken);
         detachedBytes[0] = 99;
@@ -110,7 +110,7 @@ public static class JobsKeyedSchedulingScenarios
         ];
         _AssertPolicy(current, replacementWinner);
         current.IntentFingerprint.Should().Be(fingerprintBeforeRead);
-        current.FingerprintAlgorithm.Should().Be("v2");
+        current.FingerprintAlgorithm.Should().Be("v1");
 
         var cancel = await store.CancelKeyedTimeJobAsync(scope, key, 2, cancellationToken);
         cancel.Disposition.Should().Be(JobScheduleDisposition.Cancelled);

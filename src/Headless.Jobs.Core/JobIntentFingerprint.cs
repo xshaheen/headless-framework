@@ -10,7 +10,7 @@ namespace Headless.Jobs;
 
 internal static class JobIntentFingerprint
 {
-    internal const string Algorithm = "v2";
+    internal const string Algorithm = "v1";
 
     internal static void Validate<TJob>(TJob job)
         where TJob : TimeJobEntity<TJob>
@@ -71,22 +71,19 @@ internal static class JobIntentFingerprint
         job.RetryIntervals = job.RetryIntervals is { Length: > 0 } intervals ? intervals.ToArray() : null;
     }
 
-    internal static string Compute<TJob>(TJob job, string algorithm)
-        where TJob : TimeJobEntity<TJob> => _Compute(job, job, algorithm);
-
     internal static bool Matches<TJob>(TJob candidate, TJob current)
         where TJob : TimeJobEntity<TJob> =>
         string.Equals(
-            _Compute(candidate, current, current.FingerprintAlgorithm),
+            Compute(candidate, current.FingerprintAlgorithm),
             current.IntentFingerprint,
             StringComparison.Ordinal
         );
 
 #pragma warning disable MA0045 // Pure in-memory canonical hashing has no asynchronous I/O; synchronous MemoryStream disposal is intentional.
-    private static string _Compute<TJob>(TJob job, TJob policy, string? algorithm)
+    internal static string Compute<TJob>(TJob job, string? algorithm)
         where TJob : TimeJobEntity<TJob>
     {
-        if (algorithm is not ("v1" or Algorithm))
+        if (!string.Equals(algorithm, Algorithm, StringComparison.Ordinal))
         {
             throw new NotSupportedException(
                 $"Unknown stored Jobs intent fingerprint algorithm '{algorithm}'. Migrate or explicitly replace that generation; it cannot be reinterpreted implicitly."
@@ -97,28 +94,10 @@ internal static class JobIntentFingerprint
         // An explicit tag separates this encoding from any later algorithm. Payload bytes are never deserialized.
         using var buffer = new MemoryStream();
         using var writer = new BinaryWriter(buffer, Encoding.UTF8, leaveOpen: true);
-        _WriteBytes(
-            writer,
-            string.Equals(algorithm, "v1", StringComparison.Ordinal)
-                ? "headless-jobs-intent-v1"u8.ToArray()
-                : "headless-jobs-intent-v2"u8.ToArray()
-        );
+        _WriteBytes(writer, "headless-jobs-intent-v1"u8.ToArray());
         _WriteBytes(writer, Encoding.UTF8.GetBytes(job.ContractVersion));
         _WriteBytes(writer, job.Request);
         writer.Write(job.ExecutionTime!.Value.Ticks);
-        if (string.Equals(algorithm, "v1", StringComparison.Ordinal))
-        {
-            // Retained v1 hashes include captured policy. Substitute it without mutating either row or
-            // reading stored execution fields, which may have changed since the generation was scheduled.
-            writer.Write(policy.Retries);
-            writer.Write(policy.RetryIntervals?.Length ?? 0);
-            foreach (var interval in policy.RetryIntervals ?? [])
-            {
-                writer.Write(interval);
-            }
-
-            writer.Write((int)policy.OnNodeDeath);
-        }
 
         writer.Flush();
         return Convert.ToHexStringLower(SHA256.HashData(buffer.GetBuffer().AsSpan(0, checked((int)buffer.Length))));

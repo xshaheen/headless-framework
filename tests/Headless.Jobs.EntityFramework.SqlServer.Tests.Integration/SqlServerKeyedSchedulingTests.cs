@@ -66,10 +66,6 @@ public sealed class SqlServerKeyedSchedulingTests(SqlServerJobsCoordinationFixtu
         base.independently_configured_schedulers_preserve_policy_across_restart(source);
 
     [Fact]
-    public override Task retained_v1_observation_preserves_the_stored_generation() =>
-        base.retained_v1_observation_preserves_the_stored_generation();
-
-    [Fact]
     public override Task keyed_provider_operation_matrix_survives_restart() =>
         base.keyed_provider_operation_matrix_survives_restart();
 

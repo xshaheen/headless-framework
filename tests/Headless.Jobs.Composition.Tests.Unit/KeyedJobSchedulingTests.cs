@@ -125,17 +125,13 @@ public sealed class KeyedJobSchedulingTests : TestBase
         two.Description = "other-display";
         JobIntentFingerprint.Normalize(one);
         JobIntentFingerprint.Normalize(two);
-        JobIntentFingerprint
-            .Compute(one, "v1")
-            .Should()
-            .Be("caa4a313cae19b0fe80623b8f440a4c20bd7749c2384aa61e9019770fdcca86f");
         one.ExecutionTime.Should().Be(two.ExecutionTime);
-        // Independently packed length-prefixed UTF-8 tag/version, payload, and ticks (640290528000000000), hashed with shasum.
-        JobIntentFingerprint.Algorithm.Should().Be("v2");
+        // Independently packed length-prefixed UTF-8 tag/version, payload, and ticks (640290528000000000), hashed with Digest::SHA.
+        JobIntentFingerprint.Algorithm.Should().Be("v1");
         JobIntentFingerprint
             .Compute(one, JobIntentFingerprint.Algorithm)
             .Should()
-            .Be("064c4814cd31579b8ba62b562fccedf3d69dcc70f9eabd4535cfa0dc384da120");
+            .Be("9661891edb0607a98e98e31b8ad90bb9336f16558f2655e016f3359d63010f8d");
         JobIntentFingerprint
             .Compute(one, JobIntentFingerprint.Algorithm)
             .Should()
@@ -151,23 +147,18 @@ public sealed class KeyedJobSchedulingTests : TestBase
     }
 
     [Theory]
-    [InlineData("v1", JobStatus.InProgress)]
-    [InlineData("v1", JobStatus.Succeeded)]
-    [InlineData("v2", JobStatus.InProgress)]
-    [InlineData("v2", JobStatus.Succeeded)]
-    public void comparison_uses_captured_policy_without_mutating_either_row(string algorithm, JobStatus status)
+    [InlineData(JobStatus.InProgress)]
+    [InlineData(JobStatus.Succeeded)]
+    public void comparison_ignores_policy_without_mutating_either_row(JobStatus status)
     {
         var current = JobsKeyedSchedulingScenarios.Candidate();
         current.Retries = 3;
         current.RetryIntervals = [2, 5];
         current.OnNodeDeath = NodeDeathPolicy.Skip;
         JobIntentFingerprint.Normalize(current);
-        current.FingerprintAlgorithm = algorithm;
-        // Independent hashes also pin legacy policy field order and interval encoding.
-        current.IntentFingerprint = string.Equals(algorithm, "v1", StringComparison.Ordinal)
-            ? "2f640274c7be4eae59888815835ff49caf08c86980a7af3201d6edd307e29aff"
-            : "064c4814cd31579b8ba62b562fccedf3d69dcc70f9eabd4535cfa0dc384da120";
-        JobIntentFingerprint.Compute(current, algorithm).Should().Be(current.IntentFingerprint);
+        current.FingerprintAlgorithm = JobIntentFingerprint.Algorithm;
+        current.IntentFingerprint = "9661891edb0607a98e98e31b8ad90bb9336f16558f2655e016f3359d63010f8d";
+        JobIntentFingerprint.Compute(current, JobIntentFingerprint.Algorithm).Should().Be(current.IntentFingerprint);
         current.Status = status;
         current.OwnerId = "node@incarnation";
         current.RetryCount = 2;
@@ -194,36 +185,6 @@ public sealed class KeyedJobSchedulingTests : TestBase
         candidate.RetryIntervals.Should().BeSameAs(candidateIntervals);
         current.Request.Should().BeSameAs(currentRequest);
         candidate.Request.Should().BeSameAs(candidateRequest);
-    }
-
-    [Theory]
-    [InlineData("version")]
-    [InlineData("payload")]
-    [InlineData("due")]
-    public void legacy_comparison_rejects_changed_business_identity(string changed)
-    {
-        var current = JobsKeyedSchedulingScenarios.Candidate();
-        current.Retries = 3;
-        current.RetryIntervals = [2, 5];
-        JobIntentFingerprint.Normalize(current);
-        current.FingerprintAlgorithm = "v1";
-        current.IntentFingerprint = JobIntentFingerprint.Compute(current, "v1");
-        var candidate = JobsKeyedSchedulingScenarios.Candidate();
-        switch (changed)
-        {
-            case "version":
-                candidate.ContractVersion = "2";
-                break;
-            case "payload":
-                candidate.Request = [1, 2, 4];
-                break;
-            case "due":
-                candidate.ExecutionTime = candidate.ExecutionTime!.Value.AddTicks(10);
-                break;
-        }
-
-        JobIntentFingerprint.Normalize(candidate);
-        JobIntentFingerprint.Matches(candidate, current).Should().BeFalse();
     }
 
     [Fact]
@@ -378,7 +339,7 @@ public sealed class KeyedJobSchedulingTests : TestBase
             var observed = await store.GetTimeJobByIdAsync(created.RunId.Value, AbortToken);
             observed!.Retries.Should().Be(2);
             observed.IntentFingerprint.Should().Be(persisted.IntentFingerprint);
-            observed.FingerprintAlgorithm.Should().Be("v2");
+            observed.FingerprintAlgorithm.Should().Be("v1");
             observed.Generation.Should().Be(created.Generation);
         }
         finally

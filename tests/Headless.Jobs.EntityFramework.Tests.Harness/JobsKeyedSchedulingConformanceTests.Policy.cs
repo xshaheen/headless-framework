@@ -1,11 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Jobs.DbContextFactory;
 using Headless.Jobs.Entities;
-using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Models;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
@@ -61,55 +58,5 @@ public abstract partial class JobsKeyedSchedulingConformanceTests<TFixture>
             .Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>()
             .GetTimeJobByIdAsync(result.RunId!.Value, AbortToken);
         JobsKeyedPolicyScenarios.AssertPolicy(row!, JobsKeyedPolicyScenarios.Policy(1));
-    }
-
-    public virtual async Task retained_v1_observation_preserves_the_stored_generation()
-    {
-        await Fixture.ResetDatabaseAsync(AbortToken);
-        using var host = Fixture.BuildHost("legacy-policy");
-        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, AbortToken);
-        var store = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
-        var key = new JobKey("legacy-policy");
-        var created = await store.ScheduleKeyedTimeJobAsync(
-            key,
-            JobsKeyedSchedulingScenarios.Candidate(),
-            cancellationToken: AbortToken
-        );
-        await using (
-            var context = await host
-                .Services.GetRequiredService<IDbContextFactory<JobsDbContext>>()
-                .CreateDbContextAsync(AbortToken)
-        )
-        {
-            // The fixed v1 golden hash represents this candidate before retry execution moved its due time.
-            await context
-                .Set<TimeJobEntity>()
-                .Where(row => row.Id == created.RunId)
-                .ExecuteUpdateAsync(
-                    setter =>
-                        setter
-                            .SetProperty(row => row.FingerprintAlgorithm, "v1")
-                            .SetProperty(
-                                row => row.IntentFingerprint,
-                                "caa4a313cae19b0fe80623b8f440a4c20bd7749c2384aa61e9019770fdcca86f"
-                            )
-                            .SetProperty(row => row.Status, JobStatus.Succeeded)
-                            .SetProperty(row => row.ExecutionTime, new DateTime(2030, 1, 1, 1, 0, 0, DateTimeKind.Utc)),
-                    AbortToken
-                );
-        }
-        var before = await store.GetTimeJobByIdAsync(created.RunId!.Value, AbortToken);
-        var candidate = JobsKeyedSchedulingScenarios.Candidate();
-        candidate.Retries = 5;
-        candidate.RetryIntervals = [2, 4];
-        candidate.OnNodeDeath = NodeDeathPolicy.Skip;
-        var result = await store.ScheduleKeyedTimeJobAsync(key, candidate, cancellationToken: AbortToken);
-        result.Disposition.Should().Be(JobScheduleDisposition.Existing);
-        result.State.Should().Be(JobStatus.Succeeded);
-        (await store.GetTimeJobByIdAsync(created.RunId.Value, AbortToken)).Should().BeEquivalentTo(before);
-        candidate.Request = [9];
-        (await store.ScheduleKeyedTimeJobAsync(key, candidate, cancellationToken: AbortToken))
-            .Disposition.Should()
-            .Be(JobScheduleDisposition.Conflict);
     }
 }

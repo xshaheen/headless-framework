@@ -73,7 +73,7 @@ public static class JobsKeyedPolicyScenarios
             replacement.Generation.Should().Be(2);
             var replaced = await store.GetTimeJobByIdAsync(replacement.RunId!.Value, cancellationToken);
             AssertPolicy(replaced!, Policy(1 - winner));
-            replaced!.FingerprintAlgorithm.Should().Be("v2");
+            replaced!.FingerprintAlgorithm.Should().Be("v1");
         }
 
         var raceKey = new JobKey($"{source}-race");

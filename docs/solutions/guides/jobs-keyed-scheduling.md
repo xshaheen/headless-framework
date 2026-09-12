@@ -12,7 +12,7 @@ Initialize the application's Jobs database from the current EF model before star
 | --- | --- |
 | `BusinessKey` | Ordinal caller key, at most 200 UTF-16 code units |
 | `IntentFingerprint` | SHA-256 of canonical durable intent, 64 lowercase hexadecimal characters |
-| `FingerprintAlgorithm` | Recorded algorithm; current writer uses `v2`, retained `v1` remains readable, maximum length 16 |
+| `FingerprintAlgorithm` | Recorded algorithm; current writer uses `v1`, maximum length 16 |
 | `Generation` | Positive generation within tenant/system scope, function, and business key |
 | `IsCurrentGeneration` | Current-key marker independent of execution status |
 
@@ -59,19 +59,11 @@ The indexes and conditional writes enforce storage ownership; process-local lock
 
 `Retries`, `RetryIntervals`, and `OnNodeDeath` are execution policy captured by the first successful create. Differences in host defaults, function defaults, or explicit call overrides return `Existing` when intent matches, without changing the stored policy, fingerprint, metadata, or execution state. Concurrent matching submissions retain one winner's complete policy. Options validation and `RequireAtomicEnlistment` still apply to each call. To change policy, use generation-fenced replacement while the current run is pending and unclaimed. Replacement creates generation N+1 with the call's resolved policy even when intent is unchanged.
 
-New and replacement generations use `v2`, which hashes contract version, exact durable request bytes after middleware, and UTC due ticks truncated to microseconds. Null and empty payloads differ. Retry policy, node-death policy, presentation, lineage, and tracing do not participate. Reuse the same absolute `DateTimeOffset` instant and stable serialized bytes when resubmitting.
+New and replacement generations use `v1`, which hashes contract version, exact durable request bytes after middleware, and UTC due ticks truncated to microseconds. Null and empty payloads differ. Retry policy, node-death policy, presentation, lineage, and tracing do not participate. Reuse the same absolute `DateTimeOffset` instant and stable serialized bytes when resubmitting.
 
-Retained `v1` generations remain readable without changing their stored hash or algorithm. Comparison hashes the incoming business intent with the retained generation's captured retries, intervals, and node-death policy through the original `v1` encoder. This gives legacy keys the same policy-independent observation behavior. Unknown algorithms reject ordinary observation explicitly; generation-fenced replacement keeps its existing eligibility checks.
+Unknown algorithms reject ordinary observation explicitly; generation-fenced replacement keeps its existing eligibility checks.
 
-The `v2` SHA-256 encoding uses the domain tag `headless-jobs-intent-v2`, followed by contract version, payload, and normalized due ticks. It retains signed length prefixes and little-endian integer encoding. Tenant/system scope, logical function name, and business key are enforced by key lookup rather than repeated in the hash. The original `v1` encoder also includes retries, interval count and values, and node-death policy. Its absent and empty interval arrays remain equivalent.
-
-Legacy comparison is read-only. It uses the incoming due instant, not the row's execution time, which can advance during retries. Do not mutate either row to substitute policy or deserialize and reserialize the retained request.
-
-## Upgrade keyed scheduling
-
-No schema migration or fingerprint rewrite is required. Mixed-version keyed scheduling is unsupported because old code rejects `v2` and still compares policy on `v1`. Pause keyed submissions and replacement, upgrade every process that can perform those operations, including workers, then resume. After any retained `v2` generation is written, rollback to old scheduling code is unsafe. Use a forward fix; do not delete retained keys to enable rollback.
-
-Uninterrupted rolling upgrades require a separate reader-first compatibility release or writer gate. Neither is provided by this change.
+The `v1` SHA-256 encoding uses the domain tag `headless-jobs-intent-v1`, followed by contract version, payload, and normalized due ticks. It retains signed length prefixes and little-endian integer encoding. Tenant/system scope, logical function name, and business key are enforced by key lookup rather than repeated in the hash.
 
 ## Retention and verification
 
