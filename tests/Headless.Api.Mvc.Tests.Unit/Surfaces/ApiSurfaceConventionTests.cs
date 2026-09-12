@@ -8,7 +8,6 @@ using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ApplicationModels;
-using Microsoft.Extensions.Options;
 
 namespace Tests.Surfaces;
 
@@ -36,8 +35,9 @@ public sealed class ApiSurfaceConventionTests : TestBase
             }
         );
 
-        var options = Options.Create(surfaceOptions);
-        var convention = new ApiSurfaceConvention(new ApiSurfaceRegistry(options));
+        var convention = new ApiSurfaceConvention(
+            new ApiSurfaceRegistry(surfaceOptions.Surfaces.Select(surface => surface.Build()))
+        );
 
         var controllerType = typeof(DummyPortalController).GetTypeInfo();
         var controllerModel = new ControllerModel(controllerType, [new ApiSurfaceAttribute("Portal")]);
@@ -71,7 +71,7 @@ public sealed class ApiSurfaceConventionTests : TestBase
     [Fact]
     public void should_reject_unknown_surface_instead_of_skipping_authorization()
     {
-        var convention = new ApiSurfaceConvention(new ApiSurfaceRegistry(Options.Create(new ApiSurfaceOptions())));
+        var convention = new ApiSurfaceConvention(new ApiSurfaceRegistry([]));
         var application = new ApplicationModel();
         application.Controllers.Add(
             new ControllerModel(typeof(DummyPortalController).GetTypeInfo(), [new ApiSurfaceAttribute("typo")])
