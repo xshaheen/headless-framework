@@ -62,6 +62,8 @@ internal sealed class HeadlessTenantModelConvention(DbContext db, string provide
             _ConfigureFilter(root, property);
         }
 
+        _ScopeSelectedIndexes(model);
+
         foreach (var owned in model.GetEntityTypes().Where(x => x.IsOwned()))
         {
             if (owned.FindAnnotation(HeadlessTenantPolicyAnnotations.IsOwned) is not null)
@@ -85,6 +87,86 @@ internal sealed class HeadlessTenantModelConvention(DbContext db, string provide
             {
                 throw new InvalidOperationException(
                     $"Tenant-owned graph '{owner.Name}' contains separately stored owned entity '{owned.Name}'. Only shared-row and JSON ownership are supported."
+                );
+            }
+        }
+    }
+
+    private static void _ScopeSelectedIndexes(IMutableModel model)
+    {
+        foreach (var entity in model.GetEntityTypes())
+        {
+            foreach (
+                var index in entity
+                    .GetDeclaredIndexes()
+                    .Where(x => x[HeadlessTenantPolicyAnnotations.ScopedIndex] is true)
+                    .ToArray()
+            )
+            {
+                if (!entity.IsTenantOwned() || entity.IsOwned() || !index.IsUnique)
+                {
+                    throw new InvalidOperationException(
+                        $"Tenant-scoped index '{index.Name ?? index.GetDatabaseName()}' must be unique and declared on a tenant-owned entity."
+                    );
+                }
+
+                var tenant = entity.FindProperty(entity.GetTenantPropertyName()!)!;
+                if (index.Properties.Contains(tenant))
+                {
+                    continue;
+                }
+
+                _ValidateIndexAnnotations(index, tenant.Name);
+                IMutableProperty[] properties = [.. index.Properties, tenant];
+                if (index.Name is null && entity.FindIndex(properties) is not null)
+                {
+                    throw new InvalidOperationException(
+                        $"Tenant-scoped index on '{entity.Name}' conflicts with an existing index."
+                    );
+                }
+
+                var name = index.Name;
+                var databaseName = index.GetDatabaseName();
+                var annotations = index.GetAnnotations().ToArray();
+                var directions = index.IsDescending;
+                bool[]? scopedDirections = directions is null
+                    ? null
+                    : [.. directions.Count == 0 ? Enumerable.Repeat(true, index.Properties.Count) : directions, false];
+                using var batch = model.DelayConventions();
+                entity.RemoveIndex(index);
+                var scoped = name is null ? entity.AddIndex(properties) : entity.AddIndex(properties, name);
+                scoped.IsUnique = true;
+                foreach (var annotation in annotations)
+                {
+                    scoped.SetAnnotation(annotation.Name, annotation.Value);
+                }
+                scoped.IsDescending = scopedDirections;
+                scoped.SetDatabaseName(databaseName);
+            }
+        }
+    }
+
+    private static void _ValidateIndexAnnotations(IMutableIndex index, string tenantName)
+    {
+        foreach (var annotation in index.GetAnnotations())
+        {
+            var supported = annotation.Name switch
+            {
+                "Npgsql:IndexExpression" or "Npgsql:TsVectorConfig" or "Npgsql:IndexSortOrder" => false,
+                "Npgsql:IndexOperators" or "Npgsql:IndexCollation" or "Relational:Collation" => annotation.Value
+                    is IReadOnlyList<string> values
+                    && values.Count <= index.Properties.Count,
+                "Npgsql:IndexNullSortOrder" => annotation.Value is Array values
+                    && values.Rank == 1
+                    && values.Length <= index.Properties.Count,
+                "Npgsql:IndexInclude" or "SqlServer:Include" => annotation.Value is IReadOnlyList<string> values
+                    && !values.Contains(tenantName, StringComparer.Ordinal),
+                _ => annotation.Value is (not System.Collections.IEnumerable) or string,
+            };
+            if (!supported)
+            {
+                throw new InvalidOperationException(
+                    $"Tenant-scoped index '{index.Name ?? index.GetDatabaseName()}' cannot preserve annotation '{annotation.Name}' when appending its tenant column."
                 );
             }
         }

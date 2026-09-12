@@ -91,6 +91,19 @@
         "resolved": "5.0.0-1.25277.114",
         "contentHash": "tgmnwUv1iqiQFVp1hVRDR9mUy9/i6BS75l9FkFD/T76aAlU1XEjVYsS0Jkz/nbQg+vVvyxgglDhiOXwAvoIvMg=="
       },
+      "Microsoft.EntityFrameworkCore.SqlServer": {
+        "type": "Direct",
+        "requested": "[10.0.12, )",
+        "resolved": "10.0.12",
+        "contentHash": "Wt/JUrctpOPfv3DNcZ6oKeg+FouanIXnrLfB8WN8DdMoqS/bxi9yPrwTKIEFB32qcKTUb5i9AVTCdbQBUid6ZQ==",
+        "dependencies": {
+          "Microsoft.Data.SqlClient": "6.1.6",
+          "Microsoft.EntityFrameworkCore.Relational": "10.0.12",
+          "Microsoft.Extensions.Caching.Memory": "10.0.12",
+          "Microsoft.Extensions.Configuration.Abstractions": "10.0.12",
+          "Microsoft.Extensions.Logging": "10.0.12"
+        }
+      },
       "Microsoft.Sbom.Targets": {
         "type": "Direct",
         "requested": "[4.1.5, 4.1.5]",

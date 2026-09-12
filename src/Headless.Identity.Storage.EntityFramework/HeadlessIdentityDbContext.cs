@@ -4,6 +4,7 @@ using Headless.EntityFramework.Contexts.Runtime;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.EntityFramework;
@@ -278,8 +279,31 @@ public abstract class HeadlessIdentityDbContext<
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
         base.ConfigureConventions(configurationBuilder);
+        configurationBuilder.Conventions.Add(provider => new HeadlessIdentityTenantModel(
+            [
+                typeof(TUser),
+                typeof(TRole),
+                typeof(TUserClaim),
+                typeof(TUserRole),
+                typeof(TUserLogin),
+                typeof(TRoleClaim),
+                typeof(TUserToken),
+                typeof(TUserPasskey),
+            ],
+            provider.GetRequiredService<IDatabaseProvider>().Name
+        ));
         _runtime.ConfigureConventions(configurationBuilder);
     }
+
+    /// <summary>Requires tenant ownership for the configured Identity entities and enforces same-tenant relationships.</summary>
+    /// <remarks>
+    /// Call after the base model-building call. Finalization scopes username and role-name uniqueness while retaining
+    /// primary keys and global external-login uniqueness. Existing data requires a consumer-owned tenant backfill.
+    /// Enable the tenant write guard and use fresh contexts and Identity stores when changing tenants.
+    /// </remarks>
+    /// <param name="builder">The model builder for this context.</param>
+    protected void ConfigureTenantOwnedIdentity(ModelBuilder builder) =>
+        builder.HasAnnotation(HeadlessIdentityTenantModel.OptInAnnotation, true);
 
     /// <summary>
     /// Configures the EF Core model for this context, applying <see cref="DefaultSchema"/> when set,
