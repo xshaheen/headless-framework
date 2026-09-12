@@ -35,7 +35,6 @@ public sealed class ApiSurfaceHttpTests : TestBase
         builder.Services.AddEndpointsApiExplorer();
         builder.Services.AddHeadlessMvcApiSurfaces();
         builder.Services.AddHeadlessMvcApiSurfaces();
-        builder.Services.AddNswagOpenApiSurfaces(["portal", "console"]);
         builder.Services.AddHeadlessApiSurfaces(options =>
         {
             options.AddSurface(
@@ -49,6 +48,7 @@ public sealed class ApiSurfaceHttpTests : TestBase
             );
             options.AddSurface("console", surface => surface.RoutePrefix = "api/console");
         });
+        builder.Services.AddNswagOpenApiSurfaces();
         builder
             .Services.AddAuthentication("test")
             .AddScheme<AuthenticationSchemeOptions, SurfaceAuthenticationHandler>("test", _ => { });

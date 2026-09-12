@@ -12,6 +12,7 @@ using Headless.Api.Identity.Normalizer;
 using Headless.Api.Identity.Schemes;
 using Headless.Api.Security.Claims;
 using Headless.Api.Security.Jwt;
+using Headless.Api.Surfaces;
 using Headless.Api.UserAgent;
 using Headless.Checks;
 using Headless.Constants;
@@ -302,12 +303,11 @@ public static class SetupApi
 
             if (options.OpenApi.Enabled)
             {
-                if (options.OpenApi.SurfaceDocumentNames.Count > 0)
+                var documentNames =
+                    options.OpenApi.SurfaceDocumentNames ?? ApiSurfaceRegistration.InferDocumentNames(builder.Services);
+                if (documentNames.Count > 0)
                 {
-                    builder.Services.AddHeadlessOpenApiSurfaces(
-                        options.OpenApi.SurfaceDocumentNames,
-                        options.OpenApi.ConfigureOpenApi
-                    );
+                    builder.Services.AddHeadlessOpenApiSurfaces(documentNames, options.OpenApi.ConfigureOpenApi);
                 }
                 else
                 {

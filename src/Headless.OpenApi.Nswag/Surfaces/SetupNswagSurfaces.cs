@@ -14,17 +14,18 @@ namespace Headless.OpenApi.Nswag;
 [PublicAPI]
 public static class SetupNswagSurfaces
 {
-    /// <summary>Registers explicit document names using the host's finalized surface settings.</summary>
-    /// <remarks>Document names must match ApiSurfaceBuilder.OpenApi.DocumentName. ApiGroupNames can independently select API versions.</remarks>
+    /// <summary>Registers inferred or explicitly selected surface documents.</summary>
+    /// <remarks>Omit names to infer all registered surface documents and close surface registration.
+    /// Explicit names must match ApiSurfaceBuilder.OpenApi.DocumentName. ApiGroupNames can independently select API versions.</remarks>
     public static IServiceCollection AddNswagOpenApiSurfaces(
         this IServiceCollection services,
-        IEnumerable<string> documentNames,
+        IEnumerable<string>? documentNames = null,
         Action<HeadlessNswagOptions>? setupHeadlessAction = null,
         Action<AspNetCoreOpenApiDocumentGeneratorSettings, ApiSurfaceDescriptor>? setupGeneratorActions = null
     )
     {
         Argument.IsNotNull(services);
-        Argument.IsNotNull(documentNames);
+        documentNames ??= ApiSurfaceRegistration.InferDocumentNames(services);
         var headlessOptions = new HeadlessNswagOptions();
         setupHeadlessAction?.Invoke(headlessOptions);
         foreach (var documentName in documentNames.Distinct(StringComparer.OrdinalIgnoreCase))

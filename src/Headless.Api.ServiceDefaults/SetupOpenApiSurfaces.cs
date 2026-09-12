@@ -12,17 +12,18 @@ namespace Headless.Api;
 public static class SetupOpenApiSurfaces
 {
     /// <summary>Registers built-in OpenAPI documents using the finalized settings of their API surfaces.</summary>
-    /// <remarks>Names must match ApiSurfaceBuilder.OpenApi.DocumentName. Native MapOpenApi serves the documents.
+    /// <remarks>Omit names to infer all registered surface documents and close surface registration.
+    /// Explicit names must match ApiSurfaceBuilder.OpenApi.DocumentName. Native MapOpenApi serves the documents.
     /// The callback deliberately exposes Microsoft.AspNetCore.OpenApi options for full provider customization.
     /// Its ShouldInclude predicate can narrow each surface independently of API Explorer version groups.</remarks>
     public static IServiceCollection AddHeadlessOpenApiSurfaces(
         this IServiceCollection services,
-        IEnumerable<string> documentNames,
+        IEnumerable<string>? documentNames = null,
         Action<OpenApiOptions>? configure = null
     )
     {
         Argument.IsNotNull(services);
-        Argument.IsNotNull(documentNames);
+        documentNames ??= ApiSurfaceRegistration.InferDocumentNames(services);
 
         foreach (var documentName in documentNames.Distinct(StringComparer.OrdinalIgnoreCase))
         {

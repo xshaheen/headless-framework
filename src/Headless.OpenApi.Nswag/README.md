@@ -81,11 +81,10 @@ builder.Services.AddNswagOpenApi(
 
 ### API surfaces
 
-`AddNswagOpenApiSurfaces(documentNames, ...)` publishes the explicitly listed document names. Each name must match a surface's finalized `OpenApi.DocumentName`. Registration can precede `AddHeadlessApiSurfaces(...)`; `Configure` and `PostConfigure` still supply the surface settings, but do not add documents to the publication list.
+`AddNswagOpenApiSurfaces()` infers all document names from surfaces registered with `AddHeadlessApiSurfaces(...)`. Surface definitions are finalized during registration. Inference closes surface registration, so later additions throw. An optional document list publishes only the selected names and may precede surface registration; each name must match a configured `OpenApi.DocumentName`. No surfaces or an explicit empty list registers no documents.
 
 ```csharp
 builder.Services.AddNswagOpenApiSurfaces(
-    ["portal", "console"],
     setupGeneratorActions: (settings, surface) => settings.Version = "v1"
 );
 // After building the application and mapping MVC / Minimal API endpoints:

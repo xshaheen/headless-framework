@@ -45,6 +45,7 @@ public sealed class ApiSurfaceTelemetryTests : TestBase
             options.Validation.RequireUseHeadless = false;
             options.Validation.RequireMapHeadlessEndpoints = false;
             options.Validation.RequireStatusCodesRewriter = false;
+            options.OpenApi.Enabled = false;
             options.OpenTelemetry.UseOtlpExporterWhenEndpointConfigured = false;
             options.OpenTelemetry.ConfigureTracing = tracing => tracing.AddProcessor(new CaptureProcessor(completed));
             if (overrideEnrichment)

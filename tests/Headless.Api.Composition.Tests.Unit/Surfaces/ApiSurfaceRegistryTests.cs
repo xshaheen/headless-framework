@@ -11,7 +11,7 @@ namespace Tests.Surfaces;
 public sealed class ApiSurfaceRegistryTests : TestBase
 {
     [Fact]
-    public void should_freeze_configuration_once_per_host()
+    public void should_freeze_definitions_at_registration_and_create_one_registry_per_host()
     {
         ApiSurfaceBuilder? configured = null;
         var services = new ServiceCollection();
@@ -25,10 +25,10 @@ public sealed class ApiSurfaceRegistryTests : TestBase
                 }
             )
         );
-        using var firstHost = services.BuildServiceProvider();
-        var registry = firstHost.GetRequiredService<ApiSurfaceRegistry>();
         configured!.RoutePrefix = "changed";
         configured.OpenApi.Title = "changed";
+        using var firstHost = services.BuildServiceProvider();
+        var registry = firstHost.GetRequiredService<ApiSurfaceRegistry>();
         registry.GetRequiredSurface("PORTAL").RoutePrefix.Should().Be("api/portal");
         registry.GetRequiredSurface("portal").OpenApi.Title.Should().Be("portal API");
         firstHost.GetRequiredService<ApiSurfaceRegistry>().Should().BeSameAs(registry);
@@ -44,18 +44,17 @@ public sealed class ApiSurfaceRegistryTests : TestBase
     public void should_reject_invalid_configuration(string name, string document, int tenancyMode)
     {
         var services = new ServiceCollection();
-        services.AddHeadlessApiSurfaces(options =>
-            options.AddSurface(
-                name,
-                surface =>
-                {
-                    surface.OpenApi.DocumentName = document;
-                    surface.TenancyMode = (ApiSurfaceTenancyMode)tenancyMode;
-                }
-            )
-        );
-        using var provider = services.BuildServiceProvider();
-        var act = () => provider.GetRequiredService<ApiSurfaceRegistry>();
+        var act = () =>
+            services.AddHeadlessApiSurfaces(options =>
+                options.AddSurface(
+                    name,
+                    surface =>
+                    {
+                        surface.OpenApi.DocumentName = document;
+                        surface.TenancyMode = (ApiSurfaceTenancyMode)tenancyMode;
+                    }
+                )
+            );
         act.Should().Throw<OptionsValidationException>();
     }
 
@@ -63,13 +62,12 @@ public sealed class ApiSurfaceRegistryTests : TestBase
     public void should_reject_duplicate_document_names()
     {
         var services = new ServiceCollection();
-        services.AddHeadlessApiSurfaces(options =>
-        {
-            options.AddSurface("portal");
-            options.AddSurface("console", surface => surface.OpenApi.DocumentName = "PORTAL");
-        });
-        using var provider = services.BuildServiceProvider();
-        var act = () => provider.GetRequiredService<ApiSurfaceRegistry>();
+        var act = () =>
+            services.AddHeadlessApiSurfaces(options =>
+            {
+                options.AddSurface("portal");
+                options.AddSurface("console", surface => surface.OpenApi.DocumentName = "PORTAL");
+            });
         act.Should().Throw<OptionsValidationException>().WithMessage("*document names must be unique*");
     }
 
@@ -79,5 +77,23 @@ public sealed class ApiSurfaceRegistryTests : TestBase
         var options = new ApiSurfaceOptions().AddSurface("portal");
         var act = () => options.AddSurface("PORTAL");
         act.Should().Throw<InvalidOperationException>().WithMessage("*already configured*");
+    }
+
+    [Theory]
+    [InlineData("PORTAL", "other")]
+    [InlineData("console", "PORTAL")]
+    public void should_reject_duplicate_names_across_calls_without_partial_registration(string name, string document)
+    {
+        var services = new ServiceCollection();
+        services.AddHeadlessApiSurfaces(options => options.AddSurface("portal"));
+        var act = () =>
+            services.AddHeadlessApiSurfaces(options =>
+            {
+                options.AddSurface("partner");
+                options.AddSurface(name, surface => surface.OpenApi.DocumentName = document);
+            });
+        act.Should().Throw<InvalidOperationException>().WithMessage("*already configured*");
+        using var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<ApiSurfaceRegistry>().Surfaces.Should().ContainSingle();
     }
 }

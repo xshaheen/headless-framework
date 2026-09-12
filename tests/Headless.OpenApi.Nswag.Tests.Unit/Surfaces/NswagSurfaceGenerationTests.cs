@@ -14,13 +14,13 @@ public sealed class NswagSurfaceGenerationTests : TestBase
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public void should_register_documents_from_final_configuration_in_either_order(bool surfacesFirst)
+    public void should_register_inferred_or_explicit_documents_alongside_native_documents(bool infer)
     {
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddControllers();
         var configureCalls = 0;
-        if (surfacesFirst)
+        if (!infer)
         {
             services.AddNswagOpenApiSurfaces(["portal", "console"]);
         }
@@ -32,18 +32,27 @@ public sealed class NswagSurfaceGenerationTests : TestBase
             configureCalls++;
             options.AddSurface("Portal");
         });
-        if (!surfacesFirst)
+        services.AddHeadlessApiSurfaces(options => options.AddSurface("Console"));
+        if (infer)
         {
-            services.AddNswagOpenApiSurfaces(["portal", "console"]);
+            services.AddNswagOpenApiSurfaces();
         }
 
-        services.PostConfigure<ApiSurfaceOptions>(options => options.AddSurface("Console"));
-        configureCalls.Should().Be(0);
+        configureCalls.Should().Be(1);
         using var provider = services.BuildServiceProvider();
         var registrations = provider.GetServices<OpenApiDocumentRegistration>().ToArray();
         registrations.Select(x => x.DocumentName).Should().BeEquivalentTo("portal", "console", "extra", "native");
         configureCalls.Should().Be(1);
         provider.GetRequiredService<ApiSurfaceRegistry>().Surfaces.Should().HaveCount(2);
         registrations.Single(x => x.DocumentName == "portal").Settings.Title.Should().Be("Portal API");
+    }
+
+    [Fact]
+    public void should_reject_surfaces_registered_after_inference()
+    {
+        var services = new ServiceCollection();
+        services.AddNswagOpenApiSurfaces();
+        var register = () => services.AddHeadlessApiSurfaces(options => options.AddSurface("portal"));
+        register.Should().Throw<InvalidOperationException>().WithMessage("*before OpenAPI document inference*");
     }
 }

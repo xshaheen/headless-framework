@@ -5,7 +5,7 @@ using Headless.Checks;
 
 namespace Headless.Api.Surfaces;
 
-/// <summary>Startup configuration for named API surfaces. Runtime changes require a new host.</summary>
+/// <summary>Configuration consumed immediately by AddHeadlessApiSurfaces, not by the deferred options pipeline.</summary>
 [PublicAPI]
 public sealed class ApiSurfaceOptions
 {

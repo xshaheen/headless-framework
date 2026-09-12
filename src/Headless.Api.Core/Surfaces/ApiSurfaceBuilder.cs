@@ -4,7 +4,7 @@ using Headless.Checks;
 
 namespace Headless.Api.Surfaces;
 
-/// <summary>Configures one surface before the host creates its immutable registry.</summary>
+/// <summary>Configures one surface before AddHeadlessApiSurfaces freezes its definition.</summary>
 [PublicAPI]
 public sealed class ApiSurfaceBuilder(string surfaceName)
 {

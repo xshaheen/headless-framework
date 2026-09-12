@@ -26,6 +26,18 @@ public sealed class ApiSurfaceOpenApiTests : TestBase
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseUrls("http://127.0.0.1:0");
         builder.Logging.ClearProviders();
+        builder.Services.AddHeadlessApiSurfaces(options =>
+        {
+            options.AddSurface(
+                "portal",
+                portal =>
+                {
+                    portal.OpenApi.DocumentName = "portal-doc";
+                    portal.OpenApi.Title = "Final portal title";
+                }
+            );
+            options.AddSurface("console");
+        });
         void Configure(OpenApiOptions options)
         {
             if (customize)
@@ -42,41 +54,24 @@ public sealed class ApiSurfaceOpenApiTests : TestBase
         }
         if (customize)
         {
-            builder.Configuration.AddInMemoryCollection(
-                new Dictionary<string, string?>
-                {
-                    ["Headless:StringEncryption:DefaultPassPhrase"] = "TestPassPhrase123456",
-                    ["Headless:StringEncryption:InitVectorBytes"] = "VGVzdElWMDEyMzQ1Njc4OQ==",
-                    ["Headless:StringEncryption:DefaultSalt"] = "VGVzdFNhbHQ=",
-                    ["Headless:StringHash:DefaultSalt"] = "TestSalt",
-                }
-            );
+            _ConfigureEncryption(builder);
             builder.AddHeadless(configureServices: options =>
             {
                 options.Validation.RequireUseHeadless = false;
                 options.Validation.RequireStatusCodesRewriter = false;
                 options.OpenTelemetry.Enabled = false;
-                options.OpenApi.SurfaceDocumentNames = ["PORTAL-DOC", "console"];
                 options.OpenApi.ConfigureOpenApi = Configure;
             });
             builder.Services.AddAuthentication();
         }
         else
         {
-            builder.Services.AddHeadlessOpenApiSurfaces(["PORTAL-DOC", "console"], Configure);
+            builder.Services.AddHeadlessOpenApiSurfaces(configure: Configure);
         }
         builder.Services.AddOpenApi(
             "extra",
             options => options.ShouldInclude = description => description.GroupName == "extra"
         );
-        builder.Services.AddHeadlessApiSurfaces(options => options.AddSurface("portal"));
-        builder.Services.PostConfigure<ApiSurfaceOptions>(options =>
-        {
-            var portal = options.Surfaces.Single();
-            portal.OpenApi.DocumentName = "portal-doc";
-            portal.OpenApi.Title = "Final portal title";
-            options.AddSurface("console");
-        });
         await using var app = builder.Build();
         app.MapGet("/portal/visible", () => new PortalPayload("public"))
             .WithGroupName("v2")
@@ -149,6 +144,79 @@ public sealed class ApiSurfaceOpenApiTests : TestBase
         var start = () => app.StartAsync(AbortToken);
         await start.Should().ThrowAsync<InvalidOperationException>().WithMessage("*missing*configured API surface*");
     }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void should_reject_surface_registration_after_document_inference(bool serviceDefaults)
+    {
+        var builder = WebApplication.CreateBuilder();
+        if (serviceDefaults)
+        {
+            _ConfigureEncryption(builder);
+            builder.AddHeadless();
+        }
+        else
+        {
+            builder.Services.AddHeadlessOpenApiSurfaces();
+        }
+        var register = () => builder.Services.AddHeadlessApiSurfaces(options => options.AddSurface("portal"));
+        register.Should().Throw<InvalidOperationException>().WithMessage("*before OpenAPI document inference*");
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task should_preserve_default_document_and_honor_explicit_selection(bool surfaces, bool selectPortal)
+    {
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        builder.Logging.ClearProviders();
+        _ConfigureEncryption(builder);
+        if (surfaces)
+        {
+            builder.Services.AddHeadlessApiSurfaces(options => options.AddSurface("portal").AddSurface("console"));
+        }
+        builder.AddHeadless(configureServices: options =>
+        {
+            options.Validation.RequireUseHeadless = false;
+            options.Validation.RequireStatusCodesRewriter = false;
+            options.OpenTelemetry.Enabled = false;
+            options.OpenApi.SurfaceDocumentNames = surfaces ? (selectPortal ? ["PORTAL"] : []) : null;
+        });
+        builder.Services.AddAuthentication();
+        await using var app = builder.Build();
+        app.MapGet("/portal", () => "portal").WithMetadata(new SurfaceMetadata("portal"));
+        app.MapGet("/console", () => "console").WithMetadata(new SurfaceMetadata("console"));
+        app.MapHeadlessEndpoints();
+        await app.StartAsync(AbortToken);
+        try
+        {
+            using var client = new HttpClient { BaseAddress = new Uri(app.Urls.Single()) };
+            var name = selectPortal ? "portal" : "v1";
+            using var document = JsonDocument.Parse(await client.GetStringAsync($"/openapi/{name}.json", AbortToken));
+            var paths = document.RootElement.GetProperty("paths").EnumerateObject().Select(path => path.Name);
+            paths.Should().BeEquivalentTo(selectPortal ? ["/portal"] : new[] { "/portal", "/console" });
+            using var console = await client.GetAsync("/openapi/console.json", AbortToken);
+            console.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+        finally
+        {
+            await app.StopAsync(AbortToken);
+        }
+    }
+
+    private static void _ConfigureEncryption(WebApplicationBuilder builder) =>
+        builder.Configuration.AddInMemoryCollection(
+            new Dictionary<string, string?>
+            {
+                ["Headless:StringEncryption:DefaultPassPhrase"] = "TestPassPhrase123456",
+                ["Headless:StringEncryption:InitVectorBytes"] = "VGVzdElWMDEyMzQ1Njc4OQ==",
+                ["Headless:StringEncryption:DefaultSalt"] = "VGVzdFNhbHQ=",
+                ["Headless:StringHash:DefaultSalt"] = "TestSalt",
+            }
+        );
 
     private sealed record SurfaceMetadata(string SurfaceName) : IApiSurfaceMetadata;
 

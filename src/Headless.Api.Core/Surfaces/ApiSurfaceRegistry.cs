@@ -2,7 +2,6 @@
 
 using System.Collections.Frozen;
 using Headless.Checks;
-using Microsoft.Extensions.Options;
 
 namespace Headless.Api.Surfaces;
 
@@ -12,11 +11,10 @@ public sealed class ApiSurfaceRegistry
 {
     private readonly FrozenDictionary<string, ApiSurfaceDescriptor> _surfaces;
 
-    public ApiSurfaceRegistry(IOptions<ApiSurfaceOptions> options)
+    public ApiSurfaceRegistry(IEnumerable<ApiSurfaceDescriptor> descriptors)
     {
         var surfaces = Argument
-            .IsNotNull(options)
-            .Value.Surfaces.Select(x => x.Build())
+            .IsNotNull(descriptors)
             .OrderBy(x => x.SurfaceName, StringComparer.OrdinalIgnoreCase)
             .ToArray();
         Surfaces = Array.AsReadOnly(surfaces);

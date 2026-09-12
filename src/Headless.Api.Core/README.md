@@ -118,7 +118,7 @@ public sealed class TokenValidator(IJwtTokenFactory tokens)
 
 ### API surfaces
 
-`AddHeadlessApiSurfaces(...)` configures mutable `ApiSurfaceBuilder` instances and registers a singleton `ApiSurfaceRegistry`. MVC, Minimal API, telemetry, and OpenAPI use its immutable snapshot. Configuration and `PostConfigure` callbacks finish before the snapshot is created; runtime changes require a new host.
+`AddHeadlessApiSurfaces(...)` runs its callback immediately, validates the definitions, and registers immutable descriptors plus a singleton `ApiSurfaceRegistry`. MVC, Minimal API, telemetry, and OpenAPI share these definitions. Configure surfaces inside this callback, not through `Configure` or `PostConfigure<ApiSurfaceOptions>`. Changes to a retained builder after registration have no effect. Multiple registration calls may add distinct surfaces before OpenAPI inference.
 
 ```csharp
 using Headless.Api;
@@ -144,7 +144,7 @@ With `Headless.Api.ServiceDefaults` OpenTelemetry enabled, completed request spa
 
 Surface and document names are case-insensitive identities containing ASCII letters, digits, periods, hyphens, or underscores. `.` and `..` are invalid. Surface names `unknown`, `unclassified`, and `infrastructure` are reserved. Duplicate surface/document names and invalid configuration fail validation. Unknown surface lookups throw. Document names default to the lowercase surface name; titles default to `<surfaceName> API`.
 
-`ApiSurfaceRegistry.GetRequiredSurfaceForDocument(documentName)` resolves the owner of an explicitly published document using the same immutable snapshot. It matches names case-insensitively and throws when no surface owns the document. Document adapters use this lookup without resolving options during service registration.
+`ApiSurfaceRegistry.GetRequiredSurfaceForDocument(documentName)` resolves the document owner from the same immutable definitions. It matches names case-insensitively and throws when no surface owns the document. Register all surfaces before `AddHeadless()` or a parameterless OpenAPI surface registration. Inference closes surface registration; later additions throw rather than silently missing documents.
 
 Exception mapping registered by `AddHeadlessProblemDetails()`:
 

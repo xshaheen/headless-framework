@@ -377,7 +377,7 @@ public sealed class TokenValidator(IJwtTokenFactory tokens)
 
 #### API surfaces
 
-`AddHeadlessApiSurfaces(...)` configures mutable `ApiSurfaceBuilder` instances and registers a singleton `ApiSurfaceRegistry`. MVC, Minimal API, telemetry, and OpenAPI use its immutable snapshot. Configuration and `PostConfigure` callbacks finish before the snapshot is created; runtime changes require a new host.
+`AddHeadlessApiSurfaces(...)` runs its callback immediately, validates the definitions, and registers immutable descriptors plus a singleton `ApiSurfaceRegistry`. MVC, Minimal API, telemetry, and OpenAPI share these definitions. Configure surfaces inside this callback, not through `Configure` or `PostConfigure<ApiSurfaceOptions>`. Changes to a retained builder after registration have no effect. Multiple registration calls may add distinct surfaces before OpenAPI inference.
 
 ```csharp
 using Headless.Api;
@@ -403,7 +403,7 @@ With `Headless.Api.ServiceDefaults` OpenTelemetry enabled, completed request spa
 
 Surface and document names are case-insensitive identities containing ASCII letters, digits, periods, hyphens, or underscores. `.` and `..` are invalid. Surface names `unknown`, `unclassified`, and `infrastructure` are reserved. Duplicate surface/document names and invalid configuration fail validation. Unknown surface lookups throw. Document names default to the lowercase surface name; titles default to `<surfaceName> API`.
 
-`ApiSurfaceRegistry.GetRequiredSurfaceForDocument(documentName)` resolves the owner of an explicitly published document using the same immutable snapshot. It matches names case-insensitively and throws when no surface owns the document. Document adapters use this lookup without resolving options during service registration.
+`ApiSurfaceRegistry.GetRequiredSurfaceForDocument(documentName)` resolves the document owner from the same immutable definitions. It matches names case-insensitively and throws when no surface owns the document. Register all surfaces before `AddHeadless()` or a parameterless OpenAPI surface registration. Inference closes surface registration; later additions throw rather than silently missing documents.
 
 Exception mapping from `AddHeadlessProblemDetails()`:
 
@@ -552,16 +552,19 @@ builder.AddHeadless(configureServices: options =>
 
 When API surfaces are registered, the default OpenTelemetry response enricher adds `headless.api.surface.name` to completed request spans. It uses the selected endpoint's configured name, `unknown` for unmatched requests, and `unclassified` for unmarked endpoints. Replacing `EnrichWithHttpResponse` replaces this default too; capture and invoke the existing delegate to preserve it.
 
-For built-in OpenAPI, publish the configured surface document names instead of the default `v1` document:
+With OpenAPI enabled, `AddHeadless()` infers document names from surfaces registered before it:
 
 ```csharp
-builder.AddHeadless(configureServices: options =>
-    options.OpenApi.SurfaceDocumentNames = ["portal", "console"]);
+builder.Services.AddHeadlessApiSurfaces(options =>
+    options.AddSurface("portal").AddSurface("console"));
+builder.AddHeadless();
+// After building the application:
+app.MapHeadlessEndpoints();
 ```
 
-Each name must match a surface's finalized `OpenApi.DocumentName`. The default empty list preserves the ordinary `v1` document. `MapHeadlessEndpoints()` serves the selected documents at the configured route. Surface settings may be registered before or after `AddHeadless()`; missing document ownership fails startup.
+`SurfaceDocumentNames` defaults to `null`, which publishes every registered surface document. Without surfaces, the ordinary `v1` document remains. Set a nonempty list only to select specific documents; each name must match a configured `OpenApi.DocumentName`. An explicit empty list selects the ordinary, unfiltered `v1` document. Set `OpenApi.Enabled = false` to disable registration. `MapHeadlessEndpoints()` serves documents at the configured route. Adding surfaces after inference throws; unknown explicit document names fail startup.
 
-For hosts using individual registrations, `builder.Services.AddHeadlessOpenApiSurfaces(["portal", "console"])` in namespace `Headless.Api` pairs with native `app.MapOpenApi()`. Use this path without the default `AddHeadless()` OpenAPI registration, or disable that registration with `OpenApi.Enabled = false` and map documents yourself. Native `AddOpenApi(...)` can register additional documents.
+For hosts using individual registrations, call `builder.Services.AddHeadlessOpenApiSurfaces()` after surface registration and pair it with native `app.MapOpenApi()`. An optional document list selects a subset; no surfaces or an empty list registers no documents on this standalone path. Use it without the default `AddHeadless()` OpenAPI registration, or disable that registration with `OpenApi.Enabled = false` and map documents yourself. Native `AddOpenApi(...)` can register additional documents.
 
 Surface filtering runs before schema generation and is independent of API Explorer version groups. `ConfigureOpenApi` can narrow the selected endpoints with `ShouldInclude` and append document transformers, including a title override. The standalone method accepts the same callback. This adapter uses ASP.NET Core OpenAPI generation; NSwag-specific security, schema mappings, and tenant-error examples remain in `Headless.OpenApi.Nswag`.
 
