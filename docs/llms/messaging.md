@@ -990,6 +990,8 @@ builder.Services.AddHeadlessMessaging(options => { /* ... */ })
 
 For middleware tests and tooling, `new PublishContext<T>(content, lane, options, defaultDeliveryMode, now, isTransactional, cancellationToken)` requires the host default and resolution timestamp explicitly. The constructor uses the canonical delivery resolver with `options?.DeliveryMode ?? defaultDeliveryMode` and both scheduling options. It rejects invalid lanes, modes, and delays, simultaneous scheduling options, and Direct with either scheduling option. Scheduled contexts calculate `PublishAt` from the relative delay or absolute instant. `isTransactional` models a compatible ambient commit boundary; `IsTransactional` is true only when the resolved delivery uses that boundary. Manually constructed contexts remain mutable until `MarkCompleted()` and do not own a live transaction.
 
+Absolute schedules retain the requested instant in UTC as `ScheduledAt`; `PublishAt` floors that instant to microsecond precision, matching runtime publication.
+
 **Cancellation token swaps:** middleware that creates per-attempt or per-operation tokens must call `context.WithCancellationToken(...)` before `await next()`. Downstream middleware must re-read `context.CancellationToken` at each await boundary; do not capture it once at method entry.
 
 ### Multi-tenancy

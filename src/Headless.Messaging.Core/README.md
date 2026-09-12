@@ -364,6 +364,8 @@ Middleware can short-circuit by returning without calling `next`. Use ordinary `
 
 For middleware tests and tooling, `new PublishContext<T>(content, lane, options, defaultDeliveryMode, now, isTransactional, cancellationToken)` requires the host default and resolution timestamp explicitly. The constructor uses the canonical delivery resolver with `options?.DeliveryMode ?? defaultDeliveryMode` and both scheduling options. It rejects simultaneous `Delay` and `ScheduledAt`, Direct delivery with either schedule, and invalid lanes, effective modes, or delays. Scheduled contexts calculate `PublishAt` from the relative delay or absolute instant. `isTransactional` models a compatible ambient commit boundary; `IsTransactional` is true only when the resolved delivery uses that boundary. Manually constructed contexts remain mutable until `MarkCompleted()` and do not own a live transaction.
 
+Absolute schedules retain the requested instant in UTC as `ScheduledAt`; `PublishAt` floors that instant to microsecond precision, matching runtime publication.
+
 ### Multi-Tenancy Propagation
 
 When a host uses the root tenancy surface, configure messaging tenant posture there:
