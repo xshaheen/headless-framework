@@ -51,7 +51,8 @@ public sealed class ApiSurfaceTelemetryTests : TestBase
             {
                 options.OpenTelemetry.ConfigureAspNetCoreInstrumentation = instrumentation =>
                 {
-                    instrumentation.EnrichWithHttpResponse = (activity, _) => activity.SetTag("api.surface", "custom");
+                    instrumentation.EnrichWithHttpResponse = (activity, _) =>
+                        activity.SetTag("headless.api.surface.name", "custom");
                 };
             }
         });
@@ -121,7 +122,7 @@ public sealed class ApiSurfaceTelemetryTests : TestBase
         {
             if (data.GetTagItem("test.request") is string path && completed.TryGetValue(path, out var result))
             {
-                result.TrySetResult(data.GetTagItem("api.surface")?.ToString());
+                result.TrySetResult(data.GetTagItem("headless.api.surface.name")?.ToString());
             }
         }
     }

@@ -35,7 +35,7 @@ public sealed class ApiSurfaceHttpTests : TestBase
         builder.Services.AddEndpointsApiExplorer();
         builder.Services.AddHeadlessMvcApiSurfaces();
         builder.Services.AddHeadlessMvcApiSurfaces();
-        builder.Services.AddNswagOpenApiSurfaces();
+        builder.Services.AddNswagOpenApiSurfaces(["portal", "console"]);
         builder.Services.AddHeadlessApiSurfaces(options =>
         {
             options.AddSurface(

@@ -14,37 +14,44 @@ namespace Headless.OpenApi.Nswag;
 [PublicAPI]
 public static class SetupNswagSurfaces
 {
-    /// <summary>Registers documents from the host's finalized surface registry, independently of registration order.</summary>
-    /// <remarks>Additional documents must use AddNswagOpenApi. ApiGroupNames can independently select API versions.</remarks>
+    /// <summary>Registers explicit document names using the host's finalized surface settings.</summary>
+    /// <remarks>Document names must match ApiSurfaceBuilder.OpenApi.DocumentName. ApiGroupNames can independently select API versions.</remarks>
     public static IServiceCollection AddNswagOpenApiSurfaces(
         this IServiceCollection services,
+        IEnumerable<string> documentNames,
         Action<HeadlessNswagOptions>? setupHeadlessAction = null,
         Action<AspNetCoreOpenApiDocumentGeneratorSettings, ApiSurfaceDescriptor>? setupGeneratorActions = null
     )
     {
         Argument.IsNotNull(services);
+        Argument.IsNotNull(documentNames);
         var headlessOptions = new HeadlessNswagOptions();
         setupHeadlessAction?.Invoke(headlessOptions);
-        SurfaceDocumentRegistration.AddSurfaces(
-            services,
-            (settings, sp, surface) =>
-            {
-                SetupNswag.ConfigureGeneratorSettings(settings, sp, headlessOptions);
-                settings.DocumentName = surface.OpenApi.DocumentName;
-                settings.Title = surface.OpenApi.Title;
-                setupGeneratorActions?.Invoke(settings, surface);
-                if (!string.Equals(settings.DocumentName, surface.OpenApi.DocumentName, StringComparison.Ordinal))
+        foreach (var documentName in documentNames.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            Argument.IsNotNullOrWhiteSpace(documentName);
+            services.AddOpenApiDocument(
+                (settings, sp) =>
                 {
-                    throw new InvalidOperationException(
-                        "Configure surface document names through ApiSurfaceBuilder.OpenApi.DocumentName."
-                    );
-                }
+                    var surface = sp.GetRequiredService<ApiSurfaceRegistry>()
+                        .GetRequiredSurfaceForDocument(documentName);
+                    SetupNswag.ConfigureGeneratorSettings(settings, sp, headlessOptions);
+                    settings.DocumentName = surface.OpenApi.DocumentName;
+                    settings.Title = surface.OpenApi.Title;
+                    setupGeneratorActions?.Invoke(settings, surface);
+                    if (!string.Equals(settings.DocumentName, surface.OpenApi.DocumentName, StringComparison.Ordinal))
+                    {
+                        throw new InvalidOperationException(
+                            "Configure surface document names through ApiSurfaceBuilder.OpenApi.DocumentName."
+                        );
+                    }
 
-                SetupNswag.ConfigureHeadlessGeneratorSettings(settings, headlessOptions);
-                // Filter before schema generation so excluded surfaces cannot leak schemas into this document.
-                settings.OperationProcessors.Insert(0, new ApiSurfaceOperationProcessor(surface.SurfaceName));
-            }
-        );
+                    SetupNswag.ConfigureHeadlessGeneratorSettings(settings, headlessOptions);
+                    // Filter before schema generation so excluded surfaces cannot leak schemas into this document.
+                    settings.OperationProcessors.Insert(0, new ApiSurfaceOperationProcessor(surface.SurfaceName));
+                }
+            );
+        }
         return services;
     }
 

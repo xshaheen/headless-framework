@@ -51,8 +51,7 @@ public static class SetupNswag
     {
         var headlessOptions = _BuildOptions(setupHeadlessAction);
 
-        SurfaceDocumentRegistration.AddSingle(
-            services,
+        services.AddOpenApiDocument(
             (settings, serviceProvider) =>
             {
                 ConfigureGeneratorSettings(settings, serviceProvider, headlessOptions);
@@ -86,8 +85,7 @@ public static class SetupNswag
     {
         var headlessOptions = _BuildOptions(setupHeadlessAction);
 
-        SurfaceDocumentRegistration.AddSingle(
-            services,
+        services.AddOpenApiDocument(
             (settings, serviceProvider) =>
             {
                 ConfigureGeneratorSettings(settings, serviceProvider, headlessOptions);

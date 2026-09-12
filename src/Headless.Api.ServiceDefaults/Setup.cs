@@ -302,7 +302,17 @@ public static class SetupApi
 
             if (options.OpenApi.Enabled)
             {
-                builder.Services.AddOpenApi(options.OpenApi.ConfigureOpenApi ?? (_ => { }));
+                if (options.OpenApi.SurfaceDocumentNames.Count > 0)
+                {
+                    builder.Services.AddHeadlessOpenApiSurfaces(
+                        options.OpenApi.SurfaceDocumentNames,
+                        options.OpenApi.ConfigureOpenApi
+                    );
+                }
+                else
+                {
+                    builder.Services.AddOpenApi(options.OpenApi.ConfigureOpenApi ?? (_ => { }));
+                }
             }
 
             if (options.HttpClient.UseServiceDiscovery)
@@ -378,7 +388,7 @@ public static class SetupApi
                                 var endpoint = context.GetEndpoint();
                                 var metadata = endpoint?.Metadata.GetMetadata<Surfaces.IApiSurfaceMetadata>();
                                 activity.SetTag(
-                                    "api.surface",
+                                    "headless.api.surface.name",
                                     metadata is not null ? registry.GetRequiredSurface(metadata.SurfaceName).SurfaceName
                                         : endpoint is null ? "unknown"
                                         : "unclassified"

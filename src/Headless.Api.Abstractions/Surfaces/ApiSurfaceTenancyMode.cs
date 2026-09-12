@@ -4,8 +4,10 @@
 namespace Headless.Api.Surfaces;
 
 /// <summary>
-/// Dictates how multi-tenancy requirements are applied to endpoints in an API surface.
+/// Selects default tenancy metadata for an API surface. Explicit endpoint metadata takes precedence.
 /// </summary>
+/// <remarks>Tenant requirements are enforced by the tenancy authorization handler only when the applicable
+/// authorization policy includes TenantRequirement. These defaults do not register services or policies.</remarks>
 public enum ApiSurfaceTenancyMode
 {
     /// <summary>
@@ -14,17 +16,17 @@ public enum ApiSurfaceTenancyMode
     Unspecified = 0,
 
     /// <summary>
-    /// All endpoints in this surface require a resolved tenant by default.
+    /// Adds a resolved-tenant requirement as default metadata, consumed by the tenancy authorization handler.
     /// </summary>
     RequireTenant = 1,
 
     /// <summary>
-    /// All endpoints in this surface allow a missing tenant by default.
+    /// Adds default metadata permitting a missing tenant when the tenancy authorization handler runs.
     /// </summary>
     AllowMissingTenant = 2,
 
     /// <summary>
-    /// All endpoints in this surface skip tenant resolution completely by default.
+    /// Adds default metadata to skip tenant resolution. This does not grant permission to omit a required tenant.
     /// </summary>
     SkipTenantResolution = 3,
 }

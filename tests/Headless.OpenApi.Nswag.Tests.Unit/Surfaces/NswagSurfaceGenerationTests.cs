@@ -22,10 +22,11 @@ public sealed class NswagSurfaceGenerationTests : TestBase
         var configureCalls = 0;
         if (surfacesFirst)
         {
-            services.AddNswagOpenApiSurfaces();
+            services.AddNswagOpenApiSurfaces(["portal", "console"]);
         }
 
         services.AddNswagOpenApi(setupGeneratorActions: settings => settings.DocumentName = "extra");
+        services.AddOpenApiDocument(settings => settings.DocumentName = "native");
         services.AddHeadlessApiSurfaces(options =>
         {
             configureCalls++;
@@ -33,14 +34,14 @@ public sealed class NswagSurfaceGenerationTests : TestBase
         });
         if (!surfacesFirst)
         {
-            services.AddNswagOpenApiSurfaces();
+            services.AddNswagOpenApiSurfaces(["portal", "console"]);
         }
 
         services.PostConfigure<ApiSurfaceOptions>(options => options.AddSurface("Console"));
         configureCalls.Should().Be(0);
         using var provider = services.BuildServiceProvider();
         var registrations = provider.GetServices<OpenApiDocumentRegistration>().ToArray();
-        registrations.Select(x => x.DocumentName).Should().BeEquivalentTo("portal", "console", "extra");
+        registrations.Select(x => x.DocumentName).Should().BeEquivalentTo("portal", "console", "extra", "native");
         configureCalls.Should().Be(1);
         provider.GetRequiredService<ApiSurfaceRegistry>().Surfaces.Should().HaveCount(2);
         registrations.Single(x => x.DocumentName == "portal").Settings.Title.Should().Be("Portal API");

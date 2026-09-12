@@ -243,7 +243,7 @@ public sealed class OrderService(IRequestContext context)
 
 `IApiSurfaceMetadata` and `[ApiSurface("portal")]` identify an endpoint's API surface. `ApiSurfaceDescriptor` contains immutable route, authorization, tenancy, and OpenAPI defaults. `HttpContext.GetApiSurface()` in `Headless.Api.Core` resolves that descriptor from the selected endpoint after routing. It does not describe the effective endpoint authorization policy.
 
-`ApiSurfaceTenancyMode` has `Unspecified`, `RequireTenant`, `AllowMissingTenant`, and `SkipTenantResolution` values. These are metadata defaults; enforcement belongs to the HTTP tenancy integration.
+`ApiSurfaceTenancyMode` has `Unspecified`, `RequireTenant`, `AllowMissingTenant`, and `SkipTenantResolution` values. These add metadata defaults only. `RequireTenant` needs the tenancy authorization handler and an applicable policy containing `TenantRequirement`; selecting the mode does not register either. Skipping resolution does not permit a missing tenant. Explicit endpoint metadata takes precedence.
 
 No runtime registration is required by this package.
 
@@ -399,9 +399,11 @@ Explicit controller or endpoint `RequireTenant` / `AllowMissingTenant` metadata 
 
 API surfaces require no middleware call. After routing, use `HttpContext.GetApiSurface()` to read the selected endpoint's immutable defaults. The lookup returns `null` for unmatched or unmarked endpoints and follows endpoint changes during re-execution. A marked endpoint whose surface is not registered throws.
 
-With `Headless.Api.ServiceDefaults` OpenTelemetry enabled, completed request spans receive the `api.surface` tag. Unmatched requests use `unknown`; matched endpoints without surface metadata use `unclassified`. The tag reflects the endpoint visible at response completion and is not available during authentication. Custom telemetry callbacks that run after request disposal must capture `ApiSurfaceRegistry` from host services and resolve the selected endpoint's `IApiSurfaceMetadata`. `GetApiSurface()` uses request services and is intended for the active request pipeline.
+With `Headless.Api.ServiceDefaults` OpenTelemetry enabled, completed request spans receive the `headless.api.surface.name` tag. Unmatched requests use `unknown`; matched endpoints without surface metadata use `unclassified`. The tag reflects the endpoint visible at response completion and is not available during authentication. Custom telemetry callbacks that run after request disposal must capture `ApiSurfaceRegistry` from host services and resolve the selected endpoint's `IApiSurfaceMetadata`. `GetApiSurface()` uses request services and is intended for the active request pipeline.
 
 Surface and document names are case-insensitive identities containing ASCII letters, digits, periods, hyphens, or underscores. `.` and `..` are invalid. Surface names `unknown`, `unclassified`, and `infrastructure` are reserved. Duplicate surface/document names and invalid configuration fail validation. Unknown surface lookups throw. Document names default to the lowercase surface name; titles default to `<surfaceName> API`.
+
+`ApiSurfaceRegistry.GetRequiredSurfaceForDocument(documentName)` resolves the owner of an explicitly published document using the same immutable snapshot. It matches names case-insensitively and throws when no surface owns the document. Document adapters use this lookup without resolving options during service registration.
 
 Exception mapping from `AddHeadlessProblemDetails()`:
 
@@ -548,7 +550,20 @@ builder.AddHeadless(configureServices: options =>
 });
 ```
 
-When API surfaces are registered, the default OpenTelemetry response enricher adds `api.surface` to completed request spans. It uses the selected endpoint's configured name, `unknown` for unmatched requests, and `unclassified` for unmarked endpoints. Replacing `EnrichWithHttpResponse` replaces this default too; capture and invoke the existing delegate to preserve it.
+When API surfaces are registered, the default OpenTelemetry response enricher adds `headless.api.surface.name` to completed request spans. It uses the selected endpoint's configured name, `unknown` for unmatched requests, and `unclassified` for unmarked endpoints. Replacing `EnrichWithHttpResponse` replaces this default too; capture and invoke the existing delegate to preserve it.
+
+For built-in OpenAPI, publish the configured surface document names instead of the default `v1` document:
+
+```csharp
+builder.AddHeadless(configureServices: options =>
+    options.OpenApi.SurfaceDocumentNames = ["portal", "console"]);
+```
+
+Each name must match a surface's finalized `OpenApi.DocumentName`. The default empty list preserves the ordinary `v1` document. `MapHeadlessEndpoints()` serves the selected documents at the configured route. Surface settings may be registered before or after `AddHeadless()`; missing document ownership fails startup.
+
+For hosts using individual registrations, `builder.Services.AddHeadlessOpenApiSurfaces(["portal", "console"])` in namespace `Headless.Api` pairs with native `app.MapOpenApi()`. Use this path without the default `AddHeadless()` OpenAPI registration, or disable that registration with `OpenApi.Enabled = false` and map documents yourself. Native `AddOpenApi(...)` can register additional documents.
+
+Surface filtering runs before schema generation and is independent of API Explorer version groups. `ConfigureOpenApi` can narrow the selected endpoints with `ShouldInclude` and append document transformers, including a title override. The standalone method accepts the same callback. This adapter uses ASP.NET Core OpenAPI generation; NSwag-specific security, schema mappings, and tenant-error examples remain in `Headless.OpenApi.Nswag`.
 
 #### String Encryption
 

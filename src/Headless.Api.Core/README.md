@@ -140,9 +140,11 @@ Explicit controller or endpoint `RequireTenant` / `AllowMissingTenant` metadata 
 
 API surfaces require no middleware call. After routing, use `HttpContext.GetApiSurface()` to read the selected endpoint's immutable defaults. The lookup returns `null` for unmatched or unmarked endpoints and follows endpoint changes during re-execution. A marked endpoint whose surface is not registered throws.
 
-With `Headless.Api.ServiceDefaults` OpenTelemetry enabled, completed request spans receive the `api.surface` tag. Unmatched requests use `unknown`; matched endpoints without surface metadata use `unclassified`. The tag reflects the endpoint visible at response completion and is not available during authentication. Custom telemetry callbacks that run after request disposal must capture `ApiSurfaceRegistry` from host services and resolve the selected endpoint's `IApiSurfaceMetadata`. `GetApiSurface()` uses request services and is intended for the active request pipeline.
+With `Headless.Api.ServiceDefaults` OpenTelemetry enabled, completed request spans receive the `headless.api.surface.name` tag. Unmatched requests use `unknown`; matched endpoints without surface metadata use `unclassified`. The tag reflects the endpoint visible at response completion and is not available during authentication. Custom telemetry callbacks that run after request disposal must capture `ApiSurfaceRegistry` from host services and resolve the selected endpoint's `IApiSurfaceMetadata`. `GetApiSurface()` uses request services and is intended for the active request pipeline.
 
 Surface and document names are case-insensitive identities containing ASCII letters, digits, periods, hyphens, or underscores. `.` and `..` are invalid. Surface names `unknown`, `unclassified`, and `infrastructure` are reserved. Duplicate surface/document names and invalid configuration fail validation. Unknown surface lookups throw. Document names default to the lowercase surface name; titles default to `<surfaceName> API`.
+
+`ApiSurfaceRegistry.GetRequiredSurfaceForDocument(documentName)` resolves the owner of an explicitly published document using the same immutable snapshot. It matches names case-insensitively and throws when no surface owns the document. Document adapters use this lookup without resolving options during service registration.
 
 Exception mapping registered by `AddHeadlessProblemDetails()`:
 

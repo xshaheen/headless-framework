@@ -25,6 +25,16 @@ public sealed class ApiSurfaceRegistry
 
     public IReadOnlyList<ApiSurfaceDescriptor> Surfaces { get; }
 
+    /// <summary>Returns the surface owning a configured OpenAPI document, using a case-insensitive lookup.</summary>
+    /// <exception cref="InvalidOperationException">No surface owns the document.</exception>
+    public ApiSurfaceDescriptor GetRequiredSurfaceForDocument(string documentName) =>
+        Surfaces.FirstOrDefault(surface =>
+            string.Equals(surface.OpenApi.DocumentName, documentName, StringComparison.OrdinalIgnoreCase)
+        )
+        ?? throw new InvalidOperationException(
+            $"OpenAPI document '{documentName}' does not belong to a configured API surface. Configure ApiSurfaceBuilder.OpenApi.DocumentName."
+        );
+
     /// <summary>Returns the configured surface using a case-insensitive name lookup.</summary>
     /// <exception cref="InvalidOperationException">The surface was not registered.</exception>
     public ApiSurfaceDescriptor GetRequiredSurface(string surfaceName) =>

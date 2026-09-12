@@ -81,10 +81,11 @@ builder.Services.AddNswagOpenApi(
 
 ### API surfaces
 
-`AddNswagOpenApiSurfaces(...)` creates one document per configured API surface from the finalized singleton registry. It can be called before or after `AddHeadlessApiSurfaces(...)`, and observes late `Configure` / `PostConfigure` callbacks without building a temporary service provider.
+`AddNswagOpenApiSurfaces(documentNames, ...)` publishes the explicitly listed document names. Each name must match a surface's finalized `OpenApi.DocumentName`. Registration can precede `AddHeadlessApiSurfaces(...)`; `Configure` and `PostConfigure` still supply the surface settings, but do not add documents to the publication list.
 
 ```csharp
 builder.Services.AddNswagOpenApiSurfaces(
+    ["portal", "console"],
     setupGeneratorActions: (settings, surface) => settings.Version = "v1"
 );
 // After building the application and mapping MVC / Minimal API endpoints:
@@ -93,7 +94,7 @@ app.MapNswagOpenApiSurfaces();
 
 Configure document identity through `surface.OpenApi.DocumentName` and `.Title`. The generator callback cannot rename the document. Surface metadata filters operations before schema generation, excluding other surfaces' paths and schemas. API Explorer groups remain available independently through `settings.ApiGroupNames`; surface registration does not overwrite version groups.
 
-When surfaces are enabled, register extra documents through `AddNswagOpenApi(...)`. Mixing raw NSwag `AddOpenApiDocument(...)` registrations throws. The integration registers an aggregate document collection for NSwag's generator, middleware, UI, and tooling; duplicate document names and repeated surface registration throw. `MapNswagOpenApiSurfaces()` serves `/openapi/{documentName}.json` and the shared Swagger UI at `/swagger`.
+Extra documents can use either `AddNswagOpenApi(...)` or native NSwag `AddOpenApiDocument(...)`. Surface documents use ordinary NSwag registrations without replacing its services. Register each document once across calls. `MapNswagOpenApiSurfaces()` serves `/openapi/{documentName}.json` and the shared Swagger UI at `/swagger`.
 
 `TenantRequiredExampleOperationProcessor` adds the `tenantRequired` 403 example only for effective `RequireTenant` endpoint metadata. Optional-tenant and anonymous endpoints do not receive it. It also runs for ordinary documents. Authorization responses are created per operation so examples and schemas cannot leak between documents.
 
