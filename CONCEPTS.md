@@ -235,11 +235,12 @@ definitions, process state, or event-stream coordinates. Those need a separate p
 
 A business key reserves one current standalone job generation in a tenant/system and logical-function
 scope. Contract version belongs to the intent fingerprint, not the key scope. The fingerprint records
-exact durable payload bytes plus version, normalized absolute due instant, retries, and node-death
-policy after scheduling middleware. Scheduling the same intent observes its retained current run,
-including terminal runs. Replacing a pending unclaimed generation creates a new run ID and advances
-the observed generation once. Claimed cancellation is cooperative. Current and historical keyed rows
-remain indefinitely; ordinary edits, resets, retries, and hard deletion cannot remove this memory.
+exact durable payload bytes after scheduling middleware, contract version, and normalized absolute due
+instant. Retries and node-death policy are captured by the first successful create and do not affect
+identity. Scheduling the same intent observes its retained current run and policy, including terminal
+runs. Replacing a pending unclaimed generation captures the replacement policy, creates a new run ID,
+and advances the observed generation once. Claimed cancellation is cooperative. Current and historical
+keyed rows remain indefinitely; ordinary edits, resets, retries, and hard deletion cannot remove this memory.
 
 ### Transactional deadline capability
 
