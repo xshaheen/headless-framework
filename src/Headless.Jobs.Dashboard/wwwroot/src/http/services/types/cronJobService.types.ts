@@ -2,6 +2,10 @@ export class GetCronJobRequest {
 }
 
 export class GetCronJobResponse {
+    contractVersion!: string;
+    correlationId?: string;
+    causationId?: string;
+    tenantId?: string;
     id!:string;
     function!:string;
     expression!:string;
@@ -16,6 +20,7 @@ export class GetCronJobResponse {
 }
 
 export class UpdateCronJobRequest {
+    contractVersion?: string;
     function!:string;
     expression!:string;
     request?:string;
@@ -35,6 +40,7 @@ export class GetCronJobGraphDataResponse{
 }
 
 export class AddCronJobRequest {
+    contractVersion?: string;
     function!:string;
     expression!:string;
     request?:string;

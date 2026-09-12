@@ -19,10 +19,10 @@ public sealed class RuntimeSubscriberTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Bus.ForMessage<RuntimeMessage>(message => message.MessageName("runtime.bus"));
-            setup.Queue.ForMessage<RuntimeMessage>(message => message.MessageName("runtime.queue"));
+            setup.Bus.ForMessage<RuntimeMessage>(message => message.Contract("runtime.bus"));
+            setup.Queue.ForMessage<RuntimeMessage>(message => message.Contract("runtime.queue"));
             setup.UseInMemory();
-            setup.UseInMemoryStorage();
+            setup.UseProcessLocalInMemoryStorage();
         });
 
         using var provider = services.BuildServiceProvider();
@@ -233,7 +233,7 @@ public sealed class RuntimeSubscriberTests : TestBase
         services.AddHeadlessMessaging(options =>
         {
             options.UseInMemory();
-            options.UseInMemoryStorage();
+            options.UseProcessLocalInMemoryStorage();
             options.UseConventions(c =>
             {
                 c.UseApplicationId("messaging-tests");

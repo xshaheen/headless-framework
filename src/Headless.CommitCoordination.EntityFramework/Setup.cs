@@ -21,6 +21,16 @@ public static class SetupEntityFrameworkCommitCoordination
     extension(IServiceCollection services)
     {
         /// <summary>
+        /// Adds EF Core commit coordination, attaches its transaction interceptor to the registered application
+        /// context, and probes that wiring at host startup. Repeated calls are safe.
+        /// </summary>
+        public IServiceCollection AddEntityFrameworkCommitCoordination<TContext>()
+            where TContext : DbContext
+        {
+            return services.AddCommitCoordinationWithStartupGate(typeof(TContext));
+        }
+
+        /// <summary>
         /// Adds EF Core commit coordination services: the core infrastructure, the
         /// <see cref="EntityFrameworkCommitSignalSource" />, and the
         /// <see cref="CommitCoordinationTransactionInterceptor" /> (registered as an <c>IInterceptor</c>

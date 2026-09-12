@@ -55,8 +55,10 @@ public sealed class ProviderConfigBagTests
         // when
         ((IMessageProviderConfigBuilder<TestMessage>)builder).SetMessageProviderConfig(messageConfig);
         builder.Consumer<TestConsumer>(consumer =>
-            ((IConsumerProviderConfigBuilder)consumer).SetConsumerProviderConfig(consumerConfig)
-        );
+        {
+            consumer.StableContract("tests.provider-config.overlay");
+            ((IConsumerProviderConfigBuilder)consumer).SetConsumerProviderConfig(consumerConfig);
+        });
         var registration = builder.Build();
 
         // then
@@ -76,8 +78,10 @@ public sealed class ProviderConfigBagTests
         // when
         ((IMessageProviderConfigBuilder<TestMessage>)builder).SetMessageProviderConfig(messageConfig);
         builder.Consumer<TestConsumer>(consumer =>
-            ((IConsumerProviderConfigBuilder)consumer).SetConsumerProviderConfig(consumerConfig)
-        );
+        {
+            consumer.StableContract("tests.provider-config.merge");
+            ((IConsumerProviderConfigBuilder)consumer).SetConsumerProviderConfig(consumerConfig);
+        });
         var registration = builder.Build();
 
         // then
@@ -133,8 +137,10 @@ public sealed class ProviderConfigBagTests
             {
                 ((IMessageProviderConfigBuilder<TestMessage>)message).SetMessageProviderConfig(messageConfig);
                 message.Consumer<TestConsumer>(consumer =>
-                    ((IConsumerProviderConfigBuilder)consumer).SetConsumerProviderConfig(consumerConfig)
-                );
+                {
+                    consumer.StableContract("tests.provider-config.consumer");
+                    ((IConsumerProviderConfigBuilder)consumer).SetConsumerProviderConfig(consumerConfig);
+                });
             })
         );
 
@@ -156,17 +162,21 @@ public sealed class ProviderConfigBagTests
             {
                 setup.Bus.ForMessage<TestMessage>(message =>
                     message.Consumer<TestConsumer>(consumer =>
+                    {
+                        consumer.StableContract("tests.provider-config.duplicate");
                         ((IConsumerProviderConfigBuilder)consumer).SetConsumerProviderConfig(
                             new FakeProviderConfig("first")
-                        )
-                    )
+                        );
+                    })
                 );
                 setup.Bus.ForMessage<TestMessage>(message =>
                     message.Consumer<TestConsumer>(consumer =>
+                    {
+                        consumer.StableContract("tests.provider-config.duplicate");
                         ((IConsumerProviderConfigBuilder)consumer).SetConsumerProviderConfig(
                             new FakeProviderConfig("second")
-                        )
-                    )
+                        );
+                    })
                 );
             });
 

@@ -9,10 +9,10 @@ SOLUTION ?= headless-framework.slnx
 JOBS_DASHBOARD_DIR ?= src/Headless.Jobs.Dashboard/wwwroot
 MESSAGING_DASHBOARD_DIR ?= src/Headless.Messaging.Dashboard/wwwroot
 MESSAGING_COMPATIBILITY_DIR ?= tests/Headless.Messaging.PackageReference.Tests.Unit/Probes/Compatibility
-MESSAGING_PREVIOUS_VERSION_PROBE ?= tests/Headless.Messaging.PreviousVersionProbe/Headless.Messaging.PreviousVersionProbe.csproj
 CONFIGURATION ?= Release
 ARTIFACTS_DIR ?= artifacts
 PACKAGES_DIR ?= $(ARTIFACTS_DIR)/packages-results
+PACK_LOG_DIR ?= $(ARTIFACTS_DIR)/pack-logs
 PACKAGE_MANIFEST ?= eng/expected-packages.txt
 PACKAGE_VERSION ?= $(shell $(DOTNET) msbuild src/Headless.Core/Headless.Core.csproj -nologo -target:MinVer -getProperty:PackageVersion)
 EXPECTED_PACKAGE_VERSION ?= $(shell if [ -f "$(PACKAGES_DIR)/package-version.txt" ]; then sed -n '1p' "$(PACKAGES_DIR)/package-version.txt"; else printf '%s\n' "$(PACKAGE_VERSION)"; fi)
@@ -31,17 +31,20 @@ COVERAGE_SETTINGS_PROJECT ?= tests/Headless.Domain.Tests.Unit/Headless.Domain.Te
 TEST_MODULES ?= tests/**/bin/$(CONFIGURATION)/**/*.Tests.*.dll
 UNIT_TEST_MODULES ?= tests/**/bin/$(CONFIGURATION)/**/*.Tests.Unit.dll
 INTEGRATION_TEST_MODULES ?= tests/**/bin/$(CONFIGURATION)/**/*.Tests.Integration.dll
-MESSAGING_CONFORMANCE_EVIDENCE_MODULES ?= \
-	tests/Headless.Messaging.Aws.Tests.Integration/bin/$(CONFIGURATION)/net10.0/Headless.Messaging.Aws.Tests.Integration.dll \
-	tests/Headless.Messaging.Kafka.Tests.Integration/bin/$(CONFIGURATION)/net10.0/Headless.Messaging.Kafka.Tests.Integration.dll \
-	tests/Headless.Messaging.Nats.Tests.Integration/bin/$(CONFIGURATION)/net10.0/Headless.Messaging.Nats.Tests.Integration.dll \
-	tests/Headless.Messaging.Pulsar.Tests.Integration/bin/$(CONFIGURATION)/net10.0/Headless.Messaging.Pulsar.Tests.Integration.dll \
-	tests/Headless.Messaging.RabbitMq.Tests.Integration/bin/$(CONFIGURATION)/net10.0/Headless.Messaging.RabbitMq.Tests.Integration.dll \
-	tests/Headless.Messaging.Redis.Tests.Integration/bin/$(CONFIGURATION)/net10.0/Headless.Messaging.Redis.Tests.Integration.dll
+MESSAGING_CONFORMANCE_PROVIDERS ?= Aws Kafka Nats Pulsar RabbitMq Redis
+MESSAGING_CONFORMANCE_EVIDENCE_PROJECTS ?= $(foreach provider,$(MESSAGING_CONFORMANCE_PROVIDERS),tests/Headless.Messaging.$(provider).Tests.Integration/Headless.Messaging.$(provider).Tests.Integration.csproj)
+MESSAGING_CONFORMANCE_EVIDENCE_MODULES ?= $(foreach provider,$(MESSAGING_CONFORMANCE_PROVIDERS),tests/Headless.Messaging.$(provider).Tests.Integration/bin/$(CONFIGURATION)/net10.0/Headless.Messaging.$(provider).Tests.Integration.dll)
+# `build` type-checks (vue-tsc) and bundles; CI's solution build passes `build-only` because the separate
+# Dashboard jobs already type-check, lint, and unit-test the SPAs.
+DASHBOARD_BUILD_SCRIPT ?= build
 MSBUILD_ARGS ?=
+# Static-graph restore evaluates each project once through MSBuild's project graph instead of recursively walking
+# references per project; a forced solution restore measured ~5s versus ~8s locally.
+RESTORE_ARGS ?= -p:RestoreUseStaticGraphEvaluation=true
 DEPENDENCY_AUDIT_IDLE_TIMEOUT ?= 120
 DEPENDENCY_SECURITY_AUDIT_TIMEOUT ?= 120
 NUGET_ADVISORY_AUDIT_TIMEOUT ?= 90
+PACK_PARALLELISM ?= 4
 QUALITY_SEVERITY ?= hidden
 QUALITY_DIAGNOSTICS ?=
 QUALITY_REPORT_DIR ?= $(ARTIFACTS_DIR)/quality-analyzers-report
@@ -56,7 +59,9 @@ NUGET_ADVISORY_AUDIT_ARGS ?= --timeout-seconds "$(NUGET_ADVISORY_AUDIT_TIMEOUT)"
 
 COVERAGE_ARGS ?= -p:EnableCodeCoverage=true --coverage-output-format cobertura
 CI_REPORT_ARGS ?= $(if $(GITHUB_ACTIONS),--report-gh,)
-CI_TEST_ARGS ?= --report-trx --coverage --coverage-output-format cobertura
+CI_TEST_ARGS ?= --report-trx
+# Coverage from a second run of the same binaries (e.g. the non-UTC time-zone leg) only duplicates the first.
+CI_COVERAGE ?= true
 
 .PHONY: help
 help: ## Show available commands.
@@ -78,12 +83,12 @@ tools: ## Restore repo-pinned .NET tools.
 
 .PHONY: restore
 restore: ## Restore NuGet packages.
-	$(DOTNET) restore "$(SOLUTION)" -p:Configuration="$(CONFIGURATION)"
+	$(DOTNET) restore "$(SOLUTION)" -p:Configuration="$(CONFIGURATION)" $(RESTORE_ARGS)
 
 .PHONY: restore-project
 restore-project: ## Restore one project; preferred for focused project work.
 	@test -n "$(PROJECT)" || (echo "PROJECT is required. Example: make restore-project PROJECT=src/Headless.Api/Headless.Api.csproj" && exit 2)
-	$(DOTNET) restore "$(PROJECT)" -p:Configuration="$(CONFIGURATION)"
+	$(DOTNET) restore "$(PROJECT)" -p:Configuration="$(CONFIGURATION)" $(RESTORE_ARGS)
 
 .PHONY: hooks
 hooks: ## Point git at the committed hooks (per clone/worktree).
@@ -132,7 +137,7 @@ hook-build: ## Git hook: incremental solution build over warm outputs (no restor
 	$(DOTNET) build "$(SOLUTION)" --configuration "$(CONFIGURATION)" --no-restore -v:q -nologo /clp:ErrorsOnly $(MSBUILD_ARGS)
 
 .PHONY: ci-build
-ci-build: format-check rebuild ci-test pack-built ## CI: check formatting, clean-build, test with coverage, then pack already-built projects.
+ci-build: format-check rebuild ci-test pack-built verify-packages ## CI: check formatting, clean-build, test with coverage, then pack and verify already-built projects.
 
 .PHONY: build
 build: restore ## Build the solution.
@@ -193,11 +198,11 @@ _node-check:
 
 .PHONY: dashboard-jobs
 dashboard-jobs: _node-check ## Rebuild the Jobs dashboard SPA (npm ci + vite build into wwwroot/dist).
-	cd "$(JOBS_DASHBOARD_DIR)" && $(NPM) ci && $(NPM) run build
+	cd "$(JOBS_DASHBOARD_DIR)" && $(NPM) ci --no-audit --no-fund && $(NPM) run $(DASHBOARD_BUILD_SCRIPT)
 
 .PHONY: dashboard-messaging
 dashboard-messaging: _node-check ## Rebuild the Messaging dashboard SPA (npm ci + vite build into wwwroot/dist).
-	cd "$(MESSAGING_DASHBOARD_DIR)" && $(NPM) ci && $(NPM) run build
+	cd "$(MESSAGING_DASHBOARD_DIR)" && $(NPM) ci --no-audit --no-fund && $(NPM) run $(DASHBOARD_BUILD_SCRIPT)
 
 .PHONY: format
 format: tools ## Format C# code with CSharpier.
@@ -218,14 +223,18 @@ test-fast: ## Run all tests without restore/build. Requires existing $(CONFIGURA
 	$(DOTNET) test --solution "$(SOLUTION)" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$(TEST_RESULTS_DIR)" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER)
 
 .PHONY: ci-test
-ci-test: ## Run prebuilt unit tests with CI coverage output. Requires existing $(CONFIGURATION) build outputs.
+ci-test: ## Run prebuilt unit tests with TRX and Cobertura coverage (CI_COVERAGE=false skips coverage). Requires existing $(CONFIGURATION) build outputs.
 	@mkdir -p "$(TEST_RESULTS_DIR)"
-	@coverage_settings="$$($(DOTNET) msbuild "$(COVERAGE_SETTINGS_PROJECT)" -getProperty:HeadlessCoverageSettingsPath -nologo -v:quiet)"; \
-	if [[ -z "$$coverage_settings" || ! -f "$$coverage_settings" ]]; then \
-		echo "Unable to resolve HeadlessCoverageSettingsPath from $(COVERAGE_SETTINGS_PROJECT)." >&2; \
-		exit 1; \
+	@coverage_args=(); \
+	if [[ "$(CI_COVERAGE)" == "true" ]]; then \
+		coverage_settings="$$($(DOTNET) msbuild "$(COVERAGE_SETTINGS_PROJECT)" -getProperty:HeadlessCoverageSettingsPath -nologo -v:quiet)"; \
+		if [[ -z "$$coverage_settings" || ! -f "$$coverage_settings" ]]; then \
+			echo "Unable to resolve HeadlessCoverageSettingsPath from $(COVERAGE_SETTINGS_PROJECT)." >&2; \
+			exit 1; \
+		fi; \
+		coverage_args=(--coverage --coverage-output-format cobertura --coverage-settings "$$coverage_settings"); \
 	fi; \
-	$(DOTNET) test --test-modules "$(UNIT_TEST_MODULES)" --root-directory "$(CURDIR)" --results-directory "$(TEST_RESULTS_DIR)" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER) $(CI_REPORT_ARGS) $(CI_TEST_ARGS) --coverage-settings "$$coverage_settings"
+	$(DOTNET) test --test-modules "$(UNIT_TEST_MODULES)" --root-directory "$(CURDIR)" --results-directory "$(TEST_RESULTS_DIR)" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER) $(CI_REPORT_ARGS) $(CI_TEST_ARGS) $${coverage_args[@]+"$${coverage_args[@]}"}
 
 .PHONY: ci-messaging-conformance-evidence
 ci-messaging-conformance-evidence: ## Execute every supported local-broker messaging conformance scenario (Azure uses its protected workflow).
@@ -234,14 +243,11 @@ ci-messaging-conformance-evidence: ## Execute every supported local-broker messa
 		$(DOTNET) test --test-modules "$$module" --root-directory "$(CURDIR)" --results-directory "$(TEST_RESULTS_DIR)/messaging-conformance-evidence" --max-parallel-test-modules 1 $(TEST_ARGS) $(CI_REPORT_ARGS) --filter-class '*ProviderConformanceEvidenceTests'; \
 	done
 
-.PHONY: build-messaging-previous-version-probe
-build-messaging-previous-version-probe: ## Restore and build the isolated Messaging 0.11.0 cutover producer/consumer probe.
-	$(DOTNET) restore "$(MESSAGING_PREVIOUS_VERSION_PROBE)" \
-		--configfile "$(dir $(MESSAGING_PREVIOUS_VERSION_PROBE))NuGet.config" --locked-mode
-	$(DOTNET) build "$(MESSAGING_PREVIOUS_VERSION_PROBE)" \
-		--configuration "$(CONFIGURATION)" --no-restore --no-incremental -v:minimal -nologo
-	$(DOTNET) "$(dir $(MESSAGING_PREVIOUS_VERSION_PROBE))bin/$(CONFIGURATION)/net10.0/Headless.Messaging.PreviousVersionProbe.dll" verify nats
-	$(DOTNET) "$(dir $(MESSAGING_PREVIOUS_VERSION_PROBE))bin/$(CONFIGURATION)/net10.0/Headless.Messaging.PreviousVersionProbe.dll" verify redis
+.PHONY: build-messaging-conformance-evidence
+build-messaging-conformance-evidence: ## Restore and build only the messaging conformance-evidence test projects.
+	@set -e; for project in $(MESSAGING_CONFORMANCE_EVIDENCE_PROJECTS); do \
+		$(DOTNET) build "$$project" --configuration "$(CONFIGURATION)" -v:q -nologo /clp:ErrorsOnly $(MSBUILD_ARGS); \
+	done
 
 .PHONY: test-modules
 test-modules: build ## Run prebuilt test DLLs via MTP --test-modules. Override TEST_MODULES if needed.
@@ -320,29 +326,44 @@ coverage-open: coverage-html ## Generate report and open in browser.
 	elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$(COVERAGE_REPORT_DIR)/index.html"; \
 	else echo "Report generated. Open manually: $(COVERAGE_REPORT_DIR)/index.html"; fi
 
-.PHONY: pack
-pack: restore verify-package-manifest ## Pack NuGet packages (symbols are embedded in the assemblies).
+.PHONY: _pack-projects
+_pack-projects:
 	@mkdir -p "$(PACKAGES_DIR)"
-	@set -e; for csproj in src/*/*.csproj; do \
-		$(DOTNET) pack "$$csproj" --configuration "$(CONFIGURATION)" --no-restore --output "$(PACKAGES_DIR)" /p:GenerateSBOM=true /p:SbomGenerationPackageVersion="$(PACKAGE_VERSION)" $(MSBUILD_ARGS); \
-	done
+	@rm -rf "$(PACK_LOG_DIR)"; mkdir -p "$(PACK_LOG_DIR)"
+	@find src -mindepth 2 -maxdepth 2 -type f -name '*.csproj' -print0 | \
+	xargs -0 -P "$(PACK_PARALLELISM)" -n1 bash -c 'project="$$1"; log="$(PACK_LOG_DIR)/$$(basename "$$project" .csproj).log"; \
+		echo "Packing $$project"; \
+		if ! $(DOTNET) pack "$$project" -m:1 \
+			--configuration "$(CONFIGURATION)" \
+			--output "$(PACKAGES_DIR)" \
+			/p:GenerateSBOM=true \
+			/p:SbomGenerationPackageVersion="$(PACKAGE_VERSION)" \
+			$(PACK_BUILD_ARGS) \
+			$(MSBUILD_ARGS) > "$$log" 2>&1; then \
+			echo "FAILED: $$project"; cat "$$log"; exit 1; \
+		fi' bash
 	@printf '%s\n' "$(PACKAGE_VERSION)" > "$(PACKAGES_DIR)/package-version.txt"
 
-.PHONY: pack-built
-pack-built: verify-package-manifest ## Pack already-built source projects without restore/build; used by CI.
+# One `dotnet pack` process per project with a bounded number of concurrent processes. Packing all src
+# projects through a single parallel MSBuild traversal (eng/pack.proj) produced 143 of 171 packages in 2m23s
+# and then deadlocked: every node went idle with no error while Headless.Core — the project nearly everything
+# references — was still unpacked, and the 0.14.0 release job died at its 45-minute timeout. Separate
+# processes keep each pack off a shared MSBuild scheduler. Pack runs only on releases, so this does not affect
+# the pull-request path.
+.PHONY: pack
+pack: restore verify-package-manifest ## Pack NuGet packages in bounded parallel processes.
 	@mkdir -p "$(PACKAGES_DIR)"
-	@set -e; for csproj in src/*/*.csproj; do \
-		$(DOTNET) pack "$$csproj" --configuration "$(CONFIGURATION)" --no-restore --no-build --output "$(PACKAGES_DIR)" /p:GenerateSBOM=true /p:SbomGenerationPackageVersion="$(PACKAGE_VERSION)" $(MSBUILD_ARGS); \
-	done
-	@printf '%s\n' "$(PACKAGE_VERSION)" > "$(PACKAGES_DIR)/package-version.txt"
+	@$(MAKE) _pack-projects PACK_BUILD_ARGS=--no-restore
+
+# No verify-package-manifest prerequisite: CI always follows with verify-packages, which compares the produced
+# package IDs exactly against the manifest, so a pre-pack evaluation of every project would only fail earlier.
+.PHONY: pack-built
+pack-built: ## Pack already-built src projects in bounded parallel processes; used by CI.
+	@mkdir -p "$(PACKAGES_DIR)"
+	@$(MAKE) _pack-projects PACK_BUILD_ARGS='--no-restore --no-build'
 
 .PHONY: pack-sbom
-pack-sbom: restore verify-package-manifest ## Pack NuGet packages with GenerateSBOM=true.
-	@mkdir -p "$(PACKAGES_DIR)"
-	@set -e; for csproj in src/*/*.csproj; do \
-		$(DOTNET) pack "$$csproj" --configuration "$(CONFIGURATION)" --no-restore --output "$(PACKAGES_DIR)" /p:GenerateSBOM=true /p:SbomGenerationPackageVersion="$(PACKAGE_VERSION)" $(MSBUILD_ARGS); \
-	done
-	@printf '%s\n' "$(PACKAGE_VERSION)" > "$(PACKAGES_DIR)/package-version.txt"
+pack-sbom: pack ## Alias of pack; every package already embeds an SPDX SBOM.
 
 .PHONY: verify-package-manifest
 verify-package-manifest: ## Compare the canonical package IDs with evaluated packable src projects.
@@ -367,35 +388,19 @@ nuget-publish-preflight: ## Fail when an expected package ID/version already exi
 		--repository-commit "$(EXPECTED_REPOSITORY_COMMIT)"
 
 .PHONY: verify-messaging-package-compatibility
-verify-messaging-package-compatibility: pack ## Compile old/new Messaging package families and prove the selected mixed graph fails.
-	@test -n "$${GITHUB_PACKAGES_TOKEN:-}" || (echo "GITHUB_PACKAGES_TOKEN is required for the previous-family and selected-mixed probes." && exit 2)
+verify-messaging-package-compatibility: pack ## Verify current Messaging package family composition and public API usability.
 	@set -e; \
 	version=$$(sed -n '1p' "$(PACKAGES_DIR)/package-version.txt"); \
-	$(DOTNET) restore "$(MESSAGING_COMPATIBILITY_DIR)/PreviousAllOld/PreviousAllOld.csproj" \
-		--configfile "$(MESSAGING_COMPATIBILITY_DIR)/PreviousAllOld/NuGet.config" --locked-mode; \
-	$(DOTNET) build "$(MESSAGING_COMPATIBILITY_DIR)/PreviousAllOld/PreviousAllOld.csproj" \
-		--configuration "$(CONFIGURATION)" --no-restore; \
 	$(DOTNET) restore "$(MESSAGING_COMPATIBILITY_DIR)/NewAllNew/NewAllNew.csproj" \
 		--configfile "$(MESSAGING_COMPATIBILITY_DIR)/NewAllNew/NuGet.config" \
 		-p:MessagingPackageVersion="$$version"; \
 	$(DOTNET) build "$(MESSAGING_COMPATIBILITY_DIR)/NewAllNew/NewAllNew.csproj" \
 		--configuration "$(CONFIGURATION)" --no-restore \
-		-p:MessagingPackageVersion="$$version"; \
-	log=$$(mktemp); trap 'rm -f "$$log"' EXIT; \
-	if $(DOTNET) restore "$(MESSAGING_COMPATIBILITY_DIR)/SelectedMixed/SelectedMixed.csproj" \
-		--configfile "$(MESSAGING_COMPATIBILITY_DIR)/SelectedMixed/NuGet.config" \
-		-p:MessagingPackageVersion="$$version" >"$$log" 2>&1; then \
-		sed -n '1,240p' "$$log"; \
-		echo "SelectedMixed unexpectedly restored successfully."; \
-		exit 1; \
-	fi; \
-	sed -n '1,240p' "$$log"; \
-	./scripts/verify-messaging-mixed-downgrade.sh "$$log" "0.11.0" "$$version"
+		-p:MessagingPackageVersion="$$version"
 
 .PHONY: test-package-verifier
 test-package-verifier: ## Run isolated positive and negative package-verifier fixtures.
 	./tests/scripts/verify-packages-tests.sh
-	./tests/scripts/verify-messaging-mixed-downgrade-tests.sh
 
 .PHONY: outdated
 outdated: tools ## Check outdated NuGet dependencies.

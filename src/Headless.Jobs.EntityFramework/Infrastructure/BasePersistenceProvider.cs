@@ -358,13 +358,38 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 setters =>
                     setters
                         .SetProperty(x => x.CancelRequested, valueExpression: true)
-                        .SetProperty(x => x.Status, x => x.Status == JobStatus.Idle ? JobStatus.Cancelled : x.Status)
+                        .SetProperty(
+                            x => x.Status,
+                            x =>
+                                x.Status == JobStatus.Idle
+                                && (x.BusinessKey == null || (x.OwnerId == null && x.LockedUntil == null))
+                                    ? JobStatus.Cancelled
+                                    : x.Status
+                        )
                         .SetProperty(
                             x => x.ExecutedAt,
-                            x => x.Status == JobStatus.Idle ? DateTime.UtcNow : x.ExecutedAt
+                            x =>
+                                x.Status == JobStatus.Idle
+                                && (x.BusinessKey == null || (x.OwnerId == null && x.LockedUntil == null))
+                                    ? DateTime.UtcNow
+                                    : x.ExecutedAt
                         )
-                        .SetProperty(x => x.OwnerId, x => x.Status == JobStatus.Idle ? null : x.OwnerId)
-                        .SetProperty(x => x.LockedUntil, x => x.Status == JobStatus.Idle ? null : x.LockedUntil)
+                        .SetProperty(
+                            x => x.OwnerId,
+                            x =>
+                                x.Status == JobStatus.Idle
+                                && (x.BusinessKey == null || (x.OwnerId == null && x.LockedUntil == null))
+                                    ? null
+                                    : x.OwnerId
+                        )
+                        .SetProperty(
+                            x => x.LockedUntil,
+                            x =>
+                                x.Status == JobStatus.Idle
+                                && (x.BusinessKey == null || (x.OwnerId == null && x.LockedUntil == null))
+                                    ? null
+                                    : x.LockedUntil
+                        )
                         .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
                 cancellationToken
             )
@@ -1012,6 +1037,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ConfigureAwait(false);
     }
 
+#pragma warning disable MA0002 // EF translates Distinct to SQL; comparer overloads cannot be translated. The merged result uses ordinal comparison.
     public async Task<string[]> GetActiveOwnerIdsAsync(CancellationToken cancellationToken = default)
     {
         await using var dbContext = await DbContextFactory
@@ -1042,6 +1068,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
         return [.. timeJobOwners.Concat(occurrenceOwners).Distinct(StringComparer.Ordinal)];
     }
+#pragma warning restore MA0002
 
     public async Task<int> ReclaimStalledTimeJobsAsync(CancellationToken cancellationToken = default)
     {
@@ -1199,6 +1226,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                     x.OnMissedRun,
                     x.MissedRunGraceSeconds,
                     x.EvaluationFingerprint,
+                    x.ContractVersion,
                     Id: existingByFunction.TryGetValue(x.Function, out var existingDefinition)
                         ? existingDefinition.Id
                         : JobsSeedId.ForCronSeed(x.Function)
@@ -1211,11 +1239,21 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ToDictionary(x => x.Id, x => x.Function);
 
         foreach (
-            var (function, expression, onMissedRun, missedRunGraceSeconds, evaluationFingerprint, _) in orderedCronJobs
+            var (
+                function,
+                expression,
+                onMissedRun,
+                missedRunGraceSeconds,
+                evaluationFingerprint,
+                contractVersion,
+                _
+            ) in orderedCronJobs
         )
         {
             if (existingByFunction.TryGetValue(function, out var cron))
             {
+                // Reseeding cannot upgrade the schema label of bytes already stored by an older writer.
+                // Existing function/version/request tuples change only through an explicit definition edit.
                 // Update expression if it changed
                 if (!string.Equals(cron.Expression, expression, StringComparison.Ordinal))
                 {
@@ -1258,6 +1296,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 {
                     Id = JobsSeedId.ForCronSeed(function),
                     Function = function,
+                    ContractVersion = contractVersion,
                     Expression = expression,
                     InitIdentifier = $"MemoryTicker_Seeded_{function}",
                     CreatedAt = now,
@@ -1310,12 +1349,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             await InvalidateCronExpressionsCacheAsync().ConfigureAwait(false);
         }
         catch (DbUpdateException ex)
+            when (_IsUniqueConstraintViolation(dbContext.Database.ProviderName, ex) && insertedSeeds.Count != 0)
         {
-            if (!_IsUniqueConstraintViolation(dbContext.Database.ProviderName, ex) || insertedSeeds.Count == 0)
-            {
-                throw;
-            }
-
             await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
             dbContext.ChangeTracker.Clear();
 
@@ -1743,6 +1778,12 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                     UpdatedAt = request.OperationTimeUtc,
                 };
 
+                var definition = await dbContext
+                    .Set<TCronJob>()
+                    .AsNoTracking()
+                    .SingleAsync(x => x.Id == cronJobId, cancellationToken)
+                    .ConfigureAwait(false);
+                coalescedRun.SnapshotContract(definition);
                 await occurrences.AddAsync(coalescedRun, cancellationToken).ConfigureAwait(false);
                 await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
                 dbContext.Entry(coalescedRun).State = EntityState.Detached;
@@ -1778,19 +1819,11 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             }
 
             preservedOccurrenceId = candidateId;
-            coalescedRun = new CronJobOccurrenceEntity<TCronJob>
-            {
-                Id = candidateId,
-                CronJobId = cronJobId,
-                Status = JobStatus.Idle,
-                OwnerId = null,
-                LockedUntil = null,
-                ExecutionTime = stepInstant,
-                RecoveredFromUtc = stepInstant,
-                OnNodeDeath = request.OnNodeDeath,
-                CreatedAt = step.ExistingCreatedAt!.Value,
-                UpdatedAt = request.OperationTimeUtc,
-            };
+            coalescedRun = await occurrences
+                .AsNoTracking()
+                .Include(x => x.CronJob)
+                .SingleAsync(x => x.Id == candidateId, cancellationToken)
+                .ConfigureAwait(false);
             break;
         }
 
@@ -2140,12 +2173,6 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         var committedDefinition = await definitions
             .AsNoTracking()
             .Where(x => x.Id == advance.CronJobId)
-            .Select(x => new
-            {
-                x.ReconciledThroughUtc,
-                x.NextDueUtc,
-                x.OnNodeDeath,
-            })
             .SingleAsync(cancellationToken)
             .ConfigureAwait(false);
 
@@ -2193,6 +2220,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 UpdatedAt = now,
             };
 
+            created.SnapshotContract(committedDefinition);
             await occurrences.AddAsync(created, cancellationToken).ConfigureAwait(false);
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             occurrenceId = created.Id;
@@ -2579,7 +2607,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .AsNoTracking()
             .Include(x => x.CronJob)
             .Where(x => x.Id == jobId)
-            .Select(x => x.CronJob.Request)
+            .Select(x => x.Request)
             .FirstOrDefaultAsync(cancellationToken)
             .ConfigureAwait(false);
 

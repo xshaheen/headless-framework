@@ -115,6 +115,8 @@ Headless.Messaging.Storage.SqlServer
 Headless.Messaging.Storage.SqlServer.EntityFramework
 Headless.Messaging.Testing
 Headless.MultiTenancy
+Headless.MultiTenancy.Abstractions
+Headless.MultiTenancy.Storage.EntityFramework
 Headless.NetTopologySuite
 Headless.OpenApi.Nswag
 Headless.OpenApi.Nswag.OData

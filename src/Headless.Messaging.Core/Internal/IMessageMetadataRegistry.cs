@@ -8,14 +8,18 @@ namespace Headless.Messaging.Internal;
 
 internal interface IMessageMetadataRegistry
 {
+    IReadOnlyCollection<MessageMetadata> GetAll();
+
     bool TryGet(MessageRouteKey route, [NotNullWhen(true)] out MessageMetadata? metadata);
 }
 
 internal sealed record MessageMetadata(
     MessageRouteKey Route,
     Type MessageType,
+    string ContractVersion,
     Func<object, string?>? CorrelationSelector,
-    IReadOnlyDictionary<Type, object> ProviderConfigs
+    IReadOnlyDictionary<Type, object> ProviderConfigs,
+    bool RequiresRoutingAffinity = false
 );
 
 internal sealed class MessageMetadataRegistry(
@@ -29,6 +33,8 @@ internal sealed class MessageMetadataRegistry(
         consumerRegistry,
         optionsAccessor?.Value
     );
+
+    public IReadOnlyCollection<MessageMetadata> GetAll() => _metadataByRoute.Values;
 
     public bool TryGet(MessageRouteKey route, [NotNullWhen(true)] out MessageMetadata? metadata)
     {
@@ -60,12 +66,37 @@ internal sealed class MessageMetadataRegistry(
 
             var correlationSelector = _MergeCorrelationSelector(group);
             var providerConfigs = _MergeProviderConfigs(group);
+            var contractVersion = _MergeContractVersion(group);
 
             var route = new MessageRouteKey(group.Key.MessageType, group.Key.MessageName, group.Key.Lane);
-            metadata[route] = new MessageMetadata(route, group.Key.MessageType, correlationSelector, providerConfigs);
+            metadata[route] = new MessageMetadata(
+                route,
+                group.Key.MessageType,
+                contractVersion,
+                correlationSelector,
+                providerConfigs,
+                group.Any(static registration => registration.RequiresRoutingAffinity)
+            );
         }
 
         return metadata;
+    }
+
+    private static string _MergeContractVersion(IEnumerable<MessageRegistration> registrations)
+    {
+        var versions = registrations
+            .Select(static registration => registration.ContractVersion)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        if (versions.Length != 1)
+        {
+            throw new InvalidOperationException(
+                "A message route must have exactly one contract version across all registrations."
+            );
+        }
+
+        return MessagingOptions.ValidateContractVersion(versions[0]);
     }
 
     private static string? _ResolveMessageName(

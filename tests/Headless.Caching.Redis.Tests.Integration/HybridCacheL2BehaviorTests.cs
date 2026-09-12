@@ -197,9 +197,12 @@ public sealed class HybridCacheL2BehaviorTests(RedisCacheFixture fixture) : Test
             _subscribers.Add(cache);
         }
 
+        public Task PublishAsync<T>(T? message, CancellationToken cancellationToken = default) =>
+            PublishAsync(message, options: null, cancellationToken);
+
         public async Task PublishAsync<T>(
             T? message,
-            PublishOptions? options = null,
+            PublishOptions? options,
             CancellationToken cancellationToken = default
         )
         {
@@ -230,11 +233,10 @@ public sealed class HybridCacheL2BehaviorTests(RedisCacheFixture fixture) : Test
     {
         public static readonly NoopBus Instance = new();
 
-        public Task PublishAsync<T>(
-            T? message,
-            PublishOptions? options = null,
-            CancellationToken cancellationToken = default
-        )
+        public Task PublishAsync<T>(T? message, CancellationToken cancellationToken = default) =>
+            PublishAsync(message, options: null, cancellationToken);
+
+        public Task PublishAsync<T>(T? message, PublishOptions? options, CancellationToken cancellationToken = default)
         {
             return Task.CompletedTask;
         }

@@ -811,6 +811,18 @@
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )"
         }
       },
+      "headless.commitcoordination.entityframework": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.CommitCoordination.Core": "[1.0.0, )",
+          "Microsoft.EntityFrameworkCore.Relational": "[10.0.12, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
+          "Microsoft.Extensions.Hosting.Abstractions": "[10.0.12, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )",
+          "Microsoft.Extensions.Options": "[10.0.12, )"
+        }
+      },
       "headless.commitcoordination.sqlserver": {
         "type": "Project",
         "dependencies": {
@@ -883,7 +895,10 @@
         }
       },
       "headless.domain": {
-        "type": "Project"
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )"
+        }
       },
       "headless.entityframework.core": {
         "type": "Project",
@@ -943,6 +958,7 @@
       "headless.jobs.abstractions": {
         "type": "Project",
         "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
           "Headless.CommitCoordination.Abstractions": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )"
         }
@@ -976,6 +992,8 @@
       "headless.jobs.entityframework.sqlserver": {
         "type": "Project",
         "dependencies": {
+          "Headless.CommitCoordination.EntityFramework": "[1.0.0, )",
+          "Headless.Coordination.SqlServer": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
           "Headless.Jobs.EntityFramework": "[1.0.0, )",
           "Microsoft.EntityFrameworkCore.SqlServer": "[10.0.12, )",
@@ -989,6 +1007,7 @@
           "AwesomeAssertions.Json": "[9.0.0, )",
           "Bogus": "[35.6.5, )",
           "DeepCloner": "[0.10.4, )",
+          "Headless.CommitCoordination.EntityFramework": "[1.0.0, )",
           "Headless.Coordination.Core": "[1.0.0, )",
           "Headless.Jobs.Core": "[1.0.0, )",
           "Headless.Jobs.EntityFramework": "[1.0.0, )",

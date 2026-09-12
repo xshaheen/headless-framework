@@ -106,6 +106,8 @@ public sealed class PostgreSqlClaimStrategyTests(PostgreSqlJobsCoordinationFixtu
                         {
                             Id = cronId,
                             Function = "mapped-cron",
+                            ContractVersion = "mapped-v2",
+                            Request = [1, 2],
                             Expression = "* * * * *",
                         }
                     );
@@ -115,6 +117,9 @@ public sealed class PostgreSqlClaimStrategyTests(PostgreSqlJobsCoordinationFixtu
                         {
                             Id = fallbackOccurrenceId,
                             CronJobId = cronId,
+                            Function = "previous-mapped-cron",
+                            ContractVersion = "mapped-v1",
+                            Request = [7, 8],
                             ExecutionTime = DateTime.UtcNow.AddMinutes(-2),
                         }
                     );
@@ -130,9 +135,16 @@ public sealed class PostgreSqlClaimStrategyTests(PostgreSqlJobsCoordinationFixtu
                 .QueueCronJobOccurrencesAsync((DateTime.UtcNow.AddMinutes(1), [directContext]), ct)
                 .ToArrayAsync(ct);
             direct.Should().ContainSingle();
+            direct[0].Function.Should().Be("mapped-cron");
+            direct[0].ContractVersion.Should().Be("mapped-v2");
+            direct[0].Request.Should().Equal(1, 2);
 
             var fallback = await persistence.QueueTimedOutCronJobOccurrencesAsync(ct).ToArrayAsync(ct);
             fallback.Select(x => x.Id).Should().Contain(fallbackOccurrenceId);
+            var stored = fallback.Single(x => x.Id == fallbackOccurrenceId);
+            stored.Function.Should().Be("previous-mapped-cron");
+            stored.ContractVersion.Should().Be("mapped-v1");
+            stored.Request.Should().Equal(7, 8);
         }
         finally
         {
@@ -267,6 +279,11 @@ internal sealed class PostgreSqlMappedJobsDbContext(DbContextOptions<PostgreSqlM
         {
             entity.ToTable("native_cron_occurrences", "mapped_jobs");
             entity.Property(x => x.Id).HasColumnName("occurrence_id");
+            entity.Property(x => x.Function).HasColumnName("contract_name");
+            entity.Property(x => x.ContractVersion).HasColumnName("contract_version");
+            entity.Property(x => x.Request).HasColumnName("contract_payload");
+            entity.Property(x => x.CorrelationId).HasColumnName("correlation_key");
+            entity.Property(x => x.CausationId).HasColumnName("causation_key");
             entity.Property(x => x.Status).HasColumnName("occurrence_status");
             entity.Property(x => x.OwnerId).HasColumnName("occurrence_owner");
             entity.Property(x => x.ExecutionTime).HasColumnName("occurrence_time");

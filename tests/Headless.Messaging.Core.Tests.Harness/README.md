@@ -80,6 +80,7 @@ Kafka is queue/consumer-group only in the current provider contract. Pulsar's Te
 
 | Manifest scenario | NATS | RabbitMQ | AWS/LocalStack | Kafka | Pulsar | Azure Service Bus | InMemory | Redis |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `RoutingAffinityMappingOrRejection` | S | S | S | S | S | S† | S | S |
 | `QueueRoundTrip` | S | S | S | S | S | S† | S | S |
 | `BusRoundTrip` | S | S | S | N/A | S | S† | S | S |
 | `HeaderRoundTrip` | S | S | S | S | S | S† | S | S |
@@ -97,7 +98,6 @@ Kafka is queue/consumer-group only in the current provider contract. Pulsar's Te
 | `SameNameLaneIsolation` | S | S | S | N/A | S | S† | S | S |
 | `StartupRejectionBeforeSideEffects` | U | U | U | S | U | U | U | U |
 | `MalformedEnvelopeTerminalSettlement` | S | S | S | S | S | U | N/A | S |
-| `LegacyCutoverRecovery` | S | S | U | N/A | S | N/A | N/A | S |
 
 Evidence anchors:
 

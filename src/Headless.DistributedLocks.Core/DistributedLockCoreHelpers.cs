@@ -17,8 +17,7 @@ namespace Headless.DistributedLocks;
 /// </summary>
 internal static class DistributedLockCoreHelpers
 {
-    public static PublishOptions ReleaseSignalPublishOptions { get; } =
-        new() { DeliveryMode = DeliveryMode.TransportDirect };
+    public static PublishOptions ReleaseSignalPublishOptions { get; } = new() { DeliveryMode = DeliveryMode.Direct };
 
     private static readonly TimeSpan _MinRetryDelay = TimeSpan.FromMilliseconds(50);
     private static readonly TimeSpan _MaxRetryDelay = TimeSpan.FromSeconds(3);

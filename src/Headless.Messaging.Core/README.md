@@ -10,7 +10,7 @@ Provides the foundational runtime for reliable distributed messaging with transa
 
 - **Verb-Conveyed Lanes**: `IBus` selects broadcast Bus semantics and `IQueue` selects point-to-point Queue semantics; immutable delivery modes control persistence without changing the lane
 - **Outbox Delivery**: Transactional message publishing with database consistency
-- **Scheduled Delivery**: `PublishOptions.Delay` and `EnqueueOptions.Delay` defer outbox dispatch
+- **Scheduled Delivery**: `PublishOptions.Delay` and `QueueOptions.Delay` defer outbox dispatch
 - **Lane-Owned Consumer Management**: `setup.Bus.ForMessage<TMessage>(...)`, `setup.Queue.ForMessage<TMessage>(...)`, lane-scoped assembly scanning, invocation, and per-dispatch lifecycle handling
 - **Registration Builders**: `IBusMessageBuilder<TMessage>`, `IQueueMessageBuilder<TMessage>`, and their lane-matched consumer builders live under `Headless.Messaging.Registration`; lambda setup usually infers them, while explicit references should import that namespace
 - **Public Runtime SPI**: the blessed cross-package contracts consumed by storage providers, transports, and dashboards — `IProcessingServer`, `IConsumerServiceSelector`, and `MethodMatcherCache` — live under `Headless.Messaging.Runtime` (the `TransportNaming` / `RuntimeTypeInspection` helpers there are `internal`, shared with first-party transports via `InternalsVisibleTo`) (previously `Headless.Messaging.Internal`, which now holds only implementation detail); monitoring status is the typed `StatusName` enum under `Headless.Messaging.Monitoring`, so `MessageView.StatusName` and the `MessageQuery.StatusName` filter are compile-time safe while the persisted/serialized value stays the enum member name
@@ -28,6 +28,7 @@ Provides the foundational runtime for reliable distributed messaging with transa
 - **Circuit Breaker**: Per-consumer-group circuit breaker (Closed → Open → HalfOpen) with exponential open-duration escalation
 - **Adaptive Retry Backpressure**: Retry processor backs off polling when circuit-open rate exceeds threshold
 - **Distributed Lock Integration**: Optional `IDistributedLock`-backed mutual exclusion for multi-replica retry pickup (`UseStorageLock`)
+- Coordinated durable publishes mark `CommitRetryGuard` before the write, requiring a fresh unit of work after transaction failure. The EF integration-event bridge exempts only captured occurrences that its save pipeline retains for replay.
 
 Storage providers that implement `IDelayedMessageClaimStorage` must stamp each winner's `LockedUntil` as `max(authoritative store now, ExpiresAt) + DispatchTimeout`, using the same store-clock snapshot that tests lease eligibility, and return only after the claim commits. Extending a future message's lease from its schedule time keeps the ownership grant alive until the first dispatch attempt.
 
@@ -57,6 +58,7 @@ dotnet add package Headless.Messaging.Storage.InMemory
 
 ```csharp
 using Headless.Messaging;
+using Headless.Messaging.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -65,13 +67,19 @@ var builder = Host.CreateApplicationBuilder(args);
 
 builder.Services.AddHeadlessMessaging(setup =>
 {
+    setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
     setup.UseInMemoryStorage();
     setup.UseInMemory();
 
     setup.Bus.ForMessage<OrderPlaced>(message =>
         message
-            .MessageName("orders.placed")
-            .Consumer<OrderPlacedConsumer>(consumer => consumer.Group("orders").Concurrency(4))
+            .Contract("orders.placed", version: "1")
+            .Consumer<OrderPlacedConsumer>(consumer =>
+                consumer
+                    .ConsumerIdentity("orders.order-placed")
+                    .Group("orders")
+                    .Concurrency(4)
+            )
     );
 });
 
@@ -112,12 +120,15 @@ await serviceProvider.GetRequiredService<IBus>()
 
 For durable infrastructure, replace the in-memory providers with exactly one storage provider and one transport provider:
 
+`RequiredInboxCapability` sets a minimum guarantee and defaults to `Transactional`. The order is `ProcessLocal` < `DurableDedupeOnly` < `Transactional`; a stronger provider satisfies a weaker requirement. Selecting a weaker requirement does not change the provider's actual guarantees. Undefined tier values are rejected.
+
 ```csharp
 using Polly;
 using Polly.Retry;
 
 builder.Services.AddHeadlessMessaging(setup =>
 {
+    setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
     setup.UsePostgreSql(options =>
     {
         options.ConnectionString = builder.Configuration.GetConnectionString("Messaging");
@@ -131,7 +142,9 @@ builder.Services.AddHeadlessMessaging(setup =>
     });
 
     setup.Bus.ForMessage<OrderPlaced>(message =>
-        message.MessageName("orders.placed").Consumer<OrderPlacedConsumer>()
+        message.Contract("orders.placed").Consumer<OrderPlacedConsumer>(consumer =>
+            consumer.ConsumerIdentity("orders.order-placed")
+        )
     );
 });
 ```
@@ -146,14 +159,39 @@ The transactional outbox is **on by default on the EF storage path**. When the h
 
 The write is atomic with the business data; delivery is still at-least-once, so consumers must be idempotent (see [Retry Policy](#retry-policy)). See `Headless.CommitCoordination.EntityFramework` for the interceptor attachment and probe details.
 
+Each transactional consume attempt owns one DI scope shared by the EF transaction runner, consume middleware, and handler. The configured scoped `TContext` stays alive through `SaveChangesAsync` and inbox commit or rollback. The runner saves tracked application changes after the handler returns; explicit handler saves remain inside the same transaction and roll back if inbox completion rejects the attempt fence. A subsequent Messaging attempt gets a fresh scope. `FailedInfo.ServiceProvider` refers to the outer dispatch scope and does not expose the completed attempt's services.
+
 ## Defaults And Telemetry
 
+Configure the host default for both Bus and Queue:
+
+```csharp
+services.AddHeadlessMessaging(setup =>
+{
+    setup.UseRabbitMq(configuration);
+    setup.UseEntityFramework<AppDbContext>();
+    setup.Options.DefaultDeliveryMode = DeliveryMode.Durable;
+});
+```
+
+The framework default is `DeliveryMode.Auto`. A null per-call `DeliveryMode` inherits this setting; an explicit `Auto`, `Durable`, or `Direct` overrides it. Metadata-only records and fluent callbacks also inherit. Delivery is resolved before middleware and stays fixed for that call. Invalid global enum values fail options validation. Delays require durable capture and reject Direct. Domain integration-event capture and callback responses explicitly select Durable and keep that guarantee regardless of the host default.
+
+Terminal inbox generations are retained for 30 days by default. Use `InboxRetention(...)` on a durable consumer for a deliberate override. Expiry or authorized purge removes that deduplication identity; force reprocessing instead creates a linked child generation with replay provenance.
+
+Inbox metrics use registered consumer identity and bounded lane, outcome, tier, and provider dimensions. They exclude message/replay IDs, payloads, and headers. Tenant identity is excluded unless `setup.Instrumentation.IncludeTenantIdInMetricTags = true` explicitly accepts the cardinality cost.
+
+The transactional tier commits the fenced inbox outcome, compatible enlisted application state, and captured durable Bus/Queue work atomically. It does not guarantee exactly-once handler entry, direct transport, or external/non-enlisted effects.
+
 - `AddHeadlessMessaging(...)` is the primary DI entry point.
-- `setup.Bus` and `setup.Queue` are the only registration roots. `ForMessage<TMessage>(...)` inherits its lane from that root, `MessageName(...)` sets the lane-specific logical name, and `Consumer<TConsumer>()` registers the matching consumer behavior.
-- `setup.Bus.ForMessage<TMessage>(message => message.MessageName("orders.placed"))` is valid without consumers and declares a Bus publisher-only mapping; use the Queue root for an enqueue-only mapping.
+- Durable `ConsumerIdentity(...)` values must be nonblank and at most 200 characters (`ConsumerMetadata.ConsumerIdentityMaxLength`). Fluent and scanned registration reject longer identities before delivery, matching relational inbox admission.
+- `setup.Bus` and `setup.Queue` are the only registration roots. `ForMessage<TMessage>(...)` inherits its lane from that root, `Contract(name, version)` sets the stable logical name and schema version, and `Consumer<TConsumer>(...)` registers the matching behavior with an explicit durable identity.
+- `setup.Bus.ForMessage<TMessage>(message => message.Contract("orders.placed"))` is valid without consumers and declares a Bus publisher-only mapping; use the Queue root for an enqueue-only mapping.
 - A plain class, record, or interface contract may use the same logical name on both roots. Registration, metadata, circuits, callbacks, retry/backpressure state, and transport selection remain lane-qualified. Every built-in dual-lane transport declares and proves independent physical topology; Kafka remains Queue-only and rejects Bus routes before readiness or side effects.
 - Library-owned automatic consumers use Core-owned inert immutable descriptors that bootstrap drains through the same lane-scoped registration pipeline. They may be added before or after `AddHeadlessMessaging(...)`; no public service-collection registration or contributor-based alternate root exists.
 - `CorrelationFrom(...)` derives `headless-corr-id` from the outgoing payload when `PublishOptions.CorrelationId` is not set. Correlation precedence is explicit publish option, message selector, ambient consume context, then framework message ID.
+- `headless-corr-id` identifies the root conversation, `headless-causation-id` identifies the immediate parent message, and `traceparent` remains tracing metadata. Publishing inside a consumer preserves correlation and automatically stamps causation.
+- `MessageOptions.SuppressAmbientBusinessContext = true` disables ambient consume correlation/causation and tenant defaults in the publish middleware and factory. Use it with captured business metadata; contract/selector resolution and diagnostic trace propagation remain unchanged. Required tenancy still rejects a null explicit tenant.
+- `Contract(name, version)` is the normal schema-version authority and defaults to `"1"`. `PublishOptions.ContractVersion` is an explicit per-send override for controlled compatibility work. Consumers validate the version before payload deserialization and expose the resolved values through `ConsumeContext.ContractVersion` and `ConsumeContext.CausationId`; a missing version header maps to `"1"` for legacy or external producers.
 - Outbound header validation is centralized in the publish factory: reserved framework headers stay typed-only, provider contributions cannot overwrite framework-owned keys, and all stamped header names/values reject control characters before they reach a broker client.
 - Explicit `PublishOptions.MessageName` uses the same message-name validator as configured mappings: no leading/trailing dots, no consecutive dots, and only alphanumeric, `.`, `-`, and `_`.
 - Provider packages can add message-level escape hatches such as Kafka partition keys, Azure Service Bus partition keys, AWS FIFO message group IDs, and NATS subject shards. These physical-routing selectors run in the typed publish factory and are stamped as provider-owned headers; they do not change the logical `MessageName`.
@@ -161,11 +199,11 @@ The write is atomic with the business data; delivery is still at-least-once, so 
 
 ```csharp
 setup.Bus.ForMessage<OrderPlaced>(message =>
-    message.MessageName("orders.placed").CorrelationFrom(order => order.OrderId.ToString())
+    message.Contract("orders.placed").CorrelationFrom(order => order.OrderId.ToString())
 );
 ```
 
-- `setup.Bus.ForConsumersFromAssembly(...)` / `ForConsumersFromAssemblyContaining<TMarker>()` and their Queue-root equivalents scan closed `IConsume<TMessage>` implementations for exactly one lane. Use callback overloads for `Group(...)`, `Concurrency(...)`, `HandlerId(...)`, `WithCircuitBreaker(...)`, or `Skip()`; lane selection never occurs inside the scan callback.
+- `setup.Bus.ForConsumersFromAssembly(...)` / `ForConsumersFromAssemblyContaining<TMarker>(...)` and their Queue-root equivalents scan closed `IConsume<TMessage>` implementations for exactly one lane. The callback is mandatory and must assign each durable registration an application-owned `ConsumerIdentity(...)`; use `Contract(name, version)` on the scan builder when the convention-derived message contract is not the intended durable contract. The same callback may configure `Group(...)`, `Concurrency(...)`, `HandlerId(...)`, `WithCircuitBreaker(...)`, or `Skip()`; lane selection never occurs inside the scan callback.
 - message-name mappings are lane-qualified and registered eagerly. Re-registering the same type/name on one lane merges compatible consumers; a divergent mapping or competing consumer on that lane fails. An equivalent registration on the other lane remains independent.
 - message-name and group defaults are deterministic; duplicate registrations fail fast by default.
 - runtime, monitoring, and dashboard projections expose `MessageLane` with stable `Bus = 0` / `Queue = 1` values. Storage providers retain the legacy `IntentType` column name and transports retain the `headless-intent` header at explicit compatibility boundaries. Retry pickup and received-message identity include the lane, so the two lanes do not collapse into one row.
@@ -193,13 +231,23 @@ setup.Bus.ForMessage<OrderPlaced>(message =>
 
 Core registers `IBus` and `IQueue` up front. Immutable provider descriptors then gate transport-direct, durable, and delayed behavior per lane. Bootstrap rejects invalid registered routes before readiness or provider resolution, and per-call gates reject unsupported delivery before middleware or side effects.
 
+### Routing affinity
+
+Use `message.Contract("orders.changed").RequireRoutingAffinity()` when registering a route and set `RoutingAffinityKey` on the outbound options. The key survives direct sends, outbox dispatch, and retries. Kafka Queue, Pulsar Bus/Queue, Azure session routes, and AWS FIFO destinations have native mappings; current NATS, RabbitMQ, Redis, and InMemory transports reject keyed requests.
+
+Affinity is scoped to the configured broker topology. It promises neither FIFO nor handler exclusivity, distinct-key partition uniqueness, or unchanged placement after topology changes. Raw provider keys remain adapters and must exactly match a supplied typed key.
+
+Stored keyed outbox rows are revalidated against the current frozen destination mapping before attempt reservation or native client resolution. Normal retry pickup may already hold a storage lease at this point. A deployment that removes or invalidates their mapping rejects dispatch until the operator restores a supported configuration. Unkeyed legacy rows keep their existing behavior.
+
+No affinity storage migration is required: the authoritative key lives in the serialized envelope. Upgrade all publishers and outbox/retry workers before enabling it; older workers can ignore the neutral key. Drain or fence old workers and verify broker sessions, FIFO destinations, and partition configuration before cutover. Drain or fence keyed backlog before rolling back.
+
 ### Bus Publishers
 
 Use bus publishers for broadcast publish/subscribe delivery:
 
 - `IBus` always selects the Bus lane.
-- `PublishOptions.DeliveryMode` selects Auto, Durable, or TransportDirect. TransportDirect bypasses storage and any ambient coordination boundary.
-- `PublishOptions.Delay` schedules durable delivery; TransportDirect with a delay is rejected.
+- An unset `PublishOptions.DeliveryMode` inherits `MessagingOptions.DefaultDeliveryMode`, which defaults to Auto. Explicit modes override that setting. Direct bypasses storage and any ambient coordination boundary.
+- `PublishOptions.Delay` schedules durable delivery; Direct with a delay is rejected.
 - Stored rows and consume contexts carry `MessageLane.Bus`.
 
 ### Queue Publishers
@@ -207,8 +255,8 @@ Use bus publishers for broadcast publish/subscribe delivery:
 Use queue publishers for point-to-point competing-worker delivery:
 
 - `IQueue` always selects the Queue lane.
-- `EnqueueOptions.DeliveryMode` selects Auto, Durable, or TransportDirect. TransportDirect bypasses storage and any ambient coordination boundary.
-- `EnqueueOptions.Delay` schedules durable delivery; TransportDirect with a delay is rejected.
+- An unset `QueueOptions.DeliveryMode` inherits `MessagingOptions.DefaultDeliveryMode`, which defaults to Auto. Explicit modes override that setting. Direct bypasses storage and any ambient coordination boundary.
+- `QueueOptions.Delay` schedules durable delivery; Direct with a delay is rejected.
 - Stored rows and consume contexts carry `MessageLane.Queue`.
 
 ### Publisher Contracts
@@ -225,7 +273,7 @@ public sealed class MetricsPublisher(IBus bus)
 }
 ```
 
-Durable publishes use `DeliveryMode.Durable` on `IBus` or `IQueue`. Delayed delivery is expressed with `PublishOptions.Delay` or `EnqueueOptions.Delay` and is always durable.
+`IBus.PublishAsync(message, ct)` and `IQueue.EnqueueAsync(message, ct)` inherit `MessagingOptions.DefaultDeliveryMode`, which defaults to Auto. Auto sends directly without coordination and captures durably within a compatible boundary. Their explicit-options overloads accept `PublishOptions` and `QueueOptions`, respectively, before the cancellation token. Durable acceptance waits for storage, not consumer completion. Persistent storage is required for restart survival; the process-local provider remains process-local. A compatible coordination boundary commits the capture with application state; outside one, the capture persists independently. Delayed delivery is expressed with `PublishOptions.Delay` or `QueueOptions.Delay` and is always durable.
 
 ## Runtime Delegates
 
@@ -252,6 +300,8 @@ public sealed class ProjectionSubscriptions(IRuntimeSubscriber subscriber)
 When runtime delegates are attached during application startup, the messaging runtime ensures they are either included in the initial consumer registration pass or trigger a refresh once the consumer register is live. You do not need to manually restart messaging after calling `SubscribeAsync(...)`.
 
 ## Configuration
+
+`RequireRoutingAffinity()` on a Bus or Queue message registration requires a locally supported native mapping at startup; it does not require every publication to supply a key. Set `PublishOptions.RoutingAffinityKey` or `QueueOptions.RoutingAffinityKey` per publication. The frozen capability model snapshots registered destinations from inert options before clients or processors start. Keyed unknown destination overrides, invalid keys, and typed/raw conflicts fail before outbox insertion or transport effects. `MediumMessage.RoutingAffinityKey` reads the authoritative serialized envelope; InMemory, PostgreSQL, and SQL Server preserve it without a new storage column.
 
 Register in `Program.cs`:
 
@@ -308,7 +358,9 @@ Registration scopes:
 - `AddConsumeMiddlewareFor<TMiddleware, TMessage>(group)`: typed consume middleware for one message type and consumer group.
 - `.WithPriority(int)`: lower values run first; ties use registration order. Framework tenant propagation middleware uses priority `-1000`, so user middleware defaults (`0`) run after tenant restoration/stamping.
 
-Middleware can short-circuit by returning without calling `next`. Use ordinary `try/catch` around `await next()` for compensation and error policy. The framework still guards two runtime invariants: post-success middleware failures are logged and suppressed only after the inner ring completed, and cancellation matching `context.CancellationToken` is never silently swallowed. `PublishContext<T>.Options` and `DelayTime` are mutable before `await next()` and throw after `next()` returns; reads, including `IsTransactional`, remain valid.
+Middleware can short-circuit by returning without calling `next`. Use ordinary `try/catch` around `await next()` for compensation and error policy. The framework still guards two runtime invariants: post-success middleware failures are logged and suppressed only after the inner ring completed, and cancellation matching `context.CancellationToken` is never silently swallowed. Production publish contexts freeze the delivery mode and delay before middleware runs. Middleware can change other options before `await next()`; all mutations throw after `next()` returns. Reads, including `IsTransactional`, remain valid.
+
+For middleware tests and tooling, `new PublishContext<T>(content, lane, options, defaultDeliveryMode, now, isTransactional, cancellationToken)` requires the host default and resolution timestamp explicitly. The constructor uses the canonical delivery resolver with `options?.DeliveryMode ?? defaultDeliveryMode` and `options?.Delay`. It rejects Direct delivery with a delay and invalid lanes, effective modes, or delays. Delayed contexts calculate `PublishAt` in UTC from `now` plus the delay. `isTransactional` models a compatible ambient commit boundary; `IsTransactional` is true only when the resolved delivery uses that boundary. Manually constructed contexts remain mutable until `MarkCompleted()` and do not own a live transaction.
 
 ### Multi-Tenancy Propagation
 
@@ -494,7 +546,7 @@ builder.Services.AddHeadlessMessaging(setup =>
 {
     setup.Bus.ForMessage<PaymentProcessed>(message =>
         message
-            .MessageName("payments.process")
+            .Contract("payments.process")
             .Consumer<PaymentHandler>(consumer =>
                 consumer.WithCircuitBreaker(cb =>
                 {
@@ -609,7 +661,9 @@ Operational invariant: set Coordination's dead threshold no lower than the large
 
 ## Observability
 
-Emits OpenTelemetry metrics and traces natively under a single instrumentation name, `Headless.Messaging` (both `Meter` and `ActivitySource`), exposed as `MessagingDiagnostics.SourceName`. Register with `TracerProviderBuilder.AddMessagingInstrumentation()` / `MeterProviderBuilder.AddMessagingInstrumentation()` (typed helpers, `OpenTelemetry.Api` only — no SDK dependency), or subscribe by name. Instrument names and dimensions follow the OTel messaging semantic conventions (`messaging.publish.messages`, `messaging.consume.duration`, dims `messaging.operation`/`messaging.system`/`messaging.consumer.group`/`error.type`); framework-specific span attributes are namespaced `headless.messaging.*`. W3C `traceparent`/baggage propagation is built into publish/consume. Custom span enrichers implement `IActivityTagEnricher` (synchronous) and register via `setup.Instrumentation` inside `AddHeadlessMessaging(...)`; tenant-id/intent/retry-count built-ins are suppressible there. See [docs/llms/messaging.md](../../docs/llms/messaging.md) for the full instrument table.
+Emits OpenTelemetry metrics and traces natively under a single instrumentation name, `Headless.Messaging` (both `Meter` and `ActivitySource`), exposed as `MessagingDiagnostics.SourceName`. Register with `TracerProviderBuilder.AddMessagingInstrumentation()` / `MeterProviderBuilder.AddMessagingInstrumentation()` (typed helpers, `OpenTelemetry.Api` only — no SDK dependency), or subscribe by name. Standard instruments follow the OTel messaging semantic conventions. Inbox lifecycle counters cover duplicate, attempt, recovery, terminal, replay, retention, and capability events with bounded consumer/lane/outcome/tier/provider tags. Framework-specific attributes are namespaced `headless.messaging.*`. W3C `traceparent`/baggage propagation is built into publish/consume. Custom span enrichers implement `IActivityTagEnricher` (synchronous) and register via `setup.Instrumentation` inside `AddHeadlessMessaging(...)`. See [docs/llms/messaging.md](../../docs/llms/messaging.md) for the full instrument table.
+
+Delivery mode tags use lowercase values on spans and metrics. `headless.messaging.delivery.requested` emits `auto`, `durable`, or `direct`; `headless.messaging.delivery.resolved` emits `durable` or `direct`. Queries and alerts must use `direct` for `DeliveryMode.Direct`. The former `transport_direct` value has no compatibility alias.
 
 ## Dependencies
 

@@ -210,7 +210,7 @@ internal static class MiddlewareRegistrationCollector
             )
             {
                 if (
-                    descriptor.ConstructorArguments.Length == 1
+                    descriptor.ConstructorArguments.Length >= 1
                     && descriptor.ConstructorArguments[0].Value is string name
                 )
                 {

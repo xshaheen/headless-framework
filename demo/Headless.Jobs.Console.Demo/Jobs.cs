@@ -27,10 +27,10 @@ public class SampleScheduler(IJobScheduler scheduler) : IHostedService
         Guid jobId;
         try
         {
-            var descriptor = JobFunctionProvider.JobFunctionDescriptors[ConsoleSampleJobs.FunctionName];
+            var descriptor = AppJobs.ConsoleSample_u005F_HelloWorld;
             jobId = await scheduler.EnqueueAsync(
                 descriptor,
-                new EnqueueOptions { Description = "Sample console demo job" },
+                new JobOptions { Description = "Sample console demo job" },
                 cancellationToken
             );
         }

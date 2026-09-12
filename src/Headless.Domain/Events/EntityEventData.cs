@@ -8,11 +8,8 @@ namespace Headless.Domain;
 /// </summary>
 /// <typeparam name="TEntity">Type of the entity associated with the event.</typeparam>
 [PublicAPI]
-public abstract class EntityEventData<TEntity>(TEntity entity) : IDomainEvent
+public abstract class EntityEventData<TEntity>(TEntity entity)
 {
-    /// <summary>Globally unique identifier for this event instance, generated as a UUID v7.</summary>
-    public string UniqueId { get; } = Guid.CreateVersion7().ToString();
-
     /// <summary>Related entity with this event.</summary>
     public TEntity Entity { get; } = entity;
 }

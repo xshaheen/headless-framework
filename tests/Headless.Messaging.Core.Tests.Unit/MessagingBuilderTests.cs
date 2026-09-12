@@ -25,7 +25,11 @@ public sealed class MessagingBuilderTests
 
         // when
         services.AddHeadlessMessaging(static setup =>
-            setup.Bus.ForMessage<TestOrderMessage>(message => message.Consumer<TestOrderConsumer>())
+            setup.Bus.ForMessage<TestOrderMessage>(message =>
+                message.Consumer<TestOrderConsumer>(consumer =>
+                    consumer.StableContract("tests.messaging-builder.orders")
+                )
+            )
         );
 
         using var provider = services.BuildServiceProvider();
@@ -45,7 +49,9 @@ public sealed class MessagingBuilderTests
         // when
         services.AddHeadlessMessaging(static setup =>
             setup.Bus.ForMessage<TestOrderMessage>(message =>
-                message.MessageName("orders.placed").Consumer<TestOrderConsumer>()
+                message
+                    .Contract("orders.placed")
+                    .Consumer<TestOrderConsumer>(consumer => consumer.StableContract("tests.messaging-builder.orders"))
             )
         );
 
@@ -69,7 +75,7 @@ public sealed class MessagingBuilderTests
         services.AddHeadlessMessaging(messaging =>
         {
             messaging.UseInMemory();
-            messaging.UseInMemoryStorage();
+            messaging.UseProcessLocalInMemoryStorage();
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -146,7 +152,9 @@ public sealed class MessagingBuilderTests
         services.AddHeadlessMessaging(messaging =>
         {
             messaging.Bus.ForMessage<TestOrderMessage>(message =>
-                message.MessageName("orders.placed").Consumer<TestOrderConsumer>()
+                message
+                    .Contract("orders.placed")
+                    .Consumer<TestOrderConsumer>(consumer => consumer.StableContract("tests.messaging-builder.orders"))
             );
             messaging.Options.DefaultGroupName = "shared-group";
         });
@@ -168,7 +176,9 @@ public sealed class MessagingBuilderTests
         services.AddHeadlessMessaging(messaging =>
         {
             messaging.Bus.ForMessage<TestOrderMessage>(message =>
-                message.MessageName("orders.placed").Consumer<TestOrderConsumer>()
+                message
+                    .Contract("orders.placed")
+                    .Consumer<TestOrderConsumer>(consumer => consumer.StableContract("tests.messaging-builder.orders"))
             );
             messaging.Options.GroupNamePrefix = "tenant-a";
             messaging.UseConventions(conventions =>
@@ -226,9 +236,12 @@ public sealed class MessagingBuilderTests
         services.AddHeadlessMessaging(static setup =>
             setup.Bus.ForMessage<TestOrderMessage>(message =>
                 message
-                    .MessageName("orders.placed")
+                    .Contract("orders.placed")
                     .Consumer<TestOrderConsumer>(consumer =>
-                        consumer.WithCircuitBreaker(cb => cb.FailureThreshold = 3).Group("final-group")
+                        consumer
+                            .StableContract("tests.messaging-builder.orders")
+                            .WithCircuitBreaker(cb => cb.FailureThreshold = 3)
+                            .Group("final-group")
                     )
             )
         );

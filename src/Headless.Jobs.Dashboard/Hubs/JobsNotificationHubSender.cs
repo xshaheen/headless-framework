@@ -153,6 +153,11 @@ internal sealed class JobsNotificationHubSender : IJobsNotificationHubSender, ID
         var updatePayload = new
         {
             id = executionState.JobId,
+            function = executionState.FunctionName,
+            contractVersion = executionState.ContractVersion,
+            correlationId = executionState.CorrelationId,
+            causationId = executionState.CausationId,
+            tenantId = executionState.TenantId,
             status = executionState.Status,
             cronJobId = executionState.ParentId,
             executedAt = executionState.ExecutedAt,

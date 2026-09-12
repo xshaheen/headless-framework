@@ -28,6 +28,10 @@ internal sealed class LoggerInstrumentation(ILogger<LoggerInstrumentation> logge
             activity.SetTag("headless.job.id", context.JobId.ToString());
             activity.SetTag("headless.job.type", context.Type.ToString());
             activity.SetTag("headless.job.function", context.FunctionName);
+            activity.SetTag("headless.job.contract_version", context.ContractVersion);
+            activity.SetTag("headless.job.correlation_id", context.CorrelationId);
+            activity.SetTag("headless.job.causation_id", context.CausationId);
+            activity.SetTag("headless.job.tenant_id", context.TenantId);
             activity.SetTag("headless.job.priority", context.CachedPriority.ToString());
             activity.SetTag("headless.job.machine", InstanceIdentifier);
             activity.SetTag("headless.job.retry_count", context.Retries);

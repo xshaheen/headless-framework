@@ -102,7 +102,7 @@ public sealed class DistributedReadWriteLockTests : TestBase
         await bus.Received(1)
             .PublishAsync(
                 Arg.Is<DistributedLockReleased>(message => message.Resource == resource && message.LeaseId == leaseId),
-                Arg.Is<PublishOptions?>(options => options!.DeliveryMode == DeliveryMode.TransportDirect),
+                Arg.Is<PublishOptions?>(options => options!.DeliveryMode == DeliveryMode.Direct),
                 Arg.Any<CancellationToken>()
             );
     }

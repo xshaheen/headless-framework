@@ -6,16 +6,18 @@ using Headless.Jobs.Models;
 namespace Headless.Jobs;
 
 /// <summary>
-/// An immutable, typed authoring model for a conditional sequential job chain. A chain is a tree of steps where each
+/// An immutable, typed authoring model for a static conditional continuation tree. A chain is a tree of steps where each
 /// step attaches at most one on-success child (<c>Then</c>) and at most one on-failure child (<c>Catch</c>); the
 /// scheduler resolves every step's generated descriptor and persists the whole tree atomically at enqueue.
 /// </summary>
 /// <remarks>
-/// Author a chain with the <see cref="Start{TRequest}(TRequest, EnqueueOptions?, DateTime?)"/> factories, extend it
+/// Author a chain with the <see cref="Start{TRequest}(TRequest, JobOptions?)"/> factories, extend it
 /// through the returned <see cref="JobChainBuilder"/>, then call <see cref="JobChainBuilder.Build"/> to obtain an
 /// immutable instance. The chain never references a handler contract (no <c>TJob</c>, <c>IJob&lt;TArgs&gt;</c>, or
 /// <c>ICronJob</c>): step identity is a generated <see cref="JobFunctionDescriptor"/>, resolved from the captured
 /// payload type where a step supplies a payload.
+/// Keyed scheduling/control, signals, joins, waits, compensation, mutable definitions, process state, and stream
+/// coordinates are not supported by this continuation-tree model.
 /// </remarks>
 [PublicAPI]
 public sealed class JobChain
@@ -46,13 +48,27 @@ public sealed class JobChain
     /// <typeparam name="TRequest">The request payload type used to resolve the generated descriptor.</typeparam>
     /// <param name="payload">The request payload for the root step.</param>
     /// <param name="options">Optional per-step options.</param>
-    /// <param name="executionTime">Optional explicit UTC execution time for the root step.</param>
     /// <returns>A mutable builder positioned at the root; extend it and call <see cref="JobChainBuilder.Build"/>.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="payload"/> is <see langword="null"/>.</exception>
+    public static JobChainBuilder Start<TRequest>(TRequest payload, JobOptions? options = null)
+        where TRequest : notnull
+    {
+        ArgumentNullException.ThrowIfNull(payload);
+
+        return new JobChainBuilder(
+            descriptor: null,
+            payload,
+            payloadType: typeof(TRequest),
+            options,
+            executionTime: null
+        );
+    }
+
+    /// <summary>Authors this step at an explicit execution instant.</summary>
     public static JobChainBuilder Start<TRequest>(
         TRequest payload,
-        EnqueueOptions? options = null,
-        DateTime? executionTime = null
+        DateTimeOffset executionTime,
+        JobOptions? options = null
     )
         where TRequest : notnull
     {
@@ -61,20 +77,54 @@ public sealed class JobChain
         return new JobChainBuilder(descriptor: null, payload, payloadType: typeof(TRequest), options, executionTime);
     }
 
+    /// <summary>Rejects implicit DateTime conversion; supply an explicit DateTimeOffset instant.</summary>
+    [Obsolete(
+        "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset.",
+        error: true
+    )]
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    public static JobChainBuilder Start<TRequest>(TRequest payload, DateTime executionTime, JobOptions? options = null)
+        where TRequest : notnull =>
+        throw new NotSupportedException(
+            "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset."
+        );
+
     /// <summary>Starts a chain whose root is a requestless step identified by an explicit generated descriptor.</summary>
     /// <param name="descriptor">The generated descriptor of the requestless root step.</param>
     /// <param name="options">Optional per-step options.</param>
-    /// <param name="executionTime">Optional explicit UTC execution time for the root step.</param>
     /// <returns>A mutable builder positioned at the root; extend it and call <see cref="JobChainBuilder.Build"/>.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="descriptor"/> is <see langword="null"/>.</exception>
+    public static JobChainBuilder Start(JobFunctionDescriptor descriptor, JobOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(descriptor);
+
+        return new JobChainBuilder(descriptor, payload: null, payloadType: null, options, executionTime: null);
+    }
+
+    /// <summary>Authors this step at an explicit execution instant.</summary>
     public static JobChainBuilder Start(
         JobFunctionDescriptor descriptor,
-        EnqueueOptions? options = null,
-        DateTime? executionTime = null
+        DateTimeOffset executionTime,
+        JobOptions? options = null
     )
     {
         ArgumentNullException.ThrowIfNull(descriptor);
 
         return new JobChainBuilder(descriptor, payload: null, payloadType: null, options, executionTime);
     }
+
+    /// <summary>Rejects implicit DateTime conversion; supply an explicit DateTimeOffset instant.</summary>
+    [Obsolete(
+        "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset.",
+        error: true
+    )]
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    public static JobChainBuilder Start(
+        JobFunctionDescriptor descriptor,
+        DateTime executionTime,
+        JobOptions? options = null
+    ) =>
+        throw new NotSupportedException(
+            "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset."
+        );
 }

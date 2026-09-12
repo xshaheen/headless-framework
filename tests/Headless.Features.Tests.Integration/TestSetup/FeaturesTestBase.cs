@@ -6,6 +6,7 @@ using Headless.DistributedLocks;
 using Headless.Domain;
 using Headless.Features;
 using Headless.Messaging;
+using Headless.Messaging.Configuration;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
@@ -47,7 +48,7 @@ public abstract class FeaturesTestBase(FeaturesTestFixture fixture) : TestBase
         services.AddSingleton(Substitute.For<ICurrentTenant>());
         services.AddSingleton(Substitute.For<IApplicationInformationAccessor>());
         services.AddSingleton(Substitute.For<ICurrentPrincipalAccessor>());
-        services.AddHeadlessLocalEventBus();
+        services.AddHeadlessDomainEventDispatcher();
 
         // Cache
         services.AddHeadlessCaching(setup =>
@@ -60,6 +61,7 @@ public abstract class FeaturesTestBase(FeaturesTestFixture fixture) : TestBase
         // Messages
         services.AddHeadlessMessaging(setup =>
         {
+            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
             setup.UseInMemory();
             setup.UseInMemoryStorage();
         });

@@ -71,4 +71,12 @@ internal static partial class PostgreSqlLoggerExtensions
         Message = "pg_trgm is not installed; skipping the dashboard content trigram indexes. Install pg_trgm to enable dashboard content search. Messaging write/retry paths are unaffected."
     )]
     public static partial void LogTrgmContentIndexSkipped(this ILogger logger);
+
+    [LoggerMessage(
+        EventId = 8,
+        EventName = "InboxCommitProbeFailed",
+        Level = LogLevel.Warning,
+        Message = "Could not reconcile an ambiguous transactional inbox commit; recovery will treat the outcome as indeterminate."
+    )]
+    public static partial void LogInboxCommitProbeFailed(this ILogger logger, Exception exception);
 }

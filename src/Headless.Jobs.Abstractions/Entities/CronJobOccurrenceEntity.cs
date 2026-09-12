@@ -17,6 +17,38 @@ public class CronJobOccurrenceEntity<TCronJob>
     /// <summary>Unique identifier for this occurrence row.</summary>
     public virtual Guid Id { get; set; }
 
+    /// <summary>Logical function name snapshotted at materialization; never read through the mutable definition.</summary>
+    public virtual string Function { get; set; } = null!;
+
+    /// <summary>Payload schema version snapshotted at materialization.</summary>
+    public virtual string ContractVersion { get; set; } = JobContract.InitialVersion;
+
+    /// <summary>Exact serialized payload bytes owned by this occurrence.</summary>
+    public virtual byte[]? Request { get; set; }
+
+    /// <summary>Root business correlation, independent of tracing.</summary>
+    public virtual string? CorrelationId { get; set; }
+
+    /// <summary>Immediate business cause captured at materialization.</summary>
+    public virtual string? CausationId { get; set; }
+
+    /// <summary>Cron occurrences are system scoped; this value must remain null.</summary>
+    public virtual string? TenantId { get; set; }
+
+    internal void SnapshotContract(TCronJob definition)
+    {
+        Function = JobContract.ValidateName(definition.Function);
+        ContractVersion = JobContract.ValidateVersion(definition.ContractVersion);
+        Request = definition.Request?.ToArray();
+        CorrelationId = definition.CorrelationId ?? Id.ToString("D");
+        CausationId = definition.CausationId;
+        if (definition.TenantId is not null)
+        {
+            throw new InvalidOperationException("Cron occurrences must remain system scoped.");
+        }
+        TenantId = null;
+    }
+
     /// <summary>Current lifecycle state of this occurrence.</summary>
     public virtual JobStatus Status { get; internal set; }
 

@@ -37,7 +37,9 @@ public sealed class MessagingLaneSplitTests : TestBase
 
         services.AddHeadlessMessaging(setup =>
             setup.Bus.ForMessage<TestMessage>(message =>
-                message.MessageName("events.orders").Consumer<TestBusConsumer>()
+                message
+                    .Contract("events.orders")
+                    .Consumer<TestBusConsumer>(consumer => consumer.StableContract("tests.lane-split.bus"))
             )
         );
 
@@ -54,7 +56,9 @@ public sealed class MessagingLaneSplitTests : TestBase
 
         services.AddHeadlessMessaging(setup =>
             setup.Queue.ForMessage<TestMessage>(message =>
-                message.MessageName("jobs.orders").Consumer<TestQueueConsumer>()
+                message
+                    .Contract("jobs.orders")
+                    .Consumer<TestQueueConsumer>(consumer => consumer.StableContract("tests.lane-split.queue"))
             )
         );
 
@@ -76,7 +80,9 @@ public sealed class MessagingLaneSplitTests : TestBase
                 "orders",
                 "workers",
                 1,
-                Lane: MessageLane.Bus
+                Lane: MessageLane.Bus,
+                ConsumerIdentity: "tests.lane-split.bus-registry",
+                MessageContractVersion: "v1"
             )
         );
         registry.Register(
@@ -86,7 +92,9 @@ public sealed class MessagingLaneSplitTests : TestBase
                 "orders",
                 "workers",
                 1,
-                Lane: MessageLane.Queue
+                Lane: MessageLane.Queue,
+                ConsumerIdentity: "tests.lane-split.queue-registry",
+                MessageContractVersion: "v1"
             )
         );
 
@@ -105,7 +113,9 @@ public sealed class MessagingLaneSplitTests : TestBase
                 "jobs.orders",
                 "workers",
                 1,
-                Lane: MessageLane.Queue
+                Lane: MessageLane.Queue,
+                ConsumerIdentity: "tests.lane-split.queue-bootstrap-failure",
+                MessageContractVersion: "v1"
             )
         );
 
@@ -149,7 +159,9 @@ public sealed class MessagingLaneSplitTests : TestBase
                 "events.orders",
                 "workers",
                 1,
-                Lane: MessageLane.Bus
+                Lane: MessageLane.Bus,
+                ConsumerIdentity: "tests.lane-split.bus-bootstrap-failure",
+                MessageContractVersion: "v1"
             )
         );
 
@@ -196,7 +208,9 @@ public sealed class MessagingLaneSplitTests : TestBase
                 "jobs.orders",
                 "workers",
                 1,
-                Lane: MessageLane.Queue
+                Lane: MessageLane.Queue,
+                ConsumerIdentity: "tests.lane-split.queue-bootstrap",
+                MessageContractVersion: "v1"
             )
         );
 
@@ -258,7 +272,12 @@ public sealed class MessagingLaneSplitTests : TestBase
         var bus = _CreateBus(transport);
 
         // when
-        var act = () => bus.PublishAsync(new TestMessage(), cancellationToken: AbortToken);
+        var act = () =>
+            bus.PublishAsync(
+                new TestMessage(),
+                new PublishOptions { DeliveryMode = DeliveryMode.Direct },
+                cancellationToken: AbortToken
+            );
 
         // then
         await act.Should().ThrowAsync<PublisherSentFailedException>();
@@ -285,7 +304,11 @@ public sealed class MessagingLaneSplitTests : TestBase
         var bus = _CreateBus(transport, publishRequestFactory);
 
         // when
-        await bus.PublishAsync(new TestMessage(), cancellationToken: AbortToken);
+        await bus.PublishAsync(
+            new TestMessage(),
+            new PublishOptions { DeliveryMode = DeliveryMode.Direct },
+            cancellationToken: AbortToken
+        );
 
         // then
         _ = publishRequestFactory
@@ -315,7 +338,12 @@ public sealed class MessagingLaneSplitTests : TestBase
         var queue = _CreateQueue(transport);
 
         // when
-        var act = () => queue.EnqueueAsync(new TestMessage(), cancellationToken: AbortToken);
+        var act = () =>
+            queue.EnqueueAsync(
+                new TestMessage(),
+                new QueueOptions { DeliveryMode = DeliveryMode.Direct },
+                cancellationToken: AbortToken
+            );
 
         // then
         await act.Should().ThrowAsync<PublisherSentFailedException>();
@@ -330,7 +358,7 @@ public sealed class MessagingLaneSplitTests : TestBase
             .Create(
                 Arg.Any<object?>(),
                 typeof(TestMessage),
-                Arg.Any<PublishOptions?>(),
+                Arg.Any<QueueOptions?>(),
                 Arg.Any<TimeSpan?>(),
                 MessageLane.Queue
             )
@@ -342,7 +370,11 @@ public sealed class MessagingLaneSplitTests : TestBase
         var queue = _CreateQueue(transport, publishRequestFactory);
 
         // when
-        await queue.EnqueueAsync(new TestMessage(), cancellationToken: AbortToken);
+        await queue.EnqueueAsync(
+            new TestMessage(),
+            new QueueOptions { DeliveryMode = DeliveryMode.Direct },
+            cancellationToken: AbortToken
+        );
 
         // then
         _ = publishRequestFactory
@@ -350,7 +382,7 @@ public sealed class MessagingLaneSplitTests : TestBase
             .Create(
                 Arg.Any<object?>(),
                 typeof(TestMessage),
-                Arg.Any<PublishOptions?>(),
+                Arg.Any<QueueOptions?>(),
                 Arg.Is<TimeSpan?>(delay => delay == null),
                 MessageLane.Queue
             );
@@ -525,7 +557,8 @@ public sealed class MessagingLaneSplitTests : TestBase
         return MessagingProviderCapabilities.Storage(
             "TestStorage",
             [MessageLane.Bus, MessageLane.Queue],
-            supportsDelayedScheduling: true
+            supportsDelayedScheduling: true,
+            inboxCapability: MessagingInboxCapabilityTier.Transactional
         );
     }
 
@@ -535,6 +568,8 @@ public sealed class MessagingLaneSplitTests : TestBase
     )
     {
         var model = MessagingCapabilityModel.Compose(capabilities);
+        services.AddSingleton(model);
+        services.AddSingleton<IMessageMetadataRegistry>(new MessageMetadataRegistry([]));
         services.AddSingleton<IMessagingCapabilityModel>(model);
         services.AddSingleton<IMessageCapabilityGate>(model);
         services.AddSingleton<IStorageInitializer, NoOpStorageInitializer>();

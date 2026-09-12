@@ -21,6 +21,10 @@ public sealed class JobFunctionContextTests : Headless.Testing.Tests.TestBase
             IsDue = true,
             ScheduledFor = scheduledFor,
             FunctionName = "TestFunction",
+            ContractVersion = "v2",
+            CorrelationId = "root-business-occurrence",
+            CausationId = "direct-parent-occurrence",
+            TenantId = "tenant-7",
             CronOccurrenceOperations = new CronOccurrenceOperations(() => { }),
         };
 
@@ -36,6 +40,10 @@ public sealed class JobFunctionContextTests : Headless.Testing.Tests.TestBase
         genericContext.IsDue.Should().Be(baseContext.IsDue);
         genericContext.ScheduledFor.Should().Be(baseContext.ScheduledFor);
         genericContext.FunctionName.Should().Be(baseContext.FunctionName);
+        genericContext.ContractVersion.Should().Be("v2");
+        genericContext.CorrelationId.Should().Be("root-business-occurrence");
+        genericContext.CausationId.Should().Be("direct-parent-occurrence");
+        genericContext.TenantId.Should().Be("tenant-7");
         genericContext.CronOccurrenceOperations.Should().BeSameAs(baseContext.CronOccurrenceOperations);
         genericContext.Request.Should().Be(request);
     }

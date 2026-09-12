@@ -51,6 +51,13 @@ public sealed class MessagingInstrumentationOptions
     public bool SuppressDeliveryModeTags { get; set; }
 
     /// <summary>
+    /// Includes tenant identity on inbox metric measurements. Disabled by default because tenant identifiers are an
+    /// application-controlled, potentially unbounded metric dimension.
+    /// </summary>
+    /// <remarks>Trace enrichment is configured separately by <see cref="SuppressTenantIdTag"/>.</remarks>
+    public bool IncludeTenantIdInMetricTags { get; set; }
+
+    /// <summary>
     /// Custom enrichers appended after the built-in enrichers. Enrichers are invoked in insertion
     /// order for every span type. The collection is snapshotted at registration time
     /// (<c>AddHeadlessMessaging</c>); changes after registration are ignored.

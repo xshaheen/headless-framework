@@ -3,6 +3,7 @@ using System.Security.Claims;
 using Demo;
 using Demo.Data;
 using Headless.Messaging;
+using Headless.Messaging.Configuration;
 using Headless.Messaging.Dashboard;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
@@ -47,13 +48,28 @@ builder.Services.AddHttpClient();
 
 builder.Services.AddHeadlessMessaging(setup =>
 {
-    setup.Bus.ForConsumersFromAssembly(typeof(Program).Assembly);
+    setup.Bus.ForConsumersFromAssembly(
+        typeof(Program).Assembly,
+        (context, consumer) =>
+            consumer.ConsumerIdentity(
+                context.ConsumerType switch
+                {
+                    { Name: "OrderCreatedConsumer" } => "dashboard-jwt.orders",
+                    { Name: "OrderNotificationConsumer" } => "dashboard-jwt.notifications",
+                    { Name: "PaymentProcessedConsumer" } => "dashboard-jwt.payments",
+                    { Name: "UserRegisteredConsumer" } => "dashboard-jwt.users",
+                    { Name: "InventoryUpdatedConsumer" } => "dashboard-jwt.inventory",
+                    _ => throw new InvalidOperationException($"Missing durable identity for {context.ConsumerType}."),
+                }
+            )
+    );
     setup.Options.RetryPolicy.MaxPersistedRetries = 0;
     setup.Options.RetryPolicy.RetryStrategy = new RetryStrategyOptions
     {
         MaxRetryAttempts = 0,
         ShouldHandle = static _ => ValueTask.FromResult(true),
     };
+    setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
     setup.UseInMemoryStorage();
     setup.UseInMemory();
     setup.UseDashboard(d => d.WithHostAuthentication(dashboardPolicy));

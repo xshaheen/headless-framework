@@ -8,9 +8,25 @@ namespace Headless.Messaging.Configuration;
 [PublicAPI]
 public enum MessagingProviderRole
 {
-    Transport,
-    Storage,
-    Coordination,
+    Transport = 0,
+    Storage = 1,
+    Coordination = 2,
+}
+
+/// <summary>Describes the strongest inbox guarantee a storage provider can enforce.</summary>
+[PublicAPI]
+public enum MessagingInboxCapabilityTier
+{
+    /// <summary>State and duplicate suppression are process-local and do not survive restart.</summary>
+    ProcessLocal = 0,
+
+    /// <summary>Inbox state is durable, but its outcome cannot commit atomically with application state.</summary>
+    DurableDedupeOnly = 1,
+
+    /// <summary>
+    /// Inbox outcome, compatible enlisted application state, and captured outgoing work can commit atomically.
+    /// </summary>
+    Transactional = 2,
 }
 
 /// <summary>
@@ -26,7 +42,9 @@ public sealed record MessagingProviderCapabilities
         MessagingProviderRole role,
         IEnumerable<MessageLane> lanes,
         bool supportsIndependentLaneTopology,
-        bool supportsDelayedScheduling
+        bool supportsDelayedScheduling,
+        MessagingInboxCapabilityTier? inboxCapability,
+        IReadOnlyCollection<MessagingRoutingAffinityRoute>? routingAffinityRoutes = null
     )
     {
         Argument.IsNotNullOrWhiteSpace(provider);
@@ -35,12 +53,26 @@ public sealed record MessagingProviderCapabilities
         Lanes = lanes.Select(_EnsureDefinedLane).ToFrozenSet();
         SupportsIndependentLaneTopology = supportsIndependentLaneTopology;
         SupportsDelayedScheduling = supportsDelayedScheduling;
+        InboxCapability = inboxCapability;
+        RoutingAffinityRoutes = Array.AsReadOnly((routingAffinityRoutes ?? []).ToArray());
 
         if (Lanes.Count == 0 && role is not MessagingProviderRole.Coordination)
         {
             throw new ArgumentException(
                 "Transport and storage capability descriptors require at least one lane.",
                 nameof(lanes)
+            );
+        }
+
+        if (role is MessagingProviderRole.Storage)
+        {
+            Argument.IsInEnum(inboxCapability!.Value);
+        }
+        else if (inboxCapability is not null)
+        {
+            throw new ArgumentException(
+                "Only storage capability descriptors may declare an inbox tier.",
+                nameof(inboxCapability)
             );
         }
     }
@@ -62,11 +94,20 @@ public sealed record MessagingProviderCapabilities
     /// <summary>Whether persisted delivery can be scheduled for a future dispatch time.</summary>
     public bool SupportsDelayedScheduling { get; }
 
+    /// <summary>
+    /// Strongest inbox guarantee supplied by this provider, or <see langword="null"/> for non-storage roles.
+    /// </summary>
+    public MessagingInboxCapabilityTier? InboxCapability { get; }
+
+    /// <summary>Locally verified registered destinations with native affinity mappings; empty means unsupported.</summary>
+    public IReadOnlyList<MessagingRoutingAffinityRoute> RoutingAffinityRoutes { get; }
+
     /// <summary>Creates an immutable transport capability contribution.</summary>
     public static MessagingProviderCapabilities Transport(
         string provider,
         IReadOnlyCollection<MessageLane> lanes,
-        bool supportsIndependentLaneTopology
+        bool supportsIndependentLaneTopology,
+        IReadOnlyCollection<MessagingRoutingAffinityRoute>? routingAffinityRoutes = null
     )
     {
         Argument.IsNotNull(lanes);
@@ -75,7 +116,9 @@ public sealed record MessagingProviderCapabilities
             MessagingProviderRole.Transport,
             lanes,
             supportsIndependentLaneTopology,
-            supportsDelayedScheduling: false
+            supportsDelayedScheduling: false,
+            inboxCapability: null,
+            routingAffinityRoutes
         );
     }
 
@@ -83,7 +126,8 @@ public sealed record MessagingProviderCapabilities
     public static MessagingProviderCapabilities Storage(
         string provider,
         IReadOnlyCollection<MessageLane> lanes,
-        bool supportsDelayedScheduling
+        bool supportsDelayedScheduling,
+        MessagingInboxCapabilityTier inboxCapability
     )
     {
         Argument.IsNotNull(lanes);
@@ -92,7 +136,8 @@ public sealed record MessagingProviderCapabilities
             MessagingProviderRole.Storage,
             lanes,
             supportsIndependentLaneTopology: true,
-            supportsDelayedScheduling
+            supportsDelayedScheduling,
+            inboxCapability
         );
     }
 
@@ -104,7 +149,8 @@ public sealed record MessagingProviderCapabilities
             MessagingProviderRole.Coordination,
             [],
             supportsIndependentLaneTopology: true,
-            supportsDelayedScheduling: false
+            supportsDelayedScheduling: false,
+            inboxCapability: null
         );
     }
 

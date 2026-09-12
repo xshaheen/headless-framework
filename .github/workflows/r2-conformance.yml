@@ -2,8 +2,10 @@ name: R2 Conformance
 
 # Runs the Cloudflare R2 blob conformance suite against a real R2 account. There is no R2 emulator, so this is
 # gated on credentials supplied as repository/environment secrets. This workflow intentionally does not run on
-# pull_request events because it executes code with real R2 credentials; run it manually after reviewing the branch.
+# pull_request events because it executes code with real R2 credentials. CI calls it for a published release (or a
+# dispatch that opts in to release checks); run it manually after reviewing any other branch.
 on:
+  workflow_call:
   workflow_dispatch:
 
 concurrency:
@@ -18,12 +20,12 @@ env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
   CONFIGURATION: Release
-  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
   HUSKY: 0
 
 jobs:
   r2-conformance:
-    name: "R2 conformance"
+    # Under CI this renders as "Release · R2 conformance / Cloudflare R2 suite".
+    name: "Cloudflare R2 suite"
     runs-on: ubuntu-latest
 
     permissions:
@@ -35,31 +37,32 @@ jobs:
       name: "R2 Conformance"
 
     steps:
-      - name: "Checkout"
+      - name: "Check out repository"
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: "Setup .NET SDK"
+      - name: "Set up .NET SDK"
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           global-json-file: "./global.json"
 
-      - name: "Setup nuget cache"
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+      # Restore-only: CI's primary build leg is the single writer of this cache key.
+      - name: "Restore NuGet cache"
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
         with:
-          path: ${{ env.NUGET_PACKAGES }}
-          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/*.props', '**/*.targets', 'global.json', 'nuget.config') }}
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json', 'global.json', 'dotnet-tools.json') }}
           restore-keys: |
             ${{ runner.os }}-nuget-
 
-      - name: "Restore"
+      - name: "Restore test project"
         env:
           GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: make restore-project PROJECT=tests/Headless.Blobs.CloudflareR2.Tests.Integration/Headless.Blobs.CloudflareR2.Tests.Integration.csproj
 
-      - name: "Build"
+      - name: "Build test project"
         run: make build-project-no-restore PROJECT=tests/Headless.Blobs.CloudflareR2.Tests.Integration/Headless.Blobs.CloudflareR2.Tests.Integration.csproj
 
       - name: "Run R2 conformance suite"

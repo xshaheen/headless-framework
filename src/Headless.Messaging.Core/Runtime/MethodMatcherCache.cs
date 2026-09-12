@@ -173,6 +173,29 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
         return false;
     }
 
+    internal bool TryGetInboxExecutor(
+        string consumerIdentity,
+        string contractIdentity,
+        string contractVersion,
+        MessageLane lane,
+        [NotNullWhen(true)] out ConsumerExecutorDescriptor? descriptor
+    )
+    {
+        _EnsureEntries();
+
+        // Persisted inbox identities must not use subscription wildcards or their group-level caches.
+        descriptor = _laneEntries
+            .Where(entry => entry.Key.Lane == lane)
+            .SelectMany(static entry => entry.Value)
+            .FirstOrDefault(candidate =>
+                string.Equals(candidate.ConsumerIdentity, consumerIdentity, StringComparison.Ordinal)
+                && string.Equals(candidate.MessageContractVersion, contractVersion, StringComparison.Ordinal)
+                && string.Equals(candidate.MessageName, contractIdentity, StringComparison.Ordinal)
+            );
+
+        return descriptor is not null;
+    }
+
     /// <summary>Discards the cached topology so the next access rebuilds it from the consumer selector.</summary>
     public void Invalidate()
     {

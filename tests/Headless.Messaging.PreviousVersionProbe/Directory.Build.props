@@ -1,9 +1,0 @@
-<Project>
-  <!-- Keep the previous-package process isolated from the repository's current test/package graph. -->
-  <PropertyGroup>
-    <LangVersion>14.0</LangVersion>
-    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
-    <RestoreLockedMode Condition="'$(CI)' == 'true' or '$(ContinuousIntegrationBuild)' == 'true'"
-      >true</RestoreLockedMode>
-  </PropertyGroup>
-</Project>

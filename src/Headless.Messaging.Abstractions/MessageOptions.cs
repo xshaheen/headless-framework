@@ -26,18 +26,24 @@ public abstract record MessageOptions
     /// </summary>
     public const int MessageIdMaxLength = 200;
 
+    /// <summary>The initial schema version used when a message contract does not specify one.</summary>
+    public const string InitialContractVersion = "1";
+
+    /// <summary>Maximum supported message contract version length for durable inbox storage.</summary>
+    public const int ContractVersionMaxLength = 100;
+
     /// <summary>
     /// Maximum supported length for <see cref="TenantId"/> when publishing messages that may be stored durably.
     /// </summary>
     public const int TenantIdMaxLength = 200;
 
-    /// <summary>Gets the requested delivery behavior. The default is <see cref="DeliveryMode.Auto"/>.</summary>
-    public DeliveryMode DeliveryMode { get; init; } = DeliveryMode.Auto;
+    /// <summary>Gets the per-call delivery override. Null inherits the host default, which is Auto.</summary>
+    public DeliveryMode? DeliveryMode { get; init; }
 
     /// <summary>Gets the relative delay applied before the durably captured message is dispatched.</summary>
     /// <remarks>
     /// A delay requires durable delivery. With <see cref="DeliveryMode.Auto"/> it selects durable capture;
-    /// with <see cref="DeliveryMode.TransportDirect"/> the operation is rejected.
+    /// with <see cref="DeliveryMode.Direct"/> the operation is rejected.
     /// </remarks>
     public TimeSpan? Delay { get; init; }
 
@@ -45,6 +51,13 @@ public abstract record MessageOptions
     /// Gets the explicit message name override. When <see langword="null"/>, the message name is resolved from mappings or conventions.
     /// </summary>
     public string? MessageName { get; init; }
+
+    /// <summary>Gets the explicit message contract schema version override.</summary>
+    public string? ContractVersion { get; init; }
+
+    /// <summary>Optional logical affinity key mapped to the configured provider native routing mechanism.</summary>
+    /// <remarks>The destination must be registered and support affinity. This does not promise FIFO or exclusive handling.</remarks>
+    public string? RoutingAffinityKey { get; init; }
 
     /// <summary>
     /// Gets custom application headers. Reserved messaging headers are rejected, and header names/values
@@ -66,6 +79,16 @@ public abstract record MessageOptions
     /// </summary>
     public string? CorrelationId { get; init; }
 
+    /// <summary>Gets the identifier of the message that directly caused this message.</summary>
+    public string? CausationId { get; init; }
+
+    /// <summary>Suppresses ambient correlation, causation, and tenant defaults when forwarding a captured business snapshot.</summary>
+    /// <remarks>
+    /// Defaults to false. Contract resolution and diagnostic trace propagation are unchanged.
+    /// Required tenancy still rejects a missing explicit tenant; suppression never bypasses tenant enforcement.
+    /// </remarks>
+    public bool SuppressAmbientBusinessContext { get; init; }
+
     /// <summary>
     /// Gets the explicit correlation sequence override.
     /// </summary>
@@ -78,14 +101,18 @@ public abstract record MessageOptions
 
     internal Type? MessageType { get; init; }
 
+    // Only the EF outbox bridge can promise that the save pipeline retains this occurrence for transaction replay.
+    internal bool IsRetainedForTransactionReplay { get; init; }
+
     /// <summary>
     /// Gets the explicit multi-tenancy identifier for this message.
     /// </summary>
     /// <remarks>
     /// <para>
     /// When set, the publish pipeline stamps the value into the <c>Headers.TenantId</c> wire header.
-    /// When <see langword="null"/>, no header is written and consumers observe a <see langword="null"/>
-    /// <c>ConsumeContext&lt;TMessage&gt;.TenantId</c>.
+    /// When <see langword="null"/>, configured tenant propagation or required-tenancy resolution may use the
+    /// ambient tenant unless <see cref="SuppressAmbientBusinessContext"/> is enabled. Without a resolved tenant,
+    /// no header is written; required tenancy rejects the publish instead.
     /// </para>
     /// <para>
     /// The publish pipeline enforces a strict 4-case integrity policy. A raw write to
@@ -125,8 +152,13 @@ public abstract record MessageOptions
         return DeliveryMode == other.DeliveryMode
             && Nullable.Equals(Delay, other.Delay)
             && string.Equals(MessageName, other.MessageName, StringComparison.Ordinal)
+            && string.Equals(ContractVersion, other.ContractVersion, StringComparison.Ordinal)
+            && string.Equals(RoutingAffinityKey, other.RoutingAffinityKey, StringComparison.Ordinal)
             && string.Equals(MessageId, other.MessageId, StringComparison.Ordinal)
             && string.Equals(CorrelationId, other.CorrelationId, StringComparison.Ordinal)
+            && string.Equals(CausationId, other.CausationId, StringComparison.Ordinal)
+            && SuppressAmbientBusinessContext == other.SuppressAmbientBusinessContext
+            && IsRetainedForTransactionReplay == other.IsRetainedForTransactionReplay
             && CorrelationSequence == other.CorrelationSequence
             // MessageType is internal-init and participates in equality so internally-produced options carrying a
             // captured response type are not silently treated as equal to otherwise-identical options (prevents
@@ -144,8 +176,13 @@ public abstract record MessageOptions
         hash.Add(DeliveryMode);
         hash.Add(Delay);
         hash.Add(MessageName, StringComparer.Ordinal);
+        hash.Add(ContractVersion, StringComparer.Ordinal);
+        hash.Add(RoutingAffinityKey, StringComparer.Ordinal);
         hash.Add(MessageId, StringComparer.Ordinal);
         hash.Add(CorrelationId, StringComparer.Ordinal);
+        hash.Add(CausationId, StringComparer.Ordinal);
+        hash.Add(SuppressAmbientBusinessContext);
+        hash.Add(IsRetainedForTransactionReplay);
         hash.Add(CorrelationSequence);
         // MessageType is internal-init and participates in equality so internally-produced options carrying a
         // captured response type are not silently treated as equal to otherwise-identical options (prevents

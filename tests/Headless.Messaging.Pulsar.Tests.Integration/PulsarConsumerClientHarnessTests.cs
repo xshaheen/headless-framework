@@ -102,62 +102,6 @@ public sealed class PulsarConsumerClientHarnessTests(PulsarFixture fixture) : Tr
         Volatile.Read(ref terminalLogs).Should().Be(1);
     }
 
-    [Fact]
-    public async Task should_drain_legacy_topic_before_lane_cutover_and_reconcile_forward()
-    {
-        var logicalName = $"persistent://public/default/orders-{Guid.NewGuid():N}";
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddHeadlessMessaging(setup => setup.UsePulsar(fixture.ConnectionString));
-        await using var provider = services.BuildServiceProvider();
-        var client = await provider.GetRequiredService<IConnectionFactory>().RentClientAsync(AbortToken);
-        await using var legacyProducer = await client.NewProducer().Topic(logicalName).CreateAsync();
-        await using var legacyConsumer = await client
-            .NewConsumer()
-            .Topic(logicalName)
-            .SubscriptionName($"legacy-{Guid.NewGuid():N}")
-            .SubscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
-            .SubscribeAsync();
-
-        await legacyProducer.SendAsync(legacyProducer.NewMessage("legacy"u8.ToArray()));
-        var legacyDelivery = await legacyConsumer.ReceiveAsync(AbortToken);
-        legacyDelivery.Should().NotBeNull("the deployment fence must observe and drain legacy backlog");
-        await legacyConsumer.AcknowledgeAsync(legacyDelivery.MessageId);
-
-        await using var bus = await fixture.CreateLaneSessionAsync(
-            MessageLane.Bus,
-            logicalName,
-            "orders-subscribers",
-            AbortToken
-        );
-        await using var queue = await fixture.CreateLaneSessionAsync(
-            MessageLane.Queue,
-            logicalName,
-            logicalName,
-            AbortToken
-        );
-        await bus.StartAsync(cancellationToken: AbortToken);
-        await queue.StartAsync(cancellationToken: AbortToken);
-
-        (await bus.PublishAsync(_Message(logicalName, MessageLane.Bus), AbortToken)).Succeeded.Should().BeTrue();
-        var busDelivery = await bus.ReceiveAsync(TimeSpan.FromSeconds(10), AbortToken);
-        await bus.Consumer.CommitAsync(busDelivery.SettlementValue, AbortToken);
-        (await queue.RemainsEmptyAsync(TimeSpan.FromSeconds(1), AbortToken)).Should().BeTrue();
-
-        (await queue.PublishAsync(_Message(logicalName, MessageLane.Queue), AbortToken)).Succeeded.Should().BeTrue();
-        var queueDelivery = await queue.ReceiveAsync(TimeSpan.FromSeconds(10), AbortToken);
-        await queue.Consumer.CommitAsync(queueDelivery.SettlementValue, AbortToken);
-        (await bus.RemainsEmptyAsync(TimeSpan.FromSeconds(1), AbortToken)).Should().BeTrue();
-
-        using var noLegacyDelivery = TimeSpan.FromSeconds(1).ToCancellationTokenSource(AbortToken);
-        var legacyReceive = async () => await legacyConsumer.ReceiveAsync(noLegacyDelivery.Token);
-        await legacyReceive
-            .Should()
-            .ThrowAsync<OperationCanceledException>(
-                "lane-qualified publication is roll-forward-only and must not return to the legacy topic"
-            );
-    }
-
     private static TransportMessage _Message(string logicalName, MessageLane lane) =>
         new(
             new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -166,7 +110,7 @@ public sealed class PulsarConsumerClientHarnessTests(PulsarFixture fixture) : Tr
                 [MessagingHeaders.MessageName] = logicalName,
                 [MessagingHeaders.Intent] = lane.ToString(),
             },
-            "cutover"u8.ToArray()
+            "conformance"u8.ToArray()
         );
 
     [Fact]

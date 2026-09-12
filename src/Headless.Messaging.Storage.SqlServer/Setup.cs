@@ -91,7 +91,8 @@ public static class SetupSqlServerMessaging
                 MessagingProviderCapabilities.Storage(
                     "SqlServer",
                     [MessageLane.Bus, MessageLane.Queue],
-                    supportsDelayedScheduling: true
+                    supportsDelayedScheduling: true,
+                    inboxCapability: MessagingInboxCapabilityTier.DurableDedupeOnly
                 )
             );
             configureOptions(services);

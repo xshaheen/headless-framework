@@ -397,7 +397,7 @@ public sealed class BootstrapperTests : TestBase
 
         await bootstrapper.BootstrapAsync(AbortToken);
 
-        captured.Any(entry => entry.Level == LogLevel.Warning && entry.EventId.Id == 97).Should().Be(shouldWarn);
+        captured.Exists(entry => entry.Level == LogLevel.Warning && entry.EventId.Id == 97).Should().Be(shouldWarn);
     }
 
     [Fact]
@@ -512,7 +512,8 @@ public sealed class BootstrapperTests : TestBase
                 MessagingProviderCapabilities.Storage(
                     "OtherStorage",
                     [MessageLane.Bus, MessageLane.Queue],
-                    supportsDelayedScheduling: true
+                    supportsDelayedScheduling: true,
+                    inboxCapability: MessagingInboxCapabilityTier.Transactional
                 )
             )
         );
@@ -627,7 +628,7 @@ public sealed class BootstrapperTests : TestBase
         var messagingBuilder = services.AddHeadlessMessaging(setup =>
         {
             setup.UseInMemory();
-            setup.UseInMemoryStorage();
+            setup.UseProcessLocalInMemoryStorage();
         });
         messagingBuilder.UseDistributedLock(messagingProvider);
 
@@ -685,7 +686,7 @@ public sealed class BootstrapperTests : TestBase
         var messagingBuilder = services.AddHeadlessMessaging(setup =>
         {
             setup.UseInMemory();
-            setup.UseInMemoryStorage();
+            setup.UseProcessLocalInMemoryStorage();
             setup.UseConventions(c =>
             {
                 c.UseApplicationId("bootstrap-tests");

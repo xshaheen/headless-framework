@@ -3,6 +3,7 @@ using Headless.Caching;
 using Headless.DistributedLocks;
 using Headless.Domain;
 using Headless.Messaging;
+using Headless.Messaging.Configuration;
 using Headless.MultiTenancy;
 using Headless.Permissions;
 using Headless.Testing.Tests;
@@ -48,7 +49,7 @@ public abstract class PermissionsTestBase(PermissionsTestFixture fixture) : Test
         services.AddSingleton(Substitute.For<IApplicationInformationAccessor>());
         services.AddSingleton(Substitute.For<ICurrentPrincipalAccessor>());
         services.AddSingleton(Substitute.For<IBus>());
-        services.AddHeadlessLocalEventBus();
+        services.AddHeadlessDomainEventDispatcher();
 
         // Cache
         services.AddHeadlessCaching(setup =>
@@ -61,6 +62,7 @@ public abstract class PermissionsTestBase(PermissionsTestFixture fixture) : Test
         // Messages
         services.AddHeadlessMessaging(setup =>
         {
+            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
             setup.UseInMemory();
             setup.UseInMemoryStorage();
         });

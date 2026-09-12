@@ -1,38 +1,11 @@
-# Messaging package-family compatibility probes
+# Messaging package-family composition probe
 
-These projects are isolated from the repository's central package versions and inherited sources.
+`NewAllNew` references every currently packable Messaging package at `MessagingPackageVersion` and compiles the public verb, lane, and delivery API. Its isolated NuGet configuration resolves `Headless.*` exclusively from `artifacts/packages-results`; other dependencies resolve from NuGet.org.
 
-- `PreviousAllOld` pins every Messaging package shipped by tag `0.11.0` and compiles the former `IOutboxBus` API. Its GitHub Packages credential is supplied only through `GITHUB_PACKAGES_TOKEN`.
-- `NewAllNew` pins every currently packable Messaging package to `MessagingPackageVersion`, resolves `Headless.*` exclusively from `artifacts/packages-results`, and compiles the final verb/lane/delivery API.
-- `SelectedMixed` directly pins `Headless.Messaging.Core` `0.11.0` beside the locally packed `Headless.Messaging.Redis`. Its two-feed mapping is intentionally narrow evidence for this selected graph; its observed diagnostic must not be generalized to every mixed graph.
-
-The selected mixed restore is expected to fail with `NU1605`: the local Redis package requires the matching new Core version while the application directly pins Core `0.11.0`. This proves only that selected downgrade boundary. The all-new lockfile is an ephemeral exact-artifact receipt because MinVer changes the preview version at each commit; the committed all-old lock remains stable at `0.11.0`.
-
-Run the complete enforced probe from the repository root. The target first packs the exact current
-commit, requires a token only for the historical GitHub Packages family, compiles the all-old and
-all-new families, and verifies that the selected mixed restore fails specifically with `NU1605`:
+Run from the repository root:
 
 ```bash
-GITHUB_PACKAGES_TOKEN="$(gh auth token)" make verify-messaging-package-compatibility
+make verify-messaging-package-compatibility
 ```
 
-The equivalent individual commands are:
-
-```bash
-GITHUB_PACKAGES_TOKEN="$(gh auth token)" dotnet build \
-  tests/Headless.Messaging.PackageReference.Tests.Unit/Probes/Compatibility/PreviousAllOld/PreviousAllOld.csproj \
-  --configfile tests/Headless.Messaging.PackageReference.Tests.Unit/Probes/Compatibility/PreviousAllOld/NuGet.config
-
-version="$(tr -d '\n' < artifacts/packages-results/package-version.txt)"
-dotnet build \
-  tests/Headless.Messaging.PackageReference.Tests.Unit/Probes/Compatibility/NewAllNew/NewAllNew.csproj \
-  --configfile tests/Headless.Messaging.PackageReference.Tests.Unit/Probes/Compatibility/NewAllNew/NuGet.config \
-  -p:MessagingPackageVersion="$version"
-
-GITHUB_PACKAGES_TOKEN="$(gh auth token)" dotnet restore \
-  tests/Headless.Messaging.PackageReference.Tests.Unit/Probes/Compatibility/SelectedMixed/SelectedMixed.csproj \
-  --configfile tests/Headless.Messaging.PackageReference.Tests.Unit/Probes/Compatibility/SelectedMixed/NuGet.config \
-  -p:MessagingPackageVersion="$version"
-```
-
-Do not commit credentials, temporary package caches, or raw authenticated restore logs.
+The target packs the current checkout, restores the complete Messaging family from those artifacts, and builds the consumer probe. Its lockfile is an ephemeral receipt for the exact package version, which changes as commits advance. Do not commit temporary package caches or restore logs.

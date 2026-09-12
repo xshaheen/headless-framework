@@ -20,7 +20,11 @@ public sealed class ForMessageRegistrationTests : TestBase
 
         // when
         services.AddHeadlessMessaging(setup =>
-            setup.Bus.ForMessage<OrderPlaced>(message => message.Consumer<OrderPlacedHandler>())
+            setup.Bus.ForMessage<OrderPlaced>(message =>
+                message.Consumer<OrderPlacedHandler>(consumer =>
+                    consumer.StableContract("tests.registration.orders-primary")
+                )
+            )
         );
         using var provider = services.BuildServiceProvider();
 
@@ -31,6 +35,158 @@ public sealed class ForMessageRegistrationTests : TestBase
         registration.MessageName.Should().BeNull();
         registration.Consumers.Should().ContainSingle();
         registration.Consumers[0].ConsumerType.Should().Be<OrderPlacedHandler>();
+    }
+
+    [Theory]
+    [InlineData(MessageLane.Bus)]
+    [InlineData(MessageLane.Queue)]
+    public void should_preserve_consumer_identity_at_the_durable_storage_length_limit(MessageLane lane)
+    {
+        var identity = new string('c', ConsumerMetadata.ConsumerIdentityMaxLength);
+        var services = new ServiceCollection();
+        services.AddHeadlessMessaging(setup =>
+        {
+            if (lane is MessageLane.Bus)
+            {
+                setup.Bus.ForMessage<OrderPlaced>(message =>
+                    message
+                        .Contract("orders.placed")
+                        .Consumer<OrderPlacedHandler>(consumer => consumer.ConsumerIdentity(identity))
+                );
+            }
+            else
+            {
+                setup.Queue.ForMessage<OrderPlaced>(message =>
+                    message
+                        .Contract("orders.placed")
+                        .Consumer<OrderPlacedHandler>(consumer => consumer.ConsumerIdentity(identity))
+                );
+            }
+            setup.UseInMemory();
+            setup.UseProcessLocalInMemoryStorage();
+        });
+        using var provider = services.BuildServiceProvider();
+
+        var metadata = provider.GetDrainedConsumerRegistry().GetAll().Single();
+        metadata.ConsumerIdentity.Should().Be(identity);
+        metadata.Lane.Should().Be(lane);
+    }
+
+    [Theory]
+    [InlineData(MessageLane.Bus)]
+    [InlineData(MessageLane.Queue)]
+    public void should_reject_oversized_consumer_identity_during_registration(MessageLane lane)
+    {
+        var identity = new string('c', ConsumerMetadata.ConsumerIdentityMaxLength + 1);
+        Action act = () =>
+            new ServiceCollection().AddHeadlessMessaging(setup =>
+            {
+                if (lane is MessageLane.Bus)
+                {
+                    setup.Bus.ForMessage<OrderPlaced>(message =>
+                        message.Consumer<OrderPlacedHandler>(consumer => consumer.ConsumerIdentity(identity))
+                    );
+                }
+                else
+                {
+                    setup.Queue.ForMessage<OrderPlaced>(message =>
+                        message.Consumer<OrderPlacedHandler>(consumer => consumer.ConsumerIdentity(identity))
+                    );
+                }
+            });
+
+        act.Should().Throw<ArgumentOutOfRangeException>().WithParameterName("consumerIdentity");
+    }
+
+    [Theory]
+    [InlineData(MessageLane.Bus)]
+    [InlineData(MessageLane.Queue)]
+    public void should_reject_oversized_consumer_identity_through_internal_metadata_registration(MessageLane lane)
+    {
+        Action act = () =>
+            new ServiceCollection().AddHeadlessMessaging(setup =>
+                setup.RegisterConsumer(
+                    typeof(OrderPlacedHandler),
+                    typeof(OrderPlaced),
+                    "orders.placed",
+                    "orders",
+                    1,
+                    lane,
+                    new string('c', ConsumerMetadata.ConsumerIdentityMaxLength + 1),
+                    MessageOptions.InitialContractVersion
+                )
+            );
+
+        act.Should().Throw<MessagingConfigurationException>().WithMessage("*consumer identity*200*");
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData("v 2")]
+    [InlineData("2\r\ninvalid")]
+    public void should_reject_invalid_message_contract_versions(string version)
+    {
+        // when
+        var act = () =>
+            new ServiceCollection().AddHeadlessMessaging(setup =>
+                setup.Bus.ForMessage<OrderPlaced>(message => message.Contract("orders.placed", version))
+            );
+
+        // then
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void should_reject_message_contract_versions_longer_than_the_persistence_limit()
+    {
+        // given
+        var version = new string('v', MessageOptions.ContractVersionMaxLength + 1);
+
+        // when
+        var act = () =>
+            new ServiceCollection().AddHeadlessMessaging(setup =>
+                setup.Bus.ForMessage<OrderPlaced>(message => message.Contract("orders.placed", version))
+            );
+
+        // then
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void should_capture_valid_per_consumer_inbox_retention_and_reject_invalid_durations()
+    {
+        var services = new ServiceCollection();
+        services.AddHeadlessMessaging(static setup =>
+        {
+            setup.Bus.ForMessage<OrderPlaced>(message =>
+                message.Consumer<OrderPlacedHandler>(consumer =>
+                    consumer.StableContract("tests.registration.orders-retention").InboxRetention(TimeSpan.FromDays(45))
+                )
+            );
+            setup.UseInMemory();
+            setup.UseProcessLocalInMemoryStorage();
+        });
+
+        using var provider = services.BuildServiceProvider();
+        provider
+            .GetDrainedConsumerRegistry()
+            .GetAll()
+            .Single(consumer => consumer.ConsumerType == typeof(OrderPlacedHandler))
+            .InboxRetention.Should()
+            .Be(TimeSpan.FromDays(45));
+
+        Action invalid = () =>
+            new ServiceCollection().AddHeadlessMessaging(static setup =>
+                setup.Bus.ForMessage<OrderPlaced>(message =>
+                    message.Consumer<OrderPlacedHandler>(consumer =>
+                        consumer
+                            .StableContract("tests.registration.orders-invalid-retention")
+                            .InboxRetention(TimeSpan.FromMilliseconds(1500))
+                    )
+                )
+            );
+        invalid.Should().Throw<ArgumentOutOfRangeException>();
     }
 
     [Fact]
@@ -44,8 +200,12 @@ public sealed class ForMessageRegistrationTests : TestBase
         {
             setup.Bus.ForMessage<OrderPlaced>(message =>
             {
-                message.Consumer<OrderPlacedHandler>();
-                message.Consumer<OrderPlacedAnalyticsHandler>();
+                message.Consumer<OrderPlacedHandler>(consumer =>
+                    consumer.StableContract("tests.registration.orders-primary")
+                );
+                message.Consumer<OrderPlacedAnalyticsHandler>(consumer =>
+                    consumer.StableContract("tests.registration.orders-analytics")
+                );
             });
         });
 
@@ -68,10 +228,18 @@ public sealed class ForMessageRegistrationTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.Bus.ForMessage<OrderPlaced>(message =>
-                message.MessageName("orders.placed").Consumer<OrderPlacedHandler>()
+                message
+                    .Contract("orders.placed")
+                    .Consumer<OrderPlacedHandler>(consumer =>
+                        consumer.StableContract("tests.registration.orders-primary")
+                    )
             );
             setup.Queue.ForMessage<OrderPlaced>(message =>
-                message.MessageName("orders.placed").Consumer<OrderPlacedHandler>()
+                message
+                    .Contract("orders.placed")
+                    .Consumer<OrderPlacedHandler>(consumer =>
+                        consumer.StableContract("tests.registration.orders-primary")
+                    )
             );
         });
 
@@ -96,9 +264,9 @@ public sealed class ForMessageRegistrationTests : TestBase
         // when
         services.AddHeadlessMessaging(static setup =>
         {
-            setup.Bus.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed"));
+            setup.Bus.ForMessage<OrderPlaced>(message => message.Contract("orders.placed"));
             setup.UseInMemory();
-            setup.UseInMemoryStorage();
+            setup.UseProcessLocalInMemoryStorage();
         });
 
         using var provider = services.BuildServiceProvider();
@@ -121,13 +289,17 @@ public sealed class ForMessageRegistrationTests : TestBase
         {
             setup.Queue.ForMessage<OrderPlaced>(message =>
                 message
-                    .MessageName("orders.placed")
+                    .Contract("orders.placed")
                     .Consumer<OrderPlacedHandler>(consumer =>
-                        consumer.Group("orders").Concurrency(3).HandlerId("handler-1")
+                        consumer
+                            .StableContract("tests.registration.orders-primary")
+                            .Group("orders")
+                            .Concurrency(3)
+                            .HandlerId("handler-1")
                     )
             );
             setup.UseInMemory();
-            setup.UseInMemoryStorage();
+            setup.UseProcessLocalInMemoryStorage();
         });
 
         using var provider = services.BuildServiceProvider();
@@ -150,20 +322,28 @@ public sealed class ForMessageRegistrationTests : TestBase
         {
             setup.Bus.ForMessage<OrderPlaced>(message =>
             {
-                message.MessageName("orders.bus").Consumer<OrderPlacedHandler>(consumer => consumer.Group("bus"));
+                message
+                    .Contract("orders.bus")
+                    .Consumer<OrderPlacedHandler>(consumer =>
+                        consumer.StableContract("tests.registration.orders-primary").Group("bus")
+                    );
                 ((IMessageProviderConfigBuilder<OrderPlaced>)message).SetMessageProviderConfig(
                     new LaneProviderConfig("bus")
                 );
             });
             setup.Queue.ForMessage<OrderPlaced>(message =>
             {
-                message.MessageName("orders.queue").Consumer<OrderPlacedHandler>(consumer => consumer.Group("queue"));
+                message
+                    .Contract("orders.queue")
+                    .Consumer<OrderPlacedHandler>(consumer =>
+                        consumer.StableContract("tests.registration.orders-primary").Group("queue")
+                    );
                 ((IMessageProviderConfigBuilder<OrderPlaced>)message).SetMessageProviderConfig(
                     new LaneProviderConfig("queue")
                 );
             });
             setup.UseInMemory();
-            setup.UseInMemoryStorage();
+            setup.UseProcessLocalInMemoryStorage();
         });
 
         // when
@@ -198,7 +378,9 @@ public sealed class ForMessageRegistrationTests : TestBase
         var act = () =>
             services.AddHeadlessMessaging(setup =>
                 setup.Bus.ForMessage<OrderPlaced>(message =>
-                    message.Consumer<OrderPlacedHandler>(consumer => consumer.Concurrency(0))
+                    message.Consumer<OrderPlacedHandler>(consumer =>
+                        consumer.StableContract("tests.registration.orders-primary").Concurrency(0)
+                    )
                 )
             );
 
@@ -281,13 +463,21 @@ public sealed class ForMessageRegistrationTests : TestBase
         services.AddHeadlessMessaging(static setup =>
         {
             setup.Bus.ForMessage<OrderPlaced>(message =>
-                message.MessageName("orders.placed").Consumer<OrderPlacedHandler>()
+                message
+                    .Contract("orders.placed")
+                    .Consumer<OrderPlacedHandler>(consumer =>
+                        consumer.StableContract("tests.registration.orders-primary")
+                    )
             );
             setup.Queue.ForMessage<OrderPlaced>(message =>
-                message.MessageName("orders.placed").Consumer<OrderPlacedAnalyticsHandler>()
+                message
+                    .Contract("orders.placed")
+                    .Consumer<OrderPlacedAnalyticsHandler>(consumer =>
+                        consumer.StableContract("tests.registration.orders-analytics")
+                    )
             );
             setup.UseInMemory();
-            setup.UseInMemoryStorage();
+            setup.UseProcessLocalInMemoryStorage();
         });
 
         using var provider = services.BuildServiceProvider();
@@ -309,11 +499,19 @@ public sealed class ForMessageRegistrationTests : TestBase
             services.AddHeadlessMessaging(static setup =>
             {
                 setup.Bus.ForMessage<OrderPlaced>(message =>
-                    message.MessageName("orders.placed").Consumer<OrderPlacedHandler>()
+                    message
+                        .Contract("orders.placed")
+                        .Consumer<OrderPlacedHandler>(consumer =>
+                            consumer.StableContract("tests.registration.orders-primary")
+                        )
                 );
-                setup.Bus.ForMessage<OrderPlaced>(message => message.Consumer<OrderPlacedHandler>());
+                setup.Bus.ForMessage<OrderPlaced>(message =>
+                    message.Consumer<OrderPlacedHandler>(consumer =>
+                        consumer.StableContract("tests.registration.orders-primary")
+                    )
+                );
                 setup.UseInMemory();
-                setup.UseInMemoryStorage();
+                setup.UseProcessLocalInMemoryStorage();
             });
 
         // then
@@ -343,16 +541,20 @@ public sealed class ForMessageRegistrationTests : TestBase
             {
                 setup.Bus.ForMessage<OrderPlaced>(message =>
                     message.Consumer<OrderPlacedHandler>(consumer =>
-                        consumer.WithCircuitBreaker(options => options.FailureThreshold = 3)
+                        consumer
+                            .StableContract("tests.registration.orders-primary")
+                            .WithCircuitBreaker(options => options.FailureThreshold = 3)
                     )
                 );
                 setup.Bus.ForMessage<OrderPlaced>(message =>
                     message.Consumer<OrderPlacedHandler>(consumer =>
-                        consumer.WithCircuitBreaker(options => options.FailureThreshold = 5)
+                        consumer
+                            .StableContract("tests.registration.orders-primary")
+                            .WithCircuitBreaker(options => options.FailureThreshold = 5)
                     )
                 );
                 setup.UseInMemory();
-                setup.UseInMemoryStorage();
+                setup.UseProcessLocalInMemoryStorage();
             });
 
         // then
@@ -371,14 +573,18 @@ public sealed class ForMessageRegistrationTests : TestBase
             {
                 setup.Bus.ForMessage<OrderPlaced>(message =>
                     message
-                        .MessageName("orders.placed")
-                        .Consumer<OrderPlacedHandler>(consumer => consumer.Group("orders"))
+                        .Contract("orders.placed")
+                        .Consumer<OrderPlacedHandler>(consumer =>
+                            consumer.StableContract("tests.registration.orders-primary").Group("orders")
+                        )
                 );
                 setup.Bus.ForMessage<OrderPlaced>(message =>
-                    message.Consumer<OrderPlacedAnalyticsHandler>(consumer => consumer.Group("orders"))
+                    message.Consumer<OrderPlacedAnalyticsHandler>(consumer =>
+                        consumer.StableContract("tests.registration.orders-analytics").Group("orders")
+                    )
                 );
                 setup.UseInMemory();
-                setup.UseInMemoryStorage();
+                setup.UseProcessLocalInMemoryStorage();
             });
 
         // then
@@ -400,16 +606,20 @@ public sealed class ForMessageRegistrationTests : TestBase
             {
                 setup.Bus.ForMessage<OrderPlaced>(message =>
                     message
-                        .MessageName("orders.placed")
-                        .Consumer<OrderPlacedHandler>(consumer => consumer.Group("orders"))
+                        .Contract("orders.placed")
+                        .Consumer<OrderPlacedHandler>(consumer =>
+                            consumer.StableContract("tests.registration.orders-primary").Group("orders")
+                        )
                 );
                 setup.Bus.ForMessage<OtherOrderPlaced>(message =>
                     message
-                        .MessageName("Orders.Placed")
-                        .Consumer<OtherOrderPlacedHandler>(consumer => consumer.Group("orders"))
+                        .Contract("Orders.Placed")
+                        .Consumer<OtherOrderPlacedHandler>(consumer =>
+                            consumer.StableContract("tests.registration.other-orders-primary").Group("orders")
+                        )
                 );
                 setup.UseInMemory();
-                setup.UseInMemoryStorage();
+                setup.UseProcessLocalInMemoryStorage();
             });
             using var provider = services.BuildServiceProvider();
             provider.GetDrainedConsumerRegistry().GetAll();
@@ -431,10 +641,10 @@ public sealed class ForMessageRegistrationTests : TestBase
         var act = () =>
             services.AddHeadlessMessaging(static setup =>
             {
-                setup.Bus.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed"));
-                setup.Bus.ForMessage<OrderPlaced>(message => message.MessageName("Orders.Placed"));
+                setup.Bus.ForMessage<OrderPlaced>(message => message.Contract("orders.placed"));
+                setup.Bus.ForMessage<OrderPlaced>(message => message.Contract("Orders.Placed"));
                 setup.UseInMemory();
-                setup.UseInMemoryStorage();
+                setup.UseProcessLocalInMemoryStorage();
             });
 
         // then
@@ -451,10 +661,10 @@ public sealed class ForMessageRegistrationTests : TestBase
         var act = () =>
             services.AddHeadlessMessaging(static setup =>
             {
-                setup.Bus.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed"));
-                setup.Bus.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed.v2"));
+                setup.Bus.ForMessage<OrderPlaced>(message => message.Contract("orders.placed"));
+                setup.Bus.ForMessage<OrderPlaced>(message => message.Contract("orders.placed.v2"));
                 setup.UseInMemory();
-                setup.UseInMemoryStorage();
+                setup.UseProcessLocalInMemoryStorage();
             });
 
         // then
@@ -470,13 +680,21 @@ public sealed class ForMessageRegistrationTests : TestBase
         services.AddHeadlessMessaging(static setup =>
         {
             setup.Bus.ForMessage<OrderPlaced>(message =>
-                message.MessageName("orders.same").Consumer<OrderPlacedHandler>()
+                message
+                    .Contract("orders.same")
+                    .Consumer<OrderPlacedHandler>(consumer =>
+                        consumer.StableContract("tests.registration.orders-primary")
+                    )
             );
             setup.Bus.ForMessage<OtherOrderPlaced>(message =>
-                message.MessageName("orders.same").Consumer<OtherOrderPlacedHandler>()
+                message
+                    .Contract("orders.same")
+                    .Consumer<OtherOrderPlacedHandler>(consumer =>
+                        consumer.StableContract("tests.registration.other-orders-primary")
+                    )
             );
             setup.UseInMemory();
-            setup.UseInMemoryStorage();
+            setup.UseProcessLocalInMemoryStorage();
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -501,13 +719,21 @@ public sealed class ForMessageRegistrationTests : TestBase
         services.AddHeadlessMessaging(static setup =>
         {
             setup.Bus.ForMessage<OrderPlaced>(message =>
-                message.MessageName("orders.same").Consumer<OrderPlacedHandler>()
+                message
+                    .Contract("orders.same")
+                    .Consumer<OrderPlacedHandler>(consumer =>
+                        consumer.StableContract("tests.registration.orders-primary")
+                    )
             );
             setup.Bus.ForMessage<OtherOrderPlaced>(message =>
-                message.MessageName("Orders.Same").Consumer<OtherOrderPlacedHandler>()
+                message
+                    .Contract("Orders.Same")
+                    .Consumer<OtherOrderPlacedHandler>(consumer =>
+                        consumer.StableContract("tests.registration.other-orders-primary")
+                    )
             );
             setup.UseInMemory();
-            setup.UseInMemoryStorage();
+            setup.UseProcessLocalInMemoryStorage();
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -529,12 +755,18 @@ public sealed class ForMessageRegistrationTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(static setup =>
         {
-            setup.Bus.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>();
+            setup.Bus.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>(
+                StableConsumerTestContracts.ConfigureKnownScannedConsumer
+            );
             setup.Bus.ForMessage<OtherOrderPlaced>(message =>
-                message.MessageName(nameof(OrderPlaced)).Consumer<OtherOrderPlacedHandler>()
+                message
+                    .Contract(nameof(OrderPlaced))
+                    .Consumer<OtherOrderPlacedHandler>(consumer =>
+                        consumer.StableContract("tests.registration.other-orders-primary")
+                    )
             );
             setup.UseInMemory();
-            setup.UseInMemoryStorage();
+            setup.UseProcessLocalInMemoryStorage();
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -555,9 +787,11 @@ public sealed class ForMessageRegistrationTests : TestBase
         // when
         services.AddHeadlessMessaging(static setup =>
         {
-            setup.Bus.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>();
+            setup.Bus.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>(
+                StableConsumerTestContracts.ConfigureKnownScannedConsumer
+            );
             setup.UseInMemory();
-            setup.UseInMemoryStorage();
+            setup.UseProcessLocalInMemoryStorage();
         });
 
         using var provider = services.BuildServiceProvider();
@@ -580,6 +814,8 @@ public sealed class ForMessageRegistrationTests : TestBase
             setup.Queue.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>(
                 (ctx, consumer) =>
                 {
+                    StableConsumerTestContracts.ConfigureKnownScannedConsumer(ctx, consumer);
+
                     if (ctx.ConsumerType == typeof(OrderPlacedHandler))
                     {
                         consumer.Group("orders");
@@ -587,7 +823,7 @@ public sealed class ForMessageRegistrationTests : TestBase
                 }
             );
             setup.UseInMemory();
-            setup.UseInMemoryStorage();
+            setup.UseProcessLocalInMemoryStorage();
         });
 
         using var provider = services.BuildServiceProvider();
@@ -613,14 +849,16 @@ public sealed class ForMessageRegistrationTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.Bus.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>(
-                (ctx, _) =>
+                (ctx, consumer) =>
                 {
+                    StableConsumerTestContracts.ConfigureKnownScannedConsumer(ctx, consumer);
+
                     var key = (ctx.ConsumerType, ctx.MessageType);
                     callbackCounts[key] = callbackCounts.GetValueOrDefault(key) + 1;
                 }
             );
             setup.UseInMemory();
-            setup.UseInMemoryStorage();
+            setup.UseProcessLocalInMemoryStorage();
         });
 
         using var provider = services.BuildServiceProvider();
@@ -666,6 +904,8 @@ public sealed class ForMessageRegistrationTests : TestBase
             setup.Queue.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>(
                 (ctx, consumer) =>
                 {
+                    StableConsumerTestContracts.ConfigureKnownScannedConsumer(ctx, consumer);
+
                     if (ctx.ConsumerType == typeof(OrderPlacedHandler))
                     {
                         consumer.Group("orders");
@@ -675,6 +915,8 @@ public sealed class ForMessageRegistrationTests : TestBase
             setup.Bus.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>(
                 (ctx, consumer) =>
                 {
+                    StableConsumerTestContracts.ConfigureKnownScannedConsumer(ctx, consumer);
+
                     if (ctx.ConsumerType == typeof(OrderPlacedAnalyticsHandler))
                     {
                         consumer.Group("analytics");
@@ -682,7 +924,7 @@ public sealed class ForMessageRegistrationTests : TestBase
                 }
             );
             setup.UseInMemory();
-            setup.UseInMemoryStorage();
+            setup.UseProcessLocalInMemoryStorage();
         });
 
         using var provider = services.BuildServiceProvider();
@@ -717,6 +959,8 @@ public sealed class ForMessageRegistrationTests : TestBase
             setup.Bus.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>(
                 (ctx, consumer) =>
                 {
+                    StableConsumerTestContracts.ConfigureKnownScannedConsumer(ctx, consumer);
+
                     if (ctx.ConsumerType == typeof(OrderPlacedHandler))
                     {
                         consumer.Skip();
@@ -724,7 +968,7 @@ public sealed class ForMessageRegistrationTests : TestBase
                 }
             );
             setup.UseInMemory();
-            setup.UseInMemoryStorage();
+            setup.UseProcessLocalInMemoryStorage();
         });
 
         using var provider = services.BuildServiceProvider();
@@ -754,6 +998,8 @@ public sealed class ForMessageRegistrationTests : TestBase
             setup.Queue.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>(
                 (ctx, consumer) =>
                 {
+                    StableConsumerTestContracts.ConfigureKnownScannedConsumer(ctx, consumer);
+
                     if (ctx.ConsumerType == typeof(OrderPlacedHandler))
                     {
                         consumer.Group("orders").Skip();
@@ -761,7 +1007,7 @@ public sealed class ForMessageRegistrationTests : TestBase
                 }
             );
             setup.UseInMemory();
-            setup.UseInMemoryStorage();
+            setup.UseProcessLocalInMemoryStorage();
         });
 
         using var provider = services.BuildServiceProvider();
@@ -788,6 +1034,8 @@ public sealed class ForMessageRegistrationTests : TestBase
             setup.Bus.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>(
                 (ctx, consumer) =>
                 {
+                    StableConsumerTestContracts.ConfigureKnownScannedConsumer(ctx, consumer);
+
                     if (ctx.ConsumerType == typeof(OrderPlacedHandler))
                     {
                         consumer.HandlerId("handler-1");
@@ -795,7 +1043,7 @@ public sealed class ForMessageRegistrationTests : TestBase
                 }
             );
             setup.UseInMemory();
-            setup.UseInMemoryStorage();
+            setup.UseProcessLocalInMemoryStorage();
         });
 
         using var provider = services.BuildServiceProvider();
@@ -819,15 +1067,19 @@ public sealed class ForMessageRegistrationTests : TestBase
         // when
         noArgServices.AddHeadlessMessaging(static setup =>
         {
-            setup.Bus.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>();
+            setup.Bus.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>(
+                StableConsumerTestContracts.ConfigureKnownScannedConsumer
+            );
             setup.UseInMemory();
-            setup.UseInMemoryStorage();
+            setup.UseProcessLocalInMemoryStorage();
         });
         callbackServices.AddHeadlessMessaging(static setup =>
         {
-            setup.Bus.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>(static (_, _) => { });
+            setup.Bus.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>(
+                StableConsumerTestContracts.ConfigureKnownScannedConsumer
+            );
             setup.UseInMemory();
-            setup.UseInMemoryStorage();
+            setup.UseProcessLocalInMemoryStorage();
         });
 
         using var noArgProvider = noArgServices.BuildServiceProvider();
@@ -857,11 +1109,19 @@ public sealed class ForMessageRegistrationTests : TestBase
         // when
         services.AddHeadlessMessaging(static setup =>
         {
-            setup.Bus.ForMessage<OrderPlaced>(message => message.Consumer<OrderPlacedHandler>());
-            setup.Bus.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>();
-            setup.Queue.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>();
+            setup.Bus.ForMessage<OrderPlaced>(message =>
+                message.Consumer<OrderPlacedHandler>(consumer =>
+                    consumer.StableContract("tests.registration.orders-primary")
+                )
+            );
+            setup.Bus.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>(
+                StableConsumerTestContracts.ConfigureKnownScannedConsumer
+            );
+            setup.Queue.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>(
+                StableConsumerTestContracts.ConfigureKnownScannedConsumer
+            );
             setup.UseInMemory();
-            setup.UseInMemoryStorage();
+            setup.UseProcessLocalInMemoryStorage();
         });
 
         using var provider = services.BuildServiceProvider();
@@ -887,10 +1147,16 @@ public sealed class ForMessageRegistrationTests : TestBase
         // when
         services.AddHeadlessMessaging(static setup =>
         {
-            setup.Bus.ForMessage<OrderPlaced>(message => message.Consumer<OrderPlacedHandler>());
+            setup.Bus.ForMessage<OrderPlaced>(message =>
+                message.Consumer<OrderPlacedHandler>(consumer =>
+                    consumer.StableContract("tests.registration.orders-primary")
+                )
+            );
             setup.Bus.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>(
                 (ctx, consumer) =>
                 {
+                    StableConsumerTestContracts.ConfigureKnownScannedConsumer(ctx, consumer);
+
                     if (ctx.ConsumerType == typeof(OrderPlacedHandler))
                     {
                         consumer.Group("ignored");
@@ -898,7 +1164,7 @@ public sealed class ForMessageRegistrationTests : TestBase
                 }
             );
             setup.UseInMemory();
-            setup.UseInMemoryStorage();
+            setup.UseProcessLocalInMemoryStorage();
         });
 
         using var provider = services.BuildServiceProvider();
@@ -925,6 +1191,8 @@ public sealed class ForMessageRegistrationTests : TestBase
                 setup.Bus.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>(
                     (ctx, consumer) =>
                     {
+                        StableConsumerTestContracts.ConfigureKnownScannedConsumer(ctx, consumer);
+
                         if (ctx.ConsumerType == typeof(OrderPlacedHandler))
                         {
                             consumer.Concurrency(0);
@@ -949,6 +1217,8 @@ public sealed class ForMessageRegistrationTests : TestBase
             setup.Bus.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>(
                 (ctx, consumer) =>
                 {
+                    StableConsumerTestContracts.ConfigureKnownScannedConsumer(ctx, consumer);
+
                     if (ctx.ConsumerType == typeof(OrderPlacedHandler))
                     {
                         consumer.Group("orders").WithCircuitBreaker(options => options.FailureThreshold = 3);
@@ -956,7 +1226,7 @@ public sealed class ForMessageRegistrationTests : TestBase
                 }
             );
             setup.UseInMemory();
-            setup.UseInMemoryStorage();
+            setup.UseProcessLocalInMemoryStorage();
         });
 
         using var provider = services.BuildServiceProvider();
@@ -980,6 +1250,8 @@ public sealed class ForMessageRegistrationTests : TestBase
             setup.Queue.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>(
                 (ctx, consumer) =>
                 {
+                    StableConsumerTestContracts.ConfigureKnownScannedConsumer(ctx, consumer);
+
                     if (ctx.ConsumerType == typeof(OrderPlacedHandler))
                     {
                         consumer.Group("orders").WithCircuitBreaker(options => options.FailureThreshold = 3);
@@ -987,7 +1259,7 @@ public sealed class ForMessageRegistrationTests : TestBase
                 }
             );
             setup.UseInMemory();
-            setup.UseInMemoryStorage();
+            setup.UseProcessLocalInMemoryStorage();
         });
 
         using var provider = services.BuildServiceProvider();
@@ -1013,6 +1285,8 @@ public sealed class ForMessageRegistrationTests : TestBase
                 setup.Bus.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>(
                     (ctx, consumer) =>
                     {
+                        StableConsumerTestContracts.ConfigureKnownScannedConsumer(ctx, consumer);
+
                         if (
                             ctx.ConsumerType == typeof(OrderPlacedHandler)
                             || ctx.ConsumerType == typeof(OrderPlacedAnalyticsHandler)
@@ -1023,7 +1297,7 @@ public sealed class ForMessageRegistrationTests : TestBase
                     }
                 );
                 setup.UseInMemory();
-                setup.UseInMemoryStorage();
+                setup.UseProcessLocalInMemoryStorage();
             });
             using var provider = services.BuildServiceProvider();
             provider.GetDrainedConsumerRegistry().GetAll();
@@ -1047,6 +1321,8 @@ public sealed class ForMessageRegistrationTests : TestBase
             setup.Queue.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>(
                 (ctx, consumer) =>
                 {
+                    StableConsumerTestContracts.ConfigureKnownScannedConsumer(ctx, consumer);
+
                     if (ctx.ConsumerType == typeof(OrderPlacedHandler))
                     {
                         consumer.Group("orders").Concurrency(2).HandlerId("handler-1");
@@ -1056,6 +1332,8 @@ public sealed class ForMessageRegistrationTests : TestBase
             setup.Queue.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>(
                 (ctx, consumer) =>
                 {
+                    StableConsumerTestContracts.ConfigureKnownScannedConsumer(ctx, consumer);
+
                     if (ctx.ConsumerType == typeof(OrderPlacedHandler))
                     {
                         consumer.Group("orders").Concurrency(2).HandlerId("handler-1");
@@ -1063,7 +1341,7 @@ public sealed class ForMessageRegistrationTests : TestBase
                 }
             );
             setup.UseInMemory();
-            setup.UseInMemoryStorage();
+            setup.UseProcessLocalInMemoryStorage();
         });
 
         using var provider = services.BuildServiceProvider();
@@ -1091,6 +1369,8 @@ public sealed class ForMessageRegistrationTests : TestBase
                 setup.Queue.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>(
                     (ctx, consumer) =>
                     {
+                        StableConsumerTestContracts.ConfigureKnownScannedConsumer(ctx, consumer);
+
                         if (ctx.ConsumerType == typeof(OrderPlacedHandler))
                         {
                             consumer.Group("orders").Concurrency(2);
@@ -1100,6 +1380,8 @@ public sealed class ForMessageRegistrationTests : TestBase
                 setup.Queue.ForConsumersFromAssemblyContaining<ForMessageRegistrationTests>(
                     (ctx, consumer) =>
                     {
+                        StableConsumerTestContracts.ConfigureKnownScannedConsumer(ctx, consumer);
+
                         if (ctx.ConsumerType == typeof(OrderPlacedHandler))
                         {
                             consumer.Group("orders").Concurrency(4);
@@ -1107,7 +1389,7 @@ public sealed class ForMessageRegistrationTests : TestBase
                     }
                 );
                 setup.UseInMemory();
-                setup.UseInMemoryStorage();
+                setup.UseProcessLocalInMemoryStorage();
             });
             using var provider = services.BuildServiceProvider();
             provider.GetDrainedConsumerRegistry().GetAll();
@@ -1128,10 +1410,14 @@ public sealed class ForMessageRegistrationTests : TestBase
         services.AddHeadlessMessaging(static setup =>
         {
             setup.Bus.ForMessage<OrderPlaced>(message =>
-                message.MessageName("orders.placed").Consumer<OrderPlacedHandler>()
+                message
+                    .Contract("orders.placed")
+                    .Consumer<OrderPlacedHandler>(consumer =>
+                        consumer.StableContract("tests.registration.orders-primary")
+                    )
             );
             setup.UseInMemory();
-            setup.UseInMemoryStorage();
+            setup.UseProcessLocalInMemoryStorage();
         });
 
         using var provider = services.BuildServiceProvider();

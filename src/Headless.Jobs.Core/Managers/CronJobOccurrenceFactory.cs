@@ -48,7 +48,7 @@ internal static class CronJobOccurrenceFactory
     )
         where TCronJob : CronJobEntity
     {
-        return new CronJobOccurrenceEntity<TCronJob>
+        var occurrence = new CronJobOccurrenceEntity<TCronJob>
         {
             Id = guidGenerator.Create(),
             CronJobId = definition.Id,
@@ -59,5 +59,7 @@ internal static class CronJobOccurrenceFactory
             CreatedAt = now,
             UpdatedAt = now,
         };
+        occurrence.SnapshotContract(definition);
+        return occurrence;
     }
 }

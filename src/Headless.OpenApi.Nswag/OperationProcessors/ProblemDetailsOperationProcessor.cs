@@ -19,11 +19,9 @@ namespace Headless.OpenApi.Nswag.OperationProcessors;
 /// </summary>
 /// <remarks>
 /// <para>
-/// On each invocation the processor first ensures that every Headless problem-details type
-/// (<c>HeadlessProblemDetails</c> and its specialisations) is registered in the document's shared
-/// <c>Definitions</c> so they are emitted as named <c>$ref</c> schemas rather than inlined copies.
-/// It then iterates the operation's existing responses and, for each recognised status code, sets the
-/// <c>application/problem+json</c> media type with a reference to the matching schema definition
+/// The processor iterates the operation's existing responses and, for each recognised status code,
+/// registers the matching Headless problem-details type in the document's shared <c>Definitions</c>.
+/// It then sets the <c>application/problem+json</c> media type with a reference to that schema definition
 /// and attaches a static example object.
 /// </para>
 /// <para>
@@ -35,7 +33,7 @@ namespace Headless.OpenApi.Nswag.OperationProcessors;
 public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
 {
     /// <summary>
-    /// Registers problem-details schemas in the document and attaches typed examples to error responses.
+    /// Registers the problem-details schemas used by the operation and attaches typed examples to its error responses.
     /// </summary>
     /// <param name="context">The NSwag operation processor context for the current operation.</param>
     /// <returns>Always <see langword="true"/> so that subsequent processors continue to run.</returns>
@@ -44,26 +42,12 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
     {
         Argument.IsNotNull(context);
 
-        // Create and register all schemas in document definitions to enable $ref usage
         var generator = new JsonSchemaGenerator(context.SchemaGenerator.Settings);
-
-        _RegisterSchema(context, generator, typeof(ValidationSeverity));
-        _RegisterSchema(context, generator, typeof(HeadlessProblemDetails));
-        _RegisterSchema(context, generator, typeof(ErrorDescriptor));
-        _RegisterSchema(context, generator, typeof(EntityNotFoundProblemDetails));
-        _RegisterSchema(context, generator, typeof(ConflictProblemDetails));
-        _RegisterSchema(context, generator, typeof(UnprocessableEntityProblemDetails));
-        _RegisterSchema(context, generator, typeof(BadRequestProblemDetails));
-        _RegisterSchema(context, generator, typeof(UnauthorizedProblemDetails));
-        _RegisterSchema(context, generator, typeof(ForbiddenProblemDetails));
-        _RegisterSchema(context, generator, typeof(TooManyRequestsProblemDetails));
-        _RegisterSchema(context, generator, typeof(PreconditionRequiredProblemDetails));
-
         var operation = context.OperationDescription.Operation;
 
         foreach (var response in operation.Responses)
         {
-            _SetExampleResponses(context, response.Key, response.Value);
+            _SetExampleResponses(context, generator, response.Key, response.Value);
         }
 
         return true;
@@ -78,62 +62,47 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         }
     }
 
-    private void _SetExampleResponses(OperationProcessorContext context, string statusCode, OpenApiResponse response)
+    private static void _SetExampleResponses(
+        OperationProcessorContext context,
+        JsonSchemaGenerator generator,
+        string statusCode,
+        OpenApiResponse response
+    )
     {
         switch (statusCode)
         {
             case OpenApiStatusCodes.BadRequest:
-                _SetDefaultAndExample(context, response, _Status400ProblemDetails, nameof(BadRequestProblemDetails));
+                _SetDefaultAndExample(context, generator, response, _Status400ProblemDetails);
                 break;
             case OpenApiStatusCodes.Unauthorized:
-                _SetDefaultAndExample(context, response, _Status401ProblemDetails, nameof(UnauthorizedProblemDetails));
+                _SetDefaultAndExample(context, generator, response, _Status401ProblemDetails);
                 break;
             case OpenApiStatusCodes.Forbidden:
-                _SetDefaultAndExample(context, response, _Status403ProblemDetails, nameof(ForbiddenProblemDetails));
+                _SetDefaultAndExample(context, generator, response, _Status403ProblemDetails);
                 break;
             case OpenApiStatusCodes.NotFound:
-                _SetDefaultAndExample(
-                    context,
-                    response,
-                    _Status404ProblemDetails,
-                    nameof(EntityNotFoundProblemDetails)
-                );
+                _SetDefaultAndExample(context, generator, response, _Status404ProblemDetails);
                 break;
             case OpenApiStatusCodes.Conflict:
-                _SetDefaultAndExample(context, response, _Status409ProblemDetails, nameof(ConflictProblemDetails));
+                _SetDefaultAndExample(context, generator, response, _Status409ProblemDetails);
                 break;
             case OpenApiStatusCodes.UnprocessableEntity:
-                _SetDefaultAndExample(
-                    context,
-                    response,
-                    _Status422ProblemDetails,
-                    nameof(UnprocessableEntityProblemDetails)
-                );
+                _SetDefaultAndExample(context, generator, response, _Status422ProblemDetails);
                 break;
             case OpenApiStatusCodes.TooManyRequests:
-                _SetDefaultAndExample(
-                    context,
-                    response,
-                    _Status429ProblemDetails,
-                    nameof(TooManyRequestsProblemDetails)
-                );
+                _SetDefaultAndExample(context, generator, response, _Status429ProblemDetails);
                 break;
             case OpenApiStatusCodes.PreconditionRequired:
-                _SetDefaultAndExample(
-                    context,
-                    response,
-                    _Status428ProblemDetails,
-                    nameof(PreconditionRequiredProblemDetails)
-                );
+                _SetDefaultAndExample(context, generator, response, _Status428ProblemDetails);
                 break;
         }
     }
 
     private static void _SetDefaultAndExample(
         OperationProcessorContext context,
+        JsonSchemaGenerator generator,
         OpenApiResponse response,
-        object problemDetails,
-        string schemaName
+        object problemDetails
     )
     {
         if (response.Content == null)
@@ -141,8 +110,10 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
             return; // Cannot set Content if null, so nothing to do
         }
 
-        // Create a proper reference schema pointing to the registered definition
-        var schemaReference = new JsonSchema { Reference = context.Document.Definitions[schemaName] };
+        var schemaType = problemDetails.GetType();
+        _RegisterSchema(context, generator, schemaType);
+
+        var schemaReference = new JsonSchema { Reference = context.Document.Definitions[schemaType.Name] };
 
         // Ensure ProblemJson content type exists with schema reference
         if (!response.Content.TryGetValue(ContentTypes.Applications.ProblemJson, out var problemJsonMediaType))

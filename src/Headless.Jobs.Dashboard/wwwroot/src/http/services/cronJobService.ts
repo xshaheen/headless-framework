@@ -54,8 +54,9 @@ const getCronJobsPaginated = () => {
 }
 
 const updateCronJob = () => {
+    const functionNamesStore = useFunctionNameStore();
     const baseHttp = useBaseHttpService<UpdateCronJobRequest, object>('single')
-    const requestAsync = async (id: string, request: UpdateCronJobRequest) => (await baseHttp.sendAsync("PUT", "cron-job/update", { bodyData: request, paramData: { id } }));
+    const requestAsync = async (id: string, request: UpdateCronJobRequest) => (await baseHttp.sendAsync("PUT", "cron-job/update", { bodyData: { ...request, contractVersion: functionNamesStore.getContractVersion(request.function) }, paramData: { id } }));
 
     return {
         ...baseHttp,
@@ -64,8 +65,9 @@ const updateCronJob = () => {
 }
 
 const addCronJob = () => {
+    const functionNamesStore = useFunctionNameStore();
     const baseHttp = useBaseHttpService<AddCronJobRequest, object>('single')
-    const requestAsync = async (request: AddCronJobRequest) => (await baseHttp.sendAsync("POST", "cron-job/add", { bodyData: request }));
+    const requestAsync = async (request: AddCronJobRequest) => (await baseHttp.sendAsync("POST", "cron-job/add", { bodyData: { ...request, contractVersion: functionNamesStore.getContractVersion(request.function) } }));
 
     return {
         ...baseHttp,

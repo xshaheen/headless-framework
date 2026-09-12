@@ -27,9 +27,16 @@ export const useFunctionNameStore = defineStore('functionNames', () => {
         return result;
     }
 
+    const getContractVersion = (functionName: string): string => {
+        const descriptor = data.value?.find(x => x.functionName === functionName);
+        if (!descriptor) throw new Error(`Function '${functionName}' is not registered on this host`);
+        return descriptor.contractVersion;
+    }
+
     return{
         loadData,
         data,
-        getNamespaceOrNull
+        getNamespaceOrNull,
+        getContractVersion
     }
 })

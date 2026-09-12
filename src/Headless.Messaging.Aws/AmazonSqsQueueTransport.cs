@@ -13,7 +13,6 @@ internal sealed class AmazonSqsQueueTransport(
     IOptions<AmazonSqsMessagingOptions> sqsOptionsAccessor
 ) : IQueueTransport
 {
-    private const int _MaxMessageAttributes = 10;
     private readonly ConcurrentDictionary<string, string> _queueUrlMaps = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _semaphore = new(1, 1);
     private IAmazonSQS? _sqsClient;
@@ -24,34 +23,17 @@ internal sealed class AmazonSqsQueueTransport(
     {
         try
         {
+            if (!message.Name.IsAwsFifoName())
+            {
+                Configuration.MessagingRoutingAffinityMapping.RejectUnsupported(message, "AWS standard destination");
+            }
+
+            var affinityKey = AwsRoutingAffinity.Mapping.ResolveKey(message);
             var queueName = AwsPhysicalAddress.QueueDestination(message.Name);
-            var queueUrl = await _GetOrCreateQueueUrlAsync(queueName, cancellationToken).ConfigureAwait(false);
             var body = message.Body.Length > 0 ? Encoding.UTF8.GetString(message.Body.Span) : string.Empty;
-            var attributes = new Dictionary<string, MessageAttributeValue>(
-                message.Headers.Count,
-                StringComparer.Ordinal
-            );
+            var attributes = SqsHeaderCodec.Encode(message);
 
-            foreach (var (key, value) in message.Headers)
-            {
-                if (value is not null)
-                {
-                    attributes[key] = new MessageAttributeValue { StringValue = value, DataType = "String" };
-                }
-            }
-
-            if (attributes.Count > _MaxMessageAttributes)
-            {
-                return OperateResult.Failed(
-                    new InvalidOperationException("AWS SQS supports at most 10 message attributes."),
-                    new OperateError
-                    {
-                        Code = "AWS_SQS_MESSAGE_ATTRIBUTES_LIMIT",
-                        Description = "AWS SQS supports at most 10 message attributes.",
-                    }
-                );
-            }
-
+            var queueUrl = await _GetOrCreateQueueUrlAsync(queueName, cancellationToken).ConfigureAwait(false);
             var request = new SendMessageRequest
             {
                 QueueUrl = queueUrl,
@@ -61,7 +43,7 @@ internal sealed class AmazonSqsQueueTransport(
 
             if (queueName.IsAwsFifoName())
             {
-                request.MessageGroupId = _ResolveMessageGroupId(message);
+                request.MessageGroupId = _ResolveMessageGroupId(message, affinityKey);
 
                 if (
                     message.Headers.TryGetValue(Headers.MessageId, out var messageId)
@@ -98,12 +80,9 @@ internal sealed class AmazonSqsQueueTransport(
         }
     }
 
-    private static string _ResolveMessageGroupId(TransportMessage message)
+    private static string _ResolveMessageGroupId(TransportMessage message, string? messageGroupId)
     {
-        if (
-            message.Headers.TryGetValue(AwsMessagingHeaders.MessageGroupId, out var messageGroupId)
-            && !string.IsNullOrWhiteSpace(messageGroupId)
-        )
+        if (!string.IsNullOrWhiteSpace(messageGroupId))
         {
             return messageGroupId;
         }

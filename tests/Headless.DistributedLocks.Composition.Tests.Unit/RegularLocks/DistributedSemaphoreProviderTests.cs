@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics.Metrics;
+using System.Threading.Channels;
 using Headless.Abstractions;
 using Headless.DistributedLocks;
 using Headless.DistributedLocks.InMemory;
@@ -107,7 +108,7 @@ public sealed class DistributedSemaphoreProviderTests : TestBase
                 Arg.Is<DistributedLockReleased>(message =>
                     message.Resource == resource && message.LeaseId == slot.LeaseId
                 ),
-                Arg.Is<PublishOptions?>(options => options!.DeliveryMode == DeliveryMode.TransportDirect),
+                Arg.Is<PublishOptions?>(options => options!.DeliveryMode == DeliveryMode.Direct),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -204,7 +205,8 @@ public sealed class DistributedSemaphoreProviderTests : TestBase
     public async Task should_retain_slot_beyond_ttl_when_auto_extend_mode()
     {
         // given — acquire with AutoExtend; each cadence tick renews the storage entry
-        var provider = _CreateProvider();
+        var timeProvider = new CadenceTimeProvider();
+        var provider = _CreateProvider(timeProvider: timeProvider);
         var semaphore = provider.CreateSemaphore(Faker.Random.AlphaNumeric(10), maxCount: 1);
         await using var slot = await semaphore.TryAcquireAsync(
             new DistributedLockAcquireOptions
@@ -216,15 +218,29 @@ public sealed class DistributedSemaphoreProviderTests : TestBase
         );
         slot.Should().NotBeNull();
 
-        // when — advance past TTL multiple cadence intervals; auto-extend should renew
+        // Wait for each scheduled tick so fake time cannot outrun the background renewal loop.
         for (var i = 0; i < 4; i++)
         {
-            _timeProvider.Advance(TimeSpan.FromSeconds(1));
-            await Task.Yield();
+            await timeProvider
+                .CadenceTicks.Reader.ReadAsync(AbortToken)
+                .AsTask()
+                .WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+            timeProvider.Advance(TimeSpan.FromSeconds(1));
         }
 
-        // then — LostToken NOT fired; slot is still valid
+        await timeProvider
+            .CadenceTicks.Reader.ReadAsync(AbortToken)
+            .AsTask()
+            .WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // then
+        slot!.RenewalCount.Should().Be(4);
         slot!.LostToken.IsCancellationRequested.Should().BeFalse();
+        await using var contender = await semaphore.TryAcquireAsync(
+            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero },
+            AbortToken
+        );
+        contender.Should().BeNull();
     }
 
     [Fact]
@@ -434,17 +450,39 @@ public sealed class DistributedSemaphoreProviderTests : TestBase
             .PublishAsync(Arg.Any<DistributedLockReleased>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>());
     }
 
-    private DistributedSemaphoreProvider _CreateProvider(DistributedLockOptions? options = null, IBus? bus = null)
+    private DistributedSemaphoreProvider _CreateProvider(
+        DistributedLockOptions? options = null,
+        IBus? bus = null,
+        FakeTimeProvider? timeProvider = null
+    )
     {
         _guidGenerator.Create().Returns(_ => Guid.NewGuid());
 
         return new DistributedSemaphoreProvider(
-            _storage,
+            timeProvider is null ? _storage : new InMemoryDistributedSemaphoreStorage(timeProvider),
             bus ?? Substitute.For<IBus>(),
             options ?? new DistributedLockOptions(),
             _guidGenerator,
-            _timeProvider,
+            timeProvider ?? _timeProvider,
             LoggerFactory.CreateLogger<DistributedSemaphoreProvider>()
         );
+    }
+
+    private sealed class CadenceTimeProvider : FakeTimeProvider
+    {
+        public Channel<bool> CadenceTicks { get; } = Channel.CreateUnbounded<bool>();
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            var timer = base.CreateTimer(callback, state, dueTime, period);
+
+            // In-memory probes complete synchronously; the one-second timer is the monitor cadence.
+            if (dueTime == TimeSpan.FromSeconds(1))
+            {
+                CadenceTicks.Writer.TryWrite(true);
+            }
+
+            return timer;
+        }
     }
 }

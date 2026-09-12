@@ -20,11 +20,11 @@ internal sealed class PulsarTransport(
         {
             cancellationToken.ThrowIfCancellationRequested();
 
+            var key = PulsarRoutingAffinity.Mapping.ResolveKey(message);
             var producer = await connectionFactory
                 .CreateProducerAsync(PulsarPhysicalAddress.Topic(lane, message.Name))
                 .ConfigureAwait(false);
             var headerDic = new Dictionary<string, string?>(message.Headers, StringComparer.Ordinal);
-            headerDic.TryGetValue(PulsarMessagingHeaders.PulsarKey, out var key);
             var pulsarMessage = producer.NewMessage(message.Body.ToArray(), key, headerDic);
             var messageId = await producer.SendAsync(pulsarMessage).ConfigureAwait(false);
 

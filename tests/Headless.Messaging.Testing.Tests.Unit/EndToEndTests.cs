@@ -99,6 +99,7 @@ public sealed class EndToEndTests : TestBase
             {
                 setup.UseInMemory();
                 setup.UseInMemoryStorage();
+                setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
                 configure(services, setup);
             });
         });
@@ -114,7 +115,11 @@ public sealed class EndToEndTests : TestBase
             (_, setup) =>
             {
                 setup.Bus.ForMessage<OrderCreatedEvent>(message =>
-                    message.MessageName("order-created").Consumer<OrderCreatedConsumer>()
+                    message
+                        .Contract("order-created")
+                        .Consumer<OrderCreatedConsumer>(consumer =>
+                            consumer.ConsumerIdentity("tests.messaging-testing.order-created")
+                        )
                 );
             }
         );
@@ -129,11 +134,11 @@ public sealed class EndToEndTests : TestBase
         recorded.MessageType.Should().Be<OrderCreatedEvent>();
         recorded.Message.Should().BeOfType<OrderCreatedEvent>().Which.OrderId.Should().Be("ORD-001");
         recorded.RequestedDeliveryMode.Should().Be(DeliveryMode.Auto);
-        recorded.ResolvedDeliveryMode.Should().Be(DeliveryMode.TransportDirect);
+        recorded.ResolvedDeliveryMode.Should().Be(DeliveryMode.Direct);
 
         harness.Published.Should().ContainSingle();
         harness.Published.Single().RequestedDeliveryMode.Should().Be(DeliveryMode.Auto);
-        harness.Published.Single().ResolvedDeliveryMode.Should().Be(DeliveryMode.TransportDirect);
+        harness.Published.Single().ResolvedDeliveryMode.Should().Be(DeliveryMode.Direct);
         harness.Consumed.Should().ContainSingle();
         harness.Faulted.Should().BeEmpty();
     }
@@ -148,7 +153,11 @@ public sealed class EndToEndTests : TestBase
             (_, setup) =>
             {
                 setup.Bus.ForMessage<OrderCreatedEvent>(message =>
-                    message.MessageName("order-created").Consumer<FailingConsumer>()
+                    message
+                        .Contract("order-created")
+                        .Consumer<FailingConsumer>(consumer =>
+                            consumer.ConsumerIdentity("tests.messaging-testing.failing")
+                        )
                 );
             }
         );
@@ -179,8 +188,13 @@ public sealed class EndToEndTests : TestBase
                 {
                     options.UseInMemory();
                     options.UseInMemoryStorage();
+                    options.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
                     options.Bus.ForMessage<OrderCreatedEvent>(message =>
-                        message.MessageName("order-created").Consumer<TestConsumer<OrderCreatedEvent>>()
+                        message
+                            .Contract("order-created")
+                            .Consumer<TestConsumer<OrderCreatedEvent>>(consumer =>
+                                consumer.ConsumerIdentity("tests.messaging-testing.test-consumer")
+                            )
                     );
                 });
             },
@@ -235,7 +249,11 @@ public sealed class EndToEndTests : TestBase
             (_, setup) =>
             {
                 setup.Bus.ForMessage<OrderCreatedEvent>(message =>
-                    message.MessageName("order-created").Consumer<OrderCreatedConsumer>()
+                    message
+                        .Contract("order-created")
+                        .Consumer<OrderCreatedConsumer>(consumer =>
+                            consumer.ConsumerIdentity("tests.messaging-testing.order-created")
+                        )
                 );
             }
         );
@@ -244,7 +262,11 @@ public sealed class EndToEndTests : TestBase
             (_, setup) =>
             {
                 setup.Bus.ForMessage<OrderCreatedEvent>(message =>
-                    message.MessageName("order-created").Consumer<OrderCreatedConsumer>()
+                    message
+                        .Contract("order-created")
+                        .Consumer<OrderCreatedConsumer>(consumer =>
+                            consumer.ConsumerIdentity("tests.messaging-testing.order-created")
+                        )
                 );
             }
         );
@@ -275,8 +297,13 @@ public sealed class EndToEndTests : TestBase
                 {
                     options.UseInMemory();
                     options.UseInMemoryStorage();
+                    options.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
                     options.Bus.ForMessage<OrderCreatedEvent>(message =>
-                        message.MessageName("order-created").Consumer<NotifyingConsumer>()
+                        message
+                            .Contract("order-created")
+                            .Consumer<NotifyingConsumer>(consumer =>
+                                consumer.ConsumerIdentity("tests.messaging-testing.notifying")
+                            )
                     );
                 });
             },
@@ -303,16 +330,21 @@ public sealed class EndToEndTests : TestBase
                 {
                     options.Bus.ForMessage<OrderCreatedEvent>(message =>
                         message
-                            .MessageName("order-created")
-                            .Consumer<BusLaneConsumer>(consumer => consumer.Group("bus-workers"))
+                            .Contract("order-created")
+                            .Consumer<BusLaneConsumer>(consumer =>
+                                consumer.ConsumerIdentity("tests.messaging-testing.bus-lane").Group("bus-workers")
+                            )
                     );
                     options.Queue.ForMessage<OrderCreatedEvent>(message =>
                         message
-                            .MessageName("order-created")
-                            .Consumer<QueueLaneConsumer>(consumer => consumer.Group("queue-workers"))
+                            .Contract("order-created")
+                            .Consumer<QueueLaneConsumer>(consumer =>
+                                consumer.ConsumerIdentity("tests.messaging-testing.queue-lane").Group("queue-workers")
+                            )
                     );
                     options.UseInMemory();
                     options.UseInMemoryStorage();
+                    options.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
                 });
             },
             AbortToken
@@ -339,7 +371,7 @@ public sealed class EndToEndTests : TestBase
         );
         await queue.EnqueueAsync(
             new OrderCreatedEvent("same-payload", 10m),
-            new EnqueueOptions { MessageName = "order-created" },
+            new QueueOptions { MessageName = "order-created" },
             AbortToken
         );
 
@@ -384,16 +416,25 @@ public sealed class EndToEndTests : TestBase
                 {
                     options.Bus.ForMessage<OrderCreatedEvent>(message =>
                         message
-                            .MessageName("durable-order-created")
-                            .Consumer<BusLaneConsumer>(consumer => consumer.Group("durable-bus"))
+                            .Contract("durable-order-created")
+                            .Consumer<BusLaneConsumer>(consumer =>
+                                consumer
+                                    .ConsumerIdentity("tests.messaging-testing.durable-bus-lane")
+                                    .Group("durable-bus")
+                            )
                     );
                     options.Queue.ForMessage<OrderCreatedEvent>(message =>
                         message
-                            .MessageName("durable-order-created")
-                            .Consumer<QueueLaneConsumer>(consumer => consumer.Group("durable-queue"))
+                            .Contract("durable-order-created")
+                            .Consumer<QueueLaneConsumer>(consumer =>
+                                consumer
+                                    .ConsumerIdentity("tests.messaging-testing.durable-queue-lane")
+                                    .Group("durable-queue")
+                            )
                     );
                     options.UseInMemory();
                     options.UseInMemoryStorage();
+                    options.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
                 });
             },
             AbortToken
@@ -411,7 +452,7 @@ public sealed class EndToEndTests : TestBase
         );
         await queue.EnqueueAsync(
             new OrderCreatedEvent("durable-queue", 20m),
-            new EnqueueOptions { MessageName = "durable-order-created", DeliveryMode = DeliveryMode.Durable },
+            new QueueOptions { MessageName = "durable-order-created", DeliveryMode = DeliveryMode.Durable },
             AbortToken
         );
 
@@ -458,6 +499,7 @@ public sealed class EndToEndTests : TestBase
                 services.AddHeadlessMessaging(options =>
                 {
                     options.UseInMemoryStorage();
+                    options.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
                     options.RegisterExtension(new QueueOnlyTransportExtension());
                 });
             },
@@ -469,7 +511,7 @@ public sealed class EndToEndTests : TestBase
         // when
         await queue.EnqueueAsync(
             new OrderCreatedEvent("queue-only", 10m),
-            new EnqueueOptions { MessageName = "queue-only-order-created" },
+            new QueueOptions { MessageName = "queue-only-order-created" },
             AbortToken
         );
 
@@ -550,8 +592,13 @@ public sealed class EndToEndTests : TestBase
         {
             options.UseInMemory();
             options.UseInMemoryStorage();
+            options.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
             options.Bus.ForMessage<OrderCreatedEvent>(message =>
-                message.MessageName("order-created").Consumer<OrderCreatedConsumer>()
+                message
+                    .Contract("order-created")
+                    .Consumer<OrderCreatedConsumer>(consumer =>
+                        consumer.ConsumerIdentity("tests.messaging-testing.order-created")
+                    )
             );
         });
 
@@ -589,7 +636,11 @@ public sealed class EndToEndTests : TestBase
             (services, options) =>
             {
                 options.Bus.ForMessage<OrderCreatedEvent>(message =>
-                    message.MessageName("order-created").Consumer<FailingConsumer>()
+                    message
+                        .Contract("order-created")
+                        .Consumer<FailingConsumer>(consumer =>
+                            consumer.ConsumerIdentity("tests.messaging-testing.failing")
+                        )
                 );
                 options.Options.RetryPolicy.MaxPersistedRetries = 0;
                 options.Options.RetryPolicy.RetryStrategy = new RetryStrategyOptions
@@ -637,7 +688,11 @@ public sealed class EndToEndTests : TestBase
             (services, options) =>
             {
                 options.Bus.ForMessage<OrderCreatedEvent>(message =>
-                    message.MessageName("order-created").Consumer<FailingConsumer>()
+                    message
+                        .Contract("order-created")
+                        .Consumer<FailingConsumer>(consumer =>
+                            consumer.ConsumerIdentity("tests.messaging-testing.failing")
+                        )
                 );
                 options.Options.RetryPolicy.MaxPersistedRetries = 0;
                 options.Options.RetryPolicy.RetryStrategy = new RetryStrategyOptions

@@ -23,6 +23,10 @@ internal sealed class HeadlessCommitCoordinationTransactionCoordinator : IHeadle
 
     private sealed class CommitScopeAdapter(ICommitScope scope) : IHeadlessTransactionScope
     {
+        private readonly CommitRetryGuard _retryGuard = scope.Coordinator.GetOrAdd(static _ => new CommitRetryGuard());
+
+        public bool IsRetryPrevented => _retryGuard.IsRetryPrevented;
+
         public void Dispose()
         {
             scope.Dispose();

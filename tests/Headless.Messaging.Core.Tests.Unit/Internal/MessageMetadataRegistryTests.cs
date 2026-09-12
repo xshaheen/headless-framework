@@ -16,7 +16,15 @@ public sealed class MessageMetadataRegistryTests
         // given
         var config = new FakeProviderConfig("value");
         var registry = new MessageMetadataRegistry([
-            new MessageRegistration(typeof(TestMessage), MessageLane.Bus, _MessageName, null, _Configs(config), []),
+            new MessageRegistration(
+                typeof(TestMessage),
+                MessageLane.Bus,
+                _MessageName,
+                CorrelationSelector: null,
+                ProviderConfigs: _Configs(config),
+                Consumers: [],
+                ContractVersion: "2"
+            ),
         ]);
 
         // when
@@ -24,7 +32,41 @@ public sealed class MessageMetadataRegistryTests
 
         // then
         found.Should().BeTrue();
+        metadata!.ContractVersion.Should().Be("2");
         metadata!.ProviderConfigs[typeof(FakeProviderConfig)].Should().Be(config);
+    }
+
+    [Fact]
+    public void should_reject_conflicting_contract_versions_for_the_same_route()
+    {
+        // given
+        var registrations = new[]
+        {
+            new MessageRegistration(
+                typeof(TestMessage),
+                MessageLane.Bus,
+                _MessageName,
+                null,
+                _Configs(new FakeProviderConfig("a")),
+                [],
+                "1"
+            ),
+            new MessageRegistration(
+                typeof(TestMessage),
+                MessageLane.Bus,
+                _MessageName,
+                null,
+                _Configs(new FakeProviderConfig("b")),
+                [],
+                "2"
+            ),
+        };
+
+        // when
+        var act = () => new MessageMetadataRegistry(registrations);
+
+        // then
+        act.Should().Throw<InvalidOperationException>().WithMessage("*exactly one contract version*");
     }
 
     [Fact]

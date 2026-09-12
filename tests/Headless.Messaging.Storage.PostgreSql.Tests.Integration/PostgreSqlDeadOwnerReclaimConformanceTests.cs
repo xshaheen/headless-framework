@@ -18,6 +18,7 @@ public sealed class PostgreSqlDeadOwnerReclaimConformanceTests(PostgreSqlTestFix
 {
     protected override void ConfigureStorage(MessagingSetupBuilder setup)
     {
+        setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
         setup.UsePostgreSql(fixture.ConnectionString);
     }
 

@@ -14,7 +14,7 @@ public sealed class JobsHelperTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void should_round_trip_typed_and_textual_legacy_payloads(bool compressed)
+    public void should_round_trip_typed_and_textual_payloads(bool compressed)
     {
         var options = _Options(compressed);
         var request = new SampleRequest("payload", 42);

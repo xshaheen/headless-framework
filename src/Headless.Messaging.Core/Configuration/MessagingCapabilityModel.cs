@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics;
 using Headless.Checks;
 using Headless.Messaging.Internal;
 
@@ -18,15 +19,29 @@ public interface IMessagingCapabilityModel
     /// <summary>Always true for a composed model.</summary>
     bool IsFrozen { get; }
 
+    /// <summary>The inbox tier declared by the configured storage provider, when one is present.</summary>
+    MessagingInboxCapabilityTier? InboxCapability { get; }
+
     /// <summary>Returns whether a role supports a semantic lane.</summary>
     bool Supports(MessageLane lane, MessagingProviderRole role);
 }
 
 internal interface IMessageCapabilityGate : IMessagingCapabilityModel
 {
-    void ValidateStartup(IEnumerable<MessageRouteKey> routes);
+    void ValidateStartup(
+        IEnumerable<MessageRouteKey> routes,
+        bool hasDurableConsumers,
+        MessagingInboxCapabilityTier requiredInboxCapability
+    );
 
     void EnsureDirectSupported(MessageLane lane);
+
+    void EnsureRoutingAffinitySupported(
+        string messageName,
+        MessageLane lane,
+        string key,
+        IDictionary<string, string?> headers
+    );
 
     void EnsureOutboxSupported(MessageLane lane, bool scheduled);
 }
@@ -40,12 +55,20 @@ public sealed class MessagingCapabilityModel : IMessagingCapabilityModel, IMessa
     // The model is immutable once composed, so the role/lane union is resolved here instead of scanning
     // the provider arrays with a capturing predicate on every publish gate check.
     private readonly FrozenSet<(MessagingProviderRole Role, MessageLane Lane)> _supportedRoleLanes;
+    private readonly FrozenDictionary<
+        (MessageLane Lane, string MessageName),
+        MessagingRoutingAffinityMapping
+    > _affinityRoutes;
 
     private MessagingCapabilityModel(
         MessagingProviderCapabilities[] declaredCapabilities,
         MessagingProviderCapabilities[] providers
     )
     {
+        _affinityRoutes = providers
+            .Where(static provider => provider.Role == MessagingProviderRole.Transport)
+            .SelectMany(static provider => provider.RoutingAffinityRoutes)
+            .ToFrozenDictionary(static route => (route.Lane, route.MessageName), static route => route.Mapping);
         DeclaredCapabilities = Array.AsReadOnly(declaredCapabilities);
         Providers = Array.AsReadOnly(providers);
         _providersByRole = providers
@@ -64,6 +87,12 @@ public sealed class MessagingCapabilityModel : IMessagingCapabilityModel, IMessa
 
     /// <inheritdoc />
     public bool IsFrozen => true;
+
+    /// <inheritdoc />
+    public MessagingInboxCapabilityTier? InboxCapability =>
+        _providersByRole.TryGetValue(MessagingProviderRole.Storage, out var storageProviders)
+            ? storageProviders.Single().InboxCapability
+            : null;
 
     /// <summary>Composes and freezes a deterministic capability model.</summary>
     public static MessagingCapabilityModel Compose(IEnumerable<MessagingProviderCapabilities> capabilities)
@@ -96,13 +125,23 @@ public sealed class MessagingCapabilityModel : IMessagingCapabilityModel, IMessa
     }
 
     /// <summary>Validates the frozen model against every registered semantic route.</summary>
-    internal void ValidateStartup(IEnumerable<MessageRouteKey> routes)
+    internal void ValidateStartup(
+        IEnumerable<MessageRouteKey> routes,
+        bool hasDurableConsumers = false,
+        MessagingInboxCapabilityTier requiredInboxCapability = MessagingInboxCapabilityTier.Transactional
+    )
     {
         Argument.IsNotNull(routes);
+        Argument.IsInEnum(requiredInboxCapability);
 
         var routeArray = routes.ToArray();
         _RequireRole(MessagingProviderRole.Transport, "Messaging requires a transport provider contribution.");
         _RequireRole(MessagingProviderRole.Storage, "Messaging requires exactly one storage provider contribution.");
+
+        if (hasDurableConsumers)
+        {
+            _EnsureInboxSupported(requiredInboxCapability);
+        }
 
         foreach (var route in routeArray)
         {
@@ -134,6 +173,67 @@ public sealed class MessagingCapabilityModel : IMessagingCapabilityModel, IMessa
                     + $"for logical name '{route.MessageName}'."
             );
         }
+    }
+
+    private void _EnsureInboxSupported(MessagingInboxCapabilityTier requiredInboxCapability)
+    {
+        var storage = _providersByRole[MessagingProviderRole.Storage].Single();
+        var available = storage.InboxCapability!.Value;
+
+        var isSupported = requiredInboxCapability switch
+        {
+            MessagingInboxCapabilityTier.ProcessLocal => available
+                is MessagingInboxCapabilityTier.ProcessLocal
+                    or MessagingInboxCapabilityTier.DurableDedupeOnly
+                    or MessagingInboxCapabilityTier.Transactional,
+            MessagingInboxCapabilityTier.DurableDedupeOnly => available
+                is MessagingInboxCapabilityTier.DurableDedupeOnly
+                    or MessagingInboxCapabilityTier.Transactional,
+            MessagingInboxCapabilityTier.Transactional => available is MessagingInboxCapabilityTier.Transactional,
+            _ => throw new UnreachableException(),
+        };
+
+        if (isSupported)
+        {
+            return;
+        }
+
+        throw new MessagingConfigurationException(
+            $"Durable consumers require the {requiredInboxCapability} inbox tier, but storage provider "
+                + $"'{storage.Provider}' declares {available}. Select {nameof(MessagingInboxCapabilityTier.DurableDedupeOnly)} "
+                + "explicitly when durable duplicate suppression without atomic application-state coordination is acceptable, "
+                + $"or select {nameof(MessagingInboxCapabilityTier.ProcessLocal)} explicitly for process-local development storage."
+        );
+    }
+
+    internal void ValidateRoutingAffinityStartup(IEnumerable<MessageMetadata> routes)
+    {
+        foreach (var metadata in routes.Where(static route => route.RequiresRoutingAffinity))
+        {
+            if (!_affinityRoutes.ContainsKey((metadata.Route.Lane, metadata.Route.MessageName)))
+            {
+                throw new MessagingConfigurationException(
+                    $"Routing affinity is required but unsupported for '{metadata.Route.MessageName}' ({metadata.Route.Lane})."
+                );
+            }
+        }
+    }
+
+    internal void EnsureRoutingAffinitySupported(
+        string messageName,
+        MessageLane lane,
+        string key,
+        IDictionary<string, string?> headers
+    )
+    {
+        if (!_affinityRoutes.TryGetValue((lane, messageName), out var mapping))
+        {
+            throw new MessagingConfigurationException(
+                $"Routing affinity is unsupported or unverifiable for '{messageName}' ({lane})."
+            );
+        }
+
+        mapping.Validate(key, headers);
     }
 
     /// <summary>Rejects a direct publish when the selected lane has no declared transport capability.</summary>
@@ -239,7 +339,12 @@ public sealed class MessagingCapabilityModel : IMessagingCapabilityModel, IMessa
         }
 
         providers.Add(
-            MessagingProviderCapabilities.Transport(providerNames[0], occupiedLanes.ToArray(), topologyValues[0])
+            MessagingProviderCapabilities.Transport(
+                providerNames[0],
+                occupiedLanes.ToArray(),
+                topologyValues[0],
+                contributions.SelectMany(static contribution => contribution.RoutingAffinityRoutes).ToArray()
+            )
         );
     }
 
@@ -279,9 +384,20 @@ public sealed class MessagingCapabilityModel : IMessagingCapabilityModel, IMessa
         Argument.IsInEnum(lane);
     }
 
-    void IMessageCapabilityGate.ValidateStartup(IEnumerable<MessageRouteKey> routes) => ValidateStartup(routes);
+    void IMessageCapabilityGate.ValidateStartup(
+        IEnumerable<MessageRouteKey> routes,
+        bool hasDurableConsumers,
+        MessagingInboxCapabilityTier requiredInboxCapability
+    ) => ValidateStartup(routes, hasDurableConsumers, requiredInboxCapability);
 
     void IMessageCapabilityGate.EnsureDirectSupported(MessageLane lane) => EnsureDirectSupported(lane);
+
+    void IMessageCapabilityGate.EnsureRoutingAffinitySupported(
+        string messageName,
+        MessageLane lane,
+        string key,
+        IDictionary<string, string?> headers
+    ) => EnsureRoutingAffinitySupported(messageName, lane, key, headers);
 
     void IMessageCapabilityGate.EnsureOutboxSupported(MessageLane lane, bool scheduled) =>
         EnsureOutboxSupported(lane, scheduled);

@@ -2,6 +2,7 @@ using Demo;
 using Demo.Controllers;
 using Headless.CommitCoordination;
 using Headless.Messaging;
+using Headless.Messaging.Configuration;
 using Headless.Messaging.Dashboard;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -18,11 +19,14 @@ builder.Services.AddDbContext<AppDbContext>(
 builder.Services.AddHeadlessMessaging(setup =>
 {
     setup.Queue.ForMessage<KafkaMessage>(message =>
-        message.MessageName("sample.kafka.postgrsql").Consumer<KafkaMessageConsumer>()
+        message
+            .Contract("sample.kafka.postgrsql")
+            .Consumer<KafkaMessageConsumer>(consumer => consumer.ConsumerIdentity("kafka-postgresql.message"))
     );
 
     //setup.UseEntityFramework<AppDbContext>();
     //docker run --name postgres -p 5432:5432 -e POSTGRES_PASSWORD=mysecretpassword -d postgres
+    setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
     setup.UsePostgreSql(AppConstants.DbConnectionString);
 
     /* //Run Kafka Docker Container (Powershell)

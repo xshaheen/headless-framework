@@ -66,7 +66,12 @@ internal sealed record CronOccurrenceRelationalMapping(
     string CreatedAt,
     string UpdatedAt,
     string RecoveredFromUtc,
-    string Disposition
+    string Disposition,
+    string Function,
+    string ContractVersion,
+    string Request,
+    string CorrelationId,
+    string CausationId
 )
 {
     /// <summary>
@@ -130,7 +135,12 @@ internal sealed record CronOccurrenceRelationalMapping(
             // R23: the native claim RETURNs/OUTPUTs this so a claimed row carries its recovery stamp out of the store
             // rather than trusting the caller to have supplied it.
             Column(nameof(CronJobOccurrenceEntity<>.RecoveredFromUtc)),
-            Column(nameof(CronJobOccurrenceEntity<>.Disposition))
+            Column(nameof(CronJobOccurrenceEntity<>.Disposition)),
+            Column(nameof(CronJobOccurrenceEntity<>.Function)),
+            Column(nameof(CronJobOccurrenceEntity<>.ContractVersion)),
+            Column(nameof(CronJobOccurrenceEntity<>.Request)),
+            Column(nameof(CronJobOccurrenceEntity<>.CorrelationId)),
+            Column(nameof(CronJobOccurrenceEntity<>.CausationId))
         );
     }
 }

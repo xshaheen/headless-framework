@@ -70,6 +70,34 @@ public sealed class ProviderCapabilityEndpointTests : TestBase
         capabilities[0].GetProperty("provider").GetString().Should().Be("Standalone Transport");
     }
 
+    [Theory]
+    [InlineData(MessagingInboxCapabilityTier.ProcessLocal)]
+    [InlineData(MessagingInboxCapabilityTier.DurableDedupeOnly)]
+    [InlineData(MessagingInboxCapabilityTier.Transactional)]
+    public async Task should_report_each_declared_inbox_tier(MessagingInboxCapabilityTier tier)
+    {
+        var storage = MessagingProviderCapabilities.Storage(
+            $"Storage {tier}",
+            [MessageLane.Bus, MessageLane.Queue],
+            supportsDelayedScheduling: true,
+            tier
+        );
+        await using var app = _CreateTestApp(storage);
+        await app.StartAsync(AbortToken);
+        using var client = app.GetTestClient();
+
+        var response = await client.GetAsync("/api/meta", AbortToken);
+
+        response.EnsureSuccessStatusCode();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(AbortToken));
+        document
+            .RootElement.GetProperty("providerCapabilities")[0]
+            .GetProperty("inboxCapability")
+            .GetString()
+            .Should()
+            .Be(tier.ToString("G"));
+    }
+
     private static WebApplication _CreateTestApp(
         MessagingProviderCapabilities first,
         MessagingProviderCapabilities? second = null,

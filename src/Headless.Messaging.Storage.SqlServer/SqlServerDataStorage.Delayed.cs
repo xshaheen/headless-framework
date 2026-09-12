@@ -27,7 +27,7 @@ internal sealed partial class SqlServerDataStorage
         var sql = $"""
             WITH DelayedCandidates AS (
                 SELECT TOP (@BatchSize) Id, Content, IntentType, Retries, InlineAttempts, Added, ExpiresAt
-                FROM {_publishedTable} WITH (UPDLOCK, READPAST)
+                FROM {_publishedTable} WITH (UPDLOCK, READPAST, READCOMMITTEDLOCK)
                 WHERE Version = @Version
                   AND IntentType IN (0, 1)
                   AND StatusName = @DelayedStatusName
@@ -36,7 +36,7 @@ internal sealed partial class SqlServerDataStorage
             ),
             QueuedCandidates AS (
                 SELECT TOP (@BatchSize) Id, Content, IntentType, Retries, InlineAttempts, Added, ExpiresAt
-                FROM {_publishedTable} WITH (UPDLOCK, READPAST)
+                FROM {_publishedTable} WITH (UPDLOCK, READPAST, READCOMMITTEDLOCK)
                 WHERE Version = @Version
                   AND IntentType IN (0, 1)
                   AND StatusName = @QueuedStatusName
@@ -65,7 +65,10 @@ internal sealed partial class SqlServerDataStorage
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        // A pooled session may retain Serializable from inbox admission; READPAST needs a compatible isolation level.
+        await using var transaction = await connection
+            .BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
+            .ConfigureAwait(false);
         var poisonMessages = new List<PoisonMessage>();
         var messageList = await connection
             .ExecuteReaderAsync(
@@ -141,7 +144,7 @@ internal sealed partial class SqlServerDataStorage
 
             WITH Candidates AS (
                 SELECT TOP (@BatchSize) Id
-                FROM {_publishedTable} WITH (UPDLOCK, READPAST, ROWLOCK)
+                FROM {_publishedTable} WITH (UPDLOCK, READPAST, READCOMMITTEDLOCK, ROWLOCK)
                 WHERE Version=@Version
                   AND IntentType IN (0, 1)
                   AND (LockedUntil IS NULL OR LockedUntil <= @ClaimNow)
@@ -198,7 +201,9 @@ internal sealed partial class SqlServerDataStorage
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection
+            .BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
+            .ConfigureAwait(false);
         var poisonMessages = new List<PoisonMessage>();
         var claimed = await connection
             .ExecuteReaderAsync(

@@ -52,6 +52,48 @@ public sealed class MessageSenderTests : TestBase
         );
     }
 
+    [Fact]
+    public async Task should_reject_stored_affinity_when_current_configuration_has_no_mapping_before_resolving_transport()
+    {
+        var transportFactoryCalls = 0;
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var storage = Substitute.For<IDataStorage>();
+        services.AddSingleton(storage);
+        services.AddSingleton<ISerializer>(new JsonUtf8Serializer(Options.Create(new MessagingOptions())));
+        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton(Options.Create(new MessagingOptions()));
+        services.AddSingleton<IMessageCapabilityGate>(
+            MessagingCapabilityModel.Compose([
+                MessagingProviderCapabilities.Transport("Kafka", [MessageLane.Queue], false),
+            ])
+        );
+        services.AddSingleton<IQueueTransport>(_ =>
+        {
+            transportFactoryCalls++;
+            return Substitute.For<IQueueTransport>();
+        });
+        await using var provider = services.BuildServiceProvider();
+        var stored = _CreateMediumMessage();
+        stored.Lane = MessageLane.Queue;
+        stored.Origin.Headers[Headers.RoutingAffinityKey] = "order-42";
+
+        var act = async () =>
+        {
+            var sender = new MessageSender(provider.GetRequiredService<ILogger<MessageSender>>(), provider);
+            await sender.SendAsync(stored);
+        };
+
+        await act.Should()
+            .ThrowAsync<MessagingConfigurationException>()
+            .WithMessage("*affinity*unsupported*unverifiable*");
+        transportFactoryCalls.Should().Be(0);
+        storage
+            .ReceivedCalls()
+            .Should()
+            .BeEmpty("the invalid stored key must reject before lease or attempt reservation");
+    }
+
     private static MessageSender _CreateSender(
         IDataStorage storage,
         ISerializer serializer,

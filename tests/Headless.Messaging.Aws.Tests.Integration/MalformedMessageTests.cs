@@ -16,6 +16,47 @@ namespace Tests;
 [Collection<LocalStackTestFixture>]
 public sealed class MalformedMessageTests(LocalStackTestFixture fixture) : TestBase
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task should_terminally_delete_invalid_queue_header_bags_across_restart(bool missingBag)
+    {
+        await using var session = await fixture.CreateConformanceSessionAsync(AbortToken);
+        using var sqsClient = _CreateSqsClient();
+        var queueUrl = (
+            await sqsClient.GetQueueUrlAsync(AwsPhysicalAddress.QueueDestination(session.Destination), AbortToken)
+        ).QueueUrl;
+        await session.StartAsync(cancellationToken: AbortToken);
+
+        await sqsClient.SendMessageAsync(
+            new SendMessageRequest
+            {
+                QueueUrl = queueUrl,
+                MessageBody = "queue-payload",
+                MessageAttributes = missingBag
+                    ? new Dictionary<string, MessageAttributeValue>(StringComparer.Ordinal)
+                    {
+                        [Headers.MessageId] = new() { DataType = "String", StringValue = "message-1" },
+                        [Headers.MessageName] = new() { DataType = "String", StringValue = session.Destination },
+                    }
+                    : new Dictionary<string, MessageAttributeValue>(StringComparer.Ordinal)
+                    {
+                        ["headless-aws-headers-v1"] = new() { DataType = "String", StringValue = "{invalid" },
+                    },
+            },
+            AbortToken
+        );
+
+        (await session.RemainsEmptyAsync(session.NoRedeliveryWindow, AbortToken)).Should().BeTrue();
+        (await _GetPendingMessageCountAsync(sqsClient, queueUrl)).Should().Be(0);
+        await session.StopAsync(TimeSpan.FromSeconds(10));
+
+        await using var replacement = await session.CreateReplacementAsync(AbortToken);
+        await replacement.StartAsync(cancellationToken: AbortToken);
+        (await replacement.RemainsEmptyAsync(replacement.NoRedeliveryWindow, AbortToken)).Should().BeTrue();
+        (await _GetPendingMessageCountAsync(sqsClient, queueUrl)).Should().Be(0);
+    }
+
     [Fact]
     public async Task should_reject_message_with_invalid_json()
     {

@@ -17,13 +17,17 @@ namespace Tests.MultiTenancy;
 /// validators (isolated strict-mode warning, propagation-null-current-tenant error, options-clobber error).
 /// </summary>
 [Collection<JobsHelperCollection>]
-public sealed class SetupJobsTenancyTests : TestBase, IDisposable
+public sealed class SetupJobsTenancyTests : TestBase
 {
     // AddHeadlessJobs (used by the real-host propagation test) freezes the process-global discovery registry;
     // re-arm it around each test so nothing leaks into the sibling Jobs tests in this collection.
     public SetupJobsTenancyTests() => JobFunctionProvider.ResetForTests(discoveryComplete: false);
 
-    public void Dispose() => JobFunctionProvider.ResetForTests();
+    protected override ValueTask DisposeAsyncCore()
+    {
+        JobFunctionProvider.ResetForTests();
+        return base.DisposeAsyncCore();
+    }
 
     [Fact]
     public void propagate_tenant_records_propagating_posture_and_enables_the_option()

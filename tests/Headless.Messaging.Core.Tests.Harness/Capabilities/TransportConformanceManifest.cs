@@ -9,6 +9,7 @@ namespace Tests.Capabilities;
 [PublicAPI]
 public enum TransportConformanceScenario
 {
+    RoutingAffinityMappingOrRejection,
     QueueRoundTrip,
     BusRoundTrip,
     HeaderRoundTrip,
@@ -26,7 +27,6 @@ public enum TransportConformanceScenario
     SameNameLaneIsolation,
     StartupRejectionBeforeSideEffects,
     MalformedEnvelopeTerminalSettlement,
-    LegacyCutoverRecovery,
 }
 
 /// <summary>
@@ -208,6 +208,7 @@ public static class TransportConformanceManifest
 {
     private static readonly TransportConformanceScenario[] _MandatoryBaselineScenarios =
     [
+        TransportConformanceScenario.RoutingAffinityMappingOrRejection,
         TransportConformanceScenario.QueueRoundTrip,
         TransportConformanceScenario.HeaderRoundTrip,
         TransportConformanceScenario.CommitSettlement,
@@ -219,6 +220,10 @@ public static class TransportConformanceManifest
         {
             ["NATS"] = TransportConformanceProfile
                 .CreateDisabled("NATS")
+                .WithScenario(
+                    TransportConformanceScenario.RoutingAffinityMappingOrRejection,
+                    ConformanceSupport.Supported
+                )
                 .WithRuntimeCapabilities(
                     "NATS JetStream",
                     supportsBus: true,
@@ -242,10 +247,13 @@ public static class TransportConformanceManifest
                     TransportConformanceScenario.MalformedEnvelopeTerminalSettlement,
                     ConformanceSupport.Supported
                 )
-                .WithScenario(TransportConformanceScenario.LegacyCutoverRecovery, ConformanceSupport.Supported)
                 .EnableRealBrokerLeaf(),
             ["RabbitMQ"] = TransportConformanceProfile
                 .CreateDisabled("RabbitMQ")
+                .WithScenario(
+                    TransportConformanceScenario.RoutingAffinityMappingOrRejection,
+                    ConformanceSupport.Supported
+                )
                 .WithRuntimeCapabilities(
                     "RabbitMQ",
                     supportsBus: true,
@@ -269,10 +277,13 @@ public static class TransportConformanceManifest
                     TransportConformanceScenario.MalformedEnvelopeTerminalSettlement,
                     ConformanceSupport.Supported
                 )
-                .WithScenario(TransportConformanceScenario.LegacyCutoverRecovery, ConformanceSupport.Supported)
                 .EnableRealBrokerLeaf(),
             ["AWS/LocalStack"] = TransportConformanceProfile
                 .CreateDisabled("AWS/LocalStack")
+                .WithScenario(
+                    TransportConformanceScenario.RoutingAffinityMappingOrRejection,
+                    ConformanceSupport.Supported
+                )
                 .WithRuntimeCapabilities(
                     "Amazon SQS",
                     supportsBus: true,
@@ -303,6 +314,10 @@ public static class TransportConformanceManifest
                 .EnableRealBrokerLeaf(),
             ["Kafka"] = TransportConformanceProfile
                 .CreateDisabled("Kafka")
+                .WithScenario(
+                    TransportConformanceScenario.RoutingAffinityMappingOrRejection,
+                    ConformanceSupport.Supported
+                )
                 .WithRuntimeCapabilities(
                     "Kafka",
                     supportsBus: false,
@@ -344,10 +359,6 @@ public static class TransportConformanceManifest
                     TransportConformanceScenario.MalformedEnvelopeTerminalSettlement,
                     ConformanceSupport.Supported
                 )
-                .WithScenario(
-                    TransportConformanceScenario.LegacyCutoverRecovery,
-                    ConformanceSupport.NotApplicable("Kafka physical topology does not change in this release.")
-                )
                 .WithScenario(TransportConformanceScenario.HeaderRoundTrip, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.CommitSettlement, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.RejectRedelivery, ConformanceSupport.Supported)
@@ -356,6 +367,10 @@ public static class TransportConformanceManifest
                 .EnableRealBrokerLeaf(),
             ["Pulsar"] = TransportConformanceProfile
                 .CreateDisabled("Pulsar")
+                .WithScenario(
+                    TransportConformanceScenario.RoutingAffinityMappingOrRejection,
+                    ConformanceSupport.Supported
+                )
                 .WithRuntimeCapabilities(
                     "Apache Pulsar",
                     supportsBus: true,
@@ -378,10 +393,13 @@ public static class TransportConformanceManifest
                     TransportConformanceScenario.MalformedEnvelopeTerminalSettlement,
                     ConformanceSupport.Supported
                 )
-                .WithScenario(TransportConformanceScenario.LegacyCutoverRecovery, ConformanceSupport.Supported)
                 .EnableRealBrokerLeaf(),
             ["Azure Service Bus"] = TransportConformanceProfile
                 .CreateDisabled("Azure Service Bus")
+                .WithScenario(
+                    TransportConformanceScenario.RoutingAffinityMappingOrRejection,
+                    ConformanceSupport.Supported
+                )
                 .WithRuntimeCapabilities(
                     "Azure Service Bus",
                     supportsBus: true,
@@ -389,12 +407,6 @@ public static class TransportConformanceManifest
                     supportsIndependentLaneTopology: true
                 )
                 .WithMalformedEnvelopeBound("Service Bus dead-letter settlement", 1, TimeSpan.FromSeconds(10))
-                .WithScenario(
-                    TransportConformanceScenario.LegacyCutoverRecovery,
-                    ConformanceSupport.NotApplicable(
-                        "Azure Service Bus physical topology does not change in this release."
-                    )
-                )
                 .WithScenario(TransportConformanceScenario.QueueRoundTrip, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BusRoundTrip, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.HeaderRoundTrip, ConformanceSupport.Supported)
@@ -409,6 +421,10 @@ public static class TransportConformanceManifest
                 .EnableRealBrokerLeaf(),
             ["InMemory"] = TransportConformanceProfile
                 .CreateDisabled("InMemory")
+                .WithScenario(
+                    TransportConformanceScenario.RoutingAffinityMappingOrRejection,
+                    ConformanceSupport.Supported
+                )
                 .WithRuntimeCapabilities(
                     "InMemory",
                     supportsBus: true,
@@ -432,13 +448,13 @@ public static class TransportConformanceManifest
                     ConformanceSupport.NotApplicable(
                         "InMemory transports TransportMessage instances directly and has no transport envelope to parse."
                     )
-                )
-                .WithScenario(
-                    TransportConformanceScenario.LegacyCutoverRecovery,
-                    ConformanceSupport.NotApplicable("InMemory has no durable broker topology to migrate.")
                 ),
             ["Redis"] = TransportConformanceProfile
                 .CreateDisabled("Redis")
+                .WithScenario(
+                    TransportConformanceScenario.RoutingAffinityMappingOrRejection,
+                    ConformanceSupport.Supported
+                )
                 .WithRuntimeCapabilities(
                     "Redis",
                     supportsBus: true,
@@ -461,7 +477,6 @@ public static class TransportConformanceManifest
                     TransportConformanceScenario.MalformedEnvelopeTerminalSettlement,
                     ConformanceSupport.Supported
                 )
-                .WithScenario(TransportConformanceScenario.LegacyCutoverRecovery, ConformanceSupport.Supported)
                 .EnableRealBrokerLeaf(),
         }.ToFrozenDictionary(StringComparer.Ordinal);
 

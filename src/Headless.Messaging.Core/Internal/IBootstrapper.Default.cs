@@ -344,7 +344,13 @@ internal sealed class Bootstrapper(
 
         _DrainPendingMessageRegistrations();
         _CheckMessageNameCollisions();
-        serviceProvider.GetRequiredService<IMessageCapabilityGate>().ValidateStartup(_GetRegisteredRoutes());
+        serviceProvider
+            .GetRequiredService<MessagingCapabilityModel>()
+            .ValidateRoutingAffinityStartup(serviceProvider.GetRequiredService<IMessageMetadataRegistry>().GetAll());
+        var hasDurableConsumers = serviceProvider.GetRequiredService<ConsumerRegistry>().GetAll().Count > 0;
+        serviceProvider
+            .GetRequiredService<IMessageCapabilityGate>()
+            .ValidateStartup(_GetRegisteredRoutes(), hasDurableConsumers, options.Value.RequiredInboxCapability);
     }
 
     private HashSet<MessageRouteKey> _GetRegisteredRoutes()

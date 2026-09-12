@@ -94,7 +94,8 @@ public static class SetupPostgreSqlMessaging
                 MessagingProviderCapabilities.Storage(
                     "PostgreSql",
                     [MessageLane.Bus, MessageLane.Queue],
-                    supportsDelayedScheduling: true
+                    supportsDelayedScheduling: true,
+                    inboxCapability: MessagingInboxCapabilityTier.DurableDedupeOnly
                 )
             );
             configureOptions(services);

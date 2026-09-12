@@ -153,7 +153,7 @@ internal sealed partial class CronScheduleCache(TimeZoneInfo timeZoneInfo)
         // The instant that ended the walk, whether by falling past storeUtcNow or by exhausting the expression. Both
         // the saturation probe and the caller's next projection want exactly this value, and all three used to compute
         // it separately.
-        DateTime? nextAfterPending = null;
+        DateTime? nextAfterPending;
 
         while (true)
         {

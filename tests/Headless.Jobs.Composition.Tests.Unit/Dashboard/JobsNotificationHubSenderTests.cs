@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using System.Text.Json;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Hubs;
 using Headless.Jobs.Models;
@@ -13,6 +14,52 @@ namespace Tests.Dashboard;
 
 public sealed class JobsNotificationHubSenderTests : TestBase
 {
+    [Fact]
+    public async Task live_occurrence_payload_preserves_contract_lineage_separately_from_retry_count()
+    {
+        var hubContext = Substitute.For<IHubContext<JobsNotificationHub>>();
+        var clients = Substitute.For<IHubClients>();
+        var group = Substitute.For<IClientProxy>();
+        var parentId = Guid.NewGuid();
+        hubContext.Clients.Returns(clients);
+        clients.Group(parentId.ToString()).Returns(group);
+        JsonElement payload = default;
+        group
+            .SendCoreAsync(
+                "UpdateCronOccurrenceNotification",
+                Arg.Do<object?[]>(args => payload = JsonSerializer.SerializeToElement(args[0])),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(Task.CompletedTask);
+        using var sender = new JobsNotificationHubSender(
+            hubContext,
+            new CapturingLogger<JobsNotificationHubSender>(),
+            new FakeTimeProvider()
+        );
+        var state = new JobExecutionState
+        {
+            JobId = Guid.NewGuid(),
+            ParentId = parentId,
+            FunctionName = "snapshot.name",
+            ContractVersion = "v1",
+            CorrelationId = "business-root",
+            CausationId = "direct-cause",
+            TenantId = null,
+            RetryCount = 7,
+        };
+
+        await sender.UpdateCronOccurrenceFromExecutionState<CronJobEntity>(state);
+
+        payload.GetProperty("function").GetString().Should().Be("snapshot.name");
+        payload.GetProperty("contractVersion").GetString().Should().Be("v1");
+        payload.GetProperty("correlationId").GetString().Should().Be("business-root");
+        payload.GetProperty("causationId").GetString().Should().Be("direct-cause");
+        payload.GetProperty("tenantId").ValueKind.Should().Be(JsonValueKind.Null);
+        payload.GetProperty("retryCount").GetInt32().Should().Be(7);
+        payload.GetProperty("id").GetGuid().Should().Be(state.JobId);
+        payload.TryGetProperty("generation", out _).Should().BeFalse();
+    }
+
     [Fact]
     public async Task should_log_fire_and_forget_signalr_send_failures()
     {

@@ -263,6 +263,10 @@ internal sealed class JobsExecutionTaskHandler
         var jobFunctionContext = new JobFunctionContext
         {
             FunctionName = context.FunctionName,
+            ContractVersion = context.ContractVersion,
+            CorrelationId = context.CorrelationId,
+            CausationId = context.CausationId,
+            TenantId = context.TenantId,
             Id = context.JobId,
             Type = context.Type,
             IsDue = isDue,
@@ -441,6 +445,39 @@ internal sealed class JobsExecutionTaskHandler
             // previously reached a null delegate and retried the NullReferenceException through the whole budget
             // while holding a worker slot. Release the row instead of failing it: a node that HAS the
             // registration can claim and run it — a local registry gap must not poison the job.
+            if (
+                _functionRegistry.Descriptors.TryGetValue(context.FunctionName, out var registeredContract)
+                && !string.Equals(context.ContractVersion, registeredContract.ContractVersion, StringComparison.Ordinal)
+            )
+            {
+                context.ContractVersionError =
+                    $"Unsupported stored Jobs contract '{context.FunctionName}' version '{context.ContractVersion}'; this node registers '{registeredContract.ContractVersion}'. Request was not deserialized.";
+                context.CachedDelegate = null!;
+            }
+
+            if (context.ContractVersionError is not null)
+            {
+                if (!await beginCompletionAsync().ConfigureAwait(false))
+                {
+                    return;
+                }
+
+                // Registry versions can differ during a rolling deploy. Preserve the stored intent and retry budget
+                // so a compatible node can execute; a version absent from every node requires operator action.
+                context.SetProperty(x => x.Status, JobStatus.Idle).SetProperty(x => x.ReleaseLock, value: true);
+                _logger.LogJobContractVersionNotRegisteredOnNode(context.JobId, context.ContractVersionError);
+                jobActivity?.SetTag("headless.job.contract_version_error", context.ContractVersionError);
+                var versionReleaseAffected = await _internalJobsManager
+                    .UpdateTickerAsync(context, CancellationToken.None)
+                    .ConfigureAwait(false);
+                if (versionReleaseAffected == 0)
+                {
+                    context.LeaseLost = true;
+                }
+                context.ResetUpdateProps();
+                return;
+            }
+
             if (context.CachedDelegate is null)
             {
                 if (!await beginCompletionAsync().ConfigureAwait(false))
@@ -534,6 +571,7 @@ internal sealed class JobsExecutionTaskHandler
                             stopWatch.Start();
                             await using var scope = _serviceProvider.CreateAsyncScope();
                             jobFunctionContext.SetServiceScope(scope);
+                            using var causalScope = JobCausalContext.Enter(jobFunctionContext);
                             if (_functionRegistry.Descriptors.TryGetValue(context.FunctionName, out var descriptor))
                             {
                                 Task terminal(CancellationToken token) =>
@@ -1459,4 +1497,16 @@ internal static partial class JobsExecutionTaskHandlerLog
             + "function (AddJobsDiscovery), or expect claim churn until one does."
     )]
     public static partial void LogJobFunctionNotRegisteredOnNode(this ILogger logger, Guid jobId, string function);
+
+    [LoggerMessage(
+        EventId = 3115,
+        EventName = "JobContractVersionNotRegisteredOnNode",
+        Level = LogLevel.Error,
+        Message = "Job {JobId} cannot execute on this node; releasing it for a compatible node. {ContractVersionError}"
+    )]
+    public static partial void LogJobContractVersionNotRegisteredOnNode(
+        this ILogger logger,
+        Guid jobId,
+        string contractVersionError
+    );
 }

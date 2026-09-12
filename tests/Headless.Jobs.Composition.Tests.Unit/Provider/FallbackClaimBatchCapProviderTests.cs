@@ -116,6 +116,17 @@ public sealed class FallbackClaimBatchCapProviderTests : TestBase
             .Range(0, 101)
             .Select(i => _FallbackCronOccurrence(baseTime.AddSeconds(i)))
             .ToArray();
+        await provider.InsertCronJobsAsync(
+            occurrences
+                .Select(x => new FakeCronJob
+                {
+                    Id = x.CronJobId,
+                    Function = "fn",
+                    Expression = "* * * * *",
+                })
+                .ToArray(),
+            AbortToken
+        );
         await provider.InsertCronJobOccurrencesAsync(occurrences, AbortToken);
 
         var oldestFirst = occurrences.OrderBy(x => x.ExecutionTime).ThenBy(x => x.Id).ToArray();

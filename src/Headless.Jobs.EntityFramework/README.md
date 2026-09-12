@@ -8,6 +8,8 @@ Provides persistence of time jobs and cron occurrences across restarts and acros
 
 ## Key Features
 
+- **Durable contract tuples**: time jobs and cron definitions map required bounded `Function`/`ContractVersion` columns; occurrences additionally persist their own function, version, request bytes, correlation, causation, and nullable tenant. Newly materialized occurrences copy the current definition tuple while holding its write lock; retries and restart reads use the occurrence row. Runtime write converters reject invalid identities.
+- **Application-owned schema**: initialize the Jobs database from the current EF model before starting workers or definition writers. Required bounded contract columns, occurrence-owned tuples, constraints, and indexes are part of that initial schema. Library mappings never mutate the schema automatically.
 - **Durable storage**: persists `TimeJobEntity`, `CronJobEntity`, and `CronJobOccurrenceEntity` in EF Core-mapped tables (default schema: `jobs`).
 - **`UseEntityFramework(ef => …)`**: the EF registration extension on `JobsOptionsBuilder`.
 - **`UseJobsDbContext<TDbContext>(dbOptions, schema?)`**: registers a dedicated `JobsDbContext` with configurable schema.
@@ -38,9 +40,9 @@ The scheduler's due-work peek (`GetEarliestTimeJobsAsync`) runs both of its read
 
 Deleting a time job deletes its whole descendant chain. The parent/child foreign key is deliberately non-cascading, so both the in-memory and EF providers resolve the subtree explicitly and delete it deepest-first. On the EF path, discovery and deletion share one read-committed transaction. A foreign-key violation, deadlock, serialization failure, or driver-reported transient error retries the complete scope with fresh discovery up to three times, using jittered exponential backoff. Exhausting those retries leaves the tree intact and is surfaced by `ITimeJobManager` as a failed `JobResult`; caller cancellation is wrapped the same way and is never retried. A commit failure is also never retried because its outcome is in doubt; reissuing the delete safely resolves that uncertainty and returns zero rows if the first commit succeeded. The returned count includes every descendant removed by the attempt that committed. Deleting a non-root node removes only that node's subtree and leaves its ancestors intact.
 
-The occurrence table carries the persisted `Disposition` column that `CronOccurrenceAccounting` reads as the sole input to the occupied-instant rule. Its migration backfills existing rows to `Accounted`, and its `Down` refuses while any non-`Accounted` value exists — dropping the column would collapse an owed replacement fire into a permanently suppressed one.
+The occurrence table carries the persisted `Disposition` column that `CronOccurrenceAccounting` reads as the sole input to the occupied-instant rule. Fresh occurrence rows default to `Accounted`; definition reconciliation explicitly marks a retired occurrence `ReplacementOwed` when its fire is still owed.
 
-Cron materialization uses a read-committed transaction whose first statement is the fenced definition update. That write lock is the per-definition mutex held through occurrence-key arbitration and commit, so concurrent nodes converge on one occurrence without serializable-transaction aborts. Quiesce old scheduler binaries before migration because only providers implementing the new SPI participate in this mutex.
+Cron materialization uses a read-committed transaction whose first statement is the fenced definition update. That write lock is the per-definition mutex held through occurrence-key arbitration and commit, so concurrent nodes converge on one occurrence without serializable-transaction aborts. Every materialization writer must participate in this mutex.
 
 The `JobsDbContext<TTimeJob, TCronJob>` constructor must be `public` for the EF pool to resolve it at startup. Validation fails fast at DI build time.
 
@@ -110,6 +112,16 @@ builder
         ef.SetSchema("background"); // default: "jobs"
     });
 ```
+
+### Consumer-managed Jobs models
+
+`UseApplicationDbContext<TContext>(ConfigurationType.IgnoreModelCustomizer)` preserves the application's model ownership. Keyed operations require explicit ordinal collations on the time-job `Function`, `TenantId`, and `BusinessKey` columns: PostgreSQL `C` or SQL Server `Latin1_General_100_BIN2`. Pass that value as `contractCollation` to `TimeJobConfigurations<TTimeJob>` in `OnModelCreating`, or configure the matching model-default collation. After applying Jobs configurations and all consumer table/column mappings, call `modelBuilder.FinalizeJobsModel<TTimeJob>(this)` at the end of `OnModelCreating`; it builds keyed indexes and check constraints using the final names and provider SQL syntax. The built-in Jobs model customizer performs this step automatically. Missing finalization or missing/different collations reject keyed scheduling and cancellation; ordinary unkeyed operations remain available. Initialize the database from that same model; the provider never changes the consumer schema. See the [keyed scheduling storage guide](../../docs/solutions/guides/jobs-keyed-scheduling.md) for the complete configuration example and storage requirements.
+
+Ordinary adds and updates also reject a child whose persisted parent reference targets any retained keyed generation, including inputs materialized or rebound through consumer EF APIs and coordinated writes. The row and parent checks share transaction-owned run locks with keyed insertion and replacement.
+
+Key and run locks use one database command per acquisition call. Bulk operations retain every guarded run and parent ID, deduplicate them, and acquire them in sorted order. Each call has one 30-second contention budget for the complete batch, with a 60-second command timeout. Contention raises `TimeoutException` without changing the caller's lock-timeout policy or aborting its transaction. Any locks already acquired remain owned by that transaction until commit or rollback.
+
+Standalone keyed schedule, replacement, and cancellation run their entire transaction through the configured EF execution strategy. Failures before commit can retry with a fresh context and scheduling candidate. Once commit starts, a failure propagates without automatic replay because the commit outcome may be unknown; inspect the retained key and generation before deciding how to recover. Coordinated operations remain under the caller's transaction and retry ownership.
 
 ## Dependencies
 

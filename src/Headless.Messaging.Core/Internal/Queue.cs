@@ -42,11 +42,12 @@ internal sealed class Queue : IQueue
         );
     }
 
-    public Task EnqueueAsync<T>(
-        T? contentObj,
-        EnqueueOptions? options = null,
-        CancellationToken cancellationToken = default
-    )
+    public Task EnqueueAsync<T>(T? contentObj, CancellationToken cancellationToken = default)
+    {
+        return EnqueueAsync(contentObj, options: null, cancellationToken);
+    }
+
+    public Task EnqueueAsync<T>(T? contentObj, QueueOptions? options, CancellationToken cancellationToken = default)
     {
         return _publisher.PublishAsync(MessageLane.Queue, contentObj, options, cancellationToken);
     }

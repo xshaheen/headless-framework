@@ -25,7 +25,7 @@ namespace Tests;
 public sealed class PostgreSqlJobsCoordinationFixture
     : HeadlessPostgreSqlFixture,
         ICollectionFixture<PostgreSqlJobsCoordinationFixture>,
-        IJobsCoordinationFixture
+        IJobsApplicationConfigurationFixture
 {
     public string ConnectionString => Container.GetConnectionString();
 
@@ -45,6 +45,7 @@ public sealed class PostgreSqlJobsCoordinationFixture
 
     public string ResetSql =>
         "DROP SCHEMA IF EXISTS jobs CASCADE;"
+        + "DROP SCHEMA IF EXISTS consumer_jobs CASCADE;"
         + "DROP SCHEMA IF EXISTS messaging CASCADE;"
         + "DROP TABLE IF EXISTS jobs_probe;"
         + "DROP TABLE IF EXISTS coordination_liveness, coordination_descriptor, coordination_node_generation CASCADE;";
@@ -75,6 +76,15 @@ public sealed class PostgreSqlJobsCoordinationFixture
     public void ConfigureClaims(JobsEfCoreOptionBuilder<TimeJobEntity, CronJobEntity> builder)
     {
         builder.UsePostgreSqlClaims();
+    }
+
+    public void ConfigureApplicationJobs<TContext>(
+        JobsOptionsBuilder<TimeJobEntity, CronJobEntity> builder,
+        Action<CoordinationOptions> configureCoordination
+    )
+        where TContext : DbContext
+    {
+        builder.UsePostgreSql<TContext>(configureCoordination);
     }
 
     public DbConnection CreateConnection()

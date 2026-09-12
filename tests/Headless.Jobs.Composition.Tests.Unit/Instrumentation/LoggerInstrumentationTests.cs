@@ -18,6 +18,7 @@ namespace Tests.Instrumentation;
 /// (no separate swap-implementation step exists anymore, per #695), and it must keep logging unconditionally
 /// regardless of listener presence.
 /// </summary>
+[Collection<JobsInstrumentationCollection>]
 public sealed class LoggerInstrumentationTests : TestBase
 {
     [Fact]
@@ -54,6 +55,10 @@ public sealed class LoggerInstrumentationTests : TestBase
             ParentId = Guid.NewGuid(),
             Type = JobType.TimeJob,
             FunctionName = "SendEmail",
+            ContractVersion = "schema-2",
+            CorrelationId = "business-root",
+            CausationId = "direct-cause",
+            TenantId = "tenant-7",
             CachedPriority = JobPriority.High,
             Retries = 3,
             RunCondition = RunCondition.OnFailure,
@@ -67,6 +72,10 @@ public sealed class LoggerInstrumentationTests : TestBase
         activity!.GetTagItem("headless.job.id").Should().Be(context.JobId.ToString());
         activity.GetTagItem("headless.job.type").Should().Be(context.Type.ToString());
         activity.GetTagItem("headless.job.function").Should().Be(context.FunctionName);
+        activity.GetTagItem("headless.job.contract_version").Should().Be("schema-2");
+        activity.GetTagItem("headless.job.correlation_id").Should().Be("business-root");
+        activity.GetTagItem("headless.job.causation_id").Should().Be("direct-cause");
+        activity.GetTagItem("headless.job.tenant_id").Should().Be("tenant-7");
         activity.GetTagItem("headless.job.priority").Should().Be(context.CachedPriority.ToString());
         activity.GetTagItem("headless.job.machine").Should().Be(StubOwnerIdentity.Owner);
         activity.GetTagItem("headless.job.retry_count").Should().Be(context.Retries);

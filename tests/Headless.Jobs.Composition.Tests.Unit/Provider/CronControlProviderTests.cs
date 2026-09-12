@@ -287,6 +287,71 @@ public sealed class CronControlProviderTests : TestBase
         afterSchedule.Single(x => x.Id == replacement.Id).Status.Should().Be(JobStatus.Idle);
     }
 
+    [Theory]
+    [InlineData("cron-control", " 2", false)]
+    [InlineData("invalid\nfunction", "1", false)]
+    [InlineData("cron-control", " 2", true)]
+    [InlineData("invalid\nfunction", "1", true)]
+    public async Task should_preserve_entire_batch_when_second_cron_contract_is_invalid(
+        string secondFunction,
+        string secondContractVersion,
+        bool changeFirstSchedule
+    )
+    {
+        var provider = _Create();
+        var first = _Definition(isPaused: false, revision: 2);
+        var second = _Definition(isPaused: false, revision: 4);
+        await provider.InsertCronJobsAsync([first, second], AbortToken);
+        await provider.InsertCronJobOccurrencesAsync(
+            [
+                _Occurrence(first.Id, JobStatus.Idle, owner: null, lockedUntil: null),
+                _Occurrence(first.Id, JobStatus.Queued, _Owner, _Now.UtcDateTime.AddMinutes(5)),
+                _Occurrence(second.Id, JobStatus.Queued, _Owner, _Now.UtcDateTime.AddMinutes(5)),
+            ],
+            AbortToken
+        );
+        var definitionsBefore = await provider.GetCronJobsAsync(null, AbortToken);
+        var occurrencesBefore = await provider.GetAllCronJobOccurrencesAsync(null, AbortToken);
+        var firstEdit = (FakeCronJob)first.Clone();
+        firstEdit.Description = "first edit";
+        firstEdit.Expression = changeFirstSchedule ? "0 */5 * * * *" : first.Expression;
+        var secondEdit = (FakeCronJob)second.Clone();
+        secondEdit.Description = "second edit";
+        secondEdit.Function = secondFunction;
+        secondEdit.ContractVersion = secondContractVersion;
+
+        var act = () =>
+            provider.UpdateCronJobsAtomicallyAsync(
+                [
+                    new CronJobAtomicUpdate<FakeCronJob>(
+                        firstEdit,
+                        first.ScheduleRevision,
+                        changeFirstSchedule
+                            ? anchor =>
+                                _Occurrence(
+                                    first.Id,
+                                    JobStatus.Idle,
+                                    owner: null,
+                                    lockedUntil: null,
+                                    anchor.AddMinutes(5)
+                                )
+                            : null
+                    ),
+                    new CronJobAtomicUpdate<FakeCronJob>(
+                        secondEdit,
+                        second.ScheduleRevision,
+                        NextOccurrenceFactory: null
+                    ),
+                ],
+                _Now,
+                AbortToken
+            );
+
+        await act.Should().ThrowAsync<ArgumentException>();
+        (await provider.GetCronJobsAsync(null, AbortToken)).Should().BeEquivalentTo(definitionsBefore);
+        (await provider.GetAllCronJobOccurrencesAsync(null, AbortToken)).Should().BeEquivalentTo(occurrencesBefore);
+    }
+
     private static JobsInMemoryPersistenceProvider<FakeTimeJob, FakeCronJob> _Create()
     {
         var services = new ServiceCollection();

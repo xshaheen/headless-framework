@@ -34,6 +34,24 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
         return ValueTask.CompletedTask;
     }
 
+    public async ValueTask<TransportConsumerConformanceSession> CreateRoutingAffinitySessionAsync(
+        string destination,
+        string group,
+        CancellationToken cancellationToken
+    )
+    {
+        await _CreateQueueAsync(destination, cancellationToken, requiresSession: true);
+        return await _CreateSessionAsync(
+            MessageLane.Queue,
+            destination,
+            group,
+            AzureServiceBusMessagingOptions.DefaultTopicPath,
+            async () => await _DeleteQueueAsync(destination, CancellationToken.None),
+            cancellationToken,
+            enableSessions: true
+        );
+    }
+
     public async ValueTask<TransportConsumerConformanceSession> CreateQueueSessionAsync(
         CancellationToken cancellationToken
     )
@@ -179,7 +197,8 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
         string topicPath,
         Func<ValueTask>? disposeEntity,
         CancellationToken cancellationToken,
-        Func<CancellationToken, ValueTask<TransportConsumerConformanceSession>>? createReplacementSession = null
+        Func<CancellationToken, ValueTask<TransportConsumerConformanceSession>>? createReplacementSession = null,
+        bool enableSessions = false
     )
     {
         var connectionString = _RequireConnectionString();
@@ -191,6 +210,12 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
                 options.ConnectionString = connectionString;
                 options.TopicPath = topicPath;
                 options.AutoProvision = false;
+                options.EnableSessions = enableSessions;
+                if (enableSessions)
+                {
+                    options.CustomHeadersBuilder = static (message, _) =>
+                        [new("conformance-native-session", message.SessionId)];
+                }
                 options.MaxConcurrentCalls = 2;
                 options.MaxAutoLockRenewalDuration = TimeSpan.Zero;
             })
@@ -246,10 +271,15 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
         }
     }
 
-    private async Task _CreateQueueAsync(string queueName, CancellationToken cancellationToken)
+    private async Task _CreateQueueAsync(
+        string queueName,
+        CancellationToken cancellationToken,
+        bool requiresSession = false
+    )
     {
         var options = new CreateQueueOptions(queueName)
         {
+            RequiresSession = requiresSession,
             LockDuration = TimeSpan.FromSeconds(5),
             MaxDeliveryCount = 10,
         };
