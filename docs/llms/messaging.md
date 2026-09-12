@@ -1588,7 +1588,7 @@ Provides a NATS JetStream transport for Headless messaging so applications can p
 ### Key Features
 
 - `setup.UseNats(...)`.
-- Stream auto-creation and durable consumers.
+- JetStream stream provisioning modes and durable consumers.
 - Producer hatch: `UseNats(nats => nats.SubjectShard(message => ...))`.
 - Consumer hatch: `consumer.UseNats(nats => nats.Sharded())`.
 - Consumer startup honors host cancellation while connecting and provisioning JetStream topology, while preserving configured topology timeouts.
@@ -1605,6 +1605,9 @@ Commit uses JetStream double acknowledgement and waits for the broker's settleme
 
 Bus publishes to `headless.bus.{logical-name}` with interest-retained streams and `bus-{subscriber-group}-{logical-name}` durables. Queue publishes to `headless.queue.{logical-name}` with work-queue-retained streams and the shared `queue-{logical-name}` durable. `StreamOptions` may tune storage, replicas, and limits but cannot replace provider-owned stream names, subjects, or retention.
 
+`NatsMessagingOptions.StreamProvisioning` decides what consumer startup does about that stream. `Verify` (the default) creates a missing stream but throws with the divergent fields rather than writing to one that already exists; `Reconcile` updates fields JetStream accepts in place, reports immutable divergence instead of sending an update the server rejects, and `Disabled` neither creates nor modifies. The default changed because the old flag's `true` silently overwrote the storage class, replicas, and limits of a stream provisioned with the NATS CLI, Terraform, or a Kubernetes operator on every startup.
+
+The comparison covers only fields the provider or the `StreamOptions` callback actually asserts — a field neither set is never compared, since the server defaults it and diffing it would report drift against every existing stream. Subjects compare asymmetrically: extra subjects on the live stream (from sibling consumer groups or an earlier deployment) are ignored, while a subject this client requires that the stream does not cover is a divergence, because JetStream delivers zero messages and reports no error to a filter that matches nothing. Deployments where several consumer groups share one normalized stream and each contributes subjects therefore need `Reconcile`, or a stream provisioned with full subject coverage. Divergence on a field JetStream refuses to change on a live stream — storage type is the clearest case — is reported with a recreate-or-migrate remedy instead of a mode-switch suggestion that would fail at the server.
 ### Installation
 
 ```bash

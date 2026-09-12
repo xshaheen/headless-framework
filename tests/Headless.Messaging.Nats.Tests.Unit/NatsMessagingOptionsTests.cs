@@ -31,10 +31,10 @@ public sealed class NatsMessagingOptionsTests : TestBase
     }
 
     [Fact]
-    public void should_enable_stream_creation_by_default()
+    public void should_default_stream_provisioning_to_verify()
     {
         var options = new NatsMessagingOptions();
-        options.EnableSubscriberClientStreamAndSubjectCreation.Should().BeTrue();
+        options.StreamProvisioning.Should().Be(NatsStreamProvisioning.Verify);
     }
 
     [Fact]
@@ -99,11 +99,19 @@ public sealed class NatsMessagingOptionsTests : TestBase
     }
 
     [Fact]
-    public void should_disable_stream_creation()
+    public void should_support_disabling_stream_provisioning()
     {
-        var options = new NatsMessagingOptions { EnableSubscriberClientStreamAndSubjectCreation = false };
+        var options = new NatsMessagingOptions { StreamProvisioning = NatsStreamProvisioning.Disabled };
 
-        options.EnableSubscriberClientStreamAndSubjectCreation.Should().BeFalse();
+        options.StreamProvisioning.Should().Be(NatsStreamProvisioning.Disabled);
+    }
+
+    [Fact]
+    public void should_support_selecting_reconcile_stream_provisioning()
+    {
+        var options = new NatsMessagingOptions { StreamProvisioning = NatsStreamProvisioning.Reconcile };
+
+        options.StreamProvisioning.Should().Be(NatsStreamProvisioning.Reconcile);
     }
 
     [Fact]
@@ -260,5 +268,17 @@ public sealed class NatsMessagingOptionsTests : TestBase
         result
             .Errors.Should()
             .ContainSingle(e => e.PropertyName == nameof(NatsMessagingOptions.MaxConsecutiveConsumeFailures));
+    }
+
+    [Fact]
+    public void should_fail_for_undefined_stream_provisioning_when_validator()
+    {
+        var options = new NatsMessagingOptions { StreamProvisioning = (NatsStreamProvisioning)99 };
+        var validator = new NatsMessagingOptionsValidator();
+
+        var result = validator.Validate(options);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle(e => e.PropertyName == nameof(NatsMessagingOptions.StreamProvisioning));
     }
 }

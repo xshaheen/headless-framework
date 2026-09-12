@@ -4,6 +4,7 @@ using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
+using Headless.Messaging.Nats;
 using Microsoft.Extensions.DependencyInjection;
 using NATS.Client.JetStream.Models;
 using Tests.Helpers;
@@ -29,7 +30,7 @@ public sealed class NatsPostgreSqlMessagingIntegrationTests(NatsPostgreSqlFixtur
         setup.UseNats(nats =>
         {
             nats.Servers = fixture.NatsConnectionString;
-            nats.EnableSubscriberClientStreamAndSubjectCreation = true;
+            nats.StreamProvisioning = NatsStreamProvisioning.Reconcile;
             nats.StreamOptions = static config => config.Storage = StreamConfigStorage.Memory;
         });
     }

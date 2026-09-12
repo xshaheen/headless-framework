@@ -45,7 +45,7 @@ public sealed class NatsConsumerClientHarnessTests(NatsFixture fixture) : Consum
                 new NatsMessagingOptions
                 {
                     Servers = fixture.ConnectionString,
-                    EnableSubscriberClientStreamAndSubjectCreation = true,
+                    StreamProvisioning = NatsStreamProvisioning.Reconcile,
                 }
             ),
             _serviceProvider
@@ -64,7 +64,7 @@ public sealed class NatsConsumerClientHarnessTests(NatsFixture fixture) : Consum
     ///     dot-separated subject (<c>{prefix}.{topic}</c>). The dot keeps the resulting JetStream
     ///     subject a multi-token name (<c>{prefix}.&gt;</c>) so it never overlaps with the
     ///     single-token <c>*</c> wildcard used by neighbouring test fixtures.</item>
-    ///   <item><c>FetchMessageNamesAsync</c> (gated behind <c>EnableSubscriberClientStreamAndSubjectCreation</c>)
+    ///   <item><c>FetchMessageNamesAsync</c> (gated behind <c>StreamProvisioning</c>)
     ///     materialises the stream + subject bindings before <c>SubscribeAsync</c>.</item>
     /// </list>
     /// Without these, <c>ListeningAsync</c> would spin forever in <c>CreateOrUpdateConsumerAsync</c>

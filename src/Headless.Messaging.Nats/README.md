@@ -65,6 +65,10 @@ options.UseNats(nats =>
     // supervised restart (bounds in-place spinning on a dead, non-reconnecting connection). Default 10.
     nats.MaxConsecutiveConsumeFailures = 10;
 
+    // What startup does about the stream. Verify (default) creates a missing stream but reports
+    // divergence on an existing one instead of overwriting it; Reconcile writes; Disabled does neither.
+    nats.StreamProvisioning = NatsStreamProvisioning.Verify;
+
     // Customize stream creation (defaults to File storage)
     nats.StreamOptions = config =>
     {
@@ -89,15 +93,53 @@ NATS supports the same contract and logical name on both lanes without cross-del
 
 When `SubjectShard(...)` is set on the producer side, every consumer registered for that message must declare `.UseNats(c => c.Sharded())`. This is validated at startup and throws `InvalidOperationException` if violated. The reason: NATS delivers zero messages with no error when a FilterSubject does not match any shard subject — the asymmetry causes silent data loss.
 
-### Stream Auto-Creation
+### Stream Provisioning
 
-By default, consumer clients create JetStream streams and subjects on startup via
-`EnableSubscriberClientStreamAndSubjectCreation`. For production deployments requiring
-fine-grained control, disable this and manage streams externally:
+`StreamProvisioning` decides what consumer startup does about the JetStream stream its subjects live on.
+Every mode except `Disabled` creates a stream that does not exist yet, so first-run and ephemeral
+environments behave the same under all of them. They differ only in what happens to a stream that is
+**already there**.
+
+| Mode | Stream is missing | Stream already exists |
+| --- | --- | --- |
+| `Verify` (default) | Creates it | Compares, and throws with the divergent fields rather than writing |
+| `Reconcile` | Creates it | Updates it to match this application's configuration |
+| `Disabled` | Leaves it missing | Leaves it alone |
 
 ```csharp
-nats.EnableSubscriberClientStreamAndSubjectCreation = false;
+nats.StreamProvisioning = NatsStreamProvisioning.Reconcile;
 ```
+
+**Breaking change from the previous `EnableSubscriberClientStreamAndSubjectCreation` flag.** That flag's
+`true` overwrote an existing stream's configuration on every consumer startup, which silently replaced the
+storage class, replica count, and limits of a stream provisioned with the NATS CLI, Terraform, or a
+Kubernetes operator. The default is now `Verify`, which reports the difference instead. `Reconcile` preserves
+the old behavior for updates JetStream accepts, reports immutable divergence instead of sending an update the
+server rejects, and `Disabled` replaces the old `false`.
+
+The comparison only covers fields this application actually asserts — what the provider sets plus whatever
+the `StreamOptions` callback sets. A field neither of them touched is never compared, because the server
+fills those with its own defaults and diffing them would report drift against every existing stream.
+
+Subjects are handled asymmetrically, and deliberately so. Subjects the live stream already carries —
+contributed by a sibling consumer group or an earlier deployment — are left alone rather than replaced. A
+subject this client *needs* that the stream does not carry is a divergence, because JetStream delivers zero
+messages, and reports no error, to a consumer filter that matches nothing on the stream. This is the same
+silent-loss shape the shard-symmetry check exists to prevent.
+
+**Multi-group deployments should consider `Reconcile`.** Where several consumer groups normalize to one
+stream and each contributes its own subjects, the old flag grew the subject list silently on every startup.
+Under `Verify` the second group fails startup until the stream covers its subject. Either select `Reconcile`
+so the application maintains the subject list, or provision the stream with full subject coverage up front.
+
+Some differences cannot be fixed by any mode: JetStream refuses to change a live stream's storage type,
+retention, maximum consumer count, or mirror, for example. One-way flags also cannot always be undone. The
+diagnostic separates those and asks you to recreate or migrate the stream rather than suggesting a mode
+switch that would fail at the server.
+
+`StreamOptions` observes property changes to decide what to compare. It cannot distinguish an explicit
+assignment to a property's initialized default from leaving that property unset. If the stream's live value
+differs from the default, express a different value through `StreamOptions` or align the stream out of band.
 
 ### Messaging Semantics
 
@@ -105,7 +147,7 @@ nats.EnableSubscriberClientStreamAndSubjectCreation = false;
 - Delay stays in the core pipeline. This provider does not add broker-native scheduling.
 - Commit sends a double `ACK` and waits for JetStream to confirm settlement before returning.
 - Reject sends `NAK` so JetStream can redeliver. An envelope that cannot be constructed is terminally double-acknowledged and logged without payload or headers, preventing a broker redelivery storm.
-- `FetchMessageNamesAsync(...)` groups subjects into streams and creates them when auto-creation is enabled.
+- `FetchMessageNamesAsync(...)` groups subjects into streams and applies the selected `StreamProvisioning` mode.
 - Consumer startup creates filtered, lane-qualified durable consumers for each subscribed subject.
 - Message-level `SubjectShard(...)` publishes to `{messageName}.{shard}`. Stream auto-creation and durable consumer filters add wildcard coverage only for consumers that declared `.UseNats(c => c.Sharded())`. Shard symmetry is enforced at startup.
 - Sequential handling preserves per-subject delivery order best. Parallel handlers and redeliveries can reorder work.
@@ -121,5 +163,5 @@ nats.EnableSubscriberClientStreamAndSubjectCreation = false;
 ## Side Effects
 
 - Establishes persistent connections to NATS servers
-- Creates JetStream streams and consumers if enabled
+- Creates JetStream streams and consumers according to the selected provisioning modes
 - Subscribes to subjects for message consumption
