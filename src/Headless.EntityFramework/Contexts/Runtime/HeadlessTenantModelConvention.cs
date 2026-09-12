@@ -57,6 +57,7 @@ internal sealed class HeadlessTenantModelConvention(DbContext db, string provide
                 );
             }
 
+            property.IsConcurrencyToken = true;
             _ConfigureCanonicalEquality(root, property);
             _ConfigureFilter(root, property);
         }

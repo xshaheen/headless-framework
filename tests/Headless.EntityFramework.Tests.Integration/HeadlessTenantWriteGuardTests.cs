@@ -328,13 +328,12 @@ public sealed class HeadlessTenantWriteGuardTests(
         await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
 
         var entity = new TestEntity { Name = "missing-tenant" };
-        db.Tests.Add(entity);
 
         // when
-        var act = async () => await db.SaveChangesAsync(AbortToken);
+        var act = () => db.Tests.Add(entity);
 
         // then
-        await act.Should().ThrowAsync<MissingTenantContextException>();
+        act.Should().Throw<MissingTenantContextException>();
         db.EmittedLocalMessages.Should().BeEmpty();
         db.EmittedDistributedMessages.Should().BeEmpty();
         var persisted = await db.Tests.IgnoreMultiTenancyFilter().CountAsync(AbortToken);
@@ -736,9 +735,7 @@ public sealed class HeadlessTenantWriteGuardTests(
         persisted.Should().BeFalse();
     }
 
-#pragma warning disable xUnit1004 // Test methods should not be skipped
-    [Fact(Skip = "https://github.com/xshaheen/headless-framework/issues/249")]
-#pragma warning restore xUnit1004
+    [Fact]
     public async Task guard_enabled_should_reject_attach_then_modify_cross_tenant_row()
     {
         // given
@@ -760,16 +757,16 @@ public sealed class HeadlessTenantWriteGuardTests(
         var act = async () => await db.SaveChangesAsync(AbortToken);
 
         // then
-        await act.Should().ThrowAsync<CrossTenantWriteException>();
-        db.EmittedLocalMessages.Should().BeEmpty();
-
+        var exception = await Record.ExceptionAsync(act);
         var persistedName = await _GetTenantEntityNameAsync(fixture, entityId);
+        using var assertions = new AwesomeAssertions.Execution.AssertionScope();
+        exception.Should().BeOfType<DbUpdateConcurrencyException>();
+        // Local handlers run before persistence; a SQL concurrency miss cannot undo their external side effects.
+        db.EmittedDistributedMessages.Should().BeEmpty();
         persistedName.Should().Be("attach-update-owned-by-b");
     }
 
-#pragma warning disable xUnit1004 // Test methods should not be skipped
-    [Fact(Skip = "https://github.com/xshaheen/headless-framework/issues/249")]
-#pragma warning restore xUnit1004
+    [Fact]
     public async Task guard_enabled_should_reject_attach_then_remove_cross_tenant_row()
     {
         // given
@@ -791,10 +788,12 @@ public sealed class HeadlessTenantWriteGuardTests(
         var act = async () => await db.SaveChangesAsync(AbortToken);
 
         // then
-        await act.Should().ThrowAsync<CrossTenantWriteException>();
-        db.EmittedLocalMessages.Should().BeEmpty();
-
+        var exception = await Record.ExceptionAsync(act);
         var exists = await _TenantEntityExistsAsync(fixture, entityId);
+        using var assertions = new AwesomeAssertions.Execution.AssertionScope();
+        exception.Should().BeOfType<DbUpdateConcurrencyException>();
+        // Local handlers run before persistence; a SQL concurrency miss cannot undo their external side effects.
+        db.EmittedDistributedMessages.Should().BeEmpty();
         exists.Should().BeTrue();
     }
 

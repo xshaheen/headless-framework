@@ -5,7 +5,6 @@ using Headless.Domain;
 using Headless.EntityFramework.ChangeTrackers;
 using Headless.EntityFramework.Configurations;
 using Headless.MultiTenancy;
-using Headless.Reflection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata;
@@ -56,7 +55,8 @@ internal sealed class HeadlessDbContextRuntime(DbContext db, HeadlessDbContextSe
 
         if (services.IsTenantWriteGuardEnabled)
         {
-            db.ChangeTracker.Tracked += _StampTenantOnAdded;
+            db.ChangeTracker.Tracking += _OnTracking;
+            db.ChangeTracker.StateChanging += _OnStateChanging;
             _stampTenantHandlerAttached = true;
         }
     }
@@ -73,7 +73,8 @@ internal sealed class HeadlessDbContextRuntime(DbContext db, HeadlessDbContextSe
 
         if (_stampTenantHandlerAttached)
         {
-            db.ChangeTracker.Tracked -= _StampTenantOnAdded;
+            db.ChangeTracker.Tracking -= _OnTracking;
+            db.ChangeTracker.StateChanging -= _OnStateChanging;
             _stampTenantHandlerAttached = false;
         }
 
@@ -82,33 +83,41 @@ internal sealed class HeadlessDbContextRuntime(DbContext db, HeadlessDbContextSe
         return ValueTask.CompletedTask;
     }
 
-    private void _StampTenantOnAdded(object? sender, EntityTrackedEventArgs e)
+    private void _OnTracking(object? sender, EntityTrackingEventArgs e) => _StampTenantOnAdded(e.Entry, e.State);
+
+    private void _OnStateChanging(object? sender, EntityStateChangingEventArgs e) =>
+        _StampTenantOnAdded(e.Entry, e.NewState);
+
+    private void _StampTenantOnAdded(EntityEntry entry, EntityState targetState)
     {
-        if (!services.IsTenantWriteGuardEnabled)
+        if (
+            targetState != EntityState.Added
+            || entry.Metadata.IsOwned()
+            || !entry.Metadata.IsTenantOwned()
+            || !services.IsTenantWriteGuardEnabled
+            || services.ServiceProvider.GetRequiredService<ITenantWriteGuardBypass>().IsActive
+        )
         {
             return;
         }
 
-        if (e.Entry.State != EntityState.Added || e.Entry.Entity is not IMultiTenant entity)
+        var property = entry.Property(entry.Metadata.GetTenantPropertyName()!);
+        var suppliedTenantId = HeadlessTenantModelConvention.ValidateTenantId((string?)property.CurrentValue);
+        if (!string.IsNullOrWhiteSpace(suppliedTenantId))
         {
             return;
         }
 
-        if (!string.IsNullOrWhiteSpace(entity.TenantId))
-        {
-            return;
-        }
-
-        var tenantId = services.TenantId;
-
+        var tenantId = TenantId;
         if (string.IsNullOrWhiteSpace(tenantId))
         {
-            return;
+            throw new MissingTenantContextException(
+                $"Tenant-owned Added entry '{entry.Metadata.Name}' requires an ambient tenant before tracking."
+            );
         }
 
-        // Name over selector: the expression-selector overload allocates a fresh expression tree on every
-        // tracked Added entity, and this runs from the ChangeTracker.Tracked hook.
-        ObjectPropertiesHelper.TrySetPropertyValue(entity, nameof(IMultiTenant.TenantId), tenantId);
+        // Required alternate keys enter EF's identity map during tracking, before Tracked/StateChanged fire.
+        property.CurrentValue = tenantId;
     }
 
     // Retry classification: CrossTenantWriteException is non-transient. Callers wrapping

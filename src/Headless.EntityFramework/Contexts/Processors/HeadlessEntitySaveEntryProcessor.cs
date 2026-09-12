@@ -2,10 +2,12 @@
 
 using Headless.Abstractions;
 using Headless.Domain;
+using Headless.EntityFramework.Contexts.Runtime;
 using Headless.MultiTenancy;
 using Headless.Reflection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.Options;
 
 namespace Headless.EntityFramework.Contexts.Processors;
@@ -17,8 +19,8 @@ namespace Headless.EntityFramework.Contexts.Processors;
 /// <remarks>
 /// When the tenant write guard is enabled this processor rejects writes that lack an ambient tenant
 /// context (<c>MissingTenantContextException</c>) and writes whose entity <c>TenantId</c> does not
-/// match the current tenant's identifier, including the original-value check that blocks
-/// Attach+rewrite+Remove attacks (<c>CrossTenantWriteException</c>). Use
+/// match the current tenant's identifier (<c>CrossTenantWriteException</c>). Original tracked values
+/// are also checked; crafted detached snapshots are fenced by SQL concurrency predicates. Use
 /// <c>ITenantWriteGuardBypass.BeginBypass()</c> for intentional host or admin writes that must
 /// operate across tenants.
 /// </remarks>
@@ -36,14 +38,17 @@ public sealed class HeadlessEntitySaveEntryProcessor(
     /// <param name="context">The per-save scratchpad carrying the ambient tenant identifier.</param>
     public void Process(EntityEntry entry, HeadlessSaveEntryContext context)
     {
-        _EnsureTenantWriteAllowed(entry, context.TenantId);
+        _EnsureTenantWriteAllowed(entry, context);
 
         switch (entry.State)
         {
             case EntityState.Added:
                 // Guid keys are produced by the EF Core value generator (ConfigureHeadlessValueGenerated) when the
                 // entity transitions to Added, so by the time it reaches the save pipeline the id is already set.
-                _TrySetMultiTenantId(entry, context.TenantId);
+                if (!tenantWriteGuardOptions.Value.IsEnabled || tenantWriteGuardBypass.IsActive)
+                {
+                    _TrySetMultiTenantId(entry, context.TenantId);
+                }
                 _TrySetConcurrencyStamp(entry);
                 break;
             case EntityState.Modified:
@@ -52,20 +57,31 @@ public sealed class HeadlessEntitySaveEntryProcessor(
         }
     }
 
-    private void _EnsureTenantWriteAllowed(EntityEntry entry, string? tenantId)
+    private void _EnsureTenantWriteAllowed(EntityEntry entry, HeadlessSaveEntryContext context)
     {
         if (
-            entry.Entity is not IMultiTenant
+            !entry.Metadata.IsTenantOwned()
             || entry.State is not (EntityState.Added or EntityState.Modified or EntityState.Deleted)
-            || !tenantWriteGuardOptions.Value.IsEnabled
-            || tenantWriteGuardBypass.IsActive
         )
         {
             return;
         }
 
-        var currentTenantId = _NormalizeTenantId(tenantId);
-        var entityTenantId = _NormalizeTenantId(entry.Property(nameof(IMultiTenant.TenantId)).CurrentValue);
+        var guarded = tenantWriteGuardOptions.Value.IsEnabled && !tenantWriteGuardBypass.IsActive;
+        var currentTenantId = _ReadTenantId(context.TenantId);
+        if (!guarded && entry.Metadata.IsOwned())
+        {
+            return;
+        }
+
+        var root = entry.Metadata.IsOwned() ? _ResolveOwner(entry, context.DbContext) : entry;
+        var tenantProperty = root.Property(root.Metadata.GetTenantPropertyName()!);
+        var entityTenantId = _ReadTenantId(tenantProperty.CurrentValue);
+        var originalTenantId = root.State == EntityState.Added ? null : _ReadTenantId(tenantProperty.OriginalValue);
+        if (!guarded)
+        {
+            return;
+        }
 
         if (currentTenantId is null)
         {
@@ -76,23 +92,21 @@ public sealed class HeadlessEntitySaveEntryProcessor(
             );
         }
 
-        if (entry.State == EntityState.Added && entityTenantId is null)
+        if (root.State == EntityState.Added && entityTenantId is null)
         {
-            // The guard contract requires callers to stamp TenantId at construction (or via the
-            // _TrySetMultiTenantId post-processor below). A null TenantId on an Added IMultiTenant
-            // entry under guard would otherwise rely on the ambient ICurrentTenant being copied at
-            // SaveChanges time, which silently couples write correctness to whatever tenant the
-            // current scope happens to observe — a race vector documented as a known gap. Reject
-            // the write so the failure is loud at the call site.
             throw new MissingTenantContextException(
-                $"Tenant-owned Added write for entity type '{_GetEntityTypeName(entry)}' has a null TenantId. "
-                    + "Stamp the TenantId at construction (or use ITenantWriteGuardBypass.BeginBypass() for "
-                    + "intentional host/admin writes); the guard no longer back-stamps the ambient tenant on "
-                    + "Added entries."
+                $"Tenant-owned Added write for entity type '{_GetEntityTypeName(entry)}' has no tenant. "
+                    + "The tenant must be captured before tracking; SaveChanges does not stamp guarded entries."
             );
         }
 
-        if (_TenantWriteMatches(entry, currentTenantId, entityTenantId))
+        if (
+            string.Equals(entityTenantId, currentTenantId, StringComparison.Ordinal)
+            && (
+                root.State == EntityState.Added
+                || string.Equals(originalTenantId, currentTenantId, StringComparison.Ordinal)
+            )
+        )
         {
             return;
         }
@@ -100,28 +114,97 @@ public sealed class HeadlessEntitySaveEntryProcessor(
         throw new CrossTenantWriteException(_GetEntityTypeName(entry), entry.State.ToString());
     }
 
-    private static bool _TenantWriteMatches(EntityEntry entry, string currentTenantId, string? entityTenantId)
+    private static EntityEntry _ResolveOwner(EntityEntry entry, DbContext db)
     {
-        if (!string.Equals(entityTenantId, currentTenantId, StringComparison.Ordinal))
+        // Navigation references can be stale or caller-supplied; only tracked ownership keys identify the row owner.
+        var tracked = db.ChangeTracker.Entries().ToArray();
+        var visited = new HashSet<object>(ReferenceEqualityComparer.Instance);
+        var current = entry;
+        while (current.Metadata.FindOwnership() is { } ownership)
         {
-            return false;
+            if (!visited.Add(current.Entity))
+            {
+                throw new CrossTenantWriteException(_GetEntityTypeName(entry), entry.State.ToString());
+            }
+
+            var principal = _FindPrincipal(current, ownership, tracked, original: false);
+            if (
+                principal is null
+                || current.State != EntityState.Added
+                    && _FindPrincipal(current, ownership, tracked, original: true)?.Entity != principal.Entity
+            )
+            {
+                throw new CrossTenantWriteException(_GetEntityTypeName(entry), entry.State.ToString());
+            }
+
+            current = principal;
         }
 
-        // For Modified and Deleted states, also verify the OriginalValue (the loaded-from-database
-        // tenant) matches the current tenant. This blocks Attach + rewrite + Remove patterns where
-        // the attacker controls CurrentValue but OriginalValue reflects another tenant's row.
-        if (entry.State is not (EntityState.Modified or EntityState.Deleted))
-        {
-            return true;
-        }
-
-        var originalTenantId = _NormalizeTenantId(entry.Property(nameof(IMultiTenant.TenantId)).OriginalValue);
-        return string.Equals(originalTenantId, currentTenantId, StringComparison.Ordinal);
+        return current;
     }
 
-    private static string? _NormalizeTenantId(object? value)
+    private static EntityEntry? _FindPrincipal(
+        EntityEntry dependent,
+        IForeignKey ownership,
+        EntityEntry[] tracked,
+        bool original
+    )
     {
-        return value is string tenantId && !string.IsNullOrWhiteSpace(tenantId) ? tenantId : null;
+        EntityEntry? match = null;
+        foreach (var candidate in tracked)
+        {
+            if (!ownership.PrincipalEntityType.IsAssignableFrom(candidate.Metadata))
+            {
+                continue;
+            }
+
+            var matches = true;
+            for (var i = 0; i < ownership.Properties.Count; i++)
+            {
+                var foreignKey = (original ? dependent.OriginalValues : dependent.CurrentValues)[
+                    ownership.Properties[i]
+                ];
+                var keyProperty = ownership.PrincipalKey.Properties[i];
+                var principalKey = (original ? candidate.OriginalValues : candidate.CurrentValues)[keyProperty];
+                var comparer = keyProperty.GetKeyValueComparer();
+                if (
+                    foreignKey is null
+                    || principalKey is null
+                    || !comparer.Equals(foreignKey, principalKey)
+                    || dependent.State != EntityState.Added
+                        && !comparer.Equals(
+                            dependent.OriginalValues[ownership.Properties[i]],
+                            dependent.CurrentValues[ownership.Properties[i]]
+                        )
+                    || candidate.State != EntityState.Added
+                        && !comparer.Equals(candidate.OriginalValues[keyProperty], candidate.CurrentValues[keyProperty])
+                )
+                {
+                    matches = false;
+                    break;
+                }
+            }
+
+            if (!matches)
+            {
+                continue;
+            }
+
+            if (match is not null)
+            {
+                return null;
+            }
+
+            match = candidate;
+        }
+
+        return match;
+    }
+
+    private static string? _ReadTenantId(object? value)
+    {
+        var tenantId = HeadlessTenantModelConvention.ValidateTenantId((string?)value);
+        return string.IsNullOrWhiteSpace(tenantId) ? null : tenantId;
     }
 
     private static string _GetEntityTypeName(EntityEntry entry)
@@ -131,7 +214,11 @@ public sealed class HeadlessEntitySaveEntryProcessor(
 
     private static void _TrySetMultiTenantId(EntityEntry entry, string? tenantId)
     {
-        if (entry.Entity is not IMultiTenant entity || !string.IsNullOrEmpty(entity.TenantId))
+        if (
+            !entry.Metadata.IsTenantOwned()
+            || entry.Entity is not IMultiTenant entity
+            || !string.IsNullOrEmpty(entity.TenantId)
+        )
         {
             return;
         }
