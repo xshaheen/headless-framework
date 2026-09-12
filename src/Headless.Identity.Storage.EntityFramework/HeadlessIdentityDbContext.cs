@@ -278,7 +278,7 @@ public abstract class HeadlessIdentityDbContext<
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
         base.ConfigureConventions(configurationBuilder);
-        HeadlessDbContextRuntime.ConfigureConventions(configurationBuilder);
+        _runtime.ConfigureConventions(configurationBuilder);
     }
 
     /// <summary>
@@ -295,6 +295,6 @@ public abstract class HeadlessIdentityDbContext<
         }
 
         base.OnModelCreating(builder);
-        _runtime.ProcessModelCreating(builder);
+        HeadlessDbContextRuntime.ProcessModelCreating(builder);
     }
 }

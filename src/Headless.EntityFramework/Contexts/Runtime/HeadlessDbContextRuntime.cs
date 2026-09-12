@@ -9,7 +9,9 @@ using Headless.Reflection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.EntityFramework.Contexts.Runtime;
 
@@ -37,7 +39,7 @@ internal sealed class HeadlessDbContextRuntime(DbContext db, HeadlessDbContextSe
     private bool _initialized;
     private bool _stampTenantHandlerAttached;
 
-    public string? TenantId => services.TenantId;
+    public string? TenantId => HeadlessTenantModelConvention.ValidateTenantId(services.TenantId);
 
     internal IServiceProvider ServiceProvider => services.ServiceProvider;
 
@@ -150,24 +152,20 @@ internal sealed class HeadlessDbContextRuntime(DbContext db, HeadlessDbContextSe
         }
     }
 
-    public static void ConfigureConventions(ModelConfigurationBuilder builder)
+    public void ConfigureConventions(ModelConfigurationBuilder builder)
     {
         builder.AddBuildingBlocksPrimitivesConvertersMappings();
+        builder.Conventions.Add(provider => new HeadlessTenantModelConvention(
+            db,
+            provider.GetRequiredService<IDatabaseProvider>().Name
+        ));
     }
 
-    public void ProcessModelCreating(ModelBuilder builder)
+    public static void ProcessModelCreating(ModelBuilder builder)
     {
         _ConfigureEntityConventions(builder);
         _ConfigureDateTimeValueConverters(builder);
-        _ConfigureQueryFiltersForModel(builder, _GetRuntimeContext());
-    }
-
-    private IHeadlessDbContext _GetRuntimeContext()
-    {
-        return db as IHeadlessDbContext
-            ?? throw new InvalidOperationException(
-                $"{db.GetType().Name} must inherit from a Headless DbContext base type."
-            );
+        _ConfigureQueryFiltersForModel(builder);
     }
 
     private static void _ConfigureEntityConventions(ModelBuilder modelBuilder)
@@ -226,34 +224,22 @@ internal sealed class HeadlessDbContextRuntime(DbContext db, HeadlessDbContextSe
         }
     }
 
-    private static void _ConfigureQueryFiltersForModel(ModelBuilder modelBuilder, IHeadlessDbContext runtimeContext)
+    private static void _ConfigureQueryFiltersForModel(ModelBuilder modelBuilder)
     {
         foreach (var type in modelBuilder.Model.GetEntityTypes())
         {
             if (type.BaseType is null && !type.IsOwned() && type.ClrType.IsAssignableTo<IEntity>())
             {
-                _ConfigureQueryFiltersMethod
-                    .MakeGenericMethod(type.ClrType)
-                    .Invoke(null, [modelBuilder, runtimeContext]);
+                _ConfigureQueryFiltersMethod.MakeGenericMethod(type.ClrType).Invoke(null, [modelBuilder]);
             }
         }
     }
 
-    private static void _ConfigureQueryFilters<TEntity>(ModelBuilder modelBuilder, IHeadlessDbContext runtimeContext)
+    private static void _ConfigureQueryFilters<TEntity>(ModelBuilder modelBuilder)
         where TEntity : class
     {
         var entityType = typeof(TEntity);
         var entityBuilder = modelBuilder.Entity<TEntity>();
-
-        if (entityType.IsAssignableTo<IMultiTenant>())
-        {
-            var tenantIdName = _GetColumnName(entityBuilder.Metadata, nameof(IMultiTenant.TenantId));
-
-            entityBuilder.HasQueryFilter(
-                HeadlessQueryFilters.MultiTenancyFilter,
-                x => EF.Property<string?>(x, tenantIdName) == runtimeContext.TenantId
-            );
-        }
 
         if (entityType.IsAssignableTo<IDeleteAudit>())
         {

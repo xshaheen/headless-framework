@@ -251,7 +251,7 @@ public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext, IHeadle
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
         base.ConfigureConventions(configurationBuilder);
-        HeadlessDbContextRuntime.ConfigureConventions(configurationBuilder);
+        _runtime.ConfigureConventions(configurationBuilder);
     }
 
     /// <summary>
@@ -268,7 +268,7 @@ public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext, IHeadle
         }
 
         base.OnModelCreating(modelBuilder);
-        _runtime.ProcessModelCreating(modelBuilder);
+        HeadlessDbContextRuntime.ProcessModelCreating(modelBuilder);
     }
 }
 
