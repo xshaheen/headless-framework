@@ -12,6 +12,7 @@ MESSAGING_COMPATIBILITY_DIR ?= tests/Headless.Messaging.PackageReference.Tests.U
 CONFIGURATION ?= Release
 ARTIFACTS_DIR ?= artifacts
 PACKAGES_DIR ?= $(ARTIFACTS_DIR)/packages-results
+PACK_LOG_DIR ?= $(ARTIFACTS_DIR)/pack-logs
 PACKAGE_MANIFEST ?= eng/expected-packages.txt
 PACKAGE_VERSION ?= $(shell $(DOTNET) msbuild src/Headless.Core/Headless.Core.csproj -nologo -target:MinVer -getProperty:PackageVersion)
 EXPECTED_PACKAGE_VERSION ?= $(shell if [ -f "$(PACKAGES_DIR)/package-version.txt" ]; then sed -n '1p' "$(PACKAGES_DIR)/package-version.txt"; else printf '%s\n' "$(PACKAGE_VERSION)"; fi)
@@ -43,6 +44,7 @@ RESTORE_ARGS ?= -p:RestoreUseStaticGraphEvaluation=true
 DEPENDENCY_AUDIT_IDLE_TIMEOUT ?= 120
 DEPENDENCY_SECURITY_AUDIT_TIMEOUT ?= 120
 NUGET_ADVISORY_AUDIT_TIMEOUT ?= 90
+PACK_PARALLELISM ?= 4
 QUALITY_SEVERITY ?= hidden
 QUALITY_DIAGNOSTICS ?=
 QUALITY_REPORT_DIR ?= $(ARTIFACTS_DIR)/quality-analyzers-report
@@ -324,31 +326,41 @@ coverage-open: coverage-html ## Generate report and open in browser.
 	elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$(COVERAGE_REPORT_DIR)/index.html"; \
 	else echo "Report generated. Open manually: $(COVERAGE_REPORT_DIR)/index.html"; fi
 
-# One `dotnet pack` process per project, deliberately serial. Packing all src projects through a single
-# parallel MSBuild traversal (eng/pack.proj) produced 143 of 171 packages in 2m23s and then deadlocked: every
-# node went idle with no error while Headless.Core — the project nearly everything references — was still
-# unpacked, and the 0.14.0 release job died at its 45-minute timeout. It had completed in 58s on a 14-core
-# laptop, so the stall is timing-dependent. Separate processes keep each pack off a shared MSBuild scheduler.
-# Pack runs only on releases, so its ~12 minutes are off the pull-request path.
-.PHONY: pack
-pack: restore verify-package-manifest ## Pack NuGet packages (symbols are embedded in the assemblies).
+.PHONY: _pack-projects
+_pack-projects:
 	@mkdir -p "$(PACKAGES_DIR)"
-	@set -e; version="$(PACKAGE_VERSION)"; \
-	for csproj in src/*/*.csproj; do \
-		$(DOTNET) pack "$$csproj" --configuration "$(CONFIGURATION)" --no-restore --output "$(PACKAGES_DIR)" /p:GenerateSBOM=true /p:SbomGenerationPackageVersion="$$version" $(MSBUILD_ARGS); \
-	done; \
-	printf '%s\n' "$$version" > "$(PACKAGES_DIR)/package-version.txt"
+	@rm -rf "$(PACK_LOG_DIR)"; mkdir -p "$(PACK_LOG_DIR)"
+	@find src -mindepth 2 -maxdepth 2 -type f -name '*.csproj' -print0 | \
+	xargs -0 -P "$(PACK_PARALLELISM)" -n1 bash -c 'project="$$1"; log="$(PACK_LOG_DIR)/$$(basename "$$project" .csproj).log"; \
+		echo "Packing $$project"; \
+		if ! $(DOTNET) pack "$$project" -m:1 \
+			--configuration "$(CONFIGURATION)" \
+			--output "$(PACKAGES_DIR)" \
+			/p:GenerateSBOM=true \
+			/p:SbomGenerationPackageVersion="$(PACKAGE_VERSION)" \
+			$(PACK_BUILD_ARGS) \
+			$(MSBUILD_ARGS) > "$$log" 2>&1; then \
+			echo "FAILED: $$project"; cat "$$log"; exit 1; \
+		fi' bash
+	@printf '%s\n' "$(PACKAGE_VERSION)" > "$(PACKAGES_DIR)/package-version.txt"
+
+# One `dotnet pack` process per project with a bounded number of concurrent processes. Packing all src
+# projects through a single parallel MSBuild traversal (eng/pack.proj) produced 143 of 171 packages in 2m23s
+# and then deadlocked: every node went idle with no error while Headless.Core — the project nearly everything
+# references — was still unpacked, and the 0.14.0 release job died at its 45-minute timeout. Separate
+# processes keep each pack off a shared MSBuild scheduler. Pack runs only on releases, so this does not affect
+# the pull-request path.
+.PHONY: pack
+pack: restore verify-package-manifest ## Pack NuGet packages in bounded parallel processes.
+	@mkdir -p "$(PACKAGES_DIR)"
+	@$(MAKE) _pack-projects PACK_BUILD_ARGS=--no-restore
 
 # No verify-package-manifest prerequisite: CI always follows with verify-packages, which compares the produced
 # package IDs exactly against the manifest, so a pre-pack evaluation of every project would only fail earlier.
 .PHONY: pack-built
-pack-built: ## Pack already-built src projects without restore/build; used by CI.
+pack-built: ## Pack already-built src projects in bounded parallel processes; used by CI.
 	@mkdir -p "$(PACKAGES_DIR)"
-	@set -e; version="$(PACKAGE_VERSION)"; \
-	for csproj in src/*/*.csproj; do \
-		$(DOTNET) pack "$$csproj" --configuration "$(CONFIGURATION)" --no-restore --no-build --output "$(PACKAGES_DIR)" /p:GenerateSBOM=true /p:SbomGenerationPackageVersion="$$version" $(MSBUILD_ARGS); \
-	done; \
-	printf '%s\n' "$$version" > "$(PACKAGES_DIR)/package-version.txt"
+	@$(MAKE) _pack-projects PACK_BUILD_ARGS='--no-restore --no-build'
 
 .PHONY: pack-sbom
 pack-sbom: pack ## Alias of pack; every package already embeds an SPDX SBOM.
