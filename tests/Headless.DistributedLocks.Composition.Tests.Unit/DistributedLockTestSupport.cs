@@ -1,7 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics.Metrics;
+using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
 
@@ -112,5 +114,43 @@ internal static class DistributedLockTestSupport
                 eventIds.Add(eventId.Id);
             }
         }
+    }
+}
+
+/// <summary>
+/// A <see cref="FakeTimeProvider"/> that records when cadence timers are created and provides
+/// synchronized advancement so fake time does not outrun background monitoring loops.
+/// </summary>
+internal sealed class CadenceTimeProvider(TimeSpan? expectedCadence = null) : FakeTimeProvider
+{
+    private readonly TimeSpan _expectedCadence = expectedCadence ?? TimeSpan.FromSeconds(1);
+
+    public Channel<bool> CadenceTicks { get; } = Channel.CreateUnbounded<bool>();
+
+    public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+    {
+        var timer = base.CreateTimer(callback, state, dueTime, period);
+
+        // In-memory probes complete synchronously; matching timer registration indicates monitor cadence setup.
+        if (dueTime == _expectedCadence)
+        {
+            CadenceTicks.Writer.TryWrite(true);
+        }
+
+        return timer;
+    }
+
+    public async Task WaitForCadenceTickAsync(CancellationToken cancellationToken = default)
+    {
+        await CadenceTicks
+            .Reader.ReadAsync(cancellationToken)
+            .AsTask()
+            .WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
+    }
+
+    public async Task AdvanceCadenceAsync(TimeSpan? advanceBy = null, CancellationToken cancellationToken = default)
+    {
+        await WaitForCadenceTickAsync(cancellationToken);
+        Advance(advanceBy ?? _expectedCadence);
     }
 }

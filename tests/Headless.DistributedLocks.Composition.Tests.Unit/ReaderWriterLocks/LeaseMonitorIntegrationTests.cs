@@ -24,7 +24,8 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
     public async Task should_renew_read_lease_when_auto_extend_succeeds()
     {
         // given
-        var provider = _CreateProvider();
+        var timeProvider = new CadenceTimeProvider();
+        var provider = _CreateProvider(timeProvider: timeProvider);
         var resource = Faker.Random.AlphaNumeric(10);
         await using var handle = await provider.AcquireReadLockAsync(
             resource,
@@ -40,9 +41,10 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
         // returns true while the reader id is still in the set.
         for (var i = 0; i < 5; i++)
         {
-            _timeProvider.Advance(TimeSpan.FromSeconds(1));
-            await DistributedLockTestSupport.DrainUntilAsync(() => handle.RenewalCount >= i + 1, AbortToken);
+            await timeProvider.AdvanceCadenceAsync(cancellationToken: AbortToken);
         }
+
+        await timeProvider.WaitForCadenceTickAsync(AbortToken);
 
         // then
         handle.RenewalCount.Should().BeGreaterThanOrEqualTo(3);
@@ -85,7 +87,8 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
     public async Task should_renew_write_lease_when_auto_extend_succeeds()
     {
         // given
-        var provider = _CreateProvider();
+        var timeProvider = new CadenceTimeProvider();
+        var provider = _CreateProvider(timeProvider: timeProvider);
         var resource = Faker.Random.AlphaNumeric(10);
         await using var handle = await provider.AcquireWriteLockAsync(
             resource,
@@ -100,10 +103,10 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
         // when
         for (var i = 0; i < 5; i++)
         {
-            _timeProvider.Advance(TimeSpan.FromSeconds(1));
-            await DistributedLockTestSupport.DrainUntilAsync(() => handle.RenewalCount >= i + 1, AbortToken);
+            await timeProvider.AdvanceCadenceAsync(cancellationToken: AbortToken);
         }
 
+        await timeProvider.WaitForCadenceTickAsync(AbortToken);
         // then
         handle.RenewalCount.Should().BeGreaterThanOrEqualTo(3);
         handle.LostToken.IsCancellationRequested.Should().BeFalse();
@@ -381,16 +384,23 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
         provider.GetActiveMonitorCount(resource).Should().Be(0);
     }
 
-    private DistributedReadWriteLock _CreateProvider(IDistributedReadWriteLockStorage? storage = null)
+    private DistributedReadWriteLock _CreateProvider(
+        IDistributedReadWriteLockStorage? storage = null,
+        FakeTimeProvider? timeProvider = null
+    )
     {
         _guidGenerator.Create().Returns(_ => Guid.NewGuid());
 
+        var effectiveTimeProvider = timeProvider ?? _timeProvider;
         return new DistributedReadWriteLock(
-            storage ?? _storage,
+            storage
+                ?? (
+                    timeProvider is null ? _storage : new InMemoryDistributedReadWriteLockStorage(effectiveTimeProvider)
+                ),
             bus: null,
             new DistributedLockOptions(),
             _guidGenerator,
-            _timeProvider,
+            effectiveTimeProvider,
             LoggerFactory.CreateLogger<DistributedReadWriteLock>()
         );
     }
