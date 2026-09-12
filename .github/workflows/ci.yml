@@ -3,21 +3,6 @@ name: CI
 on:
   push:
     branches: [ "main" ]
-    paths:
-      - '.github/**'
-      - '.husky/**'
-      - 'demo/**'
-      - 'eng/**'
-      - 'scripts/**'
-      - 'src/**'
-      - 'test-assets/**'
-      - 'tests/**'
-      - 'Directory.*'
-      - 'Makefile'
-      - 'dotnet-tools.json'
-      - 'global.json'
-      - 'headless-framework.slnx'
-      - 'nuget.config'
   pull_request:
     branches: [ "main" ]
   release:
@@ -58,14 +43,37 @@ env:
   TEST_RESULTS_DIR: ./artifacts/test-results
   # Disable the Husky pre-commit hooks.
   HUSKY: 0
-  # Pack + SBOM and the conformance suites run only for a published release, or for a manual dispatch that
-  # opts in to rehearse the release path without publishing. Job-level `if:` cannot read `env`, so the jobs
-  # below repeat this expression.
-  RELEASE_CHECKS: ${{ github.event_name == 'release' || inputs.release_checks == true }}
 
 jobs:
+  changes:
+    name: "Select checks"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      dotnet: ${{ steps.changes.outputs.dotnet }}
+      dashboards: ${{ steps.changes.outputs.dashboards }}
+      tus: ${{ steps.changes.outputs.tus }}
+    steps:
+      - name: "Check out repository"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: "Verify check selection"
+        run: bash scripts/test-ci-changes.sh
+
+      - name: "Select checks from changed paths"
+        id: changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: bash scripts/ci-changes.sh >> "$GITHUB_OUTPUT"
+
   format:
     name: "Lint · C# formatting"
+    needs: changes
+    if: needs.changes.outputs.dotnet == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -88,6 +96,8 @@ jobs:
   # job builds the same solution with every analyzer in parallel. CI treats warnings as errors in both builds.
   analyzers:
     name: "Lint · .NET analyzers"
+    needs: changes
+    if: needs.changes.outputs.dotnet == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -136,6 +146,8 @@ jobs:
 
   dashboards:
     name: "Frontend · ${{ matrix.name }} dashboard"
+    needs: changes
+    if: needs.changes.outputs.dashboards == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
@@ -177,6 +189,8 @@ jobs:
 
   tus-demo:
     name: "Frontend · Tus demo"
+    needs: changes
+    if: needs.changes.outputs.tus == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -204,6 +218,8 @@ jobs:
 
   build:
     name: ".NET · Build & unit tests (${{ matrix.tz }})"
+    needs: changes
+    if: needs.changes.outputs.dotnet == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -459,13 +475,12 @@ jobs:
     uses: ./.github/workflows/r2-conformance.yml
     secrets: inherit
 
-  # The single required status check for `main`. Release-only jobs report "skipped" on pull requests, which
-  # passes; any failed or cancelled job fails the gate. Adding or renaming a job therefore never requires a
-  # branch-protection change.
+  # The single required status check for `main`. Unaffected and release-only jobs may skip; failures and
+  # cancellations (including check selection) fail the gate. Every validation job must be listed in needs.
   ci-status:
     name: "CI status"
     if: always()
-    needs: [ format, analyzers, dashboards, tus-demo, build, pack, messaging-conformance, r2-conformance ]
+    needs: [ changes, format, analyzers, dashboards, tus-demo, build, pack, messaging-conformance, r2-conformance ]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

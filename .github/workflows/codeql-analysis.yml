@@ -3,6 +3,11 @@ name: "CodeQL"
 on:
   push:
     branches: [ main ]
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/*.md'
   schedule:
     # Weekly rescan picks up improvements to CodeQL queries even without a push.
     - cron: "0 8 * * 4"
@@ -18,7 +23,7 @@ concurrency:
 env:
   DOTNET_CLI_TELEMETRY_OPTOUT: "1"
   DOTNET_NOLOGO: "true"
-  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+  HUSKY: "0"
 
 jobs:
   analyze:
@@ -52,11 +57,11 @@ jobs:
         with:
           global-json-file: "./global.json"
 
-      - name: "Setup nuget cache"
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+      - name: "Restore NuGet cache"
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
         with:
-          path: ${{ env.NUGET_PACKAGES }}
-          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/*.props', '**/*.targets', 'global.json', 'nuget.config') }}
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json', 'global.json', 'dotnet-tools.json') }}
           restore-keys: |
             ${{ runner.os }}-nuget-
 
@@ -72,7 +77,8 @@ jobs:
           build-mode: manual
 
       - name: "Build"
-        run: make rebuild-no-restore
+        # CI owns Roslyn diagnostics; CodeQL still extracts the full compiled solution and source generators.
+        run: make rebuild-no-restore MSBUILD_ARGS=-p:RunAnalyzers=false
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
