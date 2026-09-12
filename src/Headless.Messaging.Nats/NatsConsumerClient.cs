@@ -163,8 +163,10 @@ internal sealed class NatsConsumerClient(
                 NatsStreamReconciliation.Snapshot(config)
             );
 
-            // The provider sets storage itself, so it is asserted whether or not the callback touched it.
+            // The provider sets these itself, so they are asserted whether or not the callback touched them.
             assertedFields.Add(nameof(StreamConfig.Storage));
+            assertedFields.Add(nameof(StreamConfig.NoAck));
+            assertedFields.Add(nameof(StreamConfig.Retention));
 
             if (
                 !string.Equals(config.Name, streamName, StringComparison.Ordinal)
@@ -181,9 +183,18 @@ internal sealed class NatsConsumerClient(
             if (liveConfig is null)
             {
                 // First-run creation happens in every enabled mode; only an existing stream is contentious.
-                await _jsContext!.CreateStreamAsync(config, cts.Token).ConfigureAwait(false);
+                var created = await _jsContext!.CreateStreamAsync(config, cts.Token).ConfigureAwait(false);
+                liveConfig = created.Info.Config;
 
-                continue;
+                // CreateStreamAsync returns an existing same-name stream if another client won the race.
+                // Treat that topology exactly like the pre-existing branch: preserve sibling subjects and
+                // run the same verification/reconciliation decision instead of assuming this create won.
+                if (liveConfig.Subjects is { } racedSubjects)
+                {
+                    subjects.UnionWith(racedSubjects);
+                    expectedSubjects = _PruneOverlappingSubjects(subjects);
+                    config.Subjects = [.. expectedSubjects];
+                }
             }
 
             var divergences = new List<StreamDivergence>(

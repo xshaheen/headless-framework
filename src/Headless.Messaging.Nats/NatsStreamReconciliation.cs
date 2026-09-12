@@ -3,6 +3,8 @@
 using System.Globalization;
 using System.Reflection;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using NATS.Client.JetStream.Models;
 
 namespace Headless.Messaging.Nats;
@@ -25,26 +27,35 @@ internal static class NatsStreamReconciliation
 {
     /// <summary>
     /// Stream identity. The provider owns these and a separate guard already rejects a <c>StreamOptions</c>
-    /// callback that alters them, so they never participate in the field comparison. Subjects are compared, but
-    /// asymmetrically and by coverage rather than equality — see <see cref="FindUncoveredSubjects"/>.
+    /// callback that alters them. Retention must still enter the comparison below because the identity guard
+    /// runs after the provider asserts the lane-required value. Subjects are compared separately and by
+    /// coverage rather than equality — see <see cref="FindUncoveredSubjects"/>.
     /// </summary>
     private static readonly HashSet<string> _IdentityFields = new(StringComparer.Ordinal)
     {
         nameof(StreamConfig.Name),
         nameof(StreamConfig.Subjects),
-        nameof(StreamConfig.Retention),
     };
 
     /// <summary>
-    /// Fields the NATS server refuses to change on a live stream. An update carrying one of these fails at the
-    /// server rather than converging, so reporting a migration remedy is the only honest answer. Retention is
-    /// listed for completeness even though identity guarding keeps it out of the comparison.
+    /// Fields NATS server 2.9 accepts when updating a stream. The update validator in NATS server
+    /// <c>server/stream.go</c> does not special-case these fields, while MaxConsumers, Storage, Retention,
+    /// Mirror, RePublish, and one-way deletion/purge/seal flags are restricted. Anything outside this explicit
+    /// list is over-reported as immutable so an unverified field cannot reach an update that the server rejects.
     /// </summary>
-    private static readonly HashSet<string> _ImmutableFields = new(StringComparer.Ordinal)
+    private static readonly HashSet<string> _ReconcilableFields = new(StringComparer.Ordinal)
     {
-        nameof(StreamConfig.Storage),
-        nameof(StreamConfig.Retention),
-        nameof(StreamConfig.MaxConsumers),
+        nameof(StreamConfig.Description),
+        nameof(StreamConfig.Discard),
+        nameof(StreamConfig.DuplicateWindow),
+        nameof(StreamConfig.MaxAge),
+        nameof(StreamConfig.MaxBytes),
+        nameof(StreamConfig.MaxMsgSize),
+        nameof(StreamConfig.MaxMsgs),
+        nameof(StreamConfig.MaxMsgsPerSubject),
+        nameof(StreamConfig.Metadata),
+        nameof(StreamConfig.NoAck),
+        nameof(StreamConfig.NumReplicas),
     };
 
     private static readonly PropertyInfo[] _ComparableProperties =
@@ -122,12 +133,17 @@ internal static class NatsStreamReconciliation
                 continue;
             }
 
+            if (_StructurallyEqual(desiredValue, liveValue))
+            {
+                continue;
+            }
+
             divergences.Add(
                 new StreamDivergence(
                     property.Name,
                     _Render(desiredValue),
                     _Render(liveValue),
-                    _ImmutableFields.Contains(property.Name)
+                    _IsImmutable(property.Name, desiredValue, liveValue)
                 )
             );
         }
@@ -151,7 +167,7 @@ internal static class NatsStreamReconciliation
         return
         [
             .. requiredSubjects
-                .Where(required => !live.Any(pattern => Matches(pattern, required)))
+                .Where(required => !live.Any(pattern => _CoversSubject(pattern, required)))
                 .Order(StringComparer.Ordinal),
         ];
     }
@@ -188,6 +204,77 @@ internal static class NatsStreamReconciliation
         }
 
         return patternTokens.Length == subjectTokens.Length;
+    }
+
+    /// <summary>
+    /// Determines whether a live subject pattern covers a required subject pattern. Unlike ordinary NATS
+    /// matching, wildcard tokens on the right are requirements: <c>orders.*</c> requires exactly one arbitrary
+    /// token, while <c>orders.&gt;</c> requires one or more arbitrary trailing tokens and cannot be covered
+    /// by <c>orders.*</c>.
+    /// </summary>
+    private static bool _CoversSubject(string pattern, string required)
+    {
+        var patternTokens = pattern.Split('.');
+        var requiredTokens = required.Split('.');
+
+        for (var i = 0; i < patternTokens.Length; i++)
+        {
+            if (string.Equals(patternTokens[i], ">", StringComparison.Ordinal))
+            {
+                return i == patternTokens.Length - 1 && requiredTokens.Length > i;
+            }
+
+            if (i >= requiredTokens.Length)
+            {
+                return false;
+            }
+
+            if (string.Equals(patternTokens[i], "*", StringComparison.Ordinal))
+            {
+                // A live '*' consumes exactly one token and cannot satisfy the open-ended cardinality
+                // represented by a required trailing '>'.
+                if (string.Equals(requiredTokens[i], ">", StringComparison.Ordinal))
+                {
+                    return false;
+                }
+
+                continue;
+            }
+
+            if (!string.Equals(patternTokens[i], requiredTokens[i], StringComparison.Ordinal))
+            {
+                return false;
+            }
+        }
+
+        return patternTokens.Length == requiredTokens.Length;
+    }
+
+    /// <summary>
+    /// Classifies divergence against the NATS 2.9 update contract. One-way flags are special cases because
+    /// enabling them is accepted, while disabling an enabled flag is rejected. Unlisted fields stay immutable.
+    /// </summary>
+    private static bool _IsImmutable(string field, object? desiredValue, object? liveValue)
+    {
+        if (field is nameof(StreamConfig.Sealed) or nameof(StreamConfig.DenyDelete) or nameof(StreamConfig.DenyPurge))
+        {
+            return !(desiredValue is false && liveValue is true);
+        }
+
+        return !_ReconcilableFields.Contains(field);
+    }
+
+    private static bool _StructurallyEqual(object? desiredValue, object? liveValue)
+    {
+        if (desiredValue is null || liveValue is null)
+        {
+            return false;
+        }
+
+        var desiredNode = JsonSerializer.SerializeToNode(desiredValue, desiredValue.GetType());
+        var liveNode = JsonSerializer.SerializeToNode(liveValue, liveValue.GetType());
+
+        return JsonNode.DeepEquals(desiredNode, liveNode);
     }
 
     /// <summary>

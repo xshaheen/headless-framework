@@ -50,6 +50,62 @@ public sealed class StreamDivergenceReportTests : TestBase
     }
 
     [Fact]
+    public void should_not_report_content_equal_complex_fields_as_divergent()
+    {
+        var desired = new StreamConfig
+        {
+            Name = "s",
+            Metadata = new Dictionary<string, string> { ["owner"] = "orders" },
+        };
+        var live = new StreamConfig
+        {
+            Name = "s",
+            Metadata = new Dictionary<string, string> { ["owner"] = "orders" },
+        };
+        var asserted = new HashSet<string>(StringComparer.Ordinal) { nameof(StreamConfig.Metadata) };
+
+        var divergences = NatsStreamReconciliation.CompareFields(desired, live, asserted);
+
+        divergences.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void should_classify_an_unconfirmed_field_as_immutable()
+    {
+        var desired = new StreamConfig { Name = "s", TemplateOwner = "legacy-template" };
+        var live = new StreamConfig { Name = "s", TemplateOwner = "current-template" };
+        var asserted = new HashSet<string>(StringComparer.Ordinal) { nameof(StreamConfig.TemplateOwner) };
+
+        var divergences = NatsStreamReconciliation.CompareFields(desired, live, asserted);
+
+        divergences.Should().ContainSingle().Which.IsImmutable.Should().BeTrue();
+    }
+
+    [Fact]
+    public void should_report_a_retention_divergence_as_immutable()
+    {
+        var desired = new StreamConfig { Name = "s", Retention = StreamConfigRetention.Interest };
+        var live = new StreamConfig { Name = "s", Retention = StreamConfigRetention.Workqueue };
+        var asserted = new HashSet<string>(StringComparer.Ordinal) { nameof(StreamConfig.Retention) };
+
+        var divergences = NatsStreamReconciliation.CompareFields(desired, live, asserted);
+
+        divergences.Should().ContainSingle().Which.IsImmutable.Should().BeTrue();
+    }
+
+    [Fact]
+    public void should_report_a_provider_asserted_no_ack_divergence_as_reconcilable()
+    {
+        var desired = new StreamConfig { Name = "s", NoAck = false };
+        var live = new StreamConfig { Name = "s", NoAck = true };
+        var asserted = new HashSet<string>(StringComparer.Ordinal) { nameof(StreamConfig.NoAck) };
+
+        var divergences = NatsStreamReconciliation.CompareFields(desired, live, asserted);
+
+        divergences.Should().ContainSingle().Which.IsImmutable.Should().BeFalse();
+    }
+
+    [Fact]
     public void should_mark_storage_divergence_as_immutable()
     {
         var desired = new StreamConfig { Name = "s", Storage = StreamConfigStorage.File };
@@ -117,6 +173,30 @@ public sealed class StreamDivergenceReportTests : TestBase
         var uncovered = NatsStreamReconciliation.FindUncoveredSubjects(["a.b", "a.c"], liveSubjects: null);
 
         uncovered.Should().BeEquivalentTo(["a.b", "a.c"]);
+    }
+
+    [Fact]
+    public void should_not_treat_a_single_token_live_wildcard_as_covering_a_required_multi_token_wildcard()
+    {
+        var uncovered = NatsStreamReconciliation.FindUncoveredSubjects(["orders.>"], ["orders.*"]);
+
+        uncovered.Should().ContainSingle().Which.Should().Be("orders.>");
+    }
+
+    [Fact]
+    public void should_treat_a_multi_token_live_wildcard_as_covering_a_required_single_token_wildcard()
+    {
+        var uncovered = NatsStreamReconciliation.FindUncoveredSubjects(["orders.*"], ["orders.>"]);
+
+        uncovered.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void should_not_treat_an_exact_live_subject_as_covering_a_required_wildcard()
+    {
+        var uncovered = NatsStreamReconciliation.FindUncoveredSubjects(["orders.*"], ["orders.created"]);
+
+        uncovered.Should().ContainSingle().Which.Should().Be("orders.*");
     }
 
     [Theory]

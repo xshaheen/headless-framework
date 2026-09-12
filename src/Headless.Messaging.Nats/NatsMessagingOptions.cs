@@ -65,9 +65,10 @@ public sealed class NatsMessagingOptions
     public Func<NatsOpts, NatsOpts>? ConfigureConnection { get; set; }
 
     /// <summary>
-    /// Customises the JetStream <c>StreamConfig</c> when streams are auto-created. Applied after
-    /// the framework sets the stream name and wildcard subject; use this to adjust retention policy,
-    /// storage type, or replication factor.
+    /// Customises the JetStream <c>StreamConfig</c> when a missing stream is created and when building the
+    /// desired configuration for an existing stream under <c>Verify</c> or <c>Reconcile</c>. Use this to
+    /// adjust storage, replication, limits, and other supported stream settings. Stream name, subjects, and
+    /// retention are provider-owned lane identity.
     /// </summary>
     public Action<StreamConfig>? StreamOptions { get; set; }
 

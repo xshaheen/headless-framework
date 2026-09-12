@@ -108,8 +108,9 @@ nats.StreamProvisioning = NatsStreamProvisioning.Reconcile;
 **Breaking change from the previous `EnableSubscriberClientStreamAndSubjectCreation` flag.** That flag's
 `true` overwrote an existing stream's configuration on every consumer startup, which silently replaced the
 storage class, replica count, and limits of a stream provisioned with the NATS CLI, Terraform, or a
-Kubernetes operator. The default is now `Verify`, which reports the difference instead. `Reconcile` restores
-the old behavior and `Disabled` replaces the old `false`.
+Kubernetes operator. The default is now `Verify`, which reports the difference instead. `Reconcile` preserves
+the old behavior for updates JetStream accepts, reports immutable divergence instead of sending an update the
+server rejects, and `Disabled` replaces the old `false`.
 
 The comparison only covers fields this application actually asserts — what the provider sets plus whatever
 the `StreamOptions` callback sets. A field neither of them touched is never compared, because the server
@@ -126,9 +127,14 @@ stream and each contributes its own subjects, the old flag grew the subject list
 Under `Verify` the second group fails startup until the stream covers its subject. Either select `Reconcile`
 so the application maintains the subject list, or provision the stream with full subject coverage up front.
 
-Some differences cannot be fixed by any mode: JetStream refuses to change a live stream's storage type, for
-example. The diagnostic separates those and asks you to recreate or migrate the stream rather than
-suggesting a mode switch that would fail at the server.
+Some differences cannot be fixed by any mode: JetStream refuses to change a live stream's storage type,
+retention, maximum consumer count, or mirror, for example. One-way flags also cannot always be undone. The
+diagnostic separates those and asks you to recreate or migrate the stream rather than suggesting a mode
+switch that would fail at the server.
+
+`StreamOptions` observes property changes to decide what to compare. It cannot distinguish an explicit
+assignment to a property's initialized default from leaving that property unset. If the stream's live value
+differs from the default, express a different value through `StreamOptions` or align the stream out of band.
 
 ### Messaging Semantics
 
@@ -136,7 +142,7 @@ suggesting a mode switch that would fail at the server.
 - Delay stays in the core pipeline. This provider does not add broker-native scheduling.
 - Commit sends a double `ACK` and waits for JetStream to confirm settlement before returning.
 - Reject sends `NAK` so JetStream can redeliver. An envelope that cannot be constructed is terminally double-acknowledged and logged without payload or headers, preventing a broker redelivery storm.
-- `FetchMessageNamesAsync(...)` groups subjects into streams and creates them when auto-creation is enabled.
+- `FetchMessageNamesAsync(...)` groups subjects into streams and applies the selected `StreamProvisioning` mode.
 - Consumer startup creates filtered, lane-qualified durable consumers for each subscribed subject.
 - Message-level `SubjectShard(...)` publishes to `{messageName}.{shard}`. Stream auto-creation and durable consumer filters add wildcard coverage only for consumers that declared `.UseNats(c => c.Sharded())`. Shard symmetry is enforced at startup.
 - Sequential handling preserves per-subject delivery order best. Parallel handlers and redeliveries can reorder work.
@@ -152,5 +158,5 @@ suggesting a mode switch that would fail at the server.
 ## Side Effects
 
 - Establishes persistent connections to NATS servers
-- Creates JetStream streams and consumers if enabled
+- Creates JetStream streams and consumers according to the selected provisioning modes
 - Subscribes to subjects for message consumption
