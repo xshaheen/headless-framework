@@ -573,7 +573,7 @@ public sealed class MessagingCapabilityModelTests : TestBase
         });
 
         await using var provider = services.BuildServiceProvider();
-        Func<Task> act = lane switch
+        Func<Task<PublishReceipt>> act = lane switch
         {
             MessageLane.Bus => () =>
                 provider

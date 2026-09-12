@@ -98,7 +98,8 @@ internal static class DeliveryDecisionResolver
         // Normalized to UTC so the persisted instant is unambiguous regardless of the caller's offset. A past
         // instant is deliberately accepted: not-before semantics make it an already-satisfied constraint, and
         // rejecting it would punish a caller whose computed deadline elapsed between decision and publish.
-        DateTimeOffset? publishAt = scheduledAt?.ToUniversalTime();
+        // Match PostgreSQL precision while retaining the exact requested instant for frozen middleware options.
+        DateTimeOffset? publishAt = scheduledAt?.ToUniversalTime().Floor(TimeSpan.FromMicroseconds(1));
         if (delay is { } value)
         {
             if (value <= TimeSpan.Zero)
@@ -158,7 +159,7 @@ internal static class DeliveryDecisionResolver
             delay,
             publishAt,
             coordination,
-            publishAt is not null && delay is null ? publishAt : null
+            scheduledAt?.ToUniversalTime()
         );
     }
 }

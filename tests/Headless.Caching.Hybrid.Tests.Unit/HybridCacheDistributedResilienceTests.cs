@@ -474,7 +474,7 @@ public sealed class HybridCacheDistributedResilienceTests : TestBase
         var publisher = Substitute.For<IBus>();
         publisher
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(_ => Task.FromException(new InvalidOperationException(message)));
+            .Returns(_ => Task.FromException<PublishReceipt>(new InvalidOperationException(message)));
 
         return publisher;
     }
@@ -489,7 +489,7 @@ public sealed class HybridCacheDistributedResilienceTests : TestBase
         var publisher = Substitute.For<IBus>();
         publisher
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(Task.CompletedTask);
+            .Returns(default(PublishReceipt));
 
         return new HybridCache(l1, l2, publisher, options, timeProvider: timeProvider ?? _timeProvider);
     }

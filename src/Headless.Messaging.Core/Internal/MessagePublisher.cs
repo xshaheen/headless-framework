@@ -28,7 +28,7 @@ internal sealed class MessagePublisher(
     // because the compiler only caches method-group conversions for static methods.
     private readonly Func<long> _nowUnixTimeMilliseconds = () => timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
 
-    internal Task PublishAsync<T>(
+    internal async Task<PublishReceipt> PublishAsync<T>(
         MessageLane lane,
         T? content,
         MessageOptions? options,
@@ -59,63 +59,74 @@ internal sealed class MessagePublisher(
         }
 
         var declaredMessageType = options?.MessageType ?? typeof(T);
-        return publishPipeline.ExecuteAsync(
-            content,
-            lane,
-            options,
-            decision,
-            innerPublish: (middlewareOptions, ct) =>
-            {
-                var request = decision.PublishAt is { } publishAt
-                    ? publishRequestFactory.Create(
-                        content,
-                        declaredMessageType,
-                        middlewareOptions,
-                        // Nullable: an absolute schedule resolves a publishAt with no relative delay, so
-                        // dereferencing Delay here threw before the message ever reached storage.
-                        decision.Delay,
-                        publishAt,
-                        lane
+        PublishReceipt receipt = default;
+        await publishPipeline
+            .ExecuteAsync(
+                content,
+                lane,
+                options,
+                decision,
+                innerPublish: async (middlewareOptions, ct) =>
+                {
+                    var request = decision.PublishAt is { } publishAt
+                        ? publishRequestFactory.Create(
+                            content,
+                            declaredMessageType,
+                            middlewareOptions,
+                            // An absolute schedule has no relative delay.
+                            decision.Delay,
+                            publishAt,
+                            lane
+                        )
+                        : publishRequestFactory.Create(content, declaredMessageType, middlewareOptions, lane: lane);
+
+                    if (decision.Path is DeliveryPath.Direct)
+                    {
+                        DeliveryMetadata.Stamp(request.Message.Headers, decision);
+                        var transport = transportResolver(lane);
+                        await DirectPublisherCore
+                            .SendAsync(
+                                request.Message,
+                                request.Lane,
+                                serializer,
+                                transport.BrokerAddress,
+                                transport.SendAsync,
+                                _nowUnixTimeMilliseconds,
+                                _telemetry,
+                                _transportPublishTimeout,
+                                timeProvider,
+                                ct
+                            )
+                            .ConfigureAwait(false);
+                        receipt = new PublishReceipt(request.Message.Headers[Headers.MessageId], StorageId: null);
+                        return;
+                    }
+
+                    var writer =
+                        outboxWriterResolver()
+                        ?? throw new InvalidOperationException(
+                            "Durable delivery requires a configured messaging storage provider."
+                        );
+                    if (
+                        decision.Path is DeliveryPath.DurableCoordinated
+                        && options?.IsRetainedForTransactionReplay is not true
                     )
-                    : publishRequestFactory.Create(content, declaredMessageType, middlewareOptions, lane: lane);
+                    {
+                        // A completed domain occurrence is not rerun after rollback. Its direct outbox writes
+                        // cannot be recovered from EF's retained state, so mark before attempting storage.
+                        decision
+                            .Coordination.Coordinator!.GetOrAdd(static _ => new CommitRetryGuard())
+                            .PreventRetry();
+                    }
 
-                if (decision.Path is DeliveryPath.Direct)
-                {
-                    DeliveryMetadata.Stamp(request.Message.Headers, decision);
-                    var transport = transportResolver(lane);
-                    return DirectPublisherCore.SendAsync(
-                        request.Message,
-                        request.Lane,
-                        serializer,
-                        transport.BrokerAddress,
-                        transport.SendAsync,
-                        _nowUnixTimeMilliseconds,
-                        _telemetry,
-                        _transportPublishTimeout,
-                        timeProvider,
-                        ct
-                    );
-                }
-
-                var writer =
-                    outboxWriterResolver()
-                    ?? throw new InvalidOperationException(
-                        "Durable delivery requires a configured messaging storage provider."
-                    );
-                if (
-                    decision.Path is DeliveryPath.DurableCoordinated
-                    && options?.IsRetainedForTransactionReplay is not true
-                )
-                {
-                    // A completed domain occurrence is not rerun after rollback. Its direct outbox writes
-                    // cannot be recovered from EF's retained state, so mark before attempting storage.
-                    decision.Coordination.Coordinator!.GetOrAdd(static _ => new CommitRetryGuard()).PreventRetry();
-                }
-
-                return writer.WriteAsync(request, decision, ct);
-            },
-            cancellationToken
-        );
+                    var storageId = await writer.WriteAsync(request, decision, ct).ConfigureAwait(false);
+                    receipt = new PublishReceipt(request.Message.Headers[Headers.MessageId], storageId);
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+        // Middleware may suppress publication before the request and its identity exist.
+        return receipt;
     }
 
     private DeliveryCoordination _ResolveCoordination(ICommitCoordinator? coordinator)

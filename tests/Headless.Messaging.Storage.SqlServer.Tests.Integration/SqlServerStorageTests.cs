@@ -23,7 +23,7 @@ namespace Tests;
 /// Inherits from <see cref="DataStorageTestsBase"/> to run standard storage tests.
 /// </summary>
 [Collection<SqlServerTestFixture>]
-public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataStorageTestsBase
+public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) : DataStorageTestsBase
 {
     [Theory]
     [InlineData(MessageLane.Bus, 0L)]

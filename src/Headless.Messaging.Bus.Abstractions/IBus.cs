@@ -30,7 +30,7 @@ public interface IBus
     /// <param name="contentObj">The message payload. Can be <see langword="null"/>.</param>
     /// <param name="options">Optional publish overrides for delivery, message name, correlation, delay, and custom headers.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
-    /// <returns>A task representing the publish operation.</returns>
+    /// <returns>A receipt with the resolved message identity and durable row handle, or an empty receipt when middleware suppresses publication.</returns>
     /// <exception cref="ArgumentException">
     /// Thrown when <see cref="MessageOptions.TenantId"/> is set to an empty or whitespace value.
     /// </exception>
@@ -45,13 +45,17 @@ public interface IBus
     /// supplied with disagreeing values, or when any outbound header name/value contains control
     /// characters.
     /// </exception>
-    Task PublishAsync<T>(T? contentObj, PublishOptions? options, CancellationToken cancellationToken = default);
+    Task<PublishReceipt> PublishAsync<T>(
+        T? contentObj,
+        PublishOptions? options,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>Publishes a message using the configured contract and host delivery mode, which defaults to Auto.</summary>
     /// <typeparam name="T">The message type.</typeparam>
     /// <param name="contentObj">The message payload. Can be <see langword="null"/>.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
-    /// <returns>A task representing transport acceptance or durable capture, not consumer completion.</returns>
+    /// <returns>A receipt for transport acceptance or durable capture, or an empty receipt when middleware suppresses publication. This does not imply consumer completion.</returns>
     /// <exception cref="InvalidOperationException">Thrown when the selected delivery mode requires unavailable storage or an active commit boundary is incompatible.</exception>
-    Task PublishAsync<T>(T? contentObj, CancellationToken cancellationToken = default);
+    Task<PublishReceipt> PublishAsync<T>(T? contentObj, CancellationToken cancellationToken = default);
 }

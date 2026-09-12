@@ -160,6 +160,23 @@ public sealed class DeliveryDecisionResolverTests : TestBase
     }
 
     [Fact]
+    public void should_normalize_absolute_eligibility_to_microseconds_without_changing_requested_instant()
+    {
+        var scheduledAt = _Now.AddTicks(17);
+        var decision = DeliveryDecisionResolver.Resolve(
+            MessageLane.Bus,
+            DeliveryMode.Auto,
+            null,
+            DeliveryCoordination.None,
+            _Now,
+            scheduledAt
+        );
+
+        decision.PublishAt.Should().Be(_Now.AddTicks(10));
+        decision.ScheduledAt.Should().Be(scheduledAt);
+    }
+
+    [Fact]
     public void should_reject_supplying_both_a_delay_and_an_absolute_schedule()
     {
         var act = () =>

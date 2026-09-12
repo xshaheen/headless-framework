@@ -16,7 +16,7 @@ namespace Tests;
 
 /// <summary>Base class for data storage implementation tests.</summary>
 [PublicAPI]
-public abstract class DataStorageTestsBase : TestBase
+public abstract partial class DataStorageTestsBase : TestBase
 {
     /// <summary>Gets the data storage instance for testing.</summary>
     protected abstract IDataStorage GetStorage();

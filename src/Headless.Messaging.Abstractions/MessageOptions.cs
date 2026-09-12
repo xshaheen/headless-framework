@@ -56,8 +56,9 @@ public abstract record MessageOptions
     /// <see cref="Delay"/> on the same call is rejected before any side effect.
     /// </para>
     /// <para>
-    /// Timing is <b>not-before</b>, not at-deadline: dispatch happens at or after this instant, never before it.
-    /// An instant already in the past is accepted and dispatches immediately rather than being rejected.
+    /// Eligibility is normalized to UTC with sub-microsecond ticks truncated to match all storage providers.
+    /// Timing is <b>not-before</b>: dispatch happens at or after that normalized instant with no upper latency bound.
+    /// An instant already in the past is accepted and becomes immediately eligible.
     /// </para>
     /// <para>
     /// This is delivery-eligibility state, not an immutable audit field. Scheduling here carries no key, no
