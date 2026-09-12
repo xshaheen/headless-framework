@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -28,18 +27,5 @@ public static class SetupApiSurfaces
         services.TryAddSingleton<Surfaces.ApiSurfaceRegistry>();
 
         return services;
-    }
-
-    /// <summary>
-    /// Adds <see cref="Surfaces.ApiSurfaceMiddleware"/> to the HTTP request pipeline.
-    /// Should be placed immediately after <c>UseRouting()</c> and before authentication or authorization.
-    /// </summary>
-    /// <param name="app">The application builder.</param>
-    /// <returns>The application builder for chaining.</returns>
-    public static IApplicationBuilder UseHeadlessApiSurfaces(this IApplicationBuilder app)
-    {
-        Argument.IsNotNull(app);
-
-        return app.UseMiddleware<Surfaces.ApiSurfaceMiddleware>();
     }
 }

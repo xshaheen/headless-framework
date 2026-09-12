@@ -59,7 +59,7 @@ public sealed class OrderService(IRequestContext context)
 
 ### API surfaces
 
-`IApiSurfaceMetadata` and `[ApiSurface("portal")]` identify an endpoint's API surface. `ApiSurfaceDescriptor` contains immutable route, authorization, tenancy, and OpenAPI defaults. `ApiSurfaceFeature.Surface` exposes that descriptor on the request; it does not describe the effective endpoint authorization policy.
+`IApiSurfaceMetadata` and `[ApiSurface("portal")]` identify an endpoint's API surface. `ApiSurfaceDescriptor` contains immutable route, authorization, tenancy, and OpenAPI defaults. `HttpContext.GetApiSurface()` in `Headless.Api.Core` resolves that descriptor from the selected endpoint after routing. It does not describe the effective endpoint authorization policy.
 
 `ApiSurfaceTenancyMode` has `Unspecified`, `RequireTenant`, `AllowMissingTenant`, and `SkipTenantResolution` values. These are metadata defaults; enforcement belongs to the HTTP tenancy integration.
 

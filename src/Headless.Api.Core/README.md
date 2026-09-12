@@ -138,7 +138,9 @@ builder.Services.AddHeadlessApiSurfaces(options => options.AddSurface("portal", 
 
 Explicit controller or endpoint `RequireTenant` / `AllowMissingTenant` metadata takes precedence over surface defaults. `SkipTenantResolution` skips HTTP tenant extraction; it does not permit a missing tenant. An explicit tenancy requirement or exemption also suppresses a surface's skip-resolution default.
 
-Place `UseHeadlessApiSurfaces()` after `UseRouting()` and before `UseAuthentication()`, `UseHeadlessTenancy()`, and `UseAuthorization()`. The middleware attaches a reused `ApiSurfaceFeature` and tags the current activity with `api.surface`. Unmatched requests use `unknown`; matched endpoints without surface metadata use `unclassified`. Re-execution clears the previous feature.
+API surfaces require no middleware call. After routing, use `HttpContext.GetApiSurface()` to read the selected endpoint's immutable defaults. The lookup returns `null` for unmatched or unmarked endpoints and follows endpoint changes during re-execution. A marked endpoint whose surface is not registered throws.
+
+With `Headless.Api.ServiceDefaults` OpenTelemetry enabled, completed request spans receive the `api.surface` tag. Unmatched requests use `unknown`; matched endpoints without surface metadata use `unclassified`. The tag reflects the endpoint visible at response completion and is not available during authentication. Custom telemetry callbacks that run after request disposal must capture `ApiSurfaceRegistry` from host services and resolve the selected endpoint's `IApiSurfaceMetadata`. `GetApiSurface()` uses request services and is intended for the active request pipeline.
 
 Surface and document names are case-insensitive identities containing ASCII letters, digits, periods, hyphens, or underscores. `.` and `..` are invalid. Surface names `unknown`, `unclassified`, and `infrastructure` are reserved. Duplicate surface/document names and invalid configuration fail validation. Unknown surface lookups throw. Document names default to the lowercase surface name; titles default to `<surfaceName> API`.
 

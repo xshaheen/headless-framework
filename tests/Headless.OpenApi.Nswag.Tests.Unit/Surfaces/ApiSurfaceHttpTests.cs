@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Diagnostics;
 using System.Net;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
@@ -29,12 +28,6 @@ public sealed class ApiSurfaceHttpTests : TestBase
     [Fact]
     public async Task should_enforce_defaults_and_overrides_and_isolate_served_documents()
     {
-        using var activityListener = new ActivityListener
-        {
-            ShouldListenTo = source => source.Name == "Microsoft.AspNetCore",
-            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
-        };
-        ActivitySource.AddActivityListener(activityListener);
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseUrls("http://127.0.0.1:0");
         builder.Logging.ClearProviders();
@@ -74,13 +67,10 @@ public sealed class ApiSurfaceHttpTests : TestBase
         await using var app = builder.Build();
         app.UseDeveloperExceptionPage();
         app.UseRouting();
-        app.UseHeadlessApiSurfaces();
         app.Use(
             async (context, next) =>
             {
-                context.Response.Headers["X-Surface"] =
-                    context.Features.Get<ApiSurfaceFeature>()?.SurfaceName ?? "none";
-                context.Response.Headers["X-Surface-Tag"] = Activity.Current?.GetTagItem("api.surface")?.ToString();
+                context.Response.Headers["X-Surface"] = context.GetApiSurface()?.SurfaceName ?? "none";
                 await next(context);
             }
         );
@@ -105,7 +95,6 @@ public sealed class ApiSurfaceHttpTests : TestBase
                     .StatusCode.Should()
                     .Be(HttpStatusCode.Unauthorized, await unauthorized.Content.ReadAsStringAsync(AbortToken));
                 unauthorized.Headers.GetValues("X-Surface").Should().ContainSingle("portal");
-                unauthorized.Headers.GetValues("X-Surface-Tag").Should().ContainSingle("portal");
                 client.DefaultRequestHeaders.Add("X-User", "alice");
                 using var forbidden = await client.GetAsync($"/api/portal/{style}/required", AbortToken);
                 forbidden.StatusCode.Should().Be(HttpStatusCode.Forbidden);

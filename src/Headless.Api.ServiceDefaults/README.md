@@ -73,6 +73,8 @@ builder.AddHeadless(configureServices: options =>
 });
 ```
 
+When API surfaces are registered, the default OpenTelemetry response enricher adds `api.surface` to completed request spans. It uses the selected endpoint's configured surface name, `unknown` for unmatched requests, and `unclassified` for unmarked endpoints. No API-surface middleware is required. Replacing `EnrichWithHttpResponse` in `ConfigureAspNetCoreInstrumentation` replaces this default too; capture and invoke the existing delegate to preserve it.
+
 `AddHeadless()` also accepts overloads for explicit string-encryption and string-hash configuration:
 
 - `AddHeadless(IConfiguration stringEncryptionConfig, IConfiguration stringHashConfig, ...)`

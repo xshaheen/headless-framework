@@ -10,7 +10,7 @@ namespace Headless.Api.Surfaces;
 [PublicAPI]
 public sealed class ApiSurfaceRegistry
 {
-    private readonly FrozenDictionary<string, ApiSurfaceFeature> _features;
+    private readonly FrozenDictionary<string, ApiSurfaceDescriptor> _surfaces;
 
     public ApiSurfaceRegistry(IOptions<ApiSurfaceOptions> options)
     {
@@ -20,22 +20,16 @@ public sealed class ApiSurfaceRegistry
             .OrderBy(x => x.SurfaceName, StringComparer.OrdinalIgnoreCase)
             .ToArray();
         Surfaces = Array.AsReadOnly(surfaces);
-        _features = surfaces.ToFrozenDictionary(
-            x => x.SurfaceName,
-            x => new ApiSurfaceFeature(x),
-            StringComparer.OrdinalIgnoreCase
-        );
+        _surfaces = surfaces.ToFrozenDictionary(x => x.SurfaceName, StringComparer.OrdinalIgnoreCase);
     }
 
     public IReadOnlyList<ApiSurfaceDescriptor> Surfaces { get; }
 
     /// <summary>Returns the configured surface using a case-insensitive name lookup.</summary>
     /// <exception cref="InvalidOperationException">The surface was not registered.</exception>
-    public ApiSurfaceDescriptor GetRequiredSurface(string surfaceName) => GetRequiredFeature(surfaceName).Surface;
-
-    internal ApiSurfaceFeature GetRequiredFeature(string surfaceName) =>
-        _features.TryGetValue(surfaceName, out var feature)
-            ? feature
+    public ApiSurfaceDescriptor GetRequiredSurface(string surfaceName) =>
+        _surfaces.TryGetValue(surfaceName, out var surface)
+            ? surface
             : throw new InvalidOperationException(
                 $"API surface '{surfaceName}' has not been configured. Register it with AddHeadlessApiSurfaces."
             );
