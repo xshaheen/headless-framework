@@ -53,9 +53,9 @@ public static class SetupNswag
         services.AddOpenApiDocument(
             (settings, serviceProvider) =>
             {
-                _ConfigureGeneratorSettings(settings, serviceProvider, headlessOptions);
+                ConfigureGeneratorSettings(settings, serviceProvider, headlessOptions);
                 setupGeneratorActions?.Invoke(settings);
-                _ConfigureHeadlessGeneratorSettings(settings, headlessOptions);
+                ConfigureHeadlessGeneratorSettings(settings, headlessOptions);
             }
         );
 
@@ -87,9 +87,9 @@ public static class SetupNswag
         services.AddOpenApiDocument(
             (settings, serviceProvider) =>
             {
-                _ConfigureGeneratorSettings(settings, serviceProvider, headlessOptions);
+                ConfigureGeneratorSettings(settings, serviceProvider, headlessOptions);
                 setupGeneratorActions?.Invoke(settings, serviceProvider);
-                _ConfigureHeadlessGeneratorSettings(settings, headlessOptions);
+                ConfigureHeadlessGeneratorSettings(settings, headlessOptions);
             }
         );
 
@@ -329,7 +329,7 @@ public static class SetupNswag
         return options;
     }
 
-    private static void _ConfigureGeneratorSettings(
+    internal static void ConfigureGeneratorSettings(
         AspNetCoreOpenApiDocumentGeneratorSettings settings,
         IServiceProvider serviceProvider,
         HeadlessNswagOptions headlessOptions
@@ -362,7 +362,7 @@ public static class SetupNswag
         settings.OperationProcessors.Add(new ProblemDetailsOperationProcessor());
     }
 
-    private static void _ConfigureHeadlessGeneratorSettings(
+    internal static void ConfigureHeadlessGeneratorSettings(
         AspNetCoreOpenApiDocumentGeneratorSettings settings,
         HeadlessNswagOptions headlessOptions
     )
