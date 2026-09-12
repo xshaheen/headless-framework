@@ -3,6 +3,7 @@
 using Headless.Checks;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Api;
@@ -23,7 +24,8 @@ public static class SetupApiSurfaces
         Argument.IsNotNull(services);
         Argument.IsNotNull(configure);
 
-        services.Configure(configure);
+        services.Configure<Surfaces.ApiSurfaceOptions, Surfaces.ApiSurfaceOptionsValidator>(configure);
+        services.TryAddSingleton<Surfaces.ApiSurfaceRegistry>();
 
         return services;
     }

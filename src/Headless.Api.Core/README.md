@@ -116,6 +116,32 @@ public sealed class TokenValidator(IJwtTokenFactory tokens)
 
 ## Configuration
 
+### API surfaces
+
+`AddHeadlessApiSurfaces(...)` configures mutable `ApiSurfaceBuilder` instances and registers a singleton `ApiSurfaceRegistry`. MVC, Minimal API, telemetry, and OpenAPI use its immutable snapshot. Configuration and `PostConfigure` callbacks finish before the snapshot is created; runtime changes require a new host.
+
+```csharp
+using Headless.Api;
+using Headless.Api.Surfaces;
+
+builder.Services.AddHeadlessApiSurfaces(options => options.AddSurface("portal", surface =>
+{
+    surface.RoutePrefix = "api/portal";
+    surface.AuthorizationPolicy = "tenant";
+    surface.TenancyMode = ApiSurfaceTenancyMode.RequireTenant;
+    surface.OpenApi.DocumentName = "portal";
+    surface.OpenApi.Title = "Portal API";
+}));
+```
+
+`AuthorizationPolicy` adds a native named policy. `[AllowAnonymous]` / `.AllowAnonymous()` still bypass authorization. `RequireTenant` requires a policy containing `TenantRequirement`, the Headless tenant authorization handler, and current-tenant services. The mode alone does not install enforcement. Configure these through `AddHeadlessTenancy(...)` as shown above.
+
+Explicit controller or endpoint `RequireTenant` / `AllowMissingTenant` metadata takes precedence over surface defaults. `SkipTenantResolution` skips HTTP tenant extraction; it does not permit a missing tenant. An explicit tenancy requirement or exemption also suppresses a surface's skip-resolution default.
+
+Place `UseHeadlessApiSurfaces()` after `UseRouting()` and before `UseAuthentication()`, `UseHeadlessTenancy()`, and `UseAuthorization()`. The middleware attaches a reused `ApiSurfaceFeature` and tags the current activity with `api.surface`. Unmatched requests use `unknown`; matched endpoints without surface metadata use `unclassified`. Re-execution clears the previous feature.
+
+Surface and document names are case-insensitive identities containing ASCII letters, digits, periods, hyphens, or underscores. `.` and `..` are invalid. Surface names `unknown`, `unclassified`, and `infrastructure` are reserved. Duplicate surface/document names and invalid configuration fail validation. Unknown surface lookups throw. Document names default to the lowercase surface name; titles default to `<surfaceName> API`.
+
 Exception mapping registered by `AddHeadlessProblemDetails()`:
 
 | Exception | Response |
@@ -153,6 +179,7 @@ All other exceptions return `false`; the host default or a downstream handler re
 
 ## Side Effects
 
+- Opt-in surface registration validates options at startup and registers the immutable singleton registry; middleware sets the request feature and activity tag.
 - Registers `HttpContextAccessor` (via `AddHeadlessProblemDetails`)
 - Configures response compression providers (Brotli, Gzip)
 - Configures Kestrel limits and disables `Server` response header (via `ConfigureHeadlessDefaultApi`)

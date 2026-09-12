@@ -1,60 +1,73 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
-using System.Collections.Frozen;
+using FluentValidation;
 using Headless.Checks;
 
 namespace Headless.Api.Surfaces;
 
-/// <summary>
-/// Options for configuring API surfaces across the application.
-/// </summary>
+/// <summary>Startup configuration for named API surfaces. Runtime changes require a new host.</summary>
+[PublicAPI]
 public sealed class ApiSurfaceOptions
 {
-    private readonly ConcurrentDictionary<string, ApiSurfaceDescriptor> _surfaces = new(
-        StringComparer.OrdinalIgnoreCase
-    );
+    private readonly Dictionary<string, ApiSurfaceBuilder> _surfaces = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Adds or configures an API surface partition.
-    /// </summary>
-    /// <param name="surfaceName">The unique name of the surface.</param>
-    /// <param name="configure">Optional configuration callback.</param>
-    /// <returns>This options instance for chaining.</returns>
-    public ApiSurfaceOptions AddSurface(string surfaceName, Action<ApiSurfaceDescriptor>? configure = null)
+    public ApiSurfaceOptions AddSurface(string surfaceName, Action<ApiSurfaceBuilder>? configure = null)
     {
         Argument.IsNotNullOrWhiteSpace(surfaceName);
+        var builder = new ApiSurfaceBuilder(surfaceName);
+        if (!_surfaces.TryAdd(surfaceName, builder))
+        {
+            throw new InvalidOperationException($"API surface '{surfaceName}' is already configured.");
+        }
 
-        var descriptor = _surfaces.GetOrAdd(surfaceName, name => new ApiSurfaceDescriptor(name));
-        configure?.Invoke(descriptor);
-
+        configure?.Invoke(builder);
         return this;
     }
 
-    /// <summary>
-    /// Gets all registered surface descriptors.
-    /// </summary>
-    public IReadOnlyCollection<ApiSurfaceDescriptor> Surfaces => _surfaces.Values.ToList();
+    public IReadOnlyCollection<ApiSurfaceBuilder> Surfaces => _surfaces.Values;
+}
 
-    /// <summary>
-    /// Attempts to retrieve a surface descriptor by name.
-    /// </summary>
-    public bool TryGetSurface(string surfaceName, out ApiSurfaceDescriptor? descriptor)
+internal sealed class ApiSurfaceOptionsValidator : AbstractValidator<ApiSurfaceOptions>
+{
+    public ApiSurfaceOptionsValidator()
     {
-        return _surfaces.TryGetValue(surfaceName, out descriptor);
+        RuleForEach(x => x.Surfaces)
+            .ChildRules(surface =>
+            {
+                surface
+                    .RuleFor(x => x.SurfaceName)
+                    .Must(_IsSafeName)
+                    .WithMessage(
+                        "Surface names must contain only ASCII letters, digits, hyphens, underscores, or periods."
+                    );
+                surface
+                    .RuleFor(x => x.SurfaceName)
+                    .Must(name =>
+                        !new[] { "unknown", "unclassified", "infrastructure" }.Contains(
+                            name,
+                            StringComparer.OrdinalIgnoreCase
+                        )
+                    )
+                    .WithMessage("The surface name is reserved for telemetry classification.");
+                surface.RuleFor(x => x.TenancyMode).IsInEnum();
+                surface
+                    .RuleFor(x => x.OpenApi.DocumentName)
+                    .Must(_IsSafeName)
+                    .WithMessage(
+                        "Document names must be safe URL segments containing ASCII letters, digits, hyphens, underscores, or periods."
+                    );
+                surface.RuleFor(x => x.OpenApi.Title).NotEmpty();
+            });
+        RuleFor(x => x.Surfaces)
+            .Must(surfaces =>
+                surfaces.Select(x => x.OpenApi.DocumentName).ToHashSet(StringComparer.OrdinalIgnoreCase).Count
+                == surfaces.Count
+            )
+            .WithMessage("API surface document names must be unique (case-insensitive).");
     }
 
-    /// <summary>
-    /// Builds a frozen lookup map from surface name to <see cref="ApiSurfaceFeature"/> for zero-allocation request handling.
-    /// </summary>
-    public FrozenDictionary<string, ApiSurfaceFeature> BuildFeatureLookup()
-    {
-        var dictionary = new Dictionary<string, ApiSurfaceFeature>(StringComparer.OrdinalIgnoreCase);
-        foreach (var descriptor in _surfaces.Values)
-        {
-            dictionary[descriptor.SurfaceName] = descriptor.ToFeature();
-        }
-
-        return dictionary.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
-    }
+    private static bool _IsSafeName(string? name) =>
+        !string.IsNullOrWhiteSpace(name)
+        && name is not "." and not ".."
+        && name.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_' or '.');
 }

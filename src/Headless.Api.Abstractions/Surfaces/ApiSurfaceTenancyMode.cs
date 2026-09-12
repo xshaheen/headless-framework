@@ -6,7 +6,7 @@ namespace Headless.Api.Surfaces;
 /// <summary>
 /// Dictates how multi-tenancy requirements are applied to endpoints in an API surface.
 /// </summary>
-public enum SurfaceTenancyPosture
+public enum ApiSurfaceTenancyMode
 {
     /// <summary>
     /// The surface does not apply default tenancy metadata. Endpoints or controllers define their own policy.

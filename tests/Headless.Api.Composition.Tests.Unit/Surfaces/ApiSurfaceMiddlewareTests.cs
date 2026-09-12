@@ -19,7 +19,7 @@ public sealed class ApiSurfaceMiddlewareTests : TestBase
     public async Task should_tag_unknown_when_no_endpoint_mapped()
     {
         var options = Options.Create(new ApiSurfaceOptions());
-        var middleware = new ApiSurfaceMiddleware(_ => Task.CompletedTask, options);
+        var middleware = new ApiSurfaceMiddleware(_ => Task.CompletedTask, new ApiSurfaceRegistry(options));
         var context = new DefaultHttpContext();
 
         using var activity = new Activity("test").Start();
@@ -31,10 +31,10 @@ public sealed class ApiSurfaceMiddlewareTests : TestBase
     }
 
     [Fact]
-    public async Task should_tag_infrastructure_when_endpoint_has_no_surface_metadata()
+    public async Task should_tag_unclassified_when_endpoint_has_no_surface_metadata()
     {
         var options = Options.Create(new ApiSurfaceOptions());
-        var middleware = new ApiSurfaceMiddleware(_ => Task.CompletedTask, options);
+        var middleware = new ApiSurfaceMiddleware(_ => Task.CompletedTask, new ApiSurfaceRegistry(options));
         var context = new DefaultHttpContext();
         context.SetEndpoint(new Endpoint(_ => Task.CompletedTask, new EndpointMetadataCollection(), "infra"));
 
@@ -42,7 +42,7 @@ public sealed class ApiSurfaceMiddlewareTests : TestBase
 
         await middleware.InvokeAsync(context);
 
-        activity.GetTagItem("api.surface").Should().Be("infrastructure");
+        activity.GetTagItem("api.surface").Should().Be("unclassified");
         context.Features.Get<ApiSurfaceFeature>().Should().BeNull();
     }
 
@@ -55,13 +55,13 @@ public sealed class ApiSurfaceMiddlewareTests : TestBase
             s =>
             {
                 s.RoutePrefix = "api/portal";
-                s.RequiredPolicy = "PortalUser";
-                s.TenancyPosture = SurfaceTenancyPosture.RequireTenant;
+                s.AuthorizationPolicy = "PortalUser";
+                s.TenancyMode = ApiSurfaceTenancyMode.RequireTenant;
             }
         );
 
         var options = Options.Create(surfaceOptions);
-        var middleware = new ApiSurfaceMiddleware(_ => Task.CompletedTask, options);
+        var middleware = new ApiSurfaceMiddleware(_ => Task.CompletedTask, new ApiSurfaceRegistry(options));
         var context = new DefaultHttpContext();
         var metadata = new EndpointMetadataCollection(new StubSurfaceMetadata("Portal"));
         context.SetEndpoint(new Endpoint(_ => Task.CompletedTask, metadata, "portal-endpoint"));
@@ -74,8 +74,8 @@ public sealed class ApiSurfaceMiddlewareTests : TestBase
         var feature = context.Features.Get<ApiSurfaceFeature>();
         feature.Should().NotBeNull();
         feature!.SurfaceName.Should().Be("Portal");
-        feature.RoutePrefix.Should().Be("api/portal");
-        feature.RequiredPolicy.Should().Be("PortalUser");
-        feature.TenancyPosture.Should().Be(SurfaceTenancyPosture.RequireTenant);
+        feature.Surface.RoutePrefix.Should().Be("api/portal");
+        feature.Surface.AuthorizationPolicy.Should().Be("PortalUser");
+        feature.Surface.TenancyMode.Should().Be(ApiSurfaceTenancyMode.RequireTenant);
     }
 }

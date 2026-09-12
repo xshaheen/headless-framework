@@ -51,6 +51,19 @@ Use `AddHeadlessMinimalApiEntityTagConcurrency(options => ...)` to validate the 
 
 ## Configuration
 
+### API surfaces
+
+After `AddHeadlessApiSurfaces(...)`, `app.MapApiSurface("portal")` returns a native `RouteGroupBuilder` with the configured prefix and named authorization policy. The optional callback and returned builder support ordinary ASP.NET Core endpoint conventions.
+
+```csharp
+var portal = app.MapApiSurface("portal");
+portal.MapGet("profile", () => "profile");
+portal.MapGet("bootstrap", () => "bootstrap").AllowMissingTenant();
+portal.MapGet("status", () => "ready").AllowAnonymous();
+```
+
+Endpoint tenancy choices override surface defaults. Native authorization policies remain additive, and `AllowAnonymous` bypasses them. `RequireTenant` metadata needs the policy and services described in `Headless.Api.Core`. Unknown surface names throw during mapping; nested groups with conflicting surface identities throw when endpoints are built. API Explorer version groups remain independent.
+
 Representation validation is optional. The default accepts any strong entity tag.
 
 ## Dependencies
@@ -60,6 +73,7 @@ Representation validation is optional. The default accepts any strong entity tag
 
 ## Side Effects
 
+- `MapApiSurface` adds group route, authorization, and tenancy conventions using the shared surface registry.
 - Configures `JsonOptions` for Minimal APIs
 - Returning `ToHttpResult(...)` makes the full ApiResult response set discoverable by OpenAPI without manual
   `.Produces(...)` calls

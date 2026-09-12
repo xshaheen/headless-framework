@@ -57,7 +57,13 @@ public sealed class OrderService(IRequestContext context)
 
 ## Configuration
 
-No configuration required. This package contains interfaces only.
+### API surfaces
+
+`IApiSurfaceMetadata` and `[ApiSurface("portal")]` identify an endpoint's API surface. `ApiSurfaceDescriptor` contains immutable route, authorization, tenancy, and OpenAPI defaults. `ApiSurfaceFeature.Surface` exposes that descriptor on the request; it does not describe the effective endpoint authorization policy.
+
+`ApiSurfaceTenancyMode` has `Unspecified`, `RequireTenant`, `AllowMissingTenant`, and `SkipTenantResolution` values. These are metadata defaults; enforcement belongs to the HTTP tenancy integration.
+
+No runtime registration is required by this package.
 
 ## Dependencies
 

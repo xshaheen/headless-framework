@@ -1,9 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Api.MultiTenancy;
 using Headless.Checks;
 using Headless.Constants;
 using Headless.OpenApi.Nswag.OperationProcessors;
+using Microsoft.AspNetCore.Authorization;
 using NSwag;
+using NSwag.Generation.AspNetCore;
 using NSwag.Generation.Processors;
 using NSwag.Generation.Processors.Contexts;
 
@@ -13,17 +16,30 @@ namespace Headless.OpenApi.Nswag.Surfaces;
 /// Documents the missing-tenant 403 alongside the standard permission-denied 403, allowing API documentation
 /// and generated SDKs to reflect both shapes permitted by <see cref="Models.ForbiddenProblemDetails"/>.
 /// </summary>
-public sealed class TenantRequiredForbiddenExampleOperationProcessor(bool includeTenantRequiredExample = true)
-    : IOperationProcessor
+public sealed class TenantRequiredExampleOperationProcessor : IOperationProcessor
 {
     private const string _DefaultExampleName = "forbidden";
     private const string _TenantRequiredExampleName = "tenantRequired";
-    private const string _TenantRequiredErrorCode = "g:tenant_required";
 
     /// <inheritdoc />
     public bool Process(OperationProcessorContext context)
     {
         Argument.IsNotNull(context);
+
+        if (context is not AspNetCoreOperationProcessorContext aspNet)
+        {
+            return true;
+        }
+
+        var metadata = aspNet.ApiDescription.ActionDescriptor.EndpointMetadata;
+        if (
+            metadata.OfType<IAllowAnonymous>().Any()
+            || metadata.LastOrDefault(x => x is RequireTenantAttribute or AllowMissingTenantAttribute)
+                is not RequireTenantAttribute
+        )
+        {
+            return true;
+        }
 
         if (
             !context.OperationDescription.Operation.Responses.TryGetValue(
@@ -52,13 +68,10 @@ public sealed class TenantRequiredForbiddenExampleOperationProcessor(bool includ
                 mediaType.Example = null;
             }
 
-            if (includeTenantRequiredExample)
-            {
-                examples.TryAdd(
-                    _TenantRequiredExampleName,
-                    new OpenApiExample { Summary = "Tenant context required", Value = _CreateTenantRequiredExample() }
-                );
-            }
+            examples.TryAdd(
+                _TenantRequiredExampleName,
+                new OpenApiExample { Summary = "Tenant context required", Value = _CreateTenantRequiredExample() }
+            );
         }
 
         return true;
@@ -75,7 +88,7 @@ public sealed class TenantRequiredForbiddenExampleOperationProcessor(bool includ
             ["instance"] = "/some-endpoint",
             ["error"] = new Dictionary<string, object?>(StringComparer.Ordinal)
             {
-                ["code"] = _TenantRequiredErrorCode,
+                ["code"] = HeadlessProblemDetailsConstants.Errors.TenantContextRequired.Code,
                 ["description"] = HeadlessProblemDetailsConstants.Details.TenantContextRequired,
             },
             ["traceId"] = "<trace-id>",

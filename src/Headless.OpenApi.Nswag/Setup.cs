@@ -4,6 +4,7 @@ using Asp.Versioning.ApiExplorer;
 using Headless.Api.ApiExplorer;
 using Headless.OpenApi.Nswag.OperationProcessors;
 using Headless.OpenApi.Nswag.SchemaProcessors;
+using Headless.OpenApi.Nswag.Surfaces;
 using Headless.Reflection;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
@@ -50,7 +51,8 @@ public static class SetupNswag
     {
         var headlessOptions = _BuildOptions(setupHeadlessAction);
 
-        services.AddOpenApiDocument(
+        SurfaceDocumentRegistration.AddSingle(
+            services,
             (settings, serviceProvider) =>
             {
                 ConfigureGeneratorSettings(settings, serviceProvider, headlessOptions);
@@ -84,7 +86,8 @@ public static class SetupNswag
     {
         var headlessOptions = _BuildOptions(setupHeadlessAction);
 
-        services.AddOpenApiDocument(
+        SurfaceDocumentRegistration.AddSingle(
+            services,
             (settings, serviceProvider) =>
             {
                 ConfigureGeneratorSettings(settings, serviceProvider, headlessOptions);
@@ -341,7 +344,10 @@ public static class SetupNswag
         settings.Description = SwaggerInformation.ResponsesDescription;
         settings.DefaultResponseReferenceTypeNullHandling = ReferenceTypeNullHandling.NotNull;
         settings.GenerateOriginalParameterNames = true;
-        settings.UseRouteNameAsOperationId = true;
+        // NSwag's route-name switch dereferences MVC-only AttributeRouteInfo on Minimal APIs.
+        // HTTP attribute names support MVC; Minimal API names use RouteNameMetadata natively.
+        settings.UseRouteNameAsOperationId = false;
+        settings.UseHttpAttributeNameAsOperationId = true;
         settings.SchemaSettings.UseXmlDocumentation = true;
         settings.SchemaSettings.GenerateEnumMappingDescription = true;
         settings.SchemaSettings.FlattenInheritanceHierarchy = true;
@@ -360,6 +366,7 @@ public static class SetupNswag
         settings.OperationProcessors.Add(new ForbiddenResponseOperationProcessor());
         settings.OperationProcessors.Add(new IfMatchOperationProcessor());
         settings.OperationProcessors.Add(new ProblemDetailsOperationProcessor());
+        settings.OperationProcessors.Add(new TenantRequiredExampleOperationProcessor());
     }
 
     internal static void ConfigureHeadlessGeneratorSettings(

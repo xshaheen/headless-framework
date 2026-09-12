@@ -25,17 +25,16 @@ public sealed class MinimalApiSurfaceGroupTests : TestBase
                 s =>
                 {
                     s.RoutePrefix = "api/portal";
-                    s.RequiredPolicy = "PortalAdmin";
-                    s.GroupName = "PortalGroup";
-                    s.TenancyPosture = SurfaceTenancyPosture.RequireTenant;
+                    s.AuthorizationPolicy = "PortalAdmin";
+                    s.TenancyMode = ApiSurfaceTenancyMode.RequireTenant;
                 }
             );
         });
 
-        var sp = services.BuildServiceProvider();
+        using var sp = services.BuildServiceProvider();
         var app = new DefaultEndpointRouteBuilder(sp);
 
-        var group = app.MapSurfaceGroup(
+        var group = app.MapApiSurface(
             "Portal",
             portalGroup =>
             {
@@ -57,6 +56,47 @@ public sealed class MinimalApiSurfaceGroupTests : TestBase
 
         var tenantMeta = endpoint.Metadata.GetMetadata<RequireTenantAttribute>();
         tenantMeta.Should().NotBeNull();
+    }
+
+    [Theory]
+    [InlineData(ApiSurfaceTenancyMode.RequireTenant, false)]
+    [InlineData(ApiSurfaceTenancyMode.AllowMissingTenant, true)]
+    [InlineData(ApiSurfaceTenancyMode.SkipTenantResolution, true)]
+    public void should_honor_endpoint_tenancy_overrides(ApiSurfaceTenancyMode mode, bool require)
+    {
+        var services = new ServiceCollection();
+        services.AddHeadlessApiSurfaces(options => options.AddSurface("portal", surface => surface.TenancyMode = mode));
+        using var provider = services.BuildServiceProvider();
+        var app = new DefaultEndpointRouteBuilder(provider);
+        var endpoint = app.MapApiSurface("portal").MapGet("/test", () => "test");
+        if (require)
+        {
+            endpoint.RequireTenant();
+        }
+        else
+        {
+            endpoint.AllowMissingTenant();
+        }
+
+        var metadata = app.DataSources.Single().Endpoints.Single().Metadata;
+        metadata.GetMetadata<SkipTenantResolutionAttribute>().Should().BeNull();
+        (metadata.Last(x => x is RequireTenantAttribute or AllowMissingTenantAttribute) is RequireTenantAttribute)
+            .Should()
+            .Be(require);
+    }
+
+    [Fact]
+    public void should_reject_unknown_and_conflicting_surfaces()
+    {
+        var services = new ServiceCollection();
+        services.AddHeadlessApiSurfaces(options => options.AddSurface("portal").AddSurface("console"));
+        using var provider = services.BuildServiceProvider();
+        var app = new DefaultEndpointRouteBuilder(provider);
+        var unknown = () => app.MapApiSurface("typo");
+        unknown.Should().Throw<InvalidOperationException>().WithMessage("*typo*");
+        app.MapApiSurface("portal").MapApiSurface("console").MapGet("/test", () => "test");
+        var conflicting = () => app.DataSources.Single().Endpoints;
+        conflicting.Should().Throw<InvalidOperationException>().WithMessage("*conflicting*");
     }
 
     private sealed class DefaultEndpointRouteBuilder(IServiceProvider sp) : IEndpointRouteBuilder

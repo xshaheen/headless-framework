@@ -8,19 +8,18 @@ namespace Tests.Surfaces;
 public sealed class SurfaceMetadataTests : TestBase
 {
     [Fact]
-    public void should_construct_api_surface_feature()
+    public void should_expose_configured_surface_defaults()
     {
-        var feature = new ApiSurfaceFeature(
-            surfaceName: "Portal",
-            routePrefix: "api/portal",
-            requiredPolicy: "PortalUser",
-            tenancyPosture: SurfaceTenancyPosture.RequireTenant
+        var surface = new ApiSurfaceDescriptor(
+            "Portal",
+            "api/portal",
+            "PortalUser",
+            ApiSurfaceTenancyMode.RequireTenant,
+            new ApiSurfaceOpenApiDescriptor("portal", "Portal API")
         );
-
+        var feature = new ApiSurfaceFeature(surface);
         feature.SurfaceName.Should().Be("Portal");
-        feature.RoutePrefix.Should().Be("api/portal");
-        feature.RequiredPolicy.Should().Be("PortalUser");
-        feature.TenancyPosture.Should().Be(SurfaceTenancyPosture.RequireTenant);
+        feature.Surface.Should().BeSameAs(surface);
     }
 
     [Theory]
@@ -29,8 +28,14 @@ public sealed class SurfaceMetadataTests : TestBase
     [InlineData("   ")]
     public void should_reject_invalid_surface_name(string? invalidName)
     {
-        var act = () => new ApiSurfaceFeature(invalidName!);
-
+        var act = () =>
+            new ApiSurfaceDescriptor(
+                invalidName!,
+                null,
+                null,
+                ApiSurfaceTenancyMode.Unspecified,
+                new ApiSurfaceOpenApiDescriptor("portal", "Portal API")
+            );
         act.Should().Throw<ArgumentException>();
     }
 }

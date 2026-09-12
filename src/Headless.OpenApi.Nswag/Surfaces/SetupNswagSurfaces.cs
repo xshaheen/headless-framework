@@ -2,25 +2,20 @@
 
 using Headless.Api.Surfaces;
 using Headless.Checks;
+using Headless.OpenApi.Nswag.Surfaces;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 using NSwag.AspNetCore;
 using NSwag.Generation.AspNetCore;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.OpenApi.Nswag;
 
+[PublicAPI]
 public static class SetupNswagSurfaces
 {
-    /// <summary>
-    /// Registers NSwag OpenAPI documents for each configured API surface in <see cref="ApiSurfaceOptions"/>,
-    /// applying standard Headless defaults (problem details, operation processors, type mappers).
-    /// </summary>
-    /// <param name="services">The service collection.</param>
-    /// <param name="setupHeadlessAction">Optional callback for configuring Headless NSwag options.</param>
-    /// <param name="setupGeneratorActions">Optional callback for configuring generator settings per surface.</param>
-    /// <returns>The service collection for chaining.</returns>
+    /// <summary>Registers documents from the host's finalized surface registry, independently of registration order.</summary>
+    /// <remarks>Additional documents must use AddNswagOpenApi. ApiGroupNames can independently select API versions.</remarks>
     public static IServiceCollection AddNswagOpenApiSurfaces(
         this IServiceCollection services,
         Action<HeadlessNswagOptions>? setupHeadlessAction = null,
@@ -28,46 +23,32 @@ public static class SetupNswagSurfaces
     )
     {
         Argument.IsNotNull(services);
-
         var headlessOptions = new HeadlessNswagOptions();
         setupHeadlessAction?.Invoke(headlessOptions);
-
-        var surfaceOptions = services.BuildServiceProvider().GetRequiredService<IOptions<ApiSurfaceOptions>>().Value;
-
-        foreach (var surface in surfaceOptions.Surfaces)
-        {
-            var surfaceDescriptor = surface;
-            services.AddOpenApiDocument(
-                (settings, sp) =>
+        SurfaceDocumentRegistration.AddSurfaces(
+            services,
+            (settings, sp, surface) =>
+            {
+                SetupNswag.ConfigureGeneratorSettings(settings, sp, headlessOptions);
+                settings.DocumentName = surface.OpenApi.DocumentName;
+                settings.Title = surface.OpenApi.Title;
+                setupGeneratorActions?.Invoke(settings, surface);
+                if (!string.Equals(settings.DocumentName, surface.OpenApi.DocumentName, StringComparison.Ordinal))
                 {
-                    SetupNswag.ConfigureGeneratorSettings(settings, sp, headlessOptions);
-                    settings.DocumentName = surfaceDescriptor.DocumentName;
-                    settings.ApiGroupNames = [surfaceDescriptor.GroupName];
-                    settings.Title = surfaceDescriptor.DocumentTitle;
-
-                    setupGeneratorActions?.Invoke(settings, surfaceDescriptor);
-
-                    SetupNswag.ConfigureHeadlessGeneratorSettings(settings, headlessOptions);
-
-                    if (surfaceDescriptor.TenancyPosture == SurfaceTenancyPosture.RequireTenant)
-                    {
-                        settings.OperationProcessors.Add(
-                            new Surfaces.TenantRequiredForbiddenExampleOperationProcessor(
-                                includeTenantRequiredExample: true
-                            )
-                        );
-                    }
+                    throw new InvalidOperationException(
+                        "Configure surface document names through ApiSurfaceBuilder.OpenApi.DocumentName."
+                    );
                 }
-            );
-        }
 
+                SetupNswag.ConfigureHeadlessGeneratorSettings(settings, headlessOptions);
+                // Filter before schema generation so excluded surfaces cannot leak schemas into this document.
+                settings.OperationProcessors.Insert(0, new ApiSurfaceOperationProcessor(surface.SurfaceName));
+            }
+        );
         return services;
     }
 
-    /// <summary>
-    /// Mounts OpenAPI endpoints for each configured surface at <c>/openapi/{surface.DocumentName}.json</c>
-    /// and configures Swagger UI at <c>/swagger</c> exposing all surfaces.
-    /// </summary>
+    /// <summary>Serves registered documents at /openapi/{documentName}.json and Swagger UI at /swagger.</summary>
     public static WebApplication MapNswagOpenApiSurfaces(
         this WebApplication app,
         Action<OpenApiDocumentMiddlewareSettings>? documentSettings = null,
@@ -75,30 +56,6 @@ public static class SetupNswagSurfaces
     )
     {
         Argument.IsNotNull(app);
-
-        var surfaceOptions = app.Services.GetRequiredService<IOptions<ApiSurfaceOptions>>().Value;
-
-        foreach (var surface in surfaceOptions.Surfaces)
-        {
-            app.UseOpenApi(settings =>
-            {
-                settings.DocumentName = surface.DocumentName;
-                settings.Path = $"/openapi/{surface.DocumentName}.json";
-                documentSettings?.Invoke(settings);
-            });
-        }
-
-        app.UseSwaggerUi(config =>
-        {
-            config.Path = "/swagger";
-            config.DocumentPath = "/openapi/{documentName}.json";
-            config.PersistAuthorization = true;
-            config.EnableTryItOut = true;
-            config.TagsSorter = "alpha";
-            config.DocExpansion = "none";
-            uiSettings?.Invoke(config);
-        });
-
-        return app;
+        return app.MapNswagOpenApi(documentSettings, uiSettings);
     }
 }

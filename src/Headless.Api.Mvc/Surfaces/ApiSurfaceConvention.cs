@@ -1,97 +1,71 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Api.MultiTenancy;
 using Headless.Api.Surfaces;
 using Headless.Checks;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ApplicationModels;
-using Microsoft.Extensions.Options;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Api.Mvc.Surfaces;
 
-/// <summary>
-/// Application model convention that applies route prefixes, authorization policies,
-/// ApiExplorer group names, and tenancy metadata based on <see cref="ApiSurfaceAttribute"/>
-/// and configured <see cref="ApiSurfaceOptions"/>.
-/// </summary>
-public sealed class ApiSurfaceConvention(IOptions<ApiSurfaceOptions> options) : IApplicationModelConvention
+/// <summary>Applies surface defaults while preserving controller/action overrides and API version groups.</summary>
+public sealed class ApiSurfaceConvention(ApiSurfaceRegistry registry) : IApplicationModelConvention
 {
-    private readonly ApiSurfaceOptions _options = Argument.IsNotNull(options).Value;
+    private readonly ApiSurfaceRegistry _registry = Argument.IsNotNull(registry);
 
     public void Apply(ApplicationModel application)
     {
         foreach (var controller in application.Controllers)
         {
-            var surfaceAttr = controller.Attributes.OfType<ApiSurfaceAttribute>().FirstOrDefault();
-            if (surfaceAttr is null)
+            var surface = controller.Attributes.OfType<ApiSurfaceAttribute>().SingleOrDefault();
+            if (surface is null)
             {
                 continue;
             }
 
-            if (!_options.TryGetSurface(surfaceAttr.SurfaceName, out var descriptor) || descriptor is null)
-            {
-                continue;
-            }
-
-            // Set ApiExplorer GroupName for OpenAPI grouping
-            if (!string.IsNullOrWhiteSpace(descriptor.GroupName))
-            {
-                controller.ApiExplorer.GroupName ??= descriptor.GroupName;
-            }
-
-            // Apply route prefix if defined
+            var descriptor = _registry.GetRequiredSurface(surface.SurfaceName);
             if (!string.IsNullOrWhiteSpace(descriptor.RoutePrefix))
             {
-                var prefixModel = new AttributeRouteModel(
-                    new Microsoft.AspNetCore.Mvc.RouteAttribute(descriptor.RoutePrefix.Trim('/'))
-                );
+                var prefix = new AttributeRouteModel(new RouteAttribute(descriptor.RoutePrefix));
+                var hasAbsoluteActionRoute = controller
+                    .Actions.SelectMany(x => x.Selectors)
+                    .Any(x => x.AttributeRouteModel?.IsAbsoluteTemplate == true);
                 foreach (var selector in controller.Selectors)
                 {
-                    selector.AttributeRouteModel = selector.AttributeRouteModel is not null
-                        ? AttributeRouteModel.CombineAttributeRouteModel(prefixModel, selector.AttributeRouteModel)
-                        : prefixModel;
+                    if (selector.AttributeRouteModel?.IsAbsoluteTemplate == true || hasAbsoluteActionRoute)
+                    {
+                        throw new InvalidOperationException(
+                            $"Controller '{controller.ControllerName}' uses an absolute route that escapes API surface '{descriptor.SurfaceName}'. Use relative routes."
+                        );
+                    }
+
+                    selector.AttributeRouteModel = AttributeRouteModel.CombineAttributeRouteModel(
+                        prefix,
+                        selector.AttributeRouteModel
+                    );
                 }
             }
 
-            // Apply default authorization policy if defined
-            if (!string.IsNullOrWhiteSpace(descriptor.RequiredPolicy))
+            foreach (var action in controller.Actions)
             {
-                var authAttribute = new AuthorizeAttribute(descriptor.RequiredPolicy);
-                foreach (var action in controller.Actions)
+                foreach (var selector in action.Selectors)
                 {
-                    foreach (var selector in action.Selectors)
+                    selector.EndpointMetadata.Insert(0, descriptor);
+                    if (!string.IsNullOrWhiteSpace(descriptor.AuthorizationPolicy))
                     {
-                        selector.EndpointMetadata.Add(authAttribute);
+                        selector.EndpointMetadata.Insert(0, new AuthorizeAttribute(descriptor.AuthorizationPolicy));
+                    }
+
+                    var tenancy = ApiSurfaceEndpointDefaults.GetTenancyMetadata(
+                        descriptor.TenancyMode,
+                        controller.Attributes.Concat(selector.EndpointMetadata)
+                    );
+                    if (tenancy is not null)
+                    {
+                        selector.EndpointMetadata.Insert(0, tenancy);
                     }
                 }
-            }
-
-            // Apply tenancy posture if configured
-            _ApplyTenancyPosture(controller, descriptor.TenancyPosture);
-        }
-    }
-
-    private static void _ApplyTenancyPosture(ControllerModel controller, SurfaceTenancyPosture posture)
-    {
-        object? tenancyAttribute = posture switch
-        {
-            SurfaceTenancyPosture.RequireTenant => new RequireTenantAttribute(),
-            SurfaceTenancyPosture.AllowMissingTenant => new AllowMissingTenantAttribute(),
-            SurfaceTenancyPosture.SkipTenantResolution => new SkipTenantResolutionAttribute(),
-            _ => null,
-        };
-
-        if (tenancyAttribute is null)
-        {
-            return;
-        }
-
-        foreach (var action in controller.Actions)
-        {
-            foreach (var selector in action.Selectors)
-            {
-                selector.EndpointMetadata.Add(tenancyAttribute);
             }
         }
     }
