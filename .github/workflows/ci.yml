@@ -314,6 +314,10 @@ jobs:
 
       - name: "Pack NuGet packages with SBOMs"
         if: env.PRIMARY == 'true' && env.RELEASE_CHECKS == 'true'
+        # Without this, pack re-runs both dashboard npm builds: this step writes the SPA input manifest fresh,
+        # which makes the embed target look stale even though dist is already built into the assemblies.
+        env:
+          BuildDashboardSpa: "false"
         run: make pack-built
 
       - name: "Verify packages"
