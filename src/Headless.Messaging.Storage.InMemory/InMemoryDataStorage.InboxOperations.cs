@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
@@ -52,6 +53,78 @@ internal sealed partial class InMemoryDataStorage
     );
 
     public IInboxOperationsApi GetInboxOperationsApi() => new InMemoryInboxOperationsApi(this);
+
+    public ValueTask<InboxHistoryRetentionCutoffs> GetInboxHistoryRetentionCutoffsAsync(
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return ValueTask.FromResult(
+            InboxHistoryRetentionCutoffs.Create(timeProvider.GetUtcNow(), messagingOptions.Value)
+        );
+    }
+
+    public ValueTask<int> DeleteExpiredInboxAuditsAsync(
+        InboxHistoryRetentionCutoffs cutoffs,
+        int batchSize,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Argument.IsPositive(batchSize);
+        lock (_receivedUpsertLock)
+        {
+            var candidates = _inboxAudit
+                .Where(x =>
+                    x.CreatedAt
+                    <= (x.OperationType == InboxOperationType.Cleanup ? cutoffs.CleanupAudit : cutoffs.OperatorAudit)
+                )
+                .OrderBy(x => x.CreatedAt)
+                .ThenBy(x => x.AuditId)
+                .Take(batchSize)
+                .ToArray();
+            foreach (var candidate in candidates)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                _inboxAudit.Remove(candidate);
+            }
+            return ValueTask.FromResult(candidates.Length);
+        }
+    }
+
+    public ValueTask<int> DeleteExpiredInboxReceiptsAsync(
+        InboxHistoryRetentionCutoffs cutoffs,
+        int batchSize,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Argument.IsPositive(batchSize);
+        lock (_receivedUpsertLock)
+        {
+            var referenced = _inboxAudit.Select(x => x.OperationId).ToHashSet();
+            var candidates = _inboxOperationReceipts
+                .Values.Where(x =>
+                    x.CreatedAt
+                        <= (
+                            x.OperationType == InboxOperationType.Cleanup
+                                ? cutoffs.CleanupReceipt
+                                : cutoffs.OperatorReceipt
+                        )
+                    && !referenced.Contains(x.OperationId)
+                )
+                .OrderBy(x => x.CreatedAt)
+                .ThenBy(x => x.OperationId)
+                .Take(batchSize)
+                .ToArray();
+            foreach (var candidate in candidates)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                _inboxOperationReceipts.Remove(candidate.OperationId);
+            }
+            return ValueTask.FromResult(candidates.Length);
+        }
+    }
 
     private ValueTask<IndexPage<InboxGenerationView>> _QueryInboxAsync(
         InboxGenerationQuery query,
@@ -175,7 +248,9 @@ internal sealed partial class InMemoryDataStorage
                     row.NextRetryAt is not null,
                     row.IsHeld,
                     row.IsCurrentGeneration,
-                    row.InboxKey!.Generation
+                    row.InboxKey!.Generation,
+                    row.IsInboxOrphaned,
+                    row.LockedUntil > now
                 );
             var outcome = InboxOperationEvaluator.Evaluate(operationType, request.ExpectedStatus, state);
             Guid? childStorageId = null;

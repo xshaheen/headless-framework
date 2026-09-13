@@ -954,7 +954,8 @@ internal sealed partial class PostgreSqlDataStorage(
         CancellationToken cancellationToken = default
     )
     {
-        return await _GetMessagesOfNeedRetryAsync(_publishedTable, lane, cancellationToken).ConfigureAwait(false);
+        return await _GetMessagesOfNeedRetryAsync(_publishedTable, lane, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <summary>
@@ -979,8 +980,14 @@ internal sealed partial class PostgreSqlDataStorage(
         CancellationToken cancellationToken = default
     )
     {
-        return await _GetMessagesOfNeedRetryAsync(_receivedTable, lane, cancellationToken).ConfigureAwait(false);
+        return await _GetMessagesOfNeedRetryAsync(_receivedTable, lane, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
     }
+
+    public ValueTask<IEnumerable<MediumMessage>> GetReceivedInboxOrphansOfNeedRetryAsync(
+        MessageLane lane,
+        CancellationToken cancellationToken = default
+    ) => _GetMessagesOfNeedRetryAsync(_receivedTable, lane, orphaned: true, cancellationToken: cancellationToken);
 
     /// <summary>
     /// Shortens the remaining lease on received messages owned by nodes in <paramref name="deadOwners"/>
@@ -1755,11 +1762,15 @@ internal sealed partial class PostgreSqlDataStorage(
     private async ValueTask<IEnumerable<MediumMessage>> _GetMessagesOfNeedRetryAsync(
         string tableName,
         MessageLane lane,
+        bool orphaned = false,
         CancellationToken cancellationToken = default
     )
     {
         var intentValue = MessageLaneCompatibility.ToPersistedValue(lane);
         var isReceivedTable = string.Equals(tableName, _receivedTable, StringComparison.Ordinal);
+        var orphanFilter = isReceivedTable
+            ? (orphaned ? "AND message.\"IsInboxOrphaned\" = TRUE" : "AND message.\"IsInboxOrphaned\" = FALSE")
+            : string.Empty;
         var attemptAssignment = isReceivedTable
             ? ",\n                \"AttemptId\" = CASE WHEN message.\"IsInboxRecord\" THEN gen_random_uuid() ELSE NULL END"
             : string.Empty;
@@ -1792,6 +1803,7 @@ internal sealed partial class PostgreSqlDataStorage(
                   AND message."IntentType" = @IntentType
                   AND "NextRetryAt" IS NOT NULL AND "NextRetryAt" <= @Now
                   AND ("LockedUntil" IS NULL OR "LockedUntil" <= statement_timestamp())
+                  {orphanFilter}
                   AND {_TerminalRowGuardSimple}
                 ORDER BY "NextRetryAt", "Id"
                 LIMIT @BatchSize
@@ -1808,7 +1820,10 @@ internal sealed partial class PostgreSqlDataStorage(
 
         object[] sqlParams =
         [
-            new NpgsqlParameter("@BatchSize", messagingOptions.Value.RetryBatchSize),
+            new NpgsqlParameter(
+                "@BatchSize",
+                orphaned ? messagingOptions.Value.OrphanProbeBatchSize : messagingOptions.Value.RetryBatchSize
+            ),
             new NpgsqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxPersistedRetries),
             new NpgsqlParameter("@Version", messagingOptions.Value.Version),
             new NpgsqlParameter("@IntentType", NpgsqlDbType.Smallint) { Value = intentValue },

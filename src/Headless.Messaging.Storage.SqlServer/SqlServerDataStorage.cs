@@ -967,7 +967,7 @@ internal sealed partial class SqlServerDataStorage(
         CancellationToken cancellationToken = default
     )
     {
-        return _GetMessagesOfNeedRetryAsync(_publishedTable, lane, cancellationToken);
+        return _GetMessagesOfNeedRetryAsync(_publishedTable, lane, cancellationToken: cancellationToken);
     }
 
     /// <summary>
@@ -993,8 +993,13 @@ internal sealed partial class SqlServerDataStorage(
         CancellationToken cancellationToken = default
     )
     {
-        return _GetMessagesOfNeedRetryAsync(_receivedTable, lane, cancellationToken);
+        return _GetMessagesOfNeedRetryAsync(_receivedTable, lane, cancellationToken: cancellationToken);
     }
+
+    public ValueTask<IEnumerable<MediumMessage>> GetReceivedInboxOrphansOfNeedRetryAsync(
+        MessageLane lane,
+        CancellationToken cancellationToken = default
+    ) => _GetMessagesOfNeedRetryAsync(_receivedTable, lane, orphaned: true, cancellationToken: cancellationToken);
 
     /// <summary>
     /// Shortens the remaining lease on received messages owned by nodes in <paramref name="deadOwners"/>
@@ -1834,11 +1839,15 @@ internal sealed partial class SqlServerDataStorage(
     private async ValueTask<IEnumerable<MediumMessage>> _GetMessagesOfNeedRetryAsync(
         string tableName,
         MessageLane lane,
+        bool orphaned = false,
         CancellationToken cancellationToken = default
     )
     {
         var intentValue = MessageLaneCompatibility.ToPersistedValue(lane);
         var isReceivedTable = string.Equals(tableName, _receivedTable, StringComparison.Ordinal);
+        var orphanFilter = isReceivedTable
+            ? (orphaned ? "AND IsInboxOrphaned=1" : "AND IsInboxOrphaned=0")
+            : string.Empty;
         var attemptAssignment = isReceivedTable
             ? ",\n                AttemptId = CASE WHEN target.IsInboxRecord=1 THEN NEWID() ELSE NULL END"
             : string.Empty;
@@ -1874,6 +1883,7 @@ internal sealed partial class SqlServerDataStorage(
                   AND IntentType = @IntentType
                   AND NextRetryAt IS NOT NULL AND NextRetryAt <= @Now
                   AND (LockedUntil IS NULL OR LockedUntil <= @ClaimNow)
+                  {orphanFilter}
                   AND {_TerminalRowGuardSimple}
                 ORDER BY NextRetryAt, Id
             )
@@ -1893,7 +1903,10 @@ internal sealed partial class SqlServerDataStorage(
 
         object[] sqlParams =
         [
-            new SqlParameter("@BatchSize", messagingOptions.Value.RetryBatchSize),
+            new SqlParameter(
+                "@BatchSize",
+                orphaned ? messagingOptions.Value.OrphanProbeBatchSize : messagingOptions.Value.RetryBatchSize
+            ),
             new SqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxPersistedRetries),
             new SqlParameter("@Version", messagingOptions.Value.Version),
             new SqlParameter("@IntentType", SqlDbType.SmallInt) { Value = intentValue },

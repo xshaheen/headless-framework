@@ -8,6 +8,31 @@ namespace Tests;
 
 public sealed class InboxOperationEvaluatorTests : TestBase
 {
+    [Theory]
+    [InlineData(InboxOperationType.Hold, false, false, InboxOperationOutcome.Applied)]
+    [InlineData(InboxOperationType.ReleaseHold, true, false, InboxOperationOutcome.Applied)]
+    [InlineData(InboxOperationType.Purge, false, false, InboxOperationOutcome.Applied)]
+    [InlineData(InboxOperationType.Purge, true, false, InboxOperationOutcome.Held)]
+    [InlineData(InboxOperationType.Hold, false, true, InboxOperationOutcome.Active)]
+    [InlineData(InboxOperationType.ReleaseHold, true, true, InboxOperationOutcome.Active)]
+    [InlineData(InboxOperationType.Purge, false, true, InboxOperationOutcome.Active)]
+    [InlineData(InboxOperationType.ForceReprocess, false, false, InboxOperationOutcome.Active)]
+    [InlineData(InboxOperationType.Cleanup, false, false, InboxOperationOutcome.Active)]
+    [InlineData((InboxOperationType)99, false, false, InboxOperationOutcome.Active)]
+    public void should_limit_orphan_exception_to_safe_unclaimed_operations(
+        InboxOperationType operation,
+        bool isHeld,
+        bool hasLiveClaim,
+        InboxOperationOutcome expected
+    )
+    {
+        foreach (var status in new[] { StatusName.Scheduled, StatusName.Failed })
+        {
+            var state = new InboxOperationState(status, true, isHeld, true, 0, true, hasLiveClaim);
+            InboxOperationEvaluator.Evaluate(operation, status, state).Should().Be(expected);
+        }
+    }
+
     [Fact]
     public void should_return_not_found_for_missing_state()
     {

@@ -154,6 +154,12 @@ public sealed class MessagingOptionsCopyToTests : TestBase
         options.Version = "v99";
         options.SucceedMessageExpiredAfter = 1;
         options.FailedMessageExpiredAfter = 2;
+        options.InboxCleanupReceiptRetention = TimeSpan.FromDays(1);
+        options.InboxCleanupAuditRetention = TimeSpan.FromDays(2);
+        options.InboxOperatorReceiptRetention = TimeSpan.FromDays(3);
+        options.InboxOperatorAuditRetention = TimeSpan.FromDays(4);
+        options.OrphanProbeInterval = TimeSpan.FromSeconds(47);
+        options.OrphanProbeBatchSize = 11;
         options.ConsumerThreadCount = 3;
         options.EnableSubscriberParallelExecute = true;
         options.SubscriberParallelExecuteThreadCount = 4;

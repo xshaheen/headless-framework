@@ -403,6 +403,7 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
 
         var messages = pickup.Messages.ToList();
         var enqueued = 0;
+        Interlocked.Exchange(ref state._consecutivePickupFailures, 0);
         var nextUnhanded = 0;
         try
         {
@@ -468,66 +469,122 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
         var skippedCircuitOpen = 0;
         var healthy = new List<MediumMessage>(messages.Count);
         var circuitWork = new List<CircuitRetryWork>();
+        var orphanPickupSucceeded = false;
 
-        foreach (var message in messages)
+        try
         {
-            var persistedLane = message.Lane;
-            if (persistedLane != state.Key.Lane)
+            var orphans = await _GetSafelyAsync(
+                    token => connection.GetReceivedInboxOrphansOfNeedRetryAsync(state.Key.Lane, token),
+                    state,
+                    context.CancellationToken
+                )
+                .ConfigureAwait(false);
+            orphanPickupSucceeded = orphans.Succeeded;
+            if (orphanPickupSucceeded)
             {
-                throw new InvalidOperationException(
-                    $"Retry pickup for lane '{state.Key.Lane}' returned persisted lane '{persistedLane}'."
-                );
+                // Both queries must recover before clearing a received-cycle failure streak.
+                Interlocked.Exchange(ref state._consecutivePickupFailures, 0);
+                messages.AddRange(orphans.Messages);
             }
 
-            if (message.InboxKey is { } inboxKey)
+            foreach (var message in messages)
             {
-                if (
-                    _consumerResolver is null
-                    || !_consumerResolver.TryGetInboxExecutor(
-                        inboxKey.ConsumerIdentity,
-                        inboxKey.ContractIdentity,
-                        inboxKey.ContractVersion,
-                        inboxKey.Lane,
-                        out var descriptor
-                    )
-                )
+                context.ThrowIfStopping();
+                var persistedLane = message.Lane;
+                if (persistedLane != state.Key.Lane)
                 {
-                    var orphaned = await connection
-                        .MarkReceivedInboxOrphanedAsync(message, orphaned: true, CancellationToken.None)
-                        .ConfigureAwait(false);
-                    if (orphaned)
+                    throw new InvalidOperationException(
+                        $"Retry pickup for lane '{state.Key.Lane}' returned persisted lane '{persistedLane}'."
+                    );
+                }
+
+                if (message.InboxKey is { } inboxKey)
+                {
+                    if (
+                        _consumerResolver is null
+                        || !_consumerResolver.TryGetInboxExecutor(
+                            inboxKey.ConsumerIdentity,
+                            inboxKey.ContractIdentity,
+                            inboxKey.ContractVersion,
+                            inboxKey.Lane,
+                            out var descriptor
+                        )
+                    )
                     {
-                        _RecordInboxRecovery(message, InboxMetricOutcome.Orphaned);
+                        var orphaned = await connection
+                            .DeferReceivedInboxOrphanAsync(message, CancellationToken.None)
+                            .ConfigureAwait(false);
+                        if (orphaned)
+                        {
+                            _RecordInboxRecovery(message, InboxMetricOutcome.Orphaned);
+                        }
+                        continue;
                     }
+
+                    // Confirm accepts unchanged rows and clears the flag on the message, so capture the
+                    // pickup-projected state first: only a real orphan-to-routable transition is a recovery.
+                    var wasOrphaned = message.IsInboxOrphaned;
+                    var routable = await connection
+                        .ConfirmReceivedInboxRoutableAsync(message, CancellationToken.None)
+                        .ConfigureAwait(false);
+                    if (!routable)
+                    {
+                        continue;
+                    }
+                    if (wasOrphaned)
+                    {
+                        _RecordInboxRecovery(message, InboxMetricOutcome.Routable);
+                    }
+                    message.Origin.Headers[Headers.Group] = descriptor.GroupName;
+                }
+
+                var group = message.Origin.GetGroup();
+                var decision = group is null
+                    ? CircuitRetryDecision.Closed
+                    : _GetCircuitRetryDecision(state.Key.Lane, group);
+                if (decision.Kind is CircuitRetryDecisionKind.Closed)
+                {
+                    healthy.Add(message);
                     continue;
                 }
 
-                var routable = await connection
-                    .MarkReceivedInboxOrphanedAsync(message, orphaned: false, CancellationToken.None)
-                    .ConfigureAwait(false);
-                if (routable)
+                skippedCircuitOpen++;
+                if (_logger.IsEnabled(LogLevel.Debug))
                 {
-                    _RecordInboxRecovery(message, InboxMetricOutcome.Routable);
+                    _logger.RetrySkippedBecauseCircuitOpen(message.StorageId, LogSanitizer.Sanitize(group));
                 }
-                message.Origin.Headers[Headers.Group] = descriptor.GroupName;
+                circuitWork.Add(new CircuitRetryWork(message, group!, decision));
             }
-
-            var group = message.Origin.GetGroup();
-            var decision = group is null
-                ? CircuitRetryDecision.Closed
-                : _GetCircuitRetryDecision(state.Key.Lane, group);
-            if (decision.Kind is CircuitRetryDecisionKind.Closed)
+        }
+        catch
+        {
+            try
             {
-                healthy.Add(message);
-                continue;
+                var circuitIds = circuitWork.Select(static work => work.Message.StorageId).ToHashSet();
+                await _ReleaseUnhandedAsync(
+                        connection,
+                        MessageType.Subscribe,
+                        [.. messages.Where(message => !circuitIds.Contains(message.StorageId))],
+                        0
+                    )
+                    .ConfigureAwait(false);
             }
-
-            skippedCircuitOpen++;
-            if (_logger.IsEnabled(LogLevel.Debug))
+            finally
             {
-                _logger.RetrySkippedBecauseCircuitOpen(message.StorageId, LogSanitizer.Sanitize(group));
+                foreach (
+                    var work in circuitWork.Where(static work =>
+                        work.Decision.Kind is CircuitRetryDecisionKind.ProbeAcquired
+                    )
+                )
+                {
+                    new HalfOpenProbeHandle(
+                        _circuitBreakerStateManager,
+                        CircuitBreakerGroupKeys.For(state.Key.Lane, work.Group),
+                        work
+                    ).ReleaseUnlessTransferred();
+                }
             }
-            circuitWork.Add(new CircuitRetryWork(message, group!, decision));
+            throw;
         }
 
         // Circuit claims are deliberately absent from this generic release range. Once classified,
@@ -594,7 +651,7 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
             }
         }
 
-        if (_adaptivePolling)
+        if (_adaptivePolling && orphanPickupSucceeded)
         {
             _AdjustPollingInterval(state, enqueued, skippedCircuitOpen);
         }
@@ -652,7 +709,6 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
         try
         {
             var result = await getMessagesAsync(cancellationToken).ConfigureAwait(false);
-            Interlocked.Exchange(ref state._consecutivePickupFailures, 0);
             return new RetryPickupResult<T>(result, Succeeded: true);
         }
         catch (OperationCanceledException)
