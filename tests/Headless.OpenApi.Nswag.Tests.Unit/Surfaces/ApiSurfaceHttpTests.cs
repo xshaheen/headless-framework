@@ -37,18 +37,18 @@ public sealed class ApiSurfaceHttpTests : TestBase
         builder.Services.AddHeadlessMvcApiSurfaces();
         builder.Services.AddHeadlessApiSurfaces(options =>
         {
-            options.AddSurface(
+            options.Add(
                 "portal",
                 surface =>
                 {
                     surface.RoutePrefix = "/api/portal/";
-                    surface.AuthorizationPolicy = "tenant";
-                    surface.TenancyMode = ApiSurfaceTenancyMode.RequireTenant;
+                    surface.DefaultAuthorizationPolicy = "tenant";
+                    surface.DefaultTenancyMode = ApiSurfaceTenancyMode.RequireTenant;
                 }
             );
-            options.AddSurface("console", surface => surface.RoutePrefix = "api/console");
+            options.Add("console", surface => surface.RoutePrefix = "api/console");
         });
-        builder.Services.AddNswagOpenApiSurfaces();
+        builder.Services.AddNswagApiSurfaceDocuments();
         builder
             .Services.AddAuthentication("test")
             .AddScheme<AuthenticationSchemeOptions, SurfaceAuthenticationHandler>("test", _ => { });
@@ -83,7 +83,7 @@ public sealed class ApiSurfaceHttpTests : TestBase
         portal.MapGet("minimal/optional", () => "optional").AllowMissingTenant();
         portal.MapGet("minimal/anonymous", () => "anonymous").AllowAnonymous();
         app.MapApiSurface("console").MapGet("minimal", () => new ConsoleSurfacePayload("private"));
-        app.MapNswagOpenApiSurfaces();
+        app.MapNswagApiSurfaceDocuments();
         await app.StartAsync(AbortToken);
         try
         {

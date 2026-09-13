@@ -28,7 +28,7 @@ public sealed class ApiSurfaceOpenApiTests : TestBase
         builder.Logging.ClearProviders();
         builder.Services.AddHeadlessApiSurfaces(options =>
         {
-            options.AddSurface(
+            options.Add(
                 "portal",
                 portal =>
                 {
@@ -36,7 +36,7 @@ public sealed class ApiSurfaceOpenApiTests : TestBase
                     portal.OpenApi.Title = "Final portal title";
                 }
             );
-            options.AddSurface("console");
+            options.Add("console");
         });
         void Configure(OpenApiOptions options)
         {
@@ -66,7 +66,7 @@ public sealed class ApiSurfaceOpenApiTests : TestBase
         }
         else
         {
-            builder.Services.AddHeadlessOpenApiSurfaces(configure: Configure);
+            builder.Services.AddHeadlessApiSurfaceDocuments(configure: Configure);
         }
         builder.Services.AddOpenApi(
             "extra",
@@ -138,8 +138,8 @@ public sealed class ApiSurfaceOpenApiTests : TestBase
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseUrls("http://127.0.0.1:0");
         builder.Logging.ClearProviders();
-        builder.Services.AddHeadlessApiSurfaces(options => options.AddSurface("portal"));
-        builder.Services.AddHeadlessOpenApiSurfaces(["missing"]);
+        builder.Services.AddHeadlessApiSurface("portal");
+        builder.Services.AddHeadlessApiSurfaceDocuments(["missing"]);
         await using var app = builder.Build();
         var start = () => app.StartAsync(AbortToken);
         await start.Should().ThrowAsync<InvalidOperationException>().WithMessage("*missing*configured API surface*");
@@ -158,9 +158,9 @@ public sealed class ApiSurfaceOpenApiTests : TestBase
         }
         else
         {
-            builder.Services.AddHeadlessOpenApiSurfaces();
+            builder.Services.AddHeadlessApiSurfaceDocuments();
         }
-        var register = () => builder.Services.AddHeadlessApiSurfaces(options => options.AddSurface("portal"));
+        var register = () => builder.Services.AddHeadlessApiSurface("portal");
         register.Should().Throw<InvalidOperationException>().WithMessage("*before OpenAPI document inference*");
     }
 
@@ -176,7 +176,7 @@ public sealed class ApiSurfaceOpenApiTests : TestBase
         _ConfigureEncryption(builder);
         if (surfaces)
         {
-            builder.Services.AddHeadlessApiSurfaces(options => options.AddSurface("portal").AddSurface("console"));
+            builder.Services.AddHeadlessApiSurface("portal").AddHeadlessApiSurface("console");
         }
         builder.AddHeadless(configureServices: options =>
         {

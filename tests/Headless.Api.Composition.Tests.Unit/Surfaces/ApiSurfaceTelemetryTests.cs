@@ -62,7 +62,7 @@ public sealed class ApiSurfaceTelemetryTests : TestBase
         // Registration order must not affect the response enricher.
         if (registerSurfaces)
         {
-            builder.Services.AddHeadlessApiSurfaces(options => options.AddSurface("Portal", _ => { }));
+            builder.Services.AddHeadlessApiSurface("Portal", _ => { });
         }
         await using var app = builder.Build();
         app.UseDeveloperExceptionPage();

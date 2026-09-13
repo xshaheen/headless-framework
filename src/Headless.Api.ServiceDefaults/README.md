@@ -78,8 +78,9 @@ When API surfaces are registered, the default OpenTelemetry response enricher ad
 With OpenAPI enabled, `AddHeadless()` infers document names from surfaces registered before it:
 
 ```csharp
-builder.Services.AddHeadlessApiSurfaces(options =>
-    options.AddSurface("portal").AddSurface("console"));
+builder.Services
+    .AddHeadlessApiSurface("portal")
+    .AddHeadlessApiSurface("console");
 builder.AddHeadless();
 // After building the application:
 app.MapHeadlessEndpoints();
@@ -87,7 +88,7 @@ app.MapHeadlessEndpoints();
 
 `SurfaceDocumentNames` defaults to `null`, which publishes every registered surface document. Without surfaces, the ordinary `v1` document remains. Set a nonempty list only to select specific documents; each name must match a configured `OpenApi.DocumentName`. An explicit empty list selects the ordinary, unfiltered `v1` document. Set `OpenApi.Enabled = false` to disable registration. `MapHeadlessEndpoints()` serves documents at the configured route. Adding surfaces after inference throws; unknown explicit document names fail startup.
 
-For hosts using individual registrations, call `builder.Services.AddHeadlessOpenApiSurfaces()` after surface registration and pair it with native `app.MapOpenApi()`. An optional document list selects a subset; no surfaces or an empty list registers no documents on this standalone path. Use it without the default `AddHeadless()` OpenAPI registration, or disable that registration with `OpenApi.Enabled = false` and map documents yourself. Native `AddOpenApi(...)` can register additional documents.
+For hosts using individual registrations, call `builder.Services.AddHeadlessApiSurfaceDocuments()` after surface registration and pair it with native `app.MapOpenApi()`. An optional document list selects a subset; no surfaces or an empty list registers no documents on this standalone path. Use it without the default `AddHeadless()` OpenAPI registration, or disable that registration with `OpenApi.Enabled = false` and map documents yourself. Native `AddOpenApi(...)` can register additional documents.
 
 Surface filtering runs before schema generation and is independent of API Explorer version groups. `ConfigureOpenApi` can narrow the selected endpoints with `ShouldInclude` and append document transformers, including a title override. The standalone method accepts the same callback. This adapter uses ASP.NET Core OpenAPI generation; NSwag-specific security, schema mappings, and tenant-error examples remain in `Headless.OpenApi.Nswag`.
 

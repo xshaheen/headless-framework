@@ -307,7 +307,7 @@ public static class SetupApi
                     options.OpenApi.SurfaceDocumentNames ?? ApiSurfaceRegistration.InferDocumentNames(builder.Services);
                 if (documentNames.Count > 0)
                 {
-                    builder.Services.AddHeadlessOpenApiSurfaces(documentNames, options.OpenApi.ConfigureOpenApi);
+                    builder.Services.AddHeadlessApiSurfaceDocuments(documentNames, options.OpenApi.ConfigureOpenApi);
                 }
                 else
                 {

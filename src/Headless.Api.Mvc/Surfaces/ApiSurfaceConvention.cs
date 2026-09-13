@@ -52,13 +52,16 @@ public sealed class ApiSurfaceConvention(ApiSurfaceRegistry registry) : IApplica
                 foreach (var selector in action.Selectors)
                 {
                     selector.EndpointMetadata.Insert(0, descriptor);
-                    if (!string.IsNullOrWhiteSpace(descriptor.AuthorizationPolicy))
+                    if (!string.IsNullOrWhiteSpace(descriptor.DefaultAuthorizationPolicy))
                     {
-                        selector.EndpointMetadata.Insert(0, new AuthorizeAttribute(descriptor.AuthorizationPolicy));
+                        selector.EndpointMetadata.Insert(
+                            0,
+                            new AuthorizeAttribute(descriptor.DefaultAuthorizationPolicy)
+                        );
                     }
 
                     var tenancy = ApiSurfaceEndpointDefaults.GetTenancyMetadata(
-                        descriptor.TenancyMode,
+                        descriptor.DefaultTenancyMode,
                         controller.Attributes.Concat(selector.EndpointMetadata)
                     );
                     if (tenancy is not null)

@@ -4,7 +4,7 @@ using Headless.Checks;
 
 namespace Headless.Api.Surfaces;
 
-/// <summary>Configures one surface before AddHeadlessApiSurfaces freezes its definition.</summary>
+/// <summary>Configures one surface before registration freezes its definition.</summary>
 [PublicAPI]
 public sealed class ApiSurfaceBuilder(string surfaceName)
 {
@@ -12,10 +12,10 @@ public sealed class ApiSurfaceBuilder(string surfaceName)
     public string? RoutePrefix { get; set; }
 
     /// <summary>An additional named authorization policy. Native AllowAnonymous metadata still applies.</summary>
-    public string? AuthorizationPolicy { get; set; }
+    public string? DefaultAuthorizationPolicy { get; set; }
 
     /// <summary>Default tenancy metadata. RequireTenant needs a TenantRequirement in the endpoint's authorization policy.</summary>
-    public ApiSurfaceTenancyMode TenancyMode { get; set; }
+    public ApiSurfaceTenancyMode DefaultTenancyMode { get; set; }
 
     public ApiSurfaceOpenApiOptions OpenApi { get; } = new(surfaceName);
 
@@ -23,8 +23,8 @@ public sealed class ApiSurfaceBuilder(string surfaceName)
         new(
             SurfaceName,
             string.IsNullOrWhiteSpace(RoutePrefix) ? null : RoutePrefix.Trim('/'),
-            AuthorizationPolicy,
-            TenancyMode,
+            DefaultAuthorizationPolicy,
+            DefaultTenancyMode,
             new ApiSurfaceOpenApiDescriptor(OpenApi.DocumentName, OpenApi.Title)
         );
 }

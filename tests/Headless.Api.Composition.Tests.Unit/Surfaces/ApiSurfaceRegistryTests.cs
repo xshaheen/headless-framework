@@ -15,15 +15,15 @@ public sealed class ApiSurfaceRegistryTests : TestBase
     {
         ApiSurfaceBuilder? configured = null;
         var services = new ServiceCollection();
-        services.AddHeadlessApiSurfaces(options =>
-            options.AddSurface(
-                "portal",
-                surface =>
-                {
-                    configured = surface;
-                    surface.RoutePrefix = "/api/portal/";
-                }
-            )
+        services.AddHeadlessApiSurface(
+            "portal",
+            surface =>
+            {
+                configured = surface;
+                surface.RoutePrefix = "/api/portal/";
+                surface.DefaultAuthorizationPolicy = "PortalUser";
+                surface.DefaultTenancyMode = ApiSurfaceTenancyMode.RequireTenant;
+            }
         );
         configured!.RoutePrefix = "changed";
         configured.OpenApi.Title = "changed";
@@ -31,6 +31,8 @@ public sealed class ApiSurfaceRegistryTests : TestBase
         var registry = firstHost.GetRequiredService<ApiSurfaceRegistry>();
         registry.GetRequiredSurface("PORTAL").RoutePrefix.Should().Be("api/portal");
         registry.GetRequiredSurface("portal").OpenApi.Title.Should().Be("portal API");
+        registry.GetRequiredSurface("portal").DefaultAuthorizationPolicy.Should().Be("PortalUser");
+        registry.GetRequiredSurface("portal").DefaultTenancyMode.Should().Be(ApiSurfaceTenancyMode.RequireTenant);
         firstHost.GetRequiredService<ApiSurfaceRegistry>().Should().BeSameAs(registry);
         using var secondHost = services.BuildServiceProvider();
         secondHost.GetRequiredService<ApiSurfaceRegistry>().Should().NotBeSameAs(registry);
@@ -45,15 +47,13 @@ public sealed class ApiSurfaceRegistryTests : TestBase
     {
         var services = new ServiceCollection();
         var act = () =>
-            services.AddHeadlessApiSurfaces(options =>
-                options.AddSurface(
-                    name,
-                    surface =>
-                    {
-                        surface.OpenApi.DocumentName = document;
-                        surface.TenancyMode = (ApiSurfaceTenancyMode)tenancyMode;
-                    }
-                )
+            services.AddHeadlessApiSurface(
+                name,
+                surface =>
+                {
+                    surface.OpenApi.DocumentName = document;
+                    surface.DefaultTenancyMode = (ApiSurfaceTenancyMode)tenancyMode;
+                }
             );
         act.Should().Throw<OptionsValidationException>();
     }
@@ -65,8 +65,8 @@ public sealed class ApiSurfaceRegistryTests : TestBase
         var act = () =>
             services.AddHeadlessApiSurfaces(options =>
             {
-                options.AddSurface("portal");
-                options.AddSurface("console", surface => surface.OpenApi.DocumentName = "PORTAL");
+                options.Add("portal");
+                options.Add("console", surface => surface.OpenApi.DocumentName = "PORTAL");
             });
         act.Should().Throw<OptionsValidationException>().WithMessage("*document names must be unique*");
     }
@@ -74,8 +74,8 @@ public sealed class ApiSurfaceRegistryTests : TestBase
     [Fact]
     public void should_reject_duplicate_surface_names()
     {
-        var options = new ApiSurfaceOptions().AddSurface("portal");
-        var act = () => options.AddSurface("PORTAL");
+        var options = new ApiSurfacesBuilder().Add("portal");
+        var act = () => options.Add("PORTAL");
         act.Should().Throw<InvalidOperationException>().WithMessage("*already configured*");
     }
 
@@ -85,12 +85,12 @@ public sealed class ApiSurfaceRegistryTests : TestBase
     public void should_reject_duplicate_names_across_calls_without_partial_registration(string name, string document)
     {
         var services = new ServiceCollection();
-        services.AddHeadlessApiSurfaces(options => options.AddSurface("portal"));
+        services.AddHeadlessApiSurface("portal");
         var act = () =>
             services.AddHeadlessApiSurfaces(options =>
             {
-                options.AddSurface("partner");
-                options.AddSurface(name, surface => surface.OpenApi.DocumentName = document);
+                options.Add("partner");
+                options.Add(name, surface => surface.OpenApi.DocumentName = document);
             });
         act.Should().Throw<InvalidOperationException>().WithMessage("*already configured*");
         using var provider = services.BuildServiceProvider();

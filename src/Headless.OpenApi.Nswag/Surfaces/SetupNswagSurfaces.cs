@@ -17,7 +17,7 @@ public static class SetupNswagSurfaces
     /// <summary>Registers inferred or explicitly selected surface documents.</summary>
     /// <remarks>Omit names to infer all registered surface documents and close surface registration.
     /// Explicit names must match ApiSurfaceBuilder.OpenApi.DocumentName. ApiGroupNames can independently select API versions.</remarks>
-    public static IServiceCollection AddNswagOpenApiSurfaces(
+    public static IServiceCollection AddNswagApiSurfaceDocuments(
         this IServiceCollection services,
         IEnumerable<string>? documentNames = null,
         Action<HeadlessNswagOptions>? setupHeadlessAction = null,
@@ -57,7 +57,7 @@ public static class SetupNswagSurfaces
     }
 
     /// <summary>Serves registered documents at /openapi/{documentName}.json and Swagger UI at /swagger.</summary>
-    public static WebApplication MapNswagOpenApiSurfaces(
+    public static WebApplication MapNswagApiSurfaceDocuments(
         this WebApplication app,
         Action<OpenApiDocumentMiddlewareSettings>? documentSettings = null,
         Action<SwaggerUiSettings>? uiSettings = null

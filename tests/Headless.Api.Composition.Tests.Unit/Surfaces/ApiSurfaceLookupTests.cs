@@ -16,8 +16,8 @@ public sealed class ApiSurfaceLookupTests : TestBase
         var services = new ServiceCollection();
         services.AddHeadlessApiSurfaces(options =>
         {
-            options.AddSurface("Portal", surface => surface.AuthorizationPolicy = "PortalUser");
-            options.AddSurface("console", _ => { });
+            options.Add("Portal", surface => surface.DefaultAuthorizationPolicy = "PortalUser");
+            options.Add("console", _ => { });
         });
         using var provider = services.BuildServiceProvider();
         var context = new DefaultHttpContext { RequestServices = provider };
@@ -26,7 +26,7 @@ public sealed class ApiSurfaceLookupTests : TestBase
         context.SetEndpoint(_Endpoint("portal"));
         var surface = context.GetApiSurface();
         surface.Should().BeSameAs(provider.GetRequiredService<ApiSurfaceRegistry>().GetRequiredSurface("Portal"));
-        surface!.AuthorizationPolicy.Should().Be("PortalUser");
+        surface!.DefaultAuthorizationPolicy.Should().Be("PortalUser");
 
         context.SetEndpoint(_Endpoint("console"));
         context.GetApiSurface()!.SurfaceName.Should().Be("console");

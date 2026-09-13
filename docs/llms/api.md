@@ -241,7 +241,7 @@ public sealed class OrderService(IRequestContext context)
 
 #### API surfaces
 
-`IApiSurfaceMetadata` and `[ApiSurface("portal")]` identify an endpoint's API surface. `ApiSurfaceDescriptor` contains immutable route, authorization, tenancy, and OpenAPI defaults. `HttpContext.GetApiSurface()` in `Headless.Api.Core` resolves that descriptor from the selected endpoint after routing. It does not describe the effective endpoint authorization policy.
+`IApiSurfaceMetadata` and `[ApiSurface("portal")]` identify an endpoint's API surface. `ApiSurfaceDescriptor` contains immutable `RoutePrefix`, `DefaultAuthorizationPolicy`, `DefaultTenancyMode`, and `OpenApi` settings. `HttpContext.GetApiSurface()` in `Headless.Api.Core` resolves that descriptor from the selected endpoint after routing. It does not describe the effective endpoint authorization policy.
 
 `ApiSurfaceTenancyMode` has `Unspecified`, `RequireTenant`, `AllowMissingTenant`, and `SkipTenantResolution` values. These add metadata defaults only. `RequireTenant` needs the tenancy authorization handler and an applicable policy containing `TenantRequirement`; selecting the mode does not register either. Skipping resolution does not permit a missing tenant. Explicit endpoint metadata takes precedence.
 
@@ -377,23 +377,23 @@ public sealed class TokenValidator(IJwtTokenFactory tokens)
 
 #### API surfaces
 
-`AddHeadlessApiSurfaces(...)` runs its callback immediately, validates the definitions, and registers immutable descriptors plus a singleton `ApiSurfaceRegistry`. MVC, Minimal API, telemetry, and OpenAPI share these definitions. Configure surfaces inside this callback, not through `Configure` or `PostConfigure<ApiSurfaceOptions>`. Changes to a retained builder after registration have no effect. Multiple registration calls may add distinct surfaces before OpenAPI inference.
+An API surface is a named set of endpoints sharing routing, authorization and tenancy defaults, plus an OpenAPI document. `AddHeadlessApiSurface(name, configure)` runs its optional callback immediately, validates the definition, and registers an immutable descriptor plus a singleton `ApiSurfaceRegistry`. MVC, Minimal API, telemetry, and OpenAPI share these definitions. Configure definitions during registration; the builders do not use the deferred .NET options pipeline. Changes to a retained builder after registration have no effect.
 
 ```csharp
 using Headless.Api;
 using Headless.Api.Surfaces;
 
-builder.Services.AddHeadlessApiSurfaces(options => options.AddSurface("portal", surface =>
+builder.Services.AddHeadlessApiSurface("portal", surface =>
 {
     surface.RoutePrefix = "api/portal";
-    surface.AuthorizationPolicy = "tenant";
-    surface.TenancyMode = ApiSurfaceTenancyMode.RequireTenant;
-    surface.OpenApi.DocumentName = "portal";
-    surface.OpenApi.Title = "Portal API";
-}));
+    surface.DefaultAuthorizationPolicy = "tenant";
+    surface.DefaultTenancyMode = ApiSurfaceTenancyMode.RequireTenant;
+});
 ```
 
-`AuthorizationPolicy` adds a native named policy. `[AllowAnonymous]` / `.AllowAnonymous()` still bypass authorization. `RequireTenant` requires a policy containing `TenantRequirement`, the Headless tenant authorization handler, and current-tenant services. The mode alone does not install enforcement. Configure these through `AddHeadlessTenancy(...)` as shown above.
+For an atomic batch, use `AddHeadlessApiSurfaces(surfaces => surfaces.Add("portal").Add("console"))`. Its `ApiSurfacesBuilder` validates every definition before registering any from the batch. Both registration methods return `IServiceCollection` for chaining and may be combined before document inference. Document names and titles are inferred; override `surface.OpenApi.DocumentName` and `.Title` only when needed.
+
+`DefaultAuthorizationPolicy` adds a native named policy alongside endpoint policies. `[AllowAnonymous]` / `.AllowAnonymous()` still bypass authorization. `DefaultTenancyMode = ApiSurfaceTenancyMode.RequireTenant` requires a policy containing `TenantRequirement`, the Headless tenant authorization handler, and current-tenant services. The mode alone does not install enforcement. Configure these through `AddHeadlessTenancy(...)` as shown above.
 
 Explicit controller or endpoint `RequireTenant` / `AllowMissingTenant` metadata takes precedence over surface defaults. `SkipTenantResolution` skips HTTP tenant extraction; it does not permit a missing tenant. An explicit tenancy requirement or exemption also suppresses a surface's skip-resolution default.
 
@@ -555,8 +555,9 @@ When API surfaces are registered, the default OpenTelemetry response enricher ad
 With OpenAPI enabled, `AddHeadless()` infers document names from surfaces registered before it:
 
 ```csharp
-builder.Services.AddHeadlessApiSurfaces(options =>
-    options.AddSurface("portal").AddSurface("console"));
+builder.Services
+    .AddHeadlessApiSurface("portal")
+    .AddHeadlessApiSurface("console");
 builder.AddHeadless();
 // After building the application:
 app.MapHeadlessEndpoints();
@@ -564,7 +565,7 @@ app.MapHeadlessEndpoints();
 
 `SurfaceDocumentNames` defaults to `null`, which publishes every registered surface document. Without surfaces, the ordinary `v1` document remains. Set a nonempty list only to select specific documents; each name must match a configured `OpenApi.DocumentName`. An explicit empty list selects the ordinary, unfiltered `v1` document. Set `OpenApi.Enabled = false` to disable registration. `MapHeadlessEndpoints()` serves documents at the configured route. Adding surfaces after inference throws; unknown explicit document names fail startup.
 
-For hosts using individual registrations, call `builder.Services.AddHeadlessOpenApiSurfaces()` after surface registration and pair it with native `app.MapOpenApi()`. An optional document list selects a subset; no surfaces or an empty list registers no documents on this standalone path. Use it without the default `AddHeadless()` OpenAPI registration, or disable that registration with `OpenApi.Enabled = false` and map documents yourself. Native `AddOpenApi(...)` can register additional documents.
+For hosts using individual registrations, call `builder.Services.AddHeadlessApiSurfaceDocuments()` after surface registration and pair it with native `app.MapOpenApi()`. An optional document list selects a subset; no surfaces or an empty list registers no documents on this standalone path. Use it without the default `AddHeadless()` OpenAPI registration, or disable that registration with `OpenApi.Enabled = false` and map documents yourself. Native `AddOpenApi(...)` can register additional documents.
 
 Surface filtering runs before schema generation and is independent of API Explorer version groups. `ConfigureOpenApi` can narrow the selected endpoints with `ShouldInclude` and append document transformers, including a title override. The standalone method accepts the same callback. This adapter uses ASP.NET Core OpenAPI generation; NSwag-specific security, schema mappings, and tenant-error examples remain in `Headless.OpenApi.Nswag`.
 
@@ -1021,7 +1022,7 @@ app.Run();
 
 #### API surfaces
 
-After `AddHeadlessApiSurfaces(...)`, `app.MapApiSurface("portal")` returns a native `RouteGroupBuilder` with the configured prefix and named authorization policy. The optional callback and returned builder support ordinary ASP.NET Core endpoint conventions.
+After `AddHeadlessApiSurface(...)`, `app.MapApiSurface("portal")` returns a native `RouteGroupBuilder` with the configured prefix and named authorization policy. The optional callback and returned builder support ordinary ASP.NET Core endpoint conventions.
 
 ```csharp
 var portal = app.MapApiSurface("portal");
@@ -1140,7 +1141,7 @@ Requests with no routed endpoint are left untouched. Registered before `UseRouti
 
 #### API surfaces
 
-Register `AddHeadlessMvcApiSurfaces()` alongside `AddControllers()` and `AddHeadlessApiSurfaces(...)`. Mark controllers with `[ApiSurface("portal")]`. The convention adds the registry's prefix, named authorization policy, and tenancy defaults to their actions.
+Register `AddHeadlessMvcApiSurfaces()` alongside `AddControllers()` and `AddHeadlessApiSurface(...)`. Mark controllers with `[ApiSurface("portal")]`. The convention adds the registry's prefix, named authorization policy, and tenancy defaults to their actions.
 
 Controller/action tenancy metadata takes precedence over surface defaults. Native authorization remains additive, and `[AllowAnonymous]` bypasses it. `RequireTenant` metadata needs the policy and services described in `Headless.Api.Core`. Unknown surface names fail MVC model construction. Controllers with a configured prefix must use relative controller and action routes; absolute templates are rejected because they escape that prefix. Existing `ApiExplorerSettings.GroupName` values are preserved for versioning. Repeated integration registration adds only one convention configurator.
 

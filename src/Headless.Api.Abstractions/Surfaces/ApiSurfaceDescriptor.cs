@@ -10,15 +10,15 @@ namespace Headless.Api.Surfaces;
 public sealed class ApiSurfaceDescriptor(
     string surfaceName,
     string? routePrefix,
-    string? authorizationPolicy,
-    ApiSurfaceTenancyMode tenancyMode,
+    string? defaultAuthorizationPolicy,
+    ApiSurfaceTenancyMode defaultTenancyMode,
     ApiSurfaceOpenApiDescriptor openApi
 ) : IApiSurfaceMetadata
 {
     public string SurfaceName { get; } = Argument.IsNotNullOrWhiteSpace(surfaceName);
     public string? RoutePrefix { get; } = routePrefix;
-    public string? AuthorizationPolicy { get; } = authorizationPolicy;
-    public ApiSurfaceTenancyMode TenancyMode { get; } = tenancyMode;
+    public string? DefaultAuthorizationPolicy { get; } = defaultAuthorizationPolicy;
+    public ApiSurfaceTenancyMode DefaultTenancyMode { get; } = defaultTenancyMode;
     public ApiSurfaceOpenApiDescriptor OpenApi { get; } = Argument.IsNotNull(openApi);
 }
 

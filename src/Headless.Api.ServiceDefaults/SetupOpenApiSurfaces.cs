@@ -16,7 +16,7 @@ public static class SetupOpenApiSurfaces
     /// Explicit names must match ApiSurfaceBuilder.OpenApi.DocumentName. Native MapOpenApi serves the documents.
     /// The callback deliberately exposes Microsoft.AspNetCore.OpenApi options for full provider customization.
     /// Its ShouldInclude predicate can narrow each surface independently of API Explorer version groups.</remarks>
-    public static IServiceCollection AddHeadlessOpenApiSurfaces(
+    public static IServiceCollection AddHeadlessApiSurfaceDocuments(
         this IServiceCollection services,
         IEnumerable<string>? documentNames = null,
         Action<OpenApiOptions>? configure = null

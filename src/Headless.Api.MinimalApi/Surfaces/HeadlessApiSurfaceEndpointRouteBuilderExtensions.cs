@@ -28,9 +28,9 @@ public static class HeadlessApiSurfaceEndpointRouteBuilderExtensions
             .GetRequiredSurface(surfaceName);
         var group = endpoints.MapGroup(descriptor.RoutePrefix ?? string.Empty);
         group.WithMetadata(descriptor);
-        if (!string.IsNullOrWhiteSpace(descriptor.AuthorizationPolicy))
+        if (!string.IsNullOrWhiteSpace(descriptor.DefaultAuthorizationPolicy))
         {
-            group.RequireAuthorization(descriptor.AuthorizationPolicy);
+            group.RequireAuthorization(descriptor.DefaultAuthorizationPolicy);
         }
 
         ((IEndpointConventionBuilder)group).Finally(builder =>
@@ -46,7 +46,10 @@ public static class HeadlessApiSurfaceEndpointRouteBuilderExtensions
                 );
             }
 
-            var tenancy = ApiSurfaceEndpointDefaults.GetTenancyMetadata(descriptor.TenancyMode, builder.Metadata);
+            var tenancy = ApiSurfaceEndpointDefaults.GetTenancyMetadata(
+                descriptor.DefaultTenancyMode,
+                builder.Metadata
+            );
             if (tenancy is not null)
             {
                 builder.Metadata.Insert(0, tenancy);

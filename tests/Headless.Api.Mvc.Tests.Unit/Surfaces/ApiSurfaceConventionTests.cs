@@ -24,14 +24,14 @@ public sealed class ApiSurfaceConventionTests : TestBase
     [Fact]
     public void should_apply_prefix_policy_and_tenancy_without_replacing_version_group()
     {
-        var surfaceOptions = new ApiSurfaceOptions();
-        surfaceOptions.AddSurface(
+        var surfaceOptions = new ApiSurfacesBuilder();
+        surfaceOptions.Add(
             "Portal",
             s =>
             {
                 s.RoutePrefix = "api/portal";
-                s.AuthorizationPolicy = "PortalUser";
-                s.TenancyMode = ApiSurfaceTenancyMode.RequireTenant;
+                s.DefaultAuthorizationPolicy = "PortalUser";
+                s.DefaultTenancyMode = ApiSurfaceTenancyMode.RequireTenant;
             }
         );
 

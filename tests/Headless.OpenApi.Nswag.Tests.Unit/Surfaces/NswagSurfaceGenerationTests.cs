@@ -22,7 +22,7 @@ public sealed class NswagSurfaceGenerationTests : TestBase
         var configureCalls = 0;
         if (!infer)
         {
-            services.AddNswagOpenApiSurfaces(["portal", "console"]);
+            services.AddNswagApiSurfaceDocuments(["portal", "console"]);
         }
 
         services.AddNswagOpenApi(setupGeneratorActions: settings => settings.DocumentName = "extra");
@@ -30,12 +30,12 @@ public sealed class NswagSurfaceGenerationTests : TestBase
         services.AddHeadlessApiSurfaces(options =>
         {
             configureCalls++;
-            options.AddSurface("Portal");
+            options.Add("Portal");
         });
-        services.AddHeadlessApiSurfaces(options => options.AddSurface("Console"));
+        services.AddHeadlessApiSurface("Console");
         if (infer)
         {
-            services.AddNswagOpenApiSurfaces();
+            services.AddNswagApiSurfaceDocuments();
         }
 
         configureCalls.Should().Be(1);
@@ -51,8 +51,8 @@ public sealed class NswagSurfaceGenerationTests : TestBase
     public void should_reject_surfaces_registered_after_inference()
     {
         var services = new ServiceCollection();
-        services.AddNswagOpenApiSurfaces();
-        var register = () => services.AddHeadlessApiSurfaces(options => options.AddSurface("portal"));
+        services.AddNswagApiSurfaceDocuments();
+        var register = () => services.AddHeadlessApiSurface("portal");
         register.Should().Throw<InvalidOperationException>().WithMessage("*before OpenAPI document inference*");
     }
 }

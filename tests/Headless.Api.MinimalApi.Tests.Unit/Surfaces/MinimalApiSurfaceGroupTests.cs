@@ -20,13 +20,13 @@ public sealed class MinimalApiSurfaceGroupTests : TestBase
         var services = new ServiceCollection();
         services.AddHeadlessApiSurfaces(options =>
         {
-            options.AddSurface(
+            options.Add(
                 "Portal",
                 s =>
                 {
                     s.RoutePrefix = "api/portal";
-                    s.AuthorizationPolicy = "PortalAdmin";
-                    s.TenancyMode = ApiSurfaceTenancyMode.RequireTenant;
+                    s.DefaultAuthorizationPolicy = "PortalAdmin";
+                    s.DefaultTenancyMode = ApiSurfaceTenancyMode.RequireTenant;
                 }
             );
         });
@@ -65,7 +65,7 @@ public sealed class MinimalApiSurfaceGroupTests : TestBase
     public void should_honor_endpoint_tenancy_overrides(ApiSurfaceTenancyMode mode, bool require)
     {
         var services = new ServiceCollection();
-        services.AddHeadlessApiSurfaces(options => options.AddSurface("portal", surface => surface.TenancyMode = mode));
+        services.AddHeadlessApiSurface("portal", surface => surface.DefaultTenancyMode = mode);
         using var provider = services.BuildServiceProvider();
         var app = new DefaultEndpointRouteBuilder(provider);
         var endpoint = app.MapApiSurface("portal").MapGet("/test", () => "test");
@@ -89,7 +89,7 @@ public sealed class MinimalApiSurfaceGroupTests : TestBase
     public void should_reject_unknown_and_conflicting_surfaces()
     {
         var services = new ServiceCollection();
-        services.AddHeadlessApiSurfaces(options => options.AddSurface("portal").AddSurface("console"));
+        services.AddHeadlessApiSurface("portal").AddHeadlessApiSurface("console");
         using var provider = services.BuildServiceProvider();
         var app = new DefaultEndpointRouteBuilder(provider);
         var unknown = () => app.MapApiSurface("typo");

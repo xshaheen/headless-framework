@@ -118,23 +118,23 @@ public sealed class TokenValidator(IJwtTokenFactory tokens)
 
 ### API surfaces
 
-`AddHeadlessApiSurfaces(...)` runs its callback immediately, validates the definitions, and registers immutable descriptors plus a singleton `ApiSurfaceRegistry`. MVC, Minimal API, telemetry, and OpenAPI share these definitions. Configure surfaces inside this callback, not through `Configure` or `PostConfigure<ApiSurfaceOptions>`. Changes to a retained builder after registration have no effect. Multiple registration calls may add distinct surfaces before OpenAPI inference.
+An API surface is a named set of endpoints sharing routing, authorization and tenancy defaults, plus an OpenAPI document. `AddHeadlessApiSurface(name, configure)` runs its optional callback immediately, validates the definition, and registers an immutable descriptor plus a singleton `ApiSurfaceRegistry`. MVC, Minimal API, telemetry, and OpenAPI share these definitions. Configure definitions during registration; the builders do not use the deferred .NET options pipeline. Changes to a retained builder after registration have no effect.
 
 ```csharp
 using Headless.Api;
 using Headless.Api.Surfaces;
 
-builder.Services.AddHeadlessApiSurfaces(options => options.AddSurface("portal", surface =>
+builder.Services.AddHeadlessApiSurface("portal", surface =>
 {
     surface.RoutePrefix = "api/portal";
-    surface.AuthorizationPolicy = "tenant";
-    surface.TenancyMode = ApiSurfaceTenancyMode.RequireTenant;
-    surface.OpenApi.DocumentName = "portal";
-    surface.OpenApi.Title = "Portal API";
-}));
+    surface.DefaultAuthorizationPolicy = "tenant";
+    surface.DefaultTenancyMode = ApiSurfaceTenancyMode.RequireTenant;
+});
 ```
 
-`AuthorizationPolicy` adds a native named policy. `[AllowAnonymous]` / `.AllowAnonymous()` still bypass authorization. `RequireTenant` requires a policy containing `TenantRequirement`, the Headless tenant authorization handler, and current-tenant services. The mode alone does not install enforcement. Configure these through `AddHeadlessTenancy(...)` as shown above.
+For an atomic batch, use `AddHeadlessApiSurfaces(surfaces => surfaces.Add("portal").Add("console"))`. Its `ApiSurfacesBuilder` validates every definition before registering any from the batch. Both registration methods return `IServiceCollection` for chaining and may be combined before document inference. Document names and titles are inferred; override `surface.OpenApi.DocumentName` and `.Title` only when needed.
+
+`DefaultAuthorizationPolicy` adds a native named policy alongside endpoint policies. `[AllowAnonymous]` / `.AllowAnonymous()` still bypass authorization. `DefaultTenancyMode = ApiSurfaceTenancyMode.RequireTenant` requires a policy containing `TenantRequirement`, the Headless tenant authorization handler, and current-tenant services. The mode alone does not install enforcement. Configure these through `AddHeadlessTenancy(...)` as shown above.
 
 Explicit controller or endpoint `RequireTenant` / `AllowMissingTenant` metadata takes precedence over surface defaults. `SkipTenantResolution` skips HTTP tenant extraction; it does not permit a missing tenant. An explicit tenancy requirement or exemption also suppresses a surface's skip-resolution default.
 

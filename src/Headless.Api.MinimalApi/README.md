@@ -53,7 +53,7 @@ Use `AddHeadlessMinimalApiEntityTagConcurrency(options => ...)` to validate the 
 
 ### API surfaces
 
-After `AddHeadlessApiSurfaces(...)`, `app.MapApiSurface("portal")` returns a native `RouteGroupBuilder` with the configured prefix and named authorization policy. The optional callback and returned builder support ordinary ASP.NET Core endpoint conventions.
+After `AddHeadlessApiSurface(...)`, `app.MapApiSurface("portal")` returns a native `RouteGroupBuilder` with the configured prefix and named authorization policy. The optional callback and returned builder support ordinary ASP.NET Core endpoint conventions.
 
 ```csharp
 var portal = app.MapApiSurface("portal");

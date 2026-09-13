@@ -11,34 +11,47 @@ namespace Headless.Api;
 
 public static class SetupApiSurfaces
 {
+    /// <summary>Configures, validates, and freezes one API surface during service registration.</summary>
+    /// <remarks>Register every surface before AddHeadless or inferred surface document registration.</remarks>
+    /// <exception cref="ArgumentException">The surface name is empty.</exception>
+    /// <exception cref="OptionsValidationException">The surface definition is invalid.</exception>
+    /// <exception cref="InvalidOperationException">An identity is already registered or document inference has closed registration.</exception>
+    public static IServiceCollection AddHeadlessApiSurface(
+        this IServiceCollection services,
+        string surfaceName,
+        Action<ApiSurfaceBuilder>? configure = null
+    ) => services.AddHeadlessApiSurfaces(surfaces => surfaces.Add(surfaceName, configure));
+
     /// <summary>
-    /// Configures, validates, and freezes API surface definitions during service registration.
+    /// Configures, validates, and freezes a batch of API surfaces atomically during service registration.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <param name="configure">Configuration delegate for setting up API surfaces.</param>
     /// <returns>The service collection for chaining.</returns>
+    /// <exception cref="OptionsValidationException">A surface definition is invalid.</exception>
+    /// <exception cref="InvalidOperationException">An identity is duplicated or document inference has closed registration.</exception>
     public static IServiceCollection AddHeadlessApiSurfaces(
         this IServiceCollection services,
-        Action<Surfaces.ApiSurfaceOptions> configure
+        Action<Surfaces.ApiSurfacesBuilder> configure
     )
     {
         Argument.IsNotNull(services);
         Argument.IsNotNull(configure);
 
         ApiSurfaceRegistration.EnsureOpen(services);
-        var options = new Surfaces.ApiSurfaceOptions();
-        configure(options);
-        var validation = new ApiSurfaceOptionsValidator().Validate(options);
+        var builder = new Surfaces.ApiSurfacesBuilder();
+        configure(builder);
+        var validation = new ApiSurfacesBuilderValidator().Validate(builder);
         if (!validation.IsValid)
         {
             throw new OptionsValidationException(
                 Microsoft.Extensions.Options.Options.DefaultName,
-                typeof(Surfaces.ApiSurfaceOptions),
+                typeof(Surfaces.ApiSurfacesBuilder),
                 validation.Errors.Select(error => error.ErrorMessage)
             );
         }
 
-        var surfaces = options.Surfaces.Select(surface => surface.Build()).ToArray();
+        var surfaces = builder.Surfaces.Select(surface => surface.Build()).ToArray();
         var existing = ApiSurfaceRegistration.GetSurfaces(services);
         foreach (var surface in surfaces)
         {
