@@ -2,6 +2,7 @@
 
 using Headless.CommitCoordination;
 using Headless.Messaging.Configuration;
+using Headless.Messaging.Registration;
 using Headless.Messaging.Serialization;
 
 namespace Headless.Messaging.Internal;
@@ -18,11 +19,24 @@ internal sealed class MessagePublisher(
     Func<OutboxMessageWriter?> outboxWriterResolver,
     MessagingTelemetry? telemetry = null,
     TimeSpan? transportPublishTimeout = null,
-    DeliveryMode defaultDeliveryMode = DeliveryMode.Durable
+    DeliveryMode defaultDeliveryMode = DeliveryMode.Durable,
+    IEnumerable<MessageRegistration>? registrations = null
 )
 {
     private readonly MessagingTelemetry _telemetry = telemetry ?? MessagingTelemetry.Default;
     private readonly TimeSpan _transportPublishTimeout = transportPublishTimeout ?? TimeSpan.FromSeconds(10);
+
+    // Frozen at construction from the explicit ForMessage<T> registrations only: assembly-scan and framework
+    // contributions never carry a policy, and several of them can share a (type, lane) key, so indexing every
+    // registration would collide while adding nothing.
+    private readonly FrozenDictionary<(Type MessageType, MessageLane Lane), DeliveryMode> _deliveryPolicies = (
+        registrations ?? []
+    )
+        .Where(static registration => registration.DeliveryMode is not null)
+        .ToFrozenDictionary(
+            static registration => (registration.MessageType, registration.Lane),
+            static registration => registration.DeliveryMode!.Value
+        );
 
     // Cached once: passing a method group as Func<long> allocates a fresh delegate on every publish,
     // because the compiler only caches method-group conversions for static methods.
@@ -38,11 +52,22 @@ internal sealed class MessagePublisher(
         // AsyncLocal state must be captured in the caller's execution context, before any middleware await.
         var coordinator = currentCommitCoordinator.Current;
         var coordination = _ResolveCoordination(coordinator);
+        // Precedence is per call, then the policy registered for the declared type on this lane, then the host
+        // default. The declared type (not the runtime content type) is the key so a callback response that names
+        // its MessageType resolves the same policy the registration declared.
+        var declaredMessageType = options?.MessageType ?? typeof(T);
+        var requestedMode =
+            options?.DeliveryMode
+            ?? (
+                _deliveryPolicies.TryGetValue((declaredMessageType, lane), out var typePolicy)
+                    ? typePolicy
+                    : defaultDeliveryMode
+            );
         // Storage support is a resolver input, not a pipeline probe: the outbox writer is registered unconditionally
         // and throws when storage is missing, so a durable request on a storage-less host is refused here first.
         var decision = DeliveryDecisionResolver.Resolve(
             lane,
-            options?.DeliveryMode ?? defaultDeliveryMode,
+            requestedMode,
             options?.Delay,
             coordination,
             timeProvider.GetUtcNow(),
@@ -61,7 +86,6 @@ internal sealed class MessagePublisher(
             capabilities.EnsureOutboxSupported(lane, scheduled: decision.PublishAt is not null);
         }
 
-        var declaredMessageType = options?.MessageType ?? typeof(T);
         PublishReceipt receipt = default;
         await publishPipeline
             .ExecuteAsync(

@@ -269,6 +269,150 @@ public sealed class MessagePublisherDeliveryTests : TestBase
     }
 
     [Theory]
+    [InlineData(MessageLane.Bus)]
+    [InlineData(MessageLane.Queue)]
+    public async Task should_resolve_a_type_registered_coordinated_inside_a_compatible_scope_without_a_per_call_mode(
+        MessageLane lane
+    )
+    {
+        var stack = new CommitScopeStack();
+        await using var scope = new CommitScopeFactory(stack).Begin(new EmptyServiceProvider(), []);
+        await using var transaction = Substitute.For<System.Data.Common.DbTransaction>();
+        var resolver = Substitute.For<IDeliveryCoordinationResolver>();
+        resolver.Resolve(scope.Coordinator).Returns(DeliveryCoordination.Compatible(scope.Coordinator, transaction));
+        await using var harness = _CreateHarness(
+            currentCommitCoordinator: stack,
+            coordinationResolver: () => resolver,
+            registrations: [_Registration(lane, DeliveryMode.Coordinated)]
+        );
+        var stored = _CaptureStoredMessage(harness.Storage);
+
+        await harness.Publisher.PublishAsync(lane, new DeliveryMessage("type-coordinated"), null, AbortToken);
+
+        harness.TransportMessages.Should().BeEmpty();
+        stored.Value.Should().NotBeNull();
+        stored.Value!.Lane.Should().Be(lane);
+        stored.Value.Origin.Headers[Headers.RequestedDeliveryMode].Should().Be(nameof(DeliveryMode.Coordinated));
+        await harness
+            .Storage.Received(1)
+            .StoreMessageAsync(Arg.Any<string>(), Arg.Any<MediumMessage>(), transaction, Arg.Any<CancellationToken>());
+        harness.Dispatcher.CommittedMessages.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(MessageLane.Bus)]
+    [InlineData(MessageLane.Queue)]
+    public async Task should_reject_a_type_registered_coordinated_outside_a_scope_before_any_side_effect(
+        MessageLane lane
+    )
+    {
+        await using var harness = _CreateHarness(registrations: [_Registration(lane, DeliveryMode.Coordinated)]);
+
+        var act = () => harness.Publisher.PublishAsync(lane, new DeliveryMessage("type-coordinated"), null, AbortToken);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Coordinated*no scope is active*");
+        harness.TransportMessages.Should().BeEmpty();
+        harness.Storage.ReceivedCalls().Should().BeEmpty();
+        harness.Dispatcher.CommittedMessages.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_send_a_per_call_direct_on_a_type_registered_durable_without_storage_side_effects()
+    {
+        await using var harness = _CreateHarness(registrations: [_Registration(MessageLane.Bus, DeliveryMode.Durable)]);
+
+        await harness.Publisher.PublishAsync(
+            MessageLane.Bus,
+            new DeliveryMessage("per-call-direct"),
+            new PublishOptions { DeliveryMode = DeliveryMode.Direct },
+            AbortToken
+        );
+
+        harness.TransportMessages.Should().ContainSingle();
+        harness.Storage.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_reject_a_per_call_delay_on_a_type_registered_direct_before_any_side_effect()
+    {
+        await using var harness = _CreateHarness(registrations: [_Registration(MessageLane.Bus, DeliveryMode.Direct)]);
+
+        var act = () =>
+            harness.Publisher.PublishAsync(
+                MessageLane.Bus,
+                new DeliveryMessage("delayed-direct"),
+                new PublishOptions { Delay = TimeSpan.FromSeconds(30) },
+                AbortToken
+            );
+
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*Direct delivery cannot specify a delay*");
+        harness.TransportMessages.Should().BeEmpty();
+        harness.Storage.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_resolve_type_policy_by_the_declared_message_type_and_lane()
+    {
+        // Mirrors a callback response: the payload is typed as object and the declared type travels in the options.
+        await using var harness = _CreateHarness(registrations: [_Registration(MessageLane.Bus, DeliveryMode.Direct)]);
+        object content = new DeliveryMessage("callback-response");
+
+        await harness.Publisher.PublishAsync(
+            MessageLane.Bus,
+            content,
+            new PublishOptions { MessageType = typeof(DeliveryMessage), MessageName = "delivery.message" },
+            AbortToken
+        );
+
+        harness.TransportMessages.Should().ContainSingle("the Bus policy for the declared type is Direct");
+        harness.Storage.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_fall_back_to_the_host_default_when_the_declared_type_or_lane_has_no_policy()
+    {
+        await using var harness = _CreateHarness(registrations: [_Registration(MessageLane.Bus, DeliveryMode.Direct)]);
+        var stored = _CaptureStoredMessage(harness.Storage);
+        object content = new DeliveryMessage("no-policy");
+
+        // Same runtime type, but the declared type is object and the Queue lane has no policy: both take Durable.
+        await harness.Publisher.PublishAsync(
+            MessageLane.Bus,
+            content,
+            new PublishOptions { MessageName = "delivery.message" },
+            AbortToken
+        );
+        await harness.Publisher.PublishAsync(MessageLane.Queue, new DeliveryMessage("queue"), null, AbortToken);
+
+        harness.TransportMessages.Should().BeEmpty();
+        stored.Value.Should().NotBeNull();
+        await harness
+            .Storage.Received(2)
+            .StoreMessageAsync(
+                Arg.Any<string>(),
+                Arg.Any<MediumMessage>(),
+                Arg.Any<System.Data.Common.DbTransaction?>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    private static Headless.Messaging.Registration.MessageRegistration _Registration(
+        MessageLane lane,
+        DeliveryMode deliveryMode
+    ) =>
+        new(
+            typeof(DeliveryMessage),
+            lane,
+            "delivery.message",
+            CorrelationSelector: null,
+            ProviderConfigs: new Dictionary<Type, object>(),
+            Consumers: [],
+            DeliveryMode: deliveryMode
+        );
+
+    [Theory]
     [InlineData(DeliveryMode.Coordinated)]
     [InlineData(DeliveryMode.Durable)]
     public async Task should_reject_durable_delivery_through_incompatible_coordination_before_any_side_effect(
@@ -962,7 +1106,8 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         ICurrentCommitCoordinator? currentCommitCoordinator = null,
         Func<IDeliveryCoordinationResolver?>? coordinationResolver = null,
         DeliveryMode defaultDeliveryMode = DeliveryMode.Durable,
-        IPublishMiddleware<PublishContext>? middleware = null
+        IPublishMiddleware<PublishContext>? middleware = null,
+        IEnumerable<Headless.Messaging.Registration.MessageRegistration>? registrations = null
     )
     {
         timeProvider ??= TimeProvider.System;
@@ -1047,7 +1192,8 @@ public sealed class MessagePublisherDeliveryTests : TestBase
             () => writer,
             telemetry: null,
             transportPublishTimeout,
-            defaultDeliveryMode
+            defaultDeliveryMode,
+            registrations
         );
 
         return new MessagePublisherHarness(
