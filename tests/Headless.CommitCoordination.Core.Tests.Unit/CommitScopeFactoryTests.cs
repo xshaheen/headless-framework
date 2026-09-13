@@ -291,20 +291,25 @@ public sealed class CommitScopeFactoryTests : TestBase
         var factory = new CommitScopeFactory(stack);
 
         var outer = factory.Open(relational: null);
+        var outerState = outer.Coordinator.GetOrAdd(static _ => new DisposableState());
         var inner = factory.Open(relational: null);
 
         var act = () => outer.DisposeAsync().AsTask();
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("Commit scope disposed out of order.");
         outer.Coordinator.State.Should().Be(CommitCoordinatorState.Active, "a rejected dispose claims no outcome");
+        outerState.IsDisposed.Should().BeFalse();
         stack.Current.Should().BeSameAs(inner.Coordinator);
 
-        // Unwind in order so the ambient frame does not leak into the async flow.
+        // Unwind in order. The rejected attempt released the disposal latch, so the outer scope is still disposable
+        // and this in-order dispose must claim the abandon it was denied before. Awaited directly (not through an
+        // assertion wrapper) so the ambient pop runs in this frame and its AsyncLocal restore is observable below.
         await inner.DisposeAsync();
         await outer.DisposeAsync();
 
-        stack.Current.Should().BeNull();
+        stack.Current.Should().BeNull("the rejected out-of-order dispose must leave the scope disposable");
         outer.Coordinator.State.Should().Be(CommitCoordinatorState.RolledBack);
+        outerState.IsDisposed.Should().BeTrue("the in-order dispose claimed and drained the abandon");
     }
 
     [Fact]

@@ -17,7 +17,7 @@ namespace Headless.CommitCoordination;
 /// the un-signalled dispose would discard the enlisted work on every successful commit) and <c>RolledBack</c> when
 /// the operation or the commit throws, so the failure path never reads as a forgotten signal.
 /// </remarks>
-internal static class CoordinatedTransactionRunner
+internal static partial class CoordinatedTransactionRunner
 {
     public static async Task<TResult> ExecuteAsync<TConnection, TTransaction, TResult>(
         TConnection connection,
@@ -61,8 +61,18 @@ internal static class CoordinatedTransactionRunner
                     {
                         // The physical rollback happens when the transaction disposes; the explicit signal discards
                         // the enlisted work now and keeps the scope's forgotten-signal warning for hand-rolled
-                        // enlistments only. Nothing runs on rollback, so this cannot mask the caller's exception.
-                        await scope.SignalAsync(CommitOutcome.RolledBack).ConfigureAwait(false);
+                        // enlistments only. No callback runs on rollback, but scope-local state registered through
+                        // GetOrAdd is still disposed, and a fault from that disposal must never replace the
+                        // caller's real failure, so it is logged and the original exception is rethrown.
+                        try
+                        {
+                            await scope.SignalAsync(CommitOutcome.RolledBack).ConfigureAwait(false);
+                        }
+                        catch (Exception signalFault)
+                        {
+                            LogRollbackSignalFaulted(logger, signalFault);
+                        }
+
                         throw;
                     }
 
@@ -93,4 +103,13 @@ internal static class CoordinatedTransactionRunner
             }
         }
     }
+
+    [LoggerMessage(
+        EventId = 2,
+        Level = LogLevel.Warning,
+        Message = "Disposing scope-local state faulted while rolling back a coordinated transaction; the enlisted "
+            + "work is discarded and the operation's own exception is rethrown."
+    )]
+    // ReSharper disable once InconsistentNaming
+    private static partial void LogRollbackSignalFaulted(ILogger logger, Exception exception);
 }

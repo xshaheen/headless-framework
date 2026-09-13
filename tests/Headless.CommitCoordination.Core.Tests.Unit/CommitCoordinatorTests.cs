@@ -186,6 +186,35 @@ public sealed class CommitCoordinatorTests : TestBase
     }
 
     [Fact]
+    public async Task should_still_run_a_callback_whose_handle_is_disposed_after_the_terminal_claim()
+    {
+        var coordinator = new CommitCoordinator();
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondCalls = 0;
+
+        coordinator.OnCommit(async () => await gate.Task);
+        var second = coordinator.OnCommit(() =>
+        {
+            secondCalls++;
+
+            return ValueTask.CompletedTask;
+        });
+
+        // The claim settles synchronously; the drain is now parked on the gate with the first callback in flight.
+        var drain = coordinator.SignalAsync(CommitOutcome.Committed);
+        coordinator.State.Should().Be(CommitCoordinatorState.Committed);
+
+        // Deregistration is honored only up to the claim: a handle disposed after it is the documented no-op.
+        second.Dispose();
+        gate.SetResult();
+        await drain;
+
+        secondCalls
+            .Should()
+            .Be(1, "a callback that won its place in the drain runs even if its handle is disposed later");
+    }
+
+    [Fact]
     public async Task should_dispose_scope_state_after_the_commit_drain()
     {
         var coordinator = new CommitCoordinator();

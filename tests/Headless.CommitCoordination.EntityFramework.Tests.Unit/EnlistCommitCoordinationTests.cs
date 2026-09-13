@@ -43,10 +43,35 @@ public sealed class EnlistCommitCoordinationTests : TestBase
             await transaction.CommitAsync(AbortToken);
 
             calls.Should().Be(1, "the async commit edge awaits the drain");
+            harness
+                .Interceptor.EnlistedTransactionCount.Should()
+                .Be(0, "the commit edge evicts the finished entry before the scope is disposed");
         }
 
         harness.Interceptor.EnlistedTransactionCount.Should().Be(0);
         (await db.Probes.AsNoTracking().CountAsync(AbortToken)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_enlist_the_same_transaction_again_after_it_committed_while_the_first_scope_is_alive()
+    {
+        await using var harness = await Harness.CreateAsync();
+        await using var scope = harness.Root.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ProbeDbContext>();
+
+        await using var transaction = await db.Database.BeginTransactionAsync(AbortToken);
+        await using var first = db.Database.EnlistCommitCoordination(transaction, scope.ServiceProvider);
+        await transaction.CommitAsync(AbortToken);
+        first.Coordinator.State.Should().Be(CommitCoordinatorState.Committed);
+
+        // Drivers that reuse one DbTransaction instance per connection re-enlist the same key before the previous
+        // scope is disposed; finished work must not read as a duplicate enlistment.
+        await using var second = db.Database.EnlistCommitCoordination(transaction, scope.ServiceProvider);
+
+        second.Coordinator.Should().NotBeSameAs(first.Coordinator);
+        second.Coordinator.State.Should().Be(CommitCoordinatorState.Active);
+        harness.Interceptor.EnlistedTransactionCount.Should().Be(1);
+        harness.Logs.Entries.Should().NotContain(e => e.Level >= LogLevel.Warning);
     }
 
     [Fact]

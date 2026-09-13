@@ -159,11 +159,6 @@ internal sealed partial class CommitCoordinator(IRelationalCommitContext? relati
 
         foreach (var registration in claim.Callbacks)
         {
-            if (registration.IsDisposed)
-            {
-                continue;
-            }
-
             try
             {
                 await registration.Work().ConfigureAwait(false);
@@ -224,7 +219,10 @@ internal sealed partial class CommitCoordinator(IRelationalCommitContext? relati
 
         lock (_gate)
         {
-            callbacks = outcome == CommitOutcome.Committed ? _commitCallbacks : [];
+            // Deregistration is honored only up to the claim: the snapshot drops handles disposed while the
+            // coordinator was active, and a handle disposed after this point is the documented no-op, so a callback
+            // that won its place in the drain still runs.
+            callbacks = outcome == CommitOutcome.Committed ? _commitCallbacks.FindAll(static r => !r.IsDisposed) : [];
             _commitCallbacks = [];
             // Most scopes never call GetOrAdd; skip the copy on the framework's most frequent path.
             scopeState = _scopeState.Count == 0 ? [] : [.. _scopeState.Values];

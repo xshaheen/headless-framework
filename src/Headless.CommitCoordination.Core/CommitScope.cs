@@ -48,18 +48,27 @@ internal sealed class CommitScope(CommitCoordinator coordinator, IDisposable amb
     }
 
     /// <summary>
-    /// Pops the ambient frame, then latches disposal. The pop comes first because an out-of-order pop throws and
-    /// must leave the scope un-disposed and un-claimed, so the owner can unwind the inner scope and dispose again.
+    /// Latches disposal atomically, then pops the ambient frame. An out-of-order pop throws and must leave the
+    /// scope un-disposed and un-claimed so the owner can unwind the inner scope and dispose again, so the latch is
+    /// released before the exception escapes; concurrent disposers still see exactly one winner.
     /// </summary>
     private bool _TryBeginDispose()
     {
-        if (Volatile.Read(ref _disposed) == 1)
+        if (Interlocked.CompareExchange(ref _disposed, 1, 0) != 0)
         {
             return false;
         }
 
-        ambientHandle.Dispose();
+        try
+        {
+            ambientHandle.Dispose();
+        }
+        catch
+        {
+            Volatile.Write(ref _disposed, 0);
+            throw;
+        }
 
-        return Interlocked.Exchange(ref _disposed, 1) == 0;
+        return true;
     }
 }

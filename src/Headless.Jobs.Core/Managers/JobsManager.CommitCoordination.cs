@@ -55,7 +55,9 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
             return null;
         }
 
-        if (relational.Transaction is null)
+        // A scope that already reached its outcome can still be ambient until it is disposed; its transaction is
+        // finished even when the driver keeps the handle populated, so the write must not pretend to enlist.
+        if (coordinator.State != CommitCoordinatorState.Active || relational.Transaction is null)
         {
             throw new InvalidOperationException(
                 "A relational commit coordinator is active but its transaction is no longer live, so the job row "

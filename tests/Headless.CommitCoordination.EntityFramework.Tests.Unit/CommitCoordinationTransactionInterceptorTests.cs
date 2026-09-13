@@ -13,8 +13,9 @@ namespace Tests;
 
 /// <summary>
 /// Exercises the interceptor's owned transaction-to-scope map against a fake <see cref="DbTransaction" />: the
-/// claim/drain threading on the sync edge, eviction on scope dispose (never on an interceptor event), and the
-/// inbox-runner shape where the caller signals the scope explicitly alongside — or instead of — the interceptor.
+/// claim/drain threading on the sync edge, eviction on the terminal edge and on scope dispose, re-enlistment of a
+/// transaction whose previous scope already settled, and the inbox-runner shape where the caller signals the scope
+/// explicitly alongside — or instead of — the interceptor.
 /// </summary>
 public sealed class CommitCoordinationTransactionInterceptorTests : TestBase
 {
@@ -65,6 +66,85 @@ public sealed class CommitCoordinationTransactionInterceptorTests : TestBase
 
         harness.Interceptor.EnlistedTransactionCount.Should().Be(1);
         harness.Stack.Current.Should().BeSameAs(first.Coordinator, "the rejected duplicate must pop its own frame");
+    }
+
+    [Fact]
+    public async Task should_evict_the_map_entry_on_the_async_commit_edge_while_the_scope_is_still_alive()
+    {
+        var harness = new Harness();
+        var transaction = new FakeDbTransaction();
+        await using var scope = harness.Enlist(transaction);
+
+        await harness.Interceptor.TransactionCommittedAsync(transaction, null!, AbortToken);
+
+        harness
+            .Interceptor.EnlistedTransactionCount.Should()
+            .Be(0, "a durable outcome is finished work and must not pin the key until the scope is disposed");
+        scope.Coordinator.State.Should().Be(CommitCoordinatorState.Committed);
+    }
+
+    [Fact]
+    public void should_evict_the_map_entry_on_the_sync_rollback_edge_while_the_scope_is_still_alive()
+    {
+        var harness = new Harness();
+        var transaction = new FakeDbTransaction();
+        using var scope = harness.Enlist(transaction);
+
+        harness.Interceptor.TransactionRolledBack(transaction, null!);
+
+        harness.Interceptor.EnlistedTransactionCount.Should().Be(0);
+        scope.Coordinator.State.Should().Be(CommitCoordinatorState.RolledBack);
+    }
+
+    [Fact]
+    public async Task should_replace_a_finished_scope_when_the_same_transaction_is_enlisted_again()
+    {
+        // Npgsql hands out one NpgsqlTransaction instance per connection: the next transaction re-enlists the same
+        // key while the previous scope, settled by a caller-confirmed commit that raised no edge, awaits its dispose.
+        var harness = new Harness();
+        var transaction = new FakeDbTransaction();
+        var first = harness.Enlist(transaction);
+
+        await first.SignalAsync(CommitOutcome.Committed);
+        harness.Interceptor.EnlistedTransactionCount.Should().Be(1, "no edge fired, so nothing evicted the entry");
+
+        var second = harness.Enlist(transaction);
+
+        harness.Interceptor.EnlistedTransactionCount.Should().Be(1);
+        second.Coordinator.Should().NotBeSameAs(first.Coordinator);
+        second.Coordinator.State.Should().Be(CommitCoordinatorState.Active);
+        harness.Stack.Current.Should().BeSameAs(second.Coordinator);
+        harness.InterceptorLogger.Entries.Should().BeEmpty("finished work is not a duplicate enlistment");
+
+        // Unwind in order so the ambient frame does not leak into the async flow.
+        await second.DisposeAsync();
+        await first.DisposeAsync();
+
+        harness.Interceptor.EnlistedTransactionCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_keep_the_map_entry_when_an_out_of_order_dispose_is_rejected()
+    {
+        var harness = new Harness();
+        var outerTransaction = new FakeDbTransaction();
+        var innerTransaction = new FakeDbTransaction();
+        var outer = harness.Enlist(outerTransaction);
+        var inner = harness.Enlist(innerTransaction);
+
+        var act = () => outer.DisposeAsync().AsTask();
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("Commit scope disposed out of order.");
+        harness
+            .Interceptor.EnlistedTransactionCount.Should()
+            .Be(2, "a scope whose dispose was rejected is still live and must stay reachable on its edge");
+        outer.Coordinator.State.Should().Be(CommitCoordinatorState.Active);
+
+        // Unwind in order so the ambient frame does not leak into the async flow.
+        await inner.DisposeAsync();
+        await outer.DisposeAsync();
+
+        harness.Interceptor.EnlistedTransactionCount.Should().Be(0);
     }
 
     [Fact]

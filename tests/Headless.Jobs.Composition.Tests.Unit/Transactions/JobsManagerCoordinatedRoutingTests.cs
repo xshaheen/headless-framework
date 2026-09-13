@@ -333,6 +333,29 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
     }
 
     [Fact]
+    public async Task time_job_committed_coordinator_throws_and_persists_nothing()
+    {
+        // A settled scope stays ambient until it is disposed, and the driver may keep the transaction handle
+        // populated; the write must refuse to enlist in a transaction that already reached its outcome.
+        var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: true);
+        await sut.Coordinator!.CommitAsync();
+
+        var act = () => sut.Time.AddAsync(_FutureTimeJob(), AbortToken);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*transaction is no longer live*");
+        await sut
+            .Persistence.DidNotReceive()
+            .AddTimeJobsAsync(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
+        await sut
+            .Writer.DidNotReceive()
+            .WriteTimeJobsAsync(
+                Arg.Any<TimeJobEntity[]>(),
+                Arg.Any<IRelationalCommitContext>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
     public async Task time_job_relational_coordinator_but_non_coordinated_provider_throws_mis_wire()
     {
         // Live relational coordinator, but the provider cannot write inside the ambient transaction (in-memory shape).

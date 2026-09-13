@@ -21,8 +21,9 @@ namespace Headless.CommitCoordination.EntityFramework;
 /// caller raises no interceptor event, and the caller signals the scope directly instead.
 /// <para>
 /// The synchronous overrides (<see cref="TransactionCommitted" />, <see cref="TransactionRolledBack" />) claim the
-/// outcome on the committing thread and run the drain off-thread (fire-and-forget) so the EF call does not block
-/// on callbacks. The async overrides await the drain. Because signals are idempotent per outcome, a caller that
+/// outcome on the committing thread and run each callback up to its first real await there too; only the
+/// continuations after that await run off-thread (fire-and-forget), so callbacks must not block. The async
+/// overrides await the drain. Because signals are idempotent per outcome, a caller that
 /// also signals the scope explicitly (the inbox transaction runners do) drains once with no warning.
 /// </para>
 /// <para>
@@ -68,8 +69,25 @@ internal sealed partial class CommitCoordinationTransactionInterceptor(
         // empty scope just pops the ambient frame it pushed.
         var scope = scopeFactory.Open(relational);
 
-        if (!_scopes.TryAdd(transaction, scope))
+        // Npgsql hands out one NpgsqlTransaction instance per connection, so a caller that begins the next
+        // transaction before disposing the previous scope re-enlists the same key. A leftover whose coordinator
+        // already reached its outcome is finished work, not a duplicate: replace it instead of refusing.
+        while (!_scopes.TryAdd(transaction, scope))
         {
+            if (
+                _scopes.TryGetValue(transaction, out var existing)
+                && existing.Coordinator.State != CommitCoordinatorState.Active
+                && _scopes.TryUpdate(transaction, scope, existing)
+            )
+            {
+                break;
+            }
+
+            if (!_scopes.ContainsKey(transaction))
+            {
+                continue;
+            }
+
             scope.Dispose();
             LogDuplicateEnlistment(_logger);
 
@@ -99,6 +117,10 @@ internal sealed partial class CommitCoordinationTransactionInterceptor(
             return;
         }
 
+        // The outcome is durable once this edge fires; the entry is finished work and must not pin the key (the
+        // scope's own dispose evicts as well, for callers that never see an interceptor edge).
+        _Evict(transaction, scope);
+
         try
         {
             await scope.SignalAsync(CommitOutcome.Committed).ConfigureAwait(false);
@@ -127,6 +149,8 @@ internal sealed partial class CommitCoordinationTransactionInterceptor(
             return;
         }
 
+        _Evict(transaction, scope);
+
         try
         {
             await scope.SignalAsync(CommitOutcome.RolledBack).ConfigureAwait(false);
@@ -143,6 +167,8 @@ internal sealed partial class CommitCoordinationTransactionInterceptor(
         {
             return;
         }
+
+        _Evict(transaction, scope);
 
         // Invoke SignalAsync synchronously (NOT inside Task.Run): the terminal claim settles on the committing thread
         // before this returns, so the caller's un-signalled scope dispose that follows cannot race it into a rollback.
@@ -186,17 +212,23 @@ internal sealed partial class CommitCoordinationTransactionInterceptor(
             return inner.SignalAsync(outcome);
         }
 
+        // Dispose the core scope first: an out-of-order pop throws and leaves that scope live, and a live scope must
+        // stay reachable by the interceptor until it really goes away.
         public void Dispose()
         {
-            owner._Evict(transaction, inner);
             inner.Dispose();
+            owner._Evict(transaction, inner);
         }
 
+        // Intentionally NOT async: the core scope pops its ambient frame synchronously inside this call, and an async
+        // state machine would restore the caller's execution context on return and discard that pop. An out-of-order
+        // pop also throws synchronously here, so the eviction below runs only once the scope really went away.
         public ValueTask DisposeAsync()
         {
+            var drain = inner.DisposeAsync();
             owner._Evict(transaction, inner);
 
-            return inner.DisposeAsync();
+            return drain;
         }
     }
 
