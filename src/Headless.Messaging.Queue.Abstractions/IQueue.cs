@@ -32,7 +32,8 @@ public interface IQueue
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A receipt with the resolved message identity and durable row handle, or an empty receipt when middleware suppresses publication.</returns>
     /// <exception cref="ArgumentException">
-    /// Thrown when <see cref="MessageOptions.TenantId"/> is set to an empty or whitespace value.
+    /// Thrown when <see cref="MessageOptions.TenantId"/> is set to an empty or whitespace value, or when both
+    /// <see cref="MessageOptions.Delay"/> and <see cref="MessageOptions.ScheduledAt"/> are set.
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">
     /// Thrown when <see cref="MessageOptions.MessageId"/> exceeds <see cref="MessageOptions.MessageIdMaxLength"/>
@@ -42,8 +43,9 @@ public interface IQueue
     /// Thrown when <see cref="MessageOptions.Headers"/> contains a reserved messaging header
     /// (use <see cref="MessageOptions"/> overrides instead), when a raw <see cref="Headers.TenantId"/>
     /// header is supplied without setting <see cref="MessageOptions.TenantId"/>, or when both are
-    /// supplied with disagreeing values, or when any outbound header name/value contains control
-    /// characters.
+    /// supplied with disagreeing values, when any outbound header name/value contains control
+    /// characters, or when <see cref="DeliveryMode.Direct"/> delivery specifies
+    /// <see cref="MessageOptions.Delay"/> or <see cref="MessageOptions.ScheduledAt"/>.
     /// </exception>
     Task<PublishReceipt> EnqueueAsync<T>(
         T? contentObj,
