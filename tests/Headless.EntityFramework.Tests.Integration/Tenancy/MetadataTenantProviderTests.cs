@@ -62,7 +62,7 @@ public sealed class SqlServerTenantIndexTests(SqlServerMetadataTenantFixture fix
         fixture.CurrentTenant.Id = null;
         await using var scope = fixture.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<MetadataTenantContext>();
-        Func<Task> insert = () =>
+        Func<Task<int>> insert = () =>
             db.Database.ExecuteSqlInterpolatedAsync(
                 $"INSERT INTO [tenancy].[HostRows] ([Id], [Code], [TenantId]) VALUES ({Guid.NewGuid()}, {"host-code"}, NULL)",
                 AbortToken
