@@ -248,11 +248,14 @@ keyed rows remain indefinitely; ordinary edits, resets, retries, and hard deleti
 
 ### Transactional deadline capability
 
-`RequireAtomicEnlistment` requires a one-shot Jobs write to use the exact live relational transaction
-that owns the application update. The requirement is transient; it is not job payload or persisted
-intent. A keyed result returned inside that transaction is provisional until the caller commits, and
-rollback removes the write. Scheduler wake-up is post-commit acceleration; polling recovers a missed
-wake-up. Messaging delivery delay, distributed locks, and membership do not provide this capability.
+`RequireAtomicEnlistment` requires a Jobs write — a one-shot deadline or a recurring definition — to use
+the exact live relational transaction that owns the application update. The requirement is transient;
+it is not job payload, definition payload, or persisted intent. A keyed result returned inside that
+transaction is provisional until the caller commits, and rollback removes the write. Scheduler wake-up
+is post-commit acceleration; polling recovers a missed wake-up. Recurring definitions take the
+requirement from the call or the function policy, never the host default, and startup seeding of
+attribute-defined definitions is exempt because it runs before any application transaction exists.
+Messaging delivery delay, distributed locks, and membership do not provide this capability.
 
 ### Catch step
 

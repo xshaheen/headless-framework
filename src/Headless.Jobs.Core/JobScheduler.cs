@@ -334,12 +334,6 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
     )
     {
         var policy = _policies.ResolveRecurring(descriptor, options);
-        if (policy.RequireAtomicEnlistment)
-        {
-            throw new NotSupportedException(
-                "Required atomic enlistment is not supported for recurring definitions. Configure required atomic policy only for one-shot functions."
-            );
-        }
         var entity = new TCronJob
         {
             Function = descriptor.FunctionName,
@@ -354,6 +348,7 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
             Retries = policy.Retries ?? 0,
             RetryIntervals = policy.RetryIntervals,
             OnNodeDeath = policy.OnNodeDeath ?? Enums.NodeDeathPolicy.Retry,
+            RequireAtomicEnlistment = policy.RequireAtomicEnlistment,
         };
 
         var persisted = await _cronJobManager.AddAsync(entity, cancellationToken).ConfigureAwait(false);

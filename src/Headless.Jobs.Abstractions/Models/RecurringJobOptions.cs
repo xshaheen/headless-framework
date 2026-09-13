@@ -11,6 +11,13 @@ namespace Headless.Jobs.Models;
 [PublicAPI]
 public sealed record RecurringJobOptions
 {
+    /// <summary>
+    /// Fails before scheduling effects unless a compatible live relational transaction can enlist the definition
+    /// write. Either this call flag or the function policy can require it; the host default is never applied to
+    /// recurring definitions.
+    /// </summary>
+    public bool RequireAtomicEnlistment { get; init; }
+
     /// <summary>Optional root business correlation captured by each materialized occurrence.</summary>
     public string? CorrelationId { get; init; }
 

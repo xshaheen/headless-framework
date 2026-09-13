@@ -258,7 +258,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
     private async Task<TCronJob> _AddCronJobAsync(TCronJob entity, CancellationToken cancellationToken)
     {
-        var coordinated = _TryCaptureCoordinatedContext();
+        var coordinated = _TryCaptureCoordinatedContext(entity.RequireAtomicEnlistment);
         var now = timeProvider.GetUtcNow();
         _StampJob(entity, now, assignId: true);
 
@@ -300,6 +300,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             return entity;
         }
 
+        _RejectDirectCronPersistence([entity]);
         var seed = await persistenceProvider
             .InsertCronJobsAsync([entity], _SeedCronSchedulePosition, cancellationToken)
             .ConfigureAwait(false);
@@ -309,6 +310,19 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         await notificationHubSender.AddCronJobNotifyAsync(entity).ConfigureAwait(false);
 
         return entity;
+    }
+
+    // Capture already throws when a required definition has no compatible live transaction, so this is unreachable
+    // today. It is kept as the invariant guard mirroring JobAtomicity.RejectDirect for time jobs: a future routing
+    // change must not let a required recurring definition fall back to a non-coordinated insert silently.
+    private static void _RejectDirectCronPersistence(IEnumerable<TCronJob> entities)
+    {
+        if (entities.Any(entity => entity.RequireAtomicEnlistment))
+        {
+            throw new InvalidOperationException(
+                "Required atomic Jobs scheduling needs a compatible live relational transaction and the coordinated manager/writer path; direct persistence cannot satisfy it."
+            );
+        }
     }
 
     /// <summary>
@@ -958,7 +972,8 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
-        var coordinated = _TryCaptureCoordinatedContext();
+        // One required definition makes the whole batch atomic-or-nothing, mirroring JobAtomicity.IsRequired.
+        var coordinated = _TryCaptureCoordinatedContext(entities.Exists(entity => entity.RequireAtomicEnlistment));
         var validEntities = new List<TCronJob>();
         List<string>? errors = null;
         var now = timeProvider.GetUtcNow();
@@ -1051,6 +1066,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             return validEntities;
         }
 
+        _RejectDirectCronPersistence(validEntities);
         var seed = await persistenceProvider
             .InsertCronJobsAsync([.. validEntities], _SeedCronSchedulePosition, cancellationToken)
             .ConfigureAwait(false);

@@ -90,6 +90,10 @@ public class CronJobConfigurations<TCronJob>(
         // Transient schedule-time authorization flag (KTD2): never a column.
         builder.Ignore(e => e.IsSystemJob);
 
+        // Transient per-call atomic-enlistment requirement: call intent, not definition payload, so never a column
+        // (mirrors TimeJobConfigurations).
+        builder.Ignore(e => e.RequireAtomicEnlistment);
+
         builder.HasIndex("Expression").HasDatabaseName("IX_CronJobs_Expression");
 
         // Index for common lookups by function + expression
