@@ -44,7 +44,7 @@ public class TimeJobEntity<TTicker> : BaseJobEntity
     /// <summary>SHA-256 of the canonical, final persisted scheduling intent.</summary>
     public virtual string? IntentFingerprint { get; internal set; }
 
-    /// <summary>Algorithm interpreting this generation's fingerprint; currently <c>v1</c>.</summary>
+    /// <summary>Algorithm interpreting this generation's fingerprint; the current format is <c>v1</c>.</summary>
     public virtual string? FingerprintAlgorithm { get; internal set; }
 
     /// <summary>Positive, monotonically increasing generation within the scoped business key.</summary>

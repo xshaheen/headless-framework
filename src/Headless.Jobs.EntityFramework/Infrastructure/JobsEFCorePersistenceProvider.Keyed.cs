@@ -78,10 +78,9 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             .ConfigureAwait(false);
         if (current is not null && expectedGeneration is null)
         {
-            var fingerprint = JobIntentFingerprint.Compute(job, current.FingerprintAlgorithm!);
             return JobIntentFingerprint.Result(
                 current,
-                string.Equals(fingerprint, current.IntentFingerprint, StringComparison.Ordinal)
+                JobIntentFingerprint.Matches(job, current)
                     ? JobScheduleDisposition.Existing
                     : JobScheduleDisposition.Conflict
             );

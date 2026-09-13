@@ -29,22 +29,44 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
         {
             var key = new JobKey("atomic-matrix");
             var scheduler = host.Services.GetRequiredService<IJobScheduler>();
+            var originalPolicy = new JobOptions
+            {
+                Retries = 3,
+                RetryIntervals = [5, 10],
+                OnNodeDeath = NodeDeathPolicy.Retry,
+            };
+            var replacementPolicy = new JobOptions
+            {
+                Retries = 5,
+                RetryIntervals = [17, 29],
+                OnNodeDeath = NodeDeathPolicy.Skip,
+            };
+            Guid? originalId = null;
             var operation = () =>
                 fixture.RunCoordinatedTransactionAsync(
                     host.Services,
                     async (connection, transaction, ct) =>
                     {
                         await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, ct);
-                        var created = await _ScheduleAsync(host, key, "first", ct);
+                        var created = await _ScheduleAsync(host, key, "first", ct, policy: originalPolicy);
+                        originalId = created.RunId;
                         created.Disposition.Should().Be(JobScheduleDisposition.Created);
                         created.IsProvisional.Should().BeTrue();
-                        (await _ScheduleAsync(host, key, "first", ct))
-                            .Disposition.Should()
-                            .Be(JobScheduleDisposition.Existing);
+                        var existing = await _ScheduleAsync(host, key, "first", ct, policy: replacementPolicy);
+                        existing.Disposition.Should().Be(JobScheduleDisposition.Existing);
+                        existing.RunId.Should().Be(created.RunId);
+                        existing.IsProvisional.Should().BeTrue();
                         (await _ScheduleAsync(host, key, "different", ct))
                             .Disposition.Should()
                             .Be(JobScheduleDisposition.Conflict);
-                        var replaced = await _ScheduleAsync(host, key, "next", ct, generation: 1);
+                        var replaced = await _ScheduleAsync(
+                            host,
+                            key,
+                            "first",
+                            ct,
+                            generation: 1,
+                            policy: replacementPolicy
+                        );
                         replaced.Disposition.Should().Be(JobScheduleDisposition.Replaced);
                         replaced.Generation.Should().Be(2);
                         (
@@ -84,10 +106,23 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
             (await fixture.CountTimeJobsAsync(AbortToken)).Should().Be(commit ? 3 : 0);
             if (commit)
             {
-                var observed = await _ScheduleAsync(host, key, "next", AbortToken, required: false);
+                var observed = await _ScheduleAsync(
+                    host,
+                    key,
+                    "first",
+                    AbortToken,
+                    required: false,
+                    policy: originalPolicy
+                );
                 observed.IsProvisional.Should().BeFalse();
                 observed.Disposition.Should().Be(JobScheduleDisposition.Existing);
                 observed.State.Should().Be(JobStatus.Cancelled);
+                var store = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+                var original = await store.GetTimeJobByIdAsync(originalId!.Value, AbortToken);
+                var current = await store.GetTimeJobByIdAsync(observed.RunId!.Value, AbortToken);
+                JobsKeyedPolicyScenarios.AssertPolicy(original!, originalPolicy);
+                JobsKeyedPolicyScenarios.AssertPolicy(current!, replacementPolicy);
+                current!.IntentFingerprint.Should().Be(original!.IntentFingerprint);
             }
         });
 
@@ -118,15 +153,39 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
             async host =>
             {
                 var key = new JobKey("savepoint");
-                var first = await _ScheduleAsync(host, key, "first", AbortToken, required: false);
+                var originalPolicy = new JobOptions
+                {
+                    Retries = 3,
+                    RetryIntervals = [5],
+                    OnNodeDeath = NodeDeathPolicy.Retry,
+                };
+                var replacementPolicy = new JobOptions
+                {
+                    Retries = 7,
+                    RetryIntervals = [19],
+                    OnNodeDeath = NodeDeathPolicy.MarkFailed,
+                };
+                var first = await _ScheduleAsync(
+                    host,
+                    key,
+                    "first",
+                    AbortToken,
+                    required: false,
+                    policy: originalPolicy
+                );
+                var store = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+                var before = await store.GetTimeJobByIdAsync(first.RunId!.Value, AbortToken);
                 await fixture.RunCoordinatedTransactionAsync(
                     host.Services,
                     async (connection, transaction, ct) =>
                     {
                         fault.FailNextKeyedSave = true;
-                        var replace = () => _ScheduleAsync(host, key, "next", ct, generation: 1);
+                        var replace = () =>
+                            _ScheduleAsync(host, key, "first", ct, generation: 1, policy: replacementPolicy);
                         await replace.Should().ThrowAsync<InjectedFailureException>();
-                        (await _ScheduleAsync(host, key, "first", ct)).RunId.Should().Be(first.RunId);
+                        (await _ScheduleAsync(host, key, "first", ct, policy: replacementPolicy))
+                            .RunId.Should()
+                            .Be(first.RunId);
                         // The failed insert must not leave generation 1 historical inside a still-usable caller transaction.
                         await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, ct);
                     },
@@ -140,6 +199,7 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
                     .GetTimeJobByIdAsync(first.RunId!.Value, AbortToken);
                 retained!.IsCurrentGeneration.Should().BeTrue();
                 retained.Status.Should().Be(JobStatus.Idle);
+                retained.Should().BeEquivalentTo(before);
             },
             fault
         );
@@ -346,12 +406,13 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
         CancellationToken ct,
         long? generation = null,
         bool required = true,
-        DateTimeOffset? due = null
+        DateTimeOffset? due = null,
+        JobOptions? policy = null
     )
     {
         var scheduler = host.Services.GetRequiredService<IJobScheduler>();
         var request = new CoordinatedFacadeRequest(Guid.Empty, payload);
-        var options = new JobOptions { RequireAtomicEnlistment = required };
+        var options = (policy ?? new JobOptions()) with { RequireAtomicEnlistment = required };
         return generation is { } observed
             ? scheduler.ReplaceKeyedAsync(key, observed, request, due ?? _Due, options, ct)
             : scheduler.ScheduleKeyedAsync(key, request, due ?? _Due, options, ct);

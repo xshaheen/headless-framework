@@ -18,10 +18,14 @@ public static class JobsKeyedSchedulingScenarios
     {
         var key = new JobKey("invoice-42");
         var scope = new JobKeyScope("deadline");
+        var candidates = Enumerable.Range(1, 12).Select(_PolicyCandidate).ToArray();
         var creates = await Task.WhenAll(
-            Enumerable
-                .Range(0, 12)
-                .Select(_ => store.ScheduleKeyedTimeJobAsync(key, Candidate(), cancellationToken: cancellationToken))
+            candidates.Select(candidate =>
+                Task.Run(
+                    () => store.ScheduleKeyedTimeJobAsync(key, candidate, cancellationToken: cancellationToken),
+                    cancellationToken
+                )
+            )
         );
         creates.Count(result => result.Disposition == JobScheduleDisposition.Created).Should().Be(1);
         creates.Count(result => result.Disposition == JobScheduleDisposition.Existing).Should().Be(11);
@@ -29,6 +33,11 @@ public static class JobsKeyedSchedulingScenarios
         creates.Should().OnlyContain(result => result.Generation == 1);
         var originalId = creates[0].RunId!.Value;
         var original = await store.GetTimeJobByIdAsync(originalId, cancellationToken);
+        var winner = candidates[
+            Array.FindIndex(creates, result => result.Disposition == JobScheduleDisposition.Created)
+        ];
+        _AssertPolicy(original!, winner);
+        original!.FingerprintAlgorithm.Should().Be("v1");
         var fingerprintBeforeRead = original!.IntentFingerprint;
         var detachedBytes = await store.GetTimeJobRequestAsync(originalId, cancellationToken);
         detachedBytes[0] = 99;
@@ -39,6 +48,7 @@ public static class JobsKeyedSchedulingScenarios
         (await store.ScheduleKeyedTimeJobAsync(key, Candidate(), cancellationToken: cancellationToken))
             .Disposition.Should()
             .Be(JobScheduleDisposition.Existing);
+        (await store.GetTimeJobByIdAsync(originalId, cancellationToken)).Should().BeEquivalentTo(afterMutatingRead);
 
         var conflictingCreates = await Task.WhenAll(
             store.ScheduleKeyedTimeJobAsync(
@@ -65,14 +75,19 @@ public static class JobsKeyedSchedulingScenarios
         presentation.Description = "Changed display";
         presentation.CorrelationId = "different-root";
         presentation.CausationId = "different-parent";
+        presentation.Retries = 20;
+        presentation.RetryIntervals = [31, 47];
+        presentation.OnNodeDeath = NodeDeathPolicy.Skip;
         (await store.ScheduleKeyedTimeJobAsync(key, presentation, cancellationToken: cancellationToken))
             .Disposition.Should()
             .Be(JobScheduleDisposition.Existing);
+        (await store.GetTimeJobByIdAsync(originalId, cancellationToken)).Should().BeEquivalentTo(afterMutatingRead);
 
+        var replacementCandidates = Enumerable.Range(21, 12).Select(_PolicyCandidate).ToArray();
         var replacement = await Task.WhenAll(
-            Enumerable
-                .Range(0, 12)
-                .Select(_ => store.ScheduleKeyedTimeJobAsync(key, Candidate([4]), 1, cancellationToken))
+            replacementCandidates.Select(candidate =>
+                Task.Run(() => store.ScheduleKeyedTimeJobAsync(key, candidate, 1, cancellationToken), cancellationToken)
+            )
         );
         replacement.Count(result => result.Disposition == JobScheduleDisposition.Replaced).Should().Be(1);
         replacement.Count(result => result.Disposition == JobScheduleDisposition.StaleGeneration).Should().Be(11);
@@ -90,13 +105,27 @@ public static class JobsKeyedSchedulingScenarios
             .Be(JobScheduleDisposition.StaleGeneration);
         var current = await store.GetTimeJobByIdAsync(currentId, cancellationToken);
         current!.CancelRequested.Should().BeFalse();
+        var replacementWinner = replacementCandidates[
+            Array.FindIndex(replacement, result => result.Disposition == JobScheduleDisposition.Replaced)
+        ];
+        _AssertPolicy(current, replacementWinner);
+        current.IntentFingerprint.Should().Be(fingerprintBeforeRead);
+        current.FingerprintAlgorithm.Should().Be("v1");
 
         var cancel = await store.CancelKeyedTimeJobAsync(scope, key, 2, cancellationToken);
         cancel.Disposition.Should().Be(JobScheduleDisposition.Cancelled);
         cancel.State.Should().Be(JobStatus.Cancelled);
-        (await store.ScheduleKeyedTimeJobAsync(key, Candidate([4]), cancellationToken: cancellationToken))
-            .Disposition.Should()
-            .Be(JobScheduleDisposition.Existing);
+        var cancelled = await store.GetTimeJobByIdAsync(currentId, cancellationToken);
+        var terminalObservation = await store.ScheduleKeyedTimeJobAsync(
+            key,
+            Candidate(),
+            cancellationToken: cancellationToken
+        );
+        terminalObservation.Disposition.Should().Be(JobScheduleDisposition.Existing);
+        terminalObservation.RunId.Should().Be(currentId);
+        terminalObservation.Generation.Should().Be(2);
+        terminalObservation.State.Should().Be(JobStatus.Cancelled);
+        (await store.GetTimeJobByIdAsync(currentId, cancellationToken)).Should().BeEquivalentTo(cancelled);
         (await store.ScheduleKeyedTimeJobAsync(key, Candidate([5]), 2, cancellationToken))
             .Disposition.Should()
             .Be(JobScheduleDisposition.Conflict);
@@ -115,7 +144,7 @@ public static class JobsKeyedSchedulingScenarios
         update.Id = currentId;
         var mutate = async () => await store.UpdateTimeJobsAsync([update], cancellationToken);
         await mutate.Should().ThrowAsync<InvalidOperationException>();
-        (await store.GetTimeJobByIdAsync(currentId, cancellationToken))!.Request.Should().Equal(4);
+        (await store.GetTimeJobByIdAsync(currentId, cancellationToken))!.Request.Should().Equal(1, 2, 3);
         (await store.RemoveTimeJobsAsync([unkeyed.Id], cancellationToken)).Should().Be(1);
 
         foreach (var tenant in new[] { "tenant-a", "tenant-b", "Tenant-A" })
@@ -202,8 +231,9 @@ public static class JobsKeyedSchedulingScenarios
             );
             var stored = await store.GetTimeJobByIdAsync(scheduled.RunId!.Value, cancellationToken);
             var claimTask = Task.Run(() => claim(stored!), cancellationToken);
+            var replacementCandidate = _PolicyCandidate(7);
             var replacementTask = Task.Run(
-                () => store.ScheduleKeyedTimeJobAsync(key, Candidate([9]), 1, cancellationToken),
+                () => store.ScheduleKeyedTimeJobAsync(key, replacementCandidate, 1, cancellationToken),
                 cancellationToken
             );
             await Task.WhenAll(claimTask, replacementTask);
@@ -219,6 +249,8 @@ public static class JobsKeyedSchedulingScenarios
             {
                 replacement.Disposition.Should().Be(JobScheduleDisposition.Replaced);
                 (await store.GetTimeJobByIdAsync(stored!.Id, cancellationToken))!.Status.Should().Be(JobStatus.Skipped);
+                var current = await store.GetTimeJobByIdAsync(replacement.RunId!.Value, cancellationToken);
+                _AssertPolicy(current!, replacementCandidate);
             }
 
             var cancelKey = new JobKey(
@@ -328,4 +360,20 @@ public static class JobsKeyedSchedulingScenarios
             ExecutionTime = new DateTime(2030, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddTicks(7),
             Request = request ?? [1, 2, 3],
         };
+
+    private static TimeJobEntity _PolicyCandidate(int retries)
+    {
+        var candidate = Candidate();
+        candidate.Retries = retries;
+        candidate.RetryIntervals = [retries, retries + 1];
+        candidate.OnNodeDeath = retries % 2 == 0 ? NodeDeathPolicy.Skip : NodeDeathPolicy.MarkFailed;
+        return candidate;
+    }
+
+    private static void _AssertPolicy(TimeJobEntity stored, TimeJobEntity expected)
+    {
+        stored.Retries.Should().Be(expected.Retries);
+        stored.RetryIntervals.Should().Equal(expected.RetryIntervals!);
+        stored.OnNodeDeath.Should().Be(expected.OnNodeDeath);
+    }
 }

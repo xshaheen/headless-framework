@@ -71,8 +71,16 @@ internal static class JobIntentFingerprint
         job.RetryIntervals = job.RetryIntervals is { Length: > 0 } intervals ? intervals.ToArray() : null;
     }
 
+    internal static bool Matches<TJob>(TJob candidate, TJob current)
+        where TJob : TimeJobEntity<TJob> =>
+        string.Equals(
+            Compute(candidate, current.FingerprintAlgorithm),
+            current.IntentFingerprint,
+            StringComparison.Ordinal
+        );
+
 #pragma warning disable MA0045 // Pure in-memory canonical hashing has no asynchronous I/O; synchronous MemoryStream disposal is intentional.
-    internal static string Compute<TJob>(TJob job, string algorithm)
+    internal static string Compute<TJob>(TJob job, string? algorithm)
         where TJob : TimeJobEntity<TJob>
     {
         if (!string.Equals(algorithm, Algorithm, StringComparison.Ordinal))
@@ -82,7 +90,7 @@ internal static class JobIntentFingerprint
             );
         }
 
-        // v1: BinaryWriter little-endian integers; strings/bytes use signed Int32 UTF-8 byte lengths (-1 for null).
+        // BinaryWriter little-endian integers; strings/bytes use signed Int32 UTF-8 byte lengths (-1 for null).
         // An explicit tag separates this encoding from any later algorithm. Payload bytes are never deserialized.
         using var buffer = new MemoryStream();
         using var writer = new BinaryWriter(buffer, Encoding.UTF8, leaveOpen: true);
@@ -90,14 +98,7 @@ internal static class JobIntentFingerprint
         _WriteBytes(writer, Encoding.UTF8.GetBytes(job.ContractVersion));
         _WriteBytes(writer, job.Request);
         writer.Write(job.ExecutionTime!.Value.Ticks);
-        writer.Write(job.Retries);
-        writer.Write(job.RetryIntervals?.Length ?? 0);
-        foreach (var interval in job.RetryIntervals ?? [])
-        {
-            writer.Write(interval);
-        }
 
-        writer.Write((int)job.OnNodeDeath);
         writer.Flush();
         return Convert.ToHexStringLower(SHA256.HashData(buffer.GetBuffer().AsSpan(0, checked((int)buffer.Length))));
     }

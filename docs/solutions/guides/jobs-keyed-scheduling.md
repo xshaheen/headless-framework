@@ -55,6 +55,16 @@ A matching explicit model-default collation is also supported. Keyed scheduling 
 
 The indexes and conditional writes enforce storage ownership; process-local locks alone are insufficient. Raw SQL or custom persistence writers must honor the entire keyed protocol, including validation, exact payload bytes, UTC microsecond due-time normalization, and the recorded fingerprint algorithm. Do not populate metadata by hand or recompute stored fingerprints with a newer serializer.
 
+## Intent and captured policy
+
+`Retries`, `RetryIntervals`, and `OnNodeDeath` are execution policy captured by the first successful create. Differences in host defaults, function defaults, or explicit call overrides return `Existing` when intent matches, without changing the stored policy, fingerprint, metadata, or execution state. Concurrent matching submissions retain one winner's complete policy. Options validation and `RequireAtomicEnlistment` still apply to each call. To change policy, use generation-fenced replacement while the current run is pending and unclaimed. Replacement creates generation N+1 with the call's resolved policy even when intent is unchanged.
+
+New and replacement generations use `v1`, which hashes contract version, exact durable request bytes after middleware, and UTC due ticks truncated to microseconds. Null and empty payloads differ. Retry policy, node-death policy, presentation, lineage, and tracing do not participate. Reuse the same absolute `DateTimeOffset` instant and stable serialized bytes when resubmitting.
+
+Unknown algorithms reject ordinary observation explicitly; generation-fenced replacement keeps its existing eligibility checks.
+
+The `v1` SHA-256 encoding uses the domain tag `headless-jobs-intent-v1`, followed by contract version, payload, and normalized due ticks. It retains signed length prefixes and little-endian integer encoding. Tenant/system scope, logical function name, and business key are enforced by key lookup rather than repeated in the hash.
+
 ## Retention and verification
 
 Current and historical keyed rows remain indefinitely after success, failure, cancellation, or replacement. Ordinary update/reset/delete APIs reject keyed records; a mixed deletion containing any keyed row rejects before deleting any member. Ordinary add/update operations, including coordinated writes and detached entities populated through consumer EF APIs, also reject attachment to a retained keyed parent before batch effects. Keyed rows remain standalone. Include these rows in operational storage sizing and backups. There is no key expiration, forget-key operation, terminal rearm, or compact replacement ledger.
