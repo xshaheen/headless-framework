@@ -29,14 +29,12 @@ public abstract class CoordinatedTransactionConformanceTests<TFixture>(TFixture 
         await fixture.RunCoordinatedAsync(
             async (context, ct) =>
             {
-                context.Coordinator.OnCommit(
-                    (_, _) =>
-                    {
-                        drained.TrySetResult();
+                context.Coordinator.OnCommit(() =>
+                {
+                    drained.TrySetResult();
 
-                        return ValueTask.CompletedTask;
-                    }
-                );
+                    return ValueTask.CompletedTask;
+                });
 
                 await context.InsertProbeRowAsync("committed", ct);
             },
@@ -61,14 +59,12 @@ public abstract class CoordinatedTransactionConformanceTests<TFixture>(TFixture 
             await fixture.RunCoordinatedAsync(
                 async (context, ct) =>
                 {
-                    context.Coordinator.OnCommit(
-                        (_, _) =>
-                        {
-                            drained.TrySetResult();
+                    context.Coordinator.OnCommit(() =>
+                    {
+                        drained.TrySetResult();
 
-                            return ValueTask.CompletedTask;
-                        }
-                    );
+                        return ValueTask.CompletedTask;
+                    });
 
                     await context.InsertProbeRowAsync("rolled-back", ct);
 

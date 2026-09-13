@@ -1,34 +1,20 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.CommitCoordination;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
 /// <summary>
-/// In-memory conformance fixture: every scope is backed by a real <see cref="CommitCoordinator" />
-/// over a fresh <see cref="CommitScopeStack" />, with an empty service provider captured for drain.
+/// In-memory conformance fixture: every session is a real <see cref="CommitScopeFactory" /> over a fresh
+/// <see cref="CommitScopeStack" />, with the coordinator's logger captured per session.
 /// </summary>
-public sealed class InMemoryCommitCoordinationFixture : ICommitCoordinationFixture, IDisposable
+public sealed class InMemoryCommitCoordinationFixture : ICommitCoordinationFixture
 {
-    private readonly ServiceProvider _services = new ServiceCollection().BuildServiceProvider();
-
-    public IServiceProvider Services => _services;
-
-    public ValueTask<ICommitScope> BeginScopeAsync(CancellationToken cancellationToken)
+    public CommitCoordinationSession CreateSession()
     {
-        var factory = new CommitScopeFactory(new CommitScopeStack());
+        var logger = new CapturingLogger<CommitCoordinator>();
+        var stack = new CommitScopeStack();
 
-        return ValueTask.FromResult(factory.Begin(_services));
-    }
-
-    public ICurrentCommitCoordinator CreateStack()
-    {
-        return new CommitScopeStack();
-    }
-
-    public void Dispose()
-    {
-        _services.Dispose();
+        return new CommitCoordinationSession(new CommitScopeFactory(stack, logger), stack, logger.Entries);
     }
 }
