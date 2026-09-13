@@ -1972,11 +1972,18 @@ Provides test harness utilities for observing messaging behavior without couplin
 - `WaitForPublished<T>(...)`, `WaitForConsumed<T>(...)`, `WaitForFaulted<T>(...)`, and `WaitForExhausted<T>(...)` block until a match arrives or the timeout elapses.
 - Registrations use `setup.Bus` / `setup.Queue`; `WaitForPublished<T>(MessageLane.Bus)` / `MessageLane.Queue` distinguishes identical payloads sent through the two lanes.
 - Predicate overloads for filtering by payload shape.
+- Store-first by default: the harness keeps the production `DeliveryMode.Durable` default, so a plain publish is stored first and dispatched from storage; `RecordedMessage.RequestedDeliveryMode` / `ResolvedDeliveryMode` report what was asked for and what ran.
+- `RunCoordinatedAsync(...)` opens a commit-coordination scope so tests can publish types registered `WithDeliveryMode(DeliveryMode.Coordinated)` and observe commit versus rollback.
+- `ResetAsync()` drains in-flight publish and consume work before clearing a shared harness.
 - `TestConsumer<T>` captures messages without custom handler logic.
 
 ### Design Notes
 
 Use the testing package for application tests that need to assert published messages or consumed messages. Provider conformance still belongs in provider-specific or shared harness tests.
+
+The harness does not weaken delivery: `MessagingOptions.DefaultDeliveryMode` stays `Durable`, so `PublishAsync` returns once the row is in in-memory storage and the transport send, the `Published` observation, and consumption follow on dispatcher threads. Assert through `WaitFor*` rather than reading the collections right after a publish. `ResetAsync()` waits until no published row is `Scheduled`/`Queued` and no received row is `Scheduled` (those states bracket every send and consumer execution), drops transport messages no consumer picked up, and only then clears observations and storage; a publish delayed by more than a minute is not awaited and still fires when due. `RunCoordinatedAsync` opens a non-relational scope through `ICommitScopeFactory`: in-memory storage captures the publishes on it, commit stores and dispatches them, rollback discards them. A `Coordinated` request resolves to `Durable` once its scope check passes, so such a message records `RequestedDeliveryMode = Coordinated` and `ResolvedDeliveryMode = Durable`.
+
+Two consequences of running on in-memory storage. First, the in-memory transport hands a message to its consumer inside the send, before the sending thread records `Published`; the harness's consume decorator therefore waits for the message's `Published` record before running the consumer, so for any one message `Published` is always observable before `Consumed` or `Faulted`, and `harness.Published` is safe to read after `WaitForConsumed`. Second, in-memory storage offers only the `ProcessLocal` inbox tier, and the messaging startup gate refuses a `Coordinated` registration beside durable consumers below `Transactional` (a consumer's coordinated publish must join the inbox transaction). Test `Coordinated` types in a publish-only harness host and assert through `WaitForPublished`; exercise consumers through `RunCoordinatedAsync` with default `Durable` types, which enlist in the same scope.
 
 ### Installation
 
@@ -1991,14 +1998,25 @@ services.AddMessagingTestHarness();
 
 var harness = provider.GetRequiredService<MessagingTestHarness>();
 await harness.WaitForPublished<OrderPlaced>(TimeSpan.FromSeconds(5));
+
+// Shared harness: wait for in-flight store-first work, then clear observations and storage.
+await harness.ResetAsync();
+
+// Coordinated delivery (OrderPlaced registered WithDeliveryMode(DeliveryMode.Coordinated) in a publish-only host):
+// commit dispatches the captured publish, a throwing delegate rolls it back.
+await harness.RunCoordinatedAsync(() => harness.Publisher.PublishAsync(new OrderPlaced("ORD-1")));
+var recorded = await harness.WaitForPublished<OrderPlaced>(TimeSpan.FromSeconds(5));
+recorded.RequestedDeliveryMode.Should().Be(DeliveryMode.Coordinated);
+recorded.ResolvedDeliveryMode.Should().Be(DeliveryMode.Durable);
 ```
 
 ### Configuration
 
-None. `MessagingTestHarness` has no configuration class or options object. The per-call `timeout` parameter controls how long `WaitFor*` methods wait; when omitted it defaults to `MessagingTestHarness.DefaultTimeout`.
+None. `MessagingTestHarness` has no configuration class or options object. The per-call `timeout` parameter controls how long `WaitFor*` methods and `ResetAsync` wait; when omitted it defaults to `MessagingTestHarness.DefaultTimeout`.
 
 ### Dependencies
 
+- `Headless.CommitCoordination.Core` — registered in the harness host so `RunCoordinatedAsync` can open a scope and a `Coordinated` type passes the messaging startup gate
 - `Headless.Messaging.Core`
 - `Headless.Messaging.InMemory`
 - `Headless.Messaging.Storage.InMemory`
@@ -2007,4 +2025,5 @@ None. `MessagingTestHarness` has no configuration class or options object. The p
 
 - `CreateAsync(...)` builds and owns a test `ServiceProvider`; dispose the harness after each test.
 - `AddMessagingTestHarness()` decorates the host's existing messaging registrations with recording wrappers; call it after `AddHeadlessMessaging(...)`.
+- Both entry points call `services.AddCommitCoordination()`, so the host resolves a real `ICommitScopeFactory` / `ICurrentCommitCoordinator` instead of Messaging's null-coordinator fallback.
 - Transport parallelism is disabled inside the harness for deterministic test execution.

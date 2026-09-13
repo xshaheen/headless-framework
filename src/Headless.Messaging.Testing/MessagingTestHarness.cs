@@ -1,9 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.CommitCoordination;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.InMemory;
 using Headless.Messaging.Internal;
+using Headless.Messaging.Monitoring;
 using Headless.Messaging.Serialization;
 using Headless.Messaging.Storage.InMemory;
 using Headless.Messaging.Testing.Internal;
@@ -32,6 +34,16 @@ namespace Headless.Messaging.Testing;
 /// await harness.Publisher.PublishAsync(new MyMessage { ... });
 /// var recorded = await harness.WaitForConsumed&lt;MyMessage&gt;();
 /// </code>
+/// </para>
+/// <para>
+/// The harness keeps the production delivery default, so a plain publish is store-first: the row is durable
+/// when <c>PublishAsync</c> returns and the transport send, the <see cref="Published"/> observation, and
+/// consumption follow on dispatcher threads. Assert through the <c>WaitFor*</c> methods; for any one message the
+/// <see cref="Published"/> observation is recorded before its <see cref="Consumed"/> or <see cref="Faulted"/> one,
+/// so the collections are safe to read once the matching wait returns. When a harness is shared across tests call
+/// <see cref="ResetAsync"/> between them — it waits for that in-flight tail before clearing.
+/// <see cref="RunCoordinatedAsync(Func{Task})"/> opens a commit-coordination scope so a test can exercise
+/// <see cref="DeliveryMode.Coordinated"/>.
 /// </para>
 /// </remarks>
 [PublicAPI]
@@ -111,6 +123,12 @@ public sealed class MessagingTestHarness : IAsyncDisposable
 
         _EnsureInMemoryInfrastructure(services);
 
+        // A real coordinator lets RunCoordinatedAsync open a scope and lets a type registered
+        // WithDeliveryMode(DeliveryMode.Coordinated) pass the bootstrap gate. The call is idempotent and its
+        // unconditional ICurrentCommitCoordinator registration wins over Messaging's null-coordinator fallback
+        // regardless of which setup call the host invoked first.
+        services.AddCommitCoordination();
+
         // Disable parallelism for deterministic single-threaded test execution
         services.Configure<MessagingOptions>(opt =>
         {
@@ -121,9 +139,9 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         var store = new MessageObservationStore();
         services.AddSingleton(store);
 
-        _DecorateBusTransport(services, store);
-        _DecorateQueueTransport(services, store);
-        _DecoratePipeline(services, store);
+        var busRecorded = _DecorateBusTransport(services, store);
+        var queueRecorded = _DecorateQueueTransport(services, store);
+        _DecoratePipeline(services, store, awaitPublishedRecord: busRecorded || queueRecorded);
         _DecorateOnExhausted(services, store);
 
         // Register the harness itself — does NOT own the ServiceProvider.
@@ -411,20 +429,120 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     // -------------------------------------------------------------------------
 
     /// <summary>
-    /// Resets all in-memory messaging state: recorded observations, pending queue messages,
-    /// and persisted storage data. Call between tests when using a shared fixture.
+    /// Waits for in-flight messaging work to settle, then resets all in-memory messaging state: recorded
+    /// observations, pending transport messages, and persisted storage rows. Call between tests that share a harness.
     /// </summary>
     /// <remarks>
-    /// Assumes no active message processing is in flight. Call this at test boundaries
-    /// (e.g., between tests) when consumers are idle. If you need to ensure quiescence
-    /// programmatically, pause consumers via <c>PauseAsync</c> before calling this method.
+    /// <para>
+    /// Default publishes are durable: <c>PublishAsync</c> returns once the row is stored, and the transport send,
+    /// the <see cref="Published"/> observation, and consumption all run afterwards on dispatcher threads. A
+    /// synchronous clear would race that tail, so this method first waits until no published row is
+    /// <c>Scheduled</c> or <c>Queued</c> and no received row is <c>Scheduled</c> — those states bracket every
+    /// send and every consumer execution — then drops transport messages no consumer has picked up, waits once
+    /// more for anything picked up in between, and only then clears observations and storage.
+    /// </para>
+    /// <para>
+    /// A publish scheduled more than a minute ahead sits in a <c>Delayed</c> row and is not awaited; the dispatcher
+    /// still holds it and publishes it when due, so a shared harness should not carry long delays across tests.
+    /// Pending <c>WaitFor*</c> calls fault when the reset clears the store.
+    /// </para>
     /// </remarks>
-    public void Clear()
+    /// <param name="timeout">How long to wait for in-flight work; defaults to <see cref="DefaultTimeout"/>.</param>
+    /// <param name="cancellationToken">Cancels the wait.</param>
+    /// <exception cref="TimeoutException">In-flight work did not settle within <paramref name="timeout"/>.</exception>
+    public async Task ResetAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = default)
     {
-        _store.Clear();
+        var storage = ServiceProvider.GetService<InMemoryDataStorage>();
+        var waitBudget = timeout ?? DefaultTimeout;
+        var startedAt = TimeProvider.System.GetTimestamp();
+
+        if (storage is not null)
+        {
+            await _WaitForStorageIdleAsync(storage, startedAt, waitBudget, cancellationToken).ConfigureAwait(false);
+        }
 
         ServiceProvider.GetService<MemoryQueue>()?.DrainAllPendingMessages();
-        ServiceProvider.GetService<InMemoryDataStorage>()?.Clear();
+
+        if (storage is not null)
+        {
+            // A consumer that dequeued a message just before the drain stores its received row next; the second
+            // wait covers that hand-off instead of clearing underneath it.
+            await _WaitForStorageIdleAsync(storage, startedAt, waitBudget, cancellationToken).ConfigureAwait(false);
+        }
+
+        _store.Clear();
+        storage?.Clear();
+    }
+
+    // -------------------------------------------------------------------------
+    // Coordinated delivery
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Runs <paramref name="action"/> inside a commit-coordination scope — the harness stand-in for an application
+    /// transaction — signalling commit when it completes and rollback when it throws.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The scope is non-relational: in-memory storage captures every publish made inside the delegate on it, so a
+    /// type registered <c>WithDeliveryMode(DeliveryMode.Coordinated)</c> can be published here (outside a scope the
+    /// publish throws <see cref="InvalidOperationException"/>), and a default <see cref="DeliveryMode.Durable"/>
+    /// publish enlists in the same scope. Commit stores the captured rows and hands them to the dispatcher, so they
+    /// surface through <see cref="WaitForPublished{T}(TimeSpan?, CancellationToken)"/> and
+    /// <see cref="WaitForConsumed{T}(TimeSpan?, CancellationToken)"/>; rollback discards them and nothing is
+    /// recorded. A coordinated message records <c>RequestedDeliveryMode = Coordinated</c> and
+    /// <c>ResolvedDeliveryMode = Durable</c>.
+    /// </para>
+    /// <para>
+    /// The scope joins an ambient coordinator when one is already active, so a nested call follows the
+    /// commit-coordination child rules: a child rollback dooms the outer scope.
+    /// </para>
+    /// </remarks>
+    /// <param name="action">The work to run inside the scope.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="action"/> is <see langword="null"/>.</exception>
+    public async Task RunCoordinatedAsync(Func<Task> action)
+    {
+        Argument.IsNotNull(action);
+
+        await RunCoordinatedAsync(async () =>
+            {
+                await action().ConfigureAwait(false);
+                return true;
+            })
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Runs <paramref name="action"/> inside a commit-coordination scope and returns its result; see
+    /// <see cref="RunCoordinatedAsync(Func{Task})"/> for the commit and rollback semantics.
+    /// </summary>
+    /// <typeparam name="TResult">The delegate's result type.</typeparam>
+    /// <param name="action">The work to run inside the scope.</param>
+    /// <returns>The delegate's result, after the scope has committed.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="action"/> is <see langword="null"/>.</exception>
+    public async Task<TResult> RunCoordinatedAsync<TResult>(Func<Task<TResult>> action)
+    {
+        Argument.IsNotNull(action);
+
+        var scopeFactory = ServiceProvider.GetRequiredService<ICommitScopeFactory>();
+        await using var scope = scopeFactory.Begin(ServiceProvider, capabilities: null);
+
+        TResult result;
+        try
+        {
+            result = await action().ConfigureAwait(false);
+        }
+        catch
+        {
+            // Disposal alone would roll back, but signalling here drains the rollback callbacks before the caller
+            // observes the exception, so the captured rows are already discarded when the test asserts.
+            await scope.SignalAsync(CommitOutcome.RolledBack).ConfigureAwait(false);
+            throw;
+        }
+
+        await scope.SignalAsync(CommitOutcome.Committed).ConfigureAwait(false);
+
+        return result;
     }
 
     // -------------------------------------------------------------------------
@@ -490,6 +608,69 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     /// <summary>Marker service for idempotency guard in <see cref="ConfigureServices"/>.</summary>
     private sealed class TestHarnessMarkerService;
 
+    private static readonly TimeSpan _ResetPollInterval = TimeSpan.FromMilliseconds(5);
+
+    private static async Task _WaitForStorageIdleAsync(
+        InMemoryDataStorage storage,
+        long startedAt,
+        TimeSpan timeout,
+        CancellationToken cancellationToken
+    )
+    {
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var inFlight = _DescribeInFlightRows(storage);
+
+            if (inFlight.Count == 0)
+            {
+                return;
+            }
+
+            if (TimeProvider.System.GetElapsedTime(startedAt) >= timeout)
+            {
+                throw new TimeoutException(
+                    $"MessagingTestHarness.ResetAsync waited {timeout} for {inFlight.Count} in-flight message(s) "
+                        + $"that never settled: {string.Join(", ", inFlight.Take(10))}. "
+                        + "Await the matching WaitFor* first, or raise the timeout."
+                );
+            }
+
+            // The system clock on purpose: this waits for dispatcher threads to make real progress, and a host that
+            // registers a FakeTimeProvider would otherwise never advance the poll.
+            await Task.Delay(_ResetPollInterval, TimeProvider.System, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Rows whose status brackets work still running on a dispatcher thread: a published row is Scheduled from
+    /// store until after the send and its Published observation, and a received row is Scheduled from admission
+    /// until after the consumer and its Consumed/Faulted observation.
+    /// </summary>
+    private static List<string> _DescribeInFlightRows(InMemoryDataStorage storage)
+    {
+        List<string> inFlight = [];
+
+        foreach (var row in storage.PublishedMessages.Values)
+        {
+            if (row.StatusName is StatusName.Scheduled or StatusName.Queued)
+            {
+                inFlight.Add($"published '{row.Name}' ({row.StatusName})");
+            }
+        }
+
+        foreach (var row in storage.ReceivedMessages.Values)
+        {
+            if (row.StatusName is StatusName.Scheduled)
+            {
+                inFlight.Add($"received '{row.Name}' ({row.StatusName})");
+            }
+        }
+
+        return inFlight;
+    }
+
     /// <summary>
     /// Verifies that in-memory queue and storage providers are registered.
     /// Throws <see cref="InvalidOperationException"/> if either marker is missing.
@@ -521,7 +702,9 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         }
     }
 
-    private static void _DecorateLast<TService>(
+    /// <summary>Wraps the last registration of <typeparamref name="TService"/> with a decorator.</summary>
+    /// <returns>Whether a registration existed to decorate.</returns>
+    private static bool _DecorateLast<TService>(
         IServiceCollection services,
         Func<IServiceProvider, Func<TService, TService>> createDecorator
     )
@@ -531,7 +714,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
 
         if (original is null)
         {
-            return;
+            return false;
         }
 
         services.Remove(original);
@@ -547,9 +730,15 @@ public sealed class MessagingTestHarness : IAsyncDisposable
                 original.Lifetime
             )
         );
+
+        return true;
     }
 
-    private static void _DecoratePipeline(IServiceCollection services, MessageObservationStore store)
+    private static void _DecoratePipeline(
+        IServiceCollection services,
+        MessageObservationStore store,
+        bool awaitPublishedRecord
+    )
     {
         var original = services.FirstOrDefault(d => d.ServiceType == typeof(IConsumeMiddlewarePipeline));
 
@@ -563,7 +752,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         services.AddSingleton<IConsumeMiddlewarePipeline>(sp =>
         {
             var inner = _ResolveFromDescriptor<IConsumeMiddlewarePipeline>(sp, original);
-            return new RecordingConsumeMiddlewarePipeline(inner, store);
+            return new RecordingConsumeMiddlewarePipeline(inner, store, awaitPublishedRecord, DefaultTimeout);
         });
     }
 
@@ -602,9 +791,9 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         });
     }
 
-    private static void _DecorateBusTransport(IServiceCollection services, MessageObservationStore store)
+    private static bool _DecorateBusTransport(IServiceCollection services, MessageObservationStore store)
     {
-        _DecorateLast<IBusTransport>(
+        return _DecorateLast<IBusTransport>(
             services,
             sp =>
             {
@@ -615,9 +804,9 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         );
     }
 
-    private static void _DecorateQueueTransport(IServiceCollection services, MessageObservationStore store)
+    private static bool _DecorateQueueTransport(IServiceCollection services, MessageObservationStore store)
     {
-        _DecorateLast<IQueueTransport>(
+        return _DecorateLast<IQueueTransport>(
             services,
             sp =>
             {

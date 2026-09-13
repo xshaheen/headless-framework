@@ -33,6 +33,28 @@ public sealed class BetaConsumer : IConsume<BetaEvent>
     }
 }
 
+public sealed record GammaEvent(string Id);
+
+/// <summary>Holds a consumption open until the test releases it, so a test can observe a reset racing in-flight work.</summary>
+public sealed class GatedConsumer : IConsume<GammaEvent>
+{
+    private readonly TaskCompletionSource _started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource _gate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public Task Started => _started.Task;
+
+    public void Release()
+    {
+        _gate.TrySetResult();
+    }
+
+    public async ValueTask ConsumeAsync(ConsumeContext<GammaEvent> context, CancellationToken cancellationToken)
+    {
+        _started.TrySetResult();
+        await _gate.Task.WaitAsync(cancellationToken);
+    }
+}
+
 // ─── Fixture ─────────────────────────────────────────────────────────────────
 
 public sealed class SharedHarnessFixture : IAsyncLifetime
@@ -43,6 +65,7 @@ public sealed class SharedHarnessFixture : IAsyncLifetime
     {
         Harness = await MessagingTestHarness.CreateAsync(services =>
         {
+            services.AddSingleton<GatedConsumer>();
             services.AddHeadlessMessaging(setup =>
             {
                 setup.UseInMemory();
@@ -58,6 +81,11 @@ public sealed class SharedHarnessFixture : IAsyncLifetime
                         .Contract("beta-messageName")
                         .Consumer<BetaConsumer>(consumer => consumer.ConsumerIdentity("tests.messaging-testing.beta"))
                 );
+                setup.Bus.ForMessage<GammaEvent>(message =>
+                    message
+                        .Contract("gamma-messageName")
+                        .Consumer<GatedConsumer>(consumer => consumer.ConsumerIdentity("tests.messaging-testing.gamma"))
+                );
             });
         });
     }
@@ -71,10 +99,10 @@ public sealed class SharedHarnessFixture : IAsyncLifetime
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 /// <summary>
-/// Proves that <see cref="MessagingTestHarness.Clear"/> resets all in-memory
-/// messaging state so a shared host can be reused across tests without leakage.
-/// Uses <see cref="IClassFixture{T}"/> so a single harness instance is shared
-/// across all test methods — each test calls <c>Clear()</c> to prove isolation.
+/// Proves that <see cref="MessagingTestHarness.ResetAsync"/> waits for in-flight store-first work and then
+/// resets all in-memory messaging state, so a shared host can be reused across tests without leakage.
+/// Uses <see cref="IClassFixture{T}"/> so a single harness instance is shared across all test methods —
+/// each test calls <c>ResetAsync()</c> to prove isolation.
 /// </summary>
 public sealed class SharedHostIsolationTests(SharedHarnessFixture fixture)
     : TestBase,
@@ -83,9 +111,9 @@ public sealed class SharedHostIsolationTests(SharedHarnessFixture fixture)
     private readonly MessagingTestHarness _harness = fixture.Harness;
 
     [Fact]
-    public async Task should_isolate_observations_after_clear()
+    public async Task should_isolate_observations_after_reset()
     {
-        _harness.Clear();
+        await _harness.ResetAsync(cancellationToken: AbortToken);
 
         // First round: publish Alpha
         await _harness.Publisher.PublishAsync(new AlphaEvent("A1"), cancellationToken: AbortToken);
@@ -94,8 +122,8 @@ public sealed class SharedHostIsolationTests(SharedHarnessFixture fixture)
         _harness.Published.Should().ContainSingle();
         _harness.Consumed.Should().ContainSingle();
 
-        // Clear all state
-        _harness.Clear();
+        // Reset all state
+        await _harness.ResetAsync(cancellationToken: AbortToken);
 
         // Second round: publish Beta
         await _harness.Publisher.PublishAsync(new BetaEvent("B1"), cancellationToken: AbortToken);
@@ -108,9 +136,51 @@ public sealed class SharedHostIsolationTests(SharedHarnessFixture fixture)
     }
 
     [Fact]
-    public async Task should_reset_storage_layer_after_clear()
+    public async Task should_not_leak_burst_publishes_into_next_round_after_reset()
     {
-        _harness.Clear();
+        await _harness.ResetAsync(cancellationToken: AbortToken);
+
+        // Store-first publishing returns once the row is durable; the transport send, the Published
+        // observation, and consumption all run on background dispatcher threads afterwards.
+        for (var i = 0; i < 20; i++)
+        {
+            await _harness.Publisher.PublishAsync(new AlphaEvent($"A{i}"), cancellationToken: AbortToken);
+        }
+
+        await _harness.ResetAsync(cancellationToken: AbortToken);
+
+        await _harness.Publisher.PublishAsync(new BetaEvent("B1"), cancellationToken: AbortToken);
+        await _harness.WaitForConsumed<BetaEvent>(TimeSpan.FromSeconds(5), AbortToken);
+
+        _harness.Published.Should().ContainSingle().Which.Message.Should().BeOfType<BetaEvent>();
+        _harness.Consumed.Should().ContainSingle().Which.Message.Should().BeOfType<BetaEvent>();
+    }
+
+    [Fact]
+    public async Task should_wait_for_in_flight_consumption_before_reset()
+    {
+        await _harness.ResetAsync(cancellationToken: AbortToken);
+        var consumer = _harness.GetRequiredService<GatedConsumer>();
+
+        await _harness.Publisher.PublishAsync(new GammaEvent("G1"), cancellationToken: AbortToken);
+        await consumer.Started.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // The consumer is mid-execution: its received row is Scheduled and its Consumed observation is still to
+        // come, so the reset must block until the gate opens instead of clearing underneath it.
+        var reset = _harness.ResetAsync(cancellationToken: AbortToken);
+        reset.IsCompleted.Should().BeFalse();
+
+        consumer.Release();
+        await reset;
+
+        _harness.Consumed.Should().BeEmpty();
+        _harness.Published.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_reset_storage_layer_after_reset()
+    {
+        await _harness.ResetAsync(cancellationToken: AbortToken);
 
         // Publish and consume to populate storage
         await _harness.Publisher.PublishAsync(new AlphaEvent("S1"), cancellationToken: AbortToken);
@@ -129,8 +199,8 @@ public sealed class SharedHostIsolationTests(SharedHarnessFixture fixture)
         var pageBefore = await monitoring.GetMessagesAsync(query, AbortToken);
         pageBefore.Items.Should().NotBeEmpty();
 
-        // Clear all state
-        _harness.Clear();
+        // Reset all state
+        await _harness.ResetAsync(cancellationToken: AbortToken);
 
         // Verify storage is empty (re-create monitoring API to read fresh state)
         var monitoringAfter = _harness.ServiceProvider.GetRequiredService<IDataStorage>().GetMonitoringApi();
@@ -139,15 +209,15 @@ public sealed class SharedHostIsolationTests(SharedHarnessFixture fixture)
     }
 
     [Fact]
-    public async Task should_support_full_publish_consume_cycle_after_clear()
+    public async Task should_support_full_publish_consume_cycle_after_reset()
     {
-        _harness.Clear();
+        await _harness.ResetAsync(cancellationToken: AbortToken);
 
         // First cycle
         await _harness.Publisher.PublishAsync(new AlphaEvent("A3"), cancellationToken: AbortToken);
         await _harness.WaitForConsumed<AlphaEvent>(TimeSpan.FromSeconds(5), AbortToken);
 
-        _harness.Clear();
+        await _harness.ResetAsync(cancellationToken: AbortToken);
 
         // Second cycle — should work identically
         await _harness.Publisher.PublishAsync(new AlphaEvent("A4"), cancellationToken: AbortToken);
@@ -158,13 +228,13 @@ public sealed class SharedHostIsolationTests(SharedHarnessFixture fixture)
     }
 
     [Fact]
-    public void should_not_throw_when_clear_called_on_empty_state()
+    public async Task should_not_throw_when_reset_called_on_empty_state()
     {
-        _harness.Clear();
+        await _harness.ResetAsync(cancellationToken: AbortToken);
 
-        var act = () => _harness.Clear();
+        var act = () => _harness.ResetAsync(cancellationToken: AbortToken);
 
-        act.Should().NotThrow();
+        await act.Should().NotThrowAsync();
         _harness.Published.Should().BeEmpty();
         _harness.Consumed.Should().BeEmpty();
         _harness.Faulted.Should().BeEmpty();

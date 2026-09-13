@@ -25,6 +25,9 @@ internal sealed class MessageObservationStore(TimeProvider? timeProvider = null)
     > _typeOnlyIndex = [];
     private readonly List<WaiterEntry> _waiters = [];
     private readonly Lock _waitersLock = new();
+    private readonly ConcurrentDictionary<string, TaskCompletionSource> _publishedArrivals = new(
+        StringComparer.Ordinal
+    );
 
     /// <summary>Gets all published messages recorded so far. Each access allocates a snapshot array.</summary>
     public IReadOnlyCollection<RecordedMessage> Published => _published.ToArray();
@@ -45,6 +48,11 @@ internal sealed class MessageObservationStore(TimeProvider? timeProvider = null)
         queue.Enqueue(message);
         _typeIndex.GetOrAdd((message.MessageType, type, message.Lane), static _ => new()).Enqueue(message);
         _typeOnlyIndex.GetOrAdd((message.MessageType, type), static _ => new()).Enqueue(message);
+
+        if (type is MessageObservationType.Published && message.MessageId.Length > 0)
+        {
+            _publishedArrivals.GetOrAdd(message.MessageId, static _ => _CreateArrival()).TrySetResult();
+        }
 
         // Snapshot candidates under lock, evaluate predicates outside to avoid
         // holding the lock during potentially expensive user predicates.
@@ -161,9 +169,35 @@ internal sealed class MessageObservationStore(TimeProvider? timeProvider = null)
         }
     }
 
+    /// <summary>
+    /// Completes once the Published observation for <paramref name="messageId"/> has been recorded, or once
+    /// <paramref name="timeout"/> elapses. The in-memory transport hands a message to its consumer inside the send,
+    /// before the sending thread records Published, so the consume pipeline awaits this to keep a message's Published
+    /// observation ahead of its Consumed or Faulted one.
+    /// </summary>
+    public async Task WaitForPublishedRecordAsync(
+        string messageId,
+        TimeSpan timeout,
+        CancellationToken cancellationToken
+    )
+    {
+        var arrival = _publishedArrivals.GetOrAdd(messageId, static _ => _CreateArrival());
+
+        try
+        {
+            await arrival.Task.WaitAsync(timeout, _timeProvider, cancellationToken).ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            // The consumer must still run; a Published record that never arrives shows up in the test's own assertions.
+        }
+    }
+
     /// <summary>Clears all recorded messages and cancels pending waiters.</summary>
     public void Clear()
     {
+        _publishedArrivals.Clear();
+
         while (_published.TryDequeue(out _)) { }
 
         while (_consumed.TryDequeue(out _)) { }
@@ -181,13 +215,18 @@ internal sealed class MessageObservationStore(TimeProvider? timeProvider = null)
             {
                 waiter.Tcs.TrySetException(
                     new InvalidOperationException(
-                        "MessagingTestHarness.Clear() was called while a WaitFor* operation was pending."
+                        "MessagingTestHarness.ResetAsync() was called while a WaitFor* operation was pending."
                     )
                 );
             }
 
             _waiters.Clear();
         }
+    }
+
+    private static TaskCompletionSource _CreateArrival()
+    {
+        return new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 
     private RecordedMessage? _FindExisting(
