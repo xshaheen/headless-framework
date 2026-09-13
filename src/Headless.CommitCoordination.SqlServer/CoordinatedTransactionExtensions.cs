@@ -16,13 +16,15 @@ namespace Microsoft.Data.SqlClient;
 /// </summary>
 /// <remarks>
 /// A raw connection cannot expose a resolving scope, so these overloads require an explicit
-/// <c>IServiceProvider</c> (the request scope) for the post-commit drain. There is no execution-strategy
-/// retry for raw ADO (that is an EF Core concept); a throwing operation rolls the transaction back and
-/// discards the enlisted buffer via un-signalled dispose. If the connection is closed it is opened for the
-/// duration and closed again afterward; an already-open connection is left open.
+/// <c>IServiceProvider</c> that resolves the commit coordination services. SQL Server signaling is explicit
+/// (this helper signals after its own <c>Commit</c>), so a caller that commits a raw <c>SqlTransaction</c>
+/// outside this helper must signal the enlisted scope itself. There is no execution-strategy retry for raw ADO
+/// (that is an EF Core concept); a throwing operation rolls the transaction back and discards the enlisted work.
+/// If the connection is closed it is opened for the duration and closed again afterward; an already-open
+/// connection is left open.
 /// </remarks>
 [PublicAPI]
-public static class HeadlessSqlServerCoordinatedTransactionExtensions
+public static partial class HeadlessSqlServerCoordinatedTransactionExtensions
 {
     extension(SqlConnection connection)
     {
@@ -134,11 +136,14 @@ public static class HeadlessSqlServerCoordinatedTransactionExtensions
     /// <summary>
     /// Shared body for every <c>ExecuteCoordinatedTransactionAsync</c> overload: opens the connection when
     /// closed, begins the transaction, enlists commit coordination, runs <paramref name="operation"/>, commits,
-    /// signals the scope, and closes the connection if it was opened here. SqlServer commit detection is
-    /// out-of-band — the SqlClient diagnostic raises <c>SignalCommittedAsync</c> within <c>CommitAsync</c> — but
-    /// this helper also signals explicitly so the drain still runs when the diagnostic is disabled or degraded;
-    /// when the diagnostic already claimed the scope the explicit signal is a logged no-op.
+    /// signals the outcome, and closes the connection if it was opened here.
     /// </summary>
+    /// <remarks>
+    /// SQL Server has no commit edge to observe, so the helper owns both signals: <c>Committed</c> after
+    /// <c>CommitAsync</c> (without it the un-signalled dispose would discard the enlisted work on every successful
+    /// commit) and <c>RolledBack</c> when the operation or the commit throws, so the failure path never reads as
+    /// a forgotten signal.
+    /// </remarks>
     private static async Task<TResult> _ExecuteCoreAsync<TResult>(
         SqlConnection connection,
         IServiceProvider services,
@@ -174,23 +179,35 @@ public static class HeadlessSqlServerCoordinatedTransactionExtensions
 
                 await using (scope.ConfigureAwait(false))
                 {
-                    var result = await operation(connection, cancellationToken).ConfigureAwait(false);
-                    await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                    TResult result;
 
                     try
                     {
+                        result = await operation(connection, cancellationToken).ConfigureAwait(false);
+                        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        // The physical rollback happens when the transaction disposes; the explicit signal discards
+                        // the enlisted work now and keeps the scope's forgotten-signal warning for hand-rolled
+                        // enlistments only. Nothing runs on rollback, so this cannot mask the caller's exception.
+                        await scope.SignalAsync(CommitOutcome.RolledBack).ConfigureAwait(false);
+                        throw;
+                    }
+
+                    try
+                    {
+                        // The drain runs to completion regardless of the caller's token: the commit is durable, and
+                        // aborting the drain would only log a spurious fault for work that was going to run.
                         await scope.SignalAsync(CommitOutcome.Committed).ConfigureAwait(false);
                     }
                     catch (Exception ex)
                     {
-                        // The transaction is ALREADY durably committed. The explicit signal is the degraded-mode
-                        // fallback (diagnostic disabled or missed); a drain fault here must not surface as a
-                        // caller failure — a retry would re-run the operation and double-apply. The enlisted work
-                        // is relay-recoverable, so log and return the committed result.
-                        logger.LogError(
-                            ex,
-                            "Post-commit drain faulted after a successful SQL Server commit; the relay will recover any uncommitted work."
-                        );
+                        // The transaction is ALREADY durably committed. The drain is the dispatch accelerator; a
+                        // fault here must not surface as a caller failure — a retry would re-run the operation and
+                        // double-apply. The enlisted work is relay-recoverable (durable rows committed
+                        // in-transaction + polling recovery), so log and return the committed result.
+                        LogPostCommitDrainFaulted(logger, ex);
                     }
 
                     return result;
@@ -205,4 +222,12 @@ public static class HeadlessSqlServerCoordinatedTransactionExtensions
             }
         }
     }
+
+    [LoggerMessage(
+        EventId = 1,
+        Level = LogLevel.Error,
+        Message = "Post-commit drain faulted after a successful SQL Server commit; the relay will recover any uncommitted work."
+    )]
+    // ReSharper disable once InconsistentNaming
+    private static partial void LogPostCommitDrainFaulted(ILogger logger, Exception exception);
 }
