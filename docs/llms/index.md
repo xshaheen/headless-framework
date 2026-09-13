@@ -242,7 +242,7 @@ Fetch only what's relevant to the task. Each file documents the domain's package
 - [blobs.md](blobs.md) — Unified blob storage (AWS S3, Azure, file system, Redis, SFTP).
 - [caching.md](caching.md) — Memory, Redis, and Hybrid (L1+L2) caching with fail-safe, refresh, tagging, and distributed factory locks.
 - [captcha.md](captcha.md) — CAPTCHA verification (Google reCAPTCHA v2/v3, Cloudflare Turnstile) behind one pass/fail abstraction.
-- [commit-coordination.md](commit-coordination.md) — Post-commit and rollback callback coordination for outbox, jobs, cache, and events.
+- [commit-coordination.md](commit-coordination.md) — Process-local post-commit callbacks tied to a relational transaction, the delivery-guarantee matrix, and the EF interceptor and explicit-signal ADO providers.
 - [coordination.md](coordination.md) — Node membership, liveness, lifecycle events, and provider-backed fail-stop fencing.
 - [emails.md](emails.md) — Email sending (Azure Communication Services, AWS SES, MailKit SMTP, dev no-op).
 - [features.md](features.md) — Feature flags with caching, value providers, EF Core storage.
@@ -335,13 +335,12 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Captcha.Turnstile` — Cloudflare Turnstile verification (pass/fail, `idempotency_key`, `cdata`) with Razor tag helpers.
 
 ### Commit Coordination
-- `Headless.CommitCoordination.Abstractions` — Register-only commit coordinator contracts, work buffers, and capabilities.
-- `Headless.CommitCoordination.Core` — In-process coordinator, ambient stack, scope factory, and relational capability implementation.
-- `Headless.CommitCoordination.EntityFramework` — EF Core commit coordination registration points.
+- `Headless.CommitCoordination.Abstractions` — Register-only commit coordinator, scope, scope factory, and relational-handle contracts.
+- `Headless.CommitCoordination.Core` — In-process coordinator, ambient `AsyncLocal` stack, scope factory, and relational handle.
+- `Headless.CommitCoordination.EntityFramework` — EF Core transaction interceptor, coordinated-transaction helper, and startup gate.
 - `Headless.EntityFramework.CommitCoordination` — Opt-in adapter that enlists the Headless EF save pipeline in commit coordination.
-- `Headless.CommitCoordination.InMemory` — Explicit in-process signal source for tests and owner-driven flows.
-- `Headless.CommitCoordination.PostgreSql` — PostgreSQL inline commit signal source.
-- `Headless.CommitCoordination.SqlServer` — SQL Server provider-key signal correlation.
+- `Headless.CommitCoordination.PostgreSql` — Raw-ADO `NpgsqlConnection` enlistment with explicit commit signals.
+- `Headless.CommitCoordination.SqlServer` — Raw-ADO `SqlConnection` enlistment with explicit commit signals.
 
 ### Coordination
 - `Headless.Coordination.Abstractions` — Node identity, liveness, membership, and event contracts.
