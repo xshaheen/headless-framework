@@ -194,11 +194,11 @@ public sealed class InMemoryDataStorageCoordinationTests : TestBase
 
     private static IDeliveryCoordinationResolver _Resolver(InMemoryDataStorage storage) => storage;
 
-    private static ICommitScope _BeginScope(params ICommitCapability[] capabilities)
+    private static ICommitScope _BeginScope(IRelationalCommitContext? relational = null)
     {
         var services = new ServiceCollection().AddCommitCoordination().BuildServiceProvider();
 
-        return services.GetRequiredService<ICommitScopeFactory>().Begin(services, capabilities);
+        return services.GetRequiredService<ICommitScopeFactory>().Open(relational);
     }
 
     private static InMemoryDataStorage _CreateStorage()

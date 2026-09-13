@@ -95,8 +95,9 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
             }
         );
         var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: true);
-        sut.Coordinator!.TryGetCapability<IRelationalCommitContext>(out var relational).Should().BeTrue();
-        close = () => relational!.Connection!.State.Returns(ConnectionState.Closed);
+        var relational = sut.Coordinator!.Relational;
+        relational.Should().NotBeNull();
+        close = () => relational.Connection!.State.Returns(ConnectionState.Closed);
         var write = () => sut.Time.AddAsync(_FutureTimeJob(), AbortToken);
         await write.Should().ThrowAsync<InvalidOperationException>().WithMessage("*closed*");
         await sut
@@ -144,7 +145,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
         sut.Scheduler.DidNotReceive().Restart();
         sut.Coordinator!.OnCommitCount.Should().Be(1);
         var restarted = _Restarted(sut);
-        await sut.Coordinator.DrainCommitAsync(AbortToken);
+        await sut.Coordinator.CommitAsync();
         // The commit callback only queues the schedule-changed signal; the hosted worker issues the restart.
         sut.Scheduler.DidNotReceive().Restart();
         sut.Signals.PendingCount.Should().Be(1);
@@ -179,7 +180,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
         result.IsProvisional.Should().BeTrue();
         sut.Scheduler.DidNotReceive().Restart();
         var restarted = _Restarted(sut);
-        await sut.Coordinator!.DrainCommitAsync(AbortToken);
+        await sut.Coordinator!.CommitAsync();
         sut.Scheduler.DidNotReceive().Restart();
         sut.Signals.PendingCount.Should().Be(1);
         await _StartWorkerAsync(sut);

@@ -2,7 +2,6 @@
 
 using System.Data.Common;
 using Headless.Abstractions;
-using Headless.CommitCoordination;
 using Headless.Jobs;
 using Headless.Jobs.BackgroundServices;
 using Headless.Jobs.Entities;
@@ -11,6 +10,7 @@ using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Managers;
 using Headless.Jobs.Models;
+using Headless.Jobs.Transactions;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -145,7 +145,7 @@ public sealed class JobsManagerDeleteResultTests : TestBase
             Substitute.For<IJobsNotificationHubSender>(),
             executionContext,
             Substitute.For<IJobsDispatcher>(),
-            Substitute.For<ICurrentCommitCoordinator>(),
+            new JobsNullCommitCoordinator(),
             new CronScheduleCache(TimeZoneInfo.Utc),
             signals,
             functionRegistry,

@@ -29,9 +29,9 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
     );
 
     // Routing decision read once, synchronously, before any await (KTD-1):
-    //  - null  → no relational capability and atomicity was not required → today's direct path.
+    //  - null  → no relational handle and atomicity was not required → today's direct path.
     //  - value → a live relational transaction is present → write rows inside it and defer side effects to commit.
-    // Throws when a relational capability is present but its transaction is dead/completed: the caller opened a
+    // Throws when a relational handle is present but its transaction is dead/completed: the caller opened a
     // transaction expecting atomicity, so silent fallback would reintroduce the divergence this feature prevents (KTD-2).
     // Jobs propagate write faults so callers cannot mistake a failed enqueue for a successfully enlisted deadline.
     private CoordinatedJobContext? _TryCaptureCoordinatedContext(
@@ -47,10 +47,10 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
             return null;
         }
 
-        if (!coordinator.TryGetCapability<IRelationalCommitContext>(out var relational))
+        if (coordinator.Relational is not { } relational)
         {
             _RejectMissingAtomicCapability(requireAtomicEnlistment);
-            // A coordinated scope without a relational capability (e.g. a messaging-only scope): the coordinator is an
+            // A coordinated scope without a relational handle (e.g. a messaging-only scope): the coordinator is an
             // ambient scope any subsystem may open, so jobs must not make it infectious — fall back to direct insert.
             return null;
         }
@@ -148,8 +148,8 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
     }
 
     // Bound for the one side effect that stays on the commit path (the cron-expressions cache invalidation). The
-    // coordinator drains OnCommit callbacks with CancellationToken.None, so the incoming token never carries a
-    // deadline; without an independent one a stalled cache would hold the commit thread, DI scope, and connection.
+    // coordinator drains OnCommit callbacks without a cancellation token, so nothing external carries a deadline;
+    // without an independent one a stalled cache would hold the commit thread, DI scope, and connection.
     private static readonly TimeSpan _CronCacheInvalidationDeadline = JobsPostCommitSignalService.SignalDeadline;
 
     // Registers a coordinated write's post-commit signal. The callback is synchronous: it hands the worker a signal
@@ -160,14 +160,12 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
     {
         // The IDisposable unsubscribe handle is intentionally discarded (as in MessageOutboxBuffer): once the row is
         // written the signal must fire unconditionally on commit, so there is nothing to cancel.
-        coordinator.OnCommit(
-            (_, _) =>
-            {
-                _postCommitSignals.TrySignal(signal);
+        coordinator.OnCommit(() =>
+        {
+            _postCommitSignals.TrySignal(signal);
 
-                return ValueTask.CompletedTask;
-            }
-        );
+            return ValueTask.CompletedTask;
+        });
     }
 
     // Cron variant: the cron-expressions cache invalidation (which the direct path's InsertCronJobsAsync runs after
@@ -180,13 +178,11 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
         JobsPostCommitSignal signal
     )
     {
-        coordinator.OnCommit(
-            async (_, _) =>
-            {
-                await _InvalidateCronExpressionsCacheBoundedAsync(writer, signal.JobScope).ConfigureAwait(false);
-                _postCommitSignals.TrySignal(signal);
-            }
-        );
+        coordinator.OnCommit(async () =>
+        {
+            await _InvalidateCronExpressionsCacheBoundedAsync(writer, signal.JobScope).ConfigureAwait(false);
+            _postCommitSignals.TrySignal(signal);
+        });
     }
 
     private async Task _InvalidateCronExpressionsCacheBoundedAsync(

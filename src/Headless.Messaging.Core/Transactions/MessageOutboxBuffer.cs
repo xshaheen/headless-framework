@@ -16,7 +16,7 @@ internal sealed class MessageOutboxBuffer : InMemoryWorkBuffer<MediumMessage>
         coordinator.OnCommit(_FlushAsync);
     }
 
-    private ValueTask _FlushAsync(CommitContext context, CancellationToken cancellationToken)
+    private ValueTask _FlushAsync()
     {
         // The transaction is already committed. These best-effort signals must never add broker or scheduler I/O
         // to the commit path; the durable relay remains the correctness mechanism when a signal is dropped.

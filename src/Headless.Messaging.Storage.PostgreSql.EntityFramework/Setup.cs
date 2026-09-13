@@ -4,7 +4,6 @@ using System.Data;
 using System.Runtime.ExceptionServices;
 using Headless.Checks;
 using Headless.CommitCoordination;
-using Headless.CommitCoordination.EntityFramework;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
@@ -82,8 +81,7 @@ public static class SetupPostgreSqlEntityFrameworkMessaging
                         serviceProvider,
                         serviceProvider.GetRequiredService<ICurrentCommitCoordinator>(),
                         serviceProvider.GetRequiredService<IDeliveryCoordinationResolver>(),
-                        serviceProvider.GetRequiredService<PostgreSqlDataStorage>(),
-                        serviceProvider.GetRequiredService<EntityFrameworkCommitSignalSource>()
+                        serviceProvider.GetRequiredService<PostgreSqlDataStorage>()
                     )
                 );
             }
@@ -124,8 +122,7 @@ public static class SetupPostgreSqlEntityFrameworkMessaging
         IServiceProvider services,
         ICurrentCommitCoordinator currentCoordinator,
         IDeliveryCoordinationResolver coordinationResolver,
-        PostgreSqlDataStorage storage,
-        EntityFrameworkCommitSignalSource signalSource
+        PostgreSqlDataStorage storage
     ) : IInboxTransactionRunner
         where TContext : DbContext
     {
@@ -183,10 +180,13 @@ public static class SetupPostgreSqlEntityFrameworkMessaging
                                 throw new StaleInboxAttemptException(message.StorageId);
                             }
 
+                            // The runner signals through the scope it owns: the interceptor may also claim the same
+                            // commit on its own path, and a repeated same-outcome signal is a silent no-op, so the
+                            // explicit signal stays authoritative on the probe-confirmed paths the interceptor cannot see.
                             try
                             {
                                 await transaction.CommitAsync(ct).ConfigureAwait(false);
-                                await signalSource.SignalCommittedAsync(dbTransaction).ConfigureAwait(false);
+                                await coordinationScope.SignalAsync(CommitOutcome.Committed).ConfigureAwait(false);
                                 return null;
                             }
                             catch (Exception commitException)
@@ -197,14 +197,14 @@ public static class SetupPostgreSqlEntityFrameworkMessaging
                                         .ConfigureAwait(false) is InboxCommitProbe.Committed
                                 )
                                 {
-                                    await signalSource.SignalCommittedAsync(dbTransaction).ConfigureAwait(false);
+                                    await coordinationScope.SignalAsync(CommitOutcome.Committed).ConfigureAwait(false);
                                     return null;
                                 }
 
                                 try
                                 {
                                     await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
-                                    await signalSource.SignalRolledBackAsync(dbTransaction).ConfigureAwait(false);
+                                    await coordinationScope.SignalAsync(CommitOutcome.RolledBack).ConfigureAwait(false);
                                 }
                                 catch (Exception rollbackException)
                                 {
@@ -214,7 +214,9 @@ public static class SetupPostgreSqlEntityFrameworkMessaging
                                             .ConfigureAwait(false) is InboxCommitProbe.Committed
                                     )
                                     {
-                                        await signalSource.SignalCommittedAsync(dbTransaction).ConfigureAwait(false);
+                                        await coordinationScope
+                                            .SignalAsync(CommitOutcome.Committed)
+                                            .ConfigureAwait(false);
                                         return null;
                                     }
 

@@ -367,11 +367,12 @@ public abstract partial class JobsKeyedSchedulingConformanceTests<TFixture>(TFix
                 async (_, _, ct) =>
                 {
                     var coordinator = host.Services.GetRequiredService<ICurrentCommitCoordinator>().Current!;
-                    coordinator.TryGetCapability<IRelationalCommitContext>(out var relational).Should().BeTrue();
+                    var relational = coordinator.Relational;
+                    relational.Should().NotBeNull();
                     var write = async () =>
                         await ((ICoordinatedJobWriter<TimeJobEntity, CronJobEntity>)store).WriteTimeJobsAsync(
                             [unrelated, child],
-                            relational!,
+                            relational,
                             ct
                         );
                     await write.Should().ThrowAsync<InvalidOperationException>().WithMessage("*keyed*parent*");

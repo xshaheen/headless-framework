@@ -11,6 +11,7 @@ using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Serialization;
+using Headless.Messaging.Transactions;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Storage.InMemory;
@@ -67,7 +68,7 @@ internal sealed partial class InMemoryDataStorage(
         // A relational handle means the caller's work commits in a database; in-memory rows cannot be atomic with
         // it, so refusing is the only honest answer. Without one, the coordinator itself is the commit boundary and
         // rows are captured on it through ICoordinatedMessageStore.
-        return coordinator.TryGetCapability<IRelationalCommitContext>(out _)
+        return coordinator.Relational is not null
             ? DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.StorageProvider)
             : DeliveryCoordination.Compatible(coordinator, transaction: null);
     }
@@ -110,7 +111,7 @@ internal sealed partial class InMemoryDataStorage(
             coordinator.OnCommit(_PromoteAsync);
         }
 
-        private ValueTask _PromoteAsync(CommitContext context, CancellationToken cancellationToken)
+        private ValueTask _PromoteAsync()
         {
             foreach (var row in Drain())
             {

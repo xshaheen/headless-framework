@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
-using Headless.CommitCoordination;
 using Headless.Jobs;
 using Headless.Jobs.BackgroundServices;
 using Headless.Jobs.Entities;
@@ -10,6 +9,7 @@ using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Managers;
 using Headless.Jobs.Models;
+using Headless.Jobs.Transactions;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
@@ -360,7 +360,7 @@ public sealed class JobsTenancyChainPropagationTests : TestBase
             Substitute.For<IJobsNotificationHubSender>(),
             new JobsExecutionContext(),
             dispatcher,
-            Substitute.For<ICurrentCommitCoordinator>(),
+            new JobsNullCommitCoordinator(),
             new CronScheduleCache(TimeZoneInfo.Utc),
             signals,
             JobFunctionProvider.CreateHostRegistry(configuration: null),

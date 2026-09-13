@@ -36,6 +36,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
     // Every wait on worker progress is bounded so a regression fails the test instead of hanging the run.
     private static readonly TimeSpan _WaitTimeout = TimeSpan.FromSeconds(30);
     private readonly List<JobsPostCommitSignalService> _workers = [];
+    private readonly List<CommitScopeProbe> _scopes = [];
 
     public JobsManagerCoordinatedRoutingTests()
     {
@@ -48,6 +49,12 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         {
             await worker.StopAsync(AbortToken);
             worker.Dispose();
+        }
+
+        // Newest first: a scope opened inside another must be disposed before it.
+        for (var i = _scopes.Count - 1; i >= 0; i--)
+        {
+            await _scopes[i].DisposeAsync();
         }
 
         JobFunctionProvider.ResetForTests();
@@ -513,7 +520,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         sut.Scheduler.DidNotReceive().RestartIfNeeded(Arg.Any<DateTime>());
         await sut.Notification.DidNotReceive().AddTimeJobNotifyAsync(Arg.Any<Guid>());
 
-        await sut.Coordinator.DrainCommitAsync(AbortToken);
+        await sut.Coordinator.CommitAsync();
 
         // The commit callback only hands the worker a signal: it completes synchronously and runs nothing itself.
         sut.Coordinator.SynchronousCommitCallbacks.Should().Be(1);
@@ -540,7 +547,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
 
         await sut.Time.AddAsync(_FutureTimeJob(), AbortToken);
 
-        var drain = () => sut.Coordinator!.DrainCommitAsync(AbortToken);
+        var drain = () => sut.Coordinator!.CommitAsync();
         await drain.Should().NotThrowAsync();
         await _StartWorkerAsync(sut);
 
@@ -570,7 +577,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         var notified = _NotifiedTimeJob(sut);
 
         await sut.Time.AddAsync(job, AbortToken);
-        await sut.Coordinator!.DrainCommitAsync(AbortToken);
+        await sut.Coordinator!.CommitAsync();
         await _StartWorkerAsync(sut);
         await notified.Task.WaitAsync(_WaitTimeout, AbortToken);
 
@@ -591,7 +598,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         var notified = _NotifiedTimeJob(sut);
 
         await sut.Time.AddAsync(job, AbortToken);
-        await sut.Coordinator!.DrainCommitAsync(AbortToken);
+        await sut.Coordinator!.CommitAsync();
         await _StartWorkerAsync(sut);
         await notified.Task.WaitAsync(_WaitTimeout, AbortToken);
 
@@ -620,7 +627,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
 
         await sut.Time.AddAsync(job, AbortToken);
         timeProvider.Advance(TimeSpan.FromSeconds(5));
-        await sut.Coordinator!.DrainCommitAsync(AbortToken);
+        await sut.Coordinator!.CommitAsync();
         await _StartWorkerAsync(sut);
         await notified.Task.WaitAsync(_WaitTimeout, AbortToken);
 
@@ -637,7 +644,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         _FillSignalChannel(sut);
 
         await sut.Time.AddAsync(_FutureTimeJob(), AbortToken);
-        var drain = () => sut.Coordinator!.DrainCommitAsync(AbortToken);
+        var drain = () => sut.Coordinator!.CommitAsync();
 
         await drain.Should().NotThrowAsync();
         sut.Coordinator!.SynchronousCommitCallbacks.Should().Be(1);
@@ -655,7 +662,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
 
         await sut.Cron.AddAsync(_CronJob(), AbortToken);
         await sut.Writer.DidNotReceive().InvalidateCronExpressionsCacheAsync();
-        await sut.Coordinator!.DrainCommitAsync(AbortToken);
+        await sut.Coordinator!.CommitAsync();
 
         await sut.Writer.Received(1).InvalidateCronExpressionsCacheAsync();
         sut.Signals.PendingCount.Should().Be(JobsPostCommitSignalService.Capacity);
@@ -678,7 +685,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
             });
 
         await sut.Cron.AddAsync(_CronJob(), AbortToken);
-        var drain = sut.Coordinator!.DrainCommitAsync(AbortToken);
+        var drain = sut.Coordinator!.CommitAsync();
         await invalidationStarted.Task.WaitAsync(_WaitTimeout, AbortToken);
         await FakeClock.AdvanceUntilAsync(
             timeProvider,
@@ -703,7 +710,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         sut.Writer.InvalidateCronExpressionsCacheAsync().Returns(Task.FromException(boom));
 
         await sut.Cron.AddAsync(_CronJob(), AbortToken);
-        var drain = () => sut.Coordinator!.DrainCommitAsync(AbortToken);
+        var drain = () => sut.Coordinator!.CommitAsync();
 
         await drain.Should().NotThrowAsync();
         sut.Logger.Entries.Should()
@@ -718,7 +725,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         var cron = _CronJob();
 
         await sut.Cron.AddAsync(cron, AbortToken);
-        await sut.Coordinator!.DrainRollbackAsync(AbortToken);
+        await sut.Coordinator!.RollbackAsync();
 
         // The row went into the caller's transaction (and is discarded with it); nothing else happened.
         await sut
@@ -780,7 +787,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         sut.Coordinator!.OnCommitCount.Should().Be(2);
         sut.Scheduler.DidNotReceive().Restart();
 
-        await sut.Coordinator.DrainCommitAsync(AbortToken);
+        await sut.Coordinator.CommitAsync();
 
         sut.Coordinator.SynchronousCommitCallbacks.Should().Be(2);
         sut.Signals.PendingCount.Should().Be(2);
@@ -803,7 +810,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         sut.Scheduler.When(x => x.RestartIfNeeded(Arg.Any<DateTime?>())).Do(_ => restarted.TrySetResult());
 
         await sut.Time.AddBatchAsync([due, later], AbortToken);
-        await sut.Coordinator!.DrainCommitAsync(AbortToken);
+        await sut.Coordinator!.CommitAsync();
 
         sut.Coordinator.OnCommitCount.Should().Be(1);
         sut.Signals.PendingCount.Should().Be(1);
@@ -829,7 +836,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         var notified = _NotifiedTimeJob(sut);
 
         await sut.Time.AddAsync(job, AbortToken);
-        var drain = () => sut.Coordinator!.DrainCommitAsync(AbortToken);
+        var drain = () => sut.Coordinator!.CommitAsync();
         await drain.Should().NotThrowAsync();
         await _StartWorkerAsync(sut);
         await notified.Task.WaitAsync(_WaitTimeout, AbortToken);
@@ -859,16 +866,20 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
     }
 
     [Fact]
-    public async Task coordinated_enqueue_registers_no_rollback_callbacks()
+    public async Task coordinated_enqueue_runs_nothing_when_the_scope_rolls_back()
     {
-        // Coordinated side effects must fire only on commit — a rollback discards the row, so the manager must
-        // never register a rollback callback (which would run side effects for work that was rolled back).
+        // Coordinated side effects must fire only on commit — a rollback discards the row, so nothing may reach the
+        // worker or the scheduler for work that was rolled back.
         var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: true);
 
         await sut.Time.AddAsync(_FutureTimeJob(), AbortToken);
-
         sut.Coordinator!.OnCommitCount.Should().Be(1);
-        sut.Coordinator.OnRollbackCount.Should().Be(0);
+
+        await sut.Coordinator.RollbackAsync();
+
+        sut.Signals.PendingCount.Should().Be(0);
+        sut.Scheduler.DidNotReceive().RestartIfNeeded(Arg.Any<DateTime>());
+        await sut.Notification.DidNotReceive().AddTimeJobNotifyAsync(Arg.Any<Guid>());
     }
 
     [Fact]
@@ -885,7 +896,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         await sut
             .Persistence.DidNotReceive()
             .AcquireImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>());
-        await sut.Coordinator!.DrainCommitAsync(AbortToken);
+        await sut.Coordinator!.CommitAsync();
         await sut
             .Persistence.DidNotReceive()
             .AcquireImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>());
@@ -926,7 +937,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         sut.Coordinator!.OnCommitCount.Should().Be(1);
         await sut.Notification.DidNotReceive().AddTimeJobsBatchNotifyAsync();
 
-        await sut.Coordinator.DrainCommitAsync(AbortToken);
+        await sut.Coordinator.CommitAsync();
         sut.Signals.PendingCount.Should().Be(1);
         await _StartWorkerAsync(sut);
         await notified.Task.WaitAsync(_WaitTimeout, AbortToken);
@@ -1026,7 +1037,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
             );
         sut.Scheduler.DidNotReceive().RestartIfNeeded(Arg.Any<DateTime>());
 
-        await sut.Coordinator.DrainCommitAsync(AbortToken);
+        await sut.Coordinator.CommitAsync();
 
         // The cache invalidation is the one side effect that runs on the commit path (R10); restart + notify are
         // handed to the worker.
@@ -1074,7 +1085,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         sut.Scheduler.DidNotReceive().RestartIfNeeded(Arg.Any<DateTime>());
         await sut.Notification.DidNotReceive().AddCronJobNotifyAsync(Arg.Any<CronJobEntity>());
 
-        await sut.Coordinator.DrainCommitAsync(AbortToken);
+        await sut.Coordinator.CommitAsync();
 
         // Cache invalidation fires exactly once for the batch on the commit path; one signal carries the rest.
         await sut.Writer.Received(1).InvalidateCronExpressionsCacheAsync();
@@ -1251,7 +1262,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         await sut.Cron.AddAsync(cron, AbortToken);
         sut.Scheduler.DidNotReceiveWithAnyArgs().RestartIfNeeded(default);
 
-        await sut.Coordinator!.DrainCommitAsync(AbortToken);
+        await sut.Coordinator!.CommitAsync();
         await _StartWorkerAsync(sut);
         await notified.Task.WaitAsync(_WaitTimeout, AbortToken);
 
@@ -1332,15 +1343,16 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         var coordinator = mode switch
         {
             CoordinatorMode.None => null,
-            CoordinatorMode.NonRelational => new FakeCommitCoordinator(relational: null),
-            CoordinatorMode.LiveRelational => new FakeCommitCoordinator(
-                new FakeRelationalCommitContext(_LiveTransaction())
-            ),
-            CoordinatorMode.DeadRelational => new FakeCommitCoordinator(
-                new FakeRelationalCommitContext(transaction: null)
-            ),
+            CoordinatorMode.NonRelational => new CommitScopeProbe(relational: null),
+            CoordinatorMode.LiveRelational => new CommitScopeProbe(new FakeRelationalCommitContext(_LiveTransaction())),
+            CoordinatorMode.DeadRelational => new CommitScopeProbe(new FakeRelationalCommitContext(transaction: null)),
             _ => throw new ArgumentOutOfRangeException(nameof(mode)),
         };
+
+        if (coordinator is not null)
+        {
+            _scopes.Add(coordinator);
+        }
 
         var logger = new CapturingLogger<JobsManager<TimeJobEntity, CronJobEntity>>();
         var signalsLogger = new CapturingLogger<JobsPostCommitSignalService>();
@@ -1508,7 +1520,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         public required IJobsHostScheduler Scheduler { get; init; }
         public required IJobsNotificationHubSender Notification { get; init; }
         public required IJobsDispatcher Dispatcher { get; init; }
-        public required FakeCommitCoordinator? Coordinator { get; init; }
+        public required CommitScopeProbe? Coordinator { get; init; }
         public required JobsManager<TimeJobEntity, CronJobEntity> Manager { get; init; }
         public required CapturingLogger<JobsManager<TimeJobEntity, CronJobEntity>> Logger { get; init; }
         public required JobsPostCommitSignalService Signals { get; init; }
@@ -1552,114 +1564,74 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         public DbTransaction? Transaction { get; } = transaction;
     }
 
-    // Captures registered OnCommit callbacks so a test can assert deferral, then drive them to assert the deferred
-    // work fires post-commit. Mirrors the real coordinator's "register now, drain after commit" contract.
-    private sealed class FakeCommitCoordinator(IRelationalCommitContext? relational) : ICommitCoordinator
+    // A real scope opened through the production factory, wrapped only so a test can observe how many commit
+    // callbacks the manager registered and whether each completed synchronously. The wrapper never runs anything
+    // itself: commit and rollback go through the scope's own signal, exactly as a provider would drive them.
+    private sealed class CommitScopeProbe : ICommitCoordinator, IAsyncDisposable
     {
-        private readonly List<Func<CommitContext, CancellationToken, ValueTask>> _onCommit = [];
-        private readonly List<Func<CommitContext, CancellationToken, ValueTask>> _onRollback = [];
+        private readonly ServiceProvider _services;
+        private readonly ICommitScope _scope;
+        private readonly ICommitCoordinator _coordinator;
 
-        public int OnCommitCount => _onCommit.Count;
+        public CommitScopeProbe(IRelationalCommitContext? relational)
+        {
+            _services = new ServiceCollection().AddCommitCoordination().BuildServiceProvider();
+            _scope = _services.GetRequiredService<ICommitScopeFactory>().Open(relational);
+            _coordinator = _scope.Coordinator;
+        }
 
-        public int OnRollbackCount => _onRollback.Count;
+        public int OnCommitCount { get; private set; }
 
         /// <summary>Commit callbacks whose returned <see cref="ValueTask" /> was already complete when it was returned.</summary>
         public int SynchronousCommitCallbacks { get; private set; }
 
-        public CommitCoordinatorState State => CommitCoordinatorState.Active;
+        public CommitCoordinatorState State => _coordinator.State;
 
-        public IDisposable OnCommit(Func<CommitContext, CancellationToken, ValueTask> work)
+        public IRelationalCommitContext? Relational => _coordinator.Relational;
+
+        public IDisposable OnCommit(Func<ValueTask> work)
         {
-            _onCommit.Add(work);
+            OnCommitCount++;
 
-            return NoopDisposable.Instance;
-        }
-
-        public IDisposable OnRollback(Func<CommitContext, CancellationToken, ValueTask> work)
-        {
-            _onRollback.Add(work);
-
-            return NoopDisposable.Instance;
-        }
-
-        public TBuffer GetOrAdd<TBuffer>(Func<ICommitCoordinator, TBuffer> factory)
-            where TBuffer : class, ICommitWorkBuffer
-        {
-            return factory(this);
-        }
-
-        public TBuffer GetOrAdd<TBuffer, TState>(TState state, Func<ICommitCoordinator, TState, TBuffer> factory)
-            where TBuffer : class, ICommitWorkBuffer
-        {
-            return factory(this, state);
-        }
-
-        public bool TryGetCapability<TCapability>([NotNullWhen(true)] out TCapability? capability)
-            where TCapability : class, ICommitCapability
-        {
-            if (relational is TCapability typed)
+            return _coordinator.OnCommit(() =>
             {
-                capability = typed;
-
-                return true;
-            }
-
-            capability = null;
-
-            return false;
-        }
-
-        public async Task DrainCommitAsync(CancellationToken cancellationToken)
-        {
-            var context = new CommitContext
-            {
-                Services = EmptyServiceProvider.Instance,
-                Outcome = CommitOutcome.Committed,
-            };
-
-            foreach (var work in _onCommit)
-            {
-                var pending = work(context, cancellationToken);
+                var pending = work();
 
                 if (pending.IsCompleted)
                 {
                     SynchronousCommitCallbacks++;
                 }
 
-                await pending;
-            }
+                return pending;
+            });
         }
 
-        // A rollback runs only the rollback callbacks; commit callbacks are discarded with the transaction.
-        public async Task DrainRollbackAsync(CancellationToken cancellationToken)
+        public TState GetOrAdd<TState>(Func<ICommitCoordinator, TState> factory)
+            where TState : class
         {
-            var context = new CommitContext
-            {
-                Services = EmptyServiceProvider.Instance,
-                Outcome = CommitOutcome.RolledBack,
-            };
-
-            foreach (var work in _onRollback)
-            {
-                await work(context, cancellationToken);
-            }
+            return _coordinator.GetOrAdd(factory);
         }
 
-        private sealed class NoopDisposable : IDisposable
+        public TState GetOrAdd<TState, TArg>(TArg arg, Func<ICommitCoordinator, TArg, TState> factory)
+            where TState : class
         {
-            public static readonly NoopDisposable Instance = new();
-
-            public void Dispose() { }
+            return _coordinator.GetOrAdd(arg, factory);
         }
-    }
 
-    private sealed class EmptyServiceProvider : IServiceProvider
-    {
-        public static readonly EmptyServiceProvider Instance = new();
-
-        public object? GetService(Type serviceType)
+        public Task CommitAsync()
         {
-            return null;
+            return _scope.SignalAsync(CommitOutcome.Committed).AsTask();
+        }
+
+        public Task RollbackAsync()
+        {
+            return _scope.SignalAsync(CommitOutcome.RolledBack).AsTask();
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            await _scope.DisposeAsync();
+            await _services.DisposeAsync();
         }
     }
 }

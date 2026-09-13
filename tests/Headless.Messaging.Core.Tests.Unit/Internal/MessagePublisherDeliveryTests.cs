@@ -41,7 +41,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
     )
     {
         var stack = new CommitScopeStack();
-        await using var scope = new CommitScopeFactory(stack).Begin(new EmptyServiceProvider(), []);
+        await using var scope = new CommitScopeFactory(stack).Open(relational: null);
         await using var transaction = Substitute.For<System.Data.Common.DbTransaction>();
         var resolver = Substitute.For<IDeliveryCoordinationResolver>();
         resolver.Resolve(scope.Coordinator).Returns(DeliveryCoordination.Compatible(scope.Coordinator, transaction));
@@ -229,7 +229,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
     )
     {
         var stack = new CommitScopeStack();
-        await using var scope = new CommitScopeFactory(stack).Begin(new EmptyServiceProvider(), []);
+        await using var scope = new CommitScopeFactory(stack).Open(relational: null);
         await using var transaction = Substitute.For<System.Data.Common.DbTransaction>();
         var resolver = Substitute.For<IDeliveryCoordinationResolver>();
         resolver.Resolve(scope.Coordinator).Returns(DeliveryCoordination.Compatible(scope.Coordinator, transaction));
@@ -276,7 +276,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
     )
     {
         var stack = new CommitScopeStack();
-        await using var scope = new CommitScopeFactory(stack).Begin(new EmptyServiceProvider(), []);
+        await using var scope = new CommitScopeFactory(stack).Open(relational: null);
         await using var transaction = Substitute.For<System.Data.Common.DbTransaction>();
         var resolver = Substitute.For<IDeliveryCoordinationResolver>();
         resolver.Resolve(scope.Coordinator).Returns(DeliveryCoordination.Compatible(scope.Coordinator, transaction));
@@ -420,7 +420,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
     )
     {
         var stack = new CommitScopeStack();
-        await using var scope = new CommitScopeFactory(stack).Begin(new EmptyServiceProvider(), []);
+        await using var scope = new CommitScopeFactory(stack).Open(relational: null);
         await using var harness = _CreateHarness(
             currentCommitCoordinator: stack,
             coordinationResolver: static () => new IncompatibleCoordinationResolver()
@@ -447,7 +447,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
     )
     {
         var stack = new CommitScopeStack();
-        await using var scope = new CommitScopeFactory(stack).Begin(new EmptyServiceProvider(), []);
+        await using var scope = new CommitScopeFactory(stack).Open(relational: null);
         await using var harness = _CreateHarness(
             currentCommitCoordinator: stack,
             coordinationResolver: static () => new InactiveCoordinationResolver()
@@ -792,7 +792,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
     public async Task should_send_transport_direct_through_incompatible_coordination_without_storage_side_effects()
     {
         var stack = new CommitScopeStack();
-        await using var scope = new CommitScopeFactory(stack).Begin(new EmptyServiceProvider(), []);
+        await using var scope = new CommitScopeFactory(stack).Open(relational: null);
         await using var harness = _CreateHarness(
             currentCommitCoordinator: stack,
             coordinationResolver: static () => new IncompatibleCoordinationResolver()
@@ -1223,14 +1223,6 @@ public sealed class MessagePublisherDeliveryTests : TestBase
     }
 
     private sealed record DeliveryMessage(string Value);
-
-    private sealed class EmptyServiceProvider : IServiceProvider
-    {
-        public object? GetService(Type serviceType)
-        {
-            return null;
-        }
-    }
 
     private sealed class IncompatibleCoordinationResolver : IDeliveryCoordinationResolver
     {

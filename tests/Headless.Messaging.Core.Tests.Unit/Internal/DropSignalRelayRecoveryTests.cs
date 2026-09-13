@@ -50,10 +50,7 @@ public sealed class DropSignalRelayRecoveryTests : TestBase
 
         var writer = new OutboxMessageWriter(storage, dispatcher, TimeProvider.System);
 
-        var scope = new CommitScopeFactory(stack).Begin(
-            new EmptyServiceProvider(),
-            [new RelationalCommitContext(() => null, () => transaction)]
-        );
+        var scope = new CommitScopeFactory(stack).Open(new RelationalCommitContext(() => null, () => transaction));
 
         await using (scope)
         {
@@ -108,14 +105,6 @@ public sealed class DropSignalRelayRecoveryTests : TestBase
     }
 
     private sealed record RelayMessage(string Value);
-
-    private sealed class EmptyServiceProvider : IServiceProvider
-    {
-        public object? GetService(Type serviceType)
-        {
-            return null;
-        }
-    }
 
     private sealed class NoopPublishMiddlewarePipeline : IPublishMiddlewarePipeline
     {

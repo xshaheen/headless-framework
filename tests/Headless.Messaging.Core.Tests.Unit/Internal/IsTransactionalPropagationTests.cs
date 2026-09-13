@@ -115,10 +115,7 @@ public sealed class IsTransactionalPropagationTests : TestBase
 
         await using var transaction = new TestDbTransaction();
         var stack = new CommitScopeStack();
-        var scope = new CommitScopeFactory(stack).Begin(
-            new EmptyServiceProvider(),
-            [new RelationalCommitContext(() => null, () => transaction)]
-        );
+        var scope = new CommitScopeFactory(stack).Open(new RelationalCommitContext(() => null, () => transaction));
 
         await using (scope)
         {
@@ -271,21 +268,11 @@ public sealed class IsTransactionalPropagationTests : TestBase
         }
     }
 
-    private sealed class EmptyServiceProvider : IServiceProvider
-    {
-        public object? GetService(Type serviceType)
-        {
-            return null;
-        }
-    }
-
     private sealed class TestDeliveryCoordinationResolver : IDeliveryCoordinationResolver
     {
         public DeliveryCoordination Resolve(ICommitCoordinator coordinator)
         {
-            return
-                coordinator.TryGetCapability<IRelationalCommitContext>(out var relational)
-                && relational.Transaction is { } transaction
+            return coordinator.Relational?.Transaction is { } transaction
                 ? DeliveryCoordination.Compatible(coordinator, transaction)
                 : DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.MissingRelationalCapability);
         }
