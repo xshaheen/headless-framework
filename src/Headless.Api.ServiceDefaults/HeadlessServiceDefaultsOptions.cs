@@ -56,6 +56,9 @@ public sealed class HeadlessServiceDefaultsOpenApiOptions
     /// <summary>Whether to register OpenAPI document generation.</summary>
     public bool Enabled { get; set; } = true;
 
+    /// <summary>Surface documents to publish. Null infers registered surfaces; empty selects the ordinary v1 document.</summary>
+    public IReadOnlyCollection<string>? SurfaceDocumentNames { get; set; }
+
     /// <summary>Allows callers to tune ASP.NET Core OpenAPI options.</summary>
     public Action<OpenApiOptions>? ConfigureOpenApi { get; set; }
 

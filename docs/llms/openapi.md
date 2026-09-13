@@ -172,6 +172,26 @@ builder.Services.AddNswagOpenApi(
 
 ### Configuration
 
+#### API surfaces
+
+`AddNswagApiSurfaceDocuments()` infers all document names from surfaces registered with `AddHeadlessApiSurface(...)`. Surface definitions are finalized during registration. Inference closes surface registration, so later additions throw. An optional document list publishes only the selected names and may precede surface registration; each name must match a configured `OpenApi.DocumentName`. No surfaces or an explicit empty list registers no documents.
+
+```csharp
+builder.Services.AddNswagApiSurfaceDocuments(
+    setupGeneratorActions: (settings, surface) => settings.Version = "v1"
+);
+// After building the application and mapping MVC / Minimal API endpoints:
+app.MapNswagApiSurfaceDocuments();
+```
+
+Configure document identity through `surface.OpenApi.DocumentName` and `.Title`. The generator callback cannot rename the document. Surface metadata filters operations before schema generation, excluding other surfaces' paths and schemas. API Explorer groups remain available independently through `settings.ApiGroupNames`; surface registration does not overwrite version groups.
+
+Extra documents can use either `AddNswagOpenApi(...)` or native NSwag `AddOpenApiDocument(...)`. Surface documents use ordinary NSwag registrations without replacing its services. Register each document once across calls. `MapNswagApiSurfaceDocuments()` serves `/openapi/{documentName}.json` and the shared Swagger UI at `/swagger`.
+
+`TenantRequiredExampleOperationProcessor` adds the `tenantRequired` 403 example only for effective `RequireTenant` endpoint metadata. Optional-tenant and anonymous endpoints do not receive it. It also runs for ordinary documents. Authorization responses are created per operation so examples and schemas cannot leak between documents.
+
+Operation IDs use named MVC HTTP attributes and native Minimal API route-name metadata. `UseRouteNameAsOperationId` defaults to `false` because NSwag 14.7.1 dereferences MVC-only route information on Minimal APIs; `UseHttpAttributeNameAsOperationId` defaults to `true`.
+
 `HeadlessNswagOptions` properties (all have defaults — only set what differs):
 
 | Property | Default | Description |
@@ -192,6 +212,7 @@ builder.Services.AddNswagOpenApi(
 
 ### Side Effects
 
+- Surface registration supplies a singleton aggregate NSwag document collection from the finalized surface registry.
 - Registers NSwag OpenAPI document generator via `services.AddOpenApiDocument(...)`
 - `MapNswagOpenApi()` mounts the OpenAPI JSON endpoint at `/openapi/{documentName}.json` and Swagger UI at `/swagger`
 - `MapNswagOpenApiVersions()` mounts one OpenAPI JSON endpoint per API version at `/openapi/{groupName}.json` and a single Swagger UI at `/swagger`
