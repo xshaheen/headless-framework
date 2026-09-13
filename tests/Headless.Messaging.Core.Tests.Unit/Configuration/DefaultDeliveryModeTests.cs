@@ -14,8 +14,6 @@ namespace Tests.Configuration;
 public sealed class DefaultDeliveryModeTests : TestBase
 {
     [Theory]
-    [InlineData(MessageLane.Bus, DeliveryMode.Auto)]
-    [InlineData(MessageLane.Queue, DeliveryMode.Auto)]
     [InlineData(MessageLane.Bus, DeliveryMode.Durable)]
     [InlineData(MessageLane.Queue, DeliveryMode.Durable)]
     [InlineData(MessageLane.Bus, DeliveryMode.Direct)]
@@ -46,8 +44,6 @@ public sealed class DefaultDeliveryModeTests : TestBase
     }
 
     [Theory]
-    [InlineData(MessageLane.Bus, DeliveryMode.Durable, DeliveryMode.Auto)]
-    [InlineData(MessageLane.Queue, DeliveryMode.Durable, DeliveryMode.Auto)]
     [InlineData(MessageLane.Bus, DeliveryMode.Durable, DeliveryMode.Direct)]
     [InlineData(MessageLane.Queue, DeliveryMode.Durable, DeliveryMode.Direct)]
     [InlineData(MessageLane.Bus, DeliveryMode.Direct, DeliveryMode.Durable)]
@@ -74,6 +70,33 @@ public sealed class DefaultDeliveryModeTests : TestBase
         }
 
         await _AssertStoredCountAsync(provider, lane, explicitMode == DeliveryMode.Durable ? 1 : 0);
+    }
+
+    [Theory]
+    [InlineData(MessageLane.Bus, true)]
+    [InlineData(MessageLane.Bus, false)]
+    [InlineData(MessageLane.Queue, true)]
+    [InlineData(MessageLane.Queue, false)]
+    public async Task should_reject_coordinated_mode_outside_a_coordinated_scope_before_any_effect(
+        MessageLane lane,
+        bool viaHostDefault
+    )
+    {
+        await using var provider = _CreateProvider(viaHostDefault ? DeliveryMode.Coordinated : DeliveryMode.Durable);
+        var message = new TestMessage("coordinated");
+        DeliveryMode? explicitMode = viaHostDefault ? null : DeliveryMode.Coordinated;
+
+        var act = () =>
+            lane == MessageLane.Bus
+                ? provider
+                    .GetRequiredService<IBus>()
+                    .PublishAsync(message, new PublishOptions { DeliveryMode = explicitMode }, AbortToken)
+                : provider
+                    .GetRequiredService<IQueue>()
+                    .EnqueueAsync(message, new QueueOptions { DeliveryMode = explicitMode }, AbortToken);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Coordinated*no scope is active*");
+        await _AssertStoredCountAsync(provider, lane, 0);
     }
 
     [Fact]

@@ -11,10 +11,10 @@ public sealed class PublishOptionsTests : TestBase
     public void should_expose_stable_delivery_mode_values()
     {
         // then
-        ((int)DeliveryMode.Auto)
+        ((int)DeliveryMode.Durable)
             .Should()
             .Be(0);
-        ((int)DeliveryMode.Durable).Should().Be(1);
+        ((int)DeliveryMode.Coordinated).Should().Be(1);
         ((int)DeliveryMode.Direct).Should().Be(2);
     }
 
@@ -34,7 +34,7 @@ public sealed class PublishOptionsTests : TestBase
         // given
         var expected = new PublishOptions { DeliveryMode = DeliveryMode.Durable, Delay = TimeSpan.FromMinutes(1) };
         var equivalent = new PublishOptions { DeliveryMode = DeliveryMode.Durable, Delay = TimeSpan.FromMinutes(1) };
-        var differentMode = expected with { DeliveryMode = DeliveryMode.Auto };
+        var differentMode = expected with { DeliveryMode = DeliveryMode.Direct };
         var differentDelay = expected with { Delay = TimeSpan.FromMinutes(2) };
 
         // then

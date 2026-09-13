@@ -68,7 +68,8 @@ public sealed class MessagingInstrumentationTests : TestBase
     }
 
     [Theory]
-    [InlineData(DeliveryMode.Auto, "auto")]
+    [InlineData(DeliveryMode.Durable, "durable")]
+    [InlineData(DeliveryMode.Coordinated, "coordinated")]
     [InlineData(DeliveryMode.Direct, "direct")]
     public void should_tag_only_finite_requested_and_resolved_delivery_modes(
         DeliveryMode requestedMode,
@@ -88,6 +89,24 @@ public sealed class MessagingInstrumentationTests : TestBase
 
         activity.GetTagItem(MessagingTags.RequestedDeliveryMode).Should().Be(requestedTag);
         activity.GetTagItem(MessagingTags.ResolvedDeliveryMode).Should().Be("direct");
+    }
+
+    [Fact]
+    public void should_never_tag_coordinated_as_a_resolved_delivery_mode()
+    {
+        using var activity = new Activity("delivery");
+
+        new DeliveryModeTagEnricher().Enrich(
+            activity,
+            new MessagingEnrichmentContext
+            {
+                RequestedDeliveryMode = DeliveryMode.Coordinated,
+                ResolvedDeliveryMode = DeliveryMode.Coordinated,
+            }
+        );
+
+        activity.GetTagItem(MessagingTags.RequestedDeliveryMode).Should().Be("coordinated");
+        activity.GetTagItem(MessagingTags.ResolvedDeliveryMode).Should().BeNull();
     }
 
     // --- Composition / suppression --------------------------------------------------------------------------

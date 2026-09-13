@@ -14,7 +14,7 @@ public sealed class MessagingBuilderMiddlewareTests : TestBase
     private static DeliveryDecision _DirectDecision =>
         DeliveryDecisionResolver.Resolve(
             MessageLane.Bus,
-            DeliveryMode.Auto,
+            DeliveryMode.Direct,
             delay: null,
             DeliveryCoordination.None,
             DateTimeOffset.UnixEpoch

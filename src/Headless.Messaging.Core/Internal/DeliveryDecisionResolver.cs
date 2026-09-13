@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
+using Headless.CommitCoordination;
 
 namespace Headless.Messaging.Internal;
 
@@ -26,6 +27,15 @@ internal readonly record struct DeliveryDecision(
     internal bool IsTransactional => Path is DeliveryPath.DurableCoordinated;
 }
 
+/// <summary>
+/// Decides the delivery path before any storage or transport effect. The matrix:
+/// <list type="bullet">
+/// <item><c>Durable</c> (default): coordinated capture inside a compatible live scope, standalone store-first
+/// with no scope, rejected inside an incompatible scope.</item>
+/// <item><c>Coordinated</c>: coordinated capture inside a compatible live scope, rejected otherwise.</item>
+/// <item><c>Direct</c>: transport now, bypassing storage and coordination checks; rejects any schedule.</item>
+/// </list>
+/// </summary>
 internal static class DeliveryDecisionResolver
 {
     internal static DeliveryDecision Resolve(
@@ -34,8 +44,9 @@ internal static class DeliveryDecisionResolver
         TimeSpan? delay,
         DeliveryCoordination coordination,
         DateTimeOffset now,
-        DateTimeOffset? scheduledAt = null
-    ) => Resolve(lane, requestedMode, delay, coordination.Status, now, coordination, scheduledAt);
+        DateTimeOffset? scheduledAt = null,
+        bool outboxSupported = true
+    ) => Resolve(lane, requestedMode, delay, coordination.Status, now, coordination, scheduledAt, outboxSupported);
 
     // Manually constructed middleware contexts need delivery semantics without live transaction resources.
     internal static DeliveryDecision Resolve(
@@ -45,7 +56,8 @@ internal static class DeliveryDecisionResolver
         DeliveryCoordinationStatus coordinationStatus,
         DateTimeOffset now,
         DeliveryCoordination coordination = default,
-        DateTimeOffset? scheduledAt = null
+        DateTimeOffset? scheduledAt = null,
+        bool outboxSupported = true
     )
     {
         // Explicit range checks rather than Enum.IsDefined: these run on every publish, and IsDefined
@@ -55,7 +67,7 @@ internal static class DeliveryDecisionResolver
             throw new ArgumentOutOfRangeException(nameof(lane), lane, "A defined messaging lane is required.");
         }
 
-        if (requestedMode is not (DeliveryMode.Auto or DeliveryMode.Durable or DeliveryMode.Direct))
+        if (requestedMode is not (DeliveryMode.Durable or DeliveryMode.Coordinated or DeliveryMode.Direct))
         {
             throw new ArgumentOutOfRangeException(
                 nameof(requestedMode),
@@ -80,11 +92,43 @@ internal static class DeliveryDecisionResolver
             );
         }
 
-        if (coordinationStatus is DeliveryCoordinationStatus.Incompatible && requestedMode is not DeliveryMode.Direct)
+        // Direct bypasses storage and coordination compatibility entirely; every durable request is fenced here,
+        // before the capability gate, storage, or transport can run.
+        if (requestedMode is not DeliveryMode.Direct)
         {
-            throw new InvalidOperationException(
-                $"The active coordination boundary is incompatible with messaging storage ({coordination.Mismatch})."
-            );
+            if (!outboxSupported)
+            {
+                throw new MessagingConfigurationException(
+                    $"{lane} {requestedMode} delivery requires a matching storage capability contribution."
+                );
+            }
+
+            if (coordinationStatus is DeliveryCoordinationStatus.Incompatible)
+            {
+                throw new InvalidOperationException(
+                    $"The active coordination boundary is incompatible with messaging storage ({coordination.Mismatch})."
+                );
+            }
+
+            // Storage resolvers report a finished coordinator as InactiveTransaction, so this only fires for a
+            // compatible coordination built by hand; it keeps "live" a resolver guarantee rather than a provider one.
+            if (
+                coordinationStatus is DeliveryCoordinationStatus.Compatible
+                && coordination.Coordinator is { State: not CommitCoordinatorState.Active } coordinator
+            )
+            {
+                throw new InvalidOperationException(
+                    $"The active coordination boundary is no longer live ({coordinator.State}); durable capture cannot enlist in it."
+                );
+            }
+
+            if (requestedMode is DeliveryMode.Coordinated && coordinationStatus is DeliveryCoordinationStatus.None)
+            {
+                throw new InvalidOperationException(
+                    "Coordinated delivery requires a compatible live commit-coordination scope, but no scope is active. "
+                        + "Open a coordinated transaction before publishing, or request Durable delivery to store the message standalone."
+                );
+            }
         }
 
         if (delay is not null && scheduledAt is not null)
@@ -131,15 +175,12 @@ internal static class DeliveryDecisionResolver
             throw new InvalidOperationException("Direct delivery cannot specify a schedule.");
         }
 
+        // Coordinated is a requested-side strictness, not a third resolved mode: once its guards pass it is
+        // durable capture on the caller's transaction, and the headers and telemetry report it that way.
         var resolvedMode = requestedMode switch
         {
             DeliveryMode.Direct => DeliveryMode.Direct,
-            DeliveryMode.Durable => DeliveryMode.Durable,
-            // publishAt, not delay: an absolute schedule must upgrade Auto to durable the same way a relative
-            // delay does, otherwise a scheduled Auto send would resolve to a direct publish with no storage.
-            DeliveryMode.Auto when publishAt is not null => DeliveryMode.Durable,
-            DeliveryMode.Auto when coordinationStatus is DeliveryCoordinationStatus.Compatible => DeliveryMode.Durable,
-            DeliveryMode.Auto => DeliveryMode.Direct,
+            DeliveryMode.Durable or DeliveryMode.Coordinated => DeliveryMode.Durable,
             _ => throw new UnreachableException(),
         };
 

@@ -186,12 +186,23 @@ public sealed class PublishContext<TMessage> : PublishContext, ICompletablePubli
     /// <param name="defaultDeliveryMode">The host delivery mode inherited when the options do not specify one.</param>
     /// <param name="now">The resolution timestamp used to calculate <see cref="PublishContext.PublishAt"/> in UTC.</param>
     /// <param name="isTransactional">Whether to resolve delivery against a compatible ambient commit boundary.</param>
+    /// <param name="isStorageSupported">
+    /// Whether the host declares messaging storage for <paramref name="lane"/>. Defaults to <see langword="true"/>,
+    /// which mirrors every real host because storage is mandatory at startup; pass <see langword="false"/> to
+    /// exercise the rejection a durable request receives on a misconfigured host.
+    /// </param>
     /// <param name="cancellationToken">The token forwarded to middleware.</param>
     /// <exception cref="ArgumentOutOfRangeException">
     /// The lane or effective delivery mode is undefined, or the delay is nonpositive or overflows the timestamp range.
     /// </exception>
     /// <exception cref="ArgumentException">Both a relative delay and an absolute schedule are specified.</exception>
-    /// <exception cref="InvalidOperationException">Direct delivery specifies a relative or absolute schedule.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// Direct delivery specifies a relative or absolute schedule, or Coordinated delivery is requested while
+    /// <paramref name="isTransactional"/> is <see langword="false"/>.
+    /// </exception>
+    /// <exception cref="MessagingConfigurationException">
+    /// Durable or Coordinated delivery is requested while <paramref name="isStorageSupported"/> is <see langword="false"/>.
+    /// </exception>
     public PublishContext(
         TMessage? content,
         MessageLane lane,
@@ -199,6 +210,7 @@ public sealed class PublishContext<TMessage> : PublishContext, ICompletablePubli
         DeliveryMode defaultDeliveryMode,
         DateTimeOffset now,
         bool isTransactional = false,
+        bool isStorageSupported = true,
         CancellationToken cancellationToken = default
     )
         : base(
@@ -213,7 +225,8 @@ public sealed class PublishContext<TMessage> : PublishContext, ICompletablePubli
                 options?.Delay,
                 isTransactional ? DeliveryCoordinationStatus.Compatible : DeliveryCoordinationStatus.None,
                 now.ToUniversalTime(),
-                scheduledAt: options?.ScheduledAt
+                scheduledAt: options?.ScheduledAt,
+                outboxSupported: isStorageSupported
             ),
             deliveryFrozen: false,
             cancellationToken

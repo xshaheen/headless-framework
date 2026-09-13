@@ -37,13 +37,16 @@ public abstract record MessageOptions
     /// </summary>
     public const int TenantIdMaxLength = 200;
 
-    /// <summary>Gets the per-call delivery override. Null inherits the host default, which is Auto.</summary>
+    /// <summary>
+    /// Gets the per-call delivery override. Null inherits the host default, which is <see cref="DeliveryMode.Durable"/>
+    /// unless <c>MessagingOptions.DefaultDeliveryMode</c> selects another mode.
+    /// </summary>
     public DeliveryMode? DeliveryMode { get; init; }
 
     /// <summary>Gets the relative delay applied before the durably captured message is dispatched.</summary>
     /// <remarks>
-    /// A delay requires durable delivery. With <see cref="DeliveryMode.Auto"/> it selects durable capture;
-    /// with <see cref="DeliveryMode.Direct"/> the operation is rejected.
+    /// A delay requires durable capture: it is honored with <see cref="DeliveryMode.Durable"/> and
+    /// <see cref="DeliveryMode.Coordinated"/>, and rejected before any side effect with <see cref="DeliveryMode.Direct"/>.
     /// </remarks>
     public TimeSpan? Delay { get; init; }
 
@@ -51,9 +54,9 @@ public abstract record MessageOptions
     /// <remarks>
     /// <para>
     /// This is the absolute spelling of <see cref="Delay"/> and carries the same contract: it requires durable
-    /// delivery, so with <see cref="DeliveryMode.Auto"/> it selects durable capture and with
-    /// <see cref="DeliveryMode.Direct"/> the operation is rejected. Setting both this and
-    /// <see cref="Delay"/> on the same call is rejected before any side effect.
+    /// capture, so it is honored with <see cref="DeliveryMode.Durable"/> and <see cref="DeliveryMode.Coordinated"/>
+    /// and rejected with <see cref="DeliveryMode.Direct"/>. Setting both this and <see cref="Delay"/> on the same
+    /// call is rejected before any side effect.
     /// </para>
     /// <para>
     /// Eligibility is normalized to UTC with sub-microsecond ticks truncated to match all storage providers.

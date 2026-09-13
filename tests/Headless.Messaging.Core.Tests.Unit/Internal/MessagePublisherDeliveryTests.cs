@@ -22,14 +22,16 @@ public sealed class MessagePublisherDeliveryTests : TestBase
     [Theory]
     [InlineData(MessageLane.Bus, DeliveryMode.Direct, false, false, null)]
     [InlineData(MessageLane.Queue, DeliveryMode.Direct, false, false, "caller-id")]
-    [InlineData(MessageLane.Bus, DeliveryMode.Auto, false, false, "caller-id")]
-    [InlineData(MessageLane.Queue, DeliveryMode.Auto, false, false, null)]
     [InlineData(MessageLane.Bus, DeliveryMode.Durable, false, false, null)]
     [InlineData(MessageLane.Queue, DeliveryMode.Durable, false, false, "caller-id")]
-    [InlineData(MessageLane.Bus, DeliveryMode.Auto, true, false, "caller-id")]
-    [InlineData(MessageLane.Queue, DeliveryMode.Auto, true, false, null)]
-    [InlineData(MessageLane.Bus, DeliveryMode.Auto, false, true, null)]
-    [InlineData(MessageLane.Queue, DeliveryMode.Auto, false, true, "caller-id")]
+    [InlineData(MessageLane.Bus, DeliveryMode.Durable, true, false, "caller-id")]
+    [InlineData(MessageLane.Queue, DeliveryMode.Durable, true, false, null)]
+    [InlineData(MessageLane.Bus, DeliveryMode.Durable, false, true, null)]
+    [InlineData(MessageLane.Queue, DeliveryMode.Durable, false, true, "caller-id")]
+    [InlineData(MessageLane.Bus, DeliveryMode.Coordinated, true, false, "caller-id")]
+    [InlineData(MessageLane.Queue, DeliveryMode.Coordinated, true, false, null)]
+    [InlineData(MessageLane.Bus, DeliveryMode.Coordinated, true, true, null)]
+    [InlineData(MessageLane.Queue, DeliveryMode.Coordinated, true, true, "caller-id")]
     public async Task should_return_the_accepted_message_identity_and_actual_storage_handle(
         MessageLane lane,
         DeliveryMode mode,
@@ -113,7 +115,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
             receipt.MessageId.Should().Be(messageId);
         }
 
-        if (mode == DeliveryMode.Durable || coordinated || scheduled)
+        if (mode != DeliveryMode.Direct)
         {
             stored.Should().NotBeNull();
             receipt.StorageId.Should().Be(storageId);
@@ -195,10 +197,11 @@ public sealed class MessagePublisherDeliveryTests : TestBase
     [Theory]
     [InlineData(MessageLane.Bus)]
     [InlineData(MessageLane.Queue)]
-    public async Task should_use_auto_by_default_outside_coordination(MessageLane lane)
+    public async Task should_store_durably_by_default_outside_coordination(MessageLane lane)
     {
         await using var harness = _CreateHarness();
-        var message = new DeliveryMessage("auto-default");
+        var stored = _CaptureStoredMessage(harness.Storage);
+        var message = new DeliveryMessage("durable-default");
         if (lane == MessageLane.Bus)
         {
             IBus bus = new Bus(harness.Publisher);
@@ -210,8 +213,112 @@ public sealed class MessagePublisherDeliveryTests : TestBase
             await queue.EnqueueAsync(message, AbortToken);
         }
 
-        var sent = harness.TransportMessages.Should().ContainSingle().Subject;
-        sent.Headers[Headers.RequestedDeliveryMode].Should().Be(nameof(DeliveryMode.Auto));
+        harness.TransportMessages.Should().BeEmpty("a default publish never reaches the transport directly");
+        stored.Value.Should().NotBeNull();
+        stored.Value!.Lane.Should().Be(lane);
+        stored.Value.Origin.Headers[Headers.RequestedDeliveryMode].Should().Be(nameof(DeliveryMode.Durable));
+        stored.Value.Origin.Headers[Headers.ResolvedDeliveryMode].Should().Be(nameof(DeliveryMode.Durable));
+        harness.Dispatcher.CommittedMessages.Should().ContainSingle().Which.Should().BeSameAs(stored.Value);
+    }
+
+    [Theory]
+    [InlineData(MessageLane.Bus)]
+    [InlineData(MessageLane.Queue)]
+    public async Task should_store_a_default_publish_inside_a_compatible_scope_on_the_captured_transaction(
+        MessageLane lane
+    )
+    {
+        var stack = new CommitScopeStack();
+        await using var scope = new CommitScopeFactory(stack).Begin(new EmptyServiceProvider(), []);
+        await using var transaction = Substitute.For<System.Data.Common.DbTransaction>();
+        var resolver = Substitute.For<IDeliveryCoordinationResolver>();
+        resolver.Resolve(scope.Coordinator).Returns(DeliveryCoordination.Compatible(scope.Coordinator, transaction));
+        await using var harness = _CreateHarness(currentCommitCoordinator: stack, coordinationResolver: () => resolver);
+        var stored = _CaptureStoredMessage(harness.Storage);
+
+        await harness.Publisher.PublishAsync(lane, new DeliveryMessage("coordinated-default"), null, AbortToken);
+
+        harness.TransportMessages.Should().BeEmpty();
+        stored.Value.Should().NotBeNull();
+        stored.Value!.Origin.Headers[Headers.RequestedDeliveryMode].Should().Be(nameof(DeliveryMode.Durable));
+        stored.Value.Origin.Headers[Headers.ResolvedDeliveryMode].Should().Be(nameof(DeliveryMode.Durable));
+        await harness
+            .Storage.Received(1)
+            .StoreMessageAsync(Arg.Any<string>(), Arg.Any<MediumMessage>(), transaction, Arg.Any<CancellationToken>());
+        // Dispatch waits for the caller's commit; nothing is handed to the dispatcher while the scope is open.
+        harness.Dispatcher.CommittedMessages.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(MessageLane.Bus)]
+    [InlineData(MessageLane.Queue)]
+    public async Task should_reject_coordinated_without_coordination_before_any_side_effect(MessageLane lane)
+    {
+        await using var harness = _CreateHarness();
+        MessageOptions options =
+            lane == MessageLane.Bus
+                ? new PublishOptions { DeliveryMode = DeliveryMode.Coordinated }
+                : new QueueOptions { DeliveryMode = DeliveryMode.Coordinated };
+
+        var act = () => harness.Publisher.PublishAsync(lane, new DeliveryMessage("coordinated"), options, AbortToken);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Coordinated*");
+        harness.TransportMessages.Should().BeEmpty();
+        harness.Storage.ReceivedCalls().Should().BeEmpty();
+        harness.Dispatcher.CommittedMessages.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(DeliveryMode.Coordinated)]
+    [InlineData(DeliveryMode.Durable)]
+    public async Task should_reject_durable_delivery_through_incompatible_coordination_before_any_side_effect(
+        DeliveryMode mode
+    )
+    {
+        var stack = new CommitScopeStack();
+        await using var scope = new CommitScopeFactory(stack).Begin(new EmptyServiceProvider(), []);
+        await using var harness = _CreateHarness(
+            currentCommitCoordinator: stack,
+            coordinationResolver: static () => new IncompatibleCoordinationResolver()
+        );
+
+        var act = () =>
+            harness.Publisher.PublishAsync(
+                MessageLane.Bus,
+                new DeliveryMessage("coordinated"),
+                new PublishOptions { DeliveryMode = mode },
+                AbortToken
+            );
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*incompatible*");
+        harness.TransportMessages.Should().BeEmpty();
+        harness.Storage.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(DeliveryMode.Coordinated)]
+    [InlineData(DeliveryMode.Durable)]
+    public async Task should_reject_durable_delivery_when_the_scope_is_no_longer_live_before_any_side_effect(
+        DeliveryMode mode
+    )
+    {
+        var stack = new CommitScopeStack();
+        await using var scope = new CommitScopeFactory(stack).Begin(new EmptyServiceProvider(), []);
+        await using var harness = _CreateHarness(
+            currentCommitCoordinator: stack,
+            coordinationResolver: static () => new InactiveCoordinationResolver()
+        );
+
+        var act = () =>
+            harness.Publisher.PublishAsync(
+                MessageLane.Queue,
+                new DeliveryMessage("stale"),
+                new QueueOptions { DeliveryMode = mode },
+                AbortToken
+            );
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*InactiveTransaction*");
+        harness.TransportMessages.Should().BeEmpty();
         harness.Storage.ReceivedCalls().Should().BeEmpty();
     }
 
@@ -512,20 +619,20 @@ public sealed class MessagePublisherDeliveryTests : TestBase
     }
 
     [Fact]
-    public async Task should_send_auto_directly_without_coordination_or_storage_side_effects()
+    public async Task should_send_explicit_direct_without_coordination_or_storage_side_effects()
     {
         await using var harness = _CreateHarness();
 
         await harness.Publisher.PublishAsync(
             MessageLane.Bus,
             new DeliveryMessage("direct"),
-            new PublishOptions { DeliveryMode = DeliveryMode.Auto },
+            new PublishOptions { DeliveryMode = DeliveryMode.Direct },
             AbortToken
         );
 
         harness.TransportLanes.Should().ContainSingle().Which.Should().Be(MessageLane.Bus);
         var sent = harness.TransportMessages.Should().ContainSingle().Which;
-        sent.Headers[Headers.RequestedDeliveryMode].Should().Be(nameof(DeliveryMode.Auto));
+        sent.Headers[Headers.RequestedDeliveryMode].Should().Be(nameof(DeliveryMode.Direct));
         sent.Headers[Headers.ResolvedDeliveryMode].Should().Be(nameof(DeliveryMode.Direct));
         await harness
             .Storage.DidNotReceive()
@@ -725,7 +832,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
     }
 
     [Fact]
-    public async Task should_schedule_auto_delay_at_the_single_resolved_timestamp()
+    public async Task should_schedule_a_default_mode_delay_at_the_single_resolved_timestamp()
     {
         var now = new DateTimeOffset(2026, 7, 26, 12, 0, 0, TimeSpan.Zero);
         var timeProvider = new FakeTimeProvider(now);
@@ -751,7 +858,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         await harness.Publisher.PublishAsync(
             MessageLane.Bus,
             new DeliveryMessage("delayed"),
-            new PublishOptions { DeliveryMode = DeliveryMode.Auto, Delay = TimeSpan.FromMinutes(5) },
+            new PublishOptions { Delay = TimeSpan.FromMinutes(5) },
             AbortToken
         );
 
@@ -854,7 +961,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         ISerializer? serializer = null,
         ICurrentCommitCoordinator? currentCommitCoordinator = null,
         Func<IDeliveryCoordinationResolver?>? coordinationResolver = null,
-        DeliveryMode defaultDeliveryMode = DeliveryMode.Auto,
+        DeliveryMode defaultDeliveryMode = DeliveryMode.Durable,
         IPublishMiddleware<PublishContext>? middleware = null
     )
     {
@@ -985,6 +1092,42 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         {
             return DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.MissingRelationalCapability);
         }
+    }
+
+    // Mirrors what every storage resolver returns once the coordinator has left the Active state.
+    private sealed class InactiveCoordinationResolver : IDeliveryCoordinationResolver
+    {
+        public DeliveryCoordination Resolve(ICommitCoordinator coordinator)
+        {
+            return DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.InactiveTransaction);
+        }
+    }
+
+    private sealed class StoredMessageCapture
+    {
+        public MediumMessage? Value { get; set; }
+    }
+
+    private static StoredMessageCapture _CaptureStoredMessage(IDataStorage storage)
+    {
+        var capture = new StoredMessageCapture();
+#pragma warning disable AsyncFixer04 // Substitute configuration completes before the awaited publish.
+        storage
+            .StoreMessageAsync(
+                Arg.Any<string>(),
+                Arg.Any<MediumMessage>(),
+                Arg.Any<System.Data.Common.DbTransaction?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(call =>
+            {
+                var stored = call.ArgAt<MediumMessage>(1);
+                stored.StorageId = Guid.NewGuid();
+                capture.Value = stored;
+                return ValueTask.FromResult(stored);
+            });
+#pragma warning restore AsyncFixer04
+        return capture;
     }
 
     private sealed class RecordingTransport(MessageLane lane, List<MessageLane> lanes, List<TransportMessage> messages)

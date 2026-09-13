@@ -383,12 +383,12 @@ internal static class MessagingMetrics
 
     private static void _AddDeliveryTags(ref TagList tags, in DeliveryMetadataValues delivery)
     {
-        if (DeliveryModeTagEnricher.ToTagValue(delivery.RequestedDeliveryMode) is { } requested)
+        if (DeliveryModeTagEnricher.ToRequestedTagValue(delivery.RequestedDeliveryMode) is { } requested)
         {
             tags.Add(MessagingTags.RequestedDeliveryMode, requested);
         }
 
-        if (DeliveryModeTagEnricher.ToTagValue(delivery.ResolvedDeliveryMode) is { } resolved)
+        if (DeliveryModeTagEnricher.ToResolvedTagValue(delivery.ResolvedDeliveryMode) is { } resolved)
         {
             tags.Add(MessagingTags.ResolvedDeliveryMode, resolved);
         }

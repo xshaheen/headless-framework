@@ -18,7 +18,7 @@ internal sealed class MessagePublisher(
     Func<OutboxMessageWriter?> outboxWriterResolver,
     MessagingTelemetry? telemetry = null,
     TimeSpan? transportPublishTimeout = null,
-    DeliveryMode defaultDeliveryMode = DeliveryMode.Auto
+    DeliveryMode defaultDeliveryMode = DeliveryMode.Durable
 )
 {
     private readonly MessagingTelemetry _telemetry = telemetry ?? MessagingTelemetry.Default;
@@ -38,13 +38,16 @@ internal sealed class MessagePublisher(
         // AsyncLocal state must be captured in the caller's execution context, before any middleware await.
         var coordinator = currentCommitCoordinator.Current;
         var coordination = _ResolveCoordination(coordinator);
+        // Storage support is a resolver input, not a pipeline probe: the outbox writer is registered unconditionally
+        // and throws when storage is missing, so a durable request on a storage-less host is refused here first.
         var decision = DeliveryDecisionResolver.Resolve(
             lane,
             options?.DeliveryMode ?? defaultDeliveryMode,
             options?.Delay,
             coordination,
             timeProvider.GetUtcNow(),
-            scheduledAt: options?.ScheduledAt
+            scheduledAt: options?.ScheduledAt,
+            outboxSupported: capabilities.IsOutboxSupported(lane)
         );
 
         if (decision.Path is DeliveryPath.Direct)

@@ -244,7 +244,7 @@ public sealed class FluentOptionsConsumerCompilationTests : TestBase
         var source = _RuntimeSource(
             """
             _ = new JobOptionsBuilder().WithRetries(0).Build();
-            _ = new PublishOptionsBuilder().WithHeader("source", "checkout").Build() with { DeliveryMode = DeliveryMode.Auto };
+            _ = new PublishOptionsBuilder().WithHeader("source", "checkout").Build() with { DeliveryMode = DeliveryMode.Direct };
             _ = new QueueOptionsBuilder().WithDelay(TimeSpan.FromSeconds(1)).Build();
             _ = bus.PublishAsync<Request>(null, p => p.WithCorrelationId("order"), ct);
             _ = queue.EnqueueAsync<Request>(null, p => p.WithCorrelationId("order"), ct);

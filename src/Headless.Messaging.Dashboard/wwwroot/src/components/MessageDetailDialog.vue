@@ -5,7 +5,7 @@ import { escapeHtml } from '@/utilities/html-escape'
 import { formatDateTime, timeAgo } from '@/utilities/dateTimeParser'
 
 export type MessageLane = 'Bus' | 'Queue'
-export type DeliveryMode = 'Auto' | 'Durable' | 'Direct'
+export type DeliveryMode = 'Durable' | 'Coordinated' | 'Direct'
 
 export interface MessageDetail {
   storageId: string

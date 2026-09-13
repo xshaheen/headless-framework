@@ -49,7 +49,7 @@ public sealed class MessagingTelemetryTests : TestBase
             extraHeaders: new Dictionary<string, string?>(StringComparer.Ordinal)
             {
                 [Headers.TenantId] = "tenant-7",
-                [Headers.RequestedDeliveryMode] = nameof(DeliveryMode.Auto),
+                [Headers.RequestedDeliveryMode] = nameof(DeliveryMode.Coordinated),
                 [Headers.ResolvedDeliveryMode] = nameof(DeliveryMode.Direct),
             }
         );
@@ -74,7 +74,7 @@ public sealed class MessagingTelemetryTests : TestBase
             ]);
         publish.GetTagItem(MessagingTags.Lane).Should().Be("bus");
         publish.GetTagItem(MessagingTags.TenantId).Should().Be("tenant-7");
-        publish.GetTagItem(MessagingTags.RequestedDeliveryMode).Should().Be("auto");
+        publish.GetTagItem(MessagingTags.RequestedDeliveryMode).Should().Be("coordinated");
         publish.GetTagItem(MessagingTags.ResolvedDeliveryMode).Should().Be("direct");
         MessagingTelemetry.PublishStop(publish, publishMessage, _Broker, 200, 260);
 
