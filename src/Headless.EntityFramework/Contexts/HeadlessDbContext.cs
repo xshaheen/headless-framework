@@ -121,8 +121,8 @@ public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext, IHeadle
     public abstract string? DefaultSchema { get; }
 
     /// <summary>
-    /// Returns the tenant identifier captured from the ambient <c>ICurrentTenant</c> when this instance
-    /// was created. The multi-tenancy global query filter and the write guard both read this value.
+    /// Returns the active ambient <c>ICurrentTenant</c> identifier on each read.
+    /// The multi-tenancy global query filter and the write guard both read this value.
     /// </summary>
     public string? TenantId => _runtime.TenantId;
 

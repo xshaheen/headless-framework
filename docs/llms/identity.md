@@ -39,7 +39,11 @@ Register with `services.AddHeadlessDbContext<TDbContext, TUser, TRole, TKey, ...
 - Your `DbContext` subclass constructor must forward to `base(services, options)` — the `HeadlessDbContextServices` parameter is required and injected by the DI container. EF Core pooling (`AddDbContextPool`) is incompatible with this constructor shape and is explicitly documented as unsupported.
 - `AddHeadlessDbContext` sets `IdentityOptions.Stores.SchemaVersion = IdentitySchemaVersions.Version3` once, guarded by a sentinel so multiple calls do not repeat it. If a host must target an older schema, add `services.Configure<IdentityOptions>(o => o.Stores.SchemaVersion = IdentitySchemaVersions.Version1)` **after** the `AddHeadlessDbContext` call (later `Configure` delegates win in the standard options pipeline).
 - All ORM conventions from `Headless.EntityFramework` apply: audit columns, soft-delete query filters, domain-event dispatch on `SaveChanges`, multi-tenancy tenant-write guard, and the `DefaultSchema` hook. Override `DefaultSchema` to namespace all Identity tables under a custom schema (e.g., `"identity"`).
-- Do NOT call `AddIdentityCore<TUser>().AddEntityFrameworkStores<TDbContext>()` separately — `AddHeadlessDbContext` does not register `UserManager`/`RoleManager`. Add those via the standard `services.AddIdentityCore<TUser>().AddRoles<TRole>().AddEntityFrameworkStores<TDbContext>()` chain after the `AddHeadlessDbContext` call. The context registration order does not matter; the stores attach to whichever `TDbContext` is registered with EF.
+- Register Identity managers and stores separately through `services.AddIdentityCore<TUser>().AddRoles<TRole>().AddEntityFrameworkStores<TDbContext>()`. `AddHeadlessDbContext` registers the context, not `UserManager` or `RoleManager`.
+- Opt in to tenant-owned Identity explicitly with `ConfigureTenantOwnedIdentity(modelBuilder)` after `base.OnModelCreating(modelBuilder)`. Register `AddHeadlessTenantWriteGuard()` for automatic tenant stamping before tracking. No tenancy interfaces are required.
+- Use fresh DI scopes for contexts, stores, `UserManager`, and `RoleManager` when changing tenants. Filters do not protect an already tracked `FindAsync` match. Existing Identity ownership is immutable through tenant alternate keys, even under write-guard bypass.
+- Preserve Identity primary-key shapes and global user/role IDs, external-login pairs, and passkey credential IDs. Tenant-scoped names do not make those global keys reusable across tenants.
+- Ship consumer migrations and explicit tenant backfills before enabling tenant-owned Identity. Validate canonical equality, lengths, trailing spaces, duplicate tenant names, and same-tenant relationships before enforcing constraints.
 - For Identity-only projects that do not use the full framework save pipeline, this package is NOT appropriate — use `Microsoft.AspNetCore.Identity.EntityFrameworkCore` directly.
 
 ## Core Concepts
@@ -93,6 +97,7 @@ Entity Framework Core integration for ASP.NET Core Identity with framework EF Co
 - 8-type-parameter form (passkey hard-wired to `IdentityUserPasskey<TKey>`) and 9-type-parameter form (explicit `TUserPasskey`) for .NET 10 passkey-aware stores
 - `services.AddHeadlessDbContext<TDbContext, TUser, TRole, TKey, ...>()` registration extension — mirrors the plain `AddHeadlessDbContext` API with additional Identity type parameters
 - Full framework save pipeline: audit, soft delete, domain events, multi-tenancy query filters
+- Explicit `ConfigureTenantOwnedIdentity(ModelBuilder)` opt-in for tenant ownership without custom interfaces, tenant-scoped names, and database-enforced same-tenant relationships
 - `IDbContextFactory<TDbContext>` registered automatically (singleton) for factory-created, scope-owning contexts
 - `DefaultSchema` abstract member lets each derived context namespace all Identity tables under a custom schema
 - `IdentityOptions.Stores.SchemaVersion` defaulted to `IdentitySchemaVersions.Version3` (passkey table support) — guarded by sentinel so multiple `AddHeadlessDbContext` calls are idempotent
@@ -198,6 +203,72 @@ builder.Services.Configure<IdentityOptions>(o => o.Stores.SchemaVersion = Identi
 ```
 
 Service lifetimes default to `ServiceLifetime.Scoped` for both the context and its options. Override via the `contextLifetime` / `optionsLifetime` parameters when needed.
+
+#### Tenant-owned Identity
+
+The protected `ConfigureTenantOwnedIdentity(ModelBuilder)` helper is defined on the nine-type-parameter base and inherited by the convenience form. Call it in your context after the base model call:
+
+```csharp
+protected override void OnModelCreating(ModelBuilder modelBuilder)
+{
+	base.OnModelCreating(modelBuilder);
+	ConfigureTenantOwnedIdentity(modelBuilder);
+}
+```
+
+Enable the write guard separately:
+
+```csharp
+builder.Services.AddHeadlessTenantWriteGuard();
+
+// Alternative when composing root tenancy:
+builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites()));
+```
+
+The helper configures the actual generic user, role, user claim, role claim, login, membership, token, and present passkey types at model finalization. Every included type requires a mapped or shadow tenant string. Ordinary Identity models remain unchanged unless they opt in. Schema version 2 excludes passkeys; the helper does not add them back.
+
+| Model element | Tenant-owned behavior |
+|---|---|
+| Normalized username and role name | Unique indexes append the tenant column, so equal names can exist in different tenants |
+| Email | Existing non-unique email index remains; configured `IdentityOptions.User.RequireUniqueEmail` validation uses tenant-filtered manager/store queries |
+| User and role | Existing `Id` primary keys remain globally unique; alternate keys `(TenantId, Id)` support relationships |
+| Claims, logins, memberships, tokens, and present passkeys | Composite foreign keys include tenant plus the user or role ID, replacing the corresponding original foreign keys |
+| Login, membership, token, and passkey primary keys | Existing shapes remain; the external-login `(LoginProvider, ProviderKey)` pair and passkey credential ID remain globally unique |
+
+Composite foreign keys reject cross-tenant links even through direct SQL. Existing delete behavior and supported navigation customizations are preserved; ambiguous or incompatible relationship mappings fail model validation.
+
+With the guard enabled, missing tenants are captured before entries become Added. An add under A followed by a save under B fails. Without the guard, supply every tenant value before tracking, including shadow values. Existing user and role tenant ownership is immutable because it participates in alternate keys; write-guard bypass does not permit reassignment.
+
+Use fresh DI scopes for the context, stores, `UserManager`, and `RoleManager` across tenant changes. `TenantId` reads the active ambient tenant dynamically, but tracked entities remain in the context. `FindAsync` can return a tracked match without executing the tenant filter.
+
+Missing ambient context or a missing required tenant on an Added entry throws `MissingTenantContextException`. Cross-tenant writes and existing-row original/current mismatches throw `CrossTenantWriteException`. These guard failures precede local handler dispatch; required key values can fail during tracking. Generated updates and deletes include the original tenant alongside Identity's existing concurrency tokens. SQL zero-row results remain `DbUpdateConcurrencyException` at the context boundary and may occur after local handlers run. A failed save prevents durable outbox persistence, but cannot undo local or external handler effects.
+
+Read-filter bypass and write-guard bypass are independent. Neither removes SQL concurrency predicates or database constraints. Bulk query operations consume query filters but skip the save guard. Raw SQL commands require explicit tenant predicates and authorization; `BeginBypass()` has no effect on them.
+
+#### Tenant key storage and rollout
+
+New tenant columns default to 41 characters (`DomainConstants.IdMaxLength`). Otherwise unbounded string Identity keys default to 128 characters within this opt-in. Compatible explicit lengths are preserved and propagated to dependent foreign-key columns. All Identity tenant columns must use one consistent length. Conflicting lengths and explicit unbounded store types such as `text` or `nvarchar(max)` are rejected.
+
+For a string-key model where `AppUser` derives from `IdentityUser<string>` and `AppRole` from `IdentityRole<string>`, compatible overrides can follow the helper call:
+
+```csharp
+modelBuilder.Entity<AppUser>().Property(x => x.Id).HasMaxLength(96);
+modelBuilder.Entity<AppRole>().Property(x => x.Id).HasMaxLength(96);
+modelBuilder.Entity<AppUser>().Property<string>("TenantId").HasMaxLength(64);
+```
+
+SQL Server validates the 900-byte budget for primary, alternate, and foreign keys and rejects unsafe configured lengths instead of silently shrinking them. The upstream passkey primary-key declaration `varbinary(1024)` is retained. That declaration does not mean SQL Server accepts a 1,024-byte credential ID: such an insert exceeds its 900-byte key limit. Ordinary shorter credentials work.
+
+Tenant columns use SQL Server `Latin1_General_100_BIN2` or PostgreSQL `C` collation. Only tenant collation changes; equality of other Identity key columns remains provider-defined. Trailing U+0020 in tenant IDs is rejected at EF read/write boundaries and by database checks. IDs are never trimmed or normalized.
+
+Consumers own the schema migration and the tenant assignment for existing rows:
+
+1. Add new tenant columns as nullable.
+2. Backfill all Identity rows from verified ownership relationships, including dependents. Do not assign a silent default tenant.
+3. Validate tenant identity, equality, lengths, and trailing spaces. Resolve duplicate normalized names within each tenant and parent-child tenant mismatches.
+4. Apply required columns, canonical collations, checks, tenant alternate keys, replacement composite foreign keys, and tenant-scoped unique indexes. Review and execute the migration for the target provider before enabling the model.
+
+Review existing interface-owned tenant columns too: they gain canonical collation, trailing-space checks, and tenant concurrency-token metadata even outside Identity opt-in. No migration or backfill runs automatically.
 
 ### Dependencies
 

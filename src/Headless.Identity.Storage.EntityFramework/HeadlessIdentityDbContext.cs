@@ -129,8 +129,8 @@ public abstract class HeadlessIdentityDbContext<
     public abstract string? DefaultSchema { get; }
 
     /// <summary>
-    /// Gets the tenant identifier resolved from the ambient tenant context at the time this
-    /// context was created, or <see langword="null"/> when running outside a tenant scope.
+    /// Gets the active ambient tenant identifier on each read,
+    /// or <see langword="null"/> when running outside a tenant scope.
     /// </summary>
     public string? TenantId => _runtime.TenantId;
 

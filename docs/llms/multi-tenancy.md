@@ -76,7 +76,7 @@ Headless multi-tenancy is built from these pieces:
 - `Headless.Api.Core` resolves tenant context for HTTP requests via `UseHeadlessTenancy()` (claim-based, post-authentication) and, when a catalog is configured, via `UseHeadlessTenantCatalogResolution()` (identifier-based, pre-authentication). It can enforce tenant presence before endpoint execution through `.Authorization(auth => auth.RequireTenant())`.
 - `Headless.Messaging.Core` propagates tenant context across message publish/consume and can require tenant context on publish.
 - `Headless.Jobs.Core` persists a tenant on time jobs — capturing the ambient tenant at schedule time and restoring it around every execution attempt — and can require a tenant on enqueue. Cron stays system-scope.
-- `Headless.EntityFramework` reads `ICurrentTenant.Id` in global query filters for `IMultiTenant` entities and can opt in to a save-time tenant write guard.
+- `Headless.EntityFramework` reads `ICurrentTenant.Id` in global query filters for finalized tenant-owned metadata and can opt in to tenant validation and Added-transition stamping.
 - `Headless.Permissions.Core` scopes permission grant cache keys by tenant via `ScopedCache<PermissionGrantCacheItem>`.
 
 For tenant-aware hosts, the recommended setup is:
@@ -116,8 +116,9 @@ app.UseAuthorization();
 - The default claim type is `tenant_id`. Override it with `ResolveFromClaims(options => options.ClaimType = "...")` only when your identity system uses a different claim name.
 - Mint the tenant claim only on principals that are actually scoped to a tenant. Host-level, admin, service-account, or cross-tenant principal types should not carry the claim — `ICurrentTenant.IsAvailable` stays false for them by design.
 - When no tenant claim is present, the middleware intentionally skips `Change(null)`. This preserves the distinction between "never set" and "explicitly null".
-- For EF Core, inherit from `HeadlessDbContext` and let the built-in model processor apply tenant filters to `IMultiTenant` entities.
-- Declare `IMultiTenant` on aggregates owned by exactly one tenant. Keep platform-level entities (cross-tenant infrastructure, audit/outbox rows, shared catalogs, materialized cross-tenant projections) outside the filter. See [Entity Ownership](#entity-ownership).
+- For EF Core, declare `IsTenantOwned()` after the base model call or use default `IMultiTenant` ownership. Keep platform-level entities outside tenant ownership. See [Entity Ownership](#entity-ownership).
+- Use fresh context and Identity store/manager scopes across tenant changes; `FindAsync` can return tracked entities without executing filters. Register the guard for metadata-only Added stamping, or supply tenant values before tracking.
+- Raw SQL requires explicit tenant predicates and authorization. `BeginBypass()` has no effect on raw SQL and never removes SQL predicates or database constraints from tracked writes.
 - When using `IgnoreMultiTenancyFilter()`, add an inline `// MULTI-TENANCY-BYPASS: <reason>` comment naming the approved scenario (cross-tenant snapshot, admin lookup, system maintenance, etc.) so reviewers and post-incident readers can distinguish legitimate bypasses from drift.
 - Enable strict EF tenant writes with `.EntityFramework(ef => ef.GuardTenantWrites())` or the lower-level `services.AddHeadlessTenantWriteGuard()` when tenant-owned saves must fail without a matching tenant context.
 - Use `ITenantWriteGuardBypass.BeginBypass()` only around intentional admin or host-level writes. `IgnoreMultiTenancyFilter()` affects reads only; it does not bypass guarded writes.
@@ -491,29 +492,38 @@ The pre-auth identifier-resolution path is reachable by unauthenticated callers 
 
 ## EF Core Integration
 
-`Headless.EntityFramework` applies tenant-aware global filters for `IMultiTenant` entities through its model conventions. To participate:
+`Headless.EntityFramework` finalizes tenant ownership after application model configuration. To participate:
 
 - Inherit from `HeadlessDbContext`
 - Call `base.OnModelCreating(modelBuilder)`
-- Ensure your entity implements `IMultiTenant`
+- Declare `IsTenantOwned()` on the entity builder, or use the default ownership inferred from `IMultiTenant`
 
-With tenant resolution active, queries automatically filter on `TenantId == ICurrentTenant.Id`. The filter is wired by `HeadlessDbContextRuntime._ConfigureQueryFilters` and registered under the constant `HeadlessQueryFilters.MultiTenancyFilter` (whose literal string value is `"MultiTenantFilter"`). Because `IQueryable<T>.ExecuteUpdate(...)` and `IQueryable<T>.ExecuteDelete(...)` consume the same `IQueryable<T>`, bulk update and bulk delete inherit the tenant predicate and are scoped to the current tenant by default. Per-query opt-out is `IgnoreMultiTenancyFilter()`, which audit-logs the bypass via `HeadlessQueryFilters._LogFilterBypassed`.
+Queries compare the mapped or shadow tenant property with the active `ICurrentTenant.Id`. The named filter is `HeadlessQueryFilters.MultiTenancyFilter` (literal `"MultiTenantFilter"`); existing application filters remain. `ExecuteUpdate` and `ExecuteDelete` inherit the query predicate, but bypass the `SaveChanges` guard and generated concurrency predicates. `IgnoreMultiTenancyFilter()` bypasses the filter for that query.
 
 ### Entity Ownership
 
-The decision of whether an entity declares `IMultiTenant` is per-aggregate and load-bearing — it controls whether the global query filter and (if enabled) the write guard cover it.
+Ownership is a root-level model policy that controls query filters, optional write validation, and tenant SQL concurrency predicates.
 
-- **Tenant-owned aggregates** (rows whose lifetime and visibility belong to exactly one tenant) declare `: IMultiTenant`. Headless then scopes reads, `ExecuteUpdate`, `ExecuteDelete`, and guarded saves automatically.
+- Tenant-owned aggregates use `IsTenantOwned(propertyName = "TenantId")` or implement `IMultiTenant`. Explicit `IsNotTenantOwned()` excludes a root even when it implements the interface. New metadata-only roots require a tenant; existing interface nullability is preserved outside Identity opt-in.
 - **Platform-level entities** do not declare `IMultiTenant`. These cover cross-tenant infrastructure (outbox rows, audit log events, system schedules), shared catalogs (vendor / product / lookup tables that span tenants), and materialized cross-tenant read models or crosswalks. Filtering them per-tenant would either hide rows from legitimate readers or force every consumer to bypass the filter.
 - **The entity that defines the tenant boundary itself** — the row whose `Id` is the `TenantId` — is a deliberate special case. Marking it `IMultiTenant` forces every lookup through `ICurrentTenant`, which usually breaks admin and bootstrap paths (tenant onboarding, support tooling, cross-tenant administration). Treat this as a deferred design decision; protect those rows with admin-policy authorization rather than the query filter unless you have an explicit reason to do otherwise.
 
-When retrofitting `IMultiTenant` onto an existing entity, ship the type change and the schema change in the same PR. The EF migration must:
+Declare ownership after `base.OnModelCreating(modelBuilder)`. Shared-row and JSON owned graphs inherit root policy. Keyless/shared CLR types, TPT/TPC, table fragments, separate roots sharing a table, and separately stored owned graphs are rejected. Select unique indexes with `IsTenantScoped()` to append the tenant once in ascending order; ordinary primary keys and unselected indexes stay unchanged. See [ORM tenant ownership](orm.md#tenant-ownership) for APIs and examples.
 
-1. Add a `TenantId` column as `NOT NULL` using the same width as the rest of your tenancy schema (e.g., `text` for free-form IDs, `varchar(N)` when fixed-length parity matters for joins or indexes).
-2. Backfill `TenantId` in the same migration from the existing owning-tenant relationship, so the `NOT NULL` constraint can be enforced atomically.
-3. Add a covering index shaped like `(TenantId, ...existing-key-columns)` so the new filter predicate does not regress existing query plans.
+Canonical tenant columns use SQL Server `Latin1_General_100_BIN2` or PostgreSQL `C` collation. EF read/write boundaries reject IDs ending in U+0020, and database checks enforce that restriction for persisted values. Canonical IDs are never trimmed or normalized. Existing nullable interface-owned host rows remain valid.
 
-Splitting these across PRs leaves the entity in a state where the query filter is active but the column is missing or unindexed, which manifests as runtime exceptions or sequential scans rather than a clean failure.
+Consumers own schema rollout for both new metadata ownership and affected existing `IMultiTenant` columns:
+
+1. Add new tenant columns as nullable.
+2. Backfill from verified ownership relationships. Do not assign a silent default tenant.
+3. Validate tenant identity, equality, lengths, trailing spaces, duplicate names within a tenant, and parent-child tenant consistency.
+4. Apply required columns, canonical collations, checks, alternate keys, composite foreign keys, and selected unique indexes as applicable before enabling the new model.
+
+Existing interface columns also gain canonical collation, trailing-space checks, and tenant concurrency-token metadata. Review generated migrations for every affected provider. No backfill or migration runs automatically.
+
+Identity has a separate explicit opt-in: call `ConfigureTenantOwnedIdentity(modelBuilder)` after the base model call. It scopes normalized user/role names and enforces same-tenant dependent relationships with composite foreign keys. IDs and existing login, membership, token, and passkey primary-key shapes remain unchanged; external-login pairs and passkey credential IDs remain global. See [Identity tenant configuration](identity.md#tenant-owned-identity) for required values, key limits, and rollout.
+
+Use fresh contexts and fresh Identity store/manager DI scopes across tenant changes. The context's `TenantId` reads active ambient state, but a query filter cannot sanitize an already tracked `FindAsync` match. Existing Identity tenant ownership is immutable through alternate keys, even under write-guard bypass.
 
 ### EF Tenant Write Guard
 
@@ -531,14 +541,18 @@ For package-level wiring without the root tenancy surface, the lower-level regis
 builder.Services.AddHeadlessTenantWriteGuard();
 ```
 
-When enabled, `SaveChanges()` and `SaveChangesAsync()` reject unsafe `IMultiTenant` writes before persistence, audit capture, and domain-message publishing:
+When enabled, the guard reads finalized ownership metadata and rejects in-memory mismatches before local handler dispatch and persistence:
 
-- Added tenant-owned entities require a non-blank `ICurrentTenant.Id`. If `TenantId` is empty, the processor stamps the current tenant before saving.
+- A missing tenant is stamped before the entry becomes Added, including state transitions. Supplied values are preserved; adding under A and saving under B fails.
 - Added tenant-owned entities with a different explicit `TenantId` fail with `CrossTenantWriteException`.
 - Modified, soft-deleted, and physically deleted tenant-owned entities must belong to the current tenant or fail with `CrossTenantWriteException`.
 - Non-tenant entities are not blocked by the guard.
 
-Missing tenant context uses the shared `Headless.MultiTenancy.MissingTenantContextException`, so HTTP hosts using `UseExceptionHandler()` get the existing normalized 403 mapping. Cross-tenant mutation uses `Headless.MultiTenancy.CrossTenantWriteException` (defined in `Headless.MultiTenancy.Abstractions` to keep the failure shared across packages without forcing an Api → EF project reference).
+Metadata-only stamping requires the guard. Without it, assign mapped or shadow tenant values before tracking. Legacy unguarded save-time stamping remains limited to `IMultiTenant`. Required Identity keys can cause a missing-tenant failure during tracking, before `SaveChanges`.
+
+Tenant SQL concurrency tokens remain enabled independently of the guard and preserve other concurrency tokens. A detached update or delete with a forged original tenant cannot affect a different persisted tenant. A zero-row result remains `DbUpdateConcurrencyException`, which can occur after local handlers have run. Failed database persistence prevents durable outbox persistence; it cannot undo local or external handler effects.
+
+Missing ambient context or a missing required tenant on an Added entry uses `Headless.MultiTenancy.MissingTenantContextException`, with the existing normalized HTTP 403 mapping. Cross-tenant mutation and existing-row original/current tenant mismatches use `Headless.MultiTenancy.CrossTenantWriteException`.
 
 `HeadlessApiExceptionHandler` (registered by `AddHeadlessProblemDetails()`) maps `CrossTenantWriteException` to HTTP 409 Conflict with the `g:cross_tenant_write` error descriptor and emits a structured warning log (event name `CrossTenantWriteException`). No exception data is leaked into the response body — only the descriptor code and title.
 
@@ -557,21 +571,25 @@ using (bypass.BeginBypass())
 
 `IgnoreMultiTenancyFilter()` is only a read-side query-filter bypass. Loading a row through `IgnoreMultiTenancyFilter()` does not permit cross-tenant updates or deletes when the write guard is enabled; wrap only the intended write in `ITenantWriteGuardBypass.BeginBypass()`.
 
+Write-guard bypass does not remove SQL tenant predicates, required columns, or database constraints, and does not supply a valid original tenant. It has no effect on raw SQL.
+
 ## Messaging Exhausted Callbacks
 
 When messaging tenant propagation is enabled, exhausted callbacks restore `ICurrentTenant` from the message envelope before invoking `RetryPolicy.OnExhausted`. This applies to publish failures, consume failures, and poisoned-on-arrival messages that bypass normal consumer execution. Missing, whitespace, or oversized tenant headers resolve to no tenant, matching consume-side lenient header handling.
 
 ### Defense Layers and Known Gaps
 
-`IMultiTenant` writes are protected by two complementary layers, plus paths that remain out of scope:
+Tenant-owned entities use several enforcement mechanisms with different boundaries:
 
-1. **Global query filter** — always on for `IMultiTenant` entities. Registered as `HeadlessQueryFilters.MultiTenancyFilter` (string value `"MultiTenantFilter"`). Scopes reads, `IQueryable<T>.ExecuteUpdate(...)`, and `IQueryable<T>.ExecuteDelete(...)` to the current tenant. Opt-out is `IgnoreMultiTenancyFilter()` (audit-logged).
-2. **`SaveChanges` write guard** — opt-in via `.EntityFramework(ef => ef.GuardTenantWrites())`. Operates on EF's `ChangeTracker`. Catches `Add` / `Update` / `Remove` / tracked-property-mutation paths and rejects unsafe writes with `CrossTenantWriteException` before persistence.
+| Path | Protection and limit |
+|---|---|
+| LINQ reads | Tenant query filter; tracked `FindAsync` matches can bypass query execution |
+| `ExecuteUpdate` / `ExecuteDelete` | Query filter only; no `SaveChanges` guard or generated tenant concurrency predicate |
+| Tracked and detached `SaveChanges` writes | Optional in-memory guard plus tenant concurrency predicates on generated updates/deletes |
+| Tenant-owned Identity relationships | Composite foreign keys enforce same-tenant links, including direct SQL writes |
+| Raw SQL commands, stored procedures, Dapper, and direct commands | No query-filter or write-guard enforcement; existing database constraints still apply |
 
-Known gaps:
-
-- **Attach-then-modify.** An attacker-controlled `Attach` populates `OriginalValue` from caller-supplied state, so the in-memory guard's `OriginalValue == currentTenantId` check passes for a row that actually belongs to another tenant. The global query filter does not cover this path because the attacker never queries the row. A SQL-level concurrency-style `WHERE TenantId = @currentTenantId` predicate on the SaveChanges-generated UPDATE/DELETE is the planned follow-up, tracked in the security follow-up issue on the project tracker.
-- **Raw SQL and out-of-band data access** are out of scope for both layers. This covers EF's own raw paths (`DbContext.Database.ExecuteSql(...)`, `ExecuteSqlInterpolated(...)`, `ExecuteSqlRaw(...)`, `FromSqlRaw(...)`, `SqlQueryRaw(...)`), stored procedures, triggers, and any code that opens its own command or connection — Dapper, other micro-ORMs, and direct `DbContext.Database.GetDbConnection()` usage all bypass the query filter and write guard entirely, including `MultiTenantFilter`. Consumers issuing raw SQL against `IMultiTenant` tables must scope manually with a `WHERE "TenantId" = @currentTenantId` predicate sourced from `ICurrentTenant.Id`, or wrap the call in `ITenantWriteGuardBypass.BeginBypass()` under an authenticated, audited host context.
+Raw SQL requires explicit tenant predicates sourced from trusted context and authorization for the operation. `ITenantWriteGuardBypass.BeginBypass()` provides no protection for raw SQL. Do not treat filter bypass as authorization, or SQL constraints as a complete authorization policy.
 
 ## Permissions and Caching
 
