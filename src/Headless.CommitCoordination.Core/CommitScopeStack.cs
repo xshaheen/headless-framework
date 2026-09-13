@@ -15,13 +15,6 @@ internal sealed class CommitScopeStack : ICurrentCommitCoordinator
     [SuppressMessage(
         "Performance",
         "CA1822:Mark members as static",
-        Justification = "This property is intentionally instance-shaped for DI consumers."
-    )]
-    internal CommitCoordinator? CurrentCore => _Current.Value?.Coordinator;
-
-    [SuppressMessage(
-        "Performance",
-        "CA1822:Mark members as static",
         Justification = "This method is intentionally instance-shaped for the registered stack service."
     )]
     internal IDisposable Push(CommitCoordinator coordinator)

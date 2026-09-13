@@ -7,7 +7,6 @@
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.CommitCoordination.EntityFramework" />
-    <InternalsVisibleTo Include="Headless.CommitCoordination.InMemory" />
     <InternalsVisibleTo Include="Headless.CommitCoordination.PostgreSql" />
     <InternalsVisibleTo Include="Headless.CommitCoordination.SqlServer" />
     <InternalsVisibleTo Include="Headless.CommitCoordination.Tests.Harness" />
