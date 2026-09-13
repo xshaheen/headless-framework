@@ -8,6 +8,7 @@ Provides ephemeral message storage without database dependencies for local devel
 
 ## Key Features
 
+- `IMessageRevocationStorage` atomically deletes a scheduled row before reservation, fenced by storage version, terminal status, and retry state. Claimed but unreserved rows remain revocable; deleted rows cannot be restored by reservation or shutdown flush.
 - **Zero Dependencies**: No database required
 - **Fast**: In-memory operations
 - **Testing**: Deterministic behavior for tests

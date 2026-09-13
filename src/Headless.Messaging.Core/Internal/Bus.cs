@@ -42,12 +42,16 @@ internal sealed class Bus : IBus
         );
     }
 
-    public Task PublishAsync<T>(T? contentObj, CancellationToken cancellationToken = default)
+    public Task<PublishReceipt> PublishAsync<T>(T? contentObj, CancellationToken cancellationToken = default)
     {
         return PublishAsync(contentObj, options: null, cancellationToken);
     }
 
-    public Task PublishAsync<T>(T? contentObj, PublishOptions? options, CancellationToken cancellationToken = default)
+    public Task<PublishReceipt> PublishAsync<T>(
+        T? contentObj,
+        PublishOptions? options,
+        CancellationToken cancellationToken = default
+    )
     {
         return _publisher.PublishAsync(MessageLane.Bus, contentObj, options, cancellationToken);
     }

@@ -23,7 +23,7 @@ namespace Tests;
 /// Inherits from <see cref="DataStorageTestsBase"/> to run standard storage tests.
 /// </summary>
 [Collection<PostgreSqlTestFixture>]
-public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : DataStorageTestsBase
+public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : DataStorageTestsBase
 {
     [Theory]
     [InlineData(MessageLane.Bus, 0L)]

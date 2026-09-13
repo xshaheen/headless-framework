@@ -47,6 +47,27 @@ public abstract record MessageOptions
     /// </remarks>
     public TimeSpan? Delay { get; init; }
 
+    /// <summary>Gets the absolute UTC instant before which the durably captured message is not dispatched.</summary>
+    /// <remarks>
+    /// <para>
+    /// This is the absolute spelling of <see cref="Delay"/> and carries the same contract: it requires durable
+    /// delivery, so with <see cref="DeliveryMode.Auto"/> it selects durable capture and with
+    /// <see cref="DeliveryMode.Direct"/> the operation is rejected. Setting both this and
+    /// <see cref="Delay"/> on the same call is rejected before any side effect.
+    /// </para>
+    /// <para>
+    /// Eligibility is normalized to UTC with sub-microsecond ticks truncated to match all storage providers.
+    /// Timing is <b>not-before</b>: dispatch happens at or after that normalized instant with no upper latency bound.
+    /// An instant already in the past is accepted and becomes immediately eligible.
+    /// </para>
+    /// <para>
+    /// This is delivery-eligibility state, not an immutable audit field. Scheduling here carries no key, no
+    /// replace, and no tenant scoping — for a keyed, replaceable, or tenant-scoped deadline, schedule a job that
+    /// publishes on execution instead.
+    /// </para>
+    /// </remarks>
+    public DateTimeOffset? ScheduledAt { get; init; }
+
     /// <summary>
     /// Gets the explicit message name override. When <see langword="null"/>, the message name is resolved from mappings or conventions.
     /// </summary>
@@ -151,6 +172,7 @@ public abstract record MessageOptions
 
         return DeliveryMode == other.DeliveryMode
             && Nullable.Equals(Delay, other.Delay)
+            && Nullable.Equals(ScheduledAt, other.ScheduledAt)
             && string.Equals(MessageName, other.MessageName, StringComparison.Ordinal)
             && string.Equals(ContractVersion, other.ContractVersion, StringComparison.Ordinal)
             && string.Equals(RoutingAffinityKey, other.RoutingAffinityKey, StringComparison.Ordinal)
@@ -175,6 +197,7 @@ public abstract record MessageOptions
         var hash = new HashCode();
         hash.Add(DeliveryMode);
         hash.Add(Delay);
+        hash.Add(ScheduledAt);
         hash.Add(MessageName, StringComparer.Ordinal);
         hash.Add(ContractVersion, StringComparer.Ordinal);
         hash.Add(RoutingAffinityKey, StringComparer.Ordinal);

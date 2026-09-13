@@ -111,9 +111,13 @@ Explicit per-call modes override the host setting. Auto follows the framework tr
 an active incompatible boundary → reject before side effects. Durable forces
 store-first regardless of transaction state. Direct bypasses storage and coordination
 compatibility checks even inside a transaction — an explicit, diagnostically-logged escape from
-atomicity. `Delay` requires storage:
+atomicity. The mutually exclusive `Delay` and `ScheduledAt` options require storage:
 under Auto it upgrades the call to durable; with explicit Direct it is an error; dispatch
-timing is best-effort (not-before semantics).
+timing is best-effort (not-before semantics). `ScheduledAt` accepts an absolute instant, including a past instant.
+Both verbs return `PublishReceipt`; durable delivery includes a `StorageId`, while direct delivery does not.
+`IMessageRevoker` deletes a scheduled row by that handle until its first dispatch reservation.
+Only `Revoked` proves prevention. `AttemptReserved` is not proof of delivery. Revocation retains no audit record.
+Use Jobs for keyed, replaceable, tenant-scoped, or transactional business deadlines.
 
 ## Flagged ambiguities
 

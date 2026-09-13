@@ -1187,7 +1187,7 @@ public sealed class DistributedLockTests : TestBase
         var provider = _CreateProvider();
         var resource = Faker.Random.AlphaNumeric(10);
         _bus.PublishAsync(Arg.Any<DistributedLockReleased>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(_ => throw new InvalidOperationException("bus down"));
+            .Returns<PublishReceipt>(_ => throw new InvalidOperationException("bus down"));
 
         var acquiredLock = await provider.TryAcquireAsync(resource, cancellationToken: AbortToken);
         acquiredLock.Should().NotBeNull();

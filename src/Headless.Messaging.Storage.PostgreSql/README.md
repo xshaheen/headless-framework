@@ -8,6 +8,7 @@ Provides durable raw ADO.NET message storage using PostgreSQL with automatic sch
 
 ## Key Features
 
+- `IMessageRevocationStorage` atomically deletes a scheduled row before reservation, fenced by storage version, terminal status, and retry state. Claimed but unreserved rows remain revocable; deleted rows cannot be restored by reservation or shutdown flush.
 - **Provider-neutral storage**: no EF Core or commit-coordination dependency
 - **Schema Bootstrap**: Automatic table and index creation, including durable bus/queue intent columns
 - **GUID Row IDs**: Message storage identifiers come from the `Version7` keyed `IGuidGenerator` and are persisted as PostgreSQL `UUID` columns

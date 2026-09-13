@@ -90,7 +90,9 @@ public sealed class MessagingOptionsExtensionsTests : TestBase
         var queue = Substitute.For<IQueue>();
         var callerToken = new CancellationToken(canceled: true);
         var failure = new InvalidOperationException("publisher failed");
-        var original = cancel ? Task.FromCanceled(callerToken) : Task.FromException(failure);
+        var original = cancel
+            ? Task.FromCanceled<PublishReceipt>(callerToken)
+            : Task.FromException<PublishReceipt>(failure);
         bus.PublishAsync("message", Arg.Any<PublishOptions>(), callerToken).Returns(original);
         queue.EnqueueAsync("message", Arg.Any<QueueOptions>(), callerToken).Returns(original);
         var calls = 0;
@@ -115,7 +117,7 @@ public sealed class MessagingOptionsExtensionsTests : TestBase
 
         calls.Should().Be(1);
         result.Should().BeSameAs(original);
-        Func<Task> observe = () => result;
+        Func<Task<PublishReceipt>> observe = () => result;
         if (cancel)
         {
             await observe.Should().ThrowAsync<OperationCanceledException>();

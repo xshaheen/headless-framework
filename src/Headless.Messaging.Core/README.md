@@ -8,9 +8,11 @@ Provides the foundational runtime for reliable distributed messaging with transa
 
 ## Key Features
 
+- `IMessageRevoker` deletes a scheduled row by `PublishReceipt.StorageId` before its first dispatch reservation. It returns `Revoked`, `NotFound`, or `AttemptReserved`, retains no audit record, and is not tenant-scoped. Use Jobs for keyed, replaceable, tenant-scoped, or transactional deadlines.
+- `PublishReceipt` carries the resolved wire `MessageId` and nullable durable `StorageId`. Direct delivery returns no storage handle. Middleware suppression before terminal publication returns both values null. A coordinated receipt remains subject to transaction commit or rollback and never implies consumer completion.
 - **Verb-Conveyed Lanes**: `IBus` selects broadcast Bus semantics and `IQueue` selects point-to-point Queue semantics; immutable delivery modes control persistence without changing the lane
 - **Outbox Delivery**: Transactional message publishing with database consistency
-- **Scheduled Delivery**: `PublishOptions.Delay` and `QueueOptions.Delay` defer outbox dispatch
+- **Scheduled Delivery**: `Delay` or absolute `ScheduledAt` on publish and queue options defers outbox dispatch
 - **Lane-Owned Consumer Management**: `setup.Bus.ForMessage<TMessage>(...)`, `setup.Queue.ForMessage<TMessage>(...)`, lane-scoped assembly scanning, invocation, and per-dispatch lifecycle handling
 - **Registration Builders**: `IBusMessageBuilder<TMessage>`, `IQueueMessageBuilder<TMessage>`, and their lane-matched consumer builders live under `Headless.Messaging.Registration`; lambda setup usually infers them, while explicit references should import that namespace
 - **Public Runtime SPI**: the blessed cross-package contracts consumed by storage providers, transports, and dashboards — `IProcessingServer`, `IConsumerServiceSelector`, and `MethodMatcherCache` — live under `Headless.Messaging.Runtime` (the `TransportNaming` / `RuntimeTypeInspection` helpers there are `internal`, shared with first-party transports via `InternalsVisibleTo`) (previously `Headless.Messaging.Internal`, which now holds only implementation detail); monitoring status is the typed `StatusName` enum under `Headless.Messaging.Monitoring`, so `MessageView.StatusName` and the `MessageQuery.StatusName` filter are compile-time safe while the persisted/serialized value stays the enum member name
@@ -247,7 +249,7 @@ Use bus publishers for broadcast publish/subscribe delivery:
 
 - `IBus` always selects the Bus lane.
 - An unset `PublishOptions.DeliveryMode` inherits `MessagingOptions.DefaultDeliveryMode`, which defaults to Auto. Explicit modes override that setting. Direct bypasses storage and any ambient coordination boundary.
-- `PublishOptions.Delay` schedules durable delivery; Direct with a delay is rejected.
+- `PublishOptions.Delay` or `PublishOptions.ScheduledAt` schedules durable delivery. Supply one scheduling form; Direct rejects either form.
 - Stored rows and consume contexts carry `MessageLane.Bus`.
 
 ### Queue Publishers
@@ -256,7 +258,7 @@ Use queue publishers for point-to-point competing-worker delivery:
 
 - `IQueue` always selects the Queue lane.
 - An unset `QueueOptions.DeliveryMode` inherits `MessagingOptions.DefaultDeliveryMode`, which defaults to Auto. Explicit modes override that setting. Direct bypasses storage and any ambient coordination boundary.
-- `QueueOptions.Delay` schedules durable delivery; Direct with a delay is rejected.
+- `QueueOptions.Delay` or `QueueOptions.ScheduledAt` schedules durable delivery. Supply one scheduling form; Direct rejects either form.
 - Stored rows and consume contexts carry `MessageLane.Queue`.
 
 ### Publisher Contracts
@@ -358,9 +360,11 @@ Registration scopes:
 - `AddConsumeMiddlewareFor<TMiddleware, TMessage>(group)`: typed consume middleware for one message type and consumer group.
 - `.WithPriority(int)`: lower values run first; ties use registration order. Framework tenant propagation middleware uses priority `-1000`, so user middleware defaults (`0`) run after tenant restoration/stamping.
 
-Middleware can short-circuit by returning without calling `next`. Use ordinary `try/catch` around `await next()` for compensation and error policy. The framework still guards two runtime invariants: post-success middleware failures are logged and suppressed only after the inner ring completed, and cancellation matching `context.CancellationToken` is never silently swallowed. Production publish contexts freeze the delivery mode and delay before middleware runs. Middleware can change other options before `await next()`; all mutations throw after `next()` returns. Reads, including `IsTransactional`, remain valid.
+Middleware can short-circuit by returning without calling `next`. Use ordinary `try/catch` around `await next()` for compensation and error policy. The framework still guards two runtime invariants: post-success middleware failures are logged and suppressed only after the inner ring completed, and cancellation matching `context.CancellationToken` is never silently swallowed. Production publish contexts freeze the delivery mode, `Delay`, and `ScheduledAt` before middleware runs. Middleware can change other options before `await next()`; all mutations throw after `next()` returns. Reads, including `IsTransactional`, remain valid.
 
-For middleware tests and tooling, `new PublishContext<T>(content, lane, options, defaultDeliveryMode, now, isTransactional, cancellationToken)` requires the host default and resolution timestamp explicitly. The constructor uses the canonical delivery resolver with `options?.DeliveryMode ?? defaultDeliveryMode` and `options?.Delay`. It rejects Direct delivery with a delay and invalid lanes, effective modes, or delays. Delayed contexts calculate `PublishAt` in UTC from `now` plus the delay. `isTransactional` models a compatible ambient commit boundary; `IsTransactional` is true only when the resolved delivery uses that boundary. Manually constructed contexts remain mutable until `MarkCompleted()` and do not own a live transaction.
+For middleware tests and tooling, `new PublishContext<T>(content, lane, options, defaultDeliveryMode, now, isTransactional, cancellationToken)` requires the host default and resolution timestamp explicitly. The constructor uses the canonical delivery resolver with `options?.DeliveryMode ?? defaultDeliveryMode` and both scheduling options. It rejects simultaneous `Delay` and `ScheduledAt`, Direct delivery with either schedule, and invalid lanes, effective modes, or delays. Scheduled contexts calculate `PublishAt` from the relative delay or absolute instant. `isTransactional` models a compatible ambient commit boundary; `IsTransactional` is true only when the resolved delivery uses that boundary. Manually constructed contexts remain mutable until `MarkCompleted()` and do not own a live transaction.
+
+Absolute schedules retain the requested instant in UTC as `ScheduledAt`; `PublishAt` floors that instant to microsecond precision, matching runtime publication.
 
 ### Multi-Tenancy Propagation
 
@@ -679,6 +683,7 @@ Delivery mode tags use lowercase values on spans and metrics. `headless.messagin
 
 ## Side Effects
 
+- Registers singleton `IMessageRevoker`, backed by the configured storage provider's optional revocation capability
 - Starts background hosted services for message processing
 - Starts the always-on `DeadOwnerRecoveryBridge<MessagingDeadOwnerReclaimer>` hosted service
 - Creates database tables for outbox storage (via storage provider)

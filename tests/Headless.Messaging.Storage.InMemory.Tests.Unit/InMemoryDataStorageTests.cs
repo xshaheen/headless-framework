@@ -29,7 +29,7 @@ namespace Tests;
 /// DI Setup. Each test gets a fresh storage instance — InMemory state is per-instance, so
 /// no cross-test cleanup is needed beyond letting the storage go out of scope.
 /// </remarks>
-public sealed class InMemoryDataStorageTests : DataStorageTestsBase
+public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
 {
     [Theory]
     [InlineData(MessageLane.Bus, 0L)]

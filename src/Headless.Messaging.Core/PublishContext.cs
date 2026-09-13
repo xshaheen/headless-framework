@@ -33,6 +33,7 @@ public abstract class PublishContext
         ResolvedDeliveryMode = decision.ResolvedMode;
         OptionsCore = options;
         DelayTime = decision.Delay;
+        ScheduledAt = decision.ScheduledAt;
         PublishAt = decision.PublishAt;
         IsTransactional = decision.IsTransactional;
         DeliveryFrozen = deliveryFrozen;
@@ -79,6 +80,9 @@ public abstract class PublishContext
     /// <summary>Gets the scheduled delay for this operation. <see langword="null"/> means immediate publish.</summary>
     public TimeSpan? DelayTime { get; private set; }
 
+    /// <summary>Gets the caller's absolute schedule for this operation, when one was supplied instead of a delay.</summary>
+    public DateTimeOffset? ScheduledAt { get; }
+
     /// <summary>Gets the resolved UTC not-before timestamp for delayed delivery.</summary>
     public DateTimeOffset? PublishAt { get; }
 
@@ -119,6 +123,11 @@ public abstract class PublishContext
         if (DeliveryFrozen && options?.Delay != DelayTime)
         {
             throw new InvalidOperationException("Publish middleware cannot change the resolved delivery delay.");
+        }
+
+        if (DeliveryFrozen && options?.ScheduledAt != ScheduledAt)
+        {
+            throw new InvalidOperationException("Publish middleware cannot change the resolved delivery schedule.");
         }
 
         OptionsCore = options;
@@ -173,7 +182,7 @@ public sealed class PublishContext<TMessage> : PublishContext, ICompletablePubli
     /// <summary>Initializes a publish context for direct construction by middleware tests and tooling.</summary>
     /// <param name="content">The message payload.</param>
     /// <param name="lane">The publish lane.</param>
-    /// <param name="options">The message options, including the delivery mode override and delay.</param>
+    /// <param name="options">The message options, including the delivery mode override and relative or absolute schedule.</param>
     /// <param name="defaultDeliveryMode">The host delivery mode inherited when the options do not specify one.</param>
     /// <param name="now">The resolution timestamp used to calculate <see cref="PublishContext.PublishAt"/> in UTC.</param>
     /// <param name="isTransactional">Whether to resolve delivery against a compatible ambient commit boundary.</param>
@@ -181,7 +190,8 @@ public sealed class PublishContext<TMessage> : PublishContext, ICompletablePubli
     /// <exception cref="ArgumentOutOfRangeException">
     /// The lane or effective delivery mode is undefined, or the delay is nonpositive or overflows the timestamp range.
     /// </exception>
-    /// <exception cref="InvalidOperationException">Direct delivery specifies a delay.</exception>
+    /// <exception cref="ArgumentException">Both a relative delay and an absolute schedule are specified.</exception>
+    /// <exception cref="InvalidOperationException">Direct delivery specifies a relative or absolute schedule.</exception>
     public PublishContext(
         TMessage? content,
         MessageLane lane,
@@ -202,7 +212,8 @@ public sealed class PublishContext<TMessage> : PublishContext, ICompletablePubli
                 options?.DeliveryMode ?? defaultDeliveryMode,
                 options?.Delay,
                 isTransactional ? DeliveryCoordinationStatus.Compatible : DeliveryCoordinationStatus.None,
-                now.ToUniversalTime()
+                now.ToUniversalTime(),
+                scheduledAt: options?.ScheduledAt
             ),
             deliveryFrozen: false,
             cancellationToken
