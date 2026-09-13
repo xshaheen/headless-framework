@@ -23,7 +23,6 @@ concurrency:
 env:
   DOTNET_CLI_TELEMETRY_OPTOUT: "1"
   DOTNET_NOLOGO: "true"
-  HUSKY: "0"
 
 jobs:
   analyze:

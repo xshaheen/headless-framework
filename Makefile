@@ -91,8 +91,9 @@ restore-project: ## Restore one project; preferred for focused project work.
 	$(DOTNET) restore "$(PROJECT)" -p:Configuration="$(CONFIGURATION)" $(RESTORE_ARGS)
 
 .PHONY: hooks
-hooks: ## Point git at the committed hooks (per clone/worktree).
-	git config core.hooksPath .husky
+hooks: ## Point this worktree at the committed native hooks in .githooks.
+	git config --local extensions.worktreeConfig true
+	git config --worktree core.hooksPath .githooks
 
 .PHONY: hook-pre-commit
 hook-pre-commit: ## Git hook: format staged C# files before commit.

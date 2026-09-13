@@ -1,0 +1,14 @@
+#!/bin/sh
+# Committed native hook. `make hooks` / `make bootstrap` points
+# core.hooksPath here; the Makefile owns checks for published refs.
+set -eu
+
+# Git supplies an all-zero local object ID for deletions. Only published
+# objects need formatting/build checks, including in a mixed update/delete push.
+while read -r _local_ref local_oid _remote_ref _remote_oid; do
+    case "$local_oid" in
+        ''|*[!0]*) exec make hook-pre-push ;;
+    esac
+done
+
+printf '[pre-push] no objects to publish; skipping format-check and build\n'

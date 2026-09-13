@@ -41,8 +41,6 @@ env:
   PACKAGES_DIR: ./artifacts/packages-results
   # Test Results Directory
   TEST_RESULTS_DIR: ./artifacts/test-results
-  # Disable the Husky pre-commit hooks.
-  HUSKY: 0
 
 jobs:
   changes:
@@ -62,6 +60,9 @@ jobs:
 
       - name: "Verify check selection"
         run: bash scripts/test-ci-changes.sh
+
+      - name: "Verify pre-push hook"
+        run: bash scripts/test-pre-push.sh
 
       - name: "Select checks from changed paths"
         id: changes
