@@ -119,6 +119,12 @@ Both verbs return `PublishReceipt`; durable delivery includes a `StorageId`, whi
 Only `Revoked` proves prevention. `AttemptReserved` is not proof of delivery. Revocation retains no audit record.
 Use Jobs for keyed, replaceable, tenant-scoped, or transactional business deadlines.
 
+### Circuit epoch
+A monotonic per-lane-qualified-circuit counter assigned to each pause/resume intent change. Callbacks,
+timers, retry decisions, and probe releases carry the epoch captured when their work was scheduled.
+The consumer-group apply gate rejects epochs older than its last completed apply, so an in-flight
+recovery cannot undo a newer Open state.
+
 ## Flagged ambiguities
 
 - "Generation" had been used loosely for both a node's Incarnation and the durable counter that
