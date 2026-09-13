@@ -140,7 +140,13 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
         result.IsProvisional.Should().BeTrue();
         sut.Scheduler.DidNotReceive().Restart();
         sut.Coordinator!.OnCommitCount.Should().Be(1);
+        var restarted = _Restarted(sut);
         await sut.Coordinator.DrainCommitAsync(AbortToken);
+        // The commit callback only queues the schedule-changed signal; the hosted worker issues the restart.
+        sut.Scheduler.DidNotReceive().Restart();
+        sut.Signals.PendingCount.Should().Be(1);
+        await _StartWorkerAsync(sut);
+        await restarted.Task.WaitAsync(_WaitTimeout, AbortToken);
         sut.Scheduler.Received(1).Restart();
         await sut
             .Persistence.DidNotReceive()
@@ -169,7 +175,12 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
         var result = await sut.Time.CancelKeyedAsync(scope, key, 1, requireAtomicEnlistment: true, AbortToken);
         result.IsProvisional.Should().BeTrue();
         sut.Scheduler.DidNotReceive().Restart();
+        var restarted = _Restarted(sut);
         await sut.Coordinator!.DrainCommitAsync(AbortToken);
+        sut.Scheduler.DidNotReceive().Restart();
+        sut.Signals.PendingCount.Should().Be(1);
+        await _StartWorkerAsync(sut);
+        await restarted.Task.WaitAsync(_WaitTimeout, AbortToken);
         sut.Scheduler.Received(1).Restart();
     }
 

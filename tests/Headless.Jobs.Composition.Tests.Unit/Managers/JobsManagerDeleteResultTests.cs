@@ -4,6 +4,7 @@ using System.Data.Common;
 using Headless.Abstractions;
 using Headless.CommitCoordination;
 using Headless.Jobs;
+using Headless.Jobs.BackgroundServices;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
@@ -126,7 +127,11 @@ public sealed class JobsManagerDeleteResultTests : TestBase
             Substitute.For<IJobsDispatcher>(),
             Substitute.For<ICurrentCommitCoordinator>(),
             new CronScheduleCache(TimeZoneInfo.Utc),
-            new SchedulerOptionsBuilder(),
+            new JobsPostCommitSignalService(
+                TestActivationBarrier.Opened(),
+                TimeProvider.System,
+                NullLogger<JobsPostCommitSignalService>.Instance
+            ),
             functionRegistry,
             NullLogger<JobsManager<TimeJobEntity, CronJobEntity>>.Instance
         );

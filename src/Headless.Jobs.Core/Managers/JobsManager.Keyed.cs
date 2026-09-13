@@ -123,16 +123,7 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
         {
             if (coordinated is { } context)
             {
-                _DeferSideEffects(
-                    context.Coordinator,
-                    result.RunId.ToString()!,
-                    cancellationToken =>
-                    {
-                        cancellationToken.ThrowIfCancellationRequested();
-                        _jobsHostScheduler.Restart();
-                        return Task.CompletedTask;
-                    }
-                );
+                _SignalOnCommit(context.Coordinator, new ScheduleChangedSignal(this, result.RunId.ToString()!));
             }
             else
             {

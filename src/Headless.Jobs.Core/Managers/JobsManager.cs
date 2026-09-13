@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using Headless.Abstractions;
 using Headless.Checks;
 using Headless.CommitCoordination;
+using Headless.Jobs.BackgroundServices;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Entities.BaseEntity;
 using Headless.Jobs.Enums;
@@ -29,7 +30,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     IJobsDispatcher dispatcher,
     ICurrentCommitCoordinator currentCommitCoordinator,
     CronScheduleCache cronScheduleCache,
-    SchedulerOptionsBuilder schedulerOptions,
+    JobsPostCommitSignalService postCommitSignals,
     JobFunctionRegistry functionRegistry,
     ILogger<JobsManager<TTimeJob, TCronJob>> logger,
     IServiceScopeFactory? serviceScopeFactory = null,
@@ -45,7 +46,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     private readonly ICurrentCommitCoordinator _currentCommitCoordinator = Argument.IsNotNull(currentCommitCoordinator);
     private readonly CronScheduleCache _cronScheduleCache = Argument.IsNotNull(cronScheduleCache);
     private readonly JobFunctionRegistry _functionRegistry = Argument.IsNotNull(functionRegistry);
-    private readonly TimeSpan _postCommitDrainTimeout = Argument.IsNotNull(schedulerOptions).PostCommitDrainTimeout;
+    private readonly JobsPostCommitSignalService _postCommitSignals = Argument.IsNotNull(postCommitSignals);
     private readonly ILogger<JobsManager<TTimeJob, TCronJob>> _logger = Argument.IsNotNull(logger);
 
     // Read at chain-walk time for the ambient tenant used by the descendant escalation rule (R7). Null in the unit
@@ -193,15 +194,11 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
                 persisted = true;
 
-                // Re-read the clock at commit time: the deferred lambda runs when the caller's transaction commits,
-                // which can be much later than enqueue. Using the enqueue-time `now` could push a job that was within
-                // the immediate-dispatch window into the scheduler/poll-sweep path. (Direct path below stays in-band,
-                // so its `now` is already current.)
-                _DeferSideEffects(
-                    context.Coordinator,
-                    entity.Id.ToString(),
-                    ct => _RunTimeJobSideEffectsAsync(entity, timeProvider.GetUtcNow(), executionTime, ct)
-                );
+                // The worker re-reads the clock when it runs the signal: the commit can land much later than the
+                // enqueue, and using the enqueue-time `now` could push a job that was within the immediate-dispatch
+                // window into the scheduler/poll-sweep path. (Direct path below stays in-band, so its `now` is
+                // already current.)
+                _SignalOnCommit(context.Coordinator, new TimeJobCommittedSignal(this, entity, executionTime));
 
                 return entity;
             }
@@ -292,18 +289,12 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 .Writer.WriteCronJobsAsync([entity], _SeedCronSchedulePosition, context.Relational, cancellationToken)
                 .ConfigureAwait(false);
 
-            // Cron has no immediate-dispatch branch; defer cache-invalidation + scheduler-restart + notify (KTD-4).
-            // The deferred closure captures the PERSISTED projection, not a pre-persistence guess.
-            _DeferSideEffects(
+            // Cron has no immediate-dispatch branch: cache invalidation runs on commit, scheduler-restart + notify go
+            // to the worker (KTD-4). The signal carries the PERSISTED projection, not a pre-persistence guess.
+            _SignalCronOnCommit(
                 context.Coordinator,
-                entity.Id.ToString(),
-                ct =>
-                    _RunCoordinatedCronJobSideEffectsAsync(
-                        context.Writer,
-                        entity,
-                        coordinatedSeed.EarliestNextDueUtc,
-                        ct
-                    )
+                context.Writer,
+                new CronJobsCommittedSignal(this, [entity], coordinatedSeed.EarliestNextDueUtc, entity.Id.ToString())
             );
 
             return entity;
@@ -899,10 +890,14 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 // rollback discards the whole row, tenant and all), so keep them.
                 persisted = true;
 
-                _DeferSideEffects(
+                // The worker re-splits immediate vs. later against its own clock, so the signal carries every id
+                // with its due time rather than the enqueue-time split computed above for the direct path.
+                _SignalOnCommit(
                     context.Coordinator,
-                    $"time batch ({entities.Count})",
-                    ct => _RunTimeJobsBatchSideEffectsAsync(immediateTickers, earliestForNonImmediate, ct)
+                    new TimeJobsBatchCommittedSignal(
+                        this,
+                        [.. entities.Select(static x => new CommittedTimeJob(x.Id, x.ExecutionTime!.Value))]
+                    )
                 );
 
                 return entities;
@@ -1042,16 +1037,15 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 )
                 .ConfigureAwait(false);
 
-            _DeferSideEffects(
+            _SignalCronOnCommit(
                 context.Coordinator,
-                $"cron batch ({validEntities.Count})",
-                ct =>
-                    _RunCoordinatedCronJobsBatchSideEffectsAsync(
-                        context.Writer,
-                        validEntities,
-                        coordinatedSeed.EarliestNextDueUtc,
-                        ct
-                    )
+                context.Writer,
+                new CronJobsCommittedSignal(
+                    this,
+                    [.. validEntities],
+                    coordinatedSeed.EarliestNextDueUtc,
+                    $"cron batch ({validEntities.Count})"
+                )
             );
 
             return validEntities;

@@ -3,6 +3,7 @@
 using Headless.Abstractions;
 using Headless.CommitCoordination;
 using Headless.Jobs;
+using Headless.Jobs.BackgroundServices;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Exceptions;
 using Headless.Jobs.Interfaces;
@@ -346,7 +347,11 @@ public sealed class JobsTenancyChainPropagationTests : TestBase
             dispatcher,
             Substitute.For<ICurrentCommitCoordinator>(),
             new CronScheduleCache(TimeZoneInfo.Utc),
-            new SchedulerOptionsBuilder(),
+            new JobsPostCommitSignalService(
+                TestActivationBarrier.Opened(),
+                TimeProvider.System,
+                Substitute.For<ILogger<JobsPostCommitSignalService>>()
+            ),
             JobFunctionProvider.CreateHostRegistry(configuration: null),
             Substitute.For<ILogger<JobsManager<TimeJobEntity, CronJobEntity>>>(),
             currentTenant: tenant,

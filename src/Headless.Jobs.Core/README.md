@@ -35,6 +35,8 @@ Keyed one-shot scheduling uses `JobKey` and `ScheduleKeyedAsync` / `ReplaceKeyed
 
 Coordinated Jobs write attempts prevent automatic retries of a pipeline-owned save because their separate context is not retained in the business change tracker. A later failure propagates unchanged; recover with a fresh context and aggregate graph after a known rollback, or reconcile an unknown commit first. Outbox-only saves retain their existing retry behavior.
 
+A coordinated write's commit callback is synchronous and non-blocking: it invalidates the cron-expressions cache (cron definitions only, bounded to 30 seconds because the poll sweep reads through that cache) and hands one signal — time jobs committed, cron jobs committed, or schedule changed for keyed operations — to the `JobsPostCommitSignalService` hosted worker. The worker (registered even with `DisableBackgroundServices()`) acquires immediately due jobs, arms the scheduler wake, and notifies the dashboard, re-reading the clock when it picks the signal up. Post-commit acceleration therefore requires a running host; its queue is bounded (1024 signals), a full queue or a stopping host drops the signal with a warning and the `headless.jobs.post_commit_signals.dropped` counter, and a signal running longer than 30 seconds is abandoned. In every case the committed row is picked up by the next fallback poll sweep — work is delayed, never lost.
+
 `Retries`, `RetryIntervals`, and `OnNodeDeath` are execution policy captured by the first successful create. Differences in host defaults, function defaults, or explicit call overrides return `Existing` when intent matches, without changing the stored policy, fingerprint, metadata, or execution state. Concurrent matching submissions retain one winner's complete policy. Options validation and `RequireAtomicEnlistment` still apply to each call. To change policy, use generation-fenced replacement while the current run is pending and unclaimed. Replacement creates generation N+1 with the call's resolved policy even when intent is unchanged.
 
 New and replacement generations use `v1`, which hashes contract version, exact durable request bytes after middleware, and UTC due ticks truncated to microseconds. Null and empty payloads differ. Retry policy, node-death policy, presentation, lineage, and tracing do not participate. Reuse the same absolute `DateTimeOffset` instant and stable serialized bytes when resubmitting.
@@ -483,7 +485,6 @@ builder.Services.AddHeadlessJobs(options =>
         scheduler.LeaseRenewalInterval = null; // null → LeaseDuration / 3
         scheduler.CancellationObservationInterval = null; // null → effective lease-renewal interval
         scheduler.FallbackIntervalChecker = TimeSpan.FromSeconds(30); // default: 30s
-        scheduler.PostCommitDrainTimeout = TimeSpan.FromSeconds(30); // default: 30s; > 0, max: 5 min
         scheduler.SchedulerTimeZone = TimeZoneInfo.Utc; // default: UTC — never Local (fleet-divergent cron dedup)
         scheduler.DeadNodeReconcileInterval = TimeSpan.FromMinutes(1); // durable path; default: 1 min
         scheduler.StartMode = JobsStartMode.Immediate; // or Manual
@@ -507,7 +508,7 @@ builder.Services.AddHeadlessJobs(options =>
 
 ## Observability
 
-Emits OpenTelemetry activity spans under the instrumentation name `Headless.Jobs`, exposed as `JobsDiagnostics.SourceName`. The default `IJobsInstrumentation` emits natively — subscribing the tracing pipeline with `TracerProviderBuilder.AddJobsInstrumentation()` (typed helper, `OpenTelemetry.Api` only — no SDK dependency) or `AddSource(JobsDiagnostics.SourceName)` is the single opt-in; without a listener the activities short-circuit and only the structured log events remain. Spans cover job execution, enqueue, completion, failure, cancellation, skip, and data seeding; framework tags are namespaced `headless.job.*` / `headless.seeding.*` with `snake_case` segments (`headless.job.retry_count`, `headless.job.parent_id`, ...). See [docs/llms/jobs.md](../../docs/llms/jobs.md) for the full tag table.
+Emits OpenTelemetry activity spans under the instrumentation name `Headless.Jobs`, exposed as `JobsDiagnostics.SourceName`. The default `IJobsInstrumentation` emits natively — subscribing the tracing pipeline with `TracerProviderBuilder.AddJobsInstrumentation()` (typed helper, `OpenTelemetry.Api` only — no SDK dependency) or `AddSource(JobsDiagnostics.SourceName)` is the single opt-in; without a listener the activities short-circuit and only the structured log events remain. Spans cover job execution, enqueue, completion, failure, cancellation, skip, and data seeding; framework tags are namespaced `headless.job.*` / `headless.seeding.*` with `snake_case` segments (`headless.job.retry_count`, `headless.job.parent_id`, ...). The Jobs `Meter` carries the same name (`AddMeter(JobsDiagnostics.SourceName)`) and exposes `headless.jobs.post_commit_signals.dropped` (counter; dimension `headless.jobs.drop_reason` = `full` | `stopping`) for coordinated post-commit signals the hosted worker could not accept. See [docs/llms/jobs.md](../../docs/llms/jobs.md) for the full tag table.
 
 ## Dependencies
 
@@ -524,7 +525,7 @@ Emits OpenTelemetry activity spans under the instrumentation name `Headless.Jobs
 
 - Registers `ITimeJobManager<TimeJobEntity>` and `ICronJobManager<CronJobEntity>` as singletons.
 - Registers the non-generic `IJobScheduler` facade against the same configured time/cron entity pair as the managers.
-- Registers background hosted services: `JobsInitializationHostedService` (always), `JobsSchedulerBackgroundService`, `JobsFallbackBackgroundService`, and `JobsExecutionTaskHandler` (unless `DisableBackgroundServices()` is called).
+- Registers background hosted services: `JobsInitializationHostedService` and `JobsPostCommitSignalService` (always — the latter drains coordinated post-commit signals and is a harmless no-op on enqueue-only hosts), `JobsSchedulerBackgroundService`, `JobsFallbackBackgroundService`, and `JobsExecutionTaskHandler` (unless `DisableBackgroundServices()` is called).
 - Registers `JobsTaskScheduler` (shared-thread-pool logical workers bounded by active async `MaxConcurrency`; dedicated threads only for `LongRunning`).
 - Registers a scheduler-scoped cron schedule cache and the per-host `JobsRequestSerializationOptions` singleton (request JSON options, GZip, decompression cap) consumed by `JobsHelper` — no process-global serializer state.
 - Registers the Jobs tenancy primitives: `TenantPropagationScheduleMiddleware` / `TenantRestoreExecuteMiddleware` (`TryAddSingleton`), an `AsyncLocal`-backed `ICurrentTenantAccessor`, and the `ICurrentTenant` fallback (`NullCurrentTenant`, replaced by a real `CurrentTenant` once an HTTP / EF / consumer seam registers one). Inserts the schedule and execute tenancy middleware into the process-global registry once per process; both no-op until the tenancy seam enables `JobsTenancyOptions`.
