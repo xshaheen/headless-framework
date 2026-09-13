@@ -78,6 +78,18 @@ Use Commit Coordination when a framework subsystem must defer work until the dat
 
 The coordinator guarantees exactly-once callback invocation per coordinator instance. It does not guarantee exactly-once business effects for brokers, external services, or processes that crash after commit.
 
+Consumers map their own guarantee onto the scope state. Messaging's `DeliveryMode` (per call, then per type via `WithDeliveryMode`, then `MessagingOptions.DefaultDeliveryMode`, default `Durable`) resolves as follows, and every throw happens before storage or transport effects; a scope is compatible when the consumer's storage can join its boundary (relational storage on the same database, in-memory storage in a scope with no relational handle):
+
+| Requested mode | Compatible live coordinated scope | No scope | Incompatible scope |
+|---|---|---|---|
+| `Durable` (default) | capture in the caller's transaction, dispatch after commit | store first, the relay dispatches | throw |
+| `Coordinated` | capture in the caller's transaction, dispatch after commit | throw | throw |
+| `Direct` | transport now | transport now | transport now |
+
+`Coordinated` is additionally rejected at Messaging startup when no `ICommitScopeFactory` is registered or when durable consumers run below the `Transactional` inbox tier. Jobs' `RequireAtomicEnlistment` behaves like `Coordinated`; without it a job write enlists in a compatible live relational transaction and otherwise inserts directly. See [Delivery Modes](messaging.md#delivery-modes) and [Commit-Coordinated Enqueue](jobs.md#commit-coordinated-enqueue-atomic-enqueue).
+
+Two behaviors of this contract are documented, not defects. Commit callbacks are savepoint-blind: a callback registered inside a savepoint that is later rolled back still runs on the outer commit (details under [Core Design Notes](#design-notes-1)). The plain-`DbContext` `ExecuteCoordinatedTransactionAsync` helper runs under EF's execution strategy and replays the whole operation for a failure before `CommitAsync` starts, while the Headless save pipeline honors `CommitRetryGuard` and does not replay a participant write (details under the [EntityFramework Quick Start](#quick-start-2)).
+
 Messaging's transactional inbox uses the application `DbContext` transaction to commit the fenced inbox outcome, enlisted application state, and captured durable Bus/Queue rows together. User code is never wrapped in transparent execution-strategy replay. Handler entry, direct transport, and external or otherwise non-enlisted effects can repeat.
 
 **Commit detection is an acceleration hook, not a correctness mechanism.** A detected signal (SQL Server SqlClient diagnostic, EF interceptor) only dispatches deferred work *sooner*; correctness must not depend on it firing. The consumer commits a durable row inside the transaction and recovers it through an independent polling sweep, so if the signal is missed, delayed, or disabled, the work is still found and executed. In-memory accelerator buffers (`InMemoryWorkBuffer<T>`) therefore require the consumer to own that durable store plus recovery (messaging: outbox rows + retry sweep); rows written in-transaction through `IRelationalCommitContext` do not depend on detection at all.

@@ -8,8 +8,9 @@ namespace Headless.Messaging;
 /// <remarks>
 /// <para>
 /// The <see cref="IQueue"/> contract is point-to-point intent: exactly one competing worker
-/// receives each enqueued message. The <c>DeliveryMode</c> on <see cref="QueueOptions"/> selects automatic,
-/// durable, or transport-direct delivery without changing the Queue lane.
+/// receives each enqueued message. The <c>DeliveryMode</c> on <see cref="QueueOptions"/> selects durable,
+/// coordinated, or direct delivery without changing the Queue lane; an unset value inherits the per-type
+/// policy, then the host default (<c>Durable</c>).
 /// </para>
 /// <para>
 /// Delayed delivery is durable and cannot be combined with <c>Direct</c> delivery.
@@ -53,7 +54,7 @@ public interface IQueue
         CancellationToken cancellationToken = default
     );
 
-    /// <summary>Publishes a message using the configured contract and host delivery mode, which defaults to Auto.</summary>
+    /// <summary>Publishes a message using the configured contract and the inherited delivery mode, which defaults to <see cref="DeliveryMode.Durable"/>.</summary>
     /// <typeparam name="T">The message type.</typeparam>
     /// <param name="contentObj">The message payload. Can be <see langword="null"/>.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>

@@ -155,7 +155,7 @@ builder.Services.AddHeadlessMessaging(setup =>
 
 The transactional outbox is **on by default on the EF storage path**. When the host selects EF-context storage with `setup.UseEntityFramework<TContext>()`, a `PublishAsync(...)` inside a coordinated transaction writes its outbox row in the same DB transaction and is discarded on rollback — zero consumer wiring. The EF storage setup auto-registers commit coordination and a DI-registered `IDbContextOptionsConfiguration<TContext>` that attaches the commit-coordination interceptor to the consumer's `DbContext`, even a plain `AddDbContext<TContext>` with no `AddInterceptors(...)`.
 
-- Opt out with `setup.UseEntityFramework<TContext>(o => o.EnableTransactionalOutbox = false)` to restore non-transactional immediate dispatch — the opt-out travels with the EF storage choice, not a separate global call.
+- Opt out with `setup.UseEntityFramework<TContext>(o => o.EnableTransactionalOutbox = false)` to skip the commit-coordination wiring: publishes are then stored outside the business transaction and dispatched by the relay (the `Durable` default), and a `Coordinated` policy fails startup. The opt-out travels with the EF storage choice, not a separate global call.
 - A startup self-probe (`CommitInterceptorStartupGate<TContext>`) commits an empty transaction and asserts the interceptor fired. On a mis-wire it logs a loud warning by default; set `CommitInterceptorProbeMode.Strict` via `services.Configure<CommitInterceptorProbeOptions>(o => o.Mode = CommitInterceptorProbeMode.Strict)` to fail startup instead.
 - On by default applies **only** to the EF-context path. The raw-ADO storage paths (`setup.UsePostgreSql(connString)` / `setup.UseSqlServer(connString)`, no `DbContext`) are unchanged and stay explicit opt-in: register `AddPostgreSqlCommitCoordination()`/`AddSqlServerCommitCoordination()` and use the `EnlistCommitCoordination` / `ExecuteCoordinatedTransactionAsync` helpers (shown in Quick Start below). There is no `DbContext` to attach an interceptor to on those paths.
 
@@ -176,7 +176,25 @@ services.AddHeadlessMessaging(setup =>
 });
 ```
 
-The framework default is `DeliveryMode.Auto`. A null per-call `DeliveryMode` inherits this setting; an explicit `Auto`, `Durable`, or `Direct` overrides it. Metadata-only records and fluent callbacks also inherit. Delivery is resolved before middleware and stays fixed for that call. Invalid global enum values fail options validation. Delays require durable capture and reject Direct. Domain integration-event capture and callback responses explicitly select Durable and keep that guarantee regardless of the host default.
+The framework default is `DeliveryMode.Durable`. A null per-call `DeliveryMode` inherits the per-type `WithDeliveryMode` policy, then this setting; an explicit `Durable`, `Coordinated`, or `Direct` overrides both. Metadata-only records and fluent callbacks inherit the same way. Delivery is resolved before middleware and stays fixed for that call. Invalid global enum values fail options validation. Delays require durable capture and reject Direct. Domain integration-event capture and callback responses explicitly select Durable and keep that guarantee regardless of the host default.
+
+`DeliveryMode` decides whether a message is atomic with the caller's transaction, durable on its own, or fire-and-forget. The framework resolves the requested mode before any effect and refuses a silently weaker guarantee instead of granting it. Every throw in this matrix happens before storage or transport effects:
+
+| Requested mode | Compatible live coordinated scope | No scope | Incompatible scope |
+|---|---|---|---|
+| `Durable` (default) | capture in the caller's transaction, dispatch after commit | store first, the relay dispatches | throw |
+| `Coordinated` | capture in the caller's transaction, dispatch after commit | throw | throw |
+| `Direct` | transport now | transport now | transport now |
+
+- **Precedence**: per-call `MessageOptions.DeliveryMode`, then the per-type policy registered with `WithDeliveryMode(...)` on `setup.Bus.ForMessage<T>(...)` / `setup.Queue.ForMessage<T>(...)`, then `MessagingOptions.DefaultDeliveryMode` (`Durable`). A per-type or host `Direct` combined with a per-call `Delay` or `ScheduledAt` throws, because scheduling requires storage.
+- **A compatible scope** is a live commit-coordination scope whose boundary the configured storage can join: the relational storages join the scope's `IRelationalCommitContext` transaction on the same database; in-memory storage joins a scope that carries no relational handle (test hosts). Anything else that is active — a scope on another database, a relational scope with in-memory storage, a scope whose transaction has already completed — is incompatible.
+- **`Coordinated` is gated at startup**, not at the first publish. When the host default or any per-type policy is `Coordinated`, bootstrap throws `MessagingConfigurationException` if (1) no commit coordinator is registered — `ICommitScopeFactory` is missing because neither `AddCommitCoordination()` nor a provider adapter such as `UseEntityFramework<TContext>()` ran — or (2) durable consumers are registered and `MessagingOptions.RequiredInboxCapability` is weaker than `Transactional`, because a handler's publish could then never join the inbox transaction and every attempt would fail.
+- **The default costs one storage write.** A `Durable` publish outside any transaction is stored first and dispatched by the relay, so high-rate events published outside transactions pay a storage write and a relay hop per message. Opt out per type with `WithDeliveryMode(DeliveryMode.Direct)` or per host with `DefaultDeliveryMode = DeliveryMode.Direct`; `Direct` gives up durability and atomicity and returns a receipt with no `StorageId`.
+- **Storage is mandatory**, so "no storage" is a configuration error raised by startup validation rather than a fourth matrix column.
+- **Telemetry**: `headless.messaging.delivery.requested` emits `durable`, `coordinated`, or `direct`; `headless.messaging.delivery.resolved` emits only `durable` or `direct` — `Coordinated` is requested-side strictness that resolves to durable capture. The `headless-delivery-requested` / `headless-delivery-resolved` headers carry the same names.
+- **Jobs equivalent**: `RequireAtomicEnlistment` behaves like `Coordinated`; without it a job write enlists in a compatible live relational transaction and otherwise inserts directly. See [Commit-Coordinated Enqueue](../../docs/llms/jobs.md#commit-coordinated-enqueue-atomic-enqueue), which also covers recurring definitions.
+
+Two coordinator behaviors are documented, not defects. Commit callbacks are savepoint-blind: a capture registered inside a savepoint that is later rolled back still dispatches when the outer transaction commits, even though its row was discarded — publish after the last partial rollback. Under EF's execution strategy, the plain-`DbContext` `ExecuteCoordinatedTransactionAsync` helper replays the whole operation, publishes included, for a failure before `CommitAsync` starts; the Headless save pipeline (`HeadlessDbContext`) honors `CommitRetryGuard` and does not replay a coordinated write. See [Commit Coordination](../../docs/llms/commit-coordination.md#quick-orientation).
 
 Terminal inbox generations are retained for 30 days by default. Use `InboxRetention(...)` on a durable consumer for a deliberate override. Expiry or authorized purge removes that deduplication identity; force reprocessing instead creates a linked child generation with replay provenance.
 
@@ -279,7 +297,7 @@ No affinity storage migration is required: the authoritative key lives in the se
 Use bus publishers for broadcast publish/subscribe delivery:
 
 - `IBus` always selects the Bus lane.
-- An unset `PublishOptions.DeliveryMode` inherits `MessagingOptions.DefaultDeliveryMode`, which defaults to Auto. Explicit modes override that setting. Direct bypasses storage and any ambient coordination boundary.
+- An unset `PublishOptions.DeliveryMode` inherits the per-type `WithDeliveryMode` policy, then `MessagingOptions.DefaultDeliveryMode`, which defaults to `Durable`. Explicit modes override both. Direct bypasses storage and any ambient coordination boundary.
 - `PublishOptions.Delay` or `PublishOptions.ScheduledAt` schedules durable delivery. Supply one scheduling form; Direct rejects either form.
 - Stored rows and consume contexts carry `MessageLane.Bus`.
 
@@ -288,7 +306,7 @@ Use bus publishers for broadcast publish/subscribe delivery:
 Use queue publishers for point-to-point competing-worker delivery:
 
 - `IQueue` always selects the Queue lane.
-- An unset `QueueOptions.DeliveryMode` inherits `MessagingOptions.DefaultDeliveryMode`, which defaults to Auto. Explicit modes override that setting. Direct bypasses storage and any ambient coordination boundary.
+- An unset `QueueOptions.DeliveryMode` inherits the per-type `WithDeliveryMode` policy, then `MessagingOptions.DefaultDeliveryMode`, which defaults to `Durable`. Explicit modes override both. Direct bypasses storage and any ambient coordination boundary.
 - `QueueOptions.Delay` or `QueueOptions.ScheduledAt` schedules durable delivery. Supply one scheduling form; Direct rejects either form.
 - Stored rows and consume contexts carry `MessageLane.Queue`.
 
@@ -306,7 +324,7 @@ public sealed class MetricsPublisher(IBus bus)
 }
 ```
 
-`IBus.PublishAsync(message, ct)` and `IQueue.EnqueueAsync(message, ct)` inherit `MessagingOptions.DefaultDeliveryMode`, which defaults to Auto. Auto sends directly without coordination and captures durably within a compatible boundary. Their explicit-options overloads accept `PublishOptions` and `QueueOptions`, respectively, before the cancellation token. Durable acceptance waits for storage, not consumer completion. Persistent storage is required for restart survival; the process-local provider remains process-local. A compatible coordination boundary commits the capture with application state; outside one, the capture persists independently. Delayed delivery is expressed with `PublishOptions.Delay` or `QueueOptions.Delay` and is always durable.
+`IBus.PublishAsync(message, ct)` and `IQueue.EnqueueAsync(message, ct)` inherit the per-type `WithDeliveryMode` policy, then `MessagingOptions.DefaultDeliveryMode`, which defaults to `Durable`: the message is stored first — inside a compatible coordinated transaction when one is active, standalone otherwise — and an incompatible boundary is rejected before any effect. Their explicit-options overloads accept `PublishOptions` and `QueueOptions`, respectively, before the cancellation token. Durable acceptance waits for storage, not consumer completion. Persistent storage is required for restart survival; the process-local provider remains process-local. `Coordinated` requires a compatible live transaction and throws otherwise; `Direct` bypasses storage and coordination. Delayed delivery is expressed with `PublishOptions.Delay` or `QueueOptions.Delay` and is always durable.
 
 ## Runtime Delegates
 
@@ -698,7 +716,7 @@ Operational invariant: set Coordination's dead threshold no lower than the large
 
 Emits OpenTelemetry metrics and traces natively under a single instrumentation name, `Headless.Messaging` (both `Meter` and `ActivitySource`), exposed as `MessagingDiagnostics.SourceName`. Register with `TracerProviderBuilder.AddMessagingInstrumentation()` / `MeterProviderBuilder.AddMessagingInstrumentation()` (typed helpers, `OpenTelemetry.Api` only — no SDK dependency), or subscribe by name. Standard instruments follow the OTel messaging semantic conventions. Inbox lifecycle counters cover duplicate, attempt, recovery, terminal, replay, retention, and capability events with bounded consumer/lane/outcome/tier/provider tags. Framework-specific attributes are namespaced `headless.messaging.*`. W3C `traceparent`/baggage propagation is built into publish/consume. Custom span enrichers implement `IActivityTagEnricher` (synchronous) and register via `setup.Instrumentation` inside `AddHeadlessMessaging(...)`. See [docs/llms/messaging.md](../../docs/llms/messaging.md) for the full instrument table.
 
-Delivery mode tags use lowercase values on spans and metrics. `headless.messaging.delivery.requested` emits `auto`, `durable`, or `direct`; `headless.messaging.delivery.resolved` emits `durable` or `direct`. Queries and alerts must use `direct` for `DeliveryMode.Direct`. The former `transport_direct` value has no compatibility alias.
+Delivery mode tags use lowercase values on spans and metrics. `headless.messaging.delivery.requested` emits `durable`, `coordinated`, or `direct`; `headless.messaging.delivery.resolved` emits `durable` or `direct` — `Coordinated` resolves to durable capture and never appears as a resolved value. Queries and alerts must use `direct` for `DeliveryMode.Direct`. The former `transport_direct` and `auto` values have no compatibility alias.
 
 ## Dependencies
 

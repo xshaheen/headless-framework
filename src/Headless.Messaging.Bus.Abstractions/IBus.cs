@@ -8,8 +8,9 @@ namespace Headless.Messaging;
 /// <remarks>
 /// <para>
 /// The <see cref="IBus"/> contract is broadcast intent: every subscriber receives its own copy of
-/// each published message. The <c>DeliveryMode</c> on <see cref="PublishOptions"/> selects automatic,
-/// durable, or transport-direct delivery without changing the Bus lane.
+/// each published message. The <c>DeliveryMode</c> on <see cref="PublishOptions"/> selects durable,
+/// coordinated, or direct delivery without changing the Bus lane; an unset value inherits the per-type
+/// policy, then the host default (<c>Durable</c>).
 /// </para>
 /// <para>
 /// Delayed delivery is durable and cannot be combined with <c>Direct</c> delivery.
@@ -53,7 +54,7 @@ public interface IBus
         CancellationToken cancellationToken = default
     );
 
-    /// <summary>Publishes a message using the configured contract and host delivery mode, which defaults to Auto.</summary>
+    /// <summary>Publishes a message using the configured contract and the inherited delivery mode, which defaults to <see cref="DeliveryMode.Durable"/>.</summary>
     /// <typeparam name="T">The message type.</typeparam>
     /// <param name="contentObj">The message payload. Can be <see langword="null"/>.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>

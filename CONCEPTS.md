@@ -70,7 +70,7 @@ failover even if it can serve approximate dashboard views.
 A **message contract** is a plain serializable class, record, or interface. The invoked operation and
 lane-scoped registration select its **Message lane**: `IBus.PublishAsync` for broadcast or
 `IQueue.EnqueueAsync` for point-to-point delivery. **Delivery mode** is orthogonal to lane: it decides
-whether the message is captured durably or sent straight to transport.
+whether the message is atomic with the caller's transaction, durable on its own, or sent straight to transport.
 
 ### Message lane
 The semantic channel of a message: bus (broadcast — every subscriber group gets a copy) or queue
@@ -103,17 +103,31 @@ remains the request's origin metadata; the declared callback contract selects ty
 the concrete response type remains payload metadata.
 
 ### Delivery mode
-The delivery choices on publish/enqueue are `Auto`, `Durable`, and `Direct`.
-An unset per-call mode inherits `MessagingOptions.DefaultDeliveryMode`, which defaults to Auto.
-Explicit per-call modes override the host setting. Auto follows the framework transaction accessor (the only source of ambient durability —
-`Transaction.Current` alone does not count): recognized compatible transaction present → outbox
-(row persisted in that transaction, dispatched post-commit); no coordination → direct to transport;
-an active incompatible boundary → reject before side effects. Durable forces
-store-first regardless of transaction state. Direct bypasses storage and coordination
-compatibility checks even inside a transaction — an explicit, diagnostically-logged escape from
-atomicity. The mutually exclusive `Delay` and `ScheduledAt` options require storage:
-under Auto it upgrades the call to durable; with explicit Direct it is an error; dispatch
+The delivery choices on publish/enqueue are `Durable`, `Coordinated`, and `Direct`. Precedence is
+per call (`MessageOptions.DeliveryMode`), then per message type (`WithDeliveryMode(...)` on the lane
+registration), then the host `MessagingOptions.DefaultDeliveryMode`, which defaults to `Durable`.
+No mode sends directly by omission. The coordination state is read from the framework commit
+coordinator (the only source of ambient durability — `Transaction.Current` alone does not count);
+a scope is compatible when the configured storage can join its boundary (relational storage on the
+same database, in-memory storage in a scope with no relational handle). Every throw below happens
+before storage or transport effects:
+
+| Requested mode | Compatible live coordinated scope | No scope | Incompatible scope |
+|---|---|---|---|
+| `Durable` (default) | capture in the caller's transaction, dispatch after commit | store first, the relay dispatches | throw |
+| `Coordinated` | capture in the caller's transaction, dispatch after commit | throw | throw |
+| `Direct` | transport now | transport now | transport now |
+
+`Coordinated` is also gated at startup: it fails bootstrap when no `ICommitScopeFactory` is registered
+or when durable consumers run below the `Transactional` inbox tier. Direct bypasses storage and
+coordination compatibility checks even inside a transaction — an explicit, diagnostically-logged
+escape from atomicity, and the opt-out for high-rate events that would otherwise pay one storage
+write and a relay hop per message under the default. The mutually exclusive `Delay` and `ScheduledAt`
+options require storage: `Durable` and `Coordinated` honor them; with `Direct` they are an error; dispatch
 timing is best-effort (not-before semantics). `ScheduledAt` accepts an absolute instant, including a past instant.
+Telemetry reports the requested mode as `durable` / `coordinated` / `direct` and the resolved mode as
+`durable` / `direct`. The Jobs equivalent is `RequireAtomicEnlistment`, which behaves like `Coordinated`;
+without it a job write enlists in a compatible live relational transaction and otherwise inserts directly.
 Both verbs return `PublishReceipt`; durable delivery includes a `StorageId`, while direct delivery does not.
 `IMessageRevoker` deletes a scheduled row by that handle until its first dispatch reservation.
 Only `Revoked` proves prevention. `AttemptReserved` is not proof of delivery. Revocation retains no audit record.
