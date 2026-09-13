@@ -16,7 +16,7 @@ internal sealed class CollectorProcessor : IProcessor
     private readonly IServiceProvider _serviceProvider;
     private readonly TimeProvider _timeProvider;
 
-    private readonly string[] _tableNames;
+    private readonly string[] _categories;
     private readonly TimeSpan _waitingInterval;
 
     public CollectorProcessor(
@@ -32,29 +32,53 @@ internal sealed class CollectorProcessor : IProcessor
 
         var initializer = _serviceProvider.GetRequiredService<IStorageInitializer>();
 
-        _tableNames = [initializer.GetPublishedTableName(), initializer.GetReceivedTableName()];
+        _categories =
+        [
+            initializer.GetPublishedTableName(),
+            initializer.GetReceivedTableName(),
+            "inbox-audits",
+            "inbox-receipts",
+        ];
     }
 
     public async Task ProcessAsync(ProcessingContext context)
     {
-        foreach (var table in _tableNames)
-        {
-            _logger.CollectingExpiredData(table);
+        context.ThrowIfStopping();
+        var storage = _serviceProvider.GetRequiredService<IDataStorage>();
+        var cutoffs = await storage
+            .GetInboxHistoryRetentionCutoffsAsync(context.CancellationToken)
+            .ConfigureAwait(false);
+        var time = _timeProvider.GetUtcNow();
+        bool deletedInRound;
 
-            int deletedCount;
-            var time = _timeProvider.GetUtcNow();
-            do
+        // Freeze eligibility for this sweep so new history cannot keep extending it.
+        do
+        {
+            deletedInRound = false;
+            for (var category = 0; category < _categories.Length; category++)
             {
+                context.ThrowIfStopping();
+                var name = _categories[category];
+                _logger.CollectingExpiredData(name);
                 try
                 {
-                    deletedCount = await _serviceProvider
-                        .GetRequiredService<IDataStorage>()
-                        .DeleteExpiresAsync(table, time, _ItemBatch, context.CancellationToken)
-                        .ConfigureAwait(false);
+                    var deletedCount = category switch
+                    {
+                        0 or 1 => await storage
+                            .DeleteExpiresAsync(name, time, _ItemBatch, context.CancellationToken)
+                            .ConfigureAwait(false),
+                        2 => await storage
+                            .DeleteExpiredInboxAuditsAsync(cutoffs, _ItemBatch, context.CancellationToken)
+                            .ConfigureAwait(false),
+                        _ => await storage
+                            .DeleteExpiredInboxReceiptsAsync(cutoffs, _ItemBatch, context.CancellationToken)
+                            .ConfigureAwait(false),
+                    };
 
                     if (deletedCount != 0)
                     {
-                        _logger.ExpiredItemsDeleted(deletedCount, table);
+                        deletedInRound = true;
+                        _logger.ExpiredItemsDeleted(deletedCount, name);
 
                         await context.WaitAsync(_delay).ConfigureAwait(false);
                         context.ThrowIfStopping();
@@ -62,11 +86,11 @@ internal sealed class CollectorProcessor : IProcessor
                 }
                 catch (Exception ex)
                 {
-                    _logger.ExpiredDataDeleteFailed(ex, table, ex.Message);
+                    _logger.ExpiredDataDeleteFailed(ex, name, ex.Message);
                     throw;
                 }
-            } while (deletedCount != 0);
-        }
+            }
+        } while (deletedInRound);
 
         await context.WaitAsync(_waitingInterval).ConfigureAwait(false);
     }

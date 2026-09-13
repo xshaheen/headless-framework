@@ -418,6 +418,16 @@ internal sealed class SqlServerStorageInitializer(
                 CREATE NONCLUSTERED INDEX [IX_{schema}_InboxAudit_Incarnation_CreatedAt]
                     ON [{schema}].[InboxAudit] ([GenerationIncarnationId],[CreatedAt]);
 
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'IX_{schema}_InboxReceipts_Type_CreatedAt' AND object_id=OBJECT_ID(N'{schema}.InboxOperationReceipts'))
+                CREATE NONCLUSTERED INDEX [IX_{schema}_InboxReceipts_Type_CreatedAt]
+                    ON [{schema}].[InboxOperationReceipts] ([OperationType],[CreatedAt]);
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'IX_{schema}_InboxAudit_Type_CreatedAt' AND object_id=OBJECT_ID(N'{schema}.InboxAudit'))
+                CREATE NONCLUSTERED INDEX [IX_{schema}_InboxAudit_Type_CreatedAt]
+                    ON [{schema}].[InboxAudit] ([OperationType],[CreatedAt]);
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'IX_{schema}_InboxAudit_Operation' AND object_id=OBJECT_ID(N'{schema}.InboxAudit'))
+                CREATE NONCLUSTERED INDEX [IX_{schema}_InboxAudit_Operation]
+                    ON [{schema}].[InboxAudit] ([OperationId]);
+
             IF OBJECT_ID(N'{schema}.SchemaState',N'U') IS NULL
             BEGIN
                 CREATE TABLE [{schema}].[SchemaState](

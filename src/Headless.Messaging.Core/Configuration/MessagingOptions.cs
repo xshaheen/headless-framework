@@ -99,6 +99,22 @@ public sealed class MessagingOptions
     /// </summary>
     public int FailedMessageExpiredAfter { get; set; } = 15 * 24 * 3600;
 
+    /// <summary>Minimum lifetime of cleanup receipts from their immutable creation time. Defaults to seven days.</summary>
+    /// <remarks>Must be positive. Audit references extend residence; replay does not reset age. Changes apply to existing history.</remarks>
+    public TimeSpan InboxCleanupReceiptRetention { get; set; } = TimeSpan.FromDays(7);
+
+    /// <summary>Minimum lifetime of cleanup audit evidence from immutable creation time. Defaults to seven days.</summary>
+    /// <remarks>Must be positive. Changes apply to existing history. Deletion removes evidence without releasing generation holds.</remarks>
+    public TimeSpan InboxCleanupAuditRetention { get; set; } = TimeSpan.FromDays(7);
+
+    /// <summary>Minimum lifetime of operator receipts. Surviving audit references extend this lifetime. Defaults to thirty days.</summary>
+    /// <remarks>Any positive duration is valid. Age uses immutable creation time, including existing history. After physical deletion, an operation ID can be evaluated as a new request.</remarks>
+    public TimeSpan InboxOperatorReceiptRetention { get; set; } = TimeSpan.FromDays(30);
+
+    /// <summary>Minimum lifetime of operator audit evidence from immutable creation time. Defaults to ninety days.</summary>
+    /// <remarks>Must be positive. Changes apply to existing history. Holds do not pin evidence; deleting evidence does not release holds.</remarks>
+    public TimeSpan InboxOperatorAuditRetention { get; set; } = TimeSpan.FromDays(90);
+
     /// <summary>
     /// Gets or sets the number of concurrent consumer threads for message consumption from the transport.
     /// Higher values increase parallelism but consume more resources; lower values reduce resource usage but may lower throughput.
@@ -166,6 +182,14 @@ public sealed class MessagingOptions
     /// reduce contention but may lower retry throughput. Default is 200.
     /// </summary>
     public int RetryBatchSize { get; set; } = 200;
+
+    /// <summary>Delay before probing a missing inbox registration again. Defaults to five minutes.</summary>
+    /// <remarks>Must be positive. Deferral releases the exact attempt without consuming failure retries. This delay is not a recovery deadline.</remarks>
+    public TimeSpan OrphanProbeInterval { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>Maximum known orphans claimed per lane per retry cycle, independently of the ordinary retry batch. Defaults to 10.</summary>
+    /// <remarks>Valid values are 1 through 100,000. Known orphans are excluded from ordinary retry pickup.</remarks>
+    public int OrphanProbeBatchSize { get; set; } = 10;
 
     /// <summary>
     /// Gets or sets the JSON serialization options used for message content serialization and deserialization.
@@ -296,6 +320,10 @@ public sealed class MessagingOptions
         target.Conventions = Conventions;
         target.SucceedMessageExpiredAfter = SucceedMessageExpiredAfter;
         target.FailedMessageExpiredAfter = FailedMessageExpiredAfter;
+        target.InboxCleanupReceiptRetention = InboxCleanupReceiptRetention;
+        target.InboxCleanupAuditRetention = InboxCleanupAuditRetention;
+        target.InboxOperatorReceiptRetention = InboxOperatorReceiptRetention;
+        target.InboxOperatorAuditRetention = InboxOperatorAuditRetention;
         target.ConsumerThreadCount = ConsumerThreadCount;
         target.EnableSubscriberParallelExecute = EnableSubscriberParallelExecute;
         target.SubscriberParallelExecuteThreadCount = SubscriberParallelExecuteThreadCount;
@@ -305,6 +333,8 @@ public sealed class MessagingOptions
         target.CollectorCleaningInterval = CollectorCleaningInterval;
         target.SchedulerBatchSize = SchedulerBatchSize;
         target.RetryBatchSize = RetryBatchSize;
+        target.OrphanProbeInterval = OrphanProbeInterval;
+        target.OrphanProbeBatchSize = OrphanProbeBatchSize;
         target.UseStorageLock = UseStorageLock;
         target.TenantContextRequired = TenantContextRequired;
         target.TransportPublishTimeout = TransportPublishTimeout;
@@ -534,6 +564,10 @@ internal sealed class MessagingOptionsValidator : AbstractValidator<MessagingOpt
 {
     public MessagingOptionsValidator(IMiddlewareDescriptorRegistry? middlewareDescriptorRegistry = null)
     {
+        RuleFor(x => x.InboxCleanupReceiptRetention).GreaterThan(TimeSpan.Zero);
+        RuleFor(x => x.InboxCleanupAuditRetention).GreaterThan(TimeSpan.Zero);
+        RuleFor(x => x.InboxOperatorReceiptRetention).GreaterThan(TimeSpan.Zero);
+        RuleFor(x => x.InboxOperatorAuditRetention).GreaterThan(TimeSpan.Zero);
         RuleFor(x => x.RetryPolicy)
             .NotNull()
             .WithMessage("RetryPolicy must not be null.")
@@ -592,6 +626,8 @@ internal sealed class MessagingOptionsValidator : AbstractValidator<MessagingOpt
             .InclusiveBetween(1, 100_000)
             .WithMessage("RetryBatchSize must be between 1 and 100,000.");
         RuleFor(x => x).Custom((_, _) => _ValidateMiddlewareDescriptors(middlewareDescriptorRegistry));
+        RuleFor(x => x.OrphanProbeInterval).GreaterThan(TimeSpan.Zero);
+        RuleFor(x => x.OrphanProbeBatchSize).InclusiveBetween(1, 100_000);
     }
 
     private static void _ValidateMiddlewareDescriptors(IMiddlewareDescriptorRegistry? registry)

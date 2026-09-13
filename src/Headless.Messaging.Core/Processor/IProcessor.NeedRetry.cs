@@ -469,65 +469,113 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
         var healthy = new List<MediumMessage>(messages.Count);
         var circuitWork = new List<CircuitRetryWork>();
 
-        foreach (var message in messages)
+        try
         {
-            var persistedLane = message.Lane;
-            if (persistedLane != state.Key.Lane)
-            {
-                throw new InvalidOperationException(
-                    $"Retry pickup for lane '{state.Key.Lane}' returned persisted lane '{persistedLane}'."
-                );
-            }
-
-            if (message.InboxKey is { } inboxKey)
-            {
-                if (
-                    _consumerResolver is null
-                    || !_consumerResolver.TryGetInboxExecutor(
-                        inboxKey.ConsumerIdentity,
-                        inboxKey.ContractIdentity,
-                        inboxKey.ContractVersion,
-                        inboxKey.Lane,
-                        out var descriptor
-                    )
+            var orphans = await _GetSafelyAsync(
+                    token => connection.GetReceivedInboxOrphansOfNeedRetryAsync(state.Key.Lane, token),
+                    state,
+                    context.CancellationToken
                 )
+                .ConfigureAwait(false);
+            if (!orphans.Succeeded)
+            {
+                await _ReleaseUnhandedAsync(connection, MessageType.Subscribe, messages, 0).ConfigureAwait(false);
+                return;
+            }
+            messages.AddRange(orphans.Messages);
+
+            foreach (var message in messages)
+            {
+                context.ThrowIfStopping();
+                var persistedLane = message.Lane;
+                if (persistedLane != state.Key.Lane)
                 {
-                    var orphaned = await connection
-                        .MarkReceivedInboxOrphanedAsync(message, orphaned: true, CancellationToken.None)
-                        .ConfigureAwait(false);
-                    if (orphaned)
+                    throw new InvalidOperationException(
+                        $"Retry pickup for lane '{state.Key.Lane}' returned persisted lane '{persistedLane}'."
+                    );
+                }
+
+                if (message.InboxKey is { } inboxKey)
+                {
+                    if (
+                        _consumerResolver is null
+                        || !_consumerResolver.TryGetInboxExecutor(
+                            inboxKey.ConsumerIdentity,
+                            inboxKey.ContractIdentity,
+                            inboxKey.ContractVersion,
+                            inboxKey.Lane,
+                            out var descriptor
+                        )
+                    )
                     {
-                        _RecordInboxRecovery(message, InboxMetricOutcome.Orphaned);
+                        var orphaned = await connection
+                            .DeferReceivedInboxOrphanAsync(message, CancellationToken.None)
+                            .ConfigureAwait(false);
+                        if (orphaned)
+                        {
+                            _RecordInboxRecovery(message, InboxMetricOutcome.Orphaned);
+                        }
+                        continue;
                     }
+
+                    var routable = await connection
+                        .ConfirmReceivedInboxRoutableAsync(message, CancellationToken.None)
+                        .ConfigureAwait(false);
+                    if (!routable)
+                    {
+                        continue;
+                    }
+                    _RecordInboxRecovery(message, InboxMetricOutcome.Routable);
+                    message.Origin.Headers[Headers.Group] = descriptor.GroupName;
+                }
+
+                var group = message.Origin.GetGroup();
+                var decision = group is null
+                    ? CircuitRetryDecision.Closed
+                    : _GetCircuitRetryDecision(state.Key.Lane, group);
+                if (decision.Kind is CircuitRetryDecisionKind.Closed)
+                {
+                    healthy.Add(message);
                     continue;
                 }
 
-                var routable = await connection
-                    .MarkReceivedInboxOrphanedAsync(message, orphaned: false, CancellationToken.None)
-                    .ConfigureAwait(false);
-                if (routable)
+                skippedCircuitOpen++;
+                if (_logger.IsEnabled(LogLevel.Debug))
                 {
-                    _RecordInboxRecovery(message, InboxMetricOutcome.Routable);
+                    _logger.RetrySkippedBecauseCircuitOpen(message.StorageId, LogSanitizer.Sanitize(group));
                 }
-                message.Origin.Headers[Headers.Group] = descriptor.GroupName;
+                circuitWork.Add(new CircuitRetryWork(message, group!, decision));
             }
-
-            var group = message.Origin.GetGroup();
-            var decision = group is null
-                ? CircuitRetryDecision.Closed
-                : _GetCircuitRetryDecision(state.Key.Lane, group);
-            if (decision.Kind is CircuitRetryDecisionKind.Closed)
+        }
+        catch
+        {
+            try
             {
-                healthy.Add(message);
-                continue;
+                var circuitIds = circuitWork.Select(static work => work.Message.StorageId).ToHashSet();
+                await _ReleaseUnhandedAsync(
+                        connection,
+                        MessageType.Subscribe,
+                        [.. messages.Where(message => !circuitIds.Contains(message.StorageId))],
+                        0
+                    )
+                    .ConfigureAwait(false);
             }
-
-            skippedCircuitOpen++;
-            if (_logger.IsEnabled(LogLevel.Debug))
+            finally
             {
-                _logger.RetrySkippedBecauseCircuitOpen(message.StorageId, LogSanitizer.Sanitize(group));
+                foreach (
+                    var work in circuitWork.Where(static work =>
+                        work.Decision.Kind is CircuitRetryDecisionKind.ProbeAcquired
+                    )
+                )
+                {
+                    new HalfOpenProbeHandle(
+                        _circuitBreakerStateManager,
+                        CircuitBreakerGroupKeys.For(state.Key.Lane, work.Group),
+                        work
+                    ).ReleaseUnlessTransferred();
+                }
             }
-            circuitWork.Add(new CircuitRetryWork(message, group!, decision));
+            throw;
         }
 
         // Circuit claims are deliberately absent from this generic release range. Once classified,

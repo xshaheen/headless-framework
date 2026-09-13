@@ -353,7 +353,16 @@ internal sealed partial class InMemoryDataStorage(
         CancellationToken cancellationToken = default
     )
     {
-        return _ReserveAttemptAsync(ReceivedMessages, message, originalInlineAttempts, timeProvider, cancellationToken);
+        lock (_receivedUpsertLock)
+        {
+            return _ReserveAttemptAsync(
+                ReceivedMessages,
+                message,
+                originalInlineAttempts,
+                timeProvider,
+                cancellationToken
+            );
+        }
     }
 
     private ValueTask<bool> _ChangeReceiveStateAsync(
@@ -367,77 +376,80 @@ internal sealed partial class InMemoryDataStorage(
         CancellationToken cancellationToken
     )
     {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        if (!ReceivedMessages.TryGetValue(message.StorageId, out var current))
+        lock (_receivedUpsertLock)
         {
-            return ValueTask.FromResult(false);
-        }
+            cancellationToken.ThrowIfCancellationRequested();
 
-        bool updated;
-        lock (current)
-        {
-            // Mirror the SQL providers' terminal guard (see ChangePublishStateAsync above).
-            if ((current.StatusName is StatusName.Succeeded or StatusName.Failed) && current.NextRetryAt is null)
+            if (!ReceivedMessages.TryGetValue(message.StorageId, out var current))
             {
                 return ValueTask.FromResult(false);
             }
 
-            if (originalRetries.HasValue && current.Retries != originalRetries.Value)
+            bool updated;
+            lock (current)
             {
-                return ValueTask.FromResult(false);
-            }
+                // Mirror the SQL providers' terminal guard (see ChangePublishStateAsync above).
+                if ((current.StatusName is StatusName.Succeeded or StatusName.Failed) && current.NextRetryAt is null)
+                {
+                    return ValueTask.FromResult(false);
+                }
 
-            if (originalInlineAttempts.HasValue && current.InlineAttempts != originalInlineAttempts.Value)
-            {
-                return ValueTask.FromResult(false);
-            }
+                if (originalRetries.HasValue && current.Retries != originalRetries.Value)
+                {
+                    return ValueTask.FromResult(false);
+                }
 
-            if (current.InboxGeneration is not null && !_MatchesInboxFence(current, message.InboxAttemptFence))
-            {
-                return ValueTask.FromResult(false);
-            }
+                if (originalInlineAttempts.HasValue && current.InlineAttempts != originalInlineAttempts.Value)
+                {
+                    return ValueTask.FromResult(false);
+                }
 
-            if (
-                originalInlineAttempts.HasValue
-                && (
-                    current.LockedUntil != message.LockedUntil
-                    || !string.Equals(current.Owner, message.Owner, StringComparison.Ordinal)
-                    || current.LockedUntil is null
-                    || current.LockedUntil <= timeProvider.GetUtcNow()
+                if (current.InboxGeneration is not null && !_MatchesInboxFence(current, message.InboxAttemptFence))
+                {
+                    return ValueTask.FromResult(false);
+                }
+
+                if (
+                    originalInlineAttempts.HasValue
+                    && (
+                        current.LockedUntil != message.LockedUntil
+                        || !string.Equals(current.Owner, message.Owner, StringComparison.Ordinal)
+                        || current.LockedUntil is null
+                        || current.LockedUntil <= timeProvider.GetUtcNow()
+                    )
                 )
-            )
-            {
-                return ValueTask.FromResult(false);
+                {
+                    return ValueTask.FromResult(false);
+                }
+
+                var utcNextRetryAt = nextRetryAt;
+                var utcLockedUntil = lockedUntil;
+                current.StatusName = state;
+                current.ExpiresAt = message.ExpiresAt;
+                current.NextRetryAt = utcNextRetryAt;
+                current.LockedUntil = utcLockedUntil;
+                current.Owner = utcLockedUntil is null ? null : nodeMembership.GetOwnerTag();
+                current.Retries = message.Retries;
+                current.InlineAttempts = message.InlineAttempts;
+                current.InboxAttemptFence = utcLockedUntil is null ? null : message.InboxAttemptFence;
+                if (
+                    current.InboxGeneration is not null
+                    && state is StatusName.Succeeded or StatusName.Failed
+                    && utcNextRetryAt is null
+                )
+                {
+                    var terminalAt = timeProvider.GetUtcNow();
+                    current.TerminalAt = terminalAt;
+                    current.EffectiveExpiresAt = terminalAt.Add(current.InboxRetention);
+                }
+
+                _WriteContent(current, message, contentWrite);
+                current.ExceptionInfo = message.ExceptionInfo;
+                updated = true;
             }
 
-            var utcNextRetryAt = nextRetryAt;
-            var utcLockedUntil = lockedUntil;
-            current.StatusName = state;
-            current.ExpiresAt = message.ExpiresAt;
-            current.NextRetryAt = utcNextRetryAt;
-            current.LockedUntil = utcLockedUntil;
-            current.Owner = utcLockedUntil is null ? null : nodeMembership.GetOwnerTag();
-            current.Retries = message.Retries;
-            current.InlineAttempts = message.InlineAttempts;
-            current.InboxAttemptFence = utcLockedUntil is null ? null : message.InboxAttemptFence;
-            if (
-                current.InboxGeneration is not null
-                && state is StatusName.Succeeded or StatusName.Failed
-                && utcNextRetryAt is null
-            )
-            {
-                var terminalAt = timeProvider.GetUtcNow();
-                current.TerminalAt = terminalAt;
-                current.EffectiveExpiresAt = terminalAt.Add(current.InboxRetention);
-            }
-
-            _WriteContent(current, message, contentWrite);
-            current.ExceptionInfo = message.ExceptionInfo;
-            updated = true;
+            return ValueTask.FromResult(updated);
         }
-
-        return ValueTask.FromResult(updated);
     }
 
     public ValueTask<bool> LeaseReceiveAsync(
@@ -446,14 +458,17 @@ internal sealed partial class InMemoryDataStorage(
         CancellationToken cancellationToken = default
     )
     {
-        return _LeaseAsync(
-            ReceivedMessages,
-            message,
-            leaseDuration,
-            timeProvider,
-            nodeMembership.GetOwnerTag(),
-            cancellationToken
-        );
+        lock (_receivedUpsertLock)
+        {
+            return _LeaseAsync(
+                ReceivedMessages,
+                message,
+                leaseDuration,
+                timeProvider,
+                nodeMembership.GetOwnerTag(),
+                cancellationToken
+            );
+        }
     }
 
     public ValueTask<bool> LeaseReceiveAndReserveAttemptAsync(
@@ -463,16 +478,19 @@ internal sealed partial class InMemoryDataStorage(
         CancellationToken cancellationToken = default
     )
     {
-        return _LeaseAndReserveAttemptAsync(
-            ReceivedMessages,
-            message,
-            leaseDuration,
-            originalInlineAttempts,
-            timeProvider,
-            nodeMembership.GetOwnerTag(),
-            guidGenerator,
-            cancellationToken
-        );
+        lock (_receivedUpsertLock)
+        {
+            return _LeaseAndReserveAttemptAsync(
+                ReceivedMessages,
+                message,
+                leaseDuration,
+                originalInlineAttempts,
+                timeProvider,
+                nodeMembership.GetOwnerTag(),
+                guidGenerator,
+                cancellationToken
+            );
+        }
     }
 
     public ValueTask<InboxAdmissionResult> AdmitReceivedMessageAsync(
@@ -557,34 +575,89 @@ internal sealed partial class InMemoryDataStorage(
         }
     }
 
+    public ValueTask<bool> DeferReceivedInboxOrphanAsync(
+        MediumMessage message,
+        CancellationToken cancellationToken = default
+    ) => _SetInboxRoutabilityAsync(message, orphaned: true, cancellationToken);
+
+    public ValueTask<bool> ConfirmReceivedInboxRoutableAsync(
+        MediumMessage message,
+        CancellationToken cancellationToken = default
+    ) => _SetInboxRoutabilityAsync(message, orphaned: false, cancellationToken);
+
+    private ValueTask<bool> _SetInboxRoutabilityAsync(
+        MediumMessage message,
+        bool orphaned,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_receivedUpsertLock)
+        {
+            if (!ReceivedMessages.TryGetValue(message.StorageId, out var current))
+            {
+                return ValueTask.FromResult(false);
+            }
+
+            lock (current)
+            {
+                if (
+                    current.InboxKey is null
+                    || !_MatchesInboxFence(current, message.InboxAttemptFence)
+                    || current.LockedUntil is null
+                    || current.LockedUntil <= timeProvider.GetUtcNow()
+                )
+                {
+                    return ValueTask.FromResult(false);
+                }
+
+                current.IsInboxOrphaned = orphaned;
+                message.IsInboxOrphaned = orphaned;
+                if (orphaned)
+                {
+                    current.NextRetryAt = timeProvider.GetUtcNow().Add(messagingOptions.Value.OrphanProbeInterval);
+                    current.Owner = null;
+                    current.LockedUntil = null;
+                    message.NextRetryAt = current.NextRetryAt;
+                    message.Owner = null;
+                    message.LockedUntil = null;
+                }
+                return ValueTask.FromResult(true);
+            }
+        }
+    }
+
     public ValueTask<bool> MarkReceivedInboxOrphanedAsync(
         MediumMessage message,
         bool orphaned,
         CancellationToken cancellationToken = default
     )
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        if (!ReceivedMessages.TryGetValue(message.StorageId, out var current))
+        lock (_receivedUpsertLock)
         {
-            return ValueTask.FromResult(false);
-        }
-
-        lock (current)
-        {
-            if (current.InboxKey is null || !_MatchesInboxFence(current, message.InboxAttemptFence))
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!ReceivedMessages.TryGetValue(message.StorageId, out var current))
             {
                 return ValueTask.FromResult(false);
             }
 
-            if (current.IsInboxOrphaned == orphaned)
+            lock (current)
             {
+                if (current.InboxKey is null || !_MatchesInboxFence(current, message.InboxAttemptFence))
+                {
+                    return ValueTask.FromResult(false);
+                }
+
+                if (current.IsInboxOrphaned == orphaned)
+                {
+                    message.IsInboxOrphaned = orphaned;
+                    return ValueTask.FromResult(false);
+                }
+
+                current.IsInboxOrphaned = orphaned;
                 message.IsInboxOrphaned = orphaned;
-                return ValueTask.FromResult(false);
+                return ValueTask.FromResult(true);
             }
-
-            current.IsInboxOrphaned = orphaned;
-            message.IsInboxOrphaned = orphaned;
-            return ValueTask.FromResult(true);
         }
     }
 
@@ -1101,7 +1174,7 @@ internal sealed partial class InMemoryDataStorage(
     )
     {
         return ValueTask.FromResult<IEnumerable<MediumMessage>>(
-            _ClaimMessagesOfNeedRetry(PublishedMessages, lane, cancellationToken)
+            _ClaimMessagesOfNeedRetry(PublishedMessages, lane, cancellationToken: cancellationToken)
         );
     }
 
@@ -1118,9 +1191,25 @@ internal sealed partial class InMemoryDataStorage(
         CancellationToken cancellationToken = default
     )
     {
-        return ValueTask.FromResult<IEnumerable<MediumMessage>>(
-            _ClaimMessagesOfNeedRetry(ReceivedMessages, lane, cancellationToken)
-        );
+        lock (_receivedUpsertLock)
+        {
+            return ValueTask.FromResult<IEnumerable<MediumMessage>>(
+                _ClaimMessagesOfNeedRetry(ReceivedMessages, lane, orphaned: false, cancellationToken: cancellationToken)
+            );
+        }
+    }
+
+    public ValueTask<IEnumerable<MediumMessage>> GetReceivedInboxOrphansOfNeedRetryAsync(
+        MessageLane lane,
+        CancellationToken cancellationToken = default
+    )
+    {
+        lock (_receivedUpsertLock)
+        {
+            return ValueTask.FromResult<IEnumerable<MediumMessage>>(
+                _ClaimMessagesOfNeedRetry(ReceivedMessages, lane, orphaned: true, cancellationToken: cancellationToken)
+            );
+        }
     }
 
     public ValueTask<int> ReclaimDeadReceivedOwnersAsync(
@@ -1128,7 +1217,10 @@ internal sealed partial class InMemoryDataStorage(
         CancellationToken cancellationToken = default
     )
     {
-        return ValueTask.FromResult(_ReclaimDeadOwners(ReceivedMessages, deadOwners, cancellationToken));
+        lock (_receivedUpsertLock)
+        {
+            return ValueTask.FromResult(_ReclaimDeadOwners(ReceivedMessages, deadOwners, cancellationToken));
+        }
     }
 
     public ValueTask<bool> ReleasePublishedLeaseAsync(
@@ -1144,7 +1236,10 @@ internal sealed partial class InMemoryDataStorage(
         CancellationToken cancellationToken = default
     )
     {
-        return ValueTask.FromResult(_ReleaseLease(ReceivedMessages, identity, cancellationToken));
+        lock (_receivedUpsertLock)
+        {
+            return ValueTask.FromResult(_ReleaseLease(ReceivedMessages, identity, cancellationToken));
+        }
     }
 
     public ValueTask<bool> DeferReceivedRetryAsync(
@@ -1152,33 +1247,36 @@ internal sealed partial class InMemoryDataStorage(
         CancellationToken cancellationToken = default
     )
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        _ = MessageLaneCompatibility.ToPersistedValue(deferral.Identity.Lane);
-
-        if (!ReceivedMessages.TryGetValue(deferral.Identity.StorageId, out var current))
+        lock (_receivedUpsertLock)
         {
-            return ValueTask.FromResult(false);
-        }
+            cancellationToken.ThrowIfCancellationRequested();
+            _ = MessageLaneCompatibility.ToPersistedValue(deferral.Identity.Lane);
 
-        lock (current)
-        {
-            var identity = deferral.Identity;
-            if (
-                current.Lane != identity.Lane
-                || !string.Equals(current.Owner, identity.Owner, StringComparison.Ordinal)
-                || current.LockedUntil != identity.LockedUntil
-                || (current.InboxGeneration is not null && !_MatchesInboxFence(current, identity.InboxAttemptFence))
-                || current.LockedUntil <= timeProvider.GetUtcNow()
-                || (current.StatusName is StatusName.Succeeded or StatusName.Failed && current.NextRetryAt is null)
-            )
+            if (!ReceivedMessages.TryGetValue(deferral.Identity.StorageId, out var current))
             {
                 return ValueTask.FromResult(false);
             }
 
-            current.NextRetryAt = deferral.NextRetryAt;
-            current.Owner = null;
-            current.LockedUntil = null;
-            return ValueTask.FromResult(true);
+            lock (current)
+            {
+                var identity = deferral.Identity;
+                if (
+                    current.Lane != identity.Lane
+                    || !string.Equals(current.Owner, identity.Owner, StringComparison.Ordinal)
+                    || current.LockedUntil != identity.LockedUntil
+                    || (current.InboxGeneration is not null && !_MatchesInboxFence(current, identity.InboxAttemptFence))
+                    || current.LockedUntil <= timeProvider.GetUtcNow()
+                    || (current.StatusName is StatusName.Succeeded or StatusName.Failed && current.NextRetryAt is null)
+                )
+                {
+                    return ValueTask.FromResult(false);
+                }
+
+                current.NextRetryAt = deferral.NextRetryAt;
+                current.Owner = null;
+                current.LockedUntil = null;
+                return ValueTask.FromResult(true);
+            }
         }
     }
 
@@ -1195,7 +1293,10 @@ internal sealed partial class InMemoryDataStorage(
         CancellationToken cancellationToken = default
     )
     {
-        return ValueTask.FromResult(_ReleaseLeases(ReceivedMessages, identities, cancellationToken));
+        lock (_receivedUpsertLock)
+        {
+            return ValueTask.FromResult(_ReleaseLeases(ReceivedMessages, identities, cancellationToken));
+        }
     }
 
     private static int _ReleaseLeases(
@@ -1252,7 +1353,8 @@ internal sealed partial class InMemoryDataStorage(
     private List<MediumMessage> _ClaimMessagesOfNeedRetry(
         ConcurrentDictionary<Guid, MemoryMessage> source,
         MessageLane lane,
-        CancellationToken cancellationToken
+        bool? orphaned = null,
+        CancellationToken cancellationToken = default
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -1260,7 +1362,9 @@ internal sealed partial class InMemoryDataStorage(
         var now = timeProvider.GetUtcNow();
         var newLease = now.Add(messagingOptions.Value.RetryPolicy.DispatchTimeout);
         var maxPersistedRetries = messagingOptions.Value.RetryPolicy.MaxPersistedRetries;
-        var retryBatchSize = messagingOptions.Value.RetryBatchSize;
+        var retryBatchSize = orphaned is true
+            ? messagingOptions.Value.OrphanProbeBatchSize
+            : messagingOptions.Value.RetryBatchSize;
         var version = messagingOptions.Value.Version;
 
         // Atomic claim-and-return mirrors the SQL providers' single-statement UPDATE...RETURNING/
@@ -1301,6 +1405,11 @@ internal sealed partial class InMemoryDataStorage(
             lock (candidate)
             {
                 if (!_IsSupportedLane(candidate.Lane))
+                {
+                    continue;
+                }
+
+                if (orphaned.HasValue && candidate.IsInboxOrphaned != orphaned.Value)
                 {
                     continue;
                 }

@@ -396,7 +396,7 @@ internal sealed partial class SqlServerDataStorage
     )
     {
         await using var command = new SqlCommand(
-            $"SELECT [Id],[StatusName],[NextRetryAt],[IsHeld],[IsCurrentGeneration],[Generation],[TenantPresent],[TenantId],[MessageId],[IntentType],[ContractIdentity],[ContractVersion],[ConsumerIdentity],[LifecycleId] FROM {_receivedTable} WITH (UPDLOCK,HOLDLOCK) WHERE [IsInboxRecord]=1 AND [GenerationIncarnationId]=@IncarnationId;",
+            $"SELECT [Id],[StatusName],[NextRetryAt],[IsHeld],[IsCurrentGeneration],[Generation],[TenantPresent],[TenantId],[MessageId],[IntentType],[ContractIdentity],[ContractVersion],[ConsumerIdentity],[LifecycleId],[IsInboxOrphaned],CAST(CASE WHEN [LockedUntil] > SYSUTCDATETIME() THEN 1 ELSE 0 END AS bit) FROM {_receivedTable} WITH (UPDLOCK,HOLDLOCK) WHERE [IsInboxRecord]=1 AND [GenerationIncarnationId]=@IncarnationId;",
             connection,
             transaction
         );
@@ -413,7 +413,9 @@ internal sealed partial class SqlServerDataStorage
                 !reader.IsDBNull(2),
                 reader.GetBoolean(3),
                 reader.GetBoolean(4),
-                reader.GetInt64(5)
+                reader.GetInt64(5),
+                reader.GetBoolean(14),
+                reader.GetBoolean(15)
             ),
             reader.GetBoolean(6),
             reader.GetString(7),

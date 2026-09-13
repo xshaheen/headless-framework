@@ -9,7 +9,9 @@ internal readonly record struct InboxOperationState(
     bool HasNextRetry,
     bool IsHeld,
     bool IsCurrentGeneration,
-    long Generation
+    long Generation,
+    bool IsOrphaned = false,
+    bool HasLiveClaim = false
 );
 
 internal static class InboxOperationEvaluator
@@ -30,7 +32,17 @@ internal static class InboxOperationEvaluator
             return InboxOperationOutcome.StateConflict;
         }
 
-        if (row.Status is not (StatusName.Succeeded or StatusName.Failed) || row.HasNextRetry)
+        var allowsUnclaimedOrphan =
+            row.IsOrphaned
+            && !row.HasLiveClaim
+            && operationType is InboxOperationType.Hold or InboxOperationType.ReleaseHold or InboxOperationType.Purge;
+        if (
+            row.HasLiveClaim
+            || (
+                !allowsUnclaimedOrphan
+                && (row.Status is not (StatusName.Succeeded or StatusName.Failed) || row.HasNextRetry)
+            )
+        )
         {
             return InboxOperationOutcome.Active;
         }

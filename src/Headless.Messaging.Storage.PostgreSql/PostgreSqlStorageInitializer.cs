@@ -192,6 +192,26 @@ internal sealed class PostgreSqlStorageInitializer(
                 )
                 .ConfigureAwait(false);
 
+            // History tables can already contain an unbounded backlog on an existing schema.
+            foreach (
+                var (indexName, table, columns) in new[]
+                {
+                    ("idx_inbox_receipts_type_created", "inbox_operation_receipts", "\"OperationType\",\"CreatedAt\""),
+                    ("idx_inbox_audit_type_created", "inbox_audit", "\"OperationType\",\"CreatedAt\""),
+                    ("idx_inbox_audit_operation", "inbox_audit", "\"OperationId\""),
+                }
+            )
+            {
+                await _DropInvalidIndexConcurrentlyAsync(connection, indexName, cancellationToken)
+                    .ConfigureAwait(false);
+                await connection
+                    .ExecuteNonQueryAsync(
+                        $"CREATE INDEX CONCURRENTLY IF NOT EXISTS \"{indexName}\" ON \"{postgreSqlOptions.Value.Schema}\".\"{table}\" ({columns});",
+                        commandTimeout: _GetDdlCommandTimeout(),
+                        cancellationToken: cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
             await _PublishInboxSchemaReadinessAsync(connection, cancellationToken).ConfigureAwait(false);
         }
         finally

@@ -194,6 +194,10 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     private static void _SetupReceivedMessages(IDataStorage dataStorage, params MediumMessage[] messages)
     {
         dataStorage
+            .GetReceivedInboxOrphansOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
+
+        dataStorage
             .GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>(messages));
 
@@ -207,6 +211,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     {
         var (sut, _, _) = _Create(baseIntervalSeconds: 0, adaptivePolling: false);
         var storage = Substitute.For<IDataStorage>();
+        storage
+            .GetReceivedInboxOrphansOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
         await using var context = _CreateContext(
             new ServiceCollection().AddSingleton(storage).BuildServiceProvider(),
             cancellationToken: AbortToken
@@ -237,6 +244,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var dispatcher = Substitute.For<IDispatcher, IRetryDispatcher>();
         var retryDispatcher = (IRetryDispatcher)dispatcher;
         var storage = Substitute.For<IDataStorage, IGracefulLeaseReleaseStorage>();
+        storage
+            .GetReceivedInboxOrphansOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
         var releaseStorage = (IGracefulLeaseReleaseStorage)storage;
         var lockedUntil = DateTimeOffset.UtcNow.AddMinutes(5);
         var first = _CreateMessage();
@@ -373,8 +383,63 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         await dispatcher.DidNotReceive().EnqueueToExecute(msg3, null, Arg.Any<CancellationToken>());
     }
 
-    [Fact]
-    public async Task inbox_retry_should_mark_missing_stable_registration_orphaned_without_misrouting()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task should_release_unhanded_claims_when_orphan_classification_fails(bool canceled)
+    {
+        var circuit = _CreateMessage("open-group");
+        var first = _CreateMessage();
+        var second = _CreateMessage();
+        foreach (var message in new[] { circuit, first, second })
+        {
+            message.Owner = "node-a";
+            message.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(5);
+        }
+        first.InboxKey = new InboxKey(null, first.Origin.Id, MessageLane.Bus, first.Origin.Name, "v1", "missing", 0);
+        var storage = Substitute.For<IDataStorage, IGracefulLeaseReleaseStorage>();
+        _SetupReceivedMessages(storage, circuit, first, second);
+        storage
+            .DeferReceivedInboxOrphanAsync(first, Arg.Any<CancellationToken>())
+            .Returns(_ =>
+                canceled
+                    ? ValueTask.FromException<bool>(new OperationCanceledException())
+                    : ValueTask.FromException<bool>(new InvalidOperationException("classification failed"))
+            );
+        var (sut, dispatcher, monitor) = _Create(baseIntervalSeconds: 0, adaptivePolling: false);
+        monitor.IsOpen(_CircuitKey("open-group")).Returns(true);
+        await using var context = _CreateContext(
+            new ServiceCollection().AddSingleton(storage).BuildServiceProvider(),
+            cancellationToken: AbortToken
+        );
+        var act = async () => await _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus);
+        if (canceled)
+        {
+            await act.Should().ThrowAsync<OperationCanceledException>();
+        }
+        else
+        {
+            await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("classification failed");
+        }
+        await ((IGracefulLeaseReleaseStorage)storage)
+            .Received(1)
+            .ReleaseReceivedLeasesAsync(
+                Arg.Is<IReadOnlyCollection<MessageLeaseIdentity>>(identities =>
+                    identities.Count == 2
+                    && identities.Any(identity => identity.StorageId == first.StorageId)
+                    && identities.Any(identity => identity.StorageId == second.StorageId)
+                ),
+                CancellationToken.None
+            );
+        await dispatcher.DidNotReceive().EnqueueToExecute(Arg.Any<MediumMessage>(), null, Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task inbox_retry_should_mark_missing_stable_registration_orphaned_without_misrouting(
+        bool mismatchedVersion
+    )
     {
         var message = _CreateMessage("obsolete-group");
         message.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(1);
@@ -384,18 +449,18 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             message.Origin.Id,
             MessageLane.Bus,
             message.Origin.Name,
-            "v1",
-            "tests.retry.missing-consumer",
+            mismatchedVersion ? "v2" : "v1",
+            "tests.retry.stable-consumer",
             Generation: 0
         );
 
         var storage = Substitute.For<IDataStorage>();
         _SetupReceivedMessages(storage, message);
         storage
-            .MarkReceivedInboxOrphanedAsync(message, true, Arg.Any<CancellationToken>())
+            .DeferReceivedInboxOrphanAsync(message, Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult(true));
         var selector = Substitute.For<IConsumerServiceSelector>();
-        selector.SelectCandidates().Returns([]);
+        selector.SelectCandidates().Returns(mismatchedVersion ? [_CreateInboxDescriptor()] : []);
         var dispatcher = Substitute.For<IDispatcher>();
         var sut = new MessageNeedToRetryProcessor(
             Options.Create(new MessagingOptions()),
@@ -412,12 +477,19 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         await _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus);
 
-        await storage.Received(1).MarkReceivedInboxOrphanedAsync(message, true, CancellationToken.None);
+        await storage.Received(1).DeferReceivedInboxOrphanAsync(message, CancellationToken.None);
         await dispatcher.DidNotReceive().EnqueueToExecute(Arg.Any<MediumMessage>(), null, Arg.Any<CancellationToken>());
     }
 
-    [Fact]
-    public async Task inbox_retry_should_route_by_stable_identity_after_mutable_group_refactor()
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    public async Task inbox_retry_should_route_by_stable_identity_only_when_fence_is_accepted(
+        bool accepted,
+        bool orphanProbe
+    )
     {
         var message = _CreateMessage("obsolete-group");
         message.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(1);
@@ -433,10 +505,20 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         );
 
         var storage = Substitute.For<IDataStorage>();
-        _SetupReceivedMessages(storage, message);
+        if (orphanProbe)
+        {
+            _SetupReceivedMessages(storage);
+            storage
+                .GetReceivedInboxOrphansOfNeedRetryAsync(MessageLane.Bus, Arg.Any<CancellationToken>())
+                .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([message]));
+        }
+        else
+        {
+            _SetupReceivedMessages(storage, message);
+        }
         storage
-            .MarkReceivedInboxOrphanedAsync(message, false, Arg.Any<CancellationToken>())
-            .Returns(ValueTask.FromResult(true));
+            .ConfirmReceivedInboxRoutableAsync(message, Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(accepted));
         var selector = Substitute.For<IConsumerServiceSelector>();
         var descriptor = _CreateInboxDescriptor();
         selector.SelectCandidates().Returns([descriptor]);
@@ -459,9 +541,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         await _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus);
 
-        message.Origin.GetGroup().Should().Be("renamed-group");
-        await storage.Received(1).MarkReceivedInboxOrphanedAsync(message, false, CancellationToken.None);
-        await dispatcher.Received(1).EnqueueToExecute(message, null, Arg.Any<CancellationToken>());
+        message.Origin.GetGroup().Should().Be(accepted ? "renamed-group" : "obsolete-group");
+        await storage.Received(1).ConfirmReceivedInboxRoutableAsync(message, CancellationToken.None);
+        await dispatcher.Received(accepted ? 1 : 0).EnqueueToExecute(message, null, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -1414,6 +1496,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         cb.IsOpen(Arg.Any<string>()).Returns(false);
 
         var dataStorage = Substitute.For<IDataStorage>();
+        dataStorage
+            .GetReceivedInboxOrphansOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
         // First storage call signals when jitter completes.
         var storageCalled = new TaskCompletionSource<DateTimeOffset>(
             TaskCreationOptions.RunContinuationsAsynchronously
@@ -1485,6 +1570,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         // given — capture EventId.Name from ILogger.Log invocations.
         var dispatcher = Substitute.For<IDispatcher>();
         var dataStorage = Substitute.For<IDataStorage>();
+        dataStorage
+            .GetReceivedInboxOrphansOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
         var captured = new ConcurrentQueue<(LogLevel Level, int Id)>();
         var logger = new CapturingLogger(captured);
 
@@ -1550,6 +1638,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     {
         var (sut, _, _) = _Create(baseIntervalSeconds: 1);
         var dataStorage = Substitute.For<IDataStorage>();
+        dataStorage
+            .GetReceivedInboxOrphansOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
 
         var receivedCalls = 0;
         dataStorage
@@ -1589,6 +1680,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         // given — capture EventId.Id from ILogger.Log invocations.
         var dispatcher = Substitute.For<IDispatcher>();
         var dataStorage = Substitute.For<IDataStorage>();
+        dataStorage
+            .GetReceivedInboxOrphansOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
         var logger = Substitute.For<ILogger<MessageNeedToRetryProcessor>>();
         logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
 
@@ -1654,6 +1748,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         // given — capture EventId.Id from ILogger.Log invocations.
         var dispatcher = Substitute.For<IDispatcher>();
         var dataStorage = Substitute.For<IDataStorage>();
+        dataStorage
+            .GetReceivedInboxOrphansOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
         var logger = Substitute.For<ILogger<MessageNeedToRetryProcessor>>();
         logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
 
@@ -1745,6 +1842,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     {
         var dispatcher = Substitute.For<IDispatcher>();
         var dataStorage = Substitute.For<IDataStorage>();
+        dataStorage
+            .GetReceivedInboxOrphansOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
         var captured = new List<(LogLevel Level, int Id)>();
         var logger = _CreateCapturingLogger(captured);
 
@@ -1791,6 +1891,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     {
         var dispatcher = Substitute.For<IDispatcher>();
         var dataStorage = Substitute.For<IDataStorage>();
+        dataStorage
+            .GetReceivedInboxOrphansOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
         var captured = new List<(LogLevel Level, int Id)>();
         var logger = _CreateCapturingLogger(captured);
 
@@ -1859,6 +1962,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     {
         var dispatcher = Substitute.For<IDispatcher>();
         var dataStorage = Substitute.For<IDataStorage>();
+        dataStorage
+            .GetReceivedInboxOrphansOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
         var captured = new List<(LogLevel Level, int Id)>();
         var logger = _CreateCapturingLogger(captured);
 
@@ -1914,6 +2020,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     {
         var dispatcher = Substitute.For<IDispatcher>();
         var dataStorage = Substitute.For<IDataStorage>();
+        dataStorage
+            .GetReceivedInboxOrphansOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
         var captured = new List<(LogLevel Level, int Id)>();
         var logger = _CreateCapturingLogger(captured);
 

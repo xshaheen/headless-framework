@@ -178,6 +178,37 @@ The framework default is `DeliveryMode.Auto`. A null per-call `DeliveryMode` inh
 
 Terminal inbox generations are retained for 30 days by default. Use `InboxRetention(...)` on a durable consumer for a deliberate override. Expiry or authorized purge removes that deduplication identity; force reprocessing instead creates a linked child generation with replay provenance.
 
+A missing registration defers an inbox generation as an orphan without consuming the handler failure retry budget. Recovery requires the exact consumer identity, logical contract name, contract version, and lane. The probe claims a fresh attempt in the same generation and incarnation, then clears the orphan flag under the complete execution fence before dispatch. Registration absence on one host does not establish absence on every deployment.
+
+Known orphans are excluded from ordinary retry pickup. Each lane has an independent probe allowance, configured through `setup.Options.OrphanProbeInterval` (default five minutes, positive) and `OrphanProbeBatchSize` (default 10, range 1 through 100,000). The interval delays the next probe after missing-registration deferral; it is not a recovery deadline. First discovery can occupy ordinary retry capacity once, so a growing backlog of unclassified work has no absolute latency guarantee.
+
+Orphans have no automatic expiry or terminalization. An orphan with no live execution claim permits `Hold`, `ReleaseHold`, and, when unheld, `Purge`, subject to the normal expected-status and incarnation checks. A live claim blocks these operator exceptions. `ForceReprocess` remains terminal-only. Holds block purge and terminal retention cleanup but do not pause execution: a held orphan can recover and keeps its hold after completion. Recovery claims and purge serialize against the same generation; only the winner can proceed.
+
+Operation history has separate retention from inbox generations. Configure these positive minimum residence durations through `setup.Options`:
+
+| Option | Default |
+|---|---|
+| `InboxCleanupReceiptRetention` | 7 days |
+| `InboxCleanupAuditRetention` | 7 days |
+| `InboxOperatorReceiptRetention` | 30 days |
+| `InboxOperatorAuditRetention` | 90 days |
+
+For example, inside the existing `AddHeadlessMessaging` callback:
+
+```csharp
+setup.Options.OrphanProbeInterval = TimeSpan.FromMinutes(2);
+setup.Options.OrphanProbeBatchSize = 20;
+setup.Options.InboxOperatorReceiptRetention = TimeSpan.FromDays(14);
+setup.Options.InboxOperatorAuditRetention = TimeSpan.FromDays(180);
+```
+
+
+Thirty days is the operator-receipt default, not a validation floor. Each record ages from its immutable `CreatedAt`; replay does not refresh receipt age. A receipt remains until its minimum residence time passes and all referencing audits have been deleted, so audit references can extend its lifetime. Matching-request replay and conflicting-request detection remain available while the receipt physically exists. After deletion, reuse of its operation ID is evaluated as a new request against current state. Clients must use unique operation IDs and retry within the configured receipt window.
+
+Deleting audits removes historical evidence but does not release a surviving generation's hold. Holds do not pin history indefinitely. Retention changes apply to existing history using its original timestamps; shortening a duration can make old evidence eligible on the next sweep, and increasing it cannot restore deleted records. Configure longer evidence windows before enabling collection. These options do not change persisted inbox-generation retention.
+
+The collector obtains one fixed provider-clock history cutoff snapshot per invocation. PostgreSQL and SQL Server use database time; InMemory uses its injected `TimeProvider`. Each round visits published messages, received messages, expired audits, and unreferenced expired receipts, with a maximum batch of 1,000 per category and a one-second pause after each nonzero batch. Rounds repeat until all categories return zero, then wait for `CollectorCleaningInterval`. History deletion creates no replacement history. Practical storage bounds depend on collection throughput keeping up with eligible arrivals; the durations are minimum residence times, not deletion deadlines.
+
 Inbox metrics use registered consumer identity and bounded lane, outcome, tier, and provider dimensions. They exclude message/replay IDs, payloads, and headers. Tenant identity is excluded unless `setup.Instrumentation.IncludeTenantIdInMetricTags = true` explicitly accepts the cardinality cost.
 
 The transactional tier commits the fenced inbox outcome, compatible enlisted application state, and captured durable Bus/Queue work atomically. It does not guarantee exactly-once handler entry, direct transport, or external/non-enlisted effects.
