@@ -239,6 +239,79 @@ public sealed class JobsPostCommitSignalServiceTests : TestBase
     }
 
     [Fact]
+    public async Task should_process_or_report_a_signal_accepted_while_idle_when_stop_follows_without_yielding()
+    {
+        // Two races share this shape. base.StartAsync runs the loop through Task.Run bound to the stopping token,
+        // so a stop before the pool picks the worker up cancels it without the loop ever reading; and once the
+        // loop runs, a stop that cancelled a token observed by its idle wait would skip an item queued between the
+        // inner loop running dry and the next wait (two adjacent statements on the worker thread, so that exact
+        // window cannot be pinned from a test). Either way TrySignal already reported the signal accepted, so it
+        // must run or be reported as dropped; it must never vanish.
+        var (service, logger) = _CreateService(new FakeTimeProvider());
+        using var drops = new DroppedSignalCounter();
+        var processed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await service.StartAsync(AbortToken);
+
+        service
+            .TrySignal(
+                new TestPostCommitSignal(
+                    "idle",
+                    (_, _) =>
+                    {
+                        processed.TrySetResult();
+                        return Task.CompletedTask;
+                    }
+                )
+            )
+            .Should()
+            .BeTrue();
+        var stop = service.StopAsync(AbortToken);
+
+        await stop.WaitAsync(_WaitTimeout, AbortToken);
+        service.PendingCount.Should().Be(0);
+
+        if (processed.Task.IsCompleted)
+        {
+            logger.Entries.Should().BeEmpty();
+            drops.Measurements.Should().BeEmpty();
+        }
+        else
+        {
+            logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning && e.Exception == null);
+            drops.Measurements.Should().ContainSingle().Which.Should().Be((1L, "stopping"));
+        }
+    }
+
+    [Fact]
+    public async Task should_report_a_signal_still_queued_when_stopped_before_activation()
+    {
+        var (service, logger) = _CreateService(new FakeTimeProvider(), new JobsActivationBarrier());
+        using var drops = new DroppedSignalCounter();
+        var processed = false;
+        await service.StartAsync(AbortToken);
+        service
+            .TrySignal(
+                new TestPostCommitSignal(
+                    "queued",
+                    (_, _) =>
+                    {
+                        processed = true;
+                        return Task.CompletedTask;
+                    }
+                )
+            )
+            .Should()
+            .BeTrue();
+
+        await service.StopAsync(AbortToken).WaitAsync(_WaitTimeout, AbortToken);
+
+        processed.Should().BeFalse();
+        service.PendingCount.Should().Be(0);
+        logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning && e.Exception == null);
+        drops.Measurements.Should().ContainSingle().Which.Should().Be((1L, "stopping"));
+    }
+
+    [Fact]
     public async Task should_abandon_the_drain_when_the_shutdown_budget_is_exhausted()
     {
         var (service, _) = _CreateService(new FakeTimeProvider());

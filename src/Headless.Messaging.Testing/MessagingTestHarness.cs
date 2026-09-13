@@ -442,9 +442,12 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     /// more for anything picked up in between, and only then clears observations and storage.
     /// </para>
     /// <para>
-    /// A publish scheduled more than a minute ahead sits in a <c>Delayed</c> row and is not awaited; the dispatcher
-    /// still holds it and publishes it when due, so a shared harness should not carry long delays across tests.
-    /// Pending <c>WaitFor*</c> calls fault when the reset clears the store.
+    /// A publish that is not yet due is clock-parked and is not awaited: the dispatcher stores it as <c>Queued</c>
+    /// when it is due within a minute and as <c>Delayed</c> beyond that, holds it either way, and publishes it when
+    /// its time arrives on the host <see cref="TimeProvider"/>. The wait therefore counts a <c>Queued</c> publish as
+    /// in flight only once it is due on that clock. A shared harness should not carry pending delays across tests,
+    /// or should advance its <c>FakeTimeProvider</c> past them before resetting. Pending <c>WaitFor*</c> calls
+    /// fault when the reset clears the store.
     /// </para>
     /// </remarks>
     /// <param name="timeout">How long to wait for in-flight work; defaults to <see cref="DefaultTimeout"/>.</param>
@@ -453,12 +456,15 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     public async Task ResetAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = default)
     {
         var storage = ServiceProvider.GetService<InMemoryDataStorage>();
+        // The dispatcher decides when a parked publish is due on the host clock, which a test host may fake.
+        var hostClock = ServiceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
         var waitBudget = timeout ?? DefaultTimeout;
         var startedAt = TimeProvider.System.GetTimestamp();
 
         if (storage is not null)
         {
-            await _WaitForStorageIdleAsync(storage, startedAt, waitBudget, cancellationToken).ConfigureAwait(false);
+            await _WaitForStorageIdleAsync(storage, hostClock, startedAt, waitBudget, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         ServiceProvider.GetService<MemoryQueue>()?.DrainAllPendingMessages();
@@ -467,7 +473,8 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         {
             // A consumer that dequeued a message just before the drain stores its received row next; the second
             // wait covers that hand-off instead of clearing underneath it.
-            await _WaitForStorageIdleAsync(storage, startedAt, waitBudget, cancellationToken).ConfigureAwait(false);
+            await _WaitForStorageIdleAsync(storage, hostClock, startedAt, waitBudget, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         _store.Clear();
@@ -612,6 +619,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
 
     private static async Task _WaitForStorageIdleAsync(
         InMemoryDataStorage storage,
+        TimeProvider hostClock,
         long startedAt,
         TimeSpan timeout,
         CancellationToken cancellationToken
@@ -621,7 +629,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var inFlight = _DescribeInFlightRows(storage);
+            var inFlight = _DescribeInFlightRows(storage, hostClock.GetUtcNow());
 
             if (inFlight.Count == 0)
             {
@@ -646,15 +654,26 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     /// <summary>
     /// Rows whose status brackets work still running on a dispatcher thread: a published row is Scheduled from
     /// store until after the send and its Published observation, and a received row is Scheduled from admission
-    /// until after the consumer and its Consumed/Faulted observation.
+    /// until after the consumer and its Consumed/Faulted observation. A Queued published row is a delayed publish
+    /// due within a minute; it counts only once its publish time has arrived on the host clock, because until
+    /// then the dispatcher parks it in its scheduler queue and no thread is working on it.
     /// </summary>
-    private static List<string> _DescribeInFlightRows(InMemoryDataStorage storage)
+    private static List<string> _DescribeInFlightRows(InMemoryDataStorage storage, DateTimeOffset now)
     {
         List<string> inFlight = [];
 
         foreach (var row in storage.PublishedMessages.Values)
         {
-            if (row.StatusName is StatusName.Scheduled or StatusName.Queued)
+            // For a published row, ExpiresAt carries the scheduled publish time (see InMemoryDataStorage._CreateRow
+            // and Dispatcher.EnqueueToScheduler); a Queued row with no time is treated as due.
+            var isInFlight = row.StatusName switch
+            {
+                StatusName.Scheduled => true,
+                StatusName.Queued => row.ExpiresAt is not { } publishAt || publishAt <= now,
+                _ => false,
+            };
+
+            if (isInFlight)
             {
                 inFlight.Add($"published '{row.Name}' ({row.StatusName})");
             }

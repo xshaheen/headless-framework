@@ -46,7 +46,15 @@ public interface IBus
     /// header is supplied without setting <see cref="MessageOptions.TenantId"/>, or when both are
     /// supplied with disagreeing values, when any outbound header name/value contains control
     /// characters, or when <see cref="DeliveryMode.Direct"/> delivery specifies
-    /// <see cref="MessageOptions.Delay"/> or <see cref="MessageOptions.ScheduledAt"/>.
+    /// <see cref="MessageOptions.Delay"/> or <see cref="MessageOptions.ScheduledAt"/>. Also thrown when the
+    /// selected delivery mode is <see cref="DeliveryMode.Durable"/> or <see cref="DeliveryMode.Coordinated"/> and
+    /// the active commit-coordination boundary is incompatible with messaging storage or is no longer live, or when
+    /// <see cref="DeliveryMode.Coordinated"/> was requested with no live coordinated transaction.
+    /// </exception>
+    /// <exception cref="Exception">
+    /// Thrown as <c>MessagingConfigurationException</c> (declared in <c>Headless.Messaging.Core</c>) when the
+    /// selected delivery mode is <see cref="DeliveryMode.Durable"/> or <see cref="DeliveryMode.Coordinated"/> and
+    /// the target lane has no storage contribution.
     /// </exception>
     Task<PublishReceipt> PublishAsync<T>(
         T? contentObj,
@@ -59,6 +67,16 @@ public interface IBus
     /// <param name="contentObj">The message payload. Can be <see langword="null"/>.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A receipt for transport acceptance or durable capture, or an empty receipt when middleware suppresses publication. This does not imply consumer completion.</returns>
-    /// <exception cref="InvalidOperationException">Thrown when the selected delivery mode requires unavailable storage or an active commit boundary is incompatible.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the selected delivery mode is <see cref="DeliveryMode.Durable"/> or
+    /// <see cref="DeliveryMode.Coordinated"/> and the active commit-coordination boundary is incompatible with
+    /// messaging storage or is no longer live, or when <see cref="DeliveryMode.Coordinated"/> was requested with no
+    /// live coordinated transaction.
+    /// </exception>
+    /// <exception cref="Exception">
+    /// Thrown as <c>MessagingConfigurationException</c> (declared in <c>Headless.Messaging.Core</c>) when the
+    /// selected delivery mode is <see cref="DeliveryMode.Durable"/> or <see cref="DeliveryMode.Coordinated"/> and
+    /// the target lane has no storage contribution.
+    /// </exception>
     Task<PublishReceipt> PublishAsync<T>(T? contentObj, CancellationToken cancellationToken = default);
 }

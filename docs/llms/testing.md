@@ -522,7 +522,7 @@ Asserting on messaging by querying the outbox table covers only messages that fl
 - `WaitForPublished<T>(MessageLane.Bus)` and `WaitForPublished<T>(MessageLane.Queue)` distinguish identical payloads sent through bus and queue paths.
 - Predicate overloads for filtering by payload shape.
 - `Published`, `Consumed`, `Faulted`, `Exhausted` collections for non-blocking assertions.
-- `ResetAsync()` for clean test isolation — waits for in-flight store-first work, then clears observations and in-memory storage; integrates with `HeadlessTestServer.ResetMessagingHarnessAsync()`.
+- `ResetAsync()` for clean test isolation — waits for in-flight store-first work (not for a delayed publish that is not yet due on the host `TimeProvider`), then clears observations and in-memory storage; integrates with `HeadlessTestServer.ResetMessagingHarnessAsync()`.
 
 ### Installation
 
@@ -571,7 +571,7 @@ A common reflex is to assert by selecting from the outbox table (`outbox.publish
 
 #### Isolation Between Tests
 
-Call `await harness.ResetAsync()` (or `await App.ResetMessagingHarnessAsync()` when using `HeadlessTestServer`) from your fixture's `ResetStateAsync()` so observations from one test do not leak into the next. Both wait for in-flight store-first work to settle — a default publish returns once its row is stored, and the send and the consumer run afterwards on dispatcher threads — then drop the accumulated `Published` / `Consumed` / `Faulted` / `Exhausted` collections and the in-memory storage rows without re-creating the transport decorators. Tests that observe asynchronous publish-then-consume flows should rely on the `WaitFor*` APIs rather than reading the collections immediately, since transport and consume observations can arrive on background processing threads.
+Call `await harness.ResetAsync()` (or `await App.ResetMessagingHarnessAsync()` when using `HeadlessTestServer`) from your fixture's `ResetStateAsync()` so observations from one test do not leak into the next. Both wait for in-flight store-first work to settle — a default publish returns once its row is stored, and the send and the consumer run afterwards on dispatcher threads — then drop the accumulated `Published` / `Consumed` / `Faulted` / `Exhausted` collections and the in-memory storage rows without re-creating the transport decorators. A publish that is not yet due is clock-parked and is not awaited: it is stored as `Queued` when due within a minute and as `Delayed` beyond that, the dispatcher holds it either way, and it publishes when due on the host `TimeProvider` (a `Queued` row counts as in flight only once it is due on that clock), so a shared harness should not carry pending delays across tests, or should advance a `FakeTimeProvider` past them before resetting. Tests that observe asynchronous publish-then-consume flows should rely on the `WaitFor*` APIs rather than reading the collections immediately, since transport and consume observations can arrive on background processing threads.
 
 ### Configuration
 
@@ -579,6 +579,7 @@ None. `MessagingTestHarness` has no configuration class or options object. The o
 
 ### Dependencies
 
+- `Headless.CommitCoordination.Core` — registered in the harness host so `RunCoordinatedAsync` can open a scope and a `Coordinated` type passes the messaging startup gate
 - `Headless.Messaging.Abstractions`
 - `Headless.Messaging.Core`
 

@@ -26,7 +26,9 @@ namespace Headless.Jobs.BackgroundServices;
 /// The channel is bounded and never blocks a producer: a full channel drops the incoming signal with a warning and a
 /// counter (<c>headless.jobs.post_commit_signals.dropped</c>). Each signal is bounded by <see cref="SignalDeadline" />
 /// so one hung send cannot starve later signals; a fault or timeout is logged and the loop continues. On stop the
-/// worker rejects new signals and drains the ones already queued within the host's shutdown budget.
+/// worker rejects new signals and drains the ones already queued within the host's shutdown budget; a signal still
+/// queued when the worker exits (budget exhausted, or stopped before it ever ran) is reported the same way as a
+/// rejected one, so an accepted signal is never lost silently.
 /// </para>
 /// </remarks>
 internal sealed partial class JobsPostCommitSignalService(
@@ -59,8 +61,9 @@ internal sealed partial class JobsPostCommitSignalService(
         }
     );
 
-    // Cancelled only when the host's shutdown budget is exhausted — NOT by the stopping token, which base.StopAsync
-    // cancels immediately and would abort the drain of signals that are already queued.
+    // Cancelled only when the host's shutdown budget is exhausted or the service is disposed without a stop — NOT by
+    // the stopping token, which base.StopAsync cancels immediately and would abort the drain of signals that are
+    // already queued. The read loop and the side effects observe only this source.
     private readonly CancellationTokenSource _drainCts = new();
     private readonly JobsActivationBarrier _activationBarrier = Argument.IsNotNull(activationBarrier);
     private readonly TimeProvider _timeProvider = Argument.IsNotNull(timeProvider);
@@ -93,6 +96,50 @@ internal sealed partial class JobsPostCommitSignalService(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        try
+        {
+            await _RunAsync(stoppingToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            // Every exit of the single reader (budget exhaustion, dispose, activation failure, stop before
+            // activation) leaves whatever is still queued to the poll sweep; report it so an accepted signal never
+            // vanishes silently.
+            _ReportAbandonedSignals();
+        }
+    }
+
+    public override async Task StopAsync(CancellationToken cancellationToken)
+    {
+        Volatile.Write(ref _stopping, 1);
+        _channel.Writer.TryComplete();
+
+        try
+        {
+            // base.StopAsync returns once the loop has drained or the host's shutdown budget has expired.
+            await base.StopAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                // Budget exhausted: abandon the remaining signals and cancel the in-flight side effect cooperatively.
+                // The poll sweep owns whatever is left.
+                await _drainCts.CancelAsync().ConfigureAwait(false);
+            }
+        }
+
+        // base.StartAsync runs ExecuteAsync through Task.Run bound to the stopping token, so a stop that lands before
+        // the pool picked the worker up cancels it without the loop ever running. The loop cannot report in that
+        // case; it is only safe to read here because a completed (or never started) worker is no longer reading.
+        if (ExecuteTask is null or { IsCompleted: true })
+        {
+            _ReportAbandonedSignals();
+        }
+    }
+
+    private async Task _RunAsync(CancellationToken stoppingToken)
+    {
         // Activation gate: side effects select and claim job rows, so they wait for the same fingerprint drain the
         // scheduler waits for. Signals queued meanwhile stay in the channel.
         Exception? activationFailure;
@@ -116,49 +163,44 @@ internal sealed partial class JobsPostCommitSignalService(
         }
 
         var reader = _channel.Reader;
+        // Captured once: Dispose cancels and then disposes the source, and the Token getter throws after disposal.
+        var drainToken = _drainCts.Token;
 
         try
         {
-            // StopAsync completes the writer BEFORE base.StopAsync cancels stoppingToken, so a stop with queued
-            // signals falls through to the inner loop and drains them; the wait observes the token only once the
-            // queue is empty, or when the service is disposed without a stop.
-            while (await reader.WaitToReadAsync(stoppingToken).ConfigureAwait(false))
+            // A graceful stop ends this loop through writer completion, not through a token: StopAsync completes
+            // the writer and WaitToReadAsync returns false only once the queue is empty, so every signal accepted
+            // before the stop is drained. The wait must NOT observe stoppingToken — base.StopAsync cancels it
+            // immediately, and WaitToReadAsync checks its token before it looks at queued items, so a signal
+            // accepted between the inner loop running dry and this wait would be skipped without a drop warning.
+            // The drain token ends the loop only on shutdown-budget exhaustion or a dispose without a stop.
+            while (await reader.WaitToReadAsync(drainToken).ConfigureAwait(false))
             {
                 while (reader.TryRead(out var signal))
                 {
-                    if (_drainCts.IsCancellationRequested)
+                    if (drainToken.IsCancellationRequested)
                     {
                         return;
                     }
 
-                    await _ProcessAsync(signal).ConfigureAwait(false);
+                    await _ProcessAsync(signal, drainToken).ConfigureAwait(false);
                 }
             }
         }
-        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (drainToken.IsCancellationRequested)
         {
-            // Stopped while idle.
+            // Budget exhausted or disposed while idle; the poll sweep owns whatever is left.
         }
     }
 
-    public override async Task StopAsync(CancellationToken cancellationToken)
+    private void _ReportAbandonedSignals()
     {
-        Volatile.Write(ref _stopping, 1);
-        _channel.Writer.TryComplete();
+        var reader = _channel.Reader;
 
-        try
+        while (reader.TryRead(out var signal))
         {
-            // base.StopAsync returns once the loop has drained or the host's shutdown budget has expired.
-            await base.StopAsync(cancellationToken).ConfigureAwait(false);
-        }
-        finally
-        {
-            if (cancellationToken.IsCancellationRequested)
-            {
-                // Budget exhausted: abandon the remaining signals and cancel the in-flight side effect cooperatively.
-                // The poll sweep owns whatever is left.
-                await _drainCts.CancelAsync().ConfigureAwait(false);
-            }
+            JobsMetrics.PostCommitSignalDropped("stopping");
+            Log.PostCommitSignalDropped(_logger, signal.JobScope, "stopping", reader.Count);
         }
     }
 
@@ -176,7 +218,7 @@ internal sealed partial class JobsPostCommitSignalService(
         base.Dispose();
     }
 
-    private async Task _ProcessAsync(JobsPostCommitSignal signal)
+    private async Task _ProcessAsync(JobsPostCommitSignal signal, CancellationToken drainToken)
     {
         Task? work = null;
 
@@ -185,10 +227,10 @@ internal sealed partial class JobsPostCommitSignalService(
             // The deadline is a wait bound, not a cancellation: a slow send keeps running in the background while
             // the loop moves on to the next signal, and shutdown-budget exhaustion is the only cancellation the side
             // effects observe. That keeps one token per worker instead of one source per signal.
-            work = signal.RunAsync(_timeProvider.GetUtcNow(), _drainCts.Token);
-            await work.WaitAsync(SignalDeadline, _timeProvider, _drainCts.Token).ConfigureAwait(false);
+            work = signal.RunAsync(_timeProvider.GetUtcNow(), drainToken);
+            await work.WaitAsync(SignalDeadline, _timeProvider, drainToken).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (_drainCts.IsCancellationRequested)
+        catch (OperationCanceledException) when (drainToken.IsCancellationRequested)
         {
             Log.PostCommitSignalAbandonedOnShutdown(_logger, signal.JobScope);
         }

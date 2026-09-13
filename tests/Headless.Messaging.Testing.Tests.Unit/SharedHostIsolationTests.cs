@@ -178,6 +178,34 @@ public sealed class SharedHostIsolationTests(SharedHarnessFixture fixture)
     }
 
     [Fact]
+    public async Task should_not_wait_for_clock_parked_delayed_publish_before_reset()
+    {
+        await _harness.ResetAsync(cancellationToken: AbortToken);
+
+        // A delay under one minute is stored as Queued and parked in the dispatcher's scheduler queue until it is
+        // due on the host clock; no thread works on it, so the reset must not treat it as in flight.
+        await _harness.Publisher.PublishAsync(
+            new AlphaEvent("D1"),
+            new PublishOptions { Delay = TimeSpan.FromSeconds(10) },
+            AbortToken
+        );
+
+        var reset = _harness.ResetAsync(cancellationToken: AbortToken);
+        await reset.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+
+        var monitoring = _harness.ServiceProvider.GetRequiredService<IDataStorage>().GetMonitoringApi();
+        var query = new MessageQuery
+        {
+            MessageType = MessageType.Publish,
+            CurrentPage = 0,
+            PageSize = 10,
+        };
+        var page = await monitoring.GetMessagesAsync(query, AbortToken);
+        page.Items.Should().BeEmpty();
+        _harness.Published.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task should_reset_storage_layer_after_reset()
     {
         await _harness.ResetAsync(cancellationToken: AbortToken);
