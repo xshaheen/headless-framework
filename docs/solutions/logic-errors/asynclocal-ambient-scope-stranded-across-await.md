@@ -48,18 +48,22 @@ public static async Task<ICommitScope> BeginCoordinatedTransactionAsync(
     this DatabaseFacade database, IServiceProvider services, CancellationToken ct)
 {
     var tx = await database.BeginTransactionAsync(ct);
-    var scope = factory.Create(...);   // sets AsyncLocal<CommitCoordinator>.Value
-    return scope;                       // caller's ExecutionContext is restored on return → Value reverts to null
+    var scope = factory.Open(relational); // pushes the AsyncLocal ambient frame
+    return scope;                         // caller's ExecutionContext is restored on return → Current reverts to null
 }
 
-// AFTER — correct: synchronous enlist runs in the caller's frame, so the set persists and flows down.
+// AFTER — correct: synchronous enlist runs in the caller's frame, so the push persists and flows down.
 public static ICommitScope EnlistCommitCoordination(
     this DatabaseFacade database, IDbContextTransaction transaction, IServiceProvider services)
 {
-    var bindings = new CommitCoordinatorBindings { Connection = ..., Transaction = transaction.GetDbTransaction() };
-    return factory.Create(bindings);    // AsyncLocal set in caller's frame → persists, flows to awaited callees
+    var dbConnection = database.GetDbConnection();
+    var dbTransaction = transaction.GetDbTransaction();
+    var relational = new RelationalCommitContext(() => dbConnection, () => dbTransaction);
+    return interceptor.Enlist(scopeFactory, relational, dbTransaction); // calls ICommitScopeFactory.Open in THIS frame
 }
 ```
+
+The same rule binds the raw-ADO helpers: `SqlConnection.EnlistCommitCoordination` and `NpgsqlConnection.EnlistCommitCoordination` call `ICommitScopeFactory.Open` synchronously and hand back the scope the caller must signal after commit.
 
 Caller (the EF save pipeline) opens the transaction and enlists synchronously before awaiting the save:
 

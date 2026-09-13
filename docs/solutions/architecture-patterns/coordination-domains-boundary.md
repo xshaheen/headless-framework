@@ -1,7 +1,7 @@
 ---
 title: Coordination Domains Boundary — Locks vs Membership vs Commit
 date: 2026-06-21
-last_updated: 2026-09-05
+last_updated: 2026-09-13
 category: architecture-patterns
 module: headless-coordination
 problem_type: architecture_pattern
@@ -36,7 +36,7 @@ solves a different problem. Pick by the question you are answering:
 |---|---|---|
 | **DistributedLocks** | **Mutual exclusion** — at most one worker in a critical section across processes | `IDistributedLock`, `IDistributedSemaphore`, `IDistributedReadWriteLock`, `IDistributedLease` |
 | **Coordination** | **Cluster membership / node liveness** — which nodes are alive, who owns what, reclaim a dead owner's work | `INodeMembership`, `INodeIdProvider`, `IDeadOwnerReclaimer`, `NodeLivenessState`, `MembershipLostBehavior` |
-| **CommitCoordination** | **Transaction outcome orchestration** — enlist durable outbox/job writes in the caller transaction and defer dispatch/notifications until it commits | `ICommitCoordinator`, `ICommitScope`, `IRelationalCommitContext`, `ICommitWorkBuffer`, `CommitOutcome` |
+| **CommitCoordination** | **Transaction outcome orchestration** — enlist durable outbox/job writes in the caller transaction and defer dispatch/notifications until it commits | `ICommitCoordinator`, `ICommitScope`, `ICommitScopeFactory`, `IRelationalCommitContext`, `CommitOutcome` |
 
 ### Quick disambiguation
 
@@ -74,10 +74,15 @@ relational work is provider-specific or provider-agnostic:
   SqlServer; Coordination has provider-specific membership stores/initializers. A single provider-agnostic EF
   package is **impossible** here, so `Core.Database` holds the shared non-SQL plumbing and each provider package
   carries its own dialect.
-- **`CommitCoordination` has a generic `EntityFramework` provider and no `Core.Database`.** Its commit-buffer
-  logic is provider-agnostic EF (`DbContext` / `SaveChanges` transactions), so the generic `EntityFramework`
-  package *is* its shared base; the `PostgreSql`/`SqlServer` packages add provider-specific commit-signal tuning
-  on top.
+- **`CommitCoordination` has a generic `EntityFramework` provider and no `Core.Database`.** Its coordinator is
+  provider-agnostic and in-process (`Core`), and the EF package owns the only observed commit edge (the
+  `DbTransactionInterceptor`), so `EntityFramework` *is* the shared relational base. The `PostgreSql` and
+  `SqlServer` packages exist for the raw-ADO path, where no commit edge is observable: each ships the
+  `EnlistCommitCoordination` / `ExecuteCoordinatedTransactionAsync` helpers for its driver connection type
+  (`NpgsqlConnection`, `SqlConnection`) under one explicit-signal contract — the helper signals `Committed` after
+  its own commit, and a hand-rolled enlistment must signal the scope itself. Neither carries options, a hosted
+  service, or a diagnostics subscription; the SQL Server package deliberately follows the PostgreSQL shape rather
+  than an out-of-band detection design.
 
 So this is **not** a coherence defect to refactor — the shapes encode a real implementation difference. The one
 thing that *was* normalized: all relational providers use the `PostgreSql` spelling (the lone `Postgres` outlier

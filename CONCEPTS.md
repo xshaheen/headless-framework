@@ -143,24 +143,42 @@ Use Jobs for keyed, replaceable, tenant-scoped, or transactional business deadli
 
 ### Commit coordinator
 
-The register-only scope object that collects commit and rollback callbacks for one physical unit of
-work. It guarantees exactly-once callback invocation per coordinator instance, not exactly-once
-business effects.
+The register-only, process-local object (`ICommitCoordinator`) that collects commit callbacks for one
+physical unit of work. Each callback runs once per coordinator instance after the outcome is durable,
+in registration order, without a cancellation token; a fault in one does not stop the rest. Nothing
+runs on rollback, nothing is persisted, and a callback that has not run when the process crashes is
+lost. This is once-per-instance callback invocation, not exactly-once business effects: durability
+comes from the row committed inside the transaction plus the consumer's own recovery sweep. Every
+scope is an independent root; opening one inside another does not join it.
 
-### Commit signal source
+### Commit scope
 
-The provider adapter that turns a native commit or rollback edge into a coordinator terminal signal.
-Examples include owner-driven in-memory signals and SQL Server provider-key correlation.
+The owner-side handle (`ICommitScope`) opened by `ICommitScopeFactory.Open(IRelationalCommitContext?)`
+for one unit of work. The owner signals the terminal outcome with `SignalAsync(CommitOutcome)`: the EF
+interceptor does this on EF's commit and rollback edges; on raw SQL Server and PostgreSQL the helper,
+or the caller that enlisted directly, signals explicitly. Signals are idempotent per outcome (a repeat
+is silent, a conflict is logged and ignored) and an un-signalled dispose is a rollback.
 
-### Work buffer
+### Coordination state
 
-Scope-local state owned by a coordinator. Buffers hold deferred work until the terminal outcome; they
-must not be used as arbitrary service-locator bags.
+The tri-state a consumer reads to place a write in the guarantee matrix (see Delivery mode): no
+ambient scope, a compatible live scope (the consumer's storage can join its boundary), or an
+incompatible one (another database, a completed transaction, a relational scope with in-memory
+storage). Messaging's `DeliveryMode` and Jobs' `RequireAtomicEnlistment` are the two consumer
+mappings of that state to an outcome.
 
-### Capability
+### Relational handle
 
-A read-only provider escape hatch attached by the scope owner. `IRelationalCommitContext` is the
-current capability for BCL `DbConnection` and `DbTransaction` handles.
+`IRelationalCommitContext`, exposed as `ICommitCoordinator.Relational`: the live BCL `DbConnection`
+and `DbTransaction` the scope was opened with, or `null` for a non-relational unit of work. Durable
+rows (outbox, jobs) are written through it so they share the caller's transaction.
+
+### Scope-local state
+
+Typed state owned by one coordinator through `GetOrAdd<TState>`: at most one instance per type,
+created atomically, disposed after the terminal outcome on commit and rollback alike. Holds a
+per-transaction buffer or the `CommitRetryGuard`; it must not be used as an arbitrary
+service-locator bag.
 
 ## Startup validation
 
@@ -180,16 +198,18 @@ only moves the failure to live traffic.
 ### Diagnostic gate
 
 A startup validation gate that does runtime I/O — opening a connection or probing a live operation —
-and so adds boot latency and can fail on a transient blip. Verifies an environment- or
-library-compatibility property rather than a per-request correctness property; defaults to off in
-production and active in development.
+and so adds boot latency and can fail on a transient blip. The one shipped instance is the EF commit
+interceptor gate (`CommitInterceptorStartupGate<TContext>`), which commits an empty transaction to
+prove the interceptor fires; it treats an unreachable database as inconclusive and defaults to warn in
+every environment because a mis-wired outbox is a production-relevant signal.
 *Avoid:* diagnostic probe (use Diagnostic gate for the concept; "probe" names the I/O call it makes).
 
 ### Validation mode
 
-The per-gate strictness setting: off (skip), warn (log and continue, recording degraded state), or
-strict (throw and fail host startup). A gate resolves its mode from an explicit operator value when
-set, otherwise from an environment-aware default keyed to its tier.
+The per-gate strictness setting: off (skip), warn (log and continue), or strict (throw and fail host
+startup). The shipped enum is `CommitProbeMode` (`Disabled` / `Warn` / `Strict`); a gate reads an
+explicit operator value and otherwise its own flat default. No gate derives its default from the host
+environment today.
 
 ## Jobs (misfire recovery)
 
