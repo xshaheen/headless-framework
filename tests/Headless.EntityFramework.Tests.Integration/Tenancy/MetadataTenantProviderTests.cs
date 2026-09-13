@@ -42,9 +42,15 @@ public sealed class SqlServerTenantIndexTests(SqlServerMetadataTenantFixture fix
         var db = scope.ServiceProvider.GetRequiredService<MetadataTenantContext>();
         var entity = db.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(HostTenantRow))!;
         var indexes = entity.GetIndexes().ToArray();
-        indexes.Single(x => x.Properties[0].Name == nameof(HostTenantRow.Code)).GetFilter().Should().BeNull();
         indexes
-            .Single(x => x.Properties[0].Name == nameof(HostTenantRow.OptionalCode))
+            .Single(x => string.Equals(x.Properties[0].Name, nameof(HostTenantRow.Code), StringComparison.Ordinal))
+            .GetFilter()
+            .Should()
+            .BeNull();
+        indexes
+            .Single(x =>
+                string.Equals(x.Properties[0].Name, nameof(HostTenantRow.OptionalCode), StringComparison.Ordinal)
+            )
             .GetFilter()
             .Should()
             .Be("[OptionalCode] IS NOT NULL");
