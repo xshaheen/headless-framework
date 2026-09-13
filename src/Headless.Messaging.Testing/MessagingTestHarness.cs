@@ -447,7 +447,8 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     /// its time arrives on the host <see cref="TimeProvider"/>. The wait therefore counts a <c>Queued</c> publish as
     /// in flight only once it is due on that clock. A shared harness should not carry pending delays across tests,
     /// or should advance its <c>FakeTimeProvider</c> past them before resetting. Pending <c>WaitFor*</c> calls
-    /// fault when the reset clears the store.
+    /// fault when the reset clears the store. A message the transport handed to a consumer just before the reset
+    /// still runs afterwards, but it is not awaited and its Consumed or Faulted observation is not recorded.
     /// </para>
     /// </remarks>
     /// <param name="timeout">How long to wait for in-flight work; defaults to <see cref="DefaultTimeout"/>.</param>

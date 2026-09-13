@@ -28,6 +28,14 @@ internal sealed class MessageObservationStore(TimeProvider? timeProvider = null)
     private readonly ConcurrentDictionary<string, TaskCompletionSource> _publishedArrivals = new(
         StringComparer.Ordinal
     );
+    private long _generation;
+
+    /// <summary>
+    /// Counts the resets this store has seen. The recording transports stamp it on every send so the recording
+    /// consume pipeline can tell a message from the current round apart from one sent before the last
+    /// <see cref="Clear"/>, whose Published record no longer exists.
+    /// </summary>
+    public long Generation => Volatile.Read(ref _generation);
 
     /// <summary>Gets all published messages recorded so far. Each access allocates a snapshot array.</summary>
     public IReadOnlyCollection<RecordedMessage> Published => _published.ToArray();
@@ -196,6 +204,15 @@ internal sealed class MessageObservationStore(TimeProvider? timeProvider = null)
     /// <summary>Clears all recorded messages and cancels pending waiters.</summary>
     public void Clear()
     {
+        Interlocked.Increment(ref _generation);
+
+        // A consumer already waiting for a Published record belongs to the round being cleared; release it now so the
+        // consumer thread is not held for the full wait budget by a record that can no longer arrive.
+        foreach (var arrival in _publishedArrivals.Values)
+        {
+            arrival.TrySetResult();
+        }
+
         _publishedArrivals.Clear();
 
         while (_published.TryDequeue(out _)) { }
