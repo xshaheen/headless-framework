@@ -1,6 +1,6 @@
 ---
 domain: Commit Coordination
-packages: CommitCoordination.Abstractions, CommitCoordination.Core, CommitCoordination.DurableWork, CommitCoordination.EntityFramework, EntityFramework.CommitCoordination, CommitCoordination.InMemory, CommitCoordination.PostgreSql, CommitCoordination.SqlServer
+packages: CommitCoordination.Abstractions, CommitCoordination.Core, CommitCoordination.EntityFramework, EntityFramework.CommitCoordination, CommitCoordination.InMemory, CommitCoordination.PostgreSql, CommitCoordination.SqlServer
 ---
 
 # Commit Coordination
@@ -33,7 +33,7 @@ packages: CommitCoordination.Abstractions, CommitCoordination.Core, CommitCoordi
     - [Configuration](#configuration-1)
     - [Dependencies](#dependencies-1)
     - [Side Effects](#side-effects-1)
-- [Headless.CommitCoordination.DurableWork](#headlesscommitcoordinationdurablework)
+- [Headless.CommitCoordination.EntityFramework](#headlesscommitcoordinationentityframework)
     - [Problem Solved](#problem-solved-2)
     - [Key Features](#key-features-2)
     - [Design Notes](#design-notes-2)
@@ -42,53 +42,45 @@ packages: CommitCoordination.Abstractions, CommitCoordination.Core, CommitCoordi
     - [Configuration](#configuration-2)
     - [Dependencies](#dependencies-2)
     - [Side Effects](#side-effects-2)
-- [Headless.CommitCoordination.EntityFramework](#headlesscommitcoordinationentityframework)
+- [Headless.EntityFramework.CommitCoordination](#headlessentityframeworkcommitcoordination)
+- [Headless.CommitCoordination.InMemory](#headlesscommitcoordinationinmemory)
     - [Problem Solved](#problem-solved-3)
     - [Key Features](#key-features-3)
-    - [Design Notes](#design-notes-3)
     - [Installation](#installation-3)
     - [Quick Start](#quick-start-3)
     - [Configuration](#configuration-3)
     - [Dependencies](#dependencies-3)
     - [Side Effects](#side-effects-3)
-- [Headless.EntityFramework.CommitCoordination](#headlessentityframeworkcommitcoordination)
-- [Headless.CommitCoordination.InMemory](#headlesscommitcoordinationinmemory)
+- [Headless.CommitCoordination.PostgreSql](#headlesscommitcoordinationpostgresql)
     - [Problem Solved](#problem-solved-4)
     - [Key Features](#key-features-4)
     - [Installation](#installation-4)
     - [Quick Start](#quick-start-4)
+    - [Advanced: raw enlistment](#advanced-raw-enlistment)
     - [Configuration](#configuration-4)
     - [Dependencies](#dependencies-4)
     - [Side Effects](#side-effects-4)
-- [Headless.CommitCoordination.PostgreSql](#headlesscommitcoordinationpostgresql)
+- [Headless.CommitCoordination.SqlServer](#headlesscommitcoordinationsqlserver)
     - [Problem Solved](#problem-solved-5)
     - [Key Features](#key-features-5)
+    - [Design Notes](#design-notes-3)
     - [Installation](#installation-5)
     - [Quick Start](#quick-start-5)
     - [Configuration](#configuration-5)
     - [Dependencies](#dependencies-5)
     - [Side Effects](#side-effects-5)
-- [Headless.CommitCoordination.SqlServer](#headlesscommitcoordinationsqlserver)
-    - [Problem Solved](#problem-solved-6)
-    - [Key Features](#key-features-6)
-    - [Design Notes](#design-notes-4)
-    - [Installation](#installation-6)
-    - [Quick Start](#quick-start-6)
-    - [Configuration](#configuration-6)
-    - [Dependencies](#dependencies-6)
-    - [Side Effects](#side-effects-6)
 
 > Commit Coordination runs registered work only after the unit of work it belongs to reaches a committed or rolled-back terminal outcome.
 
 ## Quick Orientation
 
-Use Commit Coordination when a framework subsystem must defer work until the data it belongs to has durably committed. Messaging uses it to store outbox rows inside the relational transaction and dispatch only after commit. Jobs can use `DurableWorkBuffer<TRow>` to fail closed unless a relational capability is available.
+Use Commit Coordination when a framework subsystem must defer work until the data it belongs to has durably committed. Messaging uses it to store outbox rows inside the relational transaction and dispatch only after commit. Work that must write rows inside that transaction reaches the live connection through `IRelationalCommitContext`.
 
 The coordinator guarantees exactly-once callback invocation per coordinator instance. It does not guarantee exactly-once business effects for brokers, external services, or processes that crash after commit.
 
 Messaging's transactional inbox uses the application `DbContext` transaction to commit the fenced inbox outcome, enlisted application state, and captured durable Bus/Queue rows together. User code is never wrapped in transparent execution-strategy replay. Handler entry, direct transport, and external or otherwise non-enlisted effects can repeat.
 
-**Commit detection is an acceleration hook, not a correctness mechanism.** A detected signal (SQL Server SqlClient diagnostic, EF interceptor) only dispatches deferred work *sooner*; correctness must not depend on it firing. The consumer commits a durable row inside the transaction and recovers it through an independent polling sweep, so if the signal is missed, delayed, or disabled, the work is still found and executed. In-memory accelerator buffers (`InMemoryWorkBuffer<T>`) therefore require the consumer to own that durable store plus recovery (messaging: outbox rows + retry sweep); `DurableWorkBuffer<TRow>` writes rows in-transaction and does not depend on detection at all.
+**Commit detection is an acceleration hook, not a correctness mechanism.** A detected signal (SQL Server SqlClient diagnostic, EF interceptor) only dispatches deferred work *sooner*; correctness must not depend on it firing. The consumer commits a durable row inside the transaction and recovers it through an independent polling sweep, so if the signal is missed, delayed, or disabled, the work is still found and executed. In-memory accelerator buffers (`InMemoryWorkBuffer<T>`) therefore require the consumer to own that durable store plus recovery (messaging: outbox rows + retry sweep); rows written in-transaction through `IRelationalCommitContext` do not depend on detection at all.
 
 ## Agent Instructions
 
@@ -99,7 +91,7 @@ Messaging's transactional inbox uses the application `DbContext` transaction to 
 - Use `TryGetCapability<IRelationalCommitContext>` when work must write durable rows inside the active relational transaction.
 - Never make correctness depend on a detected commit signal. Detection (SQL Server diagnostic, EF interceptor) only dispatches sooner; back every in-memory accelerator buffer with a durable row committed in-transaction plus an independent polling/recovery sweep, so a missed, delayed, or disabled signal still executes the work.
 - Prefer the single-call `ExecuteCoordinatedTransactionAsync(...)` helper over hand-rolling `Begin` + `EnlistCommitCoordination`; it welds the enlist into the transaction so it cannot be forgotten. A `HeadlessDbContext` self-sources its request scope (no `IServiceProvider` argument); a plain `DbContext`, `SqlConnection`, or `NpgsqlConnection` cannot, so those overloads require the scope passed explicitly. Pass the **request-scoped** provider (e.g. `HttpContext.RequestServices` or an injected scoped `IServiceProvider`), never the root container — the post-commit drain resolves scoped services, and the root provider would resolve the wrong (or no) scope.
-- Durable jobs should keep `DurableWorkProviderMismatchPolicy.Throw`; fallback modes are for at-least-once accelerators that already have recovery.
+- Work that must be durable fails closed when `TryGetCapability<IRelationalCommitContext>` returns `false`; falling back to an in-memory buffer is acceptable only for accelerators that already own a durable store plus recovery.
 
 ## Core Concepts
 
@@ -113,7 +105,7 @@ Messaging's transactional inbox uses the application `DbContext` transaction to 
 
 ### Work Buffer
 
-`ICommitWorkBuffer` marks state that belongs to one commit scope. `InMemoryWorkBuffer<T>` is a thread-safe queue for post-commit accelerators. `DurableWorkBuffer<TRow>` writes rows while the relational transaction is still open.
+`ICommitWorkBuffer` marks state that belongs to one commit scope. `InMemoryWorkBuffer<T>` is a thread-safe queue for post-commit accelerators. Buffers that must be durable write their rows through `IRelationalCommitContext` while the relational transaction is still open.
 
 ### Capability
 
@@ -218,56 +210,6 @@ None.
 ### Side Effects
 
 Registers `ICurrentCommitCoordinator` and `ICommitScopeFactory` (the scope-opening seam for custom `ICommitSignalSource` implementations); the backing stack and factory types are internal.
-
-## Headless.CommitCoordination.DurableWork
-
-### Problem Solved
-
-Provides a base for durable work buffers that must write rows inside the active relational transaction.
-
-### Key Features
-
-- `DurableWorkBuffer<TRow>` base class.
-- `DurableWorkProviderMismatchPolicy.Throw` default.
-- Explicit `Warn` fallback for consumers that already have recovery.
-
-### Design Notes
-
-Durable work fails closed by default because running a job before its triggering data commits is a correctness bug. Rows are written inside the active relational transaction at enlist time, so a durable buffer does not depend on commit detection at all: the row commits atomically with the business data and is recovered by the consumer's relay regardless of whether any signal fires.
-
-### Installation
-
-```bash
-dotnet add package Headless.CommitCoordination.DurableWork
-```
-
-### Quick Start
-
-```csharp
-public sealed record JobRow(string Name);
-
-public sealed class JobWorkBuffer(ICommitCoordinator coordinator) : DurableWorkBuffer<JobRow>(coordinator)
-{
-    protected override ValueTask WriteRowAsync(JobRow row, IRelationalCommitContext context, CancellationToken ct)
-    {
-        // write row using context.Connection/context.Transaction
-        return ValueTask.CompletedTask;
-    }
-}
-```
-
-### Configuration
-
-Choose `DurableWorkProviderMismatchPolicy.Throw` or `Warn` per buffer.
-
-### Dependencies
-
-- `Headless.CommitCoordination.Abstractions`
-- `Microsoft.Extensions.Logging.Abstractions`
-
-### Side Effects
-
-None.
 
 ## Headless.CommitCoordination.EntityFramework
 
