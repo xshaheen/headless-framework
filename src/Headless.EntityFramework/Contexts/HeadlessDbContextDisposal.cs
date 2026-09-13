@@ -31,6 +31,10 @@ internal static class HeadlessDbContextDisposal
             return;
         }
 
+        // The scope also tracks this context. Release ownership before disposal re-enters the context,
+        // otherwise re-entry resolves a logger from the disposing scope and aborts its remaining cleanup.
+        context.OwnedScope = null;
+
         // Resolve the logger before disposing — the scope's provider is gone afterwards. Categorize it under
         // the concrete context type so plain and Identity contexts log under their own name. The guard keeps a
         // secondary scope-dispose failure from masking the primary runtime/base exception, which is the
@@ -56,6 +60,8 @@ internal static class HeadlessDbContextDisposal
             return;
         }
 
+        // Async scope disposal also re-enters the tracked context; only the outer call owns cleanup.
+        context.OwnedScope = null;
         var logger = ownedScope.ServiceProvider.GetService<ILoggerFactory>()?.CreateLogger(context.GetType());
 
         try
