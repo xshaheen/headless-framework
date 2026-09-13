@@ -5,10 +5,8 @@ using Headless.Testing.Testcontainers;
 namespace Tests;
 
 /// <summary>
-/// Collection fixture providing a SQL Server container for the out-of-band commit-detection integration tests.
-/// Parallelization is disabled because the SqlClient diagnostic listener lives in the process-global
-/// <c>DiagnosticListener.AllListeners</c> registry — running these tests in parallel would let one test's diagnostic
-/// subscription observe another test's commit edges, so the suite must run serially.
+/// Collection fixture providing the SQL Server container shared by the commit coordination integration tests.
+/// The tests share one probe table, so the collection runs serially.
 /// </summary>
 [UsedImplicitly]
 [CollectionDefinition(DisableParallelization = true)]

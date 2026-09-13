@@ -16,8 +16,8 @@ namespace Headless.CommitCoordination.EntityFramework;
 /// </summary>
 /// <remarks>
 /// The probe is side-effect free: it opens a transaction, enlists commit coordination, registers a one-shot
-/// <c>OnCommit</c> observer, and commits an <b>empty</b> transaction (no rows written → no consumer data mutated,
-/// mirroring the SQL Server diagnostic self-probe). When the interceptor is attached, committing fires the
+/// <c>OnCommit</c> observer, and commits an <b>empty</b> transaction (no rows written → no consumer data mutated).
+/// When the interceptor is attached, committing fires the
 /// interceptor's commit edge → the scope is signalled committed → the observer runs. When the interceptor is NOT
 /// attached, the commit succeeds but nothing signals the scope, so its dispose drains as a rollback and the
 /// <c>OnCommit</c> observer never runs — that is the mis-wire the probe catches. Probing requires a reachable
@@ -82,13 +82,11 @@ internal sealed partial class CommitInterceptorStartupGate<TContext>(
                             )
                         )
                         {
-                            commitScope.Coordinator.OnCommit(
-                                (_, _) =>
-                                {
-                                    observed = true;
-                                    return ValueTask.CompletedTask;
-                                }
-                            );
+                            commitScope.Coordinator.OnCommit(() =>
+                            {
+                                observed = true;
+                                return ValueTask.CompletedTask;
+                            });
 
                             // Empty transaction: commits no rows. If the interceptor is attached it observes this
                             // commit edge and signals the scope committed (draining the observer); if not, the

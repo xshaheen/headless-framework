@@ -4,7 +4,6 @@ using System.Data;
 using System.Runtime.ExceptionServices;
 using Headless.Checks;
 using Headless.CommitCoordination;
-using Headless.CommitCoordination.EntityFramework;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
@@ -72,7 +71,7 @@ public static class SetupSqlServerEntityFrameworkMessaging
 
             if (options.EnableTransactionalOutbox)
             {
-                services.AddCommitCoordinationWithStartupGate(typeof(TContext));
+                services.AddEntityFrameworkCommitCoordination<TContext>();
                 _PromoteStorageCapability(services, "SqlServer");
                 services.AddScoped<IInboxTransactionRunner>(
                     serviceProvider => new SqlServerInboxTransactionRunner<TContext>(
@@ -80,8 +79,7 @@ public static class SetupSqlServerEntityFrameworkMessaging
                         serviceProvider,
                         serviceProvider.GetRequiredService<ICurrentCommitCoordinator>(),
                         serviceProvider.GetRequiredService<IDeliveryCoordinationResolver>(),
-                        serviceProvider.GetRequiredService<SqlServerDataStorage>(),
-                        serviceProvider.GetRequiredService<EntityFrameworkCommitSignalSource>()
+                        serviceProvider.GetRequiredService<SqlServerDataStorage>()
                     )
                 );
             }
@@ -122,8 +120,7 @@ public static class SetupSqlServerEntityFrameworkMessaging
         IServiceProvider services,
         ICurrentCommitCoordinator currentCoordinator,
         IDeliveryCoordinationResolver coordinationResolver,
-        SqlServerDataStorage storage,
-        EntityFrameworkCommitSignalSource signalSource
+        SqlServerDataStorage storage
     ) : IInboxTransactionRunner
         where TContext : DbContext
     {
@@ -181,10 +178,13 @@ public static class SetupSqlServerEntityFrameworkMessaging
                                 throw new StaleInboxAttemptException(message.StorageId);
                             }
 
+                            // The runner signals through the scope it owns: the interceptor may also claim the same
+                            // commit on its own path, and a repeated same-outcome signal is a silent no-op, so the
+                            // explicit signal stays authoritative on the probe-confirmed paths the interceptor cannot see.
                             try
                             {
                                 await transaction.CommitAsync(ct).ConfigureAwait(false);
-                                await signalSource.SignalCommittedAsync(dbTransaction).ConfigureAwait(false);
+                                await coordinationScope.SignalAsync(CommitOutcome.Committed).ConfigureAwait(false);
                                 return null;
                             }
                             catch (Exception commitException)
@@ -195,14 +195,14 @@ public static class SetupSqlServerEntityFrameworkMessaging
                                         .ConfigureAwait(false) is InboxCommitProbe.Committed
                                 )
                                 {
-                                    await signalSource.SignalCommittedAsync(dbTransaction).ConfigureAwait(false);
+                                    await coordinationScope.SignalAsync(CommitOutcome.Committed).ConfigureAwait(false);
                                     return null;
                                 }
 
                                 try
                                 {
                                     await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
-                                    await signalSource.SignalRolledBackAsync(dbTransaction).ConfigureAwait(false);
+                                    await coordinationScope.SignalAsync(CommitOutcome.RolledBack).ConfigureAwait(false);
                                 }
                                 catch (Exception rollbackException)
                                 {
@@ -212,7 +212,9 @@ public static class SetupSqlServerEntityFrameworkMessaging
                                             .ConfigureAwait(false) is InboxCommitProbe.Committed
                                     )
                                     {
-                                        await signalSource.SignalCommittedAsync(dbTransaction).ConfigureAwait(false);
+                                        await coordinationScope
+                                            .SignalAsync(CommitOutcome.Committed)
+                                            .ConfigureAwait(false);
                                         return null;
                                     }
 

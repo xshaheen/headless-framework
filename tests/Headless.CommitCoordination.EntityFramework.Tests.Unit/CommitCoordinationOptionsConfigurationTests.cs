@@ -36,13 +36,11 @@ public sealed class CommitCoordinationOptionsConfigurationTests : TestBase
             {
                 scope
                     .ServiceProvider.GetRequiredService<ICurrentCommitCoordinator>()
-                    .Current!.OnCommit(
-                        (_, _) =>
-                        {
-                            drained = true;
-                            return ValueTask.CompletedTask;
-                        }
-                    );
+                    .Current!.OnCommit(() =>
+                    {
+                        drained = true;
+                        return ValueTask.CompletedTask;
+                    });
 
                 ctx.Set<ProbeRow>().Add(new ProbeRow { Name = "committed" });
 

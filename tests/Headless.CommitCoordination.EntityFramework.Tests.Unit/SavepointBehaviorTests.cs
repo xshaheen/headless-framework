@@ -54,13 +54,11 @@ public sealed class SavepointBehaviorTests : TestBase
             async (ctx, ct) =>
             {
                 coordinator()
-                    .OnCommit(
-                        (_, _) =>
-                        {
-                            beforeSavepointDrained = true;
-                            return ValueTask.CompletedTask;
-                        }
-                    );
+                    .OnCommit(() =>
+                    {
+                        beforeSavepointDrained = true;
+                        return ValueTask.CompletedTask;
+                    });
 
                 ctx.Set<SavepointRow>().Add(new SavepointRow { Name = "before-savepoint" });
                 await ctx.SaveChangesAsync(ct);
@@ -71,13 +69,11 @@ public sealed class SavepointBehaviorTests : TestBase
                 // Work buffered INSIDE the savepoint window: the row is rolled back below, the
                 // commit work is NOT — the coordinator does not track savepoints.
                 coordinator()
-                    .OnCommit(
-                        (_, _) =>
-                        {
-                            insideSavepointDrained = true;
-                            return ValueTask.CompletedTask;
-                        }
-                    );
+                    .OnCommit(() =>
+                    {
+                        insideSavepointDrained = true;
+                        return ValueTask.CompletedTask;
+                    });
 
                 ctx.Set<SavepointRow>().Add(new SavepointRow { Name = "inside-savepoint" });
                 await ctx.SaveChangesAsync(ct);

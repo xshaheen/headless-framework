@@ -64,7 +64,7 @@ That shape keeps provider decisions at the composition root:
 | Background job contracts | `Headless.Jobs.Abstractions` | `Headless.Jobs.Core`, `Headless.Jobs.SourceGenerator`, dashboard, EF Core persistence, and a PostgreSQL or SQL Server native claim provider when contention warrants it |
 | Distributed lock contracts | `Headless.DistributedLocks.Abstractions` | `Headless.DistributedLocks.Core` plus in-memory, Redis, PostgreSQL, or SQL Server provider |
 | Cluster membership contracts | `Headless.Coordination.Abstractions` | `Headless.Coordination.Core` plus Redis, PostgreSQL, or SQL Server provider |
-| Transaction-bound side-effect contracts | `Headless.CommitCoordination.Abstractions` | `Headless.CommitCoordination.Core` plus EF Core, PostgreSQL, SQL Server, in-memory, or durable-work package |
+| Transaction-bound side-effect contracts | `Headless.CommitCoordination.Abstractions` | `Headless.CommitCoordination.Core` plus the EF Core, PostgreSQL, or SQL Server package |
 | Dynamic settings contracts | `Headless.Settings.Abstractions` | `Headless.Settings.Core` plus EF Core, PostgreSQL, or SQL Server storage |
 | Feature flag contracts | `Headless.Features.Abstractions` | `Headless.Features.Core` plus EF Core, PostgreSQL, or SQL Server storage |
 | Permission contracts | `Headless.Permissions.Abstractions` | `Headless.Permissions.Core` plus EF Core, PostgreSQL, SQL Server, or testing provider |
@@ -475,9 +475,8 @@ Tie side effects to transaction boundaries — buffer work (outbox dispatch, dur
 | [Headless.CommitCoordination.Abstractions](src/Headless.CommitCoordination.Abstractions/README.md) | Commit coordination contracts (provider-free) |
 | [Headless.CommitCoordination.Core](src/Headless.CommitCoordination.Core/README.md) | In-process coordinator, ambient stack, and scope factory |
 | [Headless.CommitCoordination.EntityFramework](src/Headless.CommitCoordination.EntityFramework/README.md) | Bridges EF Core commit/rollback edges to commit coordination |
-| [Headless.CommitCoordination.InMemory](src/Headless.CommitCoordination.InMemory/README.md) | In-process signal source for tests and owner-driven flows |
-| [Headless.CommitCoordination.PostgreSql](src/Headless.CommitCoordination.PostgreSql/README.md) | PostgreSQL commit coordination registration points |
-| [Headless.CommitCoordination.SqlServer](src/Headless.CommitCoordination.SqlServer/README.md) | Correlates SQL Server commit/rollback signals to scopes |
+| [Headless.CommitCoordination.PostgreSql](src/Headless.CommitCoordination.PostgreSql/README.md) | Raw-ADO PostgreSQL enlistment with explicit commit signals |
+| [Headless.CommitCoordination.SqlServer](src/Headless.CommitCoordination.SqlServer/README.md) | Raw-ADO SQL Server enlistment with explicit commit signals |
 
 ### Serialization
 

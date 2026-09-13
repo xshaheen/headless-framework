@@ -1,9 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
 using Headless.CommitCoordination;
 using Headless.Testing.Tests;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
@@ -12,19 +10,16 @@ public sealed class CommitScopeFactoryTests : TestBase
     [Fact]
     public async Task should_reject_unspecified_outcome_before_claiming_scope_signal()
     {
-        var stack = new CommitScopeStack();
-        var factory = new CommitScopeFactory(stack);
+        var factory = new CommitScopeFactory(new CommitScopeStack());
         var calls = 0;
 
-        await using var scope = factory.Begin(new EmptyServiceProvider());
-        scope.Coordinator.OnCommit(
-            (_, _) =>
-            {
-                calls++;
+        await using var scope = factory.Open(relational: null);
+        scope.Coordinator.OnCommit(() =>
+        {
+            calls++;
 
-                return ValueTask.CompletedTask;
-            }
-        );
+            return ValueTask.CompletedTask;
+        });
 
         var act = () => scope.SignalAsync(CommitOutcome.Unspecified).AsTask();
 
@@ -38,277 +33,152 @@ public sealed class CommitScopeFactoryTests : TestBase
     }
 
     [Fact]
-    public async Task should_restore_parent_current_after_child_scope_disposes()
+    public async Task should_set_ambient_current_synchronously_and_clear_it_on_dispose()
     {
         var stack = new CommitScopeStack();
         var factory = new CommitScopeFactory(stack);
-        var services = new EmptyServiceProvider();
 
-        await using var parent = factory.Begin(services);
-        var parentCoordinator = stack.Current;
+        var scope = factory.Open(relational: null);
+        stack.Current.Should().BeSameAs(scope.Coordinator, "the push happens in the opening frame");
 
-        await using (factory.Begin(services))
-        {
-            stack.Current.Should().NotBeSameAs(parentCoordinator);
-        }
+        await scope.DisposeAsync();
 
-        stack.Current.Should().BeSameAs(parentCoordinator);
-    }
-
-    [Fact]
-    public async Task should_promote_child_commit_work_to_parent_root()
-    {
-        var stack = new CommitScopeStack();
-        var factory = new CommitScopeFactory(stack);
-        var services = new EmptyServiceProvider();
-        var calls = 0;
-
-        await using var parent = factory.Begin(services);
-
-        await using (var child = factory.Begin(services))
-        {
-            child.Coordinator.OnCommit(
-                (_, _) =>
-                {
-                    calls++;
-
-                    return ValueTask.CompletedTask;
-                }
-            );
-
-            await child.SignalAsync(CommitOutcome.Committed);
-        }
-
-        calls.Should().Be(0);
-
-        await parent.SignalAsync(CommitOutcome.Committed);
-
-        calls.Should().Be(1);
-    }
-
-    [Fact]
-    public async Task should_throw_when_child_enlists_after_child_commit_signal()
-    {
-        var stack = new CommitScopeStack();
-        var factory = new CommitScopeFactory(stack);
-        var services = new EmptyServiceProvider();
-
-        await using var parent = factory.Begin(services);
-        await using var child = factory.Begin(services);
-
-        await child.SignalAsync(CommitOutcome.Committed);
-
-        child
-            .Coordinator.Invoking(x => x.OnCommit((_, _) => ValueTask.CompletedTask))
-            .Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage("Commit scope already Committed.");
-
-        child
-            .Coordinator.Invoking(x => x.OnRollback((_, _) => ValueTask.CompletedTask))
-            .Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage("Commit scope already Committed.");
-
-        child
-            .Coordinator.Invoking(x => x.GetOrAdd(_ => new DisposableBuffer()))
-            .Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage("Commit scope already Committed.");
-    }
-
-    [Fact]
-    public async Task should_doom_parent_when_child_rolls_back()
-    {
-        var stack = new CommitScopeStack();
-        var factory = new CommitScopeFactory(stack);
-        var services = new EmptyServiceProvider();
-        var calls = 0;
-
-        await using var parent = factory.Begin(services);
-        parent.Coordinator.OnCommit(
-            (_, _) =>
-            {
-                calls++;
-
-                return ValueTask.CompletedTask;
-            }
-        );
-
-        await using (var child = factory.Begin(services))
-        {
-            await child.SignalAsync(CommitOutcome.RolledBack);
-        }
-
-        parent.Coordinator.State.Should().Be(CommitCoordinatorState.RolledBack);
-        calls.Should().Be(0);
-    }
-
-    [Fact]
-    public async Task should_discard_work_when_scope_is_disposed_without_signal()
-    {
-        var stack = new CommitScopeStack();
-        var factory = new CommitScopeFactory(stack);
-        var services = new EmptyServiceProvider();
-        var calls = 0;
-
-        await using (var scope = factory.Begin(services))
-        {
-            scope.Coordinator.OnCommit(
-                (_, _) =>
-                {
-                    calls++;
-
-                    return ValueTask.CompletedTask;
-                }
-            );
-        }
-
-        calls.Should().Be(0);
-    }
-
-    [Fact]
-    public async Task should_run_rollback_callbacks_when_sync_scope_is_disposed_without_signal()
-    {
-        var stack = new CommitScopeStack();
-        var factory = new CommitScopeFactory(stack);
-        var services = new EmptyServiceProvider();
-        var rollbackRan = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var calls = 0;
-
-        await using (var scope = factory.Begin(services))
-        {
-            scope.Coordinator.OnRollback(
-                (_, _) =>
-                {
-                    calls++;
-                    rollbackRan.SetResult();
-
-                    return ValueTask.CompletedTask;
-                }
-            );
-        }
-
-        await rollbackRan.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
-        calls.Should().Be(1);
         stack.Current.Should().BeNull();
     }
 
     [Fact]
-    public void should_not_deadlock_when_sync_dispose_drains_rollback_under_a_synchronization_context()
+    public async Task should_open_independent_root_with_its_own_relational_handle_when_ambient_scope_active()
     {
         var stack = new CommitScopeStack();
         var factory = new CommitScopeFactory(stack);
-        var services = new EmptyServiceProvider();
-        var ran = false;
+        var outerRelational = new StubRelationalCommitContext();
+        var innerRelational = new StubRelationalCommitContext();
+
+        await using var outer = factory.Open(outerRelational);
+        await using var inner = factory.Open(innerRelational);
+
+        inner.Coordinator.Should().NotBeSameAs(outer.Coordinator);
+        inner.Coordinator.Relational.Should().BeSameAs(innerRelational);
+        outer.Coordinator.Relational.Should().BeSameAs(outerRelational);
+        stack.Current.Should().BeSameAs(inner.Coordinator);
+    }
+
+    [Fact]
+    public async Task should_restore_outer_frame_after_nested_root_is_disposed()
+    {
+        var stack = new CommitScopeStack();
+        var factory = new CommitScopeFactory(stack);
+
+        await using var outer = factory.Open(relational: null);
+
+        await using (factory.Open(relational: null))
+        {
+            stack.Current.Should().NotBeSameAs(outer.Coordinator);
+        }
+
+        stack.Current.Should().BeSameAs(outer.Coordinator);
+    }
+
+    [Fact]
+    public async Task should_discard_work_and_dispose_state_when_scope_is_disposed_without_signal()
+    {
+        var stack = new CommitScopeStack();
+        var factory = new CommitScopeFactory(stack);
+        var calls = 0;
+        DisposableState state;
+
+        await using (var scope = factory.Open(relational: null))
+        {
+            state = scope.Coordinator.GetOrAdd(static _ => new DisposableState());
+            scope.Coordinator.OnCommit(() =>
+            {
+                calls++;
+
+                return ValueTask.CompletedTask;
+            });
+        }
+
+        calls.Should().Be(0);
+        state.IsDisposed.Should().BeTrue("the async dispose awaits the rollback drain inline");
+        stack.Current.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_dispose_state_in_background_when_sync_dispose_is_unsignalled()
+    {
+        var stack = new CommitScopeStack();
+        var factory = new CommitScopeFactory(stack);
+        var disposed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        ICommitCoordinator coordinator;
+
+        using (var scope = factory.Open(relational: null))
+        {
+            coordinator = scope.Coordinator;
+            scope.Coordinator.GetOrAdd(_ => new SignallingState(disposed));
+        }
+
+        // The pop and the claim are synchronous in the disposing frame; only the state disposal is offloaded.
+        stack.Current.Should().BeNull();
+        coordinator.State.Should().Be(CommitCoordinatorState.RolledBack);
+
+        await disposed.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+    }
+
+    [Fact]
+    public async Task should_not_deadlock_when_sync_dispose_disposes_async_state_under_a_synchronization_context()
+    {
+        var factory = new CommitScopeFactory(new CommitScopeStack());
+        var disposed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         var completed = SingleThreadSynchronizationContext.Run(
             () =>
             {
-                using var scope = factory.Begin(services);
+                using var scope = factory.Open(relational: null);
 
-                scope.Coordinator.OnRollback(
-                    async (_, _) =>
-                    {
-                        // Posts the continuation back to the captured SynchronizationContext; a sync-over-async drain
-                        // on the disposing thread would deadlock here unless the drain is offloaded.
-                        await Task.Yield();
-                        ran = true;
-                    }
-                );
+                // Posts its continuation back to the captured SynchronizationContext; a sync-over-async disposal on
+                // the disposing thread would deadlock here unless the drain is offloaded.
+                scope.Coordinator.GetOrAdd(_ => new YieldingAsyncState(disposed));
             },
             TimeSpan.FromSeconds(10)
         );
 
         completed
             .Should()
-            .BeTrue("sync Dispose must offload the rollback drain off the captured SynchronizationContext");
-        SpinWait.SpinUntil(() => ran, TimeSpan.FromSeconds(5)).Should().BeTrue();
+            .BeTrue("sync Dispose must offload the abandon drain off the captured SynchronizationContext");
+        await disposed.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
     }
 
     [Fact]
     public async Task should_not_roll_back_committed_work_when_disposed_before_the_commit_drain_completes()
     {
-        var stack = new CommitScopeStack();
-        var factory = new CommitScopeFactory(stack);
-        var services = new EmptyServiceProvider();
+        var factory = new CommitScopeFactory(new CommitScopeStack());
         var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var committed = false;
-        var rolledBack = false;
 
-        var scope = factory.Begin(services);
-        scope.Coordinator.OnCommit(
-            async (_, _) =>
-            {
-                await gate.Task;
-                committed = true;
-            }
-        );
-        scope.Coordinator.OnRollback(
-            (_, _) =>
-            {
-                rolledBack = true;
-
-                return ValueTask.CompletedTask;
-            }
-        );
+        var scope = factory.Open(relational: null);
+        var state = scope.Coordinator.GetOrAdd(static _ => new DisposableState());
+        scope.Coordinator.OnCommit(async () =>
+        {
+            await gate.Task;
+            committed = true;
+        });
 
         // Claim the commit and start the drain; it blocks on the gate, so the drain is still in flight.
         var drain = scope.SignalAsync(CommitOutcome.Committed);
 
         // Dispose while the commit drain is pending. The terminal outcome was claimed synchronously by the signal,
-        // so disposal must observe it and NOT roll back the committed work.
+        // so disposal must observe it and neither re-claim nor dispose the state out from under the drain.
         await scope.DisposeAsync();
 
-        rolledBack.Should().BeFalse();
         scope.Coordinator.State.Should().Be(CommitCoordinatorState.Committed);
         committed.Should().BeFalse("the drain is still gated");
+        state.IsDisposed.Should().BeFalse("the in-flight commit drain owns the scope state");
 
-        // Release the drain and confirm the committed work runs to completion.
         gate.SetResult();
         await drain;
+
         committed.Should().BeTrue();
-    }
-
-    [Fact]
-    public async Task should_not_dispose_child_promoted_rollback_work_before_root_drain_reaches_it()
-    {
-        var stack = new CommitScopeStack();
-        var factory = new CommitScopeFactory(stack);
-        var services = new EmptyServiceProvider();
-        var rootDrainStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var unblockRootDrain = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var childRollbackRan = false;
-
-        await using var parent = factory.Begin(services);
-        parent.Coordinator.OnRollback(
-            async (_, _) =>
-            {
-                rootDrainStarted.SetResult();
-                await unblockRootDrain.Task;
-            }
-        );
-
-        await using var child = factory.Begin(services);
-        child.Coordinator.OnRollback(
-            (_, _) =>
-            {
-                childRollbackRan = true;
-
-                return ValueTask.CompletedTask;
-            }
-        );
-
-        var drain = child.SignalAsync(CommitOutcome.RolledBack);
-        await rootDrainStarted.Task;
-
-        await child.DisposeAsync();
-        childRollbackRan.Should().BeFalse("the root drain is still blocked before the child callback");
-
-        unblockRootDrain.SetResult();
-        await drain;
-
-        childRollbackRan.Should().BeTrue("child rollback work promoted to the root must survive child disposal");
+        state.IsDisposed.Should().BeTrue();
     }
 
     [Fact]
@@ -316,22 +186,20 @@ public sealed class CommitScopeFactoryTests : TestBase
     {
         var stack = new CommitScopeStack();
         var factory = new CommitScopeFactory(stack);
-        var services = new EmptyServiceProvider();
         var commits = 0;
 
-        var scope = factory.Begin(services);
-        scope.Coordinator.OnCommit(
-            (_, _) =>
-            {
-                Interlocked.Increment(ref commits);
+        var scope = factory.Open(relational: null);
+        scope.Coordinator.OnCommit(() =>
+        {
+            Interlocked.Increment(ref commits);
 
-                return ValueTask.CompletedTask;
-            }
-        );
+            return ValueTask.CompletedTask;
+        });
 
         await scope.SignalAsync(CommitOutcome.Committed);
         stack.Current.Should().NotBeNull("the ambient frame is owned by disposal, not by the signal");
 
+        await scope.DisposeAsync();
         await scope.DisposeAsync();
 
         commits.Should().Be(1, "disposal after a signal must not drain a second terminal outcome");
@@ -340,60 +208,112 @@ public sealed class CommitScopeFactoryTests : TestBase
     }
 
     [Fact]
-    public void should_open_independent_root_when_begin_new_ambient_scope_active()
+    public async Task should_ignore_signal_after_dispose()
     {
-        var stack = new CommitScopeStack();
-        var factory = new CommitScopeFactory(stack);
-        var services = new EmptyServiceProvider();
+        var factory = new CommitScopeFactory(new CommitScopeStack());
+        var calls = 0;
 
-        using var ambient = factory.Begin(services);
-        using var independent = factory.BeginNew(services);
+        var scope = factory.Open(relational: null);
+        scope.Coordinator.OnCommit(() =>
+        {
+            calls++;
 
-        var ambientCoordinator = (CommitCoordinator)ambient.Coordinator;
-        var independentCoordinator = (CommitCoordinator)independent.Coordinator;
+            return ValueTask.CompletedTask;
+        });
 
-        independentCoordinator.Should().NotBeSameAs(ambientCoordinator);
-        independentCoordinator
-            .Root.Should()
-            .BeSameAs(
-                independentCoordinator,
-                "BeginNew opens an independent root, not a child joined to the ambient coordinator"
+        await scope.DisposeAsync();
+        await scope.SignalAsync(CommitOutcome.Committed);
+
+        calls.Should().Be(0);
+        scope.Coordinator.State.Should().Be(CommitCoordinatorState.RolledBack);
+    }
+
+    [Fact]
+    public async Task should_observe_exactly_one_outcome_when_signal_and_dispose_race()
+    {
+        // Each iteration runs in its own flow so the ambient frames it pushes never leak into the test's flow.
+        for (var iteration = 0; iteration < 200; iteration++)
+        {
+            await Task.Run(
+                async () =>
+                {
+                    var factory = new CommitScopeFactory(new CommitScopeStack());
+                    var scope = factory.Open(relational: null);
+                    var calls = 0;
+                    var disposals = 0;
+                    scope.Coordinator.GetOrAdd(_ => new CountingState(() => Interlocked.Increment(ref disposals)));
+                    scope.Coordinator.OnCommit(() =>
+                    {
+                        Interlocked.Increment(ref calls);
+
+                        return ValueTask.CompletedTask;
+                    });
+                    using var start = new Barrier(2);
+
+                    var signal = Task.Run(
+                        async () =>
+                        {
+                            start.SignalAndWait();
+                            await scope.SignalAsync(CommitOutcome.Committed);
+                        },
+                        AbortToken
+                    );
+                    var dispose = Task.Run(
+                        async () =>
+                        {
+                            start.SignalAndWait();
+                            await scope.DisposeAsync();
+                        },
+                        AbortToken
+                    );
+
+                    await Task.WhenAll(signal, dispose);
+
+                    var outcome = scope.Coordinator.State;
+                    outcome.Should().BeOneOf(CommitCoordinatorState.Committed, CommitCoordinatorState.RolledBack);
+                    calls
+                        .Should()
+                        .Be(
+                            outcome == CommitCoordinatorState.Committed ? 1 : 0,
+                            "work is drained or discarded, never both"
+                        );
+                    disposals.Should().Be(1, "scope state is disposed exactly once whichever side wins");
+                },
+                AbortToken
             );
+        }
     }
 
     [Fact]
-    public void should_preserve_nested_physical_transaction_capabilities_when_signal_source_attach()
+    public async Task should_throw_when_outer_scope_is_disposed_while_inner_is_active()
     {
         var stack = new CommitScopeStack();
         var factory = new CommitScopeFactory(stack);
-        using var services = new ServiceCollection().BuildServiceProvider();
-        var outerCapability = new TestCapability();
-        var innerCapability = new TestCapability();
-        using var outer = factory.BeginNew(services, [outerCapability]);
-        var scopes = new ConcurrentDictionary<object, ICommitScope>();
-        var key = new object();
 
-        using var inner = CommitSignalSourceAttach.Attach(
-            factory,
-            new CommitCoordinatorBindings
-            {
-                Services = services,
-                Capabilities = [innerCapability],
-                ProviderTransactionKey = key,
-            },
-            scopes,
-            _ => new InvalidOperationException("duplicate"),
-            CancellationToken.None
-        );
+        var outer = factory.Open(relational: null);
+        var outerState = outer.Coordinator.GetOrAdd(static _ => new DisposableState());
+        var inner = factory.Open(relational: null);
 
-        inner.Coordinator.TryGetCapability<TestCapability>(out var resolved).Should().BeTrue();
-        resolved.Should().BeSameAs(innerCapability);
-        outer.Coordinator.TryGetCapability<TestCapability>(out var outerResolved).Should().BeTrue();
-        outerResolved.Should().BeSameAs(outerCapability);
+        var act = () => outer.DisposeAsync().AsTask();
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("Commit scope disposed out of order.");
+        outer.Coordinator.State.Should().Be(CommitCoordinatorState.Active, "a rejected dispose claims no outcome");
+        outerState.IsDisposed.Should().BeFalse();
+        stack.Current.Should().BeSameAs(inner.Coordinator);
+
+        // Unwind in order. The rejected attempt released the disposal latch, so the outer scope is still disposable
+        // and this in-order dispose must claim the abandon it was denied before. Awaited directly (not through an
+        // assertion wrapper) so the ambient pop runs in this frame and its AsyncLocal restore is observable below.
+        await inner.DisposeAsync();
+        await outer.DisposeAsync();
+
+        stack.Current.Should().BeNull("the rejected out-of-order dispose must leave the scope disposable");
+        outer.Coordinator.State.Should().Be(CommitCoordinatorState.RolledBack);
+        outerState.IsDisposed.Should().BeTrue("the in-order dispose claimed and drained the abandon");
     }
 
     [Fact]
-    public void should_throw_when_pop_handle_outer_scope_disposed_before_inner()
+    public void should_throw_when_pop_handle_outer_frame_disposed_before_inner()
     {
         var stack = new CommitScopeStack();
 
@@ -409,10 +329,84 @@ public sealed class CommitScopeFactoryTests : TestBase
         outer.Dispose();
     }
 
-    private sealed class DisposableBuffer : ICommitWorkBuffer, IDisposable
+    [Fact]
+    public async Task should_ignore_pop_of_frame_its_parent_already_popped()
     {
-        public void Dispose() { }
+        var stack = new CommitScopeStack();
+        var outerCoordinator = new CommitCoordinator();
+        var outer = stack.Push(outerCoordinator);
+        IDisposable inner = null!;
+
+        async Task pushInIsolatedFlowAsync()
+        {
+            inner = stack.Push(new CommitCoordinator());
+            await Task.Yield();
+        }
+
+        // The async method's execution context is restored on return, so the inner frame exists only in that
+        // flow; from here the outer frame is current and the inner frame counts as already popped.
+        await pushInIsolatedFlowAsync();
+        stack.Current.Should().BeSameAs(outerCoordinator);
+
+        var act = inner.Dispose;
+
+        act.Should().NotThrow();
+        stack.Current.Should().BeSameAs(outerCoordinator);
+
+        outer.Dispose();
+        stack.Current.Should().BeNull();
     }
 
-    private sealed class TestCapability : ICommitCapability;
+    [Fact]
+    public async Task should_get_or_add_same_instance_and_dispose_it_on_both_outcomes()
+    {
+        var factory = new CommitScopeFactory(new CommitScopeStack());
+
+        await using var committed = factory.Open(relational: null);
+        var committedState = committed.Coordinator.GetOrAdd(static _ => new DisposableState());
+        committed.Coordinator.GetOrAdd(static _ => new DisposableState()).Should().BeSameAs(committedState);
+        await committed.SignalAsync(CommitOutcome.Committed);
+        committedState.IsDisposed.Should().BeTrue();
+
+        await using var rolledBack = factory.Open(relational: null);
+        var rolledBackState = rolledBack.Coordinator.GetOrAdd(static _ => new DisposableState());
+        rolledBackState.Should().NotBeSameAs(committedState, "state is scoped to one coordinator");
+        await rolledBack.SignalAsync(CommitOutcome.RolledBack);
+        rolledBackState.IsDisposed.Should().BeTrue();
+    }
+
+    private sealed class DisposableState : IDisposable
+    {
+        public bool IsDisposed { get; private set; }
+
+        public void Dispose()
+        {
+            IsDisposed = true;
+        }
+    }
+
+    private sealed class CountingState(Action onDispose) : IDisposable
+    {
+        public void Dispose()
+        {
+            onDispose();
+        }
+    }
+
+    private sealed class SignallingState(TaskCompletionSource disposed) : IDisposable
+    {
+        public void Dispose()
+        {
+            disposed.TrySetResult();
+        }
+    }
+
+    private sealed class YieldingAsyncState(TaskCompletionSource disposed) : IAsyncDisposable
+    {
+        public async ValueTask DisposeAsync()
+        {
+            await Task.Yield();
+            disposed.TrySetResult();
+        }
+    }
 }

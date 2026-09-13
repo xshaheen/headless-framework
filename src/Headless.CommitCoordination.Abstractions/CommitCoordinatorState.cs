@@ -8,9 +8,9 @@ namespace Headless.CommitCoordination;
 /// <remarks>
 /// State transitions are one-way and atomic: <see cref="Active" /> → <see cref="Committed" /> or
 /// <see cref="Active" /> → <see cref="RolledBack" />. Once a terminal state is reached, no further
-/// transitions occur. Attempts to register new work (via <see cref="ICommitCoordinator.OnCommit" />,
-/// <see cref="ICommitCoordinator.OnRollback" />, or <see cref="ICommitCoordinator.GetOrAdd{TBuffer}" />)
-/// after the coordinator leaves <see cref="Active" /> throw <see cref="InvalidOperationException" />.
+/// transitions occur. Attempts to register new work (via <see cref="ICommitCoordinator.OnCommit" /> or
+/// <see cref="ICommitCoordinator.GetOrAdd{TState}" />) after the coordinator leaves <see cref="Active" />
+/// throw <see cref="InvalidOperationException" />.
 /// </remarks>
 [PublicAPI]
 public enum CommitCoordinatorState
@@ -29,7 +29,7 @@ public enum CommitCoordinatorState
 
     /// <summary>
     /// The physical unit of work rolled back or was abandoned. The coordinator no longer accepts work
-    /// registrations. Any registered rollback callbacks are drained asynchronously after the state is set.
+    /// registrations; registered commit work is discarded and scope-local state is disposed.
     /// </summary>
     RolledBack = 2,
 }

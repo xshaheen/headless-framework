@@ -16,11 +16,12 @@ namespace Npgsql;
 /// </summary>
 /// <remarks>
 /// A raw connection cannot expose a resolving scope, so these overloads require an explicit
-/// <c>IServiceProvider</c> (the request scope) for the post-commit drain. PostgreSQL commit detection is
-/// inline (the signal fires when this helper's <c>Commit</c> runs), so bypassing this helper with a raw
-/// <c>NpgsqlTransaction.Commit</c> would leave the in-memory dispatch accelerator unfired and rely on the
-/// consumer's polling recovery. If the connection is closed it is opened for the duration and closed again
-/// afterward; an already-open connection is left open.
+/// <c>IServiceProvider</c> that resolves the commit coordination services. PostgreSQL signaling is explicit
+/// (this helper signals after its own <c>Commit</c>), so a caller that commits a raw <c>NpgsqlTransaction</c>
+/// outside this helper must signal the enlisted scope itself. There is no execution-strategy retry for raw ADO
+/// (that is an EF Core concept); a throwing operation rolls the transaction back and discards the enlisted work.
+/// If the connection is closed it is opened for the duration and closed again afterward; an already-open
+/// connection is left open.
 /// </remarks>
 [PublicAPI]
 public static partial class HeadlessNpgsqlCoordinatedTransactionExtensions
@@ -133,17 +134,13 @@ public static partial class HeadlessNpgsqlCoordinatedTransactionExtensions
     }
 
     /// <summary>
-    /// Shared body for every <c>ExecuteCoordinatedTransactionAsync</c> overload: opens the connection when
-    /// closed, begins the transaction, enlists commit coordination, runs <paramref name="operation"/>, commits,
-    /// signals the inline commit, and closes the connection if it was opened here.
+    /// Resolves the post-commit-fault logger up front (fail loud here, at a safe point) rather than with a
+    /// null-conditional inside the catch: a missing ILoggerFactory is a host misconfiguration, and surfacing it
+    /// before any commit is safe, whereas resolving it inside the post-commit catch could throw after the
+    /// transaction is already durable — exactly the caller-failure the catch exists to prevent. The transaction
+    /// body itself is the shared <see cref="CoordinatedTransactionRunner" />.
     /// </summary>
-    /// <remarks>
-    /// PostgreSQL is an inline (caller-driven) signal source: no diagnostic/interceptor raises the commit
-    /// signal, so the helper must drive it after <c>CommitAsync</c>. Without the explicit
-    /// <c>SignalAsync(Committed)</c> the un-signalled scope dispose drains as rollback and discards the enlisted
-    /// work on every successful commit.
-    /// </remarks>
-    private static async Task<TResult> _ExecuteCoreAsync<TResult>(
+    private static Task<TResult> _ExecuteCoreAsync<TResult>(
         NpgsqlConnection connection,
         IServiceProvider services,
         IsolationLevel isolation,
@@ -151,64 +148,20 @@ public static partial class HeadlessNpgsqlCoordinatedTransactionExtensions
         CancellationToken cancellationToken
     )
     {
-        // Resolve the post-commit-fault logger up front (fail loud here, at a safe point) rather than with a
-        // null-conditional inside the catch: a missing ILoggerFactory is a host misconfiguration, and surfacing it
-        // before any commit is safe, whereas resolving it inside the post-commit catch could throw after the
-        // transaction is already durable — exactly the caller-failure the catch exists to prevent.
         var logger = services
             .GetRequiredService<ILoggerFactory>()
             .CreateLogger("Headless.CommitCoordination.PostgreSql.CoordinatedTransaction");
 
-        var shouldClose = connection.State == ConnectionState.Closed;
-
-        if (shouldClose)
-        {
-            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        }
-
-        try
-        {
-            var transaction = await connection
-                .BeginTransactionAsync(isolation, cancellationToken)
-                .ConfigureAwait(false);
-
-            await using (transaction.ConfigureAwait(false))
-            {
-                // Enlist SYNCHRONOUSLY, in this frame, so the ambient coordinator flows to the operation's publishes.
-                var scope = connection.EnlistCommitCoordination(transaction, services, cancellationToken);
-
-                await using (scope.ConfigureAwait(false))
-                {
-                    var result = await operation(connection, cancellationToken).ConfigureAwait(false);
-                    await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-
-                    try
-                    {
-                        // CancellationToken.None: the commit is durable, so the post-commit drain must run to
-                        // completion rather than be aborted by a caller cancellation (which would log a spurious
-                        // fault even though the work drained). Matches the SqlServer inline-signal helper.
-                        await scope.SignalAsync(CommitOutcome.Committed).ConfigureAwait(false);
-                    }
-                    catch (Exception ex)
-                    {
-                        // The transaction is ALREADY durably committed. The inline signal drives the dispatch
-                        // accelerator (drain); a fault here must not surface as a caller failure — a retry would
-                        // re-run the operation and double-apply. The enlisted work is relay-recoverable (durable
-                        // rows committed in-transaction + polling recovery), so log and return the committed result.
-                        LogPostCommitDrainFaulted(logger, ex);
-                    }
-
-                    return result;
-                }
-            }
-        }
-        finally
-        {
-            if (shouldClose)
-            {
-                await connection.CloseAsync().ConfigureAwait(false);
-            }
-        }
+        return CoordinatedTransactionRunner.ExecuteAsync(
+            connection,
+            isolation,
+            static (c, iso, ct) => c.BeginTransactionAsync(iso, ct),
+            (c, t) => c.EnlistCommitCoordination(t, services, cancellationToken),
+            operation,
+            logger,
+            static (l, ex) => LogPostCommitDrainFaulted(l, ex),
+            cancellationToken
+        );
     }
 
     [LoggerMessage(

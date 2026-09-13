@@ -9,21 +9,18 @@ namespace Headless.CommitCoordination;
 /// physical transaction before commit.
 /// </summary>
 /// <remarks>
-/// This capability is attached by provider enlistment helpers (for example
+/// The handle is supplied by the provider enlistment helper that opens the scope (for example
 /// <c>DatabaseFacade.EnlistCommitCoordination</c> for EF Core, or <c>NpgsqlConnection.EnlistCommitCoordination</c>
-/// for PostgreSQL). Work buffers and callbacks retrieve it via
-/// <see cref="ICommitCoordinator.TryGetCapability{TCapability}" /> or
-/// <see cref="CommitContext.TryGetCapability{TCapability}" /> to write outbox rows or similar durable data
-/// atomically within the transaction.
+/// for PostgreSQL) and surfaces as <see cref="ICommitCoordinator.Relational" />, so outbox and job writers can
+/// place their rows atomically within the caller's transaction.
 /// <para>
 /// The properties return <see langword="null" /> after the transaction has closed (e.g. when accessed from a
 /// post-commit callback after the transaction has been disposed). Callers should check for
-/// <see langword="null" /> or only access these handles from <see cref="ICommitCoordinator.OnCommit" />
-/// callbacks (where the transaction is still live at the point the buffer writes).
+/// <see langword="null" /> or only access these handles while the transaction is still live.
 /// </para>
 /// </remarks>
 [PublicAPI]
-public interface IRelationalCommitContext : ICommitCapability
+public interface IRelationalCommitContext
 {
     /// <summary>
     /// Gets the active database connection, or <see langword="null" /> if the connection is no longer available.

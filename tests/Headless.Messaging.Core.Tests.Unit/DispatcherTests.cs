@@ -1577,9 +1577,8 @@ public sealed class DispatcherTests : TestBase
         var delayed = _CreateTestMessage(_StorageGuid(1));
         delayed.ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(1);
         buffer.Add(delayed);
-        using var commitServices = _scopeFactory.CreateScope();
 
-        var act = async () => await coordinator.SignalAsync(CommitOutcome.Committed, commitServices.ServiceProvider);
+        var act = async () => await coordinator.SignalAsync(CommitOutcome.Committed);
 
         await act.Should().NotThrowAsync();
     }
@@ -1637,12 +1636,8 @@ public sealed class DispatcherTests : TestBase
         var coordinator = new CommitCoordinator();
         var buffer = new MessageOutboxBuffer(coordinator, dispatcher);
         buffer.Add(_CreateTestMessage());
-        using var commitServices = _scopeFactory.CreateScope();
 
-        var commitTask = Task.Run(
-            async () => await coordinator.SignalAsync(CommitOutcome.Committed, commitServices.ServiceProvider),
-            AbortToken
-        );
+        var commitTask = Task.Run(async () => await coordinator.SignalAsync(CommitOutcome.Committed), AbortToken);
 
         await sender.Entered.Task.WaitAsync(AbortToken);
         try

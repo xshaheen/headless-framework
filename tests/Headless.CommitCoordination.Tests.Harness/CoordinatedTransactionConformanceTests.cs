@@ -29,14 +29,12 @@ public abstract class CoordinatedTransactionConformanceTests<TFixture>(TFixture 
         await fixture.RunCoordinatedAsync(
             async (context, ct) =>
             {
-                context.Coordinator.OnCommit(
-                    (_, _) =>
-                    {
-                        drained.TrySetResult();
+                context.Coordinator.OnCommit(() =>
+                {
+                    drained.TrySetResult();
 
-                        return ValueTask.CompletedTask;
-                    }
-                );
+                    return ValueTask.CompletedTask;
+                });
 
                 await context.InsertProbeRowAsync("committed", ct);
             },
@@ -54,6 +52,7 @@ public abstract class CoordinatedTransactionConformanceTests<TFixture>(TFixture 
         await fixture.ResetAsync(AbortToken);
 
         var drained = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var settled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         InvalidOperationException? thrown = null;
 
         try
@@ -61,14 +60,15 @@ public abstract class CoordinatedTransactionConformanceTests<TFixture>(TFixture 
             await fixture.RunCoordinatedAsync(
                 async (context, ct) =>
                 {
-                    context.Coordinator.OnCommit(
-                        (_, _) =>
-                        {
-                            drained.TrySetResult();
+                    context.Coordinator.OnCommit(() =>
+                    {
+                        drained.TrySetResult();
 
-                            return ValueTask.CompletedTask;
-                        }
-                    );
+                        return ValueTask.CompletedTask;
+                    });
+                    // Scope-local state is disposed on both outcomes after the callbacks, so its disposal marks
+                    // the moment the rollback drain has finished and the "nothing ran" read below is meaningful.
+                    context.Coordinator.GetOrAdd(_ => new DrainSentinel(settled));
 
                     await context.InsertProbeRowAsync("rolled-back", ct);
 
@@ -86,8 +86,18 @@ public abstract class CoordinatedTransactionConformanceTests<TFixture>(TFixture 
         thrown!.Message.Should().Be("conformance-rollback");
 
         (await fixture.CountProbeRowsAsync(AbortToken)).Should().Be(0, "the rolled-back probe row must not be durable");
+        var winner = await Task.WhenAny(settled.Task, Task.Delay(_DrainTimeout, AbortToken));
+        winner.Should().BeSameAs(settled.Task, "the rollback drain must dispose scope-local state");
         drained
             .Task.IsCompleted.Should()
             .BeFalse("a rolled-back coordinated transaction must discard buffered OnCommit work");
+    }
+
+    private sealed class DrainSentinel(TaskCompletionSource settled) : IDisposable
+    {
+        public void Dispose()
+        {
+            settled.TrySetResult();
+        }
     }
 }

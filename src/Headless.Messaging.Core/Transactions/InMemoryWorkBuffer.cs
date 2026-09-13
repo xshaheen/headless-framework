@@ -2,7 +2,7 @@
 
 using System.Collections.Concurrent;
 
-namespace Headless.CommitCoordination;
+namespace Headless.Messaging.Transactions;
 
 /// <summary>
 /// Thread-safe scope-local in-memory work buffer for accumulating work items during a transaction.
@@ -15,8 +15,7 @@ namespace Headless.CommitCoordination;
 /// this buffer is only the post-commit fast path in front of that store.
 /// </remarks>
 /// <typeparam name="TWork">The type of work item buffered per transaction.</typeparam>
-[PublicAPI]
-public class InMemoryWorkBuffer<TWork> : ICommitWorkBuffer
+internal class InMemoryWorkBuffer<TWork>
 {
     private readonly ConcurrentQueue<TWork> _items = new();
 

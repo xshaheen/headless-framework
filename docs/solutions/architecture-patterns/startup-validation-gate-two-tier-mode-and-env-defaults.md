@@ -26,6 +26,13 @@ tags:
 
 # Startup validation gates: two-tier (correctness vs diagnostic) with Off/Warn/Strict mode and environment-aware defaults
 
+> **Historical note (2026-09-13).** The SQL Server commit diagnostic gate this document lifted its shape from (a hosted
+> service, its `Disabled | Warn | Strict` probe mode, probe options, and probe state) was removed when
+> `Headless.CommitCoordination.SqlServer` became an explicit-signal raw-ADO helper package with no hosted service.
+> References to it below describe the code as it was when the pattern was extracted. The 3-state shape now ships as
+> `CommitProbeMode` (`Headless.CommitCoordination.Abstractions`) and its only consumer is the EF
+> `CommitInterceptorStartupGate<TContext>` (Tier-2 exception at the end of this document).
+
 ## Context
 
 The framework already validates a lot at host startup, but each package invented its own gate shape. Today there are **four incompatible shapes** and **no environment-awareness anywhere** (`grep IsDevelopment src/` returns hits, none of them a startup gate):
@@ -35,7 +42,7 @@ The framework already validates a lot at host startup, but each package invented
 | Always-throw, no knob | `FeaturesEntityValidationStartupGate<TContext>` (`Headless.Features.Storage.EntityFramework/Internal/`) | Throws `InvalidOperationException` if a required EF entity type is absent from the model. No opt-out. |
 | Per-gate `bool`, throw-when-on | `HeadlessServiceDefaultsValidationStartupFilter` (`Headless.Api.ServiceDefaults/`) | Reads `RequireUseHeadless` / `RequireMapHeadlessEndpoints` / `RequireStatusCodesRewriter` (all default `true`); throws if wiring was skipped. Two-state per gate. |
 | Collect-then-throw + warn-log | `HeadlessTenancyStartupValidator` (`Headless.MultiTenancy/`) | Aggregates `IHeadlessTenancyValidator` diagnostics, throws if any `Error`, logs `Warning`/`Information`. Warn-vs-strict is baked into each diagnostic's severity, not operator-configurable. |
-| **Real 3-state mode — but only one package has it** | `SqlServerCommitDiagnosticHostedService` (`Headless.CommitCoordination.SqlServer/`) | `SqlServerCommitDiagnosticProbeMode` = `Disabled \| Warn \| Strict`. The only gate with an explicit graduated knob. |
+| **Real 3-state mode — but only one package has it** | The former SQL Server commit diagnostic hosted service (`Headless.CommitCoordination.SqlServer/`, since removed) | Its probe mode was `Disabled \| Warn \| Strict`. The only gate with an explicit graduated knob at the time; today that knob is `CommitProbeMode` on the EF interceptor gate. |
 
 This scatter creates three frictions:
 
@@ -54,13 +61,13 @@ This doc names the latent pattern across those instances and proposes the one mi
 | Tier | Definition | Default policy | Real gates |
 | --- | --- | --- | --- |
 | **Tier-1 — Correctness** | cheap, **no network I/O**: in-memory checks of options, EF model metadata, DI wiring flags, tenant posture | `Strict` in **all** environments | `FeaturesEntityValidationStartupGate<TContext>` (EF model-metadata only); `HeadlessServiceDefaultsValidationStartupFilter` (flag checks); `HeadlessTenancyStartupValidator` (Tier-1 *by convention* — see edge case); options `ValidateOnStart()` chains; `UseDefaultServiceProvider(ValidateOnBuild/ValidateScopes)` |
-| **Tier-2 — Diagnostic** | network I/O, adds startup latency, can fail on transient blips | `Strict`/`Warn` in Dev, **`Off` in Prod** | `SqlServerCommitDiagnosticHostedService` (opens a live `SqlConnection`, runs a real txn under `DiagnosticProbeTimeout`) — currently the only one |
+| **Tier-2 — Diagnostic** | network I/O, adds startup latency, can fail on transient blips | `Strict`/`Warn` in Dev, **`Off` in Prod** | The former SQL Server commit diagnostic hosted service (opened a live `SqlConnection`, ran a real txn under a probe timeout; removed). Today the only Tier-2 gate is `CommitInterceptorStartupGate<TContext>`, covered as the exception below |
 
 The test for tier is **I/O at runtime, not object allocation.** `FeaturesEntityValidationStartupGate` opens a `DbContext` via `IDbContextFactory` but only reads `context.Model.FindEntityType(...)` — in-memory model metadata, no DB round-trip — so it is correctly Tier-1 despite "creating" a context.
 
 ### Shared 3-state mode enum
 
-Generalize the existing `SqlServerCommitDiagnosticProbeMode` into a shared enum in `Headless.Hosting`, renaming `Disabled` → `Off` for a consistent vocabulary:
+Generalize the existing probe-mode enum (then the SQL Server one; now `CommitProbeMode` in `Headless.CommitCoordination.Abstractions`) into a shared enum in `Headless.Hosting`, renaming `Disabled` → `Off` for a consistent vocabulary:
 
 ```csharp
 // proposed: Headless.Hosting (shared)
@@ -82,7 +89,7 @@ public enum HeadlessValidationMode
 
 ### Canonical gate shape: resolve → short-circuit → check → branch
 
-Lifted from `SqlServerCommitDiagnosticHostedService._RunProbeAsync`:
+Lifted from the former SQL Server commit diagnostic hosted service's probe method:
 
 ```csharp
 if (Interlocked.Exchange(ref _probeRan, 1) == 1) return; // run-once guard for IHostedService gates
@@ -131,13 +138,13 @@ public HeadlessValidationMode ResolveValidationMode(HeadlessValidationMode? expl
 
 ### Alignment with repo conventions
 
-- **Options validators.** Companion knobs (timeouts, sizes) keep an `internal sealed class {Options}Validator : AbstractValidator<{Options}>` in the same file, registered via `services.AddOptions<TOptions, TValidator>()` / `Configure<TOption, TValidator>(...)` from `Headless.Hosting`. Real example: `SqlServerCommitCoordinationOptionsValidator` enforces `DiagnosticProbeTimeout > TimeSpan.Zero` — itself a Tier-1 rule running via `ValidateOnStart()`. The mode enum needs no validator (every value is valid); its companion timeout does.
+- **Options validators.** Companion knobs (timeouts, sizes) keep an `internal sealed class {Options}Validator : AbstractValidator<{Options}>` in the same file, registered via `services.AddOptions<TOptions, TValidator>()` / `Configure<TOption, TValidator>(...)` from `Headless.Hosting`. Example at the time: the SQL Server probe options validator enforced its probe timeout `> TimeSpan.Zero` — itself a Tier-1 rule running via `ValidateOnStart()`. The mode enum needs no validator (every value is valid); its companion timeout does.
 - **`LoggerMessage` partials at file bottom.** Use the bottom-of-file `internal static partial class {Gate}Logger` form (as `HeadlessTenancyStartupValidator` does) when logging methods are shared.
 - **`g:snake_case` problem-detail codes.** Today's gates throw raw `InvalidOperationException` with a human message and **no `g:` code** — they fail *startup*, not a *request*, so no `ProblemDetails` is produced. If a generalized Strict failure ever surfaces a structured code, use the `g:lower_snake_case` shape (e.g. `g:startup_gate_failed`). It is not done today; do not assume codes exist.
 
 ### A note on `ValidateOnStart` for diagnostic options (settled)
 
-A prior review (session history) flagged `SqlServerCommitCoordinationOptions` for lacking a FluentValidation validator + `ValidateOnStart`, and the finding was **rejected**: the SqlServer package doesn't reference `Headless.Hosting`/FluentValidation, all probe options carry safe defaults, and CLAUDE.md's "validate only when needed" qualifier applies. Don't re-add that validator on the strength of this pattern alone — the mode enum is self-validating, and a Tier-2 package isn't obligated to take a Hosting dependency just for it.
+A prior review (session history) flagged the former SQL Server commit coordination options for lacking a FluentValidation validator + `ValidateOnStart`, and the finding was **rejected**: the SqlServer package doesn't reference `Headless.Hosting`/FluentValidation, all probe options carry safe defaults, and CLAUDE.md's "validate only when needed" qualifier applies. Don't re-add that validator on the strength of this pattern alone — the mode enum is self-validating, and a Tier-2 package isn't obligated to take a Hosting dependency just for it.
 
 ## Why This Matters
 
@@ -207,7 +214,7 @@ return services
 
 Treat options validation as the *reference* Tier-1 implementation rather than reinventing it. New Tier-1 gates that aren't expressible as an options validator (EF model presence, wiring flags) are the ones that need the `IHostedLifecycleService` shape above.
 
-### Tier-2 after — mode-aware, env-defaulted (generalized from `SqlServerCommitDiagnosticHostedService._RunProbeAsync`)
+### Tier-2 after — mode-aware, env-defaulted (generalized from the former SQL Server commit diagnostic probe)
 
 ```csharp
 // BEFORE: var mode = _options.Value.DiagnosticProbeMode;  // unconditional, defaults Warn (even in prod)

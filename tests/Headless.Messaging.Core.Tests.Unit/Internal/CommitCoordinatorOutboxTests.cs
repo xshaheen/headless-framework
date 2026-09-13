@@ -23,10 +23,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
     {
         await using var transaction = new TestDbTransaction();
         var stack = new CommitScopeStack();
-        var scope = new CommitScopeFactory(stack).Begin(
-            new EmptyServiceProvider(),
-            [new RelationalCommitContext(() => null, () => transaction)]
-        );
+        var scope = new CommitScopeFactory(stack).Open(new RelationalCommitContext(() => null, () => transaction));
 
         await using (scope)
         {
@@ -82,10 +79,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
     {
         await using var transaction = new TestDbTransaction();
         var stack = new CommitScopeStack();
-        var scope = new CommitScopeFactory(stack).Begin(
-            new EmptyServiceProvider(),
-            [new RelationalCommitContext(() => null, () => transaction)]
-        );
+        var scope = new CommitScopeFactory(stack).Open(new RelationalCommitContext(() => null, () => transaction));
 
         await using (scope)
         {
@@ -138,10 +132,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
         // Ambient coordination is authoritative. A torn-down relational capability must reject instead of silently
         // falling back to a non-transactional durable write.
         var stack = new CommitScopeStack();
-        var scope = new CommitScopeFactory(stack).Begin(
-            new EmptyServiceProvider(),
-            [new RelationalCommitContext(() => null, () => null)]
-        );
+        var scope = new CommitScopeFactory(stack).Open(new RelationalCommitContext(() => null, () => null));
 
         await using (scope)
         {
@@ -182,7 +173,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
         // coordinated seam; a plain IDataStorage must fail before any durable write or dispatcher hand-off,
         // otherwise a standalone row would survive the caller's rollback.
         var stack = new CommitScopeStack();
-        var scope = new CommitScopeFactory(stack).Begin(new EmptyServiceProvider());
+        var scope = new CommitScopeFactory(stack).Open(relational: null);
 
         await using (scope)
         {
@@ -235,7 +226,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
         message.ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(30);
         buffer.Add(message);
 
-        await coordinator.SignalAsync(CommitOutcome.Committed, new EmptyServiceProvider());
+        await coordinator.SignalAsync(CommitOutcome.Committed);
 
         dispatcher.CommittedDelayedMessages.Should().ContainSingle().Which.Should().BeSameAs(message);
         dispatcher.SchedulerCalls.Should().Be(0, "the schedule state was already committed with the durable row");
@@ -276,10 +267,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
     {
         await using var transaction = new TestDbTransaction();
         var stack = new CommitScopeStack();
-        var scope = new CommitScopeFactory(stack).Begin(
-            new EmptyServiceProvider(),
-            [new RelationalCommitContext(() => null, () => transaction)]
-        );
+        var scope = new CommitScopeFactory(stack).Open(new RelationalCommitContext(() => null, () => transaction));
 
         await using (scope)
         {
@@ -347,14 +335,6 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
     }
 
     private sealed record CoordinatorMessage(string Value);
-
-    private sealed class EmptyServiceProvider : IServiceProvider
-    {
-        public object? GetService(Type serviceType)
-        {
-            return null;
-        }
-    }
 
     private sealed class RecordingCommittedDispatcher
         : IDispatcher,

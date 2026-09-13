@@ -502,8 +502,8 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     /// <c>ResolvedDeliveryMode = Durable</c>.
     /// </para>
     /// <para>
-    /// The scope joins an ambient coordinator when one is already active, so a nested call follows the
-    /// commit-coordination child rules: a child rollback dooms the outer scope.
+    /// Every call opens an independent root scope: a nested call does not join the outer one, its rows commit or
+    /// roll back on their own, and the outer coordinator becomes ambient again once the inner call returns.
     /// </para>
     /// </remarks>
     /// <param name="action">The work to run inside the scope.</param>
@@ -532,8 +532,9 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     {
         Argument.IsNotNull(action);
 
+        // Opened here, in the frame that owns the unit of work, so the ambient coordinator flows into the action.
         var scopeFactory = ServiceProvider.GetRequiredService<ICommitScopeFactory>();
-        await using var scope = scopeFactory.Begin(ServiceProvider, capabilities: null);
+        await using var scope = scopeFactory.Open(relational: null);
 
         TResult result;
         try
@@ -542,7 +543,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         }
         catch
         {
-            // Disposal alone would roll back, but signalling here drains the rollback callbacks before the caller
+            // Disposal alone would roll back, but signalling here disposes the scope-local buffers before the caller
             // observes the exception, so the captured rows are already discarded when the test asserts.
             await scope.SignalAsync(CommitOutcome.RolledBack).ConfigureAwait(false);
             throw;

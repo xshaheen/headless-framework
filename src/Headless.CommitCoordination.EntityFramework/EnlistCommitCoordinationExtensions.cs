@@ -24,10 +24,14 @@ namespace Microsoft.EntityFrameworkCore;
 /// <b>in their own frame</b>, before doing the work that should enlist:
 /// <code>
 /// await using var tx = await db.Database.BeginTransactionAsync(ct);
-/// await using var _ = db.Database.EnlistCommitCoordination(tx, services);
+/// await using var scope = db.Database.EnlistCommitCoordination(tx, services);
 /// // publish / save here — ICurrentCommitCoordinator.Current is now this scope
-/// await tx.CommitAsync(ct);
+/// await tx.CommitAsync(ct); // the interceptor signals the scope on the commit edge
 /// </code>
+/// The interceptor signals the outcome, so no explicit signal is needed. A caller that must settle the outcome
+/// itself — for example after a commit that threw client-side but was confirmed committed by a probe — calls
+/// <see cref="ICommitScope.SignalAsync" /> on the returned scope; a repeated signal with the same outcome is a
+/// silent no-op. Disposing the scope without any signal discards the enlisted work.
 /// </remarks>
 [PublicAPI]
 public static class HeadlessEntityFrameworkEnlistCommitCoordinationExtensions
@@ -35,17 +39,21 @@ public static class HeadlessEntityFrameworkEnlistCommitCoordinationExtensions
     extension(DatabaseFacade database)
     {
         /// <summary>
-        /// Pushes the ambient coordinated scope for an open EF transaction. Dispose the returned scope to pop the
-        /// ambient scope and discard enlisted work if the transaction was never signalled (un-signalled dispose
-        /// rolls back).
+        /// Pushes the ambient coordinated scope for an open EF transaction and registers it with the commit
+        /// interceptor. Dispose the returned scope after the transaction completes; an un-signalled dispose
+        /// discards the enlisted work.
         /// </summary>
         /// <param name="transaction">The open EF transaction to coordinate.</param>
-        /// <param name="services">The scoped service provider captured for the post-commit drain.</param>
+        /// <param name="services">A service provider that resolves the commit coordination services.</param>
         /// <param name="cancellationToken">
-        /// Observed only while attaching (before any work is enlisted); a pre-cancelled token throws here rather
-        /// than pushing an ambient scope. It does not govern the post-commit drain (design decision D9).
+        /// Observed only before the scope is pushed; a pre-cancelled token throws here rather than pushing an
+        /// ambient scope. It does not govern the post-commit drain, which always runs to completion.
         /// </param>
-        /// <returns>The coordinated scope; dispose it (after the transaction completes) to tear down.</returns>
+        /// <returns>The coordinated scope; the caller owns it and disposes it after the transaction completes.</returns>
+        /// <exception cref="InvalidOperationException">
+        /// <c>AddEntityFrameworkCommitCoordination</c> was not called, or a scope is already enlisted for
+        /// <paramref name="transaction" />.
+        /// </exception>
         public ICommitScope EnlistCommitCoordination(
             IDbContextTransaction transaction,
             IServiceProvider services,
@@ -54,19 +62,17 @@ public static class HeadlessEntityFrameworkEnlistCommitCoordinationExtensions
         {
             Argument.IsNotNull(transaction);
             Argument.IsNotNull(services);
+            cancellationToken.ThrowIfCancellationRequested();
 
-            var signalSource = services.GetRequiredService<EntityFrameworkCommitSignalSource>();
+            var interceptor = services.GetRequiredService<CommitCoordinationTransactionInterceptor>();
+            var scopeFactory = services.GetRequiredService<ICommitScopeFactory>();
             var dbConnection = database.GetDbConnection();
             var dbTransaction = transaction.GetDbTransaction();
 
-            return signalSource.Attach(
-                new CommitCoordinatorBindings
-                {
-                    Services = services,
-                    Capabilities = [new RelationalCommitContext(() => dbConnection, () => dbTransaction)],
-                    ProviderTransactionKey = dbTransaction,
-                },
-                cancellationToken
+            return interceptor.Enlist(
+                scopeFactory,
+                new RelationalCommitContext(() => dbConnection, () => dbTransaction),
+                dbTransaction
             );
         }
     }

@@ -113,22 +113,19 @@ public sealed class PostgreSqlJobsCoordinationFixture
         await connection.ExecuteCoordinatedTransactionAsync(
             async (conn, ct) =>
             {
-                // Reach the live transaction through the same relational capability production participants use.
+                // Reach the live transaction through the same relational handle production participants use.
                 var coordinator =
                     services.GetRequiredService<ICurrentCommitCoordinator>().Current
                     ?? throw new InvalidOperationException("No ambient coordinator — the helper did not enlist.");
 
-                if (
-                    !coordinator.TryGetCapability<IRelationalCommitContext>(out var relational)
-                    || relational.Transaction is null
-                )
+                if (coordinator.Relational?.Transaction is not { } transaction)
                 {
                     throw new InvalidOperationException(
                         "The coordinated scope exposed no live relational transaction."
                     );
                 }
 
-                await operation(conn, relational.Transaction, ct);
+                await operation(conn, transaction, ct);
             },
             services,
             cancellationToken: cancellationToken

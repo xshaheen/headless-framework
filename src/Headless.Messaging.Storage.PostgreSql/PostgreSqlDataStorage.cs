@@ -82,7 +82,7 @@ internal sealed partial class PostgreSqlDataStorage(
             return DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.InactiveTransaction);
         }
 
-        if (!coordinator.TryGetCapability<IRelationalCommitContext>(out var relational))
+        if (coordinator.Relational is not { } relational)
         {
             return DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.MissingRelationalCapability);
         }

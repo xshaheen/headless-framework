@@ -76,7 +76,7 @@ Headless.<Feature>.Testing       -> أدوات اختبار عند الحاجة
 | المهام الخلفية | `Headless.Jobs.Abstractions` | `Headless.Jobs.Core`, `Headless.Jobs.SourceGenerator`, Dashboard، أو تخزين دائم عبر EF Core |
 | الأقفال الموزّعة | `Headless.DistributedLocks.Abstractions` | `Headless.DistributedLocks.Core` مع InMemory أو Redis أو PostgreSQL أو SQL Server |
 | عضوية العُقد وحالتها | `Headless.Coordination.Abstractions` | `Headless.Coordination.Core` مع Redis أو PostgreSQL أو SQL Server |
-| ربط الآثار الجانبية بالمعاملة | `Headless.CommitCoordination.Abstractions` | `Headless.CommitCoordination.Core` مع EF Core أو PostgreSQL أو SQL Server أو InMemory أو Durable Work |
+| ربط الآثار الجانبية بالمعاملة | `Headless.CommitCoordination.Abstractions` | `Headless.CommitCoordination.Core` مع EF Core أو PostgreSQL أو SQL Server |
 | الإعدادات الديناميكية | `Headless.Settings.Abstractions` | `Headless.Settings.Core` مع تخزين EF Core أو PostgreSQL أو SQL Server |
 | Feature flags | `Headless.Features.Abstractions` | `Headless.Features.Core` مع تخزين EF Core أو PostgreSQL أو SQL Server |
 | الصلاحيات | `Headless.Permissions.Abstractions` | `Headless.Permissions.Core` مع تخزين EF Core أو PostgreSQL أو SQL Server أو مزوّد اختبار |
@@ -420,9 +420,8 @@ Messaging في Headless مجرد عائلة من عائلات الإطار، م�
 | [Headless.CommitCoordination.Abstractions](src/Headless.CommitCoordination.Abstractions/README.md) | عقود commit coordination |
 | [Headless.CommitCoordination.Core](src/Headless.CommitCoordination.Core/README.md) | Ambient scopes وربط الشغل بحدود المعاملة |
 | [Headless.CommitCoordination.EntityFramework](src/Headless.CommitCoordination.EntityFramework/README.md) | ربط EF Core بحدود commit/rollback |
-| [Headless.CommitCoordination.InMemory](src/Headless.CommitCoordination.InMemory/README.md) | إشارات داخل نفس العملية |
-| [Headless.CommitCoordination.PostgreSql](src/Headless.CommitCoordination.PostgreSql/README.md) | نقاط تسجيل PostgreSQL |
-| [Headless.CommitCoordination.SqlServer](src/Headless.CommitCoordination.SqlServer/README.md) | إشارات commit/rollback في SQL Server |
+| [Headless.CommitCoordination.PostgreSql](src/Headless.CommitCoordination.PostgreSql/README.md) | ربط معاملات PostgreSQL الخام (raw ADO) مع إشارة commit صريحة |
+| [Headless.CommitCoordination.SqlServer](src/Headless.CommitCoordination.SqlServer/README.md) | ربط معاملات SQL Server الخام (raw ADO) مع إشارة commit صريحة |
 
 ### Serialization
 

@@ -3,20 +3,27 @@
 namespace Headless.CommitCoordination;
 
 /// <summary>
-/// Register-only view of a commit coordination scope for consumers that enlist post-commit or post-rollback work.
+/// Register-only view of a commit coordination scope for consumers that enlist post-commit work.
 /// </summary>
 /// <remarks>
 /// This interface is <b>register-only</b>: it accepts work registrations but never executes them directly.
-/// Execution is driven by the infrastructure after the physical unit of work (database transaction) reaches a
-/// terminal outcome — commit or rollback — as signalled by the provider's <see cref="ICommitSignalSource" />.
+/// Execution is driven by the scope owner after the physical unit of work (database transaction) reaches a
+/// terminal outcome, through <see cref="ICommitScope.SignalAsync" />.
 /// <para>
-/// Callbacks registered via <see cref="OnCommit" /> or <see cref="OnRollback" /> are <b>process-local</b>: the
-/// coordinator is an in-memory object, and each callback runs <b>once per coordinator instance</b>, after the
-/// physical outcome is durable, on the drain that the terminal signal triggers. Nothing persists the
-/// registrations, so a callback that has not yet run when the process crashes is lost; no relay or sweep
-/// recovers it. Durable delivery therefore never comes from a callback — it comes from the row the consumer
-/// commits inside the transaction (an outbox or job row) plus that consumer's own recovery sweep. A callback
-/// is only the fast path that dispatches such a row sooner.
+/// Callbacks registered via <see cref="OnCommit" /> are <b>process-local</b>: the coordinator is an in-memory
+/// object, and each callback runs <b>once per coordinator instance</b>, after the physical outcome is durable,
+/// on the drain that the commit signal triggers. Callbacks receive no cancellation token: a drain runs to
+/// completion once the outcome is durable, because cancelling it would abandon work whose data has already
+/// committed. Nothing persists the registrations, so a callback that has not yet run when the process crashes
+/// is lost; no relay or sweep recovers it. Durable delivery therefore never comes from a callback — it comes
+/// from the row the consumer commits inside the transaction (an outbox or job row) plus that consumer's own
+/// recovery sweep. A callback is only the fast path that dispatches such a row sooner.
+/// </para>
+/// <para>
+/// Callbacks drain in registration order. A callback fault does not stop the remaining callbacks: every
+/// registered callback runs, and the faults surface to the signaller after the drain (a single fault as-is,
+/// several as an <see cref="AggregateException" />). Nothing runs on rollback; rollback only discards the
+/// registrations and disposes the scope-local state.
 /// </para>
 /// <para>
 /// Callbacks are savepoint-blind. The coordinator observes the physical transaction's terminal outcome only,
@@ -26,9 +33,9 @@ namespace Headless.CommitCoordination;
 /// transaction tracking.
 /// </para>
 /// <para>
-/// Child coordinators (opened via <see cref="ICommitScopeFactory.Begin" /> when an ambient scope already exists)
-/// promote their registrations to the ambient root: a callback registered on a child fires as part of the root's
-/// drain when the root reaches its terminal outcome. A child rollback dooms the root.
+/// Every scope is an independent root. Opening a scope while another is ambient does not join it: the new
+/// coordinator has its own registrations and its own outcome, and the outer coordinator becomes ambient again
+/// once the inner scope is disposed.
 /// </para>
 /// </remarks>
 [PublicAPI]
@@ -40,17 +47,24 @@ public interface ICommitCoordinator
     CommitCoordinatorState State { get; }
 
     /// <summary>
+    /// Gets the live relational connection and transaction the scope was opened with, or <see langword="null" />
+    /// when the scope is not bound to a relational transaction (an in-memory or non-relational unit of work).
+    /// </summary>
+    /// <remarks>
+    /// Work that must write durable rows inside the physical transaction (an outbox row, a job row) uses this
+    /// handle so the write shares the caller's transaction and disappears with it on rollback.
+    /// </remarks>
+    IRelationalCommitContext? Relational { get; }
+
+    /// <summary>
     /// Registers a callback to run after the physical unit of work commits.
     /// </summary>
     /// <remarks>
     /// Registration after the coordinator reaches a terminal state throws <see cref="InvalidOperationException" />
     /// — callers that may register after an outcome must check <see cref="State" /> first or catch the
-    /// exception. Callbacks are invoked in registration order; each receives a <see cref="CommitContext" /> that
-    /// carries the service provider and the terminal outcome. The callback always receives
-    /// <see cref="CancellationToken.None" />: a drain runs to completion once the outcome is durable, because
-    /// cancelling it would abandon work whose data has already committed. The callback runs once on this
-    /// coordinator instance and is not replayed after a process crash; see the type remarks for what that
-    /// means for durability.
+    /// exception. A callback that registers another callback during the drain therefore throws as well: the
+    /// state is already terminal when the drain runs. See the type remarks for ordering, fault handling,
+    /// cancellation, and durability.
     /// </remarks>
     /// <param name="work">The callback to invoke after the transaction commits.</param>
     /// <returns>
@@ -59,74 +73,42 @@ public interface ICommitCoordinator
     /// </returns>
     /// <exception cref="ArgumentNullException"><paramref name="work" /> is <see langword="null" />.</exception>
     /// <exception cref="InvalidOperationException">The coordinator is no longer active.</exception>
-    IDisposable OnCommit(Func<CommitContext, CancellationToken, ValueTask> work);
+    IDisposable OnCommit(Func<ValueTask> work);
 
     /// <summary>
-    /// Registers a callback to run after the physical unit of work rolls back or is abandoned.
+    /// Gets or creates a typed, scope-local state object associated with this coordinator.
     /// </summary>
     /// <remarks>
-    /// See <see cref="OnCommit" /> for ordering, cancellation, and terminal-state semantics — they apply
-    /// identically to rollback callbacks.
+    /// The state is keyed by <typeparamref name="TState" />: at most one instance of each type exists per
+    /// coordinator. The factory is invoked at most once; the result is stored and returned on subsequent calls.
+    /// Construction is atomic — concurrent first-access calls serialize, so a factory that enlists a callback
+    /// on construction never registers it twice. State that implements <see cref="IAsyncDisposable" /> or
+    /// <see cref="IDisposable" /> is disposed after the terminal outcome, on commit and on rollback alike, once
+    /// the commit drain (if any) has finished.
     /// </remarks>
-    /// <param name="work">The callback to invoke after the transaction rolls back.</param>
-    /// <returns>
-    /// A handle whose disposal deregisters the callback while the coordinator is still active. Once the
-    /// coordinator has reached a terminal state, disposal of the handle is a no-op.
-    /// </returns>
-    /// <exception cref="ArgumentNullException"><paramref name="work" /> is <see langword="null" />.</exception>
-    /// <exception cref="InvalidOperationException">The coordinator is no longer active.</exception>
-    IDisposable OnRollback(Func<CommitContext, CancellationToken, ValueTask> work);
-
-    /// <summary>
-    /// Gets or creates a typed, scope-local work buffer associated with this coordinator.
-    /// </summary>
-    /// <remarks>
-    /// The buffer is keyed by <typeparamref name="TBuffer" />: at most one instance of each buffer type
-    /// exists per root coordinator scope. The factory is invoked at most once; the result is stored and
-    /// returned on subsequent calls. Buffer construction is atomic — concurrent first-access calls serialize
-    /// to avoid double-registration of callbacks the buffer's constructor typically enlists.
-    /// </remarks>
-    /// <typeparam name="TBuffer">The concrete buffer type, implementing <see cref="ICommitWorkBuffer" />.</typeparam>
-    /// <param name="factory">A factory that receives this coordinator and creates the buffer when absent.</param>
-    /// <returns>The existing buffer if already present, or the newly-created buffer.</returns>
+    /// <typeparam name="TState">The concrete state type.</typeparam>
+    /// <param name="factory">A factory that receives this coordinator and creates the state when absent.</param>
+    /// <returns>The existing state if already present, or the newly-created state.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="factory" /> is <see langword="null" />.</exception>
     /// <exception cref="InvalidOperationException">The coordinator is no longer active.</exception>
-    TBuffer GetOrAdd<TBuffer>(Func<ICommitCoordinator, TBuffer> factory)
-        where TBuffer : class, ICommitWorkBuffer;
+    TState GetOrAdd<TState>(Func<ICommitCoordinator, TState> factory)
+        where TState : class;
 
     /// <summary>
-    /// Gets or creates a typed, scope-local work buffer using caller-supplied state to avoid a closure allocation.
+    /// Gets or creates a typed, scope-local state object using a caller-supplied argument to avoid a closure
+    /// allocation.
     /// </summary>
     /// <remarks>
-    /// Functionally identical to <see cref="GetOrAdd{TBuffer}" /> but the
-    /// factory receives an extra <paramref name="state" /> argument so callers on hot paths can avoid capturing
-    /// variables in a closure.
+    /// Functionally identical to <see cref="GetOrAdd{TState}" /> but the factory receives an extra
+    /// <paramref name="arg" /> so callers on hot paths can avoid capturing variables in a closure.
     /// </remarks>
-    /// <typeparam name="TBuffer">The concrete buffer type, implementing <see cref="ICommitWorkBuffer" />.</typeparam>
-    /// <typeparam name="TState">The type of the caller-supplied factory state.</typeparam>
-    /// <param name="state">The state forwarded to <paramref name="factory" /> when the buffer is absent.</param>
-    /// <param name="factory">A factory that receives this coordinator and <paramref name="state" />, and creates the buffer when absent.</param>
-    /// <returns>The existing buffer if already present, or the newly-created buffer.</returns>
+    /// <typeparam name="TState">The concrete state type.</typeparam>
+    /// <typeparam name="TArg">The type of the caller-supplied factory argument.</typeparam>
+    /// <param name="arg">The argument forwarded to <paramref name="factory" /> when the state is absent.</param>
+    /// <param name="factory">A factory that receives this coordinator and <paramref name="arg" />, and creates the state when absent.</param>
+    /// <returns>The existing state if already present, or the newly-created state.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="factory" /> is <see langword="null" />.</exception>
     /// <exception cref="InvalidOperationException">The coordinator is no longer active.</exception>
-    TBuffer GetOrAdd<TBuffer, TState>(TState state, Func<ICommitCoordinator, TState, TBuffer> factory)
-        where TBuffer : class, ICommitWorkBuffer;
-
-    /// <summary>
-    /// Attempts to retrieve a provider capability attached when the enclosing scope was opened.
-    /// </summary>
-    /// <remarks>
-    /// Capabilities are attached by the scope owner (typically a provider enlistment helper such as
-    /// <c>EnlistCommitCoordination</c>) and are read-only to consumers. For example, a relational provider
-    /// attaches an <see cref="IRelationalCommitContext" /> so work that must write rows inside the active
-    /// transaction can reach the live connection and transaction.
-    /// </remarks>
-    /// <typeparam name="TCapability">The capability interface to query, deriving from <see cref="ICommitCapability" />.</typeparam>
-    /// <param name="capability">
-    /// When this method returns <see langword="true" />, contains the attached capability; otherwise
-    /// <see langword="null" />.
-    /// </param>
-    /// <returns><see langword="true" /> when the requested capability is attached; otherwise <see langword="false" />.</returns>
-    bool TryGetCapability<TCapability>([NotNullWhen(true)] out TCapability? capability)
-        where TCapability : class, ICommitCapability;
+    TState GetOrAdd<TState, TArg>(TArg arg, Func<ICommitCoordinator, TArg, TState> factory)
+        where TState : class;
 }

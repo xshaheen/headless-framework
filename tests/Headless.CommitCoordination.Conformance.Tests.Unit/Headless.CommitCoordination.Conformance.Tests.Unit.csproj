@@ -10,7 +10,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.CommitCoordination.Abstractions\Headless.CommitCoordination.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Headless.CommitCoordination.Core\Headless.CommitCoordination.Core.csproj" />
-    <ProjectReference Include="..\..\src\Headless.CommitCoordination.InMemory\Headless.CommitCoordination.InMemory.csproj" />
     <ProjectReference Include="..\Headless.CommitCoordination.Tests.Harness\Headless.CommitCoordination.Tests.Harness.csproj" />
   </ItemGroup>
 </Project>
