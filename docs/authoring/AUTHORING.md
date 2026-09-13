@@ -1,164 +1,146 @@
-# Documentation Authoring Rules
+# Authoring Agent-Facing Docs
 
-Rules for writing and maintaining the two agent-facing documentation surfaces:
+Rules for the two documentation **surfaces** an agent reads to use this framework:
 
-- `docs/llms/*.md` — cross-domain orientation + per-package sections (loaded by agents on demand).
-- `src/Headless.<Package>/README.md` — per-package README shipped with the NuGet package (rendered on nuget.org).
+- **Domain doc** — `docs/llms/<domain>.md`. Cross-domain orientation plus one section per package, loaded on demand.
+- **Package README** — `src/Headless.<Package>/README.md`. Ships with the NuGet package, rendered on nuget.org.
 
-Both must be **deterministic**: predictable structure, stable anchors, no per-author drift. They share the same facts and the same per-package sub-section shape; the only differences are heading depth and that the README has no domain-level wrapper.
+Both surfaces share the same **package contract** (the per-package section defined below) and the same facts. They differ only in wrapper: the domain doc adds a domain-level map and cross-package reference; the README carries one package alone, with no frontmatter and no map.
 
-**Not pure API reference.** An agent that knows *what* a method does but not *why* the framework offers it — or *when to pick this option over another* — will choose wrong defaults. Every domain doc must explain:
-
-- **Core concepts**: the vocabulary and mental model the agent needs before picking a package or option.
-- **Trade-offs**: why a default value, ordering guarantee, threading model, or dependency was chosen — especially when an obvious alternative exists.
-- **Decisions between providers**: when 2+ providers exist, give the agent a decision table with explicit *use when* / *avoid when* / *trade-off* columns.
-
-API surface (signatures, options, side effects) is necessary but not sufficient. If a section reads like a method list, it is incomplete.
+Write for an agent that must **choose**, not just recall. An agent that knows *what* a method does but not *why* the framework offers it — or *when this option beats another* — picks wrong defaults. Every doc states the concept, the trade-off, and the provider decision, not just the signature. A section that reads like a method list is incomplete.
 
 Templates:
 
-- [TEMPLATE.md](TEMPLATE.md) — canonical shape for `docs/llms/<domain>.md`.
-- [PACKAGE-README-TEMPLATE.md](PACKAGE-README-TEMPLATE.md) — canonical shape for `src/Headless.<Package>/README.md`.
+- [TEMPLATE.md](TEMPLATE.md) — starting point for a domain doc.
+- [PACKAGE-README-TEMPLATE.md](PACKAGE-README-TEMPLATE.md) — starting point for a package README.
 
 ---
 
-## Domain docs (`docs/llms/<domain>.md`)
+## The package contract
 
-### Structural invariants
+The per-package section is the **single source of truth** shared by both surfaces. It appears as an H2 (`## Headless.<Package>`) inside a domain doc and as the H1 body of a README. Same sub-sections, same order, same facts; only the heading depth differs.
 
-- **One file per domain**, kebab-case filename (e.g., `caching.md`, `multi-tenancy.md`). One H1 per file matching the domain name.
-- **YAML frontmatter is required**:
+Lead sentence: one line — what the package is and who uses it.
+
+Sub-sections, in order:
+
+| Sub-section | Content | When empty |
+| --- | --- | --- |
+| Problem Solved | What the consumer would otherwise build or stitch together | Always present |
+| Key Features | Concrete capabilities, one per bullet | Always present |
+| Design Notes | *(optional)* A non-obvious choice the agent must know: a default's rationale, an ordering or threading guarantee, why a dependency exists | Omit the heading entirely — never write `None.` |
+| Installation | `dotnet add package Headless.<Package>` — version-free | Always present |
+| Quick Start | Minimal setup that compiles against the current public API: the registration call and one representative use | Always present |
+| Configuration | Options block or table | Write `None.` |
+| Dependencies | Direct `Headless.*` and third-party packages (transitive framework packages may be omitted) | Write `None.` |
+| Side Effects | DI registrations and their lifetimes, hosted/background services, filesystem/network/process effects | Write `None.` |
+
+Rules for the contract, both surfaces:
+
+- **Every required sub-section is present.** Write `None.` for an empty Configuration, Dependencies, or Side Effects — never drop the heading. Design Notes is the one sub-section you omit when it does not apply.
+- **Design Notes earns its place.** Include it only when a conventional reading of the API would lead the agent wrong. Skip it for ordinary packages.
+- **Code samples compile** against the package's current public API. No pseudo-code, no `...` inside `using` statements.
+- **Headings carry no** emojis, version numbers, or dates — they break anchors and go stale.
+- **Prose states facts.** No marketing adjectives (`blazing fast`, `enterprise-grade`, `robust`, `seamless`), no hedging (`should probably`, `might`), no unexplained jargon.
+
+---
+
+## Domain doc
+
+A domain doc wraps the package contracts for one feature family with a shared map. Structure follows what the agent needs first, not a fixed template.
+
+- **Frontmatter is required:**
 
   ```yaml
   ---
   domain: <Human-readable domain name>
-  packages: <comma-separated package suffixes, e.g., Caching.Abstractions, Caching.InMemory>
+  packages: <comma-separated suffixes, e.g. Caching.Abstractions, Caching.Redis>
   ---
   ```
 
-- **Top-level section order is fixed — do not reorder or rename**:
-    1. `# <Domain>` (H1)
-    2. `## Table of Contents` (4-space indent for nested items)
-    3. One-line blockquote summary (`> ...`)
-    4. `## Quick Orientation`
-    5. `## Agent Instructions` (bulleted rules)
-    6. `## Core Concepts` *(optional, fixed position when present)*
-    7. `## Choosing a Provider` *(optional, fixed position when present — required if the domain ships 2+ providers)*
-    8. Other optional cross-cutting H2 sections (e.g., `## Provider Capabilities`) — before per-package sections
-    9. Per-package sections — H2 `## Headless.<Package>`, separated by `---`
-- **Per-package required H3 sub-sections, in order**: `Problem Solved`, `Key Features`, `Installation`, `Quick Start`, `Configuration`, `Dependencies`, `Side Effects`. Write `None.` when truly empty — never omit the heading.
-- **Per-package optional H3 sub-section**: `Design Notes`, placed between `Key Features` and `Installation`. Include when the package makes a non-obvious choice that affects how the agent must use it (default rationale, ordering guarantees, threading model, why a dependency exists). Skip entirely for conventional packages — do **not** write `None.`.
-- **Naming**: `Quick Start` (not `Usage`, `Minimal Setup`, `Getting Started`). `Configuration` (not `Options`). `Side Effects` (not `Effects`, `Registrations`).
-- **Package order**: Abstractions first, then Core, then providers alphabetically.
-- **Exactly one H1 — package headings are H2.** The domain title is the file's only `#` heading. Every package section is H2 (`## Headless.<Package>`) and its sub-sections are H3 — never promote a package to its own H1. Multiple H1s per file break the single-H1 invariant and corrupt the generated ToC anchors. This holds for single-package domains too (e.g., `logging.md`, `identity.md`, `mediator.md`): the one package is still H2, not H1.
-- **Banned in headings**: emojis (break anchors and chunking), version numbers, dates.
-- **Banned in prose**: marketing adjectives (`blazing fast`, `enterprise-grade`, `robust`, `seamless`), unexplained jargon, hedging (`should probably`, `might`).
-- **Install commands are version-free**: `dotnet add package Headless.<Name>` only — versions live in `Directory.Packages.props`.
+- **One H1**, matching the domain name. Every package is an H2; its sub-sections are H3. A single-package domain still uses H2 — never promote a package to H1.
+- **Lead with the map, then the rules, then the packages.** The reliable order:
+    1. `# <Domain>` then a one-line blockquote summary.
+    2. `## Orientation` — what the domain solves, the entry-point interfaces, and when to pick which provider. This is the map an agent reads first.
+    3. `## Agent Rules` — the highest-leverage section: do/don't bullets, footguns, and banned alternatives. This is what agents act on.
+    4. `## Core Concepts` *(optional)* — the vocabulary and mental model, when the domain needs one before an agent can choose.
+    5. `## Choosing a Provider` *(required when the domain ships 2+ providers)* — a decision table with `use when` / `avoid when` / `trade-off`.
+    6. Other cross-cutting reference (e.g. `## Provider Capabilities`), then the per-package H2 sections separated by `---`.
+- **Package order:** Abstractions, then Core, then providers alphabetically.
+- **Structure follows the information hierarchy.** Add a compact in-file Table of Contents only when a doc is long enough that an agent needs it to jump between packages; keep short docs flat. A ToC, when present, mirrors the headings exactly. There is no fixed section list to reproduce verbatim — omit a section the domain does not need.
 - **Cross-links** use relative paths within `docs/llms/`.
-- **`docs/llms/index.md`** is the cross-domain hub. Keep its **Domain documentation** list and **Packages** catalog in sync when domains or packages change, and keep the **End-to-End Example** compiling against the current public API of the packages it threads (update it when a registration entry point or abstraction signature it uses changes).
+- **Install commands are version-free** — versions live in `Directory.Packages.props`.
 
-### Workflow: writing a new doc
+### index.md
 
-1. Copy [TEMPLATE.md](TEMPLATE.md) to `docs/llms/<domain>.md`.
-2. Fill frontmatter, `Quick Orientation`, `Agent Instructions`, then each per-package section in order.
-3. Add the file to `docs/llms/index.md` in both places — the **Domain documentation** list (one-line summary) and the **Packages** catalog (grouped section).
-4. Regenerate the Table of Contents so every H2/H3 has a matching entry and every anchor resolves.
-5. Self-check against the invariants above before committing.
+`docs/llms/index.md` is the cross-domain hub. Keep it in sync with the domain set:
 
-### Workflow: updating an existing doc
-
-- **Preserve section order and names.** Add new H3s only inside the right H2; never invent new top-level sections without first updating [TEMPLATE.md](TEMPLATE.md) and these rules.
-- **Append, don't rewrite.** If a restructure is genuinely needed, do it in a separate commit so the diff is reviewable.
-- **Regenerate the ToC** when adding or removing sections so anchors stay accurate.
-- **Highest-leverage edit:** update `## Agent Instructions` when you discover a footgun the existing rules don't cover. That section is what agents actually act on.
-- **Do not duplicate** content across `Quick Orientation` and per-package sections; orientation is the map, package sections are the territory.
-
-### Workflow: keeping docs in sync with code
-
-A code change in `src/Headless.*` **requires** a `docs/llms/` update when any of these are true:
-
-- Public API surface changes — new, removed, or renamed `public` type or method.
-- New package, package rename, or package removal — update both the per-domain file and `index.md`.
-- Behavior visible to consumers changes — default values, side effects, ordering guarantees, retry semantics, cancellation behavior, threading rules.
-- New or removed configuration option.
-
-A code change does **not** require a doc update for:
-
-- Internal refactors and `internal`/`private`-only changes.
-- Performance improvements with no API or behavior change.
-- Test-only changes.
-- Comment, formatting, or copyright-header changes.
-
-**Drift check before committing a change to a `Headless.*` package**:
-
-1. Re-read the matching `docs/llms/<domain>.md`. Does any sub-section still describe the old behavior?
-2. `grep` for the changed type, method, or option name across `docs/llms/` and fix every match.
-3. If a package was removed or renamed, search `docs/llms/index.md` and update both the link list and the catalog.
-4. Update the matching `src/Headless.<Package>/README.md` so it mirrors the new `## Headless.<Package>` section content (see Package READMEs below).
-5. If the change is ambiguous (e.g., behavior change that's hard to describe), flag it in the PR description rather than leaving stale docs silently.
+- The **Domain documentation** list carries one line per domain doc.
+- The **Packages** catalog groups every package.
+- The **End-to-End Example** compiles against the current public API of the packages it threads; update it when a registration entry point or abstraction signature it uses changes.
 
 ---
 
-## Package READMEs (`src/Headless.*/README.md`)
+## Package README
 
-Every package ships a `README.md` to nuget.org. Each README is the **per-package surface** that mirrors the matching `## Headless.<Package>` section inside `docs/llms/<domain>.md`. Same sub-section order, same content, same facts — the only differences are heading depth and that the README has no domain-level wrapper (no frontmatter, no ToC, no `Quick Orientation`, no `Agent Instructions`).
+A README carries one package contract alone. It is the `## Headless.<Package>` section of the domain doc, lifted out and promoted:
 
-### Structural invariants
+- **One `README.md`** per `src/Headless.<Package>/` directory. H1 is `# Headless.<Package>` verbatim, no tagline.
+- **No frontmatter, no ToC, no map.** The domain-level Orientation, Agent Rules, and cross-cutting reference stay in the domain doc so they appear once, not once per package.
+- **Sub-sections are H2** (the contract's H3 promoted one level), same order, same facts as the matching domain-doc section.
+- **Cross-links to other packages use the package name in backticks** (`` `Headless.Caching.Abstractions` ``), not relative paths — nuget.org breaks relative links.
 
-- **Exactly one `README.md`** per `src/Headless.<Package>/` directory.
-- **H1 is the package name** verbatim: `# Headless.<Package>`. No tagline in the heading.
-- **Required sub-sections, in order, all H2**: `Problem Solved`, `Key Features`, `Installation`, `Quick Start`, `Configuration`, `Dependencies`, `Side Effects`. Write `None.` when truly empty — never omit the heading.
-- **Optional sub-section**: `Design Notes`, H2, placed between `Key Features` and `Installation`. Include when the package makes a non-obvious choice the agent must understand. Skip entirely for conventional packages — do **not** write `None.`. Content must mirror the matching `### Design Notes` in `docs/llms/<domain>.md`.
-- **No frontmatter, no Table of Contents** — READMEs are short enough to skim. ToC belongs in `docs/llms/<domain>.md`, not here.
-- **Banned in headings**: emojis, version numbers, dates. Same rule as domain docs.
-- **Banned in prose**: marketing adjectives, unexplained jargon, hedging.
-- **Install command is version-free**: `dotnet add package Headless.<Name>` only.
-- **Code samples must compile** against the package's current public API. No pseudo-code, no `...` placeholders in `using` statements.
-- **Cross-links to other Headless packages**: use the package name in backticks (`` `Headless.Caching.Abstractions` ``), not relative file paths — the README is rendered on nuget.org where relative links break.
+---
 
-### Workflow: writing a new package README
+## Keeping docs in sync with code
 
-1. Copy [PACKAGE-README-TEMPLATE.md](PACKAGE-README-TEMPLATE.md) to `src/Headless.<Package>/README.md`.
-2. Fill every section. Write `None.` for `Dependencies` or `Side Effects` only when genuinely empty.
-3. Add or update the matching `## Headless.<Package>` section in `docs/llms/<domain>.md` so the two stay aligned. If the package belongs to a new domain, also create the domain doc.
-4. Add the package to `docs/llms/index.md` **Packages** catalog under the right group.
+The two surfaces **mirror** each other, and both mirror the code. A change to one requires the same change to the other in the same commit.
 
-### Workflow: updating a package README
+### When a code change requires a docs change
 
-- **Preserve sub-section order and names.** Add new H3s only inside the right H2; never invent new top-level sections without first updating [PACKAGE-README-TEMPLATE.md](PACKAGE-README-TEMPLATE.md) and these rules.
-- **Mirror the edit in `docs/llms/<domain>.md`** within the same commit. The two files must not disagree on facts.
-- **Do not paste long architecture explanations** into the README; those belong in `docs/llms/<domain>.md` cross-cutting sections so they show up once, not 28 times.
+Update both surfaces when a change to `src/Headless.<Package>/` does any of:
 
-### Workflow: keeping READMEs in sync with code
+- Changes public API surface — a `public` type or method added, removed, or renamed.
+- Changes consumer-visible behavior — a default, side effect, ordering guarantee, retry or cancellation semantics, or threading rule.
+- Adds or removes a configuration option.
+- Adds or removes a direct dependency (update Dependencies) or a DI registration (update Side Effects).
+- Adds, renames, or removes a package (also update `index.md`).
 
-A code change in `src/Headless.<Package>/` **requires** a `README.md` update when any of these are true:
+No docs change is required for an internal refactor, a `private`/`internal`-only change, a perf-only change with no behavior difference, or a test/formatting/header change.
 
-- Public API surface changes (new, removed, or renamed `public` type or method).
-- Behavior visible to consumers changes (default values, side effects, ordering guarantees, retry semantics, cancellation behavior, threading rules).
-- New or removed configuration option.
-- A new dependency is added or removed (update the `Dependencies` section).
-- DI registrations change (update the `Side Effects` section).
+### Drift check before committing a package change
 
-A code change does **not** require a README update for the same exclusions listed under domain docs (internal refactors, perf-only, test-only, formatting).
+Run this before committing any `Headless.*` change that meets a trigger above. Each item has a checkable bound:
 
-**Drift check before committing a change to a `Headless.*` package**:
+1. **README ↔ code:** every type and method named in a README code sample still exists; `Dependencies` matches the direct `<PackageReference>` entries; `Side Effects` matches what `Setup<Provider>.Add<Feature>(...)` registers.
+2. **Domain doc ↔ code:** re-read the matching `docs/llms/<domain>.md`; no sub-section still describes the old behavior.
+3. **grep the changed name** — type, method, or option — across `docs/llms/` and fix every match.
+4. **Domain doc ↔ README:** the `## Headless.<Package>` section and the README state the same facts. Fix whichever is wrong, or both.
+5. **Package added, renamed, or removed:** update the `index.md` link list and catalog.
 
-1. Diff `src/Headless.<Package>/README.md` against the package's actual public API — every type and method named in code samples must still exist.
-2. Verify `Dependencies` matches `<PackageReference>` entries (transitively-pulled framework packages can be omitted; direct dependencies must be listed).
-3. Verify `Side Effects` matches what `Setup<Provider>.Add<Feature>(...)` actually registers.
-4. Confirm the matching `## Headless.<Package>` section in `docs/llms/<domain>.md` says the same things — fix whichever side is wrong, or both.
+If a behavior change is hard to describe accurately, flag it in the PR rather than committing stale docs.
 
-## Observability and operations safety
+---
 
-- Metric examples must use bounded dimensions. Never use message, replay, operation, payload, header, or free-form tenant values as metric labels. Tenant labels require a documented default-off cardinality opt-in.
-- Operations UI examples must identify the authorization boundary and use safe lifecycle projections. Payloads and raw headers do not belong in inbox generation, retention, replay, or recovery views.
-- Reliability claims must distinguish atomic commit of enlisted state from handler entry and effects outside that transaction; neither direct transport nor external effects are exactly once.
+## Scoped reference
 
-## Provider SDK types in options — policy
+Consult these only when the trigger applies.
 
-A provider options class may expose a property whose type comes straight from the backend SDK (`AWSSDK.S3`, `Azure.Storage.Blobs`, `Azure.Core`, `MailKit`, `SixLabors.ImageSharp`, `SSH.NET`, `StackExchange.Redis`, …). This is **deliberate and allowed** — do not "abstract it away" reflexively. Decide by fidelity:
+### Provider SDK types in options
 
-- **Full-fidelity pass-throughs are the intended shape.** When the SDK type carries a large or open-ended surface that a Headless wrapper could only re-expose lossily — `AWSOptions`, a `BlobServiceClient` factory, `IImageEncoder`, `IConnectionMultiplexer`, `ConfigurationOptions`, `TokenCredential`, MailKit's socket enums, `S3CannedACL`, `PublicAccessType`, `ProxyTypes` — pass the SDK type through verbatim so no backend capability is lost. Wrapping it would trade fidelity for a false sense of decoupling: the consumer still needs the SDK on their reference graph to construct the value. Accept the coupling openly instead.
-- **Low-fidelity, trivially-abstractable enums should be wrapped** in a Headless type when practical: a small, closed, stable enum with an obvious one-to-one Headless equivalent does not justify pulling the SDK into the option's type just to name three values.
+*When documenting a provider options class whose property type comes from the backend SDK* (`AWSSDK.S3`, `Azure.Storage.Blobs`, `Azure.Core`, `MailKit`, `SixLabors.ImageSharp`, `SSH.NET`, `StackExchange.Redis`, …).
 
-**Every SDK pass-through option property must carry an XML `<remarks>` noting the coupling** — one sentence stating it is a deliberate full-fidelity pass-through of the named SDK type and that it intentionally couples the option to that package. This makes the decision auditable (a reviewer sees it was a choice, not an oversight) and warns the consumer their reference graph now includes the SDK. See `AwsBlobStorageOptions.CannedAcl`, `AzureStorageOptions.ContainerPublicAccessType`, `SshBlobStorageOptions.ProxyType`, `ImageSharpOptions.*CompressEncoder`, `MailkitSmtpOptions.SocketOptions`, `AzureCommunicationEmailOptions.TokenCredential`, and `MessagingRedisOptions`/`RedisPubSubOptions.Configuration` for the established shape.
+Exposing an SDK type directly is deliberate and allowed — do not reflexively abstract it away. Decide by fidelity:
+
+- **Full-fidelity pass-throughs are the intended shape.** When the SDK type carries a large or open-ended surface a Headless wrapper could only re-expose lossily — `AWSOptions`, a `BlobServiceClient` factory, `IImageEncoder`, `IConnectionMultiplexer`, `ConfigurationOptions`, `TokenCredential`, MailKit socket enums, `S3CannedACL`, `PublicAccessType`, `ProxyTypes` — pass it through verbatim. The consumer needs the SDK on their reference graph to construct the value anyway; accept the coupling openly.
+- **Low-fidelity, trivially abstractable enums should be wrapped** in a Headless type: a small, closed, stable enum with an obvious one-to-one equivalent does not justify pulling the SDK into the option's type just to name three values.
+
+Every SDK pass-through property carries an XML `<remarks>` stating it is a deliberate full-fidelity pass-through of the named SDK type that intentionally couples the option to that package. This makes the choice auditable and warns the consumer their reference graph now includes the SDK. See `AwsBlobStorageOptions.CannedAcl`, `AzureStorageOptions.ContainerPublicAccessType`, `SshBlobStorageOptions.ProxyType`, `ImageSharpOptions.*CompressEncoder`, `MailkitSmtpOptions.SocketOptions`, `AzureCommunicationEmailOptions.TokenCredential`, and `MessagingRedisOptions`/`RedisPubSubOptions.Configuration` for the established shape.
+
+### Observability and operations safety
+
+*When documenting metrics, dashboards, or operations UI.*
+
+- Metric examples use bounded dimensions. Never label a metric with message, replay, operation, payload, header, or free-form tenant values. A tenant label requires a documented default-off cardinality opt-in.
+- Operations UI examples identify the authorization boundary and use safe lifecycle projections. Payloads and raw headers do not belong in inbox generation, retention, replay, or recovery views.
+- Reliability claims distinguish atomic commit of enlisted state from handler entry and effects outside that transaction. Neither direct transport nor external effects are exactly once.

@@ -5,74 +5,9 @@ packages: CommitCoordination.Abstractions, CommitCoordination.Core, CommitCoordi
 
 # Commit Coordination
 
-## Table of Contents
-
-- [Quick Orientation](#quick-orientation)
-- [Agent Instructions](#agent-instructions)
-- [Core Concepts](#core-concepts)
-    - [Coordinator](#coordinator)
-    - [Signal Source](#signal-source)
-    - [Work Buffer](#work-buffer)
-    - [Capability](#capability)
-- [Choosing a Provider](#choosing-a-provider)
-- [Headless.CommitCoordination.Abstractions](#headlesscommitcoordinationabstractions)
-    - [Problem Solved](#problem-solved)
-    - [Key Features](#key-features)
-    - [Design Notes](#design-notes)
-    - [Installation](#installation)
-    - [Quick Start](#quick-start)
-    - [Configuration](#configuration)
-    - [Dependencies](#dependencies)
-    - [Side Effects](#side-effects)
-- [Headless.CommitCoordination.Core](#headlesscommitcoordinationcore)
-    - [Problem Solved](#problem-solved-1)
-    - [Key Features](#key-features-1)
-    - [Design Notes](#design-notes-1)
-    - [Installation](#installation-1)
-    - [Quick Start](#quick-start-1)
-    - [Configuration](#configuration-1)
-    - [Dependencies](#dependencies-1)
-    - [Side Effects](#side-effects-1)
-- [Headless.CommitCoordination.EntityFramework](#headlesscommitcoordinationentityframework)
-    - [Problem Solved](#problem-solved-2)
-    - [Key Features](#key-features-2)
-    - [Design Notes](#design-notes-2)
-    - [Installation](#installation-2)
-    - [Quick Start](#quick-start-2)
-    - [Configuration](#configuration-2)
-    - [Dependencies](#dependencies-2)
-    - [Side Effects](#side-effects-2)
-- [Headless.EntityFramework.CommitCoordination](#headlessentityframeworkcommitcoordination)
-- [Headless.CommitCoordination.InMemory](#headlesscommitcoordinationinmemory)
-    - [Problem Solved](#problem-solved-3)
-    - [Key Features](#key-features-3)
-    - [Installation](#installation-3)
-    - [Quick Start](#quick-start-3)
-    - [Configuration](#configuration-3)
-    - [Dependencies](#dependencies-3)
-    - [Side Effects](#side-effects-3)
-- [Headless.CommitCoordination.PostgreSql](#headlesscommitcoordinationpostgresql)
-    - [Problem Solved](#problem-solved-4)
-    - [Key Features](#key-features-4)
-    - [Installation](#installation-4)
-    - [Quick Start](#quick-start-4)
-    - [Advanced: raw enlistment](#advanced-raw-enlistment)
-    - [Configuration](#configuration-4)
-    - [Dependencies](#dependencies-4)
-    - [Side Effects](#side-effects-4)
-- [Headless.CommitCoordination.SqlServer](#headlesscommitcoordinationsqlserver)
-    - [Problem Solved](#problem-solved-5)
-    - [Key Features](#key-features-5)
-    - [Design Notes](#design-notes-3)
-    - [Installation](#installation-5)
-    - [Quick Start](#quick-start-5)
-    - [Configuration](#configuration-5)
-    - [Dependencies](#dependencies-5)
-    - [Side Effects](#side-effects-5)
-
 > Commit Coordination runs registered work only after the unit of work it belongs to reaches a committed or rolled-back terminal outcome.
 
-## Quick Orientation
+## Orientation
 
 Use Commit Coordination when a framework subsystem must defer work until the data it belongs to has durably committed. Messaging uses it to store outbox rows inside the relational transaction and dispatch only after commit. Work that must write rows inside that transaction reaches the live connection through `IRelationalCommitContext`.
 
@@ -94,7 +29,7 @@ Messaging's transactional inbox uses the application `DbContext` transaction to 
 
 **Commit detection is an acceleration hook, not a correctness mechanism.** A detected signal (SQL Server SqlClient diagnostic, EF interceptor) only dispatches deferred work *sooner*; correctness must not depend on it firing. The consumer commits a durable row inside the transaction and recovers it through an independent polling sweep, so if the signal is missed, delayed, or disabled, the work is still found and executed. In-memory accelerator buffers (`InMemoryWorkBuffer<T>`) therefore require the consumer to own that durable store plus recovery (messaging: outbox rows + retry sweep); rows written in-transaction through `IRelationalCommitContext` do not depend on detection at all.
 
-## Agent Instructions
+## Agent Rules
 
 - Consumer packages should depend on `Headless.CommitCoordination.Abstractions`; provider packages depend on `Headless.CommitCoordination.Core`.
 - `Headless.CommitCoordination.EntityFramework` owns generic EF commit detection. `Headless.EntityFramework.CommitCoordination` is the separate adapter that makes the Headless save pipeline select it.

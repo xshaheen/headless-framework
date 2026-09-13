@@ -232,7 +232,7 @@ For each feature's options, providers, and trade-offs, fetch the matching domain
 
 ## Domain documentation
 
-Fetch only what's relevant to the task. Each file documents the domain's packages, quick orientation, setup, and domain-specific agent rules.
+Fetch only what's relevant to the task. Each file documents the domain's packages, orientation, setup, and domain-specific agent rules.
 
 - [api.md](api.md) — ASP.NET Core API infrastructure (JWT, middleware, Minimal API, MVC, FluentValidation, Data Protection).
 - [audit-log.md](audit-log.md) — Property-level audit logging for entity mutations and explicit business events with EF Core persistence.

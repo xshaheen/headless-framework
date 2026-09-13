@@ -5,33 +5,15 @@ packages: Identity.Storage.EntityFramework
 
 # Identity
 
-## Table of Contents
-
-- [Quick Orientation](#quick-orientation)
-- [Agent Instructions](#agent-instructions)
-- [Core Concepts](#core-concepts)
-    - [What this package adds over stock Identity + EF](#what-this-package-adds-over-stock-identity-ef)
-    - [Type parameter forms](#type-parameter-forms)
-    - [Save pipeline and `HeadlessDbContextServices`](#save-pipeline-and-headlessdbcontextservices)
-- [Headless.Identity.Storage.EntityFramework](#headlessidentitystorageentityframework)
-    - [Problem Solved](#problem-solved)
-    - [Key Features](#key-features)
-    - [Design Notes](#design-notes)
-    - [Installation](#installation)
-    - [Quick Start](#quick-start)
-    - [Configuration](#configuration)
-    - [Dependencies](#dependencies)
-    - [Side Effects](#side-effects)
-
 > ASP.NET Core Identity wired to the framework's EF Core save pipeline, auditing, and multi-tenancy conventions via a single base class.
 
-## Quick Orientation
+## Orientation
 
 Single package: `Headless.Identity.Storage.EntityFramework`. Provides `HeadlessIdentityDbContext<>` — a base DbContext that layers the framework's EF Core runtime (auditing, soft delete, domain events, multi-tenancy query filters, save-changes pipeline) on top of ASP.NET Core Identity's `IdentityDbContext<>`.
 
 Register with `services.AddHeadlessDbContext<TDbContext, TUser, TRole, TKey, ...>()` from `SetupIdentityEntityFramework`. This is the exact same pattern as `Headless.EntityFramework`'s `AddHeadlessDbContext<TDbContext>()`, extended with Identity-specific type parameters. The underlying service surface wired is identical — `HeadlessDbContextServices`, save pipeline, audit persistence, tenant/user accessors, `IDbContextFactory<TDbContext>`.
 
-## Agent Instructions
+## Agent Rules
 
 - The registration method is `services.AddHeadlessDbContext<TDbContext, TUser, TRole, TKey, TUserClaim, TUserRole, TUserLogin, TRoleClaim, TUserToken>()` (or the 10-type-parameter form that includes `TUserPasskey`). There is **no** `AddHeadlessIdentity(...)` or `UseEntityFramework<...>()` API — those do not exist.
 - Do NOT register via `AddDbContext<TDbContext>()` directly. That bypasses `HeadlessDbContextServices` injection, the save-changes pipeline, DI-registered interceptors, and `IDbContextFactory<TDbContext>` — the context will instantiate without its required constructor argument and throw at resolution time.

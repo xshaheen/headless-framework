@@ -5,93 +5,9 @@ packages: Caching.Abstractions, Caching.Core, Caching.DistributedLocks, Caching.
 
 # Caching
 
-## Table of Contents
-
-- [Quick Orientation](#quick-orientation)
-- [Agent Instructions](#agent-instructions)
-- [Core Concepts](#core-concepts)
-    - [Resilience model](#resilience-model)
-    - [Read path](#read-path)
-    - [Fail-safe and the expiration timeline](#fail-safe-and-the-expiration-timeline)
-    - [Operation semantics and entry model](#operation-semantics-and-entry-model)
-    - [Zero-intermediate-copy buffer path](#zero-intermediate-copy-buffer-path)
-- [Choosing a Provider](#choosing-a-provider)
-- [Headless.Caching.Abstractions](#headlesscachingabstractions)
-    - [Problem Solved](#problem-solved)
-    - [Key Features](#key-features)
-    - [Design Notes](#design-notes)
-    - [Installation](#installation)
-    - [Quick Start](#quick-start)
-    - [Configuration](#configuration)
-    - [Dependencies](#dependencies)
-    - [Side Effects](#side-effects)
-- [Headless.Caching.Core](#headlesscachingcore)
-    - [Problem Solved](#problem-solved-1)
-    - [Key Features](#key-features-1)
-    - [Design Notes](#design-notes-1)
-    - [Installation](#installation-1)
-    - [Quick Start](#quick-start-1)
-    - [Configuration](#configuration-1)
-    - [Dependencies](#dependencies-1)
-    - [Side Effects](#side-effects-1)
-- [Headless.Caching.DistributedLocks](#headlesscachingdistributedlocks)
-    - [Problem Solved](#problem-solved-2)
-    - [Key Features](#key-features-2)
-    - [Design Notes](#design-notes-2)
-    - [Installation](#installation-2)
-    - [Quick Start](#quick-start-2)
-    - [Configuration](#configuration-2)
-    - [Dependencies](#dependencies-2)
-    - [Side Effects](#side-effects-2)
-- [Headless.Caching.Hybrid](#headlesscachinghybrid)
-    - [Problem Solved](#problem-solved-3)
-    - [Key Features](#key-features-3)
-    - [Design Notes](#design-notes-3)
-    - [Installation](#installation-3)
-    - [Quick Start](#quick-start-3)
-    - [Configuration](#configuration-3)
-    - [Dependencies](#dependencies-3)
-    - [Side Effects](#side-effects-3)
-- [Headless.Caching.InMemory](#headlesscachinginmemory)
-    - [Problem Solved](#problem-solved-4)
-    - [Key Features](#key-features-4)
-    - [Design Notes](#design-notes-4)
-    - [Installation](#installation-4)
-    - [Quick Start](#quick-start-4)
-    - [Configuration](#configuration-4)
-    - [Dependencies](#dependencies-4)
-    - [Side Effects](#side-effects-4)
-- [Headless.Caching.Redis](#headlesscachingredis)
-    - [Problem Solved](#problem-solved-5)
-    - [Key Features](#key-features-5)
-    - [Design Notes](#design-notes-5)
-    - [Installation](#installation-5)
-    - [Quick Start](#quick-start-5)
-    - [Configuration](#configuration-5)
-    - [Dependencies](#dependencies-5)
-    - [Side Effects](#side-effects-5)
-- [Headless.Caching.Bcl](#headlesscachingbcl)
-    - [Problem Solved](#problem-solved-6)
-    - [Key Features](#key-features-6)
-    - [Design Notes](#design-notes-6)
-    - [Installation](#installation-6)
-    - [Quick Start](#quick-start-6)
-    - [Configuration](#configuration-6)
-    - [Dependencies](#dependencies-6)
-    - [Side Effects](#side-effects-6)
-- [Headless.Caching.OutputCache](#headlesscachingoutputcache)
-    - [Problem Solved](#problem-solved-7)
-    - [Key Features](#key-features-7)
-    - [Design Notes](#design-notes-7)
-    - [Installation](#installation-7)
-    - [Quick Start](#quick-start-7)
-    - [Configuration](#configuration-7)
-    - [Dependencies](#dependencies-7)
-    - [Side Effects](#side-effects-7)
-
 > Unified cache abstraction with in-memory, Redis, and hybrid L1+L2 implementations, plus fail-safe, refresh, tagging, and multi-node stampede protection on the factory path.
 
-## Quick Orientation
+## Orientation
 
 Install `Headless.Caching.Abstractions` plus one provider. All registration flows through a single `services.AddHeadlessCaching(setup => ...)` call (entry point in `Headless.Caching.Core`); provider packages contribute `Use*`/`Add*Tier`/`AddNamed` extensions on the setup builder. Code against `ICache` for application cache operations.
 
@@ -103,7 +19,7 @@ Install `Headless.Caching.Abstractions` plus one provider. All registration flow
 
 `ICache` supports scalar reads/writes, bulk operations, prefix operations, atomic compare/replace and numeric operations, set operations, tag invalidation (`RemoveByTagAsync`), and a logical whole-cache clear (`ClearAsync`). Invalidation comes in shapes that differ by what survives. `RemoveAsync` hard-deletes a single entry (including any fail-safe reserve); `ExpireAsync` logically expires a single entry — normal reads miss immediately but the fail-safe reserve is preserved. `RemoveByTagAsync` is an O(1) logical tag invalidation (it writes a per-tag timestamp marker; it does not enumerate or delete member keys), and `ClearAsync` is an O(1) logical whole-cache clear (it bumps one reserved generation marker); both preserve fail-safe reserves. `FlushAsync` is the whole-cache flush that drops reserves — physical in-process, a logical remove-generation marker on a distributed (Redis) tier (cluster-safe, no `FLUSHDB`); the reserve-dropping counterpart of `ClearAsync`. `GetOrAddAsync` is the factory-backed path: it is governed by `CacheEntryOptions` (fail-safe, factory timeouts, sliding expiration, eager refresh, tags, distributed lock) and has a conditional overload taking a `CacheFactoryContext<T>` factory for HTTP-304-style refresh. `UpsertEntryAsync` is the only direct-write path that also honors `CacheEntryOptions`. Named cache instances are added with `setup.AddNamed(name, i => i.Use{InMemory,Redis,Hybrid}(...))` and resolved through `ICacheProvider`.
 
-## Agent Instructions
+## Agent Rules
 
 - Use `ICache` from `Headless.Caching.Abstractions` for application cache operations. Use `Microsoft.Extensions.Caching.Distributed.IDistributedCache` only for standard BCL consumers such as ASP.NET Core Session, and back it with `Headless.Caching.Bcl`. Use `IRemoteCache` only when a remote/L2 implementation is required.
 - For ASP.NET Core response/output caching, do not back `AddOutputCache()` with `IDistributedCache` — ASP.NET's own guidance rejects it as an output-cache store because it lacks atomic tag operations. Add `Headless.Caching.OutputCache` and call `setup.UseOutputCache(...)`; it registers an `IOutputCacheStore` over a named Headless cache so tag eviction rides the engine's distributed tag index. Still call `AddOutputCache()` and declare tags via `[OutputCache(Tags = "...")]` / `.CacheOutput(p => p.Tag("..."))` — the package supplies only the store, not the policy. In the `configureCache` callback select only the backing provider (`instance.UseRedis(...)` / `UseHybrid(...)`); no serializer configuration is needed because the middleware's payloads are `byte[]`, the cache's native wire format — configuring a serializer on the named instance is rejected at registration. `UseOutputCache` is a consumer of the engine, so `AddHeadlessCaching` still requires a default provider alongside it.
@@ -163,7 +79,7 @@ Install `Headless.Caching.Abstractions` plus one provider. All registration flow
 
 ### Resilience model
 
-The factory path (`GetOrAddAsync`) composes several independent mechanisms, each targeting one failure mode. Reach for the option whose row matches the failure you need to survive; the mechanisms combine freely except where Agent Instructions note an exclusion (sliding expiration excludes both fail-safe and eager refresh).
+The factory path (`GetOrAddAsync`) composes several independent mechanisms, each targeting one failure mode. Reach for the option whose row matches the failure you need to survive; the mechanisms combine freely except where the Agent Rules note an exclusion (sliding expiration excludes both fail-safe and eager refresh).
 
 | Failure mode | Mechanism | Option / API |
 | --- | --- | --- |

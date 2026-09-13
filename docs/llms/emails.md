@@ -5,70 +5,9 @@ packages: Emails.Abstractions, Emails.Core, Emails.Aws, Emails.Azure, Emails.Dev
 
 # Email
 
-## Table of Contents
-
-- [Quick Orientation](#quick-orientation)
-- [Agent Instructions](#agent-instructions)
-- [Core Concepts](#core-concepts)
-    - [Request and Response model](#request-and-response-model)
-    - [Provider wiring (unified setup builder)](#provider-wiring-unified-setup-builder)
-- [Choosing a Provider](#choosing-a-provider)
-- [Headless.Emails.Abstractions](#headlessemailsabstractions)
-    - [Problem Solved](#problem-solved)
-    - [Key Features](#key-features)
-    - [Installation](#installation)
-    - [Quick Start](#quick-start)
-    - [Configuration](#configuration)
-    - [Dependencies](#dependencies)
-    - [Side Effects](#side-effects)
-- [Headless.Emails.Core](#headlessemailscore)
-    - [Problem Solved](#problem-solved-1)
-    - [Key Features](#key-features-1)
-    - [Design Notes](#design-notes)
-    - [Installation](#installation-1)
-    - [Quick Start](#quick-start-1)
-    - [Configuration](#configuration-1)
-    - [Dependencies](#dependencies-1)
-    - [Side Effects](#side-effects-1)
-- [Headless.Emails.Aws](#headlessemailsaws)
-    - [Problem Solved](#problem-solved-2)
-    - [Key Features](#key-features-2)
-    - [Installation](#installation-2)
-    - [Quick Start](#quick-start-2)
-    - [Email Event Tracking](#email-event-tracking)
-    - [Configuration](#configuration-2)
-    - [Dependencies](#dependencies-2)
-    - [Side Effects](#side-effects-2)
-- [Headless.Emails.Azure](#headlessemailsazure)
-    - [Problem Solved](#problem-solved-3)
-    - [Key Features](#key-features-3)
-    - [Design Notes](#design-notes-1)
-    - [Installation](#installation-3)
-    - [Quick Start](#quick-start-3)
-    - [Configuration](#configuration-3)
-    - [Dependencies](#dependencies-3)
-    - [Side Effects](#side-effects-3)
-- [Headless.Emails.Dev](#headlessemailsdev)
-    - [Problem Solved](#problem-solved-4)
-    - [Key Features](#key-features-4)
-    - [Installation](#installation-4)
-    - [Quick Start](#quick-start-4)
-    - [Configuration](#configuration-4)
-    - [Dependencies](#dependencies-4)
-    - [Side Effects](#side-effects-4)
-- [Headless.Emails.Mailkit](#headlessemailsmailkit)
-    - [Problem Solved](#problem-solved-5)
-    - [Key Features](#key-features-5)
-    - [Design Notes](#design-notes-2)
-    - [Installation](#installation-5)
-    - [Quick Start](#quick-start-5)
-    - [Configuration](#configuration-5)
-    - [Dependencies](#dependencies-5)
-    - [Side Effects](#side-effects-5)
-
 > Provider-agnostic email sending with implementations for Azure Communication Services, AWS SES, SMTP (MailKit), and development/testing modes.
 
-## Quick Orientation
+## Orientation
 
 Install `Headless.Emails.Abstractions` + one provider. Register with `AddHeadlessEmails(setup => setup.Use…())` — at most one **default** `Use*` provider per call (the default is optional; a named-only host is supported), plus any number of **named** senders via `setup.AddNamed(name, i => i.Use…())`. Code against `IEmailSender` for the default; resolve named senders with `[FromKeyedServices("name")] IEmailSender` or `IEmailSenderProvider`.
 
@@ -83,7 +22,7 @@ Send emails via `IEmailSender.SendAsync(SendSingleEmailRequest)` which returns `
 
 Register additional **named** senders alongside an optional default: `setup.AddNamed("marketing", i => i.UseMailkit(…))`. Resolve them with `[FromKeyedServices("marketing")] IEmailSender` or `IEmailSenderProvider.GetSender("marketing")`. The default sender is optional; when configured it resolves as the unkeyed `IEmailSender` (with no default, the unkeyed `IEmailSender` is simply not registered). Each named sender is keyed under its name and isolates its own provider, options, and backend clients.
 
-## Agent Instructions
+## Agent Rules
 
 - Register at most one **default** provider per container: `services.AddHeadlessEmails(setup => setup.Use…())`. The default is optional — zero defaults is allowed (a named-only host). Multiple default providers in one delegate, or a repeated `AddHeadlessEmails` on the same `IServiceCollection`, throws `InvalidOperationException` at registration time. The available `Use*` calls are `UseAzure`, `UseAwsSes`, `UseMailkit`, `UseDevelopment`, `UseNoop` — on the default builder and on each named instance.
 - Add **named** senders in the same call: `setup.AddNamed("name", i => i.Use…())`. Names must be non-empty and unique within the call, and each named instance must select exactly one provider — a duplicate name, empty name, or zero/multiple providers throws at registration time. The default sender is optional; a named-only host (no default) is supported — the unkeyed `IEmailSender` is simply not registered when no default is configured.

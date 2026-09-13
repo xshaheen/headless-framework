@@ -5,72 +5,9 @@ packages: Permissions.Abstractions, Permissions.Core, Permissions.Storage.Entity
 
 # Permissions
 
-## Table of Contents
-
-- [Quick Orientation](#quick-orientation)
-- [Agent Instructions](#agent-instructions)
-- [Core Concepts](#core-concepts)
-    - [Permission Definitions and Groups](#permission-definitions-and-groups)
-    - [Grant Providers and Resolution Order](#grant-providers-and-resolution-order)
-    - [Grant States](#grant-states)
-    - [Grant Store and Caching](#grant-store-and-caching)
-    - [Static vs. Dynamic Definition Store](#static-vs-dynamic-definition-store)
-    - [Startup Initialization](#startup-initialization)
-- [Choosing a Provider](#choosing-a-provider)
-- [Headless.Permissions.Abstractions](#headlesspermissionsabstractions)
-    - [Problem Solved](#problem-solved)
-    - [Key Features](#key-features)
-    - [Installation](#installation)
-    - [Quick Start](#quick-start)
-    - [Configuration](#configuration)
-    - [Dependencies](#dependencies)
-    - [Side Effects](#side-effects)
-- [Headless.Permissions.Core](#headlesspermissionscore)
-    - [Problem Solved](#problem-solved-1)
-    - [Key Features](#key-features-1)
-    - [Design Notes](#design-notes)
-    - [Installation](#installation-1)
-    - [Quick Start](#quick-start-1)
-    - [Configuration](#configuration-1)
-    - [Dependencies](#dependencies-1)
-    - [Side Effects](#side-effects-1)
-- [Headless.Permissions.Storage.EntityFramework](#headlesspermissionsstorageentityframework)
-    - [Problem Solved](#problem-solved-2)
-    - [Key Features](#key-features-2)
-    - [Design Notes](#design-notes-1)
-    - [Installation](#installation-2)
-    - [Quick Start](#quick-start-2)
-    - [Configuration](#configuration-2)
-    - [Dependencies](#dependencies-2)
-    - [Side Effects](#side-effects-2)
-- [Headless.Permissions.Storage.PostgreSql](#headlesspermissionsstoragepostgresql)
-    - [Problem Solved](#problem-solved-3)
-    - [Key Features](#key-features-3)
-    - [Installation](#installation-3)
-    - [Quick Start](#quick-start-3)
-    - [Configuration](#configuration-3)
-    - [Dependencies](#dependencies-3)
-    - [Side Effects](#side-effects-3)
-- [Headless.Permissions.Storage.SqlServer](#headlesspermissionsstoragesqlserver)
-    - [Problem Solved](#problem-solved-4)
-    - [Key Features](#key-features-4)
-    - [Installation](#installation-4)
-    - [Quick Start](#quick-start-4)
-    - [Configuration](#configuration-4)
-    - [Dependencies](#dependencies-4)
-    - [Side Effects](#side-effects-4)
-- [Headless.Permissions.Testing](#headlesspermissionstesting)
-    - [Problem Solved](#problem-solved-5)
-    - [Key Features](#key-features-5)
-    - [Installation](#installation-5)
-    - [Quick Start](#quick-start-5)
-    - [Configuration](#configuration-5)
-    - [Dependencies](#dependencies-5)
-    - [Side Effects](#side-effects-5)
-
 > Dynamic permission management with hierarchical grant resolution (User > Role), explicit-deny semantics, caching, and database persistence via EF Core, PostgreSQL, or SQL Server.
 
-## Quick Orientation
+## Orientation
 
 Install `Headless.Permissions.Abstractions` to depend on interfaces only (domain/application layers). Install `Headless.Permissions.Core` plus exactly one storage provider for the full runtime.
 
@@ -91,7 +28,7 @@ Provider packages:
 - `Headless.Permissions.Storage.PostgreSql` — raw ADO.NET, schema created at startup
 - `Headless.Permissions.Storage.SqlServer` — raw ADO.NET, schema created at startup
 
-## Agent Instructions
+## Agent Rules
 
 - Inject `IPermissionManager` to read or write permission grants. Never roll custom permission checks.
 - Check a permission with `GetAsync(name, currentUser)` and inspect `result.IsGranted`. Use `IsGrantedAsync(currentUser, name)` for a boolean shorthand.
