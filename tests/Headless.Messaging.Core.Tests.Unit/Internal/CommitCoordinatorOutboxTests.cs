@@ -176,6 +176,56 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
     }
 
     [Fact]
+    public async Task should_reject_non_relational_coordination_when_storage_cannot_capture_on_coordinator()
+    {
+        // A compatible scope without a relational handle is only valid for a storage that implements the
+        // coordinated seam; a plain IDataStorage must fail before any durable write or dispatcher hand-off,
+        // otherwise a standalone row would survive the caller's rollback.
+        var stack = new CommitScopeStack();
+        var scope = new CommitScopeFactory(stack).Begin(new EmptyServiceProvider());
+
+        await using (scope)
+        {
+            var storage = Substitute.For<IDataStorage>();
+            await using var dispatcher = new RecordingCommittedDispatcher();
+            var writer = new OutboxMessageWriter(storage, dispatcher, TimeProvider.System);
+            var request = _CreatePublishRequestFactory().Create(new CoordinatorMessage("value"), lane: MessageLane.Bus);
+            var decision = DeliveryDecisionResolver.Resolve(
+                MessageLane.Bus,
+                DeliveryMode.Coordinated,
+                delay: null,
+                DeliveryCoordination.Compatible(stack.Current!, transaction: null),
+                TimeProvider.System.GetUtcNow()
+            );
+
+            var act = () => writer.WriteAsync(request, decision, AbortToken);
+
+            await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*relational transaction*");
+            _ = storage
+                .DidNotReceive()
+                .StoreMessageAsync(
+                    Arg.Any<string>(),
+                    Arg.Any<MediumMessage>(),
+                    Arg.Any<DbTransaction?>(),
+                    Arg.Any<CancellationToken>()
+                );
+            _ = storage
+                .DidNotReceive()
+                .StoreScheduledMessageAsync(
+                    Arg.Any<string>(),
+                    Arg.Any<MediumMessage>(),
+                    Arg.Any<DateTimeOffset>(),
+                    Arg.Any<DbTransaction?>(),
+                    Arg.Any<CancellationToken>()
+                );
+
+            await scope.SignalAsync(CommitOutcome.Committed);
+
+            dispatcher.CommittedMessages.Should().BeEmpty();
+        }
+    }
+
+    [Fact]
     public async Task should_signal_delayed_message_after_commit_without_scheduler_io()
     {
         var coordinator = new CommitCoordinator();

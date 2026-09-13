@@ -94,15 +94,19 @@ internal readonly record struct DeliveryCoordination
 
     internal ICommitCoordinator? Coordinator { get; }
 
+    /// <summary>
+    /// The live relational transaction the durable row must join, or <see langword="null" /> for a non-relational
+    /// scope whose storage captures rows on the coordinator itself (see <see cref="ICoordinatedMessageStore" />).
+    /// </summary>
     internal DbTransaction? Transaction { get; }
 
-    internal static DeliveryCoordination Compatible(ICommitCoordinator coordinator, DbTransaction transaction)
+    internal static DeliveryCoordination Compatible(ICommitCoordinator coordinator, DbTransaction? transaction)
     {
         return new DeliveryCoordination(
             DeliveryCoordinationStatus.Compatible,
             DeliveryCoordinationMismatch.None,
             Argument.IsNotNull(coordinator),
-            Argument.IsNotNull(transaction)
+            transaction
         );
     }
 
