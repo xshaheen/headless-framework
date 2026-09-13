@@ -205,17 +205,7 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
         {
             // The removal is not cancellable, so it completes unobserved; only its late fault is worth a log line.
             Log.CronCacheInvalidationTimedOut(_logger, jobScope, _CronCacheInvalidationDeadline);
-            _ = invalidation.ContinueWith(
-                static (settled, state) =>
-                {
-                    var (logger, scope) = ((ILogger, string))state!;
-                    Log.CronCacheInvalidationFailed(logger, scope, settled.Exception!);
-                },
-                (_logger, jobScope),
-                CancellationToken.None,
-                TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
-                TaskScheduler.Default
-            );
+            LateFaultObserver.ObserveLateFault(invalidation, _logger, jobScope, Log.CronCacheInvalidationFailed);
         }
         catch (Exception e)
         {

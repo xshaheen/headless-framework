@@ -98,9 +98,10 @@ internal sealed partial class InMemoryDataStorage(
     /// Scope-local rows captured inside a non-relational coordinated scope. They join <see cref="PublishedMessages" />
     /// only when the coordinator commits; a rollback disposes the buffer and the rows with it.
     /// </summary>
-    private sealed class CoordinatedPublishBuffer : ICommitWorkBuffer, IDisposable
+    // Same shape as MessageOutboxBuffer: rows wait in the scope-local buffer and are promoted on commit; a rollback
+    // never drains, so the buffered rows are simply dropped with the coordinator.
+    private sealed class CoordinatedPublishBuffer : InMemoryWorkBuffer<MemoryMessage>
     {
-        private readonly ConcurrentQueue<MemoryMessage> _rows = new();
         private readonly InMemoryDataStorage _storage;
 
         public CoordinatedPublishBuffer(ICommitCoordinator coordinator, InMemoryDataStorage storage)
@@ -109,19 +110,9 @@ internal sealed partial class InMemoryDataStorage(
             coordinator.OnCommit(_PromoteAsync);
         }
 
-        public void Add(MemoryMessage row)
-        {
-            _rows.Enqueue(row);
-        }
-
-        public void Dispose()
-        {
-            _rows.Clear();
-        }
-
         private ValueTask _PromoteAsync(CommitContext context, CancellationToken cancellationToken)
         {
-            while (_rows.TryDequeue(out var row))
+            foreach (var row in Drain())
             {
                 _storage.PublishedMessages[row.StorageId] = row;
             }

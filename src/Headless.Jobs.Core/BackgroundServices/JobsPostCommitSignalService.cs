@@ -197,7 +197,7 @@ internal sealed partial class JobsPostCommitSignalService(
             // A side effect's own TimeoutException completes `work` and is reported as a failure below; only the wait
             // bound lands here.
             Log.PostCommitSignalTimedOut(_logger, signal.JobScope, SignalDeadline);
-            _ObserveLateFault(work, _logger, signal.JobScope);
+            LateFaultObserver.ObserveLateFault(work, _logger, signal.JobScope, Log.PostCommitSignalFailed);
         }
         catch (Exception e)
         {
@@ -206,21 +206,6 @@ internal sealed partial class JobsPostCommitSignalService(
     }
 
     // Surfaces a fault from an abandoned side effect instead of leaving it unobserved.
-    private static void _ObserveLateFault(Task work, ILogger logger, string jobScope)
-    {
-        _ = work.ContinueWith(
-            static (settled, state) =>
-            {
-                var (continuationLogger, continuationJobScope) = ((ILogger, string))state!;
-                Log.PostCommitSignalFailed(continuationLogger, continuationJobScope, settled.Exception!);
-            },
-            (logger, jobScope),
-            CancellationToken.None,
-            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
-            TaskScheduler.Default
-        );
-    }
-
     private static partial class Log
     {
         [LoggerMessage(

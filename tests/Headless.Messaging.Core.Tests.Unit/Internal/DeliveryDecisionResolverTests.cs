@@ -156,7 +156,7 @@ public sealed class DeliveryDecisionResolverTests : TestBase
                 delay: null,
                 _Coordination(status),
                 _Now,
-                outboxSupported: false
+                storageSupported: false
             );
 
         act.Should().Throw<MessagingConfigurationException>().WithMessage("*Bus*storage*");
@@ -174,7 +174,7 @@ public sealed class DeliveryDecisionResolverTests : TestBase
             delay: null,
             _Coordination(status),
             _Now,
-            outboxSupported: false
+            storageSupported: false
         );
 
         decision.ResolvedMode.Should().Be(DeliveryMode.Direct);

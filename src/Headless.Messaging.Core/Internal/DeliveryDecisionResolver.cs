@@ -45,8 +45,8 @@ internal static class DeliveryDecisionResolver
         DeliveryCoordination coordination,
         DateTimeOffset now,
         DateTimeOffset? scheduledAt = null,
-        bool outboxSupported = true
-    ) => Resolve(lane, requestedMode, delay, coordination.Status, now, coordination, scheduledAt, outboxSupported);
+        bool storageSupported = true
+    ) => Resolve(lane, requestedMode, delay, coordination.Status, now, coordination, scheduledAt, storageSupported);
 
     // Manually constructed middleware contexts need delivery semantics without live transaction resources.
     internal static DeliveryDecision Resolve(
@@ -57,7 +57,7 @@ internal static class DeliveryDecisionResolver
         DateTimeOffset now,
         DeliveryCoordination coordination = default,
         DateTimeOffset? scheduledAt = null,
-        bool outboxSupported = true
+        bool storageSupported = true
     )
     {
         // Explicit range checks rather than Enum.IsDefined: these run on every publish, and IsDefined
@@ -96,7 +96,7 @@ internal static class DeliveryDecisionResolver
         // before the capability gate, storage, or transport can run.
         if (requestedMode is not DeliveryMode.Direct)
         {
-            if (!outboxSupported)
+            if (!storageSupported)
             {
                 throw new MessagingConfigurationException(
                     $"{lane} {requestedMode} delivery requires a matching storage capability contribution."

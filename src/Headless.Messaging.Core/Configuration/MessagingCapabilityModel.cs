@@ -46,12 +46,6 @@ internal interface IMessageCapabilityGate : IMessagingCapabilityModel
     );
 
     void EnsureOutboxSupported(MessageLane lane, bool scheduled);
-
-    /// <summary>
-    /// Non-throwing lane-scoped storage query consumed by the delivery resolver so a durable request on a host
-    /// without matching storage is rejected before any capability gate, storage, or transport effect.
-    /// </summary>
-    bool IsOutboxSupported(MessageLane lane);
 }
 
 /// <summary>Composes immutable provider contributions into the runtime capability authority.</summary>
@@ -324,9 +318,6 @@ public sealed class MessagingCapabilityModel : IMessagingCapabilityModel, IMessa
         );
     }
 
-    /// <summary>Returns whether the single storage provider declares the lane; never throws for a defined lane.</summary>
-    internal bool IsOutboxSupported(MessageLane lane) => Supports(lane, MessagingProviderRole.Storage);
-
     /// <summary>Rejects an outbox publish when transport, storage, or scheduling support is absent.</summary>
     internal void EnsureOutboxSupported(MessageLane lane, bool scheduled)
     {
@@ -472,6 +463,4 @@ public sealed class MessagingCapabilityModel : IMessagingCapabilityModel, IMessa
 
     void IMessageCapabilityGate.EnsureOutboxSupported(MessageLane lane, bool scheduled) =>
         EnsureOutboxSupported(lane, scheduled);
-
-    bool IMessageCapabilityGate.IsOutboxSupported(MessageLane lane) => IsOutboxSupported(lane);
 }

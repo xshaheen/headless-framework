@@ -32,7 +32,12 @@ internal static class JobAtomicity
     internal static void RejectDirect<TJob>(IEnumerable<TJob> jobs)
         where TJob : TimeJobEntity<TJob>
     {
-        if (IsRequired(jobs))
+        RejectDirect(IsRequired(jobs));
+    }
+
+    internal static void RejectDirect(bool anyRequiresAtomicEnlistment)
+    {
+        if (anyRequiresAtomicEnlistment)
         {
             throw new InvalidOperationException(
                 "Required atomic Jobs scheduling needs a compatible live relational transaction and the coordinated manager/writer path; direct persistence cannot satisfy it."

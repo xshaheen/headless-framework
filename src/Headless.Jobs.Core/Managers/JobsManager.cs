@@ -317,12 +317,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     // change must not let a required recurring definition fall back to a non-coordinated insert silently.
     private static void _RejectDirectCronPersistence(IEnumerable<TCronJob> entities)
     {
-        if (entities.Any(entity => entity.RequireAtomicEnlistment))
-        {
-            throw new InvalidOperationException(
-                "Required atomic Jobs scheduling needs a compatible live relational transaction and the coordinated manager/writer path; direct persistence cannot satisfy it."
-            );
-        }
+        JobAtomicity.RejectDirect(entities.Any(entity => entity.RequireAtomicEnlistment));
     }
 
     /// <summary>
