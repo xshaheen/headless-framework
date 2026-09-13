@@ -24,6 +24,8 @@ Use `EventEmissionScope.Begin(new EventEmissionContext(correlationId, parentId, 
 
 Emitter buffers contain `IReadOnlyList<EventContext<object>>` so one aggregate can raise different payload types. The generic `AddDomainEvent(context)` / `AddIntegrationEvent(context)` overloads preserve an existing concrete envelope. Batch clear removes only saved event IDs; parameterless clear explicitly discards the pending buffer.
 
+Use `EventBuffer` when an entity implements an emitter interface without inheriting `AggregateRoot`. It provides `Add(payload)`, `Add(context)`, `Snapshot()`, `Clear()`, and `Clear(savedBatch)` with the same occurrence semantics as aggregate roots. Keep one buffer per entity and event kind; instances are not thread-safe. The buffer only retains events in memory. The entity must still implement `IIntegrationEventEmitter` or `IDomainEventEmitter` so infrastructure can collect them. Choose application-specific tenant and correlation values before adding an explicit `EventContext`; the buffer preserves them.
+
 Handlers receive `EventContext<TPayload>` and a cancellation token. `IDomainEventDispatcher.DispatchAsync(context, token)` accepts only a captured envelope and resolves the exact runtime payload type, preserving identity and lineage across retries.
 
 This package adds no event store, stream version, replay, or durable Domain contract registry. Domain remains independent of Messaging, Jobs, persistence, and commit coordination.
@@ -51,6 +53,26 @@ public sealed class Order : AggregateRoot<Guid>, ICreateAudit
 }
 
 public sealed record OrderCompletedEvent(Guid OrderId);
+```
+
+For an entity using composition:
+
+```csharp
+public sealed class Account : IIntegrationEventEmitter
+{
+    private readonly EventBuffer _events = new();
+
+    public void AddIntegrationEvent(object payload) => _events.Add(payload);
+
+    public void AddIntegrationEvent<TPayload>(EventContext<TPayload> context)
+        where TPayload : class => _events.Add(context);
+
+    public IReadOnlyList<EventContext<object>> GetIntegrationEvents() => _events.Snapshot();
+
+    public void ClearIntegrationEvents() => _events.Clear();
+
+    public void ClearIntegrationEvents(IReadOnlyList<EventContext<object>> occurrences) => _events.Clear(occurrences);
+}
 ```
 
 ### Auditing

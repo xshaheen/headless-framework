@@ -5,100 +5,9 @@ packages: Blobs.Abstractions, Blobs.Core, Blobs.Aws, Blobs.Azure, Blobs.Cloudfla
 
 # Blob Storage
 
-## Table of Contents
-
-- [Quick Orientation](#quick-orientation)
-- [Agent Instructions](#agent-instructions)
-- [Core Concepts](#core-concepts)
-    - [Addressing: BlobLocation and the resolve seam](#addressing-bloblocation-and-the-resolve-seam)
-    - [Listing: token paging and guarantee tiers](#listing-token-paging-and-guarantee-tiers)
-    - [Prefix vs. glob filtering](#prefix-vs-glob-filtering)
-    - [Capabilities: container management and presigned URLs](#capabilities-container-management-and-presigned-urls)
-    - [Metadata and sidecar companions](#metadata-and-sidecar-companions)
-    - [Move, copy, and bulk results](#move-copy-and-bulk-results)
-    - [Migration from the array-addressing contract](#migration-from-the-array-addressing-contract)
-- [Choosing a Provider](#choosing-a-provider)
-- [Headless.Blobs.Abstractions](#headlessblobsabstractions)
-    - [Problem Solved](#problem-solved)
-    - [Key Features](#key-features)
-    - [Installation](#installation)
-    - [Quick Start](#quick-start)
-    - [Configuration](#configuration)
-    - [Dependencies](#dependencies)
-    - [Side Effects](#side-effects)
-- [Headless.Blobs.Core](#headlessblobscore)
-    - [Problem Solved](#problem-solved-1)
-    - [Key Features](#key-features-1)
-    - [Design Notes](#design-notes)
-    - [Installation](#installation-1)
-    - [Quick Start](#quick-start-1)
-    - [Configuration](#configuration-1)
-    - [Dependencies](#dependencies-1)
-    - [Side Effects](#side-effects-1)
-- [Headless.Blobs.Aws](#headlessblobsaws)
-    - [Problem Solved](#problem-solved-2)
-    - [Key Features](#key-features-2)
-    - [Installation](#installation-2)
-    - [Quick Start](#quick-start-2)
-    - [Configuration](#configuration-2)
-        - [appsettings.json](#appsettingsjson)
-        - [Options](#options)
-    - [Dependencies](#dependencies-2)
-    - [Side Effects](#side-effects-2)
-- [Headless.Blobs.Azure](#headlessblobsazure)
-    - [Problem Solved](#problem-solved-3)
-    - [Key Features](#key-features-3)
-    - [Installation](#installation-3)
-    - [Quick Start](#quick-start-3)
-    - [Configuration](#configuration-3)
-        - [appsettings.json](#appsettingsjson-1)
-    - [Dependencies](#dependencies-3)
-    - [Side Effects](#side-effects-3)
-- [Headless.Blobs.CloudflareR2](#headlessblobscloudflarer2)
-    - [Problem Solved](#problem-solved-4)
-    - [Key Features](#key-features-4)
-    - [Design Notes](#design-notes-1)
-    - [Installation](#installation-4)
-    - [Quick Start](#quick-start-4)
-    - [Configuration](#configuration-4)
-        - [appsettings.json](#appsettingsjson-2)
-    - [Dependencies](#dependencies-4)
-    - [Side Effects](#side-effects-4)
-- [Headless.Blobs.FileSystem](#headlessblobsfilesystem)
-    - [Problem Solved](#problem-solved-5)
-    - [Key Features](#key-features-5)
-    - [Design Notes](#design-notes-2)
-    - [Installation](#installation-5)
-    - [Quick Start](#quick-start-5)
-    - [Configuration](#configuration-5)
-        - [appsettings.json](#appsettingsjson-3)
-        - [Options](#options-1)
-    - [Dependencies](#dependencies-5)
-    - [Side Effects](#side-effects-5)
-- [Headless.Blobs.Redis](#headlessblobsredis)
-    - [Problem Solved](#problem-solved-6)
-    - [Key Features](#key-features-6)
-    - [Design Notes](#design-notes-3)
-    - [Installation](#installation-6)
-    - [Quick Start](#quick-start-6)
-    - [Configuration](#configuration-6)
-    - [Dependencies](#dependencies-6)
-    - [Side Effects](#side-effects-6)
-- [Headless.Blobs.SshNet](#headlessblobssshnet)
-    - [Problem Solved](#problem-solved-7)
-    - [Key Features](#key-features-7)
-    - [Design Notes](#design-notes-4)
-    - [Installation](#installation-7)
-    - [Quick Start](#quick-start-7)
-    - [Configuration](#configuration-7)
-        - [appsettings.json](#appsettingsjson-4)
-        - [SSH Key Authentication](#ssh-key-authentication)
-    - [Dependencies](#dependencies-7)
-    - [Side Effects](#side-effects-7)
-
 > Provider-agnostic file/blob storage with implementations for AWS S3, Azure Blob, Cloudflare R2, local filesystem, Redis, and SFTP.
 
-## Quick Orientation
+## Orientation
 
 Install `Headless.Blobs.Abstractions`, `Headless.Blobs.Core`, and one or more provider packages. Register every store through a single `AddHeadlessBlobs(...)` call: pick a default with `Use{Provider}(...)` and add named stores with `AddNamed(name, i => i.Use{Provider}(...))`. Code against `IBlobStorage` — never reference concrete provider types in application code.
 
@@ -112,7 +21,7 @@ Provider selection guide:
 
 The default store registers as a plain (unkeyed) `IBlobStorage` singleton; named stores register as keyed `IBlobStorage` singletons and resolve through `IBlobStorageProvider`. Every operation addresses a blob with a single `BlobLocation(container, path)` value — a validated `(top-level container, container-relative object key)` pair — instead of the old `string[] container` + `blobName` shape. Container/bucket lifecycle and presigned URLs are opt-in capabilities (`IBlobContainerManager`, `IPresignedUrlBlobStorage`), not part of the data-plane `IBlobStorage` contract.
 
-## Agent Instructions
+## Agent Rules
 
 - Always depend on `IBlobStorage` from `Headless.Blobs.Abstractions` — never reference `AwsBlobStorage`, `AzureBlobStorage`, or other concrete types in service code.
 - Register all stores through `AddHeadlessBlobs(...)` from `Headless.Blobs.Core`. Choose a default with `Use{Provider}(...)` and add named stores with `AddNamed(name, i => i.Use{Provider}(...))`. Use `UseFileSystem` for local development and testing; `UseAws`, `UseAzure`, or `UseCloudflareR2` for production.

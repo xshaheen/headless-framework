@@ -16,7 +16,7 @@ internal sealed class OutboxMessageWriter(
 {
     private readonly MessagingTelemetry _telemetry = telemetry ?? MessagingTelemetry.Default;
 
-    internal async Task WriteAsync(
+    internal async Task<Guid> WriteAsync(
         PreparedPublishMessage publishRequest,
         DeliveryDecision decision,
         CancellationToken cancellationToken
@@ -53,7 +53,7 @@ internal sealed class OutboxMessageWriter(
                 );
                 buffer.Add(mediumMessage);
 
-                return;
+                return mediumMessage.StorageId;
             }
 
             // No ambient coordinator (or no relational transaction on it): commit the durable row first.
@@ -76,6 +76,8 @@ internal sealed class OutboxMessageWriter(
             {
                 (dispatcher as ICommittedMessageDispatcher)?.EnqueueCommittedMessage(immediateMessage);
             }
+
+            return immediateMessage.StorageId;
         }
         catch (OperationCanceledException)
         {

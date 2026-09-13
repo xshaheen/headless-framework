@@ -5,43 +5,9 @@ packages: Tus, Tus.Azure, Tus.DistributedLocks
 
 # TUS (Resumable Uploads)
 
-## Table of Contents
-
-- [Quick Orientation](#quick-orientation)
-- [Agent Instructions](#agent-instructions)
-- [Core Concepts](#core-concepts)
-    - [TUS Protocol Flow](#tus-protocol-flow)
-    - [Azure Block Blob Mapping](#azure-block-blob-mapping)
-    - [Concurrent PATCH Safety](#concurrent-patch-safety)
-- [Headless.Tus](#headlesstus)
-    - [Problem Solved](#problem-solved)
-    - [Key Features](#key-features)
-    - [Installation](#installation)
-    - [Quick Start](#quick-start)
-    - [Configuration](#configuration)
-    - [Dependencies](#dependencies)
-    - [Side Effects](#side-effects)
-- [Headless.Tus.Azure](#headlesstusazure)
-    - [Problem Solved](#problem-solved-1)
-    - [Key Features](#key-features-1)
-    - [Design Notes](#design-notes)
-    - [Installation](#installation-1)
-    - [Quick Start](#quick-start-1)
-    - [Configuration](#configuration-1)
-    - [Dependencies](#dependencies-1)
-    - [Side Effects](#side-effects-1)
-- [Headless.Tus.DistributedLocks](#headlesstusdistributedlocks)
-    - [Problem Solved](#problem-solved-2)
-    - [Key Features](#key-features-2)
-    - [Installation](#installation-2)
-    - [Quick Start](#quick-start-2)
-    - [Configuration](#configuration-2)
-    - [Dependencies](#dependencies-2)
-    - [Side Effects](#side-effects-2)
-
 > TUS protocol implementation for resumable file uploads with Azure Blob Storage backend and distributed lock support.
 
-## Quick Orientation
+## Orientation
 
 Three packages compose the TUS domain:
 
@@ -99,7 +65,7 @@ app.Run();
 
 Any tus 1.0.0 client works against this endpoint (`tus-js-client`, Uppy's `@uppy/tus`, tuspy, …). A complete runnable example — this backend plus a React frontend driving the endpoint with both Uppy Dashboard and `use-tus` — lives in [demo/Headless.Tus.Demo](../../demo/Headless.Tus.Demo/README.md).
 
-## Agent Instructions
+## Agent Rules
 
 - `Headless.Tus` has no store implementation — always add `Headless.Tus.Azure` for upload storage. It does ship the cross-provider pieces: `TusCorsDefaults` / `WithTusHeaders()` and `AddTusExpiredUploadsCleanup()`.
 - Browser clients on another origin need the tus CORS surface: use `policy.WithTusHeaders()` (allowed request headers + exposed response headers + methods incl. PATCH/DELETE). Without the exposed headers, `tus-js-client`/Uppy cannot read `Location`/`Upload-Offset` and uploads fail on the first request.

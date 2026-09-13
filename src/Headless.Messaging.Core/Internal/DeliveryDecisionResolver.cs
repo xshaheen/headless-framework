@@ -17,7 +17,10 @@ internal readonly record struct DeliveryDecision(
     DeliveryPath Path,
     TimeSpan? Delay,
     DateTimeOffset? PublishAt,
-    DeliveryCoordination Coordination
+    DeliveryCoordination Coordination,
+    // The caller's absolute instant, retained separately from PublishAt so the publish context can fence
+    // middleware against changing it. PublishAt is the resolved not-before regardless of which form produced it.
+    DateTimeOffset? ScheduledAt = null
 )
 {
     internal bool IsTransactional => Path is DeliveryPath.DurableCoordinated;
@@ -30,8 +33,9 @@ internal static class DeliveryDecisionResolver
         DeliveryMode requestedMode,
         TimeSpan? delay,
         DeliveryCoordination coordination,
-        DateTimeOffset now
-    ) => Resolve(lane, requestedMode, delay, coordination.Status, now, coordination);
+        DateTimeOffset now,
+        DateTimeOffset? scheduledAt = null
+    ) => Resolve(lane, requestedMode, delay, coordination.Status, now, coordination, scheduledAt);
 
     // Manually constructed middleware contexts need delivery semantics without live transaction resources.
     internal static DeliveryDecision Resolve(
@@ -40,7 +44,8 @@ internal static class DeliveryDecisionResolver
         TimeSpan? delay,
         DeliveryCoordinationStatus coordinationStatus,
         DateTimeOffset now,
-        DeliveryCoordination coordination = default
+        DeliveryCoordination coordination = default,
+        DateTimeOffset? scheduledAt = null
     )
     {
         // Explicit range checks rather than Enum.IsDefined: these run on every publish, and IsDefined
@@ -82,7 +87,19 @@ internal static class DeliveryDecisionResolver
             );
         }
 
-        DateTimeOffset? publishAt = null;
+        if (delay is not null && scheduledAt is not null)
+        {
+            throw new ArgumentException(
+                "Delay and ScheduledAt are two spellings of the same schedule; supply one, not both.",
+                nameof(scheduledAt)
+            );
+        }
+
+        // Normalized to UTC so the persisted instant is unambiguous regardless of the caller's offset. A past
+        // instant is deliberately accepted: not-before semantics make it an already-satisfied constraint, and
+        // rejecting it would punish a caller whose computed deadline elapsed between decision and publish.
+        // Match PostgreSQL precision while retaining the exact requested instant for frozen middleware options.
+        DateTimeOffset? publishAt = scheduledAt?.ToUniversalTime().Floor(TimeSpan.FromMicroseconds(1));
         if (delay is { } value)
         {
             if (value <= TimeSpan.Zero)
@@ -109,11 +126,18 @@ internal static class DeliveryDecisionResolver
             throw new InvalidOperationException("Direct delivery cannot specify a delay.");
         }
 
+        if (requestedMode is DeliveryMode.Direct && scheduledAt is not null)
+        {
+            throw new InvalidOperationException("Direct delivery cannot specify a schedule.");
+        }
+
         var resolvedMode = requestedMode switch
         {
             DeliveryMode.Direct => DeliveryMode.Direct,
             DeliveryMode.Durable => DeliveryMode.Durable,
-            DeliveryMode.Auto when delay is not null => DeliveryMode.Durable,
+            // publishAt, not delay: an absolute schedule must upgrade Auto to durable the same way a relative
+            // delay does, otherwise a scheduled Auto send would resolve to a direct publish with no storage.
+            DeliveryMode.Auto when publishAt is not null => DeliveryMode.Durable,
             DeliveryMode.Auto when coordinationStatus is DeliveryCoordinationStatus.Compatible => DeliveryMode.Durable,
             DeliveryMode.Auto => DeliveryMode.Direct,
             _ => throw new UnreachableException(),
@@ -128,6 +152,14 @@ internal static class DeliveryDecisionResolver
             _ => throw new UnreachableException(),
         };
 
-        return new DeliveryDecision(requestedMode, resolvedMode, path, delay, publishAt, coordination);
+        return new DeliveryDecision(
+            requestedMode,
+            resolvedMode,
+            path,
+            delay,
+            publishAt,
+            coordination,
+            scheduledAt?.ToUniversalTime()
+        );
     }
 }

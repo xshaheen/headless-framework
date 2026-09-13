@@ -32,7 +32,7 @@ public sealed class HybridCacheTests : TestBase
         var publisher = Substitute.For<IBus>();
         publisher
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(Task.CompletedTask);
+            .Returns(default(PublishReceipt));
 
         var cache = new HybridCache(l1, l2, publisher, options, timeProvider: _timeProvider);
 
@@ -619,7 +619,7 @@ public sealed class HybridCacheTests : TestBase
         var publisher = Substitute.For<IBus>();
         publisher
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(Task.CompletedTask);
+            .Returns(default(PublishReceipt));
 
         var cache = new HybridCache(l1, l2, publisher, new HybridCacheOptions(), timeProvider: _timeProvider);
         await using var _ = cache;
@@ -966,7 +966,7 @@ public sealed class HybridCacheTests : TestBase
         var publisher = Substitute.For<IBus>();
         publisher
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(_ => throw new InvalidOperationException("Publish failed"));
+            .Returns<PublishReceipt>(_ => throw new InvalidOperationException("Publish failed"));
 
         var cache = new HybridCache(l1, l2, publisher, new HybridCacheOptions(), timeProvider: _timeProvider);
         await using var _ = cache;
@@ -1398,7 +1398,9 @@ public sealed class HybridCacheTests : TestBase
 
         publisher
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(_ => failPublish ? throw new InvalidOperationException("Publish failed") : Task.CompletedTask);
+            .Returns(_ =>
+                failPublish ? throw new InvalidOperationException("Publish failed") : default(PublishReceipt)
+            );
 
         using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
         using var l2Inner = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
@@ -1460,12 +1462,12 @@ public sealed class HybridCacheTests : TestBase
                 Arg.Any<PublishOptions?>(),
                 Arg.Any<CancellationToken>()
             )
-            .Returns(Task.CompletedTask);
+            .Returns(default(PublishReceipt));
 
         var publisherB = Substitute.For<IBus>();
         publisherB
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(Task.CompletedTask);
+            .Returns(default(PublishReceipt));
 
         using var l1A = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
         using var l1B = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
@@ -1518,7 +1520,7 @@ public sealed class HybridCacheTests : TestBase
                 Arg.Any<PublishOptions?>(),
                 Arg.Any<CancellationToken>()
             )
-            .Returns(Task.CompletedTask);
+            .Returns(default(PublishReceipt));
 
         using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
         using var l2Inner = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
@@ -1592,7 +1594,7 @@ public sealed class HybridCacheTests : TestBase
         var publisher = Substitute.For<IBus>();
         publisher
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(Task.CompletedTask);
+            .Returns(default(PublishReceipt));
 
         var cache = new HybridCache(l1, l2, publisher, new HybridCacheOptions(), timeProvider: _timeProvider);
         await using var _ = cache;
@@ -1639,7 +1641,7 @@ public sealed class HybridCacheTests : TestBase
         var publisher = Substitute.For<IBus>();
         publisher
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(Task.CompletedTask);
+            .Returns(default(PublishReceipt));
 
         var cache = new HybridCache(
             l1,
@@ -1778,7 +1780,7 @@ public sealed class HybridCacheTests : TestBase
         var publisher = Substitute.For<IBus>();
         publisher
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(Task.CompletedTask);
+            .Returns(default(PublishReceipt));
 
         var cache = new HybridCache(
             l1,
@@ -1881,7 +1883,7 @@ public sealed class HybridCacheTests : TestBase
         var publisher = Substitute.For<IBus>();
         publisher
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(Task.CompletedTask);
+            .Returns(default(PublishReceipt));
 
         var cache = new HybridCache(
             l1,
@@ -1939,7 +1941,7 @@ public sealed class HybridCacheTests : TestBase
         var publisher = Substitute.For<IBus>();
         publisher
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(Task.CompletedTask);
+            .Returns(default(PublishReceipt));
 
         var cache = new HybridCache(
             l1,
@@ -1996,7 +1998,7 @@ public sealed class HybridCacheTests : TestBase
         var publisher = Substitute.For<IBus>();
         publisher
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(Task.CompletedTask);
+            .Returns(default(PublishReceipt));
 
         var cache = new HybridCache(
             l1,
@@ -2036,7 +2038,7 @@ public sealed class HybridCacheTests : TestBase
         var publisher = Substitute.For<IBus>();
         publisher
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(Task.CompletedTask);
+            .Returns(default(PublishReceipt));
 
         var cache = new HybridCache(
             l1,
@@ -2083,7 +2085,7 @@ public sealed class HybridCacheTests : TestBase
         var publisher = Substitute.For<IBus>();
         publisher
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(Task.CompletedTask);
+            .Returns(default(PublishReceipt));
 
         var logger = new RecordingHybridCacheLogger();
         var cache = new HybridCache(
@@ -2135,7 +2137,7 @@ public sealed class HybridCacheTests : TestBase
         var publisher = Substitute.For<IBus>();
         publisher
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(Task.CompletedTask);
+            .Returns(default(PublishReceipt));
 
         await using var cache = new HybridCache(
             l1,
@@ -2185,7 +2187,7 @@ public sealed class HybridCacheTests : TestBase
         var publisher = Substitute.For<IBus>();
         publisher
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(Task.CompletedTask);
+            .Returns(default(PublishReceipt));
 
         var cache = new HybridCache(
             l1,

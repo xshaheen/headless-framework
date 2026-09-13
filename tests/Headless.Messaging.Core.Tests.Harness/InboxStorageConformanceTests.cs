@@ -15,6 +15,165 @@ public abstract class InboxStorageConformanceTests : TestBase
     protected abstract void ConfigureStorage(MessagingSetupBuilder setup);
 
     [Theory]
+    [InlineData(MessageLane.Bus)]
+    [InlineData(MessageLane.Queue)]
+    public async Task should_defer_orphan_and_release_ownership_without_consuming_failure_retries(MessageLane lane)
+    {
+        await using var provider = _CreateProvider();
+        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        var storage = provider.GetRequiredService<IDataStorage>();
+        var envelope = _CreateMessage(lane);
+        var winner = (await _AdmitAsync(storage, envelope)).Message;
+        var previousAttempts = winner.InlineAttempts++;
+        (
+            await storage.LeaseReceiveAndReserveAttemptAsync(
+                winner,
+                TimeSpan.FromMinutes(5),
+                previousAttempts,
+                AbortToken
+            )
+        )
+            .Should()
+            .BeTrue();
+        var retries = winner.Retries;
+        var before = DateTimeOffset.UtcNow;
+
+        (await storage.DeferReceivedInboxOrphanAsync(winner, AbortToken)).Should().BeTrue();
+
+        var persisted = (await _AdmitAsync(storage, envelope)).Message;
+        persisted.IsInboxOrphaned.Should().BeTrue();
+        persisted.Owner.Should().BeNull();
+        persisted.LockedUntil.Should().BeNull();
+        persisted.NextRetryAt.Should().BeAfter(before);
+        persisted.Retries.Should().Be(retries);
+    }
+
+    [Theory]
+    [InlineData(MessageLane.Bus)]
+    [InlineData(MessageLane.Queue)]
+    public async Task should_require_every_fence_component_for_orphan_deferral_and_confirmation(MessageLane lane)
+    {
+        await using var provider = _CreateProvider();
+        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        var storage = provider.GetRequiredService<IDataStorage>();
+        var envelope = _CreateMessage(lane);
+        var message = (await _AdmitAsync(storage, envelope)).Message;
+        message.InlineAttempts++;
+        (await storage.LeaseReceiveAndReserveAttemptAsync(message, TimeSpan.FromMinutes(5), 0, AbortToken))
+            .Should()
+            .BeTrue();
+        var fence = message.InboxAttemptFence!;
+        foreach (var invalidFence in _InvalidFences(fence).Values)
+        {
+            message.InboxAttemptFence = invalidFence;
+            (await storage.DeferReceivedInboxOrphanAsync(message, AbortToken)).Should().BeFalse();
+            (await storage.ConfirmReceivedInboxRoutableAsync(message, AbortToken)).Should().BeFalse();
+            var unchanged = (await _AdmitAsync(storage, envelope)).Message;
+            unchanged.IsInboxOrphaned.Should().BeFalse();
+            unchanged.InboxAttemptFence.Should().Be(fence);
+            unchanged.NextRetryAt.Should().Be(message.NextRetryAt);
+        }
+        message.InboxAttemptFence = fence;
+        (await storage.ConfirmReceivedInboxRoutableAsync(message, AbortToken))
+            .Should()
+            .BeTrue("already-routable is accepted under the exact fence");
+        (await storage.DeferReceivedInboxOrphanAsync(message, AbortToken)).Should().BeTrue();
+        (await storage.ConfirmReceivedInboxRoutableAsync(message, AbortToken))
+            .Should()
+            .BeFalse("deferral released this attempt");
+
+        var deferred = (await _AdmitAsync(storage, envelope)).Message;
+        var attempts = deferred.InlineAttempts++;
+        (await storage.LeaseReceiveAndReserveAttemptAsync(deferred, TimeSpan.FromMinutes(5), attempts, AbortToken))
+            .Should()
+            .BeTrue();
+        var nextFence = deferred.InboxAttemptFence!;
+        nextFence.AttemptId.Should().NotBe(fence.AttemptId);
+        deferred.InboxGeneration.Should().Be(message.InboxGeneration);
+        (await storage.DeferReceivedInboxOrphanAsync(deferred, AbortToken))
+            .Should()
+            .BeTrue("a previously classified orphan must release every new probe");
+        var repeated = (await _AdmitAsync(storage, envelope)).Message;
+        repeated.LockedUntil.Should().BeNull();
+        repeated.Owner.Should().BeNull();
+        repeated.NextRetryAt.Should().BeOnOrAfter(message.NextRetryAt!.Value);
+        attempts = repeated.InlineAttempts++;
+        (await storage.LeaseReceiveAndReserveAttemptAsync(repeated, TimeSpan.FromMinutes(5), attempts, AbortToken))
+            .Should()
+            .BeTrue();
+        (await storage.ConfirmReceivedInboxRoutableAsync(repeated, AbortToken)).Should().BeTrue();
+        var recovered = (await _AdmitAsync(storage, envelope)).Message;
+        recovered.IsInboxOrphaned.Should().BeFalse();
+        recovered.InboxGeneration.Should().Be(message.InboxGeneration);
+        recovered.InboxAttemptFence!.AttemptId.Should().NotBe(nextFence.AttemptId);
+    }
+
+    [Theory]
+    [InlineData(MessageLane.Bus)]
+    [InlineData(MessageLane.Queue)]
+    public async Task should_keep_orphan_probe_capacity_separate_from_ordinary_retries(MessageLane lane)
+    {
+        await using var provider = _CreateProvider(options =>
+        {
+            options.RetryBatchSize = 1;
+            options.OrphanProbeBatchSize = 2;
+        });
+        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        var storage = provider.GetRequiredService<IDataStorage>();
+        var orphanIds = new List<Guid>();
+        Guid ordinaryId = default;
+        for (var i = 0; i < 5; i++)
+        {
+            var message = (await _AdmitAsync(storage, _CreateMessage(lane))).Message;
+            message.InlineAttempts++;
+            (await storage.LeaseReceiveAndReserveAttemptAsync(message, TimeSpan.FromMinutes(5), 0, AbortToken))
+                .Should()
+                .BeTrue();
+            if (i < 4)
+            {
+                // Deferral releases the claim; re-lease so the due-time mutation below runs under a live fence.
+                (await storage.DeferReceivedInboxOrphanAsync(message, AbortToken))
+                    .Should()
+                    .BeTrue();
+                var deferredAttempts = message.InlineAttempts++;
+                (
+                    await storage.LeaseReceiveAndReserveAttemptAsync(
+                        message,
+                        TimeSpan.FromMinutes(5),
+                        deferredAttempts,
+                        AbortToken
+                    )
+                )
+                    .Should()
+                    .BeTrue();
+                orphanIds.Add(message.StorageId);
+            }
+            else
+            {
+                ordinaryId = message.StorageId;
+            }
+            var identity = new MessageLeaseIdentity(
+                message.StorageId,
+                message.Owner,
+                message.LockedUntil!.Value,
+                lane,
+                message.InboxAttemptFence
+            );
+            (await _MutateLeaseAsync(storage, "defer", identity, DateTimeOffset.UtcNow.AddMinutes(-10 + i)))
+                .Should()
+                .BeTrue();
+        }
+
+        var ordinary = (await storage.GetReceivedMessagesOfNeedRetryAsync(lane, AbortToken)).ToList();
+        ordinary.Should().ContainSingle().Which.StorageId.Should().Be(ordinaryId);
+        var probes = (await storage.GetReceivedInboxOrphansOfNeedRetryAsync(lane, AbortToken)).ToList();
+        probes.Should().HaveCount(2);
+        probes.Should().OnlyContain(message => orphanIds.Contains(message.StorageId) && message.IsInboxOrphaned);
+        var oppositeLane = lane is MessageLane.Bus ? MessageLane.Queue : MessageLane.Bus;
+        (await storage.GetReceivedInboxOrphansOfNeedRetryAsync(oppositeLane, AbortToken)).Should().BeEmpty();
+    }
+
+    [Theory]
     [InlineData("release", MessageLane.Bus)]
     [InlineData("batch-release", MessageLane.Bus)]
     [InlineData("defer", MessageLane.Bus)]
@@ -304,11 +463,18 @@ public abstract class InboxStorageConformanceTests : TestBase
         tenant.Message.StorageId.Should().NotBe(first.Message.StorageId);
     }
 
-    private ServiceProvider _CreateProvider()
+    private ServiceProvider _CreateProvider(Action<MessagingOptions>? configure = null)
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessMessaging(ConfigureStorage);
+        services.AddHeadlessMessaging(setup =>
+        {
+            ConfigureStorage(setup);
+            if (configure is not null)
+            {
+                configure(setup.Options);
+            }
+        });
         return services.BuildServiceProvider();
     }
 

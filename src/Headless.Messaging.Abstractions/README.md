@@ -8,6 +8,8 @@ Defines the stable message envelope, consume context, consumer contract, publish
 
 ## Key Features
 
+- `IMessageRevoker` deletes a scheduled row by `PublishReceipt.StorageId` before its first dispatch reservation. It returns `Revoked`, `NotFound`, or `AttemptReserved`, retains no audit record, and is not tenant-scoped. Use Jobs for keyed, replaceable, tenant-scoped, or transactional deadlines.
+- `PublishReceipt` carries the resolved wire `MessageId` and nullable durable `StorageId`. Direct delivery returns no storage handle. Middleware suppression before terminal publication returns both values null. A coordinated receipt remains subject to transaction commit or rollback and never implies consumer completion.
 - `IConsume<TMessage>` with `ConsumeContext<TMessage>` for type-safe handlers.
 - `MessageLane` for broadcast bus versus point-to-point queue delivery.
 - `Message`, `TransportMessage`, headers, and publish option base types.
@@ -44,7 +46,7 @@ public sealed class OrderPlacedHandler(ILogger<OrderPlacedHandler> logger) : ICo
 
 Use `Headless.Messaging.Bus.Abstractions` for broadcast publisher contracts and `Headless.Messaging.Queue.Abstractions` for point-to-point publisher contracts.
 
-`DeliveryMode.Auto` captures inside a compatible coordination boundary and sends directly when no boundary is active; an active incompatible boundary is rejected. The host default is `Auto`; configure `setup.Options.DefaultDeliveryMode` to change it. `Durable` always persists first. `Direct` bypasses storage and any ambient coordination boundary, and cannot be combined with `Delay`.
+`DeliveryMode.Auto` captures inside a compatible coordination boundary and sends directly when no boundary is active; an active incompatible boundary is rejected. The host default is `Auto`; configure `setup.Options.DefaultDeliveryMode` to change it. `Durable` always persists first. `Direct` bypasses storage and any ambient coordination boundary, and cannot be combined with `Delay` or `ScheduledAt`.
 
 ## Callbacks
 

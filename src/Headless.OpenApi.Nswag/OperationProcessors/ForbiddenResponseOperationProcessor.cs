@@ -37,8 +37,6 @@ namespace Headless.OpenApi.Nswag.OperationProcessors;
 /// </remarks>
 public sealed class ForbiddenResponseOperationProcessor : IOperationProcessor
 {
-    private static readonly OpenApiResponse _ForbiddenResponse = _CreateForbiddenResponse();
-
     /// <summary>
     /// Conditionally adds a 403 Forbidden response to the current operation.
     /// </summary>
@@ -69,7 +67,7 @@ public sealed class ForbiddenResponseOperationProcessor : IOperationProcessor
 
         if (authorizeAttribute.Exists(attribute => attribute.Policy is not null || attribute.Roles is not null))
         {
-            responses.Add(OpenApiStatusCodes.Forbidden, _ForbiddenResponse);
+            responses.Add(OpenApiStatusCodes.Forbidden, _CreateForbiddenResponse());
 
             return true;
         }
@@ -87,7 +85,7 @@ public sealed class ForbiddenResponseOperationProcessor : IOperationProcessor
             )
         )
         {
-            responses.Add(OpenApiStatusCodes.Forbidden, _ForbiddenResponse);
+            responses.Add(OpenApiStatusCodes.Forbidden, _CreateForbiddenResponse());
         }
 
         return true;

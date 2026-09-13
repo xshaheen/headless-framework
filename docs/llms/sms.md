@@ -5,104 +5,9 @@ packages: Sms.Abstractions, Sms.Core, Sms.Aws, Sms.Cequens, Sms.Connekio, Sms.De
 
 # SMS
 
-## Table of Contents
-
-- [Quick Orientation](#quick-orientation)
-- [Agent Instructions](#agent-instructions)
-- [Core Concepts](#core-concepts)
-    - [Default and named clients](#default-and-named-clients)
-    - [Message model](#message-model)
-    - [Result model](#result-model)
-    - [Retry safety](#retry-safety)
-- [Choosing a Provider](#choosing-a-provider)
-- [Headless.Sms.Abstractions](#headlesssmsabstractions)
-    - [Problem Solved](#problem-solved)
-    - [Key Features](#key-features)
-    - [Installation](#installation)
-    - [Quick Start](#quick-start)
-    - [Configuration](#configuration)
-    - [Dependencies](#dependencies)
-    - [Side Effects](#side-effects)
-- [Headless.Sms.Core](#headlesssmscore)
-    - [Problem Solved](#problem-solved-1)
-    - [Key Features](#key-features-1)
-    - [Design Notes](#design-notes)
-    - [Installation](#installation-1)
-    - [Quick Start](#quick-start-1)
-    - [Configuration](#configuration-1)
-    - [Dependencies](#dependencies-1)
-    - [Side Effects](#side-effects-1)
-- [Headless.Sms.Aws](#headlesssmsaws)
-    - [Problem Solved](#problem-solved-2)
-    - [Key Features](#key-features-2)
-    - [Installation](#installation-2)
-    - [Quick Start](#quick-start-2)
-    - [Configuration](#configuration-2)
-    - [Dependencies](#dependencies-2)
-    - [Side Effects](#side-effects-2)
-- [Headless.Sms.Cequens](#headlesssmscequens)
-    - [Problem Solved](#problem-solved-3)
-    - [Key Features](#key-features-3)
-    - [Design Notes](#design-notes-1)
-    - [Installation](#installation-3)
-    - [Quick Start](#quick-start-3)
-    - [Configuration](#configuration-3)
-    - [Dependencies](#dependencies-3)
-    - [Side Effects](#side-effects-3)
-- [Headless.Sms.Connekio](#headlesssmsconnekio)
-    - [Problem Solved](#problem-solved-4)
-    - [Key Features](#key-features-4)
-    - [Design Notes](#design-notes-2)
-    - [Installation](#installation-4)
-    - [Quick Start](#quick-start-4)
-    - [Configuration](#configuration-4)
-    - [Dependencies](#dependencies-4)
-    - [Side Effects](#side-effects-4)
-- [Headless.Sms.Dev](#headlesssmsdev)
-    - [Problem Solved](#problem-solved-5)
-    - [Key Features](#key-features-5)
-    - [Installation](#installation-5)
-    - [Quick Start](#quick-start-5)
-    - [Configuration](#configuration-5)
-    - [Dependencies](#dependencies-5)
-    - [Side Effects](#side-effects-5)
-- [Headless.Sms.Infobip](#headlesssmsinfobip)
-    - [Problem Solved](#problem-solved-6)
-    - [Key Features](#key-features-6)
-    - [Installation](#installation-6)
-    - [Quick Start](#quick-start-6)
-    - [Configuration](#configuration-6)
-    - [Dependencies](#dependencies-6)
-    - [Side Effects](#side-effects-6)
-- [Headless.Sms.Twilio](#headlesssmstwilio)
-    - [Problem Solved](#problem-solved-7)
-    - [Key Features](#key-features-7)
-    - [Installation](#installation-7)
-    - [Quick Start](#quick-start-7)
-    - [Configuration](#configuration-7)
-    - [Dependencies](#dependencies-7)
-    - [Side Effects](#side-effects-7)
-- [Headless.Sms.VictoryLink](#headlesssmsvictorylink)
-    - [Problem Solved](#problem-solved-8)
-    - [Key Features](#key-features-8)
-    - [Installation](#installation-8)
-    - [Quick Start](#quick-start-8)
-    - [Configuration](#configuration-8)
-    - [Dependencies](#dependencies-8)
-    - [Side Effects](#side-effects-8)
-- [Headless.Sms.Vodafone](#headlesssmsvodafone)
-    - [Problem Solved](#problem-solved-9)
-    - [Key Features](#key-features-9)
-    - [Design Notes](#design-notes-3)
-    - [Installation](#installation-9)
-    - [Quick Start](#quick-start-9)
-    - [Configuration](#configuration-9)
-    - [Dependencies](#dependencies-9)
-    - [Side Effects](#side-effects-9)
-
 > Provider-agnostic SMS sending with pluggable backends for international (Twilio, AWS SNS, Infobip) and regional MENA providers (Cequens, Connekio, VictoryLink, Vodafone).
 
-## Quick Orientation
+## Orientation
 
 Install `Headless.Sms.Abstractions` plus one provider package. Register with `AddHeadlessSms(setup => setup.Use…())` — at most one **default** `Use*` provider per call (the default is optional; a named-only host is supported), plus any number of **named** senders via `setup.AddNamed(name, i => i.Use…())`. Code against `ISmsSender` (single recipient) or `IBulkSmsSender` (multi-recipient, where supported) for the default; resolve named senders with `ISmsSenderProvider.GetSender("name")` or `[FromKeyedServices("name")] ISmsSender`. Never reference provider-specific sender types in application code — swap providers by changing DI registration only.
 
@@ -114,7 +19,7 @@ Install `Headless.Sms.Abstractions` plus one provider package. Register with `Ad
 
 Register additional **named** senders alongside an optional default: `setup.AddNamed("otp", i => i.UseTwilio(…))`. Resolve them with `ISmsSenderProvider.GetSender("otp")` or `[FromKeyedServices("otp")] ISmsSender`. The default sender is optional; when configured it resolves as the unkeyed `ISmsSender` (with no default, the unkeyed `ISmsSender` is simply not registered). Each named sender is keyed under its name and isolates its own provider, options, HttpClient (and resilience pipeline), and backend state.
 
-## Agent Instructions
+## Agent Rules
 
 - Register at most one **default** provider per container: `services.AddHeadlessSms(setup => setup.Use…())`. The default is optional — zero defaults is allowed (a named-only host). Multiple default providers in one delegate, or a repeated `AddHeadlessSms` on the same `IServiceCollection`, throws `InvalidOperationException` at registration time. The available default `Use*` calls are `UseTwilio`, `UseAwsSns`, `UseInfobip`, `UseCequens`, `UseConnekio`, `UseVictoryLink`, `UseVodafone`, `UseDevelopment`, `UseNoop` — the same set is available on each named instance.
 - Add **named** senders in the same call: `setup.AddNamed("name", i => i.Use…())`. Names must be non-whitespace and ordinal-unique within the call, and each named instance must select exactly one provider — a duplicate name, whitespace name, or zero/multiple providers throws at registration time. The default sender is optional; a named-only host (no default) is supported — the unkeyed `ISmsSender` is simply not registered when no default is configured.

@@ -18,7 +18,7 @@ public sealed class HybridCacheNumericOperationsTests : TestBase
         var l2 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
         var bus = Substitute.For<IBus>();
         bus.PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(Task.CompletedTask);
+            .Returns(default(PublishReceipt));
 
         var cache = new HybridCache(
             l1,
@@ -172,7 +172,7 @@ public sealed class HybridCacheNumericOperationsTests : TestBase
         var remote = new TogglableRemoteCache(_timeProvider);
         var bus = Substitute.For<IBus>();
         bus.PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(Task.CompletedTask);
+            .Returns(default(PublishReceipt));
         var cache = new HybridCache(
             l1,
             remote,

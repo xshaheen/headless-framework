@@ -6,11 +6,15 @@ namespace Headless.Caching.Benchmarks.Infrastructure;
 
 internal sealed class NoOpBus : IBus
 {
-    public Task PublishAsync<T>(T? contentObj, CancellationToken cancellationToken = default) =>
+    public Task<PublishReceipt> PublishAsync<T>(T? contentObj, CancellationToken cancellationToken = default) =>
         PublishAsync(contentObj, options: null, cancellationToken);
 
-    public Task PublishAsync<T>(T? contentObj, PublishOptions? options, CancellationToken cancellationToken = default)
+    public Task<PublishReceipt> PublishAsync<T>(
+        T? contentObj,
+        PublishOptions? options,
+        CancellationToken cancellationToken = default
+    )
     {
-        return Task.CompletedTask;
+        return Task.FromResult(default(PublishReceipt));
     }
 }

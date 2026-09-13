@@ -5,65 +5,9 @@ packages: AuditLog.Abstractions, AuditLog.Core, AuditLog.Storage.EntityFramework
 
 # Audit Log
 
-## Table of Contents
-
-- [Quick Orientation](#quick-orientation)
-- [Agent Instructions](#agent-instructions)
-- [Core Concepts](#core-concepts)
-    - [Two flavors of audit entry](#two-flavors-of-audit-entry)
-    - [What gets captured](#what-gets-captured)
-    - [Sensitive data handling](#sensitive-data-handling)
-    - [Scope and unit-of-work](#scope-and-unit-of-work)
-    - [Field length limits](#field-length-limits)
-    - [Startup initialization](#startup-initialization)
-- [Choosing a Provider](#choosing-a-provider)
-- [Headless.AuditLog.Abstractions](#headlessauditlogabstractions)
-    - [Problem Solved](#problem-solved)
-    - [Key Features](#key-features)
-    - [Installation](#installation)
-    - [Quick Start](#quick-start)
-    - [Configuration](#configuration)
-    - [Dependencies](#dependencies)
-    - [Side Effects](#side-effects)
-- [Headless.AuditLog.Core](#headlessauditlogcore)
-    - [Problem Solved](#problem-solved-1)
-    - [Key Features](#key-features-1)
-    - [Installation](#installation-1)
-    - [Quick Start](#quick-start-1)
-    - [Configuration](#configuration-1)
-    - [Dependencies](#dependencies-1)
-    - [Side Effects](#side-effects-1)
-- [Headless.AuditLog.Storage.EntityFramework](#headlessauditlogstorageentityframework)
-    - [Problem Solved](#problem-solved-2)
-    - [Key Features](#key-features-2)
-    - [Design Notes](#design-notes)
-    - [Installation](#installation-2)
-    - [Quick Start](#quick-start-2)
-    - [Configuration](#configuration-2)
-    - [Dependencies](#dependencies-2)
-    - [Side Effects](#side-effects-2)
-- [Headless.AuditLog.Storage.PostgreSql](#headlessauditlogstoragepostgresql)
-    - [Problem Solved](#problem-solved-3)
-    - [Key Features](#key-features-3)
-    - [Design Notes](#design-notes-1)
-    - [Installation](#installation-3)
-    - [Quick Start](#quick-start-3)
-    - [Configuration](#configuration-3)
-    - [Dependencies](#dependencies-3)
-    - [Side Effects](#side-effects-3)
-- [Headless.AuditLog.Storage.SqlServer](#headlessauditlogstoragesqlserver)
-    - [Problem Solved](#problem-solved-4)
-    - [Key Features](#key-features-4)
-    - [Design Notes](#design-notes-2)
-    - [Installation](#installation-4)
-    - [Quick Start](#quick-start-4)
-    - [Configuration](#configuration-4)
-    - [Dependencies](#dependencies-4)
-    - [Side Effects](#side-effects-4)
-
 > Property-level audit logging for entity mutations and explicit business events (PII reveals, cross-tenant access, etc.). EF Core implementation persists audit rows atomically with the originating `SaveChanges`. Raw ADO.NET providers (PostgreSql, SqlServer) create and own the audit table at host startup.
 
-## Quick Orientation
+## Orientation
 
 Install `Headless.AuditLog.Core` plus exactly one storage provider:
 
@@ -77,7 +21,7 @@ Install `Headless.AuditLog.Core` plus exactly one storage provider:
 
 Code against `IAuditLog<TContext>` and `IReadAuditLog<TContext>` — never reference provider types directly.
 
-## Agent Instructions
+## Agent Rules
 
 - Configure automatic capture in the EF model: `modelBuilder.Entity<TEntity>().IsAudited()` opts in, `ExcludeFromAudit()` opts an entity or property out, and `IsAuditSensitive(...)` marks a property as sensitive. These methods live in `Headless.EntityFramework`; domain entities need no audit marker or attributes.
 - Treat entity policy as tri-state. Explicit inclusion or exclusion wins; an unconfigured entity follows `AuditLogOptions.AuditByDefault`. Owned entries inherit eligibility from their root owner, and derived types inherit the nearest configured base policy unless overridden.

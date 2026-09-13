@@ -8,6 +8,7 @@ Provides durable raw ADO.NET message storage using SQL Server with automatic sch
 
 ## Key Features
 
+- `IMessageRevocationStorage` atomically deletes a scheduled row before reservation, fenced by storage version, terminal status, and retry state. Claimed but unreserved rows remain revocable; deleted rows cannot be restored by reservation or shutdown flush.
 - **Provider-neutral storage**: no EF Core or commit-coordination dependency
 - **Schema Bootstrap**: Creates the final table and index shape directly, including durable bus/queue intent columns and `([StatusName],[Added])` dashboard indexes; it does not carry legacy migration DDL
 - **GUID Row IDs**: Message storage identifiers come from the `SqlServer` keyed `IGuidGenerator` and are persisted as SQL Server `uniqueidentifier` columns
@@ -59,11 +60,22 @@ builder.Services.AddHeadlessMessaging(options =>
 
 ## Configuration
 
+Known orphans use a separate bounded probe batch and recover only when the exact consumer identity, logical contract name/version, and lane return. They do not expire automatically. Unclaimed orphans permit Hold/ReleaseHold and unheld Purge; live claims block those actions, and ForceReprocess remains terminal-only. A hold protects retention and purge but does not stop recovery.
+
+History retention uses the shared `MessagingOptions` defaults: cleanup receipts/audits 7 days each, operator receipts 30 days, and operator audits 90 days. All four are positive configurable minimum residence durations. Audit references can extend receipt lifetime; deleting history does not release holds. SQL Server database time controls history age. Initialization adds the history-selection and audit-reference indexes idempotently. See the [Core lifecycle and retention contract](https://www.nuget.org/packages/Headless.Messaging.Core#readme-body-tab) for probe settings, replay limits, rollout effects, and collector pacing.
+
+On an upgraded schema, the history tables (`InboxOperationReceipts`, `InboxAudit`) already hold their backlog. The first startup builds their history indexes offline, one command per index. Because `ONLINE = ON` depends on the SQL Server edition, the builds do not use it. A build holds a shared lock that blocks writes to that history table until it finishes. It runs while the initializer lock is held, and inbox readiness is published only after it finishes. Other replicas wait on that lock rather than fail. On a large backlog, pre-create the indexes during a maintenance window or allow for a longer first startup. `DdlCommandTimeout` bounds these builds and the lock wait.
+
 ```csharp
 options.UseSqlServer(config =>
 {
     config.ConnectionString = "connection_string";
     config.Schema = "messaging";
+
+    // Optional: cap schema-init DDL that scales with table size (history-index builds and the
+    // initializer-lock wait). Default null = no timeout (wait indefinitely), decoupled from the OLTP
+    // MessagingOptions.CommandTimeout so an upgrade index build is not killed at ~30s on every boot.
+    config.DdlCommandTimeout = TimeSpan.FromMinutes(30);
 });
 ```
 

@@ -10,6 +10,64 @@ namespace Tests.Configuration;
 
 public sealed class MessagingOptionsValidationTests : TestBase
 {
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(1)]
+    public void should_validate_all_history_retentions_as_positive_without_default_floor(int days)
+    {
+        var options = new MessagingOptions
+        {
+            InboxCleanupReceiptRetention = TimeSpan.FromDays(days),
+            InboxCleanupAuditRetention = TimeSpan.FromDays(days),
+            InboxOperatorReceiptRetention = TimeSpan.FromDays(days),
+            InboxOperatorAuditRetention = TimeSpan.FromDays(days),
+        };
+        var result = new MessagingOptionsValidator().Validate(options);
+        var properties = new[]
+        {
+            nameof(options.InboxCleanupReceiptRetention),
+            nameof(options.InboxCleanupAuditRetention),
+            nameof(options.InboxOperatorReceiptRetention),
+            nameof(options.InboxOperatorAuditRetention),
+        };
+        foreach (var property in properties)
+        {
+            result
+                .Errors.Exists(x => string.Equals(x.PropertyName, property, StringComparison.Ordinal))
+                .Should()
+                .Be(days <= 0);
+        }
+    }
+
+    [Fact]
+    public void should_default_history_retention_to_finite_independent_lifetimes()
+    {
+        var options = new MessagingOptions();
+        options.InboxCleanupReceiptRetention.Should().Be(TimeSpan.FromDays(7));
+        options.InboxCleanupAuditRetention.Should().Be(TimeSpan.FromDays(7));
+        options.InboxOperatorReceiptRetention.Should().Be(TimeSpan.FromDays(30));
+        options.InboxOperatorAuditRetention.Should().Be(TimeSpan.FromDays(90));
+    }
+
+    [Theory]
+    [InlineData(0, 10)]
+    [InlineData(-1, 10)]
+    [InlineData(300, 0)]
+    [InlineData(300, -1)]
+    [InlineData(300, 100001)]
+    public void should_reject_invalid_orphan_probe_options(int seconds, int batchSize)
+    {
+        var result = new MessagingOptionsValidator().Validate(
+            new MessagingOptions
+            {
+                OrphanProbeInterval = TimeSpan.FromSeconds(seconds),
+                OrphanProbeBatchSize = batchSize,
+            }
+        );
+        result.IsValid.Should().BeFalse();
+    }
+
     [Fact]
     public void should_validate_topic_name_length()
     {

@@ -20,6 +20,179 @@ namespace Tests.Internal;
 public sealed class MessagePublisherDeliveryTests : TestBase
 {
     [Theory]
+    [InlineData(MessageLane.Bus, DeliveryMode.Direct, false, false, null)]
+    [InlineData(MessageLane.Queue, DeliveryMode.Direct, false, false, "caller-id")]
+    [InlineData(MessageLane.Bus, DeliveryMode.Auto, false, false, "caller-id")]
+    [InlineData(MessageLane.Queue, DeliveryMode.Auto, false, false, null)]
+    [InlineData(MessageLane.Bus, DeliveryMode.Durable, false, false, null)]
+    [InlineData(MessageLane.Queue, DeliveryMode.Durable, false, false, "caller-id")]
+    [InlineData(MessageLane.Bus, DeliveryMode.Auto, true, false, "caller-id")]
+    [InlineData(MessageLane.Queue, DeliveryMode.Auto, true, false, null)]
+    [InlineData(MessageLane.Bus, DeliveryMode.Auto, false, true, null)]
+    [InlineData(MessageLane.Queue, DeliveryMode.Auto, false, true, "caller-id")]
+    public async Task should_return_the_accepted_message_identity_and_actual_storage_handle(
+        MessageLane lane,
+        DeliveryMode mode,
+        bool coordinated,
+        bool scheduled,
+        string? messageId
+    )
+    {
+        var stack = new CommitScopeStack();
+        await using var scope = new CommitScopeFactory(stack).Begin(new EmptyServiceProvider(), []);
+        await using var transaction = Substitute.For<System.Data.Common.DbTransaction>();
+        var resolver = Substitute.For<IDeliveryCoordinationResolver>();
+        resolver.Resolve(scope.Coordinator).Returns(DeliveryCoordination.Compatible(scope.Coordinator, transaction));
+        var now = new DateTimeOffset(2026, 9, 12, 12, 0, 0, TimeSpan.Zero);
+        await using var harness = _CreateHarness(
+            new FakeTimeProvider(now),
+            currentCommitCoordinator: coordinated ? stack : null,
+            coordinationResolver: () => resolver
+        );
+        MediumMessage? stored = null;
+        var storageId = Guid.NewGuid();
+#pragma warning disable AsyncFixer04 // Substitute configuration completes before the awaited publish.
+        harness
+            .Storage.StoreMessageAsync(
+                Arg.Any<string>(),
+                Arg.Any<MediumMessage>(),
+                Arg.Any<System.Data.Common.DbTransaction?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(call =>
+            {
+                stored = call.ArgAt<MediumMessage>(1);
+                stored.StorageId = storageId;
+                return ValueTask.FromResult(stored);
+            });
+        harness
+            .Storage.StoreScheduledMessageAsync(
+                Arg.Any<string>(),
+                Arg.Any<MediumMessage>(),
+                Arg.Any<DateTimeOffset>(),
+                Arg.Any<System.Data.Common.DbTransaction?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(call =>
+            {
+                stored = call.ArgAt<MediumMessage>(1);
+                stored.StorageId = storageId;
+                return ValueTask.FromResult(stored);
+            });
+#pragma warning restore AsyncFixer04
+        DateTimeOffset? scheduledAt = scheduled ? now.AddMinutes(5) : null;
+        IBus bus = new Bus(harness.Publisher);
+        IQueue queue = new Queue(harness.Publisher);
+
+        var receipt =
+            lane == MessageLane.Bus
+                ? await bus.PublishAsync(
+                    new DeliveryMessage("receipt"),
+                    new PublishOptions
+                    {
+                        DeliveryMode = mode,
+                        MessageId = messageId,
+                        ScheduledAt = scheduledAt,
+                    },
+                    AbortToken
+                )
+                : await queue.EnqueueAsync(
+                    new DeliveryMessage("receipt"),
+                    new QueueOptions
+                    {
+                        DeliveryMode = mode,
+                        MessageId = messageId,
+                        ScheduledAt = scheduledAt,
+                    },
+                    AbortToken
+                );
+
+        receipt.MessageId.Should().NotBeNullOrEmpty();
+        if (messageId is not null)
+        {
+            receipt.MessageId.Should().Be(messageId);
+        }
+
+        if (mode == DeliveryMode.Durable || coordinated || scheduled)
+        {
+            stored.Should().NotBeNull();
+            receipt.StorageId.Should().Be(storageId);
+            receipt.MessageId.Should().Be(stored!.Origin.Headers[Headers.MessageId]);
+            stored.Lane.Should().Be(lane);
+            harness.TransportMessages.Should().BeEmpty();
+            harness.Storage.ReceivedCalls().Should().ContainSingle();
+        }
+        else
+        {
+            receipt.StorageId.Should().BeNull();
+            receipt
+                .MessageId.Should()
+                .Be(harness.TransportMessages.Should().ContainSingle().Subject.Headers[Headers.MessageId]);
+            harness.Storage.ReceivedCalls().Should().BeEmpty();
+        }
+    }
+
+    [Theory]
+    [InlineData(MessageLane.Bus, DeliveryMode.Direct, true)]
+    [InlineData(MessageLane.Queue, DeliveryMode.Durable, true)]
+    [InlineData(MessageLane.Bus, DeliveryMode.Direct, false)]
+    [InlineData(MessageLane.Queue, DeliveryMode.Durable, false)]
+    public async Task should_preserve_suppression_and_capture_receipts_before_post_success_middleware_failures(
+        MessageLane lane,
+        DeliveryMode mode,
+        bool suppress
+    )
+    {
+        await using var harness = _CreateHarness(middleware: new ReceiptMiddleware(suppress));
+#pragma warning disable AsyncFixer04 // Substitute configuration completes before the awaited publish.
+        harness
+            .Storage.StoreMessageAsync(
+                Arg.Any<string>(),
+                Arg.Any<MediumMessage>(),
+                Arg.Any<System.Data.Common.DbTransaction?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(call =>
+            {
+                var stored = call.ArgAt<MediumMessage>(1);
+                stored.StorageId = Guid.NewGuid();
+                return ValueTask.FromResult(stored);
+            });
+#pragma warning restore AsyncFixer04
+        var receipt = await harness.Publisher.PublishAsync(
+            lane,
+            new DeliveryMessage("middleware"),
+            new PublishOptions { DeliveryMode = mode, MessageId = "caller-id" },
+            AbortToken
+        );
+
+        if (suppress)
+        {
+            receipt.MessageId.Should().BeNull();
+            receipt.StorageId.Should().BeNull();
+            harness.TransportMessages.Should().BeEmpty();
+            harness.Storage.ReceivedCalls().Should().BeEmpty();
+        }
+        else
+        {
+            receipt.MessageId.Should().Be("middleware-id");
+            if (mode == DeliveryMode.Durable)
+            {
+                receipt
+                    .StorageId.Should()
+                    .Be(harness.Dispatcher.CommittedMessages.Should().ContainSingle().Subject.StorageId);
+            }
+            else
+            {
+                receipt.StorageId.Should().BeNull();
+                receipt
+                    .MessageId.Should()
+                    .Be(harness.TransportMessages.Should().ContainSingle().Subject.Headers[Headers.MessageId]);
+            }
+        }
+    }
+
+    [Theory]
     [InlineData(MessageLane.Bus)]
     [InlineData(MessageLane.Queue)]
     public async Task should_use_auto_by_default_outside_coordination(MessageLane lane)
@@ -65,7 +238,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         IQueue queue = new Queue(harness.Publisher);
         var message = new DeliveryMessage("invalid");
 
-        Func<Task> publish = () =>
+        Func<Task<PublishReceipt>> publish = () =>
             lane == MessageLane.Bus
                 ? bus.PublishAsync(
                     message,
@@ -135,7 +308,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         IBus bus = new Bus(harness.Publisher);
         IQueue queue = new Queue(harness.Publisher);
         var message = new DeliveryMessage("fluent");
-        Func<Task> publish = () =>
+        Func<Task<PublishReceipt>> publish = () =>
             lane == MessageLane.Bus
                 ? bus.PublishAsync(
                     message,
@@ -187,6 +360,96 @@ public sealed class MessagePublisherDeliveryTests : TestBase
             stored.Origin.Headers[Headers.TenantId].Should().Be("tenant");
             stored.Origin.Headers[Headers.MessageId].Should().Be("id");
         }
+        harness.TransportMessages.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(MessageLane.Bus, 3)]
+    [InlineData(MessageLane.Queue, 3)]
+    [InlineData(MessageLane.Bus, -2)]
+    [InlineData(MessageLane.Queue, -2)]
+    public async Task should_publish_an_absolute_schedule_without_a_relative_delay(MessageLane lane, int offsetHours)
+    {
+        var now = new DateTimeOffset(2026, 7, 26, 12, 0, 0, TimeSpan.Zero);
+        var scheduledAt = now.AddHours(offsetHours);
+        await using var harness = _CreateHarness(new FakeTimeProvider(now));
+#pragma warning disable AsyncFixer04 // Substitute setup is synchronous; the publish is awaited before disposal.
+        harness
+            .Storage.StoreScheduledMessageAsync(
+                Arg.Any<string>(),
+                Arg.Any<MediumMessage>(),
+                Arg.Any<DateTimeOffset>(),
+                Arg.Any<System.Data.Common.DbTransaction?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(call =>
+            {
+                call.ArgAt<DateTimeOffset>(2).Should().Be(scheduledAt);
+                var stored = call.ArgAt<MediumMessage>(1);
+                stored.StorageId = Guid.NewGuid();
+                return ValueTask.FromResult(stored);
+            });
+#pragma warning restore AsyncFixer04
+        IBus bus = new Bus(harness.Publisher);
+        IQueue queue = new Queue(harness.Publisher);
+        var message = new DeliveryMessage("absolute");
+
+        if (lane == MessageLane.Bus)
+        {
+            await bus.PublishAsync(message, options => options.WithScheduledAt(scheduledAt), AbortToken);
+        }
+        else
+        {
+            await queue.EnqueueAsync(message, options => options.WithScheduledAt(scheduledAt), AbortToken);
+        }
+
+        // Assert the scheduled-store call itself: ExpiresAt is stamped by the real provider, so a substituted
+        // storage never populates it and asserting on it would prove nothing here.
+        await harness
+            .Storage.Received(1)
+            .StoreScheduledMessageAsync(
+                Arg.Any<string>(),
+                Arg.Any<MediumMessage>(),
+                scheduledAt,
+                Arg.Any<System.Data.Common.DbTransaction?>(),
+                Arg.Any<CancellationToken>()
+            );
+        var stored = harness.Dispatcher.CommittedDelayedMessages.Should().ContainSingle().Subject;
+        stored.Lane.Should().Be(lane);
+        stored.Origin.Headers[Headers.ResolvedDeliveryMode].Should().Be(nameof(DeliveryMode.Durable));
+        // The delay header describes a relative offset that was never supplied.
+        stored.Origin.Headers.Should().NotContainKey(Headers.DelayTime);
+        harness.TransportMessages.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(MessageLane.Bus)]
+    [InlineData(MessageLane.Queue)]
+    public async Task should_reject_supplying_both_a_delay_and_an_absolute_schedule(MessageLane lane)
+    {
+        await using var harness = _CreateHarness();
+        IBus bus = new Bus(harness.Publisher);
+        IQueue queue = new Queue(harness.Publisher);
+        var message = new DeliveryMessage("both");
+        var scheduledAt = DateTimeOffset.UnixEpoch.AddYears(60);
+
+        Func<Task<PublishReceipt>> publish = () =>
+            lane == MessageLane.Bus
+                ? bus.PublishAsync(
+                    message,
+                    options => options.WithDelay(TimeSpan.FromMinutes(5)).WithScheduledAt(scheduledAt),
+                    AbortToken
+                )
+                : queue.EnqueueAsync(
+                    message,
+                    options => options.WithDelay(TimeSpan.FromMinutes(5)).WithScheduledAt(scheduledAt),
+                    AbortToken
+                );
+
+        await publish.Should().ThrowAsync<ArgumentException>();
+        harness.Storage.ReceivedCalls().Should().BeEmpty();
+        harness.Dispatcher.CommittedMessages.Should().BeEmpty();
+        harness.Dispatcher.CommittedDelayedMessages.Should().BeEmpty();
         harness.TransportMessages.Should().BeEmpty();
     }
 
@@ -591,7 +854,8 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         ISerializer? serializer = null,
         ICurrentCommitCoordinator? currentCommitCoordinator = null,
         Func<IDeliveryCoordinationResolver?>? coordinationResolver = null,
-        DeliveryMode defaultDeliveryMode = DeliveryMode.Auto
+        DeliveryMode defaultDeliveryMode = DeliveryMode.Auto,
+        IPublishMiddleware<PublishContext>? middleware = null
     )
     {
         timeProvider ??= TimeProvider.System;
@@ -647,7 +911,12 @@ public sealed class MessagePublisherDeliveryTests : TestBase
             ]),
             capabilityGate: capabilities
         );
-        var services = new ServiceCollection().BuildServiceProvider();
+        var collection = new ServiceCollection();
+        if (middleware is not null)
+        {
+            collection.AddSingleton(middleware);
+        }
+        var services = collection.BuildServiceProvider();
         var pipeline = new PublishMiddlewarePipeline(services);
         var writer = new OutboxMessageWriter(storage, dispatcher, timeProvider);
 
@@ -683,6 +952,21 @@ public sealed class MessagePublisherDeliveryTests : TestBase
             [.. transports.Values],
             services
         );
+    }
+
+    private sealed class ReceiptMiddleware(bool suppress) : IPublishMiddleware<PublishContext>
+    {
+        public async ValueTask InvokeAsync(PublishContext context, Func<ValueTask> next)
+        {
+            if (suppress)
+            {
+                return;
+            }
+
+            context.WithOptions(context.Options! with { MessageId = "middleware-id" });
+            await next();
+            throw new InvalidOperationException("Post-success middleware failure");
+        }
     }
 
     private sealed record DeliveryMessage(string Value);

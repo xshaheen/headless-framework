@@ -12,6 +12,7 @@ using Headless.Api.Identity.Normalizer;
 using Headless.Api.Identity.Schemes;
 using Headless.Api.Security.Claims;
 using Headless.Api.Security.Jwt;
+using Headless.Api.Surfaces;
 using Headless.Api.UserAgent;
 using Headless.Checks;
 using Headless.Constants;
@@ -33,6 +34,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.JsonWebTokens;
 using OpenTelemetry;
+using OpenTelemetry.Instrumentation.AspNetCore;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
@@ -301,7 +303,16 @@ public static class SetupApi
 
             if (options.OpenApi.Enabled)
             {
-                builder.Services.AddOpenApi(options.OpenApi.ConfigureOpenApi ?? (_ => { }));
+                var documentNames =
+                    options.OpenApi.SurfaceDocumentNames ?? ApiSurfaceRegistration.InferDocumentNames(builder.Services);
+                if (documentNames.Count > 0)
+                {
+                    builder.Services.AddHeadlessApiSurfaceDocuments(documentNames, options.OpenApi.ConfigureOpenApi);
+                }
+                else
+                {
+                    builder.Services.AddOpenApi(options.OpenApi.ConfigureOpenApi ?? (_ => { }));
+                }
             }
 
             if (options.HttpClient.UseServiceDiscovery)
@@ -353,6 +364,43 @@ public static class SetupApi
                 options.OpenTelemetry.ConfigureLogging?.Invoke(logging);
             });
 
+            builder
+                .Services.AddOptions<AspNetCoreTraceInstrumentationOptions>()
+                .Configure<IServiceProvider>(
+                    (instrumentation, serviceProvider) =>
+                    {
+                        var otel = options.OpenTelemetry;
+                        instrumentation.EnableAspNetCoreSignalRSupport = true;
+                        instrumentation.RecordException = otel.RecordException;
+
+                        // Capture otel by reference so MapHeadlessEndpoints() can replace
+                        // SkipOperationalEndpointFunc with a delegate built from the actual
+                        // configured paths before any requests start flowing.
+                        instrumentation.Filter = otel.Filter ?? (context => !otel.SkipOperationalEndpointFunc(context));
+
+                        // Request scopes are disposed before response enrichment. Capture the host snapshot.
+                        var registry = serviceProvider.GetService<Surfaces.ApiSurfaceRegistry>();
+                        if (registry is not null)
+                        {
+                            instrumentation.EnrichWithHttpResponse = (activity, response) =>
+                            {
+                                var context = response.HttpContext;
+                                var endpoint = context.GetEndpoint();
+                                var metadata = endpoint?.Metadata.GetMetadata<Surfaces.IApiSurfaceMetadata>();
+                                activity.SetTag(
+                                    "headless.api.surface.name",
+                                    metadata is not null ? registry.GetRequiredSurface(metadata.SurfaceName).SurfaceName
+                                        : endpoint is null ? "unknown"
+                                        : "unclassified"
+                                );
+                            };
+                        }
+
+                        // User hook runs LAST so it can override Filter, add enrichers, etc.
+                        otel.ConfigureAspNetCoreInstrumentation?.Invoke(instrumentation);
+                    }
+                );
+
             var openTelemetry = builder
                 .Services.AddOpenTelemetry()
                 .ConfigureResource(resource =>
@@ -381,21 +429,7 @@ public static class SetupApi
                 {
                     tracing
                         .AddSource(builder.Environment.ApplicationName)
-                        .AddAspNetCoreInstrumentation(instrumentation =>
-                        {
-                            var otel = options.OpenTelemetry;
-                            instrumentation.EnableAspNetCoreSignalRSupport = true;
-                            instrumentation.RecordException = otel.RecordException;
-
-                            // Capture otel by reference so MapHeadlessEndpoints() can replace
-                            // SkipOperationalEndpointFunc with a delegate built from the actual
-                            // configured paths before any requests start flowing.
-                            instrumentation.Filter =
-                                otel.Filter ?? (context => !otel.SkipOperationalEndpointFunc(context));
-
-                            // User hook runs LAST so it can override Filter, add enrichers, etc.
-                            otel.ConfigureAspNetCoreInstrumentation?.Invoke(instrumentation);
-                        })
+                        .AddAspNetCoreInstrumentation()
                         .AddHttpClientInstrumentation()
                         .AddSource(_HeadlessWildcardSourceName);
 

@@ -119,6 +119,10 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
     private static void _SetupReceivedMessages(IDataStorage dataStorage, params MediumMessage[] messages)
     {
         dataStorage
+            .GetReceivedInboxOrphansOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
+
+        dataStorage
             .GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>(messages));
 

@@ -16,7 +16,7 @@ public static class BusExtensions
     {
         /// <summary>Publishes a nullable message payload with a freshly built options snapshot.</summary>
         /// <exception cref="ArgumentNullException">The bus or configuration callback is null.</exception>
-        public Task PublishAsync<T>(
+        public Task<PublishReceipt> PublishAsync<T>(
             T? contentObj,
             Action<PublishOptionsBuilder> configure,
             CancellationToken cancellationToken = default

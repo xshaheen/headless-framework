@@ -5,96 +5,15 @@ packages: DistributedLocks.Abstractions, DistributedLocks.Core, DistributedLocks
 
 # Distributed Locks
 
-## Table of Contents
-
-- [Quick Orientation](#quick-orientation)
-- [Agent Instructions](#agent-instructions)
-- [Core Concepts](#core-concepts)
-    - [Efficiency Locks](#efficiency-locks)
-    - [Correctness Locks](#correctness-locks)
-    - [Fencing Tokens](#fencing-tokens)
-    - [Composite Acquisition](#composite-acquisition)
-    - [Lease Lifecycle Monitoring](#lease-lifecycle-monitoring)
-    - [Connection-Scoped Locks (Database Engine)](#connection-scoped-locks-database-engine)
-    - [Messaging Wake-ups](#messaging-wake-ups)
-    - [Observability](#observability)
-- [Reader-Writer Locks](#reader-writer-locks)
-    - [Reader-Writer Composite Acquisition](#reader-writer-composite-acquisition)
-- [Semaphores](#semaphores)
-    - [Semaphore Composite Acquisition](#semaphore-composite-acquisition)
-- [Choosing a Provider](#choosing-a-provider)
-- [Headless.DistributedLocks.Abstractions](#headlessdistributedlocksabstractions)
-    - [Problem Solved](#problem-solved)
-    - [Key Features](#key-features)
-    - [Design Notes](#design-notes)
-    - [Installation](#installation)
-    - [Quick Start](#quick-start)
-    - [Configuration](#configuration)
-    - [Dependencies](#dependencies)
-    - [Side Effects](#side-effects)
-- [Headless.DistributedLocks.Core](#headlessdistributedlockscore)
-    - [Problem Solved](#problem-solved-1)
-    - [Key Features](#key-features-1)
-    - [Design Notes](#design-notes-1)
-    - [Installation](#installation-1)
-    - [Quick Start](#quick-start-1)
-    - [Configuration](#configuration-1)
-    - [Dependencies](#dependencies-1)
-    - [Side Effects](#side-effects-1)
-- [Headless.DistributedLocks.Core.Database](#headlessdistributedlockscoredatabase)
-    - [Problem Solved](#problem-solved-2)
-    - [Key Features](#key-features-2)
-    - [Design Notes](#design-notes-2)
-    - [Installation](#installation-2)
-    - [Quick Start](#quick-start-2)
-    - [Configuration](#configuration-2)
-    - [Dependencies](#dependencies-2)
-    - [Side Effects](#side-effects-2)
-- [Headless.DistributedLocks.InMemory](#headlessdistributedlocksinmemory)
-    - [Problem Solved](#problem-solved-3)
-    - [Key Features](#key-features-3)
-    - [Design Notes](#design-notes-3)
-    - [Installation](#installation-3)
-    - [Quick Start](#quick-start-3)
-    - [Configuration](#configuration-3)
-    - [Dependencies](#dependencies-3)
-    - [Side Effects](#side-effects-3)
-- [Headless.DistributedLocks.PostgreSql](#headlessdistributedlockspostgresql)
-    - [Problem Solved](#problem-solved-4)
-    - [Key Features](#key-features-4)
-    - [Design Notes](#design-notes-4)
-    - [Installation](#installation-4)
-    - [Quick Start](#quick-start-4)
-    - [Configuration](#configuration-4)
-    - [Dependencies](#dependencies-4)
-    - [Side Effects](#side-effects-4)
-- [Headless.DistributedLocks.Redis](#headlessdistributedlocksredis)
-    - [Problem Solved](#problem-solved-5)
-    - [Key Features](#key-features-5)
-    - [Installation](#installation-5)
-    - [Quick Start](#quick-start-5)
-    - [Configuration](#configuration-5)
-    - [Dependencies](#dependencies-5)
-    - [Side Effects](#side-effects-5)
-- [Headless.DistributedLocks.SqlServer](#headlessdistributedlockssqlserver)
-    - [Problem Solved](#problem-solved-6)
-    - [Key Features](#key-features-6)
-    - [Design Notes](#design-notes-5)
-    - [Installation](#installation-6)
-    - [Quick Start](#quick-start-6)
-    - [Configuration](#configuration-6)
-    - [Dependencies](#dependencies-6)
-    - [Side Effects](#side-effects-6)
-
 > Provider-agnostic distributed locking with automatic renewal, expiration, explicit release, and pluggable storage backends.
 
-## Quick Orientation
+## Orientation
 
 Use `IDistributedLock` when only one worker should own a named resource at a time. `TryAcquireAsync(...)` returns `null` on timeout; `AcquireAsync(...)` throws `LockAcquisitionTimeoutException` on timeout. Rate limiting is out of scope for this domain — and the framework does not ship a rate-limiting package. Use `Microsoft.AspNetCore.RateLimiting` (in-process) or `Polly.RateLimiting` + a community Redis-backed `RateLimiter` (distributed) when admission control is needed.
 
 Use `IDistributedReadWriteLock` when concurrent readers are safe and writers need exclusivity. Use `IDistributedSemaphoreProvider.CreateSemaphore(resource, maxCount)` when up to N holders may work concurrently. Redis ships mutex, reader-writer, and semaphore support. Postgres ships mutex and reader-writer support over advisory locks; it does not provide semaphores. In-process scenarios can use `Headless.DistributedLocks.InMemory`, which ships all three primitives but is process-local and not distributed.
 
-## Agent Instructions
+## Agent Rules
 
 - Code against `IDistributedLock` from `Headless.DistributedLocks.Abstractions`; do not inject Redis storage types into application services.
 - Use `Headless.DistributedLocks.InMemory` only for tests, local development, or deliberately single-instance apps. It is not a cross-process lock.

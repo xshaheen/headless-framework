@@ -18,7 +18,7 @@ public sealed class HybridCacheBackgroundDistributedOperationsTests : TestBase
         var publisher = Substitute.For<IBus>();
         publisher
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(Task.CompletedTask);
+            .Returns(default(PublishReceipt));
         return publisher;
     }
 
@@ -286,11 +286,14 @@ public sealed class HybridCacheBackgroundDistributedOperationsTests : TestBase
         var publisher = Substitute.For<IBus>();
         publisher
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(async _ =>
-            {
-                publishStarted.TrySetResult();
-                await publishGate.Task;
-            });
+            .Returns(
+                async Task<PublishReceipt> (_) =>
+                {
+                    publishStarted.TrySetResult();
+                    await publishGate.Task;
+                    return default;
+                }
+            );
 
         var cache = new HybridCache(
             l1,

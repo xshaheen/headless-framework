@@ -30,7 +30,7 @@ public sealed class HybridCacheTagAutoRecoveryTests : TestBase
         var publisher = Substitute.For<IBus>();
         publisher
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(Task.CompletedTask);
+            .Returns(default(PublishReceipt));
 
         var cache = new HybridCache(l1, l2, publisher, options, timeProvider: _timeProvider);
 

@@ -5,176 +5,9 @@ packages: Messaging.Abstractions, Messaging.Bus.Abstractions, Messaging.Queue.Ab
 
 # Messaging
 
-## Table of Contents
-
-- [Quick Orientation](#quick-orientation)
-- [Agent Instructions](#agent-instructions)
-- [Core Concepts](#core-concepts)
-- [Choosing a Provider](#choosing-a-provider)
-- [Provider Capabilities](#provider-capabilities)
-- [Headless.Messaging.Abstractions](#headlessmessagingabstractions)
-    - [Problem Solved](#problem-solved)
-    - [Key Features](#key-features)
-    - [Design Notes](#design-notes)
-    - [Installation](#installation)
-    - [Quick Start](#quick-start)
-    - [Configuration](#configuration)
-    - [Dependencies](#dependencies)
-    - [Side Effects](#side-effects)
-- [Headless.Messaging.Bus.Abstractions](#headlessmessagingbusabstractions)
-    - [Problem Solved](#problem-solved-1)
-    - [Key Features](#key-features-1)
-    - [Installation](#installation-1)
-    - [Quick Start](#quick-start-1)
-    - [Configuration](#configuration-1)
-    - [Dependencies](#dependencies-1)
-    - [Side Effects](#side-effects-1)
-- [Headless.Messaging.Queue.Abstractions](#headlessmessagingqueueabstractions)
-    - [Problem Solved](#problem-solved-2)
-    - [Key Features](#key-features-2)
-    - [Installation](#installation-2)
-    - [Quick Start](#quick-start-2)
-    - [Configuration](#configuration-2)
-    - [Dependencies](#dependencies-2)
-    - [Side Effects](#side-effects-2)
-- [Headless.Messaging.Core](#headlessmessagingcore)
-    - [Problem Solved](#problem-solved-3)
-    - [Key Features](#key-features-3)
-    - [Design Notes](#design-notes-1)
-    - [Installation](#installation-3)
-    - [Quick Start](#quick-start-3)
-    - [Configuration](#configuration-3)
-    - [Dependencies](#dependencies-3)
-    - [Side Effects](#side-effects-3)
-- [Headless.Messaging.Dashboard](#headlessmessagingdashboard)
-    - [Problem Solved](#problem-solved-4)
-    - [Key Features](#key-features-4)
-    - [Design Notes](#design-notes-2)
-    - [Installation](#installation-4)
-    - [Quick Start](#quick-start-4)
-    - [Configuration](#configuration-4)
-    - [Dependencies](#dependencies-4)
-    - [Side Effects](#side-effects-4)
-- [Headless.Messaging.Dashboard.K8s](#headlessmessagingdashboardk8s)
-    - [Problem Solved](#problem-solved-5)
-    - [Key Features](#key-features-5)
-    - [Installation](#installation-5)
-    - [Quick Start](#quick-start-5)
-    - [Configuration](#configuration-5)
-    - [Dependencies](#dependencies-5)
-    - [Side Effects](#side-effects-5)
-- [OpenTelemetry (native, in Headless.Messaging.Core)](#opentelemetry-native-in-headlessmessagingcore)
-    - [Problem Solved](#problem-solved-6)
-    - [Key Features](#key-features-6)
-    - [Design Notes](#design-notes-3)
-    - [Span attributes and toggles](#span-attributes-and-toggles)
-    - [Quick Start](#quick-start-6)
-- [Headless.Messaging.Aws](#headlessmessagingaws)
-    - [Problem Solved](#problem-solved-7)
-    - [Key Features](#key-features-7)
-    - [Design Notes](#design-notes-4)
-    - [Installation](#installation-7)
-    - [Quick Start](#quick-start-7)
-    - [Configuration](#configuration-7)
-    - [Dependencies](#dependencies-7)
-    - [Side Effects](#side-effects-7)
-- [Headless.Messaging.AzureServiceBus](#headlessmessagingazureservicebus)
-    - [Problem Solved](#problem-solved-8)
-    - [Key Features](#key-features-8)
-    - [Design Notes](#design-notes-5)
-    - [Installation](#installation-8)
-    - [Quick Start](#quick-start-8)
-    - [Configuration](#configuration-8)
-    - [Dependencies](#dependencies-8)
-    - [Side Effects](#side-effects-8)
-- [Headless.Messaging.InMemory](#headlessmessaginginmemory)
-    - [Problem Solved](#problem-solved-9)
-    - [Key Features](#key-features-9)
-    - [Installation](#installation-9)
-    - [Quick Start](#quick-start-9)
-    - [Configuration](#configuration-9)
-    - [Dependencies](#dependencies-9)
-    - [Side Effects](#side-effects-9)
-- [Headless.Messaging.Storage.InMemory](#headlessmessagingstorageinmemory)
-    - [Problem Solved](#problem-solved-10)
-    - [Key Features](#key-features-10)
-    - [Installation](#installation-10)
-    - [Quick Start](#quick-start-10)
-    - [Configuration](#configuration-10)
-    - [Dependencies](#dependencies-10)
-    - [Side Effects](#side-effects-10)
-- [Headless.Messaging.Kafka](#headlessmessagingkafka)
-    - [Problem Solved](#problem-solved-11)
-    - [Key Features](#key-features-11)
-    - [Design Notes](#design-notes-6)
-    - [Installation](#installation-11)
-    - [Quick Start](#quick-start-11)
-    - [Configuration](#configuration-11)
-    - [Dependencies](#dependencies-11)
-    - [Side Effects](#side-effects-11)
-- [Headless.Messaging.Nats](#headlessmessagingnats)
-    - [Problem Solved](#problem-solved-12)
-    - [Key Features](#key-features-12)
-    - [Design Notes](#design-notes-7)
-    - [Installation](#installation-12)
-    - [Quick Start](#quick-start-12)
-    - [Configuration](#configuration-12)
-    - [Dependencies](#dependencies-12)
-    - [Side Effects](#side-effects-12)
-- [Headless.Messaging.Pulsar](#headlessmessagingpulsar)
-    - [Problem Solved](#problem-solved-13)
-    - [Key Features](#key-features-13)
-    - [Installation](#installation-13)
-    - [Quick Start](#quick-start-13)
-    - [Configuration](#configuration-13)
-    - [Dependencies](#dependencies-13)
-    - [Side Effects](#side-effects-13)
-- [Headless.Messaging.RabbitMq](#headlessmessagingrabbitmq)
-    - [Problem Solved](#problem-solved-14)
-    - [Key Features](#key-features-14)
-    - [Design Notes](#design-notes-8)
-    - [Installation](#installation-14)
-    - [Quick Start](#quick-start-14)
-    - [Configuration](#configuration-14)
-    - [Dependencies](#dependencies-14)
-    - [Side Effects](#side-effects-14)
-- [Headless.Messaging.Redis](#headlessmessagingredis)
-    - [Problem Solved](#problem-solved-15)
-    - [Key Features](#key-features-15)
-    - [Installation](#installation-15)
-    - [Quick Start](#quick-start-15)
-    - [Configuration](#configuration-15)
-    - [Dependencies](#dependencies-15)
-    - [Side Effects](#side-effects-15)
-- [Headless.Messaging.Storage.PostgreSql](#headlessmessagingstoragepostgresql)
-    - [Problem Solved](#problem-solved-16)
-    - [Key Features](#key-features-16)
-    - [Installation](#installation-16)
-    - [Quick Start](#quick-start-16)
-    - [Configuration](#configuration-16)
-    - [Dependencies](#dependencies-16)
-    - [Side Effects](#side-effects-16)
-- [Headless.Messaging.Storage.SqlServer](#headlessmessagingstoragesqlserver)
-    - [Problem Solved](#problem-solved-17)
-    - [Key Features](#key-features-17)
-    - [Installation](#installation-17)
-    - [Quick Start](#quick-start-17)
-    - [Configuration](#configuration-17)
-    - [Dependencies](#dependencies-17)
-    - [Side Effects](#side-effects-17)
-- [Headless.Messaging.Testing](#headlessmessagingtesting)
-    - [Problem Solved](#problem-solved-18)
-    - [Key Features](#key-features-18)
-    - [Design Notes](#design-notes-9)
-    - [Installation](#installation-18)
-    - [Quick Start](#quick-start-18)
-    - [Configuration](#configuration-18)
-    - [Dependencies](#dependencies-18)
-    - [Side Effects](#side-effects-18)
-
 > Messaging is the framework's durable publish/consume layer: typed bus and queue APIs, explicit message registration, storage-backed retry/outbox state, provider-native transports, dashboards, telemetry, and test harness support.
 
-## Quick Orientation
+## Orientation
 
 Use `Headless.Messaging.Core` as the composition package, then add exactly one transport provider and one storage provider for a production host. `IBus.PublishAsync` selects broadcast Bus semantics and `IQueue.EnqueueAsync` selects point-to-point Queue semantics; message contracts remain plain classes, records, or interfaces. Consumers implement `IConsume<TMessage>` and are registered from `setup.Bus` or `setup.Queue`.
 
@@ -197,7 +30,7 @@ services.AddHeadlessMessaging(setup =>
 });
 ```
 
-## Agent Instructions
+## Agent Rules
 
 - **App install pattern**: install `Messaging.Core` + exactly one transport + exactly one storage. Bootstrap fails when zero or multiple storage providers are configured. Core brings shared/bus/queue abstractions transitively for applications.
 - **Library contract pattern**: install `Messaging.Abstractions`, `Messaging.Bus.Abstractions`, or `Messaging.Queue.Abstractions` directly only when a library exposes consumers/envelopes or publisher interfaces without bootstrapping Core.
@@ -226,6 +59,8 @@ services.AddHeadlessMessaging(setup =>
 - **Inbox telemetry is bounded**: inbox counters use registered consumer identity plus finite lane, outcome, tier, and provider dimensions. Message/replay IDs, payloads, and headers are never metric labels. `setup.Instrumentation.IncludeTenantIdInMetricTags` is an explicit, default-off cardinality opt-in.
 - **Retention resets identity after purge or expiry**: terminal generations are retained for 30 days by default; configure `InboxRetention(...)` per consumer. Direct admission suppresses duplicates while its root is retained. Once that root expires or is purged, readmission creates a fresh lifecycle, even if older replay descendants remain held. Replay generation numbers are local to their lifecycle; explicit admission generations remain independent. Holds, mutations, and operation receipts target immutable generation incarnations. Relational inbox schema v4 requires lifecycle identity and separate admission/replay uniqueness; startup rejects retained older inbox rows whose lifecycle identity cannot be reconstructed safely.
 - **Poison inbox retention**: recovery of an unreadable inbox envelope records a terminal failure and clears the attempt fence in the claim transaction. Terminal retention starts from the database clock using the row's persisted retention duration. Terminal redeliveries are suppressed without deserializing or replacing the retained payload; expiry then allows fresh admission.
+- Recover missing registrations with the exact consumer identity, logical contract name/version, and lane. Known orphans use independent probe capacity and consume no handler failure retries during deferral. They do not expire automatically; holds do not pause recovery. Unclaimed orphans allow Hold/ReleaseHold and unheld Purge, while live claims block these actions and ForceReprocess remains terminal-only.
+- Configure all four inbox history residence durations before enabling collection if existing evidence needs longer retention. Receipt replay and conflict detection last only while the receipt exists; deletion permits a new evaluation of the same operation ID. Audit references can extend receipt lifetime, but history deletion never releases a hold. History ages from original timestamps using the provider clock, and changing retention affects existing records.
 - **SQL Server pooled isolation**: monitoring, expiry cleanup, and delayed scheduling preserve skip-locked behavior with `READ_COMMITTED_SNAPSHOT` on or off, even after pooled Serializable inbox admission. Received-message cleanup and delayed scheduling explicitly use ReadCommitted transactions without weakening inbox admission.
 - **Consumer lifecycle semantics**: `IConsumerLifecycle` runs per delivery on the scoped consumer instance. Do not treat it as application startup or shutdown.
 - **Consumer startup is host-cancellable**: consumer factory creation, metadata provisioning, and subscription receive the host-stopping token. Provider implementations preserve `OperationCanceledException`; do not wrap shutdown cancellation as a broker failure.
@@ -361,11 +196,16 @@ Conformance tests exercise the provider behavior; a deployment must still config
 Use matching versions of the `Headless.Messaging.*` packages. The package-family probe verifies the complete current package graph and its public API:
 
 - Publish through `IBus.PublishAsync(...)` and enqueue through `IQueue.EnqueueAsync(...)`. Both inherit `MessagingOptions.DefaultDeliveryMode` (Auto by default) when the per-call mode is unset, including omitted, null, metadata-only, and fluent options. Explicit Auto, Durable, or Direct overrides the host setting.
-- Omit an unused cancellation token, or pass `default` or `cancellationToken: default` to select the existing token overload. Supplying `default` followed by a cancellation token selects the options overload. Use `options:` and `configure:` to make record and callback intent explicit.
+- `PublishAsync` and `EnqueueAsync`, including callback overloads, now return `Task<PublishReceipt>`. Existing `await` statements and `Func<Task>` adapters can ignore the result because `Task<PublishReceipt>` derives from `Task`. Custom `IBus`/`IQueue` implementations and test doubles must update their return signatures and supply a receipt; recompile consumers for this binary API break. Use `var receipt = await bus.PublishAsync(message, cancellationToken);` to retain the returned identity.
+
+Omit an unused cancellation token, or pass `default` or `cancellationToken: default` to select the existing token overload. Supplying `default` followed by a cancellation token selects the options overload. Use `options:` and `configure:` to make record and callback intent explicit.
 - Register consumers through `setup.Bus` or `setup.Queue`; public APIs use `MessageLane`.
 - Dashboard and monitoring JSON expose `lane`, `requestedDeliveryMode`, and `resolvedDeliveryMode`. Storage uses the `IntentType` column and the `headless-intent` header with `Bus = 0` and `Queue = 1`.
-- `Delay` is a one-shot durable scheduling request: `Auto` resolves to durable capture, `Durable` remains durable, and `Direct` is rejected before side effects. The delay controls initial outbox eligibility and is removed from transport dispatch so broker recovery does not schedule it again.
+- `Delay` and `ScheduledAt` are mutually exclusive one-shot schedules. Both require storage: `Auto` resolves to durable capture, `Durable` remains durable, and `Direct` is rejected before side effects. `ScheduledAt` accepts past instants and normalizes eligibility to UTC microseconds. Dispatch is best-effort after that not-before instant, with no upper latency bound. The relative-delay header travels with the message; transports do not interpret it. Absolute-only schedules omit that header.
+- Keep `PublishReceipt.StorageId` to revoke a schedule through `IMessageRevoker.RevokeAsync` after the publishing transaction commits. Token cancellation cancels the current request; it does not revoke an accepted message. `Revoked` means deletion won before reservation, `NotFound` means no matching row in the configured storage version, and `AttemptReserved` means dispatch, terminal, or retry state prevented deletion. The last outcome is not proof of delivery. Unscheduled rows with initial-dispatch grace are also ineligible. A claim alone does not prevent revocation. Deletion retains no audit record and has no tenant filter; applications must authorize access to handles. Providers without `IMessageRevocationStorage` throw a provider-naming `NotSupportedException`.
 - Redis uses Streams for both lanes. AWS Bus subscriber groups, RabbitMQ, NATS JetStream, and Pulsar use the physical topologies above.
+
+Messaging provides not-before delivery, revocable until reservation. Keyed identity, replace, reschedule, tenant scoping, and transactional business deadlines belong to Jobs. See [Commit-Coordinated Enqueue (Atomic Enqueue)](jobs.md#commit-coordinated-enqueue-atomic-enqueue), which commits an order, a message, and a reminder job together.
 
 ### Registration Overloads
 
@@ -402,10 +242,12 @@ Defines shared messaging contracts and envelope types used by all bus, queue, co
 
 ### Key Features
 
+- `PublishReceipt` carries the resolved wire `MessageId` and nullable durable `StorageId`. Direct delivery returns no storage handle. Middleware suppression before terminal publication returns both values null. A coordinated receipt remains subject to transaction commit or rollback and never implies consumer completion.
 - `IConsume<TMessage>` consumer contract.
-- `MessageOptions` base options, including headers, correlation, delay, message id, message type, and tenant id.
+- `MessageOptions` base options, including headers, correlation, mutually exclusive `Delay` and `ScheduledAt`, message id, message type, and tenant id.
+- `IMessageRevoker` deletes a scheduled row by `PublishReceipt.StorageId` before its first dispatch reservation. It returns `Revoked`, `NotFound`, or `AttemptReserved`, retains no audit record, and is not tenant-scoped. Use Jobs for keyed, replaceable, tenant-scoped, or transactional deadlines.
 - `MessageOptions.SuppressAmbientBusinessContext` preserves captured business metadata by disabling ambient correlation, causation, and tenant defaults. It defaults to `false`; explicit options, registered contract/selector resolution, and diagnostic trace propagation remain unchanged. Required tenancy still rejects a null explicit tenant when suppression is enabled.
-- `DeliveryMode.Auto` captures under compatible coordination, sends directly with no coordination, and rejects an active incompatible boundary. The host default is `Auto`; configure `setup.Options.DefaultDeliveryMode` to change it. `Durable` always persists first. `Direct` bypasses storage and any ambient coordination boundary and cannot be combined with `Delay`.
+- `DeliveryMode.Auto` captures under compatible coordination, sends directly with no coordination, and rejects an active incompatible boundary. The host default is `Auto`; configure `setup.Options.DefaultDeliveryMode` to change it. `Durable` always persists first. `Direct` bypasses storage and any ambient coordination boundary and cannot be combined with `Delay` or `ScheduledAt`.
 - `MessageHeader`, `Headers`, `TransportMessage`, and broker address primitives.
 - Common transport pause/resume and retry/backoff abstractions.
 
@@ -453,9 +295,10 @@ Gives application code a compile-time bus surface for publish/subscribe delivery
 
 ### Key Features
 
+- `PublishReceipt` carries the resolved wire `MessageId` and nullable durable `StorageId`. Direct delivery returns no storage handle. Middleware suppression before terminal publication returns both values null. A coordinated receipt remains subject to transaction commit or rollback and never implies consumer completion.
 - `IBus` is the only bus publisher; an unset `PublishOptions.DeliveryMode` inherits `MessagingOptions.DefaultDeliveryMode`, which defaults to Auto. Explicit modes override that setting.
 - Durable delivery persists messages first, then drains them through the configured bus transport.
-- `PublishOptions.Delay` schedules durable bus delivery.
+- `PublishOptions.Delay` or `PublishOptions.ScheduledAt` schedules durable bus delivery. Supply one scheduling form. `Auto` upgrades to durable and `Direct` rejects either form.
 - `PublishOptionsBuilder` and the `BusExtensions.PublishAsync` callback author canonical options snapshots without a Core dependency.
 - Every bus publish carries `MessageLane.Bus` through storage, tracing, dashboard projections, and consume context.
 
@@ -488,11 +331,13 @@ public sealed class OrderEvents(IBus bus)
 public sealed record OrderPlaced(Guid OrderId);
 ```
 
-The short overload uses the registered message contract and inherits the host delivery mode, which defaults to `Auto`. Auto sends directly outside coordination and captures durably inside a compatible transaction. Pass `PublishOptions` before the cancellation token for metadata or delivery overrides. Durable acceptance waits for storage, not consumer completion; restart survival requires persistent storage. Inside a compatible coordination boundary the capture commits with application state, while an incompatible boundary is rejected. Explicit `Auto` captures in a compatible boundary and sends directly with no boundary. `Direct` bypasses storage and coordination and cannot be combined with `Delay`.
+The short overload uses the registered message contract and inherits the host delivery mode, which defaults to `Auto`. Auto sends directly outside coordination and captures durably inside a compatible transaction. Pass `PublishOptions` before the cancellation token for metadata or delivery overrides. Durable acceptance waits for storage, not consumer completion; restart survival requires persistent storage. Inside a compatible coordination boundary the capture commits with application state, while an incompatible boundary is rejected. Explicit `Auto` captures in a compatible boundary and sends directly with no boundary. `Direct` bypasses storage and coordination and cannot be combined with `Delay` or `ScheduledAt`.
+
+`PublishAsync` and `EnqueueAsync`, including callback overloads, now return `Task<PublishReceipt>`. Existing `await` statements and `Func<Task>` adapters can ignore the result because `Task<PublishReceipt>` derives from `Task`. Custom `IBus`/`IQueue` implementations and test doubles must update their return signatures and supply a receipt; recompile consumers for this binary API break. Use `var receipt = await bus.PublishAsync(message, cancellationToken);` to retain the returned identity.
 
 Omit an unused cancellation token, or pass `default` or `cancellationToken: default` to select the existing token overload. Supplying `default` followed by a cancellation token selects the options overload. Use `options:` and `configure:` to make record and callback intent explicit.
 
-Import `Headless.Messaging` for `PublishOptionsBuilder` and the callback extension. Its operations are `WithHeader`, `WithHeaders`, `WithCorrelationId`, `WithCausationId`, `WithMessageId`, `WithTenantId`, `WithDelay`, and `Build`. Use a callback for a single authoring scope or construct a builder directly and call `Build()` for a reusable options template. Delivery-mode and other advanced overrides remain available through `PublishOptions` or `builder.Build() with { ... }`.
+Import `Headless.Messaging` for `PublishOptionsBuilder` and the callback extension. Its operations are `WithHeader`, `WithHeaders`, `WithCorrelationId`, `WithCausationId`, `WithMessageId`, `WithTenantId`, `WithDelay`, `WithScheduledAt`, and `Build`. Use a callback for a single authoring scope or construct a builder directly and call `Build()` for a reusable options template. Delivery-mode and other advanced overrides remain available through `PublishOptions` or `builder.Build() with { ... }`.
 
 Each callback runs synchronously exactly once on a fresh builder; async-void callbacks are unsupported. A null receiver or `configure` throws before user code, and a throwing callback submits nothing. The adapter forwards the original token and returns the original task. `options: null` and positional `null` keep the existing options path; `configure: null!` selects the callback guard.
 
@@ -518,9 +363,10 @@ Gives application code a compile-time queue surface for work-queue delivery wher
 
 ### Key Features
 
+- `PublishReceipt` carries the resolved wire `MessageId` and nullable durable `StorageId`. Direct delivery returns no storage handle. Middleware suppression before terminal publication returns both values null. A coordinated receipt remains subject to transaction commit or rollback and never implies consumer completion.
 - `IQueue` is the only queue publisher; an unset `QueueOptions.DeliveryMode` inherits `MessagingOptions.DefaultDeliveryMode`, which defaults to Auto. Explicit modes override that setting.
 - Durable delivery persists messages first, then drains them through the configured queue transport.
-- `QueueOptions.Delay` schedules durable queue delivery.
+- `QueueOptions.Delay` or `QueueOptions.ScheduledAt` schedules durable queue delivery. Supply one scheduling form. `Auto` upgrades to durable and `Direct` rejects either form.
 - `QueueOptionsBuilder` and the `QueueExtensions.EnqueueAsync` callback author canonical options snapshots without a Core dependency.
 - Every queue enqueue carries `MessageLane.Queue` through storage, tracing, dashboard projections, and consume context.
 
@@ -553,11 +399,13 @@ public sealed class ImportJobs(IQueue queue)
 public sealed record ImportRequested(Guid ImportId);
 ```
 
-The short overload uses the registered message contract and inherits the host delivery mode, which defaults to `Auto`. Auto sends directly outside coordination and captures durably inside a compatible transaction. Pass `QueueOptions` before the cancellation token for metadata or delivery overrides. Durable acceptance waits for storage, not consumer completion; restart survival requires persistent storage. Inside a compatible coordination boundary the capture commits with application state, while an incompatible boundary is rejected. Explicit `Auto` captures in a compatible boundary and sends directly with no boundary. `Direct` bypasses storage and coordination and cannot be combined with `Delay`.
+The short overload uses the registered message contract and inherits the host delivery mode, which defaults to `Auto`. Auto sends directly outside coordination and captures durably inside a compatible transaction. Pass `QueueOptions` before the cancellation token for metadata or delivery overrides. Durable acceptance waits for storage, not consumer completion; restart survival requires persistent storage. Inside a compatible coordination boundary the capture commits with application state, while an incompatible boundary is rejected. Explicit `Auto` captures in a compatible boundary and sends directly with no boundary. `Direct` bypasses storage and coordination and cannot be combined with `Delay` or `ScheduledAt`.
+
+`PublishAsync` and `EnqueueAsync`, including callback overloads, now return `Task<PublishReceipt>`. Existing `await` statements and `Func<Task>` adapters can ignore the result because `Task<PublishReceipt>` derives from `Task`. Custom `IBus`/`IQueue` implementations and test doubles must update their return signatures and supply a receipt; recompile consumers for this binary API break. Use `var receipt = await bus.PublishAsync(message, cancellationToken);` to retain the returned identity.
 
 Omit an unused cancellation token, or pass `default` or `cancellationToken: default` to select the existing token overload. Supplying `default` followed by a cancellation token selects the options overload. Use `options:` and `configure:` to make record and callback intent explicit.
 
-Import `Headless.Messaging` for `QueueOptionsBuilder` and the callback extension. Its operations are `WithHeader`, `WithHeaders`, `WithCorrelationId`, `WithCausationId`, `WithMessageId`, `WithTenantId`, `WithDelay`, and `Build`. Use a callback for a single authoring scope or construct a builder directly and call `Build()` for a reusable options template. Delivery-mode and other advanced overrides remain available through `QueueOptions` or `builder.Build() with { ... }`.
+Import `Headless.Messaging` for `QueueOptionsBuilder` and the callback extension. Its operations are `WithHeader`, `WithHeaders`, `WithCorrelationId`, `WithCausationId`, `WithMessageId`, `WithTenantId`, `WithDelay`, `WithScheduledAt`, and `Build`. Use a callback for a single authoring scope or construct a builder directly and call `Build()` for a reusable options template. Delivery-mode and other advanced overrides remain available through `QueueOptions` or `builder.Build() with { ... }`.
 
 Each callback runs synchronously exactly once on a fresh builder; async-void callbacks are unsupported. A null receiver or `configure` throws before user code, and a throwing callback submits nothing. The adapter forwards the original token and returns the original task. `options: null` and positional `null` keep the existing options path; `configure: null!` selects the callback guard.
 
@@ -583,6 +431,7 @@ Wires messaging into dependency injection: registration, publishing, dispatch, m
 
 ### Key Features
 
+- `PublishReceipt` carries the resolved wire `MessageId` and nullable durable `StorageId`. Direct delivery returns no storage handle. Middleware suppression before terminal publication returns both values null. A coordinated receipt remains subject to transaction commit or rollback and never implies consumer completion.
 - `services.AddHeadlessMessaging(setup => ...)`.
 - `setup.Bus.ForMessage<TMessage>(...)`, `setup.Queue.ForMessage<TMessage>(...)`, and root-scoped assembly scanning.
 - `Contract(...)`, `CorrelationFrom(...)`, and `Consumer<TConsumer>(...)` inherit the selected root lane.
@@ -592,6 +441,7 @@ Wires messaging into dependency injection: registration, publishing, dispatch, m
 - Publish and consume middleware.
 - Strict publish tenancy via `RequireTenantOnPublish()`.
 - Storage-backed retry/outbox and cleanup processors.
+- Singleton `IMessageRevoker` delegates to optional `IMessageRevocationStorage`. Unsupported providers throw `NotSupportedException` naming the provider.
 - Optional `IDelayedMessageClaimStorage` SPI for providers that can atomically claim, lease, and transition a bounded delayed-message batch before Core enqueues committed winners.
 - Optional `IGracefulLeaseReleaseStorage` SPI for providers that can exact-release completed or pre-execution-abandoned retry leases during bounded shutdown.
 - Internal `ICircuitRetryDeferralStorage` capability lets built-in storage atomically move circuit-open received retries to the circuit's next eligible probe time while releasing only the exact claimed lease generation; providers without it retain the claim until normal expiry.
@@ -648,6 +498,37 @@ services.AddHeadlessMessaging(setup =>
 ### Configuration
 
 `RequireRoutingAffinity()` on a Bus or Queue message registration requires a locally supported native mapping at startup; it does not require every publication to supply a key. Set `PublishOptions.RoutingAffinityKey` or `QueueOptions.RoutingAffinityKey` per publication. The frozen capability model snapshots registered destinations from inert options before clients or processors start. Keyed unknown destination overrides, invalid keys, and typed/raw conflicts fail before outbox insertion or transport effects. `MediumMessage.RoutingAffinityKey` reads the authoritative serialized envelope; InMemory, PostgreSQL, and SQL Server preserve it without a new storage column.
+
+A missing registration defers an inbox generation as an orphan without consuming the handler failure retry budget. Recovery requires the exact consumer identity, logical contract name, contract version, and lane. The probe claims a fresh attempt in the same generation and incarnation, then clears the orphan flag under the complete execution fence before dispatch. Registration absence on one host does not establish absence on every deployment.
+
+Known orphans are excluded from ordinary retry pickup. Each lane has an independent probe allowance, configured through `setup.Options.OrphanProbeInterval` (default five minutes, positive) and `OrphanProbeBatchSize` (default 10, range 1 through 100,000). The interval delays the next probe after missing-registration deferral; it is not a recovery deadline. First discovery can occupy ordinary retry capacity once, so a growing backlog of unclassified work has no absolute latency guarantee.
+
+Orphans have no automatic expiry or terminalization. An orphan with no live execution claim permits `Hold`, `ReleaseHold`, and, when unheld, `Purge`, subject to the normal expected-status and incarnation checks. A live claim blocks these operator exceptions. `ForceReprocess` remains terminal-only. Holds block purge and terminal retention cleanup but do not pause execution: a held orphan can recover and keeps its hold after completion. Recovery claims and purge serialize against the same generation; only the winner can proceed.
+
+Operation history has separate retention from inbox generations. Configure these positive minimum residence durations through `setup.Options`:
+
+| Option | Default |
+|---|---|
+| `InboxCleanupReceiptRetention` | 7 days |
+| `InboxCleanupAuditRetention` | 7 days |
+| `InboxOperatorReceiptRetention` | 30 days |
+| `InboxOperatorAuditRetention` | 90 days |
+
+For example, inside the existing `AddHeadlessMessaging` callback:
+
+```csharp
+setup.Options.OrphanProbeInterval = TimeSpan.FromMinutes(2);
+setup.Options.OrphanProbeBatchSize = 20;
+setup.Options.InboxOperatorReceiptRetention = TimeSpan.FromDays(14);
+setup.Options.InboxOperatorAuditRetention = TimeSpan.FromDays(180);
+```
+
+
+Thirty days is the operator-receipt default, not a validation floor. Each record ages from its immutable `CreatedAt`; replay does not refresh receipt age. A receipt remains until its minimum residence time passes and all referencing audits have been deleted, so audit references can extend its lifetime. Matching-request replay and conflicting-request detection remain available while the receipt physically exists. After deletion, reuse of its operation ID is evaluated as a new request against current state. Clients must use unique operation IDs and retry within the configured receipt window.
+
+Deleting audits removes historical evidence but does not release a surviving generation's hold. Holds do not pin history indefinitely. Retention changes apply to existing history using its original timestamps; shortening a duration can make old evidence eligible on the next sweep, and increasing it cannot restore deleted records. Configure longer evidence windows before enabling collection. These options do not change persisted inbox-generation retention.
+
+The collector obtains one fixed provider-clock history cutoff snapshot per invocation. PostgreSQL and SQL Server use database time; InMemory uses its injected `TimeProvider`. Each round visits published messages, received messages, expired audits, and unreferenced expired receipts, with a maximum batch of 1,000 per category and a one-second pause after each nonzero batch. Rounds repeat until all categories return zero, then wait for `CollectorCleaningInterval`. History deletion creates no replacement history. Practical storage bounds depend on collection throughput keeping up with eligible arrivals; the durations are minimum residence times, not deletion deadlines.
 
 - `MessagingOptions.DefaultGroupName`, `GroupNamePrefix`, `MessageNamePrefix`, and `Version` control naming and isolation. `Version` is validated non-empty and at most 20 characters — the SQL storage providers persist it as a literal into a `VARCHAR(20)`/`nvarchar(20)` column, so an over-long value is rejected at startup instead of failing every outbox insert.
 - `MessagingOptions.DefaultDeliveryMode` defaults to `DeliveryMode.Auto` for both lanes. Null per-call modes inherit it; explicit modes override it. Metadata-only records and fluent callbacks inherit the same setting. Invalid global values fail options validation.
@@ -971,9 +852,11 @@ builder.Services.AddHeadlessMessaging(options => { /* ... */ })
 - `OperationCanceledException` whose token matches `context.CancellationToken` is never silently swallowed, including recursive `AggregateException` cases.
 - After middleware returns normally, the pipeline rechecks `context.CancellationToken.IsCancellationRequested` and throws OCE if the current context token is canceled.
 
-**Publish context rules:** Production publish contexts freeze the delivery mode and delay before middleware runs. Middleware can change other options before `await next()`; all mutations throw after the inner publisher completes. Reads, including `IsTransactional`, remain valid. `IsTransactional` is true only when durable delivery uses a compatible ambient commit boundary, whose commit is the caller's responsibility.
+**Publish context rules:** Production publish contexts freeze the delivery mode, `Delay`, and `ScheduledAt` before middleware runs. Middleware can change other options before `await next()`; all mutations throw after the inner publisher completes. Reads, including `IsTransactional`, remain valid. `IsTransactional` is true only when durable delivery uses a compatible ambient commit boundary, whose commit is the caller's responsibility.
 
-For middleware tests and tooling, `new PublishContext<T>(content, lane, options, defaultDeliveryMode, now, isTransactional, cancellationToken)` requires the host default and resolution timestamp explicitly. The constructor uses the canonical delivery resolver with `options?.DeliveryMode ?? defaultDeliveryMode` and `options?.Delay`. It rejects Direct delivery with a delay and invalid lanes, effective modes, or delays. Delayed contexts calculate `PublishAt` in UTC from `now` plus the delay. `isTransactional` models a compatible ambient commit boundary; `IsTransactional` is true only when the resolved delivery uses that boundary. Manually constructed contexts remain mutable until `MarkCompleted()` and do not own a live transaction.
+For middleware tests and tooling, `new PublishContext<T>(content, lane, options, defaultDeliveryMode, now, isTransactional, cancellationToken)` requires the host default and resolution timestamp explicitly. The constructor uses the canonical delivery resolver with `options?.DeliveryMode ?? defaultDeliveryMode` and both scheduling options. It rejects invalid lanes, modes, and delays, simultaneous scheduling options, and Direct with either scheduling option. Scheduled contexts calculate `PublishAt` from the relative delay or absolute instant. `isTransactional` models a compatible ambient commit boundary; `IsTransactional` is true only when the resolved delivery uses that boundary. Manually constructed contexts remain mutable until `MarkCompleted()` and do not own a live transaction.
+
+Absolute schedules retain the requested instant in UTC as `ScheduledAt`; `PublishAt` floors that instant to microsecond precision, matching runtime publication.
 
 **Cancellation token swaps:** middleware that creates per-attempt or per-operation tokens must call `context.WithCancellationToken(...)` before `await next()`. Downstream middleware must re-read `context.CancellationToken` at each await boundary; do not capture it once at method entry.
 
@@ -1496,6 +1379,7 @@ Provides in-process messaging storage for local development and tests.
 
 ### Key Features
 
+- `IMessageRevocationStorage` atomically deletes a scheduled row before reservation, fenced by storage version, terminal status, and retry state. Claimed but unreserved rows remain revocable; deleted rows cannot be restored by reservation or shutdown flush.
 - `setup.UseInMemoryStorage()`.
 - Stores published, received, failed, and monitoring state in memory.
 - Declares `MessagingInboxCapabilityTier.ProcessLocal`; state and duplicate suppression do not survive process restart and cannot satisfy a durable transactional requirement.
@@ -1516,7 +1400,11 @@ setup.UseInMemoryStorage();
 
 ### Configuration
 
-None.
+No provider-specific configuration is required.
+
+Known orphans use a separate bounded probe batch and recover only when the exact consumer identity, logical contract name/version, and lane return. They do not expire automatically. Unclaimed orphans permit Hold/ReleaseHold and unheld Purge; live claims block those actions, and ForceReprocess remains terminal-only. A hold protects retention and purge but does not stop recovery.
+
+History retention uses the shared `MessagingOptions` defaults: cleanup receipts/audits 7 days each, operator receipts 30 days, and operator audits 90 days. All four are positive configurable minimum residence durations. Audit references can extend receipt lifetime; deleting history does not release holds. The injected `TimeProvider` controls history age. State is process-local and is lost on restart. See [Core configuration](#configuration-3) for probe settings, replay limits, rollout effects, and collector pacing.
 
 ### Dependencies
 
@@ -1799,6 +1687,7 @@ Provides PostgreSQL durable storage for messaging publish/receive state, retries
 
 ### Key Features
 
+- `IMessageRevocationStorage` atomically deletes a scheduled row before reservation, fenced by storage version, terminal status, and retry state. Claimed but unreserved rows remain revocable; deleted rows cannot be restored by reservation or shutdown flush.
 - `setup.UsePostgreSql(...)` — connection string, `IConfiguration` binding, `Action<PostgreSqlOptions>`, or `Action<PostgreSqlOptions, IServiceProvider>`.
 - PostgreSQL schema/table configuration.
 - Raw ADO.NET integration and startup initialization.
@@ -1822,6 +1711,10 @@ setup.UsePostgreSql(builder.Configuration.GetConnectionString("Messaging")!);
 ### Configuration
 
 Configure connection string, schema, table names, and provider-specific storage options through `PostgreSqlOptions`.
+
+Known orphans use a separate bounded probe batch and recover only when the exact consumer identity, logical contract name/version, and lane return. They do not expire automatically. Unclaimed orphans permit Hold/ReleaseHold and unheld Purge; live claims block those actions, and ForceReprocess remains terminal-only. A hold protects retention and purge but does not stop recovery.
+
+History retention uses the shared `MessagingOptions` defaults: cleanup receipts/audits 7 days each, operator receipts 30 days, and operator audits 90 days. All four are positive configurable minimum residence durations. Audit references can extend receipt lifetime; deleting history does not release holds. PostgreSQL database time controls history age. Initialization adds the history-selection and audit-reference indexes idempotently. See [Core configuration](#configuration-3) for probe settings, replay limits, rollout effects, and collector pacing.
 
 - **`DdlCommandTimeout`** (`TimeSpan?`, default `null`): timeout budget for schema-init DDL — the `CREATE INDEX CONCURRENTLY` / `DROP INDEX CONCURRENTLY` builds, the `CREATE EXTENSION` probe, and the advisory-lock waits that gate them. Decoupled from the OLTP `MessagingOptions.CommandTimeout` (~30s) because these can run for minutes-to-hours on a large table; a premature kill leaves a `CONCURRENTLY` index `INVALID` for the next boot to repair. Default `null` (and `TimeSpan.Zero`) mean **no timeout** (wait indefinitely). A negative value is rejected at validation time.
 - **`pg_trgm` on managed PostgreSQL**: dashboard content (ILIKE) search uses GIN trigram indexes that need the `pg_trgm` extension. The initializer runs `CREATE EXTENSION IF NOT EXISTS pg_trgm` best-effort **outside** the schema transaction. On managed PostgreSQL (AWS RDS, Azure, Neon, Supabase) the app role usually lacks `CREATE EXTENSION`; it logs a warning, **skips the trigram content indexes**, and continues — write/retry paths are unaffected, only dashboard content search is disabled until a DBA pre-installs `pg_trgm`. (Previously `CREATE EXTENSION` ran as the first statement of the schema transaction, so a permission error rolled back the entire schema batch and left messaging dead at startup.)
@@ -1851,6 +1744,7 @@ Provides SQL Server durable storage for messaging publish/receive state, retries
 
 ### Key Features
 
+- `IMessageRevocationStorage` atomically deletes a scheduled row before reservation, fenced by storage version, terminal status, and retry state. Claimed but unreserved rows remain revocable; deleted rows cannot be restored by reservation or shutdown flush.
 - `setup.UseSqlServer(...)` — connection string, `IConfiguration` binding, `Action<SqlServerOptions>`, or `Action<SqlServerOptions, IServiceProvider>`.
 - SQL Server schema/table configuration.
 - Raw ADO.NET integration and startup initialization.
@@ -1875,7 +1769,13 @@ setup.UseSqlServer(builder.Configuration.GetConnectionString("Messaging")!);
 
 Configure connection string, schema, table names, and provider-specific storage options through `SqlServerOptions`.
 
+Known orphans use a separate bounded probe batch and recover only when the exact consumer identity, logical contract name/version, and lane return. They do not expire automatically. Unclaimed orphans permit Hold/ReleaseHold and unheld Purge; live claims block those actions, and ForceReprocess remains terminal-only. A hold protects retention and purge but does not stop recovery.
+
+History retention uses the shared `MessagingOptions` defaults: cleanup receipts/audits 7 days each, operator receipts 30 days, and operator audits 90 days. All four are positive configurable minimum residence durations. Audit references can extend receipt lifetime; deleting history does not release holds. SQL Server database time controls history age. Initialization adds the history-selection and audit-reference indexes idempotently. See [Core configuration](#configuration-3) for probe settings, replay limits, rollout effects, and collector pacing.
+
 Fresh schemas directly create `([StatusName],[Added])` indexes for dashboard timelines/statistics. The initializer creates the final schema shape and does not carry legacy migration DDL.
+
+- **`DdlCommandTimeout`** (`TimeSpan?`, default `null`): timeout for schema-init DDL that grows with table size. That covers the history-table index builds on `InboxOperationReceipts` and `InboxAudit`, plus the `sp_getapplock` wait that serializes initializers. It is separate from the OLTP `MessagingOptions.CommandTimeout` (~30s) because upgraded schemas already hold an unbounded history backlog. The builds run offline, since `ONLINE = ON` depends on the edition, and block writes to that history table until they finish. Each index is its own command, run while the initializer lock is held. Inbox readiness is published only after the builds finish, so peer replicas wait instead of failing. `null` and `TimeSpan.Zero` mean **no timeout**. A negative value is rejected at validation time.
 
 ### Dependencies
 

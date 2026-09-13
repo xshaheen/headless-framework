@@ -5,45 +5,9 @@ packages: Imaging.Abstractions, Imaging.Core, Imaging.ImageSharp
 
 # Imaging
 
-## Table of Contents
-
-- [Quick Orientation](#quick-orientation)
-- [Agent Instructions](#agent-instructions)
-- [Core Concepts](#core-concepts)
-    - [Abstraction layer](#abstraction-layer)
-    - [Contributor pipeline](#contributor-pipeline)
-    - [Result model](#result-model)
-    - [Resize modes](#resize-modes)
-- [Headless.Imaging.Abstractions](#headlessimagingabstractions)
-    - [Problem Solved](#problem-solved)
-    - [Key Features](#key-features)
-    - [Installation](#installation)
-    - [Quick Start](#quick-start)
-    - [Configuration](#configuration)
-    - [Dependencies](#dependencies)
-    - [Side Effects](#side-effects)
-- [Headless.Imaging.Core](#headlessimagingcore)
-    - [Problem Solved](#problem-solved-1)
-    - [Key Features](#key-features-1)
-    - [Design Notes](#design-notes)
-    - [Installation](#installation-1)
-    - [Quick Start](#quick-start-1)
-    - [Configuration](#configuration-1)
-    - [Dependencies](#dependencies-1)
-    - [Side Effects](#side-effects-1)
-- [Headless.Imaging.ImageSharp](#headlessimagingimagesharp)
-    - [Problem Solved](#problem-solved-2)
-    - [Key Features](#key-features-2)
-    - [Design Notes](#design-notes-1)
-    - [Installation](#installation-2)
-    - [Quick Start](#quick-start-2)
-    - [Configuration](#configuration-2)
-    - [Dependencies](#dependencies-2)
-    - [Side Effects](#side-effects-2)
-
 > Image resizing and compression pipeline with contributor-based extensibility, powered by ImageSharp.
 
-## Quick Orientation
+## Orientation
 
 Install all three packages for a complete imaging pipeline:
 
@@ -67,7 +31,7 @@ builder
 
 Supports JPEG, PNG, WebP, and GIF formats for resize; JPEG, PNG, and WebP for compression.
 
-## Agent Instructions
+## Agent Rules
 
 - Always install all three packages (Abstractions + Core + ImageSharp) for a working pipeline. Abstractions alone provides no implementation; Core alone has no image-processing backend.
 - Inject `IImageResizer` for resizing, `IImageCompressor` for compression. Both are registered as singletons.

@@ -36,10 +36,10 @@ public sealed class FakeBackplaneBus : IBus
         _subscribers.Add(cache);
     }
 
-    public Task PublishAsync<T>(T? contentObj, CancellationToken cancellationToken = default) =>
+    public Task<PublishReceipt> PublishAsync<T>(T? contentObj, CancellationToken cancellationToken = default) =>
         PublishAsync(contentObj, options: null, cancellationToken);
 
-    public async Task PublishAsync<T>(
+    public async Task<PublishReceipt> PublishAsync<T>(
         T? contentObj,
         PublishOptions? options,
         CancellationToken cancellationToken = default
@@ -50,7 +50,7 @@ public sealed class FakeBackplaneBus : IBus
             case FakeBackplaneState.Down:
                 throw new InvalidOperationException("Backplane is down");
             case FakeBackplaneState.Lossy:
-                return;
+                return new PublishReceipt(options?.MessageId ?? Guid.NewGuid().ToString(), null);
             case FakeBackplaneState.Up:
             default:
                 break;
@@ -58,12 +58,14 @@ public sealed class FakeBackplaneBus : IBus
 
         if (contentObj is not CacheInvalidationMessage message)
         {
-            return;
+            return new PublishReceipt(options?.MessageId ?? Guid.NewGuid().ToString(), null);
         }
 
         foreach (var subscriber in _subscribers)
         {
             await subscriber.HandleInvalidationAsync(message, cancellationToken);
         }
+
+        return new PublishReceipt(options?.MessageId ?? Guid.NewGuid().ToString(), null);
     }
 }

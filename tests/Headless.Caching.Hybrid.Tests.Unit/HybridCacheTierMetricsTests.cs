@@ -45,7 +45,7 @@ public sealed class HybridCacheTierMetricsTests : TestBase
         var publisher = Substitute.For<IBus>();
         publisher
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(Task.CompletedTask);
+            .Returns(default(PublishReceipt));
 
         // A unique cache name isolates this test's measurements from other parallel tests sharing the meter.
         var cacheName = "test-" + Guid.NewGuid().ToString("N");
@@ -114,7 +114,7 @@ public sealed class HybridCacheTierMetricsTests : TestBase
         var publisher = Substitute.For<IBus>();
         publisher
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(Task.CompletedTask);
+            .Returns(default(PublishReceipt));
 
         var cacheName = "orders-" + Guid.NewGuid().ToString("N");
         var hybridOptions = new HybridCacheOptions { CacheName = cacheName };

@@ -22,8 +22,8 @@ public interface IAggregateRoot : IEntity;
 [PublicAPI]
 public abstract class AggregateRoot : Entity, IAggregateRoot, IIntegrationEventEmitter, IDomainEventEmitter
 {
-    private List<EventContext<object>>? _domainEvents;
-    private List<EventContext<object>>? _integrationEvents;
+    private EventBuffer? _domainEvents;
+    private EventBuffer? _integrationEvents;
 
     /// <summary>Appends an integration event to the pending outbox for this aggregate.</summary>
     /// <remarks>Call from the aggregate's own behavior methods to raise integration events.</remarks>
@@ -43,7 +43,7 @@ public abstract class AggregateRoot : Entity, IAggregateRoot, IIntegrationEventE
     /// <returns>A read-only snapshot of enqueued integration events; empty when none have been added.</returns>
     public IReadOnlyList<EventContext<object>> GetIntegrationEvents()
     {
-        return _integrationEvents?.ToArray() ?? [];
+        return _integrationEvents?.Snapshot() ?? [];
     }
 
     /// <summary>Appends a domain event to be dispatched within the current unit of work.</summary>
@@ -58,7 +58,7 @@ public abstract class AggregateRoot : Entity, IAggregateRoot, IIntegrationEventE
     /// <returns>A read-only snapshot of enqueued domain events; empty when none have been added.</returns>
     public IReadOnlyList<EventContext<object>> GetDomainEvents()
     {
-        return _domainEvents?.ToArray() ?? [];
+        return _domainEvents?.Snapshot() ?? [];
     }
 
     /// <summary>Discards all pending domain events without dispatching them.</summary>
@@ -84,18 +84,14 @@ public abstract class AggregateRoot : Entity, IAggregateRoot, IIntegrationEventE
         where TPayload : class
     {
         Argument.IsNotNull(context);
-        (_domainEvents ??= []).Add(
-            context as EventContext<object>
-                ?? new(context.Payload, context.EventId, context.CorrelationId, context.CausationId, context.TenantId)
-        );
+        (_domainEvents ??= new()).Add(context);
     }
 
     /// <summary>Removes only occurrences included in a successfully saved batch.</summary>
     public void ClearDomainEvents(IReadOnlyList<EventContext<object>> occurrences)
     {
         Argument.IsNotNull(occurrences);
-        var ids = occurrences.Select(occurrence => occurrence.EventId).ToHashSet(StringComparer.Ordinal);
-        _domainEvents?.RemoveAll(occurrence => ids.Contains(occurrence.EventId));
+        _domainEvents?.Clear(occurrences);
     }
 
     /// <inheritdoc/>
@@ -106,18 +102,14 @@ public abstract class AggregateRoot : Entity, IAggregateRoot, IIntegrationEventE
         where TPayload : class
     {
         Argument.IsNotNull(context);
-        (_integrationEvents ??= []).Add(
-            context as EventContext<object>
-                ?? new(context.Payload, context.EventId, context.CorrelationId, context.CausationId, context.TenantId)
-        );
+        (_integrationEvents ??= new()).Add(context);
     }
 
     /// <summary>Removes only occurrences included in a successfully saved batch.</summary>
     public void ClearIntegrationEvents(IReadOnlyList<EventContext<object>> occurrences)
     {
         Argument.IsNotNull(occurrences);
-        var ids = occurrences.Select(occurrence => occurrence.EventId).ToHashSet(StringComparer.Ordinal);
-        _integrationEvents?.RemoveAll(occurrence => ids.Contains(occurrence.EventId));
+        _integrationEvents?.Clear(occurrences);
     }
 
     /// <inheritdoc/>

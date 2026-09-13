@@ -390,7 +390,7 @@ internal sealed partial class PostgreSqlDataStorage
     )
     {
         await using var command = new NpgsqlCommand(
-            $"SELECT \"Id\",\"StatusName\",\"NextRetryAt\",\"IsHeld\",\"IsCurrentGeneration\",\"Generation\",\"IntentType\",\"ConsumerIdentity\" FROM {_receivedTable} WHERE \"IsInboxRecord\" AND \"GenerationIncarnationId\"=@IncarnationId FOR UPDATE;",
+            $"SELECT \"Id\",\"StatusName\",\"NextRetryAt\",\"IsHeld\",\"IsCurrentGeneration\",\"Generation\",\"IntentType\",\"ConsumerIdentity\",\"IsInboxOrphaned\",COALESCE(\"LockedUntil\" > clock_timestamp(), FALSE) FROM {_receivedTable} WHERE \"IsInboxRecord\" AND \"GenerationIncarnationId\"=@IncarnationId FOR UPDATE;",
             connection,
             transaction
         );
@@ -404,7 +404,9 @@ internal sealed partial class PostgreSqlDataStorage
                     !reader.IsDBNull(2),
                     reader.GetBoolean(3),
                     reader.GetBoolean(4),
-                    reader.GetInt64(5)
+                    reader.GetInt64(5),
+                    reader.GetBoolean(8),
+                    reader.GetBoolean(9)
                 ),
                 MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(6)),
                 reader.GetString(7)

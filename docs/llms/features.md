@@ -5,62 +5,9 @@ packages: Features.Abstractions, Features.Core, Features.Storage.EntityFramework
 
 # Feature Management
 
-## Table of Contents
-
-- [Quick Orientation](#quick-orientation)
-- [Agent Instructions](#agent-instructions)
-- [Core Concepts](#core-concepts)
-    - [Feature Definitions vs. Feature Values](#feature-definitions-vs-feature-values)
-    - [Value Providers and Resolution Order](#value-providers-and-resolution-order)
-    - [Static Store vs. Dynamic Store](#static-store-vs-dynamic-store)
-    - [Feature Value Caching](#feature-value-caching)
-    - [Startup Initialization](#startup-initialization)
-- [Choosing a Provider](#choosing-a-provider)
-- [Headless.Features.Abstractions](#headlessfeaturesabstractions)
-    - [Problem Solved](#problem-solved)
-    - [Key Features](#key-features)
-    - [Installation](#installation)
-    - [Quick Start](#quick-start)
-    - [Configuration](#configuration)
-    - [Dependencies](#dependencies)
-    - [Side Effects](#side-effects)
-- [Headless.Features.Core](#headlessfeaturescore)
-    - [Problem Solved](#problem-solved-1)
-    - [Key Features](#key-features-1)
-    - [Design Notes](#design-notes)
-    - [Installation](#installation-1)
-    - [Quick Start](#quick-start-1)
-    - [Configuration](#configuration-1)
-    - [Dependencies](#dependencies-1)
-    - [Side Effects](#side-effects-1)
-- [Headless.Features.Storage.EntityFramework](#headlessfeaturesstorageentityframework)
-    - [Problem Solved](#problem-solved-2)
-    - [Key Features](#key-features-2)
-    - [Installation](#installation-2)
-    - [Quick Start](#quick-start-2)
-    - [Configuration](#configuration-2)
-    - [Dependencies](#dependencies-2)
-    - [Side Effects](#side-effects-2)
-- [Headless.Features.Storage.PostgreSql](#headlessfeaturesstoragepostgresql)
-    - [Problem Solved](#problem-solved-3)
-    - [Key Features](#key-features-3)
-    - [Installation](#installation-3)
-    - [Quick Start](#quick-start-3)
-    - [Configuration](#configuration-3)
-    - [Dependencies](#dependencies-3)
-    - [Side Effects](#side-effects-3)
-- [Headless.Features.Storage.SqlServer](#headlessfeaturesstoragesqlserver)
-    - [Problem Solved](#problem-solved-4)
-    - [Key Features](#key-features-4)
-    - [Installation](#installation-4)
-    - [Quick Start](#quick-start-4)
-    - [Configuration](#configuration-4)
-    - [Dependencies](#dependencies-4)
-    - [Side Effects](#side-effects-4)
-
 > Dynamic feature flags and feature value management with hierarchical resolution (Tenant > Edition > Default), caching, and database persistence via EF Core, PostgreSQL, or SQL Server.
 
-## Quick Orientation
+## Orientation
 
 Install `Headless.Features.Abstractions` plus `Headless.Features.Core` and exactly one storage provider:
 
@@ -82,7 +29,7 @@ builder.Services.AddHeadlessFeatures(setup => setup.UseEntityFramework<AppDbCont
 
 `AddHeadlessFeatures` requires `ICache`, `IDistributedLock`, `IGuidGenerator`, and `TimeProvider` to be registered before it is called.
 
-## Agent Instructions
+## Agent Rules
 
 - Inject `IFeatureManager` to read or write feature values. Do NOT use `Microsoft.FeatureManagement` — this is a separate system with a different model.
 - Define features by implementing `IFeatureDefinitionProvider` and calling `context.AddGroup()` / `group.AddChild()`. Register the provider with `services.AddFeatureDefinitionProvider<T>()`.

@@ -104,7 +104,13 @@ Requests with no routed endpoint are left untouched. Registered before `UseRouti
 
 ## Configuration
 
-No additional configuration required.
+### API surfaces
+
+Register `AddHeadlessMvcApiSurfaces()` alongside `AddControllers()` and `AddHeadlessApiSurface(...)`. Mark controllers with `[ApiSurface("portal")]`. The convention adds the registry's prefix, named authorization policy, and tenancy defaults to their actions.
+
+Controller/action tenancy metadata takes precedence over surface defaults. Native authorization remains additive, and `[AllowAnonymous]` bypasses it. `RequireTenant` metadata needs the policy and services described in `Headless.Api.Core`. Unknown surface names fail MVC model construction. Controllers with a configured prefix must use relative controller and action routes; absolute templates are rejected because they escape that prefix. Existing `ApiExplorerSettings.GroupName` values are preserved for versioning. Repeated integration registration adds only one convention configurator.
+
+Other MVC features require no additional configuration.
 
 ## Dependencies
 
@@ -114,6 +120,7 @@ No additional configuration required.
 
 ## Side Effects
 
+- `AddHeadlessMvcApiSurfaces` registers one MVC options configurator that applies surface defaults during model construction.
 - Configures `MvcOptions` and `JsonOptions` for controllers
 - Adds a result filter that applies ProblemDetails customization to Headless-generated MVC object results
 - When opted in, adds a result filter that emits ETags for `IHasEntityTag` responses

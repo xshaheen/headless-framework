@@ -118,4 +118,37 @@ public sealed class PublishOptionsBuilderTests : TestBase
         snapshot.TenantId.Should().Be(" ");
         snapshot.Headers![Headers.MessageName].Should().Be("reserved");
     }
+
+    [Fact]
+    public void should_round_trip_an_absolute_schedule_onto_the_built_record()
+    {
+        var scheduledAt = new DateTimeOffset(2026, 7, 26, 12, 0, 0, TimeSpan.FromHours(3));
+
+        var snapshot = new PublishOptionsBuilder().WithScheduledAt(scheduledAt).Build();
+
+        snapshot.ScheduledAt.Should().Be(scheduledAt);
+        snapshot.Delay.Should().BeNull();
+        // The builder stays non-validating; the publisher normalizes and rejects conflicting forms.
+        new PublishOptionsBuilder()
+            .WithScheduledAt(scheduledAt)
+            .WithScheduledAt(null)
+            .Build()
+            .ScheduledAt.Should()
+            .BeNull();
+    }
+
+    [Fact]
+    public void should_distinguish_options_that_differ_only_by_absolute_schedule()
+    {
+        var scheduledAt = new DateTimeOffset(2026, 7, 26, 12, 0, 0, TimeSpan.Zero);
+        var scheduled = new PublishOptionsBuilder().WithScheduledAt(scheduledAt).Build();
+        var unscheduled = new PublishOptionsBuilder().Build();
+        var later = new PublishOptionsBuilder().WithScheduledAt(scheduledAt.AddHours(1)).Build();
+
+        // Guards the hand-written equality members: a property missing from them is silently ignored.
+        scheduled.Should().NotBe(unscheduled);
+        scheduled.Should().NotBe(later);
+        scheduled.GetHashCode().Should().NotBe(unscheduled.GetHashCode());
+        scheduled.Should().Be(new PublishOptionsBuilder().WithScheduledAt(scheduledAt).Build());
+    }
 }

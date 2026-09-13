@@ -5,64 +5,9 @@ packages: Base, BuildingBlocks, Checks, Domain, Domain.LocalEventBus, Security.A
 
 # Core
 
-## Table of Contents
-
-- [Quick Orientation](#quick-orientation)
-- [Agent Instructions](#agent-instructions)
-- [Headless.Core](#headlesscore)
-    - [Problem Solved](#problem-solved)
-    - [Key Features](#key-features)
-    - [Installation](#installation)
-    - [Quick Start](#quick-start)
-    - [Configuration](#configuration)
-    - [Dependencies](#dependencies)
-    - [Side Effects](#side-effects)
-- [Headless.Checks](#headlesschecks)
-    - [Problem Solved](#problem-solved-1)
-    - [Key Features](#key-features-1)
-    - [Installation](#installation-1)
-    - [Quick Start](#quick-start-1)
-    - [Configuration](#configuration-1)
-    - [Dependencies](#dependencies-1)
-    - [Side Effects](#side-effects-1)
-- [Headless.Domain](#headlessdomain)
-    - [Problem Solved](#problem-solved-2)
-    - [Key Features](#key-features-2)
-    - [Installation](#installation-2)
-    - [Quick Start](#quick-start-2)
-    - [Configuration](#configuration-2)
-    - [Dependencies](#dependencies-2)
-    - [Side Effects](#side-effects-2)
-- [Headless.Domain.LocalEventBus](#headlessdomainlocaleventbus)
-    - [Problem Solved](#problem-solved-3)
-    - [Key Features](#key-features-3)
-    - [Design Notes](#design-notes)
-    - [Installation](#installation-3)
-    - [Quick Start](#quick-start-3)
-    - [Configuration](#configuration-3)
-    - [Dependencies](#dependencies-3)
-    - [Side Effects](#side-effects-3)
-- [Headless.Security.Abstractions](#headlesssecurityabstractions)
-    - [Problem Solved](#problem-solved-4)
-    - [Key Features](#key-features-4)
-    - [Installation](#installation-4)
-    - [Quick Start](#quick-start-4)
-    - [Configuration](#configuration-4)
-    - [Dependencies](#dependencies-4)
-    - [Side Effects](#side-effects-4)
-- [Headless.Security](#headlesssecurity)
-    - [Problem Solved](#problem-solved-5)
-    - [Key Features](#key-features-5)
-    - [Design Notes](#design-notes-1)
-    - [Installation](#installation-5)
-    - [Quick Start](#quick-start-5)
-    - [Configuration](#configuration-5)
-    - [Dependencies](#dependencies-5)
-    - [Side Effects](#side-effects-5)
-
 > Foundational utilities, DDD building blocks, guard clauses, multi-tenancy, and domain messaging for the Headless framework.
 
-## Quick Orientation
+## Orientation
 
 - **`Headless.Extensions`** — the framework's base utility library (result pattern, domain primitives, value objects, collections, IO, threading, reflection helpers, constants, validators). Almost every other `Headless.*` package depends on it. Documented separately — see [extensions.md](extensions.md).
 - **`Headless.Core`** — cross-cutting abstractions: `ICurrentUser`, `ICurrentLocale`, `ICurrentTimeZone`, `ITimezoneProvider`, `ICurrentPrincipalAccessor`, plus utilities (`SnappyCompressor`, `LogState` structured logging) and `AddHeadlessGuidGenerator()` for keyed GUID strategy registration. It also supplies the default `AsyncLocal`-backed implementations of the tenant-context contracts (`CurrentTenant`, `AsyncLocalCurrentTenantAccessor`, `NullCurrentTenant`, `TenantWriteGuardBypass`) — the contracts themselves (`ICurrentTenant`, `ICurrentTenantAccessor`, `ITenantWriteGuardBypass`, `CrossTenantWriteException`, `MissingTenantContextException`) live in `Headless.MultiTenancy.Abstractions` under the `Headless.MultiTenancy` namespace, which `Headless.Core` references. See [multi-tenancy.md](multi-tenancy.md) for the full tenancy surface, including the opt-in tenant catalog.
@@ -72,7 +17,7 @@ packages: Base, BuildingBlocks, Checks, Domain, Domain.LocalEventBus, Security.A
 - **`Headless.Domain`** — DDD abstractions: `Entity`, `AggregateRoot`, `ValueObject`, auditing interfaces, concurrency stamps, and event contracts. Domain (in-process) events use plain payloads through `IDomainEventEmitter`; integration (distributed) events use plain payloads through `IIntegrationEventEmitter`. `AggregateRoot` implements both emitters; integration events are dispatched by the ORM/messaging layer, not from this package (see [orm.md](orm.md)).
 - **`Headless.Domain.LocalEventBus`** — DI-based `IDomainEventDispatcher` for in-process domain event dispatch. Register with `AddHeadlessDomainEventDispatcher()` and implement `IDomainEventHandler<T>`. Namespace: `Headless.Domain`.
 
-## Agent Instructions
+## Agent Rules
 
 - Use `Headless.Checks` (`Argument.IsNotNull`, `Argument.IsNotNullOrEmpty`, `Argument.IsPositive`, etc.) for argument validation instead of raw `ArgumentNullException` or `ArgumentOutOfRangeException`. Use `Ensure` for internal state assertions.
 - Use `Headless.Domain` base classes for DDD: inherit `Entity<T>` for entities, `AggregateRoot<T>` for aggregate roots, `ValueObject` for value objects. Emit in-process events via `AddDomainEvent()` and distributed events via `AddIntegrationEvent()` on aggregate roots.
@@ -317,6 +262,8 @@ Use `EventEmissionScope.Begin(new EventEmissionContext(correlationId, parentId, 
 
 Emitter buffers contain `IReadOnlyList<EventContext<object>>` so one aggregate can raise different payload types. The generic `AddDomainEvent(context)` / `AddIntegrationEvent(context)` overloads preserve an existing concrete envelope. Batch clear removes only saved event IDs; parameterless clear explicitly discards the pending buffer.
 
+Use `EventBuffer` when an entity implements an emitter interface without inheriting `AggregateRoot`. It provides `Add(payload)`, `Add(context)`, `Snapshot()`, `Clear()`, and `Clear(savedBatch)` with the same occurrence semantics as aggregate roots. Keep one buffer per entity and event kind; instances are not thread-safe. The buffer only retains events in memory. The entity must still implement `IIntegrationEventEmitter` or `IDomainEventEmitter` so infrastructure can collect them. Choose application-specific tenant and correlation values before adding an explicit `EventContext`; the buffer preserves them.
+
 Handlers receive `EventContext<TPayload>` and a cancellation token. `IDomainEventDispatcher.DispatchAsync(context, token)` accepts only a captured envelope and resolves the exact runtime payload type, preserving identity and lineage across retries.
 
 This package adds no event store, stream version, replay, or durable Domain contract registry. Domain remains independent of Messaging, Jobs, persistence, and commit coordination.
@@ -344,6 +291,26 @@ public sealed class Order : AggregateRoot<Guid>, ICreateAudit
 }
 
 public sealed record OrderCompletedEvent(Guid OrderId);
+```
+
+For an entity using composition:
+
+```csharp
+public sealed class Account : IIntegrationEventEmitter
+{
+    private readonly EventBuffer _events = new();
+
+    public void AddIntegrationEvent(object payload) => _events.Add(payload);
+
+    public void AddIntegrationEvent<TPayload>(EventContext<TPayload> context)
+        where TPayload : class => _events.Add(context);
+
+    public IReadOnlyList<EventContext<object>> GetIntegrationEvents() => _events.Snapshot();
+
+    public void ClearIntegrationEvents() => _events.Clear();
+
+    public void ClearIntegrationEvents(IReadOnlyList<EventContext<object>> occurrences) => _events.Clear(occurrences);
+}
 ```
 
 #### Auditing

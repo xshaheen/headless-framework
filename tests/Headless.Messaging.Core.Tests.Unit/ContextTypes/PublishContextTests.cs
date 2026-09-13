@@ -8,6 +8,72 @@ namespace Tests.ContextTypes;
 
 public sealed class PublishContextTests : TestBase
 {
+    [Theory]
+    [InlineData(MessageLane.Bus, false)]
+    [InlineData(MessageLane.Bus, true)]
+    [InlineData(MessageLane.Queue, false)]
+    [InlineData(MessageLane.Queue, true)]
+    public void should_resolve_absolute_schedule_during_public_construction(MessageLane lane, bool isTransactional)
+    {
+        var scheduledAt = new DateTimeOffset(2026, 9, 10, 12, 0, 0, TimeSpan.FromHours(3)).AddTicks(17);
+        MessageOptions options =
+            lane == MessageLane.Bus
+                ? new PublishOptions { ScheduledAt = scheduledAt }
+                : new QueueOptions { ScheduledAt = scheduledAt };
+
+        var context = new PublishContext<OrderPlaced>(
+            new OrderPlaced("order-1"),
+            lane,
+            options,
+            defaultDeliveryMode: DeliveryMode.Auto,
+            now: DateTimeOffset.UnixEpoch,
+            isTransactional: isTransactional,
+            cancellationToken: AbortToken
+        );
+
+        context.ResolvedDeliveryMode.Should().Be(DeliveryMode.Durable);
+        context.ScheduledAt.Should().Be(scheduledAt.ToUniversalTime());
+        context.PublishAt.Should().Be(new DateTimeOffset(2026, 9, 10, 9, 0, 0, TimeSpan.Zero).AddTicks(10));
+        context.DelayTime.Should().BeNull();
+        context.IsTransactional.Should().Be(isTransactional);
+    }
+
+    [Fact]
+    public void should_reject_absolute_schedule_for_direct_delivery_during_public_construction()
+    {
+        var act = () =>
+            new PublishContext<OrderPlaced>(
+                new OrderPlaced("order-1"),
+                MessageLane.Bus,
+                new PublishOptions { ScheduledAt = DateTimeOffset.UnixEpoch.AddHours(1) },
+                defaultDeliveryMode: DeliveryMode.Direct,
+                now: DateTimeOffset.UnixEpoch,
+                cancellationToken: AbortToken
+            );
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*Direct*schedule*");
+    }
+
+    [Fact]
+    public void should_reject_conflicting_schedules_during_public_construction()
+    {
+        var act = () =>
+            new PublishContext<OrderPlaced>(
+                new OrderPlaced("order-1"),
+                MessageLane.Queue,
+                new QueueOptions
+                {
+                    Delay = TimeSpan.FromMinutes(1),
+                    ScheduledAt = DateTimeOffset.UnixEpoch.AddHours(1),
+                },
+                defaultDeliveryMode: DeliveryMode.Auto,
+                now: DateTimeOffset.UnixEpoch,
+                cancellationToken: AbortToken
+            );
+
+        act.Should().Throw<ArgumentException>().WithMessage("*Delay*ScheduledAt*");
+    }
+
     [Fact]
     public void should_allow_options_and_delay_mutation_before_completion()
     {

@@ -8,6 +8,7 @@ Provides durable raw ADO.NET message storage using PostgreSQL with automatic sch
 
 ## Key Features
 
+- `IMessageRevocationStorage` atomically deletes a scheduled row before reservation, fenced by storage version, terminal status, and retry state. Claimed but unreserved rows remain revocable; deleted rows cannot be restored by reservation or shutdown flush.
 - **Provider-neutral storage**: no EF Core or commit-coordination dependency
 - **Schema Bootstrap**: Automatic table and index creation, including durable bus/queue intent columns
 - **GUID Row IDs**: Message storage identifiers come from the `Version7` keyed `IGuidGenerator` and are persisted as PostgreSQL `UUID` columns
@@ -58,6 +59,10 @@ builder.Services.AddHeadlessMessaging(options =>
 ```
 
 ## Configuration
+
+Known orphans use a separate bounded probe batch and recover only when the exact consumer identity, logical contract name/version, and lane return. They do not expire automatically. Unclaimed orphans permit Hold/ReleaseHold and unheld Purge; live claims block those actions, and ForceReprocess remains terminal-only. A hold protects retention and purge but does not stop recovery.
+
+History retention uses the shared `MessagingOptions` defaults: cleanup receipts/audits 7 days each, operator receipts 30 days, and operator audits 90 days. All four are positive configurable minimum residence durations. Audit references can extend receipt lifetime; deleting history does not release holds. PostgreSQL database time controls history age. Initialization adds the history-selection and audit-reference indexes idempotently. See the [Core lifecycle and retention contract](https://www.nuget.org/packages/Headless.Messaging.Core#readme-body-tab) for probe settings, replay limits, rollout effects, and collector pacing.
 
 ```csharp
 options.UsePostgreSql(config =>

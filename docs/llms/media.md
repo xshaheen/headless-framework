@@ -5,35 +5,9 @@ packages: Media.Indexing.Abstractions, Media.Indexing
 
 # Media
 
-## Table of Contents
-
-- [Quick Orientation](#quick-orientation)
-- [Agent Instructions](#agent-instructions)
-- [Core Concepts](#core-concepts)
-    - [Text Extraction vs. OCR](#text-extraction-vs-ocr)
-    - [Provider per Format](#provider-per-format)
-    - [Stream Ownership](#stream-ownership)
-- [Headless.Media.Indexing.Abstractions](#headlessmediaindexingabstractions)
-    - [Problem Solved](#problem-solved)
-    - [Key Features](#key-features)
-    - [Installation](#installation)
-    - [Quick Start](#quick-start)
-    - [Configuration](#configuration)
-    - [Dependencies](#dependencies)
-    - [Side Effects](#side-effects)
-- [Headless.Media.Indexing](#headlessmediaindexing)
-    - [Problem Solved](#problem-solved-1)
-    - [Key Features](#key-features-1)
-    - [Design Notes](#design-notes)
-    - [Installation](#installation-1)
-    - [Quick Start](#quick-start-1)
-    - [Configuration](#configuration-1)
-    - [Dependencies](#dependencies-1)
-    - [Side Effects](#side-effects-1)
-
 > Text extraction from documents (PDF, Word, PowerPoint) for full-text search indexing.
 
-## Quick Orientation
+## Orientation
 
 Two packages:
 
@@ -56,7 +30,7 @@ public sealed class Indexer(IMediaFileTextProviderResolver resolver)
 }
 ```
 
-## Agent Instructions
+## Agent Rules
 
 - Install `Headless.Media.Indexing` — it transitively includes `Headless.Media.Indexing.Abstractions`.
 - Three concrete providers ship: `PdfMediaFileTextProvider`, `WordDocumentMediaFileTextProvider`, `PresentationDocumentMediaFileTextProvider`. Call `AddMediaIndexing()` to register all three plus the resolver in one line.

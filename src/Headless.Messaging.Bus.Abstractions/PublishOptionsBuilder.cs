@@ -18,6 +18,7 @@ public sealed class PublishOptionsBuilder
     private string? _messageId;
     private string? _tenantId;
     private TimeSpan? _delay;
+    private DateTimeOffset? _scheduledAt;
 
     /// <summary>Creates an empty builder that preserves the canonical options defaults.</summary>
     public PublishOptionsBuilder() { }
@@ -81,6 +82,16 @@ public sealed class PublishOptionsBuilder
         return this;
     }
 
+    /// <summary>
+    /// Sets an absolute not-before instant; null removes it. The publisher rejects supplying this together
+    /// with a delay, and normalizes the instant to UTC.
+    /// </summary>
+    public PublishOptionsBuilder WithScheduledAt(DateTimeOffset? scheduledAt)
+    {
+        _scheduledAt = scheduledAt;
+        return this;
+    }
+
     /// <summary>Creates a canonical options snapshot with its own independently mutable headers.</summary>
     public PublishOptions Build() =>
         new()
@@ -91,5 +102,6 @@ public sealed class PublishOptionsBuilder
             MessageId = _messageId,
             TenantId = _tenantId,
             Delay = _delay,
+            ScheduledAt = _scheduledAt,
         };
 }

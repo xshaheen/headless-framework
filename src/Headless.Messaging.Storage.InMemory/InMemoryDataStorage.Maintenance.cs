@@ -27,6 +27,12 @@ internal sealed partial class InMemoryDataStorage
 
         lock (current)
         {
+            // Revocation may remove the row while this reservation waits for its lock.
+            if (!messages.TryGetValue(message.StorageId, out var stored) || !ReferenceEquals(stored, current))
+            {
+                return ValueTask.FromResult(false);
+            }
+
             if (
                 ((current.StatusName is StatusName.Succeeded or StatusName.Failed) && current.NextRetryAt is null)
                 || current.Retries != message.Retries
@@ -65,6 +71,12 @@ internal sealed partial class InMemoryDataStorage
 
         lock (current)
         {
+            // A reference acquired before revocation is not a live durable row.
+            if (!messages.TryGetValue(message.StorageId, out var stored) || !ReferenceEquals(stored, current))
+            {
+                return ValueTask.FromResult(false);
+            }
+
             // Fresh-dispatch fast path: lease acquisition + attempt reservation in one atomic step.
             // Combines _LeaseAsync's lease-contention guard with _ReserveAttemptAsync's durable
             // counter CAS; no owner match is required because this path is TAKING the lease.

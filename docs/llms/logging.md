@@ -5,23 +5,9 @@ packages: Logging.Serilog
 
 # Logging
 
-## Table of Contents
-
-- [Quick Orientation](#quick-orientation)
-- [Agent Instructions](#agent-instructions)
-- [Headless.Logging.Serilog](#headlessloggingserilog)
-    - [Problem Solved](#problem-solved)
-    - [Key Features](#key-features)
-    - [Design Notes](#design-notes)
-    - [Installation](#installation)
-    - [Quick Start](#quick-start)
-    - [Configuration](#configuration)
-    - [Dependencies](#dependencies)
-    - [Side Effects](#side-effects)
-
 > Serilog configuration factory with preconfigured sinks, enrichers, and structured logging defaults for ASP.NET Core applications.
 
-## Quick Orientation
+## Orientation
 
 Single package: `Headless.Logging.Serilog`. Provides `SerilogFactory` — a static factory that supplies two distinct `LoggerConfiguration` setups via extension methods:
 
@@ -42,7 +28,7 @@ builder.Host.UseSerilog(
 );
 ```
 
-## Agent Instructions
+## Agent Rules
 
 - Call `SerilogFactory.CreateBootstrapLoggerConfiguration()` (or the extension `loggerConfiguration.ConfigureBootstrapLoggerConfiguration()`) **before** `WebApplication.CreateBuilder()` — the bootstrap logger must be assigned to `Log.Logger` early to capture DI and configuration-loading exceptions.
 - Call `ConfigureReloadableLoggerConfiguration()` inside `UseSerilog(…)` — that delegate receives the fully-built `IServiceProvider`, enabling `ReadFrom.Services(services)` for DI-registered enrichers/sinks.

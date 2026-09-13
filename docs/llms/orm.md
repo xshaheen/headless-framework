@@ -5,58 +5,9 @@ packages: EntityFramework.Core, EntityFramework, EntityFramework.CommitCoordinat
 
 # ORM
 
-## Table of Contents
-
-- [Quick Orientation](#quick-orientation)
-    - [The two-tier event model](#the-two-tier-event-model)
-- [Agent Instructions](#agent-instructions)
-- [Core Concepts](#core-concepts)
-    - [HeadlessDbContext conventions](#headlessdbcontext-conventions)
-    - [Global query filters](#global-query-filters)
-    - [Save pipeline and auditing](#save-pipeline-and-auditing)
-    - [DDD aggregate support](#ddd-aggregate-support)
-    - [Outbox-within-save-transaction bridge](#outbox-within-save-transaction-bridge)
-- [Choosing a Provider](#choosing-a-provider)
-- [Headless.EntityFramework.Core](#headlessentityframeworkcore)
-    - [Problem Solved](#problem-solved)
-    - [Key Features](#key-features)
-    - [Design Notes](#design-notes)
-    - [Installation](#installation)
-    - [Quick Start](#quick-start)
-    - [Configuration](#configuration)
-    - [Dependencies](#dependencies)
-    - [Side Effects](#side-effects)
-- [Headless.EntityFramework](#headlessentityframework)
-    - [Problem Solved](#problem-solved-1)
-    - [Key Features](#key-features-1)
-    - [Design Notes](#design-notes-1)
-    - [Installation](#installation-1)
-    - [Quick Start](#quick-start-1)
-    - [Configuration](#configuration-1)
-    - [Dependencies](#dependencies-1)
-    - [Side Effects](#side-effects-1)
-- [Headless.EntityFramework.Messaging](#headlessentityframeworkmessaging)
-    - [Problem Solved](#problem-solved-2)
-    - [Key Features](#key-features-2)
-    - [Design Notes](#design-notes-2)
-    - [Installation](#installation-2)
-    - [Quick Start](#quick-start-2)
-    - [Configuration](#configuration-2)
-    - [Dependencies](#dependencies-2)
-    - [Side Effects](#side-effects-2)
-- [Headless.Couchbase](#headlesscouchbase)
-    - [Problem Solved](#problem-solved-3)
-    - [Key Features](#key-features-3)
-    - [Installation](#installation-3)
-    - [Quick Start](#quick-start-3)
-    - [Configuration](#configuration-3)
-    - [Dependencies](#dependencies-3)
-    - [Side Effects](#side-effects-3)
-    - [Cancellation (Couchbase)](#cancellation-couchbase)
-
 > ORM domain: `Headless.EntityFramework.Core` for reusable EF primitives, `Headless.EntityFramework` for relational stores with framework conventions, opt-in `Headless.EntityFramework.CommitCoordination` and `Headless.EntityFramework.Messaging` bridges, and `Headless.Couchbase` for document storage via Couchbase.
 
-## Quick Orientation
+## Orientation
 
 Choose by storage model:
 
@@ -75,7 +26,7 @@ Use these packages for ORM-level persistence primitives. For raw SQL connection 
 - **Domain events** (plain payloads emitted by `IDomainEventEmitter` entities) — in-process and in-transaction, published through `IDomainEventDispatcher` before commit. Opt in with `.AddDomainEvents()` (in `Headless.EntityFramework`).
 - **Integration events** (plain payloads emitted by `IIntegrationEventEmitter` entities) — distributed, enqueued to the transactional outbox through `IHeadlessOutboxDispatcher` and delivered to the broker after commit by the messaging relay. Opt in with `.AddIntegrationEventOutbox()` (in `Headless.EntityFramework.Messaging`).
 
-## Agent Instructions
+## Agent Rules
 
 - The outbox dispatcher accepts captured `EventContext<object>` values. Preserve their IDs and business context, including null root causation/system tenant, across save and persistence retry; do not recapture at dispatch.
 - Treat `Headless.EntityFramework.Core` as the provider-neutral primitives package and `Headless.EntityFramework` as the application-facing relational package; commit coordination and messaging are opt-in adapters, while `Headless.Couchbase` is the document provider. Do not invent an ORM umbrella package.

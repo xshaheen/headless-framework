@@ -5,75 +5,9 @@ packages: Coordination.Abstractions, Coordination.Core, Coordination.Core.Databa
 
 # Coordination
 
-## Table of Contents
-
-- [Quick Orientation](#quick-orientation)
-- [Agent Instructions](#agent-instructions)
-- [Core Concepts](#core-concepts)
-    - [Node Identity](#node-identity)
-    - [Liveness States](#liveness-states)
-    - [Operational Read Model](#operational-read-model)
-    - [Events And Reconcile](#events-and-reconcile)
-    - [Safety Ceiling](#safety-ceiling)
-- [Choosing a Provider](#choosing-a-provider)
-- [Headless.Coordination.Abstractions](#headlesscoordinationabstractions)
-    - [Problem Solved](#problem-solved)
-    - [Key Features](#key-features)
-    - [Design Notes](#design-notes)
-    - [Installation](#installation)
-    - [Quick Start](#quick-start)
-    - [Configuration](#configuration)
-    - [Dependencies](#dependencies)
-    - [Side Effects](#side-effects)
-- [Headless.Coordination.Core](#headlesscoordinationcore)
-    - [Problem Solved](#problem-solved-1)
-    - [Key Features](#key-features-1)
-    - [Design Notes](#design-notes-1)
-    - [Installation](#installation-1)
-    - [Quick Start](#quick-start-1)
-    - [Configuration](#configuration-1)
-    - [Dependencies](#dependencies-1)
-    - [Side Effects](#side-effects-1)
-- [Headless.Coordination.Core.Database](#headlesscoordinationcoredatabase)
-    - [Problem Solved](#problem-solved-2)
-    - [Key Features](#key-features-2)
-    - [Design Notes](#design-notes-2)
-    - [Installation](#installation-2)
-    - [Quick Start](#quick-start-2)
-    - [Configuration](#configuration-2)
-    - [Dependencies](#dependencies-2)
-    - [Side Effects](#side-effects-2)
-- [Headless.Coordination.PostgreSql](#headlesscoordinationpostgresql)
-    - [Problem Solved](#problem-solved-3)
-    - [Key Features](#key-features-3)
-    - [Design Notes](#design-notes-3)
-    - [Installation](#installation-3)
-    - [Quick Start](#quick-start-3)
-    - [Configuration](#configuration-3)
-    - [Dependencies](#dependencies-3)
-    - [Side Effects](#side-effects-3)
-- [Headless.Coordination.Redis](#headlesscoordinationredis)
-    - [Problem Solved](#problem-solved-4)
-    - [Key Features](#key-features-4)
-    - [Design Notes](#design-notes-4)
-    - [Installation](#installation-4)
-    - [Quick Start](#quick-start-4)
-    - [Configuration](#configuration-4)
-    - [Dependencies](#dependencies-4)
-    - [Side Effects](#side-effects-4)
-- [Headless.Coordination.SqlServer](#headlesscoordinationsqlserver)
-    - [Problem Solved](#problem-solved-5)
-    - [Key Features](#key-features-5)
-    - [Design Notes](#design-notes-5)
-    - [Installation](#installation-5)
-    - [Quick Start](#quick-start-5)
-    - [Configuration](#configuration-5)
-    - [Dependencies](#dependencies-5)
-    - [Side Effects](#side-effects-5)
-
 > Store-authoritative node membership and liveness for distributed consumers that need stable `node@incarnation` identity and lifecycle observations.
 
-## Quick Orientation
+## Orientation
 
 Use Coordination when a distributed consumer needs to know which process incarnation is alive. It supplies `INodeMembership` for register, heartbeat, leave, live-node reads, full liveness snapshots, and lifecycle events. Consumers stamp `NodeIdentity` (`node@incarnation`) on their own rows; Coordination does not store ownership.
 
@@ -81,7 +15,7 @@ Concrete consumer: the `Headless.Jobs` durable (operational-store) path resolves
 
 The store is the temporal authority. PostgreSQL uses `clock_timestamp()`, SQL Server uses `SYSUTCDATETIME()`, and Redis uses `TIME` inside Lua. Application clocks do not classify another node as Alive, Suspected, or Dead.
 
-## Agent Instructions
+## Agent Rules
 
 - Depend on `Headless.Coordination.Abstractions` from application code and add exactly one provider package through `AddHeadlessCoordination(setup => setup.Use...)`.
 - Treat `NodeLeft` as an optimization trigger. Consumers must also periodically reconcile rows whose owner identity is not in `GetLiveNodesAsync()`.

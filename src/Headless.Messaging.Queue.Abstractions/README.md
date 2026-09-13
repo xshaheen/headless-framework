@@ -8,9 +8,10 @@ Gives application code a compile-time queue surface for work-queue delivery wher
 
 ## Key Features
 
+- `PublishReceipt` carries the resolved wire `MessageId` and nullable durable `StorageId`. Direct delivery returns no storage handle. Middleware suppression before terminal publication returns both values null. A coordinated receipt remains subject to transaction commit or rollback and never implies consumer completion.
 - `IQueue` is the only queue publisher; an unset `QueueOptions.DeliveryMode` inherits `MessagingOptions.DefaultDeliveryMode`, which defaults to Auto. Explicit modes override that setting.
 - Durable delivery persists messages first, then drains them through the configured queue transport.
-- `QueueOptions.Delay` schedules durable queue delivery.
+- `QueueOptions.Delay` or `QueueOptions.ScheduledAt` schedules durable queue delivery. Supply one scheduling form. `Auto` upgrades to durable and `Direct` rejects either form.
 - `QueueOptionsBuilder` and the `QueueExtensions.EnqueueAsync` callback author canonical options snapshots without a Core dependency.
 - Every queue enqueue carries `MessageLane.Queue` through storage, tracing, dashboard projections, and consume context.
 
@@ -43,11 +44,13 @@ public sealed class ImportJobs(IQueue queue)
 public sealed record ImportRequested(Guid ImportId);
 ```
 
-The short overload uses the registered message contract and inherits the host delivery mode, which defaults to `Auto`. Auto sends directly outside coordination and captures durably inside a compatible transaction. Pass `QueueOptions` before the cancellation token for metadata or delivery overrides. Durable acceptance waits for storage, not consumer completion; restart survival requires persistent storage. Inside a compatible coordination boundary the capture commits with application state, while an incompatible boundary is rejected. Explicit `Auto` captures in a compatible boundary and sends directly with no boundary. `Direct` bypasses storage and coordination and cannot be combined with `Delay`.
+The short overload uses the registered message contract and inherits the host delivery mode, which defaults to `Auto`. Auto sends directly outside coordination and captures durably inside a compatible transaction. Pass `QueueOptions` before the cancellation token for metadata or delivery overrides. Durable acceptance waits for storage, not consumer completion; restart survival requires persistent storage. Inside a compatible coordination boundary the capture commits with application state, while an incompatible boundary is rejected. Explicit `Auto` captures in a compatible boundary and sends directly with no boundary. `Direct` bypasses storage and coordination and cannot be combined with `Delay` or `ScheduledAt`.
+
+`PublishAsync` and `EnqueueAsync`, including callback overloads, now return `Task<PublishReceipt>`. Existing `await` statements and `Func<Task>` adapters can ignore the result because `Task<PublishReceipt>` derives from `Task`. Custom `IBus`/`IQueue` implementations and test doubles must update their return signatures and supply a receipt; recompile consumers for this binary API break. Use `var receipt = await bus.PublishAsync(message, cancellationToken);` to retain the returned identity.
 
 Omit an unused cancellation token, or pass `default` or `cancellationToken: default` to select the existing token overload. Supplying `default` followed by a cancellation token selects the options overload. Use `options:` and `configure:` to make record and callback intent explicit.
 
-Import `Headless.Messaging` for `QueueOptionsBuilder` and the callback extension. Its operations are `WithHeader`, `WithHeaders`, `WithCorrelationId`, `WithCausationId`, `WithMessageId`, `WithTenantId`, `WithDelay`, and `Build`. Use a callback for a single authoring scope or construct a builder directly and call `Build()` for a reusable options template. Delivery-mode and other advanced overrides remain available through `QueueOptions` or `builder.Build() with { ... }`.
+Import `Headless.Messaging` for `QueueOptionsBuilder` and the callback extension. Its operations are `WithHeader`, `WithHeaders`, `WithCorrelationId`, `WithCausationId`, `WithMessageId`, `WithTenantId`, `WithDelay`, `WithScheduledAt`, and `Build`. Use a callback for a single authoring scope or construct a builder directly and call `Build()` for a reusable options template. Delivery-mode and other advanced overrides remain available through `QueueOptions` or `builder.Build() with { ... }`.
 
 Each callback runs synchronously exactly once on a fresh builder; async-void callbacks are unsupported. A null receiver or `configure` throws before user code, and a throwing callback submits nothing. The adapter forwards the original token and returns the original task. `options: null` and positional `null` keep the existing options path; `configure: null!` selects the callback guard.
 

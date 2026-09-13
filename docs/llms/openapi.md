@@ -5,41 +5,9 @@ packages: OpenApi.Nswag, OpenApi.Nswag.OData, OpenApi.Scalar
 
 # OpenAPI
 
-## Table of Contents
-
-- [Quick Orientation](#quick-orientation)
-- [Agent Instructions](#agent-instructions)
-- [Core Concepts](#core-concepts)
-- [Headless.OpenApi.Nswag](#headlessopenapinswag)
-    - [Problem Solved](#problem-solved)
-    - [Key Features](#key-features)
-    - [Design Notes](#design-notes)
-    - [Installation](#installation)
-    - [Quick Start](#quick-start)
-    - [Configuration](#configuration)
-    - [Dependencies](#dependencies)
-    - [Side Effects](#side-effects)
-- [Headless.OpenApi.Nswag.OData](#headlessopenapinswagodata)
-    - [Problem Solved](#problem-solved-1)
-    - [Key Features](#key-features-1)
-    - [Installation](#installation-1)
-    - [Quick Start](#quick-start-1)
-    - [Configuration](#configuration-1)
-    - [Dependencies](#dependencies-1)
-    - [Side Effects](#side-effects-1)
-- [Headless.OpenApi.Scalar](#headlessopenapiscalar)
-    - [Problem Solved](#problem-solved-2)
-    - [Key Features](#key-features-2)
-    - [Design Notes](#design-notes-1)
-    - [Installation](#installation-2)
-    - [Quick Start](#quick-start-2)
-    - [Configuration](#configuration-2)
-    - [Dependencies](#dependencies-2)
-    - [Side Effects](#side-effects-2)
-
 > OpenAPI document generation via NSwag (with FluentValidation schema integration and framework processors) plus OData query-parameter documentation and Scalar UI rendering.
 
-## Quick Orientation
+## Orientation
 
 These three packages are **complementary**, not competing. Each has a distinct role:
 
@@ -66,7 +34,7 @@ app.MapScalarOpenApi();
 
 For versioned APIs, replace `app.MapNswagOpenApi()` with `app.MapNswagOpenApiVersions()`.
 
-## Agent Instructions
+## Agent Rules
 
 - Call `AddNswagOpenApi()` to register OpenAPI document generation. Do NOT call NSwag's `AddOpenApiDocument()` directly — the framework wires all processors in the correct order.
 - **Processor registration order matters**: `GenericNullabilitySchemaProcessor` is registered before `NullabilityAsRequiredSchemaProcessor` intentionally. If you inject processors via `setupGeneratorActions`, add them after the framework processors (they run last) unless the intent is to override defaults.
@@ -172,6 +140,26 @@ builder.Services.AddNswagOpenApi(
 
 ### Configuration
 
+#### API surfaces
+
+`AddNswagApiSurfaceDocuments()` infers all document names from surfaces registered with `AddHeadlessApiSurface(...)`. Surface definitions are finalized during registration. Inference closes surface registration, so later additions throw. An optional document list publishes only the selected names and may precede surface registration; each name must match a configured `OpenApi.DocumentName`. No surfaces or an explicit empty list registers no documents.
+
+```csharp
+builder.Services.AddNswagApiSurfaceDocuments(
+    setupGeneratorActions: (settings, surface) => settings.Version = "v1"
+);
+// After building the application and mapping MVC / Minimal API endpoints:
+app.MapNswagApiSurfaceDocuments();
+```
+
+Configure document identity through `surface.OpenApi.DocumentName` and `.Title`. The generator callback cannot rename the document. Surface metadata filters operations before schema generation, excluding other surfaces' paths and schemas. API Explorer groups remain available independently through `settings.ApiGroupNames`; surface registration does not overwrite version groups.
+
+Extra documents can use either `AddNswagOpenApi(...)` or native NSwag `AddOpenApiDocument(...)`. Surface documents use ordinary NSwag registrations without replacing its services. Register each document once across calls. `MapNswagApiSurfaceDocuments()` serves `/openapi/{documentName}.json` and the shared Swagger UI at `/swagger`.
+
+`TenantRequiredExampleOperationProcessor` adds the `tenantRequired` 403 example only for effective `RequireTenant` endpoint metadata. Optional-tenant and anonymous endpoints do not receive it. It also runs for ordinary documents. Authorization responses are created per operation so examples and schemas cannot leak between documents.
+
+Operation IDs use named MVC HTTP attributes and native Minimal API route-name metadata. `UseRouteNameAsOperationId` defaults to `false` because NSwag 14.7.1 dereferences MVC-only route information on Minimal APIs; `UseHttpAttributeNameAsOperationId` defaults to `true`.
+
 `HeadlessNswagOptions` properties (all have defaults — only set what differs):
 
 | Property | Default | Description |
@@ -192,6 +180,7 @@ builder.Services.AddNswagOpenApi(
 
 ### Side Effects
 
+- Surface registration supplies a singleton aggregate NSwag document collection from the finalized surface registry.
 - Registers NSwag OpenAPI document generator via `services.AddOpenApiDocument(...)`
 - `MapNswagOpenApi()` mounts the OpenAPI JSON endpoint at `/openapi/{documentName}.json` and Swagger UI at `/swagger`
 - `MapNswagOpenApiVersions()` mounts one OpenAPI JSON endpoint per API version at `/openapi/{groupName}.json` and a single Swagger UI at `/swagger`

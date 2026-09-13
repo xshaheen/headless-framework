@@ -5,95 +5,9 @@ packages: Api.Abstractions, Api.Core, Api.ServiceDefaults, Api.DataProtection, A
 
 # API & Web
 
-## Table of Contents
-
-- [Quick Orientation](#quick-orientation)
-- [Agent Instructions](#agent-instructions)
-- [Core Concepts](#core-concepts)
-    - [Bootstrap model: ServiceDefaults vs Core](#bootstrap-model-servicedefaults-vs-core)
-    - [Request context: `IRequestContext`](#request-context-irequestcontext)
-    - [Problem details and error codes](#problem-details-and-error-codes)
-    - [Standard middleware order](#standard-middleware-order)
-    - [Idempotency as HTTP middleware](#idempotency-as-http-middleware)
-- [Headless.Api.Abstractions](#headlessapiabstractions)
-    - [Problem Solved](#problem-solved)
-    - [Key Features](#key-features)
-    - [Installation](#installation)
-    - [Quick Start](#quick-start)
-    - [Configuration](#configuration)
-    - [Dependencies](#dependencies)
-    - [Side Effects](#side-effects)
-- [Headless.Api.Core](#headlessapicore)
-    - [Problem Solved](#problem-solved-1)
-    - [Key Features](#key-features-1)
-    - [Design Notes](#design-notes)
-    - [Installation](#installation-1)
-    - [Quick Start](#quick-start-1)
-    - [Configuration](#configuration-1)
-    - [Dependencies](#dependencies-1)
-    - [Side Effects](#side-effects-1)
-- [Headless.Api.ServiceDefaults](#headlessapiservicedefaults)
-    - [Problem Solved](#problem-solved-2)
-    - [Key Features](#key-features-2)
-    - [Installation](#installation-2)
-    - [Quick Start](#quick-start-2)
-    - [Tenant-Context Exception Mapping](#tenant-context-exception-mapping)
-    - [Configuration](#configuration-2)
-    - [Dependencies](#dependencies-2)
-    - [Side Effects](#side-effects-2)
-- [Headless.Api.DataProtection](#headlessapidataprotection)
-    - [Problem Solved](#problem-solved-3)
-    - [Key Features](#key-features-3)
-    - [Installation](#installation-3)
-    - [Quick Start](#quick-start-3)
-    - [Configuration](#configuration-3)
-    - [Dependencies](#dependencies-3)
-    - [Side Effects](#side-effects-3)
-- [Headless.Api.FluentValidation](#headlessapifluentvalidation)
-    - [Problem Solved](#problem-solved-4)
-    - [Key Features](#key-features-4)
-    - [Installation](#installation-4)
-    - [Quick Start](#quick-start-4)
-    - [Configuration](#configuration-4)
-    - [Dependencies](#dependencies-4)
-    - [Side Effects](#side-effects-4)
-- [Headless.Api.Idempotency](#headlessapiidempotency)
-    - [Problem Solved](#problem-solved-5)
-    - [Key Features](#key-features-5)
-    - [Design Notes](#design-notes-1)
-    - [Installation](#installation-5)
-    - [Quick Start](#quick-start-5)
-    - [Configuration](#configuration-5)
-    - [Dependencies](#dependencies-5)
-    - [Side Effects](#side-effects-5)
-- [Headless.Api.Logging.Serilog](#headlessapiloggingserilog)
-    - [Problem Solved](#problem-solved-6)
-    - [Key Features](#key-features-6)
-    - [Installation](#installation-6)
-    - [Quick Start](#quick-start-6)
-    - [Configuration](#configuration-6)
-    - [Dependencies](#dependencies-6)
-    - [Side Effects](#side-effects-6)
-- [Headless.Api.MinimalApi](#headlessapiminimalapi)
-    - [Problem Solved](#problem-solved-7)
-    - [Key Features](#key-features-7)
-    - [Installation](#installation-7)
-    - [Quick Start](#quick-start-7)
-    - [Configuration](#configuration-7)
-    - [Dependencies](#dependencies-7)
-    - [Side Effects](#side-effects-7)
-- [Headless.Api.Mvc](#headlessapimvc)
-    - [Problem Solved](#problem-solved-8)
-    - [Key Features](#key-features-8)
-    - [Installation](#installation-8)
-    - [Quick Start](#quick-start-8)
-    - [Configuration](#configuration-8)
-    - [Dependencies](#dependencies-8)
-    - [Side Effects](#side-effects-8)
-
 > ASP.NET Core API infrastructure: service registration, JWT, middleware, validation, logging, and endpoint integration for Minimal API and MVC.
 
-## Quick Orientation
+## Orientation
 
 The package split:
 
@@ -114,7 +28,7 @@ Additional packages:
 - `Headless.Api.Logging.Serilog` — enrich Serilog logs with per-request context (IP, user agent, user ID, tenant ID, correlation ID).
 - `Headless.Api.Idempotency` — Stripe-style idempotency middleware: cache full HTTP responses on first execution and replay them byte-equivalent on identical retries. See [mediator.md](mediator.md) for why idempotency is HTTP middleware and not a Mediator behavior.
 
-## Agent Instructions
+## Agent Rules
 
 - Default install for any new Headless API: `Headless.Api.ServiceDefaults`. It transitively pulls in `Headless.Api.Core`. Only reach for `Headless.Api.Core` directly when you specifically want primitives without the orchestrator.
 - Use `AddHeadless()` on `WebApplicationBuilder` for bootstrapping; do not manually register compression, security headers, JSON defaults, OpenTelemetry, OpenAPI, or problem details. `AddHeadless(configureServices: options => ...)` accepts a `HeadlessServiceDefaultsOptions` callback for Aspire-style toggles (OTel, OpenAPI, service discovery, validation, antiforgery). Antiforgery is opt-in — set `options.Antiforgery.Enabled = true` for cookie-auth apps and wire `app.UseAntiforgery()` yourself after `UseAuthentication()`/`UseAuthorization()`; bearer-token APIs leave it disabled.
@@ -239,7 +153,13 @@ public sealed class OrderService(IRequestContext context)
 
 ### Configuration
 
-No configuration required. This package contains interfaces only.
+#### API surfaces
+
+`IApiSurfaceMetadata` and `[ApiSurface("portal")]` identify an endpoint's API surface. `ApiSurfaceDescriptor` contains immutable `RoutePrefix`, `DefaultAuthorizationPolicy`, `DefaultTenancyMode`, and `OpenApi` settings. `HttpContext.GetApiSurface()` in `Headless.Api.Core` resolves that descriptor from the selected endpoint after routing. It does not describe the effective endpoint authorization policy.
+
+`ApiSurfaceTenancyMode` has `Unspecified`, `RequireTenant`, `AllowMissingTenant`, and `SkipTenantResolution` values. These add metadata defaults only. `RequireTenant` needs the tenancy authorization handler and an applicable policy containing `TenantRequirement`; selecting the mode does not register either. Skipping resolution does not permit a missing tenant. Explicit endpoint metadata takes precedence.
+
+No runtime registration is required by this package.
 
 ### Dependencies
 
@@ -369,6 +289,36 @@ public sealed class TokenValidator(IJwtTokenFactory tokens)
 
 ### Configuration
 
+#### API surfaces
+
+An API surface is a named set of endpoints sharing routing, authorization and tenancy defaults, plus an OpenAPI document. `AddHeadlessApiSurface(name, configure)` runs its optional callback immediately, validates the definition, and registers an immutable descriptor plus a singleton `ApiSurfaceRegistry`. MVC, Minimal API, telemetry, and OpenAPI share these definitions. Configure definitions during registration; the builders do not use the deferred .NET options pipeline. Changes to a retained builder after registration have no effect.
+
+```csharp
+using Headless.Api;
+using Headless.Api.Surfaces;
+
+builder.Services.AddHeadlessApiSurface("portal", surface =>
+{
+    surface.RoutePrefix = "api/portal";
+    surface.DefaultAuthorizationPolicy = "tenant";
+    surface.DefaultTenancyMode = ApiSurfaceTenancyMode.RequireTenant;
+});
+```
+
+For an atomic batch, use `AddHeadlessApiSurfaces(surfaces => surfaces.Add("portal").Add("console"))`. Its `ApiSurfacesBuilder` validates every definition before registering any from the batch. Both registration methods return `IServiceCollection` for chaining and may be combined before document inference. Document names and titles are inferred; override `surface.OpenApi.DocumentName` and `.Title` only when needed.
+
+`DefaultAuthorizationPolicy` adds a native named policy alongside endpoint policies. `[AllowAnonymous]` / `.AllowAnonymous()` still bypass authorization. `DefaultTenancyMode = ApiSurfaceTenancyMode.RequireTenant` requires a policy containing `TenantRequirement`, the Headless tenant authorization handler, and current-tenant services. The mode alone does not install enforcement. Configure these through `AddHeadlessTenancy(...)` as shown above.
+
+Explicit controller or endpoint `RequireTenant` / `AllowMissingTenant` metadata takes precedence over surface defaults. `SkipTenantResolution` skips HTTP tenant extraction; it does not permit a missing tenant. An explicit tenancy requirement or exemption also suppresses a surface's skip-resolution default.
+
+API surfaces require no middleware call. After routing, use `HttpContext.GetApiSurface()` to read the selected endpoint's immutable defaults. The lookup returns `null` for unmatched or unmarked endpoints and follows endpoint changes during re-execution. A marked endpoint whose surface is not registered throws.
+
+With `Headless.Api.ServiceDefaults` OpenTelemetry enabled, completed request spans receive the `headless.api.surface.name` tag. Unmatched requests use `unknown`; matched endpoints without surface metadata use `unclassified`. The tag reflects the endpoint visible at response completion and is not available during authentication. Custom telemetry callbacks that run after request disposal must capture `ApiSurfaceRegistry` from host services and resolve the selected endpoint's `IApiSurfaceMetadata`. `GetApiSurface()` uses request services and is intended for the active request pipeline.
+
+Surface and document names are case-insensitive identities containing ASCII letters, digits, periods, hyphens, or underscores. `.` and `..` are invalid. Surface names `unknown`, `unclassified`, and `infrastructure` are reserved. Duplicate surface/document names and invalid configuration fail validation. Unknown surface lookups throw. Document names default to the lowercase surface name; titles default to `<surfaceName> API`.
+
+`ApiSurfaceRegistry.GetRequiredSurfaceForDocument(documentName)` resolves the document owner from the same immutable definitions. It matches names case-insensitively and throws when no surface owns the document. Register all surfaces before `AddHeadless()` or a parameterless OpenAPI surface registration. Inference closes surface registration; later additions throw rather than silently missing documents.
+
 Exception mapping from `AddHeadlessProblemDetails()`:
 
 | Exception | Response |
@@ -406,6 +356,7 @@ All other exceptions return `false`; the host default or a downstream handler re
 
 ### Side Effects
 
+- Opt-in surface registration validates options at startup and registers the immutable singleton registry; middleware sets the request feature and activity tag.
 - Registers `HttpContextAccessor` (via `AddHeadlessProblemDetails`)
 - Configures response compression providers (Brotli, Gzip)
 - Configures Kestrel limits and disables `Server` response header (via `ConfigureHeadlessDefaultApi`)
@@ -512,6 +463,25 @@ builder.AddHeadless(configureServices: options =>
     options.Antiforgery.Enabled = false;
 });
 ```
+
+When API surfaces are registered, the default OpenTelemetry response enricher adds `headless.api.surface.name` to completed request spans. It uses the selected endpoint's configured name, `unknown` for unmatched requests, and `unclassified` for unmarked endpoints. Replacing `EnrichWithHttpResponse` replaces this default too; capture and invoke the existing delegate to preserve it.
+
+With OpenAPI enabled, `AddHeadless()` infers document names from surfaces registered before it:
+
+```csharp
+builder.Services
+    .AddHeadlessApiSurface("portal")
+    .AddHeadlessApiSurface("console");
+builder.AddHeadless();
+// After building the application:
+app.MapHeadlessEndpoints();
+```
+
+`SurfaceDocumentNames` defaults to `null`, which publishes every registered surface document. Without surfaces, the ordinary `v1` document remains. Set a nonempty list only to select specific documents; each name must match a configured `OpenApi.DocumentName`. An explicit empty list selects the ordinary, unfiltered `v1` document. Set `OpenApi.Enabled = false` to disable registration. `MapHeadlessEndpoints()` serves documents at the configured route. Adding surfaces after inference throws; unknown explicit document names fail startup.
+
+For hosts using individual registrations, call `builder.Services.AddHeadlessApiSurfaceDocuments()` after surface registration and pair it with native `app.MapOpenApi()`. An optional document list selects a subset; no surfaces or an empty list registers no documents on this standalone path. Use it without the default `AddHeadless()` OpenAPI registration, or disable that registration with `OpenApi.Enabled = false` and map documents yourself. Native `AddOpenApi(...)` can register additional documents.
+
+Surface filtering runs before schema generation and is independent of API Explorer version groups. `ConfigureOpenApi` can narrow the selected endpoints with `ShouldInclude` and append document transformers, including a title override. The standalone method accepts the same callback. This adapter uses ASP.NET Core OpenAPI generation; NSwag-specific security, schema mappings, and tenant-error examples remain in `Headless.OpenApi.Nswag`.
 
 #### String Encryption
 
@@ -964,6 +934,19 @@ app.Run();
 
 ### Configuration
 
+#### API surfaces
+
+After `AddHeadlessApiSurface(...)`, `app.MapApiSurface("portal")` returns a native `RouteGroupBuilder` with the configured prefix and named authorization policy. The optional callback and returned builder support ordinary ASP.NET Core endpoint conventions.
+
+```csharp
+var portal = app.MapApiSurface("portal");
+portal.MapGet("profile", () => "profile");
+portal.MapGet("bootstrap", () => "bootstrap").AllowMissingTenant();
+portal.MapGet("status", () => "ready").AllowAnonymous();
+```
+
+Endpoint tenancy choices override surface defaults. Native authorization policies remain additive, and `AllowAnonymous` bypasses them. `RequireTenant` metadata needs the policy and services described in `Headless.Api.Core`. Unknown surface names throw during mapping; nested groups with conflicting surface identities throw when endpoints are built. API Explorer version groups remain independent.
+
 Representation validation is optional. The default accepts any strong entity tag. Configure the shared MVC and Minimal API validator when every conditional write uses a specific representation format:
 
 ```csharp
@@ -979,6 +962,7 @@ builder.Services.AddHeadlessMinimalApiEntityTagConcurrency(options =>
 
 ### Side Effects
 
+- `MapApiSurface` adds group route, authorization, and tenancy conventions using the shared surface registry.
 - Configures `JsonOptions` for Minimal APIs
 - Returning `ToHttpResult(...)` makes the full ApiResult response set discoverable by OpenAPI without manual `.Produces(...)` calls
 - When opted in, endpoint filters emit ETags for successful `IHasEntityTag` results and reject missing or invalid `If-Match` preconditions before invoking the handler
@@ -1069,7 +1053,13 @@ Requests with no routed endpoint are left untouched. Registered before `UseRouti
 
 ### Configuration
 
-No additional configuration required.
+#### API surfaces
+
+Register `AddHeadlessMvcApiSurfaces()` alongside `AddControllers()` and `AddHeadlessApiSurface(...)`. Mark controllers with `[ApiSurface("portal")]`. The convention adds the registry's prefix, named authorization policy, and tenancy defaults to their actions.
+
+Controller/action tenancy metadata takes precedence over surface defaults. Native authorization remains additive, and `[AllowAnonymous]` bypasses it. `RequireTenant` metadata needs the policy and services described in `Headless.Api.Core`. Unknown surface names fail MVC model construction. Controllers with a configured prefix must use relative controller and action routes; absolute templates are rejected because they escape that prefix. Existing `ApiExplorerSettings.GroupName` values are preserved for versioning. Repeated integration registration adds only one convention configurator.
+
+Other MVC features require no additional configuration.
 
 ### Dependencies
 
@@ -1079,6 +1069,7 @@ No additional configuration required.
 
 ### Side Effects
 
+- `AddHeadlessMvcApiSurfaces` registers one MVC options configurator that applies surface defaults during model construction.
 - Configures `MvcOptions` and `JsonOptions` for controllers
 - Adds a result filter that applies ProblemDetails customization to Headless-generated MVC object results
 - When opted in, emits ETags for `IHasEntityTag` responses

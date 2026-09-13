@@ -46,6 +46,23 @@ public sealed partial class SqlServerOptions
     /// </summary>
     public string? ConnectionString { get; set; }
 
+    /// <summary>
+    /// Gets or sets the command timeout applied to schema-initialization DDL that can scale with table
+    /// size — the history-table index builds (<c>InboxOperationReceipts</c>, <c>InboxAudit</c>) and the
+    /// <c>sp_getapplock</c> wait that serializes initializers across replicas.
+    /// <para>
+    /// History tables already exist and grow without bound on upgraded schemas, so adding an index to them
+    /// is an offline build over the full backlog that can run far longer than the OLTP
+    /// <c>MessagingOptions.CommandTimeout</c> (~30s) used for query/write paths.
+    /// </para>
+    /// <para>
+    /// Default <see langword="null" /> means <b>no timeout</b> (wait indefinitely): the DDL runs with a
+    /// SqlClient <c>CommandTimeout</c> of <c>0</c>. Set a finite value to cap startup DDL. <see cref="TimeSpan.Zero"/>
+    /// is also treated as "no timeout". A negative value is rejected at validation time.
+    /// </para>
+    /// </summary>
+    public TimeSpan? DdlCommandTimeout { get; set; }
+
     internal string Version { get; set; } = null!;
 }
 
@@ -61,5 +78,11 @@ internal sealed class SqlServerOptionsValidator : AbstractValidator<SqlServerOpt
             );
 
         RuleFor(x => x.OwnerColumnMaxLength).GreaterThanOrEqualTo(DataStorageConstants.MinimumOwnerColumnMaxLength);
+
+        // A negative DDL timeout is meaningless; null/Zero already express "no timeout".
+        RuleFor(x => x.DdlCommandTimeout!.Value)
+            .GreaterThanOrEqualTo(TimeSpan.Zero)
+            .When(x => x.DdlCommandTimeout is not null)
+            .WithMessage("DdlCommandTimeout must be greater than or equal to zero (zero or null means no timeout).");
     }
 }

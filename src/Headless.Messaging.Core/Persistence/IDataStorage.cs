@@ -15,6 +15,28 @@ public interface IDataStorage
     /// <summary>Returns the audited, provider-neutral inbox administration API.</summary>
     IInboxOperationsApi GetInboxOperationsApi();
 
+    /// <summary>Reads one provider-clock snapshot with the current history retention settings.</summary>
+    /// <remarks>Use database time for SQL providers and the injected clock for InMemory. Reuse this snapshot throughout a collector invocation.</remarks>
+    ValueTask<InboxHistoryRetentionCutoffs> GetInboxHistoryRetentionCutoffsAsync(
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>Deletes at most <paramref name="batchSize"/> expired audits without creating new history.</summary>
+    /// <remarks>Creation timestamps equal to a cutoff are expired. Deletion removes evidence but does not release generation holds.</remarks>
+    ValueTask<int> DeleteExpiredInboxAuditsAsync(
+        InboxHistoryRetentionCutoffs cutoffs,
+        int batchSize,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>Deletes at most <paramref name="batchSize"/> expired receipts with no remaining audit references. Replay survives until physical deletion.</summary>
+    /// <remarks>Serialize deletion with operation replay and recheck age and references. After deletion, the same operation ID can be evaluated against current state as a new request.</remarks>
+    ValueTask<int> DeleteExpiredInboxReceiptsAsync(
+        InboxHistoryRetentionCutoffs cutoffs,
+        int batchSize,
+        CancellationToken cancellationToken = default
+    );
+
     /// <summary>
     /// Atomically converges a complete received envelope on its logical inbox key before transport settlement.
     /// Only <see cref="InboxAdmissionDisposition.Winner"/> may be dispatched by the caller.
@@ -34,15 +56,20 @@ public interface IDataStorage
         return new InboxAdmissionResult(InboxAdmissionDisposition.Winner, stored);
     }
 
-    /// <summary>
-    /// Marks a claimed inbox generation as orphaned or resolved. Implementations must condition the mutation on
-    /// the exact row, lane, owner, and <c>LockedUntil</c> claim returned by pickup.
-    /// </summary>
-    ValueTask<bool> MarkReceivedInboxOrphanedAsync(
+    /// <summary>Defers a missing registration by the configured orphan probe interval and releases ownership atomically under the complete attempt fence. Does not consume failure retries.</summary>
+    ValueTask<bool> DeferReceivedInboxOrphanAsync(MediumMessage message, CancellationToken cancellationToken = default);
+
+    /// <summary>Confirms routability under the complete live attempt fence and clears orphan state. Returns true even when already routable; false forbids dispatch.</summary>
+    ValueTask<bool> ConfirmReceivedInboxRoutableAsync(
         MediumMessage message,
-        bool orphaned,
         CancellationToken cancellationToken = default
-    ) => ValueTask.FromResult(false);
+    );
+
+    /// <summary>Claims due known orphans using a separate capped batch per lane, minting fresh attempts in the existing generation.</summary>
+    ValueTask<IEnumerable<MediumMessage>> GetReceivedInboxOrphansOfNeedRetryAsync(
+        MessageLane lane,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// Transitions the specified published message rows to the <c>Delayed</c> state for deferred dispatch.

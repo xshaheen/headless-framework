@@ -16,7 +16,7 @@ public static class QueueExtensions
     {
         /// <summary>Enqueues a nullable message payload with a freshly built options snapshot.</summary>
         /// <exception cref="ArgumentNullException">The queue or configuration callback is null.</exception>
-        public Task EnqueueAsync<T>(
+        public Task<PublishReceipt> EnqueueAsync<T>(
             T? contentObj,
             Action<QueueOptionsBuilder> configure,
             CancellationToken cancellationToken = default

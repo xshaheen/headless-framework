@@ -30,9 +30,10 @@ public interface IQueue
     /// <param name="contentObj">The message payload. Can be <see langword="null"/>.</param>
     /// <param name="options">Optional enqueue overrides for delivery, destination, correlation, delay, and custom headers.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
-    /// <returns>A task representing the enqueue operation.</returns>
+    /// <returns>A receipt with the resolved message identity and durable row handle, or an empty receipt when middleware suppresses publication.</returns>
     /// <exception cref="ArgumentException">
-    /// Thrown when <see cref="MessageOptions.TenantId"/> is set to an empty or whitespace value.
+    /// Thrown when <see cref="MessageOptions.TenantId"/> is set to an empty or whitespace value, or when both
+    /// <see cref="MessageOptions.Delay"/> and <see cref="MessageOptions.ScheduledAt"/> are set.
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">
     /// Thrown when <see cref="MessageOptions.MessageId"/> exceeds <see cref="MessageOptions.MessageIdMaxLength"/>
@@ -42,16 +43,21 @@ public interface IQueue
     /// Thrown when <see cref="MessageOptions.Headers"/> contains a reserved messaging header
     /// (use <see cref="MessageOptions"/> overrides instead), when a raw <see cref="Headers.TenantId"/>
     /// header is supplied without setting <see cref="MessageOptions.TenantId"/>, or when both are
-    /// supplied with disagreeing values, or when any outbound header name/value contains control
-    /// characters.
+    /// supplied with disagreeing values, when any outbound header name/value contains control
+    /// characters, or when <see cref="DeliveryMode.Direct"/> delivery specifies
+    /// <see cref="MessageOptions.Delay"/> or <see cref="MessageOptions.ScheduledAt"/>.
     /// </exception>
-    Task EnqueueAsync<T>(T? contentObj, QueueOptions? options, CancellationToken cancellationToken = default);
+    Task<PublishReceipt> EnqueueAsync<T>(
+        T? contentObj,
+        QueueOptions? options,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>Publishes a message using the configured contract and host delivery mode, which defaults to Auto.</summary>
     /// <typeparam name="T">The message type.</typeparam>
     /// <param name="contentObj">The message payload. Can be <see langword="null"/>.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
-    /// <returns>A task representing transport acceptance or durable capture, not consumer completion.</returns>
+    /// <returns>A receipt for transport acceptance or durable capture, or an empty receipt when middleware suppresses publication. This does not imply consumer completion.</returns>
     /// <exception cref="InvalidOperationException">Thrown when the selected delivery mode requires unavailable storage or an active commit boundary is incompatible.</exception>
-    Task EnqueueAsync<T>(T? contentObj, CancellationToken cancellationToken = default);
+    Task<PublishReceipt> EnqueueAsync<T>(T? contentObj, CancellationToken cancellationToken = default);
 }

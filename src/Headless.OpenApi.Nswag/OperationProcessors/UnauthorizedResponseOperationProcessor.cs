@@ -32,8 +32,6 @@ namespace Headless.OpenApi.Nswag.OperationProcessors;
 /// </remarks>
 public sealed class UnauthorizedResponseOperationProcessor : IOperationProcessor
 {
-    private static readonly OpenApiResponse _UnauthorizedResponse = _CreateUnauthorizedResponse();
-
     /// <summary>
     /// Conditionally adds a 401 Unauthorized response to the current operation.
     /// </summary>
@@ -66,7 +64,7 @@ public sealed class UnauthorizedResponseOperationProcessor : IOperationProcessor
             || actionDescriptor.EndpointMetadata.OfType<AuthorizeAttribute>().Any()
         )
         {
-            responses.Add(OpenApiStatusCodes.Unauthorized, _UnauthorizedResponse);
+            responses.Add(OpenApiStatusCodes.Unauthorized, _CreateUnauthorizedResponse());
         }
 
         return true;
