@@ -1565,6 +1565,81 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     // -------------------------------------------------------------------------
 
     [Fact]
+    public async Task should_dispatch_ordinary_retries_and_escalate_repeated_orphan_pickup_failures()
+    {
+        var message = _CreateMessage();
+        var storage = Substitute.For<IDataStorage>();
+        _SetupReceivedMessages(storage, message);
+        var calls = 0;
+        storage
+            .GetReceivedInboxOrphansOfNeedRetryAsync(MessageLane.Bus, Arg.Any<CancellationToken>())
+            .Returns(_ =>
+                ++calls <= 3
+                    ? ValueTask.FromException<IEnumerable<MediumMessage>>(
+                        new InvalidOperationException("orphan query failed")
+                    )
+                    : ValueTask.FromResult<IEnumerable<MediumMessage>>([])
+            );
+        var captured = new ConcurrentQueue<(LogLevel Level, int Id)>();
+        var dispatcher = Substitute.For<IDispatcher>();
+        var sut = new MessageNeedToRetryProcessor(
+            Options.Create(new MessagingOptions()),
+            Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.FromSeconds(1) }),
+            new CapturingLogger(captured),
+            dispatcher,
+            Substitute.For<IDistributedLock>()
+        );
+        await using var context = _CreateContext(
+            new ServiceCollection().AddSingleton(storage).BuildServiceProvider(),
+            cancellationToken: AbortToken
+        );
+
+        for (var cycle = 1; cycle <= 3; cycle++)
+        {
+            await _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus);
+            await dispatcher.Received(cycle).EnqueueToExecute(message, null, Arg.Any<CancellationToken>());
+            sut.GetPickupFailureCountForTest(MessageType.Subscribe, MessageLane.Bus).Should().Be(cycle);
+            sut.CurrentPollingInterval.Should().BeGreaterThan(TimeSpan.FromSeconds(1));
+        }
+        captured.Count(e => e.Id == 3110).Should().Be(2);
+        captured.Count(e => e.Id == 74 && e.Level == LogLevel.Error).Should().Be(1);
+
+        await _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus);
+        await dispatcher.Received(4).EnqueueToExecute(message, null, Arg.Any<CancellationToken>());
+        sut.GetPickupFailureCountForTest(MessageType.Subscribe, MessageLane.Bus).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_release_ordinary_claims_when_orphan_pickup_is_canceled()
+    {
+        var message = _CreateMessage();
+        message.Owner = "node-a";
+        message.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(5);
+        var storage = Substitute.For<IDataStorage, IGracefulLeaseReleaseStorage>();
+        _SetupReceivedMessages(storage, message);
+        storage
+            .GetReceivedInboxOrphansOfNeedRetryAsync(MessageLane.Bus, Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromException<IEnumerable<MediumMessage>>(new OperationCanceledException()));
+        var (sut, dispatcher, _) = _Create(baseIntervalSeconds: 0, adaptivePolling: false);
+        await using var context = _CreateContext(
+            new ServiceCollection().AddSingleton(storage).BuildServiceProvider(),
+            cancellationToken: AbortToken
+        );
+
+        var act = async () => await _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus);
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        await ((IGracefulLeaseReleaseStorage)storage)
+            .Received(1)
+            .ReleaseReceivedLeasesAsync(
+                Arg.Is<IReadOnlyCollection<MessageLeaseIdentity>>(ids =>
+                    ids.Count == 1 && ids.Single().StorageId == message.StorageId
+                ),
+                CancellationToken.None
+            );
+        await dispatcher.DidNotReceive().EnqueueToExecute(Arg.Any<MediumMessage>(), null, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task process_async_escalates_to_error_after_three_consecutive_storage_failures_and_resets_after_success()
     {
         // given — capture EventId.Name from ILogger.Log invocations.

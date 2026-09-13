@@ -18,6 +18,45 @@ public sealed class SqlServerInboxOperationPolicyTests(SqlServerTestFixture fixt
     : InboxOperationPolicyConformanceTests
 {
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task should_apply_configured_timeout_to_blocked_history_queries(bool receipts)
+    {
+        await using var provider = _CreateProvider();
+        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        provider.GetRequiredService<IOptions<MessagingOptions>>().Value.CommandTimeout = TimeSpan.FromSeconds(1);
+        var storage = provider.GetRequiredService<IDataStorage>();
+        var schema = provider.GetRequiredService<IOptions<SqlServerOptions>>().Value.Schema;
+        await storage.GetInboxOperationsApi().HoldAsync(_Request(Guid.NewGuid(), StatusName.Succeeded), AbortToken);
+        var cutoffs = await storage.GetInboxHistoryRetentionCutoffsAsync(AbortToken);
+        var table = receipts ? "InboxOperationReceipts" : "InboxAudit";
+        await using var blocker = new SqlConnection(fixture.ConnectionString);
+        await blocker.OpenAsync(AbortToken);
+        await using var transaction = (SqlTransaction)await blocker.BeginTransactionAsync(AbortToken);
+        await using var command = new SqlCommand(
+            $"SELECT COUNT(*) FROM [{schema}].[{table}] WITH (TABLOCKX,HOLDLOCK);",
+            blocker,
+            transaction
+        );
+        await command.ExecuteScalarAsync(AbortToken);
+        // The cancellation bound makes a missing command timeout fail without waiting for the driver's default.
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        deadline.CancelAfter(TimeSpan.FromSeconds(10));
+        var act = async () =>
+        {
+            if (receipts)
+            {
+                await storage.DeleteExpiredInboxReceiptsAsync(cutoffs, 1, deadline.Token);
+            }
+            else
+            {
+                await storage.DeleteExpiredInboxAuditsAsync(cutoffs, 1, deadline.Token);
+            }
+        };
+        await act.Should().ThrowAsync<SqlException>().Where(ex => ex.Number == -2);
+    }
+
+    [Theory]
     [InlineData(-365)]
     [InlineData(365)]
     public async Task should_use_database_history_clock_and_exact_cutoff(int skewDays)

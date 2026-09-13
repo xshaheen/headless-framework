@@ -17,6 +17,8 @@ internal sealed partial class SqlServerDataStorage
         await using var connection = new SqlConnection(options.Value.ConnectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new SqlCommand("SELECT CONVERT(datetimeoffset(7), SYSUTCDATETIME());", connection);
+        command.CommandTimeout = (int)
+            Math.Min(Math.Ceiling(messagingOptions.Value.CommandTimeout.TotalSeconds), int.MaxValue);
         var now = (DateTimeOffset)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false))!;
         return InboxHistoryRetentionCutoffs.Create(now, messagingOptions.Value);
     }
@@ -40,6 +42,8 @@ internal sealed partial class SqlServerDataStorage
             """,
             connection
         );
+        command.CommandTimeout = (int)
+            Math.Min(Math.Ceiling(messagingOptions.Value.CommandTimeout.TotalSeconds), int.MaxValue);
         command.Parameters.Add(new SqlParameter("@Cleanup", cutoffs.CleanupAudit));
         command.Parameters.Add(new SqlParameter("@Operator", cutoffs.OperatorAudit));
         command.Parameters.Add(new SqlParameter("@BatchSize", batchSize));
@@ -69,6 +73,8 @@ internal sealed partial class SqlServerDataStorage
             )
         )
         {
+            command.CommandTimeout = (int)
+                Math.Min(Math.Ceiling(messagingOptions.Value.CommandTimeout.TotalSeconds), int.MaxValue);
             command.Parameters.Add(new SqlParameter("@Cleanup", cutoffs.CleanupReceipt));
             command.Parameters.Add(new SqlParameter("@Operator", cutoffs.OperatorReceipt));
             command.Parameters.Add(new SqlParameter("@BatchSize", batchSize));
@@ -95,6 +101,8 @@ internal sealed partial class SqlServerDataStorage
                 connection,
                 transaction
             );
+            command.CommandTimeout = (int)
+                Math.Min(Math.Ceiling(messagingOptions.Value.CommandTimeout.TotalSeconds), int.MaxValue);
             command.Parameters.Add(new SqlParameter("@OperationId", operationId));
             command.Parameters.Add(new SqlParameter("@Cleanup", cutoffs.CleanupReceipt));
             command.Parameters.Add(new SqlParameter("@Operator", cutoffs.OperatorReceipt));

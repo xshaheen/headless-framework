@@ -17,6 +17,45 @@ public sealed class PostgreSqlInboxOperationPolicyTests(PostgreSqlTestFixture fi
     : InboxOperationPolicyConformanceTests
 {
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task should_apply_configured_timeout_to_blocked_history_queries(bool receipts)
+    {
+        await using var provider = _CreateProvider();
+        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        provider.GetRequiredService<IOptions<MessagingOptions>>().Value.CommandTimeout = TimeSpan.FromSeconds(1);
+        var storage = provider.GetRequiredService<IDataStorage>();
+        var schema = provider.GetRequiredService<IOptions<PostgreSqlOptions>>().Value.Schema;
+        await storage.GetInboxOperationsApi().HoldAsync(_Request(Guid.NewGuid(), StatusName.Succeeded), AbortToken);
+        var cutoffs = await storage.GetInboxHistoryRetentionCutoffsAsync(AbortToken);
+        var table = receipts ? "inbox_operation_receipts" : "inbox_audit";
+        await using var blocker = new NpgsqlConnection(fixture.ConnectionString);
+        await blocker.OpenAsync(AbortToken);
+        await using var transaction = await blocker.BeginTransactionAsync(AbortToken);
+        await using var command = new NpgsqlCommand(
+            $"""LOCK TABLE "{schema}"."{table}" IN ACCESS EXCLUSIVE MODE;""",
+            blocker,
+            transaction
+        );
+        await command.ExecuteScalarAsync(AbortToken);
+        // The cancellation bound makes a missing command timeout fail without waiting for the driver's default.
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        deadline.CancelAfter(TimeSpan.FromSeconds(10));
+        var act = async () =>
+        {
+            if (receipts)
+            {
+                await storage.DeleteExpiredInboxReceiptsAsync(cutoffs, 1, deadline.Token);
+            }
+            else
+            {
+                await storage.DeleteExpiredInboxAuditsAsync(cutoffs, 1, deadline.Token);
+            }
+        };
+        await act.Should().ThrowAsync<NpgsqlException>().Where(ex => ex.InnerException is TimeoutException);
+    }
+
+    [Theory]
     [InlineData(-365)]
     [InlineData(365)]
     public async Task should_use_database_history_clock_and_exact_cutoff(int skewDays)

@@ -403,6 +403,7 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
 
         var messages = pickup.Messages.ToList();
         var enqueued = 0;
+        Interlocked.Exchange(ref state._consecutivePickupFailures, 0);
         var nextUnhanded = 0;
         try
         {
@@ -468,6 +469,7 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
         var skippedCircuitOpen = 0;
         var healthy = new List<MediumMessage>(messages.Count);
         var circuitWork = new List<CircuitRetryWork>();
+        var orphanPickupSucceeded = false;
 
         try
         {
@@ -477,12 +479,13 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
                     context.CancellationToken
                 )
                 .ConfigureAwait(false);
-            if (!orphans.Succeeded)
+            orphanPickupSucceeded = orphans.Succeeded;
+            if (orphanPickupSucceeded)
             {
-                await _ReleaseUnhandedAsync(connection, MessageType.Subscribe, messages, 0).ConfigureAwait(false);
-                return;
+                // Both queries must recover before clearing a received-cycle failure streak.
+                Interlocked.Exchange(ref state._consecutivePickupFailures, 0);
+                messages.AddRange(orphans.Messages);
             }
-            messages.AddRange(orphans.Messages);
 
             foreach (var message in messages)
             {
@@ -642,7 +645,7 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
             }
         }
 
-        if (_adaptivePolling)
+        if (_adaptivePolling && orphanPickupSucceeded)
         {
             _AdjustPollingInterval(state, enqueued, skippedCircuitOpen);
         }
@@ -700,7 +703,6 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
         try
         {
             var result = await getMessagesAsync(cancellationToken).ConfigureAwait(false);
-            Interlocked.Exchange(ref state._consecutivePickupFailures, 0);
             return new RetryPickupResult<T>(result, Succeeded: true);
         }
         catch (OperationCanceledException)

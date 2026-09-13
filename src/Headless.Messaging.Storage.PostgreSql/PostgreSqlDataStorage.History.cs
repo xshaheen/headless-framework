@@ -17,6 +17,8 @@ internal sealed partial class PostgreSqlDataStorage
         await using var connection = postgreSqlOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand("SELECT clock_timestamp();", connection);
+        command.CommandTimeout = (int)
+            Math.Min(Math.Ceiling(messagingOptions.Value.CommandTimeout.TotalSeconds), int.MaxValue);
         var now = (DateTime)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false))!;
         return InboxHistoryRetentionCutoffs.Create(new DateTimeOffset(now), messagingOptions.Value);
     }
@@ -41,6 +43,8 @@ internal sealed partial class PostgreSqlDataStorage
             """,
             connection
         );
+        command.CommandTimeout = (int)
+            Math.Min(Math.Ceiling(messagingOptions.Value.CommandTimeout.TotalSeconds), int.MaxValue);
         command.Parameters.AddWithValue("@Cleanup", cutoffs.CleanupAudit);
         command.Parameters.AddWithValue("@Operator", cutoffs.OperatorAudit);
         command.Parameters.AddWithValue("@BatchSize", batchSize);
@@ -70,6 +74,8 @@ internal sealed partial class PostgreSqlDataStorage
             )
         )
         {
+            command.CommandTimeout = (int)
+                Math.Min(Math.Ceiling(messagingOptions.Value.CommandTimeout.TotalSeconds), int.MaxValue);
             command.Parameters.AddWithValue("@Cleanup", cutoffs.CleanupReceipt);
             command.Parameters.AddWithValue("@Operator", cutoffs.OperatorReceipt);
             command.Parameters.AddWithValue("@BatchSize", batchSize);
@@ -97,6 +103,8 @@ internal sealed partial class PostgreSqlDataStorage
                 connection,
                 transaction
             );
+            command.CommandTimeout = (int)
+                Math.Min(Math.Ceiling(messagingOptions.Value.CommandTimeout.TotalSeconds), int.MaxValue);
             command.Parameters.AddWithValue("@OperationId", operationId);
             command.Parameters.AddWithValue("@Cleanup", cutoffs.CleanupReceipt);
             command.Parameters.AddWithValue("@Operator", cutoffs.OperatorReceipt);
