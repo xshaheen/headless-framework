@@ -23,7 +23,7 @@ internal static class FakeClock
         for (var attempt = 0; attempt < 500 && !until.IsCompleted; attempt++)
         {
             timeProvider.Advance(step);
-            await Task.WhenAny(until, Task.Delay(TimeSpan.FromMilliseconds(10), cancellationToken));
+            _ = await Task.WhenAny(until, Task.Delay(TimeSpan.FromMilliseconds(10), cancellationToken));
         }
 
         await until.WaitAsync(TimeSpan.FromSeconds(30), cancellationToken);

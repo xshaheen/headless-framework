@@ -116,7 +116,11 @@ public sealed class CoordinatedHarnessTests : TestBase
         await harness.RunCoordinatedAsync(() =>
             harness.Publisher.PublishAsync(new CoordinatedOrderPlaced("C3"), cancellationToken: AbortToken)
         );
-        await harness.WaitForPublished<CoordinatedOrderPlaced>(m => m.Id == "C3", TimeSpan.FromSeconds(5), AbortToken);
+        await harness.WaitForPublished<CoordinatedOrderPlaced>(
+            m => string.Equals(m.Id, "C3", StringComparison.Ordinal),
+            TimeSpan.FromSeconds(5),
+            AbortToken
+        );
 
         harness
             .Published.Should()
