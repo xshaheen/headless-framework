@@ -195,7 +195,7 @@ public sealed class CollectorProcessorTests : TestBase
                 && (LogLevel)call.GetArguments()[0]! == LogLevel.Error
             );
         error.GetArguments()[3].Should().BeSameAs(failure);
-        error.GetArguments()[2]!.ToString().Should().Contain("inbox-audits");
+        error.GetArguments()[2]!.ToString().Should().Contain("category InboxAudits");
     }
 
     private static ServiceProvider _CreateProvider(IDataStorage storage, TimeProvider clock)

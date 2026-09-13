@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
 using Microsoft.Extensions.DependencyInjection;
@@ -11,12 +12,21 @@ namespace Headless.Messaging.Processor;
 internal sealed class CollectorProcessor : IProcessor
 {
     private const int _ItemBatch = 1000;
+    private static readonly CleanupCategory[] _Categories =
+    [
+        CleanupCategory.Published,
+        CleanupCategory.Received,
+        CleanupCategory.InboxAudits,
+        CleanupCategory.InboxReceipts,
+    ];
+
     private readonly TimeSpan _delay = TimeSpan.FromSeconds(1);
     private readonly ILogger _logger;
     private readonly IServiceProvider _serviceProvider;
     private readonly TimeProvider _timeProvider;
 
-    private readonly string[] _categories;
+    private readonly string _publishedTableName;
+    private readonly string _receivedTableName;
     private readonly TimeSpan _waitingInterval;
 
     public CollectorProcessor(
@@ -32,13 +42,8 @@ internal sealed class CollectorProcessor : IProcessor
 
         var initializer = _serviceProvider.GetRequiredService<IStorageInitializer>();
 
-        _categories =
-        [
-            initializer.GetPublishedTableName(),
-            initializer.GetReceivedTableName(),
-            "inbox-audits",
-            "inbox-receipts",
-        ];
+        _publishedTableName = initializer.GetPublishedTableName();
+        _receivedTableName = initializer.GetReceivedTableName();
     }
 
     public async Task ProcessAsync(ProcessingContext context)
@@ -55,24 +60,28 @@ internal sealed class CollectorProcessor : IProcessor
         do
         {
             deletedInRound = false;
-            for (var category = 0; category < _categories.Length; category++)
+            foreach (var category in _Categories)
             {
                 context.ThrowIfStopping();
-                var name = _categories[category];
+                var name = category.ToString();
                 _logger.CollectingExpiredData(name);
                 try
                 {
                     var deletedCount = category switch
                     {
-                        0 or 1 => await storage
-                            .DeleteExpiresAsync(name, time, _ItemBatch, context.CancellationToken)
+                        CleanupCategory.Published => await storage
+                            .DeleteExpiresAsync(_publishedTableName, time, _ItemBatch, context.CancellationToken)
                             .ConfigureAwait(false),
-                        2 => await storage
+                        CleanupCategory.Received => await storage
+                            .DeleteExpiresAsync(_receivedTableName, time, _ItemBatch, context.CancellationToken)
+                            .ConfigureAwait(false),
+                        CleanupCategory.InboxAudits => await storage
                             .DeleteExpiredInboxAuditsAsync(cutoffs, _ItemBatch, context.CancellationToken)
                             .ConfigureAwait(false),
-                        _ => await storage
+                        CleanupCategory.InboxReceipts => await storage
                             .DeleteExpiredInboxReceiptsAsync(cutoffs, _ItemBatch, context.CancellationToken)
                             .ConfigureAwait(false),
+                        _ => throw new UnreachableException(),
                     };
 
                     if (deletedCount != 0)
@@ -94,29 +103,41 @@ internal sealed class CollectorProcessor : IProcessor
 
         await context.WaitAsync(_waitingInterval).ConfigureAwait(false);
     }
+
+    private enum CleanupCategory
+    {
+        Published,
+        Received,
+        InboxAudits,
+        InboxReceipts,
+    }
 }
 
 internal static partial class CollectorProcessorLog
 {
-    [LoggerMessage(EventId = 3104, Level = LogLevel.Debug, Message = "Collecting expired data from table: {Table}")]
-    public static partial void CollectingExpiredData(this ILogger logger, string table);
+    [LoggerMessage(
+        EventId = 3104,
+        Level = LogLevel.Debug,
+        Message = "Collecting expired data for category {Category}."
+    )]
+    public static partial void CollectingExpiredData(this ILogger logger, string category);
 
     [LoggerMessage(
         EventId = 3105,
         Level = LogLevel.Debug,
-        Message = "Successfully deleted {DeletedCount} expired items from table '{Table}'."
+        Message = "Successfully deleted {DeletedCount} expired items for category {Category}."
     )]
-    public static partial void ExpiredItemsDeleted(this ILogger logger, int deletedCount, string table);
+    public static partial void ExpiredItemsDeleted(this ILogger logger, int deletedCount, string category);
 
     [LoggerMessage(
         EventId = 3106,
         Level = LogLevel.Error,
-        Message = "An error occurred while attempting to delete expired data from table '{Table}':{ExMessage}"
+        Message = "An error occurred while deleting expired data for category {Category}: {ExMessage}"
     )]
     public static partial void ExpiredDataDeleteFailed(
         this ILogger logger,
         Exception ex,
-        string table,
+        string category,
         string exMessage
     );
 }
