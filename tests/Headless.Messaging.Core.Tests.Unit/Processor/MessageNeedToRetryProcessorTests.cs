@@ -903,7 +903,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var stateManager = Substitute.For<ICircuitBreakerStateManager>();
         stateManager
             .GetRetryDecision(MessageLane.Bus, "probe-group")
-            .Returns(new CircuitRetryDecision(CircuitRetryDecisionKind.ProbeAcquired, null, null));
+            .Returns(new CircuitRetryDecision(CircuitRetryDecisionKind.ProbeAcquired, null, null, 91L));
         var dispatcher = Substitute.For<IDispatcher, IRetryDispatcher>();
         ((IRetryDispatcher)dispatcher)
             .DispatchReceivedAsync(message, Arg.Any<Action?>(), Arg.Any<CancellationToken>())
@@ -916,7 +916,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         await _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus);
 
-        stateManager.Received(1).ReleaseHalfOpenProbe(CircuitBreakerGroupKeys.For(MessageLane.Bus, "probe-group"));
+        stateManager.Received(1).ReleaseHalfOpenProbe(CircuitBreakerGroupKeys.For(MessageLane.Bus, "probe-group"), 91L);
     }
 
     [Fact]
@@ -936,7 +936,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 #pragma warning disable MA0045 // Cancellation must complete inside this synchronous classification callback before dispatch resumes.
                 cts.Cancel();
 #pragma warning restore MA0045
-                return new CircuitRetryDecision(CircuitRetryDecisionKind.ProbeAcquired, null, null);
+                return new CircuitRetryDecision(CircuitRetryDecisionKind.ProbeAcquired, null, null, 73L);
             });
         var dispatcher = Substitute.For<IDispatcher>();
         var sut = _CreateCircuitAwareProcessor(stateManager, dispatcher);
@@ -948,7 +948,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         Func<Task> act = () => _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
-        stateManager.Received(1).ReleaseHalfOpenProbe(CircuitBreakerGroupKeys.For(MessageLane.Bus, "probe-group"));
+        stateManager.Received(1).ReleaseHalfOpenProbe(CircuitBreakerGroupKeys.For(MessageLane.Bus, "probe-group"), 73L);
         await dispatcher
             .DidNotReceive()
             .EnqueueToExecute(
@@ -1123,7 +1123,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var stateManager = Substitute.For<ICircuitBreakerStateManager>();
         stateManager
             .GetRetryDecision(MessageLane.Bus, "probe-group")
-            .Returns(new CircuitRetryDecision(CircuitRetryDecisionKind.ProbeAcquired, null, null));
+            .Returns(new CircuitRetryDecision(CircuitRetryDecisionKind.ProbeAcquired, null, null, 97L));
         Action? onAbandoned = null;
         var dispatcher = Substitute.For<IDispatcher, IRetryDispatcher>();
         ((IRetryDispatcher)dispatcher)
@@ -1141,14 +1141,14 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         await _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus);
 
-        stateManager.DidNotReceive().ReleaseHalfOpenProbe(Arg.Any<string>());
+        stateManager.DidNotReceive().ReleaseHalfOpenProbe(Arg.Any<string>(), Arg.Any<long>());
         onAbandoned.Should().NotBeNull("a transferred probe row must carry its release for pre-execution abandonment");
 
         // The dispatcher abandons the queued attempt before execution; the release fires exactly once.
         onAbandoned!();
         onAbandoned();
 
-        stateManager.Received(1).ReleaseHalfOpenProbe(CircuitBreakerGroupKeys.For(MessageLane.Bus, "probe-group"));
+        stateManager.Received(1).ReleaseHalfOpenProbe(CircuitBreakerGroupKeys.For(MessageLane.Bus, "probe-group"), 97L);
     }
 
     [Fact]

@@ -1,10 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using System.Diagnostics.Metrics;
+using System.Reflection;
 using Headless.DistributedLocks;
 using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
+using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Processor;
@@ -65,7 +68,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
             new ConsumerCircuitBreakerRegistry(),
             new NullLogger<CircuitBreakerStateManager>(),
             new CircuitBreakerMetrics(meterFactory),
-            timeProvider ?? TimeProvider.System
+            timeProvider ?? new FakeTimeProvider()
         );
     }
 
@@ -145,12 +148,11 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
 
         sut.RegisterGroupCallbacks(
             group,
-            onPause: () =>
+            onPause: async epoch =>
             {
                 pauseCalled = true;
-                return ValueTask.CompletedTask;
             },
-            onResume: () => ValueTask.CompletedTask
+            onResume: epoch => ValueTask.CompletedTask
         );
 
         // when — 2 failures: still below threshold
@@ -191,17 +193,22 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         var pauseCalled = false;
         var resumeCalled = false;
         var halfOpenTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var timeProvider = new FakeTimeProvider();
 
-        await using var sut = _CreateStateManager(failureThreshold: 2, openDuration: TimeSpan.FromMilliseconds(30));
+        await using var sut = _CreateStateManager(
+            failureThreshold: 2,
+            openDuration: TimeSpan.FromMilliseconds(30),
+            timeProvider: timeProvider
+        );
 
         sut.RegisterGroupCallbacks(
             group,
-            onPause: () =>
+            onPause: epoch =>
             {
                 pauseCalled = true;
                 return ValueTask.CompletedTask;
             },
-            onResume: () =>
+            onResume: epoch =>
             {
                 resumeCalled = true;
                 halfOpenTcs.TrySetResult();
@@ -218,6 +225,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         pauseCalled.Should().BeTrue();
 
         // when — wait for HalfOpen transition (resume callback fires)
+        timeProvider.Advance(TimeSpan.FromMilliseconds(30));
         await halfOpenTcs.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         // then — circuit is HalfOpen (still reports IsOpen=true to prevent new messages)
@@ -227,7 +235,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
 
         // when — acquire probe and report success (simulating a successful message processing)
         var probeAcquired = sut.TryAcquireHalfOpenProbe(group);
-        probeAcquired.Should().BeTrue();
+        probeAcquired.Should().NotBeNull();
         await sut.ReportSuccessAsync(group, AbortToken);
 
         // then — circuit closes, consumer fully operational
@@ -257,13 +265,13 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
 
         stateManager.RegisterGroupCallbacks(
             openCircuitGroup,
-            onPause: () => ValueTask.CompletedTask,
-            onResume: () => ValueTask.CompletedTask
+            onPause: epoch => ValueTask.CompletedTask,
+            onResume: epoch => ValueTask.CompletedTask
         );
         stateManager.RegisterGroupCallbacks(
             healthyCircuitGroup,
-            onPause: () => ValueTask.CompletedTask,
-            onResume: () => ValueTask.CompletedTask
+            onPause: epoch => ValueTask.CompletedTask,
+            onResume: epoch => ValueTask.CompletedTask
         );
 
         // trip circuit for openGroup
@@ -326,8 +334,8 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
 
         stateManager.RegisterGroupCallbacks(
             circuitGroup,
-            onPause: () => ValueTask.CompletedTask,
-            onResume: () =>
+            onPause: epoch => ValueTask.CompletedTask,
+            onResume: epoch =>
             {
                 halfOpenTcs.TrySetResult();
                 return ValueTask.CompletedTask;
@@ -400,17 +408,22 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         var queuePaused = false;
         var queueResumed = false;
         var busResumed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        await using var sut = _CreateStateManager(failureThreshold: 1, openDuration: TimeSpan.FromMilliseconds(30));
+        var timeProvider = new FakeTimeProvider();
+        await using var sut = _CreateStateManager(
+            failureThreshold: 1,
+            openDuration: TimeSpan.FromMilliseconds(30),
+            timeProvider: timeProvider
+        );
 
         sut.RegisterKnownGroups([busKey, queueKey]);
         sut.RegisterGroupCallbacks(
             busKey,
-            onPause: () =>
+            onPause: epoch =>
             {
                 busPaused = true;
                 return ValueTask.CompletedTask;
             },
-            onResume: () =>
+            onResume: epoch =>
             {
                 busResumed.TrySetResult();
                 return ValueTask.CompletedTask;
@@ -418,12 +431,12 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         );
         sut.RegisterGroupCallbacks(
             queueKey,
-            onPause: () =>
+            onPause: epoch =>
             {
                 queuePaused = true;
                 return ValueTask.CompletedTask;
             },
-            onResume: () =>
+            onResume: epoch =>
             {
                 queueResumed = true;
                 return ValueTask.CompletedTask;
@@ -432,6 +445,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
 
         // when
         await sut.ReportFailureAsync(busKey, new TimeoutException("bus unavailable"), AbortToken);
+        timeProvider.Advance(TimeSpan.FromMilliseconds(30));
         await busResumed.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         // then
@@ -442,7 +456,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         queueResumed.Should().BeFalse();
 
         // when
-        sut.TryAcquireHalfOpenProbe(busKey).Should().BeTrue();
+        sut.TryAcquireHalfOpenProbe(busKey).Should().NotBeNull();
         await sut.ReportSuccessAsync(busKey, AbortToken);
 
         // then
@@ -450,10 +464,336 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         sut.GetState(queueKey).Should().Be(CircuitBreakerState.Closed);
     }
 
+    [Fact]
+    public async Task timer_resume_parked_before_force_open_leaves_transport_paused()
+    {
+        const string group = "integration.stale-resume.timer";
+        var circuitGroup = _CircuitKey(group);
+        var resumeQueued = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseResume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var resumeFinished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var timeProvider = new FakeTimeProvider();
+        await using var stateManager = _CreateStateManager(
+            failureThreshold: 1,
+            openDuration: TimeSpan.FromMinutes(1),
+            timeProvider: timeProvider
+        );
+        await using var provider = _CreateRegisterProvider();
+        var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
+        var client = Substitute.For<IConsumerClient>();
+        var handle = await _CreateHandleAsync(register, group, client);
+
+        stateManager.RegisterGroupCallbacks(
+            circuitGroup,
+            onPause: epoch => _PauseHandleAsync(register, handle, epoch),
+            onResume: async epoch =>
+            {
+                resumeQueued.TrySetResult(epoch);
+                await releaseResume.Task.WaitAsync(AbortToken);
+                await _ResumeHandleAsync(register, handle, epoch);
+                resumeFinished.TrySetResult();
+            }
+        );
+
+        await stateManager.ReportFailureAsync(circuitGroup, new TimeoutException(), AbortToken);
+        await client.Received(1).PauseAsync(Arg.Any<CancellationToken>());
+
+        timeProvider.Advance(TimeSpan.FromMinutes(1));
+        await resumeQueued.Task.WaitAsync(AbortToken);
+
+        await stateManager.ForceOpenAsync(circuitGroup, AbortToken);
+        releaseResume.TrySetResult();
+        await resumeFinished.Task.WaitAsync(AbortToken);
+
+        stateManager.GetState(circuitGroup).Should().Be(CircuitBreakerState.Open);
+        await client.DidNotReceive().ResumeAsync(Arg.Any<CancellationToken>());
+        await client.Received(2).PauseAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task retry_resume_parked_before_force_open_is_skipped()
+    {
+        const string group = "integration.stale-resume.retry";
+        var circuitGroup = _CircuitKey(group);
+        var resumeQueued = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseResume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var resumeFinished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var timeProvider = new FakeTimeProvider();
+        await using var stateManager = _CreateStateManager(
+            failureThreshold: 1,
+            openDuration: TimeSpan.FromMinutes(1),
+            timeProvider: timeProvider
+        );
+        await using var provider = _CreateRegisterProvider();
+        var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
+        var client = Substitute.For<IConsumerClient>();
+        var handle = await _CreateHandleAsync(register, group, client);
+
+        stateManager.RegisterGroupCallbacks(
+            circuitGroup,
+            onPause: epoch => _PauseHandleAsync(register, handle, epoch),
+            onResume: async epoch =>
+            {
+                resumeQueued.TrySetResult(epoch);
+                await releaseResume.Task.WaitAsync(AbortToken);
+                await _ResumeHandleAsync(register, handle, epoch);
+                resumeFinished.TrySetResult();
+            }
+        );
+
+        await stateManager.ReportFailureAsync(circuitGroup, new TimeoutException(), AbortToken);
+        timeProvider.Advance(TimeSpan.FromMinutes(1));
+
+        var decision = stateManager.GetRetryDecision(MessageLane.Bus, group);
+        decision.Kind.Should().Be(CircuitRetryDecisionKind.ProbeAcquired);
+        await resumeQueued.Task.WaitAsync(AbortToken);
+
+        await stateManager.ForceOpenAsync(circuitGroup, AbortToken);
+        releaseResume.TrySetResult();
+        await resumeFinished.Task.WaitAsync(AbortToken);
+
+        stateManager.GetState(circuitGroup).Should().Be(CircuitBreakerState.Open);
+        await client.DidNotReceive().ResumeAsync(Arg.Any<CancellationToken>());
+        await client.Received(2).PauseAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task reset_resume_completes_before_later_force_open_pauses_again()
+    {
+        const string group = "integration.reset.force-open";
+        var circuitGroup = _CircuitKey(group);
+        var resumeCompleted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var timeProvider = new FakeTimeProvider();
+        await using var stateManager = _CreateStateManager(
+            failureThreshold: 1,
+            openDuration: TimeSpan.FromMinutes(1),
+            timeProvider: timeProvider
+        );
+        await using var provider = _CreateRegisterProvider();
+        var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
+        var client = Substitute.For<IConsumerClient>();
+        var handle = await _CreateHandleAsync(register, group, client);
+
+        stateManager.RegisterGroupCallbacks(
+            circuitGroup,
+            onPause: epoch => _PauseHandleAsync(register, handle, epoch),
+            onResume: async epoch =>
+            {
+                await _ResumeHandleAsync(register, handle, epoch);
+                resumeCompleted.TrySetResult();
+            }
+        );
+
+        await stateManager.ReportFailureAsync(circuitGroup, new TimeoutException(), AbortToken);
+        await stateManager.ResetAsync(circuitGroup, AbortToken);
+        await resumeCompleted.Task.WaitAsync(AbortToken);
+
+        stateManager.GetState(circuitGroup).Should().Be(CircuitBreakerState.Closed);
+        await client.Received(1).ResumeAsync(Arg.Any<CancellationToken>());
+
+        await stateManager.ForceOpenAsync(circuitGroup, AbortToken);
+
+        stateManager.GetState(circuitGroup).Should().Be(CircuitBreakerState.Open);
+        await client.Received(2).PauseAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task restart_prepause_fences_resume_launched_before_halfopen_abort()
+    {
+        const string group = "integration.restart.stale-resume";
+        var circuitGroup = _CircuitKey(group);
+        var staleResumeQueued = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseStaleResume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var staleResumeFinished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var timeProvider = new FakeTimeProvider();
+        await using var stateManager = _CreateStateManager(
+            failureThreshold: 1,
+            openDuration: TimeSpan.FromMinutes(1),
+            timeProvider: timeProvider
+        );
+        await using var provider = _CreateRegisterProvider();
+        var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
+        typeof(ConsumerRegister)
+            .GetField(
+                "_circuitBreakerStateManager",
+                BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+            )!
+            .SetValue(register, stateManager);
+        var replacementClient = Substitute.For<IConsumerClient>();
+        var legacyClient = Substitute.For<IConsumerClient>();
+        var replacementHandle = await _CreateHandleAsync(register, group, replacementClient);
+        var legacyHandle = await _CreateHandleAsync(register, group, legacyClient);
+
+        stateManager.RegisterGroupCallbacks(
+            circuitGroup,
+            onPause: epoch => _PauseHandleAsync(register, replacementHandle, epoch),
+            onResume: async epoch =>
+            {
+                staleResumeQueued.TrySetResult(epoch);
+                await releaseStaleResume.Task.WaitAsync(AbortToken);
+                await _ResumeHandleAsync(register, replacementHandle, epoch);
+                staleResumeFinished.TrySetResult();
+            }
+        );
+
+        await stateManager.ReportFailureAsync(circuitGroup, new TimeoutException(), AbortToken);
+        timeProvider.Advance(TimeSpan.FromMinutes(1));
+        var staleDecision = stateManager.GetRetryDecision(MessageLane.Bus, group);
+        staleDecision.Kind.Should().Be(CircuitRetryDecisionKind.ProbeAcquired);
+        var staleEpoch = await staleResumeQueued.Task.WaitAsync(AbortToken);
+
+        await stateManager.AbortHalfOpenProbeAsync(circuitGroup);
+        stateManager.TryGetOpenEpoch(circuitGroup, out var restartEpoch).Should().BeTrue();
+        await _PauseHandleAsync(register, replacementHandle, restartEpoch);
+
+        releaseStaleResume.TrySetResult();
+        await staleResumeFinished.Task.WaitAsync(AbortToken);
+        await _ResumeHandleAsync(register, replacementHandle, staleEpoch);
+
+        stateManager.GetState(circuitGroup).Should().Be(CircuitBreakerState.Open);
+        await replacementClient.Received(2).PauseAsync(Arg.Any<CancellationToken>());
+        await replacementClient.DidNotReceive().ResumeAsync(Arg.Any<CancellationToken>());
+        await legacyClient.DidNotReceive().PauseAsync(Arg.Any<CancellationToken>());
+        await legacyClient.DidNotReceive().ResumeAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task current_resume_failure_reopens_and_pauses_transport()
+    {
+        const string group = "integration.resume-failure.current";
+        var circuitGroup = _CircuitKey(group);
+        var reopenPauseCompleted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var pauseCount = 0;
+        var timeProvider = new FakeTimeProvider();
+        await using var stateManager = _CreateStateManager(
+            failureThreshold: 1,
+            openDuration: TimeSpan.FromMinutes(1),
+            timeProvider: timeProvider
+        );
+        await using var provider = _CreateRegisterProvider();
+        var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
+        var client = Substitute.For<IConsumerClient>();
+        client
+            .ResumeAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => ValueTask.FromException(new InvalidOperationException("resume failed")));
+        var handle = await _CreateHandleAsync(register, group, client);
+
+        stateManager.RegisterGroupCallbacks(
+            circuitGroup,
+            onPause: async epoch =>
+            {
+                await _PauseHandleAsync(register, handle, epoch);
+                if (Interlocked.Increment(ref pauseCount) == 2)
+                {
+                    reopenPauseCompleted.TrySetResult();
+                }
+            },
+            onResume: epoch => _ResumeHandleAsync(register, handle, epoch)
+        );
+
+        await stateManager.ReportFailureAsync(circuitGroup, new TimeoutException(), AbortToken);
+        timeProvider.Advance(TimeSpan.FromMinutes(1));
+        await reopenPauseCompleted.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        stateManager.GetState(circuitGroup).Should().Be(CircuitBreakerState.Open);
+        await client.Received(1).ResumeAsync(Arg.Any<CancellationToken>());
+        await client.Received(2).PauseAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task stale_resume_failure_does_not_reopen_replacement_transport()
+    {
+        const string group = "integration.resume-failure.stale";
+        var circuitGroup = _CircuitKey(group);
+        var timeProvider = new FakeTimeProvider();
+        await using var stateManager = _CreateStateManager(
+            failureThreshold: 1,
+            openDuration: TimeSpan.FromMinutes(1),
+            timeProvider: timeProvider
+        );
+        await using var provider = _CreateRegisterProvider();
+        var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
+        var replacementClient = Substitute.For<IConsumerClient>();
+        var replacementHandle = await _CreateHandleAsync(register, group, replacementClient);
+
+        stateManager.RegisterGroupCallbacks(
+            circuitGroup,
+            onPause: epoch => _PauseHandleAsync(register, replacementHandle, epoch),
+            onResume: _ => ValueTask.CompletedTask
+        );
+
+        await stateManager.ReportFailureAsync(circuitGroup, new TimeoutException(), AbortToken);
+        var currentEpoch = stateManager.TryAcquireHalfOpenProbe(circuitGroup)!.Value;
+        await stateManager.ForceOpenAsync(circuitGroup, AbortToken);
+
+        var reopenMethod = typeof(CircuitBreakerStateManager).GetMethod(
+            "_ReopenAfterResumeFailureAsync",
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+        )!;
+        await (Task)reopenMethod.Invoke(stateManager, [circuitGroup, currentEpoch])!;
+
+        stateManager.GetState(circuitGroup).Should().Be(CircuitBreakerState.Open);
+        await replacementClient.Received(1).PauseAsync(Arg.Any<CancellationToken>());
+        await replacementClient.DidNotReceive().ResumeAsync(Arg.Any<CancellationToken>());
+    }
+
     private static async Task _ReportProbeSuccess(CircuitBreakerStateManager stateManager, string group)
     {
         var probeAcquired = stateManager.TryAcquireHalfOpenProbe(group);
-        probeAcquired.Should().BeTrue("should be able to acquire probe in HalfOpen state");
+        probeAcquired.Should().NotBeNull("should be able to acquire probe in HalfOpen state");
         await stateManager.ReportSuccessAsync(group);
+    }
+
+    private static ServiceProvider _CreateRegisterProvider()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessMessaging(setup =>
+        {
+            setup.UseInMemory();
+            setup.UseProcessLocalInMemoryStorage();
+            setup.UseConventions(conventions =>
+            {
+                conventions.UseApplicationId("circuit-breaker-integration-tests");
+                conventions.UseVersion("v1");
+            });
+        });
+
+        return services.BuildServiceProvider();
+    }
+
+    private static async ValueTask<object> _CreateHandleAsync(
+        ConsumerRegister register,
+        string groupName,
+        IConsumerClient client
+    )
+    {
+        var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
+        var handle = Activator.CreateInstance(handleType, nonPublic: true)!;
+        handleType.GetProperty("Logger")!.SetValue(handle, NullLogger<ConsumerRegister>.Instance);
+        handleType.GetProperty("Cts")!.SetValue(handle, new CancellationTokenSource());
+        handleType.GetProperty("GroupName")!.SetValue(handle, groupName);
+        handleType.GetProperty("ConsumerTasks")!.SetValue(handle, new ConcurrentBag<Task>());
+        await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, [client])!;
+
+        return handle;
+    }
+
+    private static async ValueTask _PauseHandleAsync(ConsumerRegister register, object handle, long epoch)
+    {
+        var method = typeof(ConsumerRegister).GetMethod(
+            "_PauseGroupAsync",
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+        )!;
+        await (ValueTask)method.Invoke(register, [handle, epoch])!;
+    }
+
+    private static async ValueTask _ResumeHandleAsync(ConsumerRegister register, object handle, long epoch)
+    {
+        var method = typeof(ConsumerRegister).GetMethod(
+            "_ResumeGroupAsync",
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+        )!;
+        await (ValueTask)method.Invoke(register, [handle, epoch])!;
     }
 }
