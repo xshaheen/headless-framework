@@ -46,13 +46,11 @@ public sealed class DiRegisteredInterceptorsConfigurationTests : TestBase
             {
                 scope
                     .ServiceProvider.GetRequiredService<ICurrentCommitCoordinator>()
-                    .Current!.OnCommit(
-                        (_, _) =>
-                        {
-                            drained = true;
-                            return ValueTask.CompletedTask;
-                        }
-                    );
+                    .Current!.OnCommit(() =>
+                    {
+                        drained = true;
+                        return ValueTask.CompletedTask;
+                    });
 
                 ((PlainDbContext)ctx).Set<PlainRow>().Add(new PlainRow { Name = "x" });
                 await ctx.SaveChangesAsync(ct);

@@ -40,13 +40,11 @@ public sealed class CommitCoordinationInterceptorWiringTests : TestBase
             {
                 scope
                     .ServiceProvider.GetRequiredService<ICurrentCommitCoordinator>()
-                    .Current!.OnCommit(
-                        (_, _) =>
-                        {
-                            drained = true;
-                            return ValueTask.CompletedTask;
-                        }
-                    );
+                    .Current!.OnCommit(() =>
+                    {
+                        drained = true;
+                        return ValueTask.CompletedTask;
+                    });
 
                 ctx.Set<WiringRow>().Add(new WiringRow { Name = "committed" });
 
@@ -78,13 +76,11 @@ public sealed class CommitCoordinationInterceptorWiringTests : TestBase
                 {
                     scope
                         .ServiceProvider.GetRequiredService<ICurrentCommitCoordinator>()
-                        .Current!.OnCommit(
-                            (_, _) =>
-                            {
-                                drained = true;
-                                return ValueTask.CompletedTask;
-                            }
-                        );
+                        .Current!.OnCommit(() =>
+                        {
+                            drained = true;
+                            return ValueTask.CompletedTask;
+                        });
 
                     ctx.Set<WiringRow>().Add(new WiringRow { Name = "rolled-back" });
                     await ctx.SaveChangesAsync(ct);

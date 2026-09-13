@@ -73,7 +73,7 @@ public static class SetupPostgreSqlEntityFrameworkMessaging
 
             if (options.EnableTransactionalOutbox)
             {
-                services.AddCommitCoordinationWithStartupGate(typeof(TContext));
+                services.AddEntityFrameworkCommitCoordination<TContext>();
                 _PromoteStorageCapability(services, "PostgreSql");
                 services.AddScoped<IInboxTransactionRunner>(
                     serviceProvider => new PostgreSqlInboxTransactionRunner<TContext>(

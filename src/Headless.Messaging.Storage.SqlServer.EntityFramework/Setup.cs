@@ -71,7 +71,7 @@ public static class SetupSqlServerEntityFrameworkMessaging
 
             if (options.EnableTransactionalOutbox)
             {
-                services.AddCommitCoordinationWithStartupGate(typeof(TContext));
+                services.AddEntityFrameworkCommitCoordination<TContext>();
                 _PromoteStorageCapability(services, "SqlServer");
                 services.AddScoped<IInboxTransactionRunner>(
                     serviceProvider => new SqlServerInboxTransactionRunner<TContext>(
