@@ -31,10 +31,9 @@ public static class SetupEntityFrameworkCommitCoordination
         }
 
         /// <summary>
-        /// Adds EF Core commit coordination services: the core infrastructure, the
-        /// <see cref="EntityFrameworkCommitSignalSource" />, and the
-        /// <see cref="CommitCoordinationTransactionInterceptor" /> (registered as an <c>IInterceptor</c>
-        /// singleton).
+        /// Adds EF Core commit coordination services: the core infrastructure and the
+        /// <see cref="CommitCoordinationTransactionInterceptor" /> (a singleton, also registered as an
+        /// <c>IInterceptor</c>), which owns the transaction-to-scope map and signals enlisted scopes.
         /// </summary>
         /// <remarks>
         /// EF Core does <b>not</b> auto-discover <c>IInterceptor</c> registrations from the application service
@@ -51,10 +50,7 @@ public static class SetupEntityFrameworkCommitCoordination
         public IServiceCollection AddEntityFrameworkCommitCoordination()
         {
             services.AddCommitCoordination();
-            services.TryAddSingleton<EntityFrameworkCommitSignalSource>();
-            services.TryAddSingleton<ICommitSignalSource>(sp =>
-                sp.GetRequiredService<EntityFrameworkCommitSignalSource>()
-            );
+            services.TryAddSingleton<CommitCoordinationTransactionInterceptor>();
 
             // IMPORTANT: EF Core does NOT auto-discover IInterceptor registrations from the application
             // service provider — the interceptor must be added to the context options explicitly or the
@@ -63,8 +59,12 @@ public static class SetupEntityFrameworkCommitCoordination
             // interceptors automatically; plain AddDbContext consumers must opt in themselves:
             //   services.AddDbContext<MyDbContext>((sp, options) =>
             //       options.UseNpgsql(...).AddInterceptors(sp.GetServices<IInterceptor>()));
+            // The same singleton is exposed as IInterceptor so the options configuration attaches the instance
+            // that EnlistCommitCoordination resolves — one map, one interceptor.
             services.TryAddEnumerable(
-                ServiceDescriptor.Singleton<IInterceptor, CommitCoordinationTransactionInterceptor>()
+                ServiceDescriptor.Singleton<IInterceptor, CommitCoordinationTransactionInterceptor>(sp =>
+                    sp.GetRequiredService<CommitCoordinationTransactionInterceptor>()
+                )
             );
 
             return services;
@@ -122,7 +122,7 @@ public static class SetupEntityFrameworkCommitCoordination
 
         /// <summary>
         /// Wires the full transactional-outbox stack for <paramref name="dbContextType"/> in one call: the EF commit
-        /// signal source (<see cref="AddEntityFrameworkCommitCoordination"/>), the interceptor-attach options
+        /// interceptor (<see cref="AddEntityFrameworkCommitCoordination"/>), the interceptor-attach options
         /// configuration (<see cref="AddCommitCoordinationDbContextConfiguration"/>), and the startup self-probe gate
         /// (<see cref="AddCommitInterceptorStartupGate"/>). Callers own the enable/opt-out policy (EF-context vs
         /// raw-ADO path, consumer opt-out) and call this only once that policy resolves to "wire it".

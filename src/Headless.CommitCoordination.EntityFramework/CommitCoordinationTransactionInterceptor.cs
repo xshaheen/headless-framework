@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using System.Data.Common;
+using Headless.Checks;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -8,41 +10,81 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Headless.CommitCoordination.EntityFramework;
 
 /// <summary>
-/// EF Core <see cref="DbTransactionInterceptor" /> that bridges the post-commit and post-rollback transaction
-/// edges to the commit coordination infrastructure.
+/// EF Core <see cref="DbTransactionInterceptor" /> that signals the commit coordination scope enlisted for a
+/// transaction when that transaction commits or rolls back.
 /// </summary>
 /// <remarks>
-/// Registered on the <c>DbContext</c> options (automatically by the Headless ORM setup, or manually via
-/// <c>AddInterceptors</c> for plain <c>AddDbContext</c> registrations). When a transaction that was enrolled
-/// via <c>DatabaseFacade.EnlistCommitCoordination</c> commits or rolls back, the interceptor drives the
-/// corresponding signal on <see cref="EntityFrameworkCommitSignalSource" />, which drains registered callbacks.
+/// The interceptor owns the transaction-to-scope map. <see cref="Enlist" /> (reached through
+/// <c>DatabaseFacade.EnlistCommitCoordination</c>) opens the scope and registers it under the live
+/// <see cref="DbTransaction" />; the returned scope removes the entry when it is disposed, so eviction never
+/// depends on an interceptor event firing — a commit that throws client-side but is later probe-confirmed by the
+/// caller raises no interceptor event, and the caller signals the scope directly instead.
 /// <para>
-/// The synchronous overrides (<see cref="TransactionCommitted" />, <see cref="TransactionRolledBack" />) fire
-/// the signal in the background (fire-and-forget) so the EF commit/rollback call does not block on the drain.
-/// The async overrides await the drain directly.
+/// The synchronous overrides (<see cref="TransactionCommitted" />, <see cref="TransactionRolledBack" />) claim the
+/// outcome on the committing thread and run the drain off-thread (fire-and-forget) so the EF call does not block
+/// on callbacks. The async overrides await the drain. Because signals are idempotent per outcome, a caller that
+/// also signals the scope explicitly (the inbox transaction runners do) drains once with no warning.
 /// </para>
 /// <para>
-/// Drain faults are logged and swallowed here: by the time these methods fire, the transaction outcome is
-/// already durable. Propagating a drain fault would surface a phantom failure to the caller (and, inside an EF
-/// execution strategy, cause the operation to be retried and double-applied). The enlisted durable rows are
-/// relay-recoverable.
-/// </para>
-/// <para>
-/// The interceptor is a no-op for transactions that were never enrolled in commit coordination — absent keys
-/// are silently ignored by <see cref="EntityFrameworkCommitSignalSource" />.
+/// Drain faults are logged and swallowed: by the time these methods fire, the transaction outcome is already
+/// durable. Propagating a drain fault would surface a phantom failure to the caller (and, inside an EF execution
+/// strategy, cause the operation to be retried and double-applied). The enlisted durable rows are
+/// relay-recoverable. Transactions that were never enlisted are ignored.
 /// </para>
 /// </remarks>
 internal sealed partial class CommitCoordinationTransactionInterceptor(
-    EntityFrameworkCommitSignalSource signalSource,
     ILogger<CommitCoordinationTransactionInterceptor>? logger = null
 ) : DbTransactionInterceptor
 {
     private readonly ILogger _logger = logger ?? NullLogger<CommitCoordinationTransactionInterceptor>.Instance;
+    private readonly ConcurrentDictionary<DbTransaction, ICommitScope> _scopes = new(
+        ReferenceEqualityComparer.Instance
+    );
+
+    /// <summary>Gets the number of transactions currently enlisted. Exposed for tests.</summary>
+    internal int EnlistedTransactionCount => _scopes.Count;
+
+    /// <summary>
+    /// Opens a scope for <paramref name="transaction" /> and registers it so the interceptor can signal it on the
+    /// transaction's commit or rollback edge. The returned scope evicts the entry when disposed.
+    /// </summary>
+    /// <param name="scopeFactory">The core scope factory.</param>
+    /// <param name="relational">The live connection/transaction handle exposed to participants.</param>
+    /// <param name="transaction">The provider transaction the interceptor will receive on the commit edge.</param>
+    /// <returns>The scope the caller owns: signal it (optional — the interceptor does) and dispose it after the transaction completes.</returns>
+    /// <exception cref="InvalidOperationException">A scope is already enlisted for <paramref name="transaction" />.</exception>
+    internal ICommitScope Enlist(
+        ICommitScopeFactory scopeFactory,
+        IRelationalCommitContext relational,
+        DbTransaction transaction
+    )
+    {
+        Argument.IsNotNull(scopeFactory);
+        Argument.IsNotNull(relational);
+        Argument.IsNotNull(transaction);
+
+        // Open first: the ambient push must land in the caller's frame, and the factory is the only thing that can
+        // create a scope. On a duplicate the fresh scope is disposed immediately — an un-signalled dispose of an
+        // empty scope just pops the ambient frame it pushed.
+        var scope = scopeFactory.Open(relational);
+
+        if (!_scopes.TryAdd(transaction, scope))
+        {
+            scope.Dispose();
+            LogDuplicateEnlistment(_logger);
+
+            throw new InvalidOperationException(
+                "An EF Core commit coordination scope is already enlisted for this transaction."
+            );
+        }
+
+        return new EnlistedCommitScope(this, transaction, scope);
+    }
 
     /// <inheritdoc />
     public override void TransactionCommitted(DbTransaction transaction, TransactionEndEventData eventData)
     {
-        signalSource.SignalCommittedInBackground(transaction);
+        _SignalInBackground(transaction, CommitOutcome.Committed);
     }
 
     /// <inheritdoc />
@@ -52,22 +94,25 @@ internal sealed partial class CommitCoordinationTransactionInterceptor(
         CancellationToken cancellationToken = default
     )
     {
+        if (!_scopes.TryGetValue(transaction, out var scope))
+        {
+            return;
+        }
+
         try
         {
-            await signalSource.SignalCommittedAsync(transaction).ConfigureAwait(false);
+            await scope.SignalAsync(CommitOutcome.Committed).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            // The commit is ALREADY durable; the drain is acceleration. Propagating would fail the caller (or
-            // re-run an execution-strategy delegate) for committed work — log and let the relay recover.
-            LogPostCommitDrainFaulted(_logger, ex);
+            LogDrainFaulted(_logger, CommitOutcome.Committed, ex);
         }
     }
 
     /// <inheritdoc />
     public override void TransactionRolledBack(DbTransaction transaction, TransactionEndEventData eventData)
     {
-        signalSource.SignalRolledBackInBackground(transaction);
+        _SignalInBackground(transaction, CommitOutcome.RolledBack);
     }
 
     /// <inheritdoc />
@@ -77,31 +122,105 @@ internal sealed partial class CommitCoordinationTransactionInterceptor(
         CancellationToken cancellationToken = default
     )
     {
+        if (!_scopes.TryGetValue(transaction, out var scope))
+        {
+            return;
+        }
+
         try
         {
-            await signalSource.SignalRolledBackAsync(transaction).ConfigureAwait(false);
+            await scope.SignalAsync(CommitOutcome.RolledBack).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            // The rollback already happened and the enlisted work is discarded either way; a rollback-callback
-            // fault must not replace the caller's rollback flow with a phantom error.
-            LogPostRollbackDrainFaulted(_logger, ex);
+            LogDrainFaulted(_logger, CommitOutcome.RolledBack, ex);
+        }
+    }
+
+    private void _SignalInBackground(DbTransaction transaction, CommitOutcome outcome)
+    {
+        if (!_scopes.TryGetValue(transaction, out var scope))
+        {
+            return;
+        }
+
+        // Invoke SignalAsync synchronously (NOT inside Task.Run): the terminal claim settles on the committing thread
+        // before this returns, so the caller's un-signalled scope dispose that follows cannot race it into a rollback.
+        // Only the awaited drain continues off-thread. There is no shutdown drain gate — the drain is acceleration,
+        // not durability: the rows were committed in the transaction and the relay sweep recovers an abandoned drain.
+        var signal = scope.SignalAsync(outcome);
+
+        if (signal.IsCompletedSuccessfully)
+        {
+            return;
+        }
+
+        _ = signal
+            .AsTask()
+            .ContinueWith(
+                static (t, state) =>
+                {
+                    var (logger, outcome) = ((ILogger, CommitOutcome))state!;
+                    LogDrainFaulted(logger, outcome, t.Exception!);
+                },
+                (_logger, outcome),
+                CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default
+            );
+    }
+
+    private void _Evict(DbTransaction transaction, ICommitScope scope)
+    {
+        // Remove-if-equal: never evict a successor that re-enlisted the same transaction after this scope was
+        // removed (cannot happen while this scope is live, but the guard costs nothing).
+        _scopes.TryRemove(new KeyValuePair<DbTransaction, ICommitScope>(transaction, scope));
+    }
+
+    /// <summary>
+    /// The scope handed to the enlisting caller: delegates to the core scope and evicts the interceptor's map
+    /// entry on disposal. Disposal stays synchronous so the ambient pop runs in the caller's own frame.
+    /// </summary>
+    private sealed class EnlistedCommitScope(
+        CommitCoordinationTransactionInterceptor owner,
+        DbTransaction transaction,
+        ICommitScope inner
+    ) : ICommitScope
+    {
+        public ICommitCoordinator Coordinator => inner.Coordinator;
+
+        public ValueTask SignalAsync(CommitOutcome outcome)
+        {
+            return inner.SignalAsync(outcome);
+        }
+
+        public void Dispose()
+        {
+            owner._Evict(transaction, inner);
+            inner.Dispose();
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            owner._Evict(transaction, inner);
+
+            return inner.DisposeAsync();
         }
     }
 
     [LoggerMessage(
         EventId = 1,
         Level = LogLevel.Error,
-        Message = "Post-commit drain faulted after a durable EF Core commit; the relay will recover any uncommitted work."
+        Message = "An EF Core commit coordination scope is already enlisted for this transaction."
     )]
     // ReSharper disable once InconsistentNaming
-    private static partial void LogPostCommitDrainFaulted(ILogger logger, Exception exception);
+    private static partial void LogDuplicateEnlistment(ILogger logger);
 
     [LoggerMessage(
         EventId = 2,
         Level = LogLevel.Error,
-        Message = "Rollback drain faulted after an EF Core rollback; the enlisted work was already discarded."
+        Message = "EF Core commit coordination drain faulted after a durable {Outcome} edge; the relay will recover any committed work."
     )]
     // ReSharper disable once InconsistentNaming
-    private static partial void LogPostRollbackDrainFaulted(ILogger logger, Exception exception);
+    private static partial void LogDrainFaulted(ILogger logger, CommitOutcome outcome, Exception exception);
 }

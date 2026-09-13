@@ -70,21 +70,34 @@ public sealed class CoordinatedTransactionAmbiguousCommitTests : TestBase
         services.AddLogging();
         services.AddEntityFrameworkCommitCoordination();
         services.AddDbContext<AmbiguousCommitDbContext>(
-            (_, options) =>
+            (sp, options) =>
                 options
                     .UseSqlite(connection)
                     .ReplaceService<IExecutionStrategyFactory, OneShotRetryExecutionStrategyFactory>()
+                    .AddInterceptors(sp.GetServices<IInterceptor>())
         );
         await using var provider = services.BuildServiceProvider();
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AmbiguousCommitDbContext>();
         await db.Database.EnsureCreatedAsync(AbortToken);
         var operationCalls = 0;
+        var drains = 0;
 
         await db.ExecuteCoordinatedTransactionAsync(
             async (context, cancellationToken) =>
             {
                 operationCalls++;
+
+                // Each attempt enlists on its own coordinator; only the attempt that commits may drain.
+                scope
+                    .ServiceProvider.GetRequiredService<ICurrentCommitCoordinator>()
+                    .Current!.OnCommit(() =>
+                    {
+                        drains++;
+
+                        return ValueTask.CompletedTask;
+                    });
+
                 if (operationCalls == 1)
                 {
                     // A failure BEFORE commit starts must propagate to the execution strategy and replay
@@ -100,6 +113,7 @@ public sealed class CoordinatedTransactionAmbiguousCommitTests : TestBase
         );
 
         operationCalls.Should().Be(2);
+        drains.Should().Be(1, "the replayed attempt's coordinator was disposed un-signalled and must not drain");
         (await db.Set<ProbeRow>().AsNoTracking().CountAsync(AbortToken)).Should().Be(1);
     }
 
