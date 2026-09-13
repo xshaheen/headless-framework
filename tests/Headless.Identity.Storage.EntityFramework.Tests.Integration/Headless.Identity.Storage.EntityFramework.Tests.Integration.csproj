@@ -12,6 +12,7 @@
     <PackageReference Include="xunit.v3.mtp-v2" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="../Headless.Identity.Storage.EntityFramework.Tests.Harness/Headless.Identity.Storage.EntityFramework.Tests.Harness.csproj" />
     <ProjectReference Include="..\..\src\Headless.Identity.Storage.EntityFramework\Headless.Identity.Storage.EntityFramework.csproj" />
     <ProjectReference Include="..\..\src\Headless.EntityFramework.CommitCoordination\Headless.EntityFramework.CommitCoordination.csproj" />
     <ProjectReference Include="..\Headless.EntityFramework.Tests.Harness\Headless.EntityFramework.Tests.Harness.csproj" />

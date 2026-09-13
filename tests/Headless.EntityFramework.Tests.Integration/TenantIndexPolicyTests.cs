@@ -215,7 +215,10 @@ public sealed class TenantIndexPolicyTests : TestBase
         public static void Configure(ModelBuilder builder)
         {
             builder.Entity<Row>().Property<string>("TenantId");
-            builder.Entity<Row>().HasIndex(x => x.Code).IsUnique().IsTenantScoped().IncludeProperties("TenantId");
+            NpgsqlIndexBuilderExtensions.IncludeProperties(
+                builder.Entity<Row>().HasIndex(x => x.Code).IsUnique().IsTenantScoped(),
+                "TenantId"
+            );
         }
     }
 

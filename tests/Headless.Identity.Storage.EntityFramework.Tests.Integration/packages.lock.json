@@ -935,6 +935,7 @@
           "Headless.EntityFramework": "[1.0.0, )",
           "Headless.Testing": "[1.0.0, )",
           "Headless.Testing.Testcontainers": "[1.0.0, )",
+          "Microsoft.EntityFrameworkCore.SqlServer": "[10.0.12, )",
           "NSubstitute": "[5.3.0, )",
           "Npgsql.EntityFrameworkCore.PostgreSQL": "[10.0.3, )",
           "xunit.v3.assert": "[4.0.0, )",
@@ -987,6 +988,20 @@
         "dependencies": {
           "Headless.EntityFramework": "[1.0.0, )",
           "Microsoft.AspNetCore.Identity.EntityFrameworkCore": "[10.0.12, )"
+        }
+      },
+      "headless.identity.storage.entityframework.tests.harness": {
+        "type": "Project",
+        "dependencies": {
+          "AwesomeAssertions": "[9.6.0, )",
+          "AwesomeAssertions.Json": "[9.0.0, )",
+          "Bogus": "[35.6.5, )",
+          "DeepCloner": "[0.10.4, )",
+          "Headless.EntityFramework.Tests.Harness": "[1.0.0, )",
+          "Headless.Identity.Storage.EntityFramework": "[1.0.0, )",
+          "NSubstitute": "[5.3.0, )",
+          "xunit.v3.assert": "[4.0.0, )",
+          "xunit.v3.extensibility.core": "[4.0.0, )"
         }
       },
       "headless.multitenancy": {
