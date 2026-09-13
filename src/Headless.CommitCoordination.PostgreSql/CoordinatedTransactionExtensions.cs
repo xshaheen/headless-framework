@@ -16,11 +16,12 @@ namespace Npgsql;
 /// </summary>
 /// <remarks>
 /// A raw connection cannot expose a resolving scope, so these overloads require an explicit
-/// <c>IServiceProvider</c> (the request scope) for the post-commit drain. PostgreSQL commit detection is
-/// inline (the signal fires when this helper's <c>Commit</c> runs), so bypassing this helper with a raw
-/// <c>NpgsqlTransaction.Commit</c> would leave the in-memory dispatch accelerator unfired and rely on the
-/// consumer's polling recovery. If the connection is closed it is opened for the duration and closed again
-/// afterward; an already-open connection is left open.
+/// <c>IServiceProvider</c> that resolves the commit coordination services. PostgreSQL signaling is explicit
+/// (this helper signals after its own <c>Commit</c>), so a caller that commits a raw <c>NpgsqlTransaction</c>
+/// outside this helper must signal the enlisted scope itself. There is no execution-strategy retry for raw ADO
+/// (that is an EF Core concept); a throwing operation rolls the transaction back and discards the enlisted work.
+/// If the connection is closed it is opened for the duration and closed again afterward; an already-open
+/// connection is left open.
 /// </remarks>
 [PublicAPI]
 public static partial class HeadlessNpgsqlCoordinatedTransactionExtensions
@@ -135,13 +136,13 @@ public static partial class HeadlessNpgsqlCoordinatedTransactionExtensions
     /// <summary>
     /// Shared body for every <c>ExecuteCoordinatedTransactionAsync</c> overload: opens the connection when
     /// closed, begins the transaction, enlists commit coordination, runs <paramref name="operation"/>, commits,
-    /// signals the inline commit, and closes the connection if it was opened here.
+    /// signals the outcome, and closes the connection if it was opened here.
     /// </summary>
     /// <remarks>
-    /// PostgreSQL is an inline (caller-driven) signal source: no diagnostic/interceptor raises the commit
-    /// signal, so the helper must drive it after <c>CommitAsync</c>. Without the explicit
-    /// <c>SignalAsync(Committed)</c> the un-signalled scope dispose drains as rollback and discards the enlisted
-    /// work on every successful commit.
+    /// PostgreSQL has no commit edge to observe, so the helper owns both signals: <c>Committed</c> after
+    /// <c>CommitAsync</c> (without it the un-signalled dispose would discard the enlisted work on every successful
+    /// commit) and <c>RolledBack</c> when the operation or the commit throws, so the failure path never reads as
+    /// a forgotten signal.
     /// </remarks>
     private static async Task<TResult> _ExecuteCoreAsync<TResult>(
         NpgsqlConnection connection,
@@ -179,22 +180,34 @@ public static partial class HeadlessNpgsqlCoordinatedTransactionExtensions
 
                 await using (scope.ConfigureAwait(false))
                 {
-                    var result = await operation(connection, cancellationToken).ConfigureAwait(false);
-                    await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                    TResult result;
 
                     try
                     {
-                        // CancellationToken.None: the commit is durable, so the post-commit drain must run to
-                        // completion rather than be aborted by a caller cancellation (which would log a spurious
-                        // fault even though the work drained). Matches the SqlServer inline-signal helper.
+                        result = await operation(connection, cancellationToken).ConfigureAwait(false);
+                        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        // The physical rollback happens when the transaction disposes; the explicit signal discards
+                        // the enlisted work now and keeps the scope's forgotten-signal warning for hand-rolled
+                        // enlistments only. Nothing runs on rollback, so this cannot mask the caller's exception.
+                        await scope.SignalAsync(CommitOutcome.RolledBack).ConfigureAwait(false);
+                        throw;
+                    }
+
+                    try
+                    {
+                        // The drain runs to completion regardless of the caller's token: the commit is durable, and
+                        // aborting the drain would only log a spurious fault for work that was going to run.
                         await scope.SignalAsync(CommitOutcome.Committed).ConfigureAwait(false);
                     }
                     catch (Exception ex)
                     {
-                        // The transaction is ALREADY durably committed. The inline signal drives the dispatch
-                        // accelerator (drain); a fault here must not surface as a caller failure — a retry would
-                        // re-run the operation and double-apply. The enlisted work is relay-recoverable (durable
-                        // rows committed in-transaction + polling recovery), so log and return the committed result.
+                        // The transaction is ALREADY durably committed. The drain is the dispatch accelerator; a
+                        // fault here must not surface as a caller failure — a retry would re-run the operation and
+                        // double-apply. The enlisted work is relay-recoverable (durable rows committed
+                        // in-transaction + polling recovery), so log and return the committed result.
                         LogPostCommitDrainFaulted(logger, ex);
                     }
 

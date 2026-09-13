@@ -2,13 +2,21 @@
 
 ## Problem Solved
 
-Provides PostgreSQL commit coordination registration points for inline framework-owned transaction flows.
+Enlists raw-ADO `NpgsqlConnection` transactions in commit coordination so work buffered inside the transaction — outbox dispatch, durable jobs — drains after commit and is discarded on rollback.
 
 ## Key Features
 
-- Internal `PostgreSqlCommitSignalSource` registered as `ICommitSignalSource`.
-- DI extension `AddPostgreSqlCommitCoordination()`.
-- `NpgsqlConnection.ExecuteCoordinatedTransactionAsync(operation, services, …)` — single-call coordinated transaction for raw ADO (opens the connection if closed; no execution-strategy retry).
+- `NpgsqlConnection.ExecuteCoordinatedTransactionAsync(operation, services, …)` — single-call coordinated transaction for raw ADO: opens the connection if closed, begins the transaction, enlists, runs the operation, commits, and signals the outcome for you (no execution-strategy retry).
+- `NpgsqlConnection.EnlistCommitCoordination(transaction, services)` — the advanced seam for a transaction you already own; returns the `ICommitScope` you must signal.
+- DI extension `AddPostgreSqlCommitCoordination()` (parameterless; there are no provider options).
+
+## Design Notes
+
+PostgreSQL signaling is **explicit**: Npgsql exposes no commit edge, so nothing signals for you. `ExecuteCoordinatedTransactionAsync` signals `Committed` after its own `CommitAsync` and `RolledBack` when the operation or commit throws. A caller that uses `EnlistCommitCoordination` directly owns that signal — call `scope.SignalAsync(CommitOutcome.Committed)` (or `RolledBack`) immediately after the transaction completes, then dispose the scope.
+
+An un-signalled dispose is a rollback: the enlisted work is discarded. When the transaction had already completed by the time the scope is disposed without a signal, the package logs a warning (`PostgreSqlCommitScope`, event 1) because the signal was almost certainly forgotten — durable outbox rows are still relay-recovered, but the fast-path dispatch was lost. An un-signalled dispose while the transaction is still open (the operation threw before commit) is the normal failure path and logs nothing.
+
+The same contract applies to `Headless.CommitCoordination.SqlServer`. Prefer `Headless.CommitCoordination.EntityFramework` where EF owns the commit edge — its interceptor signals for the caller.
 
 ## Installation
 
@@ -23,7 +31,6 @@ dotnet add package Headless.CommitCoordination.PostgreSql
 ```csharp
 services.AddPostgreSqlCommitCoordination();
 
-// Open + enlist + commit in one call; the enlist cannot be forgotten.
 await connection.ExecuteCoordinatedTransactionAsync(
     async (conn, ct) => {
         // raw-ADO work on conn, plus publishes that enlist on the ambient coordinator
@@ -34,20 +41,13 @@ await connection.ExecuteCoordinatedTransactionAsync(
 
 ### Advanced: raw enlistment
 
-> **WARNING — PostgreSQL is an inline (caller-driven) signal provider.** Npgsql exposes no commit
-> diagnostic, so nothing signals for you. If you hand-roll `EnlistCommitCoordination`, you MUST call
-> `scope.SignalAsync(CommitOutcome.Committed)` immediately after `transaction.CommitAsync(...)`.
-> An un-signalled scope dispose drains as **rollback** and silently discards every enlisted publish on
-> a transaction that actually committed — durable outbox rows survive (the relay sweep recovers them),
-> but accelerator-only work is lost. Prefer the helper above; it signals for you.
-
 ```csharp
 await using var tx = await connection.BeginTransactionAsync(ct);
 await using var scope = connection.EnlistCommitCoordination(tx, requestServiceProvider);
 
 // ... raw-ADO work + publishes ...
 await tx.CommitAsync(ct);
-await scope.SignalAsync(CommitOutcome.Committed); // REQUIRED — see warning above
+await scope.SignalAsync(CommitOutcome.Committed); // REQUIRED — nothing signals for you
 ```
 
 ## Configuration
@@ -58,8 +58,9 @@ None.
 
 - `Headless.CommitCoordination.Core`
 - `Microsoft.Extensions.DependencyInjection.Abstractions`
+- `Microsoft.Extensions.Logging.Abstractions`
 - `Npgsql`
 
 ## Side Effects
 
-Registers core commit coordination services and the internal `PostgreSqlCommitSignalSource` (exposed as `ICommitSignalSource`).
+Registers the core commit coordination services only.

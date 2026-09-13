@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.CommitCoordination.PostgreSql;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.CommitCoordination;
@@ -16,23 +14,20 @@ public static class SetupPostgreSqlCommitCoordination
     extension(IServiceCollection services)
     {
         /// <summary>
-        /// Adds the PostgreSQL (Npgsql) commit signal source and the core commit coordination services.
+        /// Adds the commit coordination services the Npgsql enlistment helpers resolve.
         /// </summary>
         /// <remarks>
-        /// PostgreSQL uses an inline (caller-driven) signal model: after committing the transaction the caller
-        /// must call <see cref="ICommitScope.SignalAsync" /> on the scope returned by
-        /// <c>NpgsqlConnection.EnlistCommitCoordination</c>. Use
-        /// <c>NpgsqlConnection.ExecuteCoordinatedTransactionAsync</c> to handle this automatically.
-        /// Idempotent: repeated calls register each service at most once.
+        /// PostgreSQL uses an explicit (caller-driven) signal model: after committing the transaction the caller
+        /// calls <see cref="ICommitScope.SignalAsync" /> on the scope returned by
+        /// <c>NpgsqlConnection.EnlistCommitCoordination</c>, or uses
+        /// <c>NpgsqlConnection.ExecuteCoordinatedTransactionAsync</c>, which signals for the caller. No provider
+        /// service is needed beyond the core, so this registers <see cref="SetupCommitCoordination.AddCommitCoordination" />
+        /// only; it exists so hosts declare the provider they enlist through. Idempotent.
         /// </remarks>
         /// <returns>The same <see cref="IServiceCollection" /> for chaining.</returns>
         public IServiceCollection AddPostgreSqlCommitCoordination()
         {
-            services.AddCommitCoordination();
-            services.TryAddSingleton<PostgreSqlCommitSignalSource>();
-            services.TryAddSingleton<ICommitSignalSource>(sp => sp.GetRequiredService<PostgreSqlCommitSignalSource>());
-
-            return services;
+            return services.AddCommitCoordination();
         }
     }
 }

@@ -23,7 +23,7 @@ public sealed class PostgreSqlCoordinatedTransactionFixture
         ICollectionFixture<PostgreSqlCoordinatedTransactionFixture>,
         ICoordinatedTransactionFixture
 {
-    private string ConnectionString => Container.GetConnectionString();
+    public string ConnectionString => Container.GetConnectionString();
 
     protected override PostgreSqlBuilder Configure()
     {
@@ -87,16 +87,11 @@ public sealed class PostgreSqlCoordinatedTransactionFixture
 
         public async Task InsertProbeRowAsync(string name, CancellationToken cancellationToken)
         {
-            // Reach the live transaction through the relational capability — the same designed path
-            // production participants (e.g. the outbox writer) use to enlist their writes.
-            if (!Coordinator.TryGetCapability<IRelationalCommitContext>(out var relational))
-            {
-                throw new InvalidOperationException("The helper did not attach IRelationalCommitContext.");
-            }
-
+            // Reach the live transaction through the relational handle — the same designed path production
+            // participants (e.g. the outbox writer) use to enlist their writes.
             var transaction =
-                (NpgsqlTransaction?)relational.Transaction
-                ?? throw new InvalidOperationException("The relational capability exposed no live transaction.");
+                (NpgsqlTransaction?)Coordinator.Relational?.Transaction
+                ?? throw new InvalidOperationException("The helper exposed no live relational transaction.");
 
             await using var command = new NpgsqlCommand(
                 "INSERT INTO probe_rows (name) VALUES (@name)",
