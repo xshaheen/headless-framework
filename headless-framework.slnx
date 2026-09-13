@@ -207,6 +207,7 @@
         <Project Path="tests/Headless.Jobs.SourceGenerator.Tests.Unit/Headless.Jobs.SourceGenerator.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Identities/">
+        <Project Path="tests/Headless.Identity.Storage.EntityFramework.Tests.Harness/Headless.Identity.Storage.EntityFramework.Tests.Harness.csproj" />
         <Project Path="src\Headless.Identity.Storage.EntityFramework\Headless.Identity.Storage.EntityFramework.csproj" />
         <Project Path="tests/Headless.Identity.Storage.EntityFramework.Tests.Integration/Headless.Identity.Storage.EntityFramework.Tests.Integration.csproj" />
     </Folder>

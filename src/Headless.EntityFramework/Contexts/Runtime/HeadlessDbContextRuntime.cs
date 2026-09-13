@@ -5,11 +5,12 @@ using Headless.Domain;
 using Headless.EntityFramework.ChangeTrackers;
 using Headless.EntityFramework.Configurations;
 using Headless.MultiTenancy;
-using Headless.Reflection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.EntityFramework.Contexts.Runtime;
 
@@ -37,7 +38,7 @@ internal sealed class HeadlessDbContextRuntime(DbContext db, HeadlessDbContextSe
     private bool _initialized;
     private bool _stampTenantHandlerAttached;
 
-    public string? TenantId => services.TenantId;
+    public string? TenantId => HeadlessTenantModelConvention.ValidateTenantId(services.TenantId);
 
     internal IServiceProvider ServiceProvider => services.ServiceProvider;
 
@@ -54,7 +55,8 @@ internal sealed class HeadlessDbContextRuntime(DbContext db, HeadlessDbContextSe
 
         if (services.IsTenantWriteGuardEnabled)
         {
-            db.ChangeTracker.Tracked += _StampTenantOnAdded;
+            db.ChangeTracker.Tracking += _OnTracking;
+            db.ChangeTracker.StateChanging += _OnStateChanging;
             _stampTenantHandlerAttached = true;
         }
     }
@@ -71,7 +73,8 @@ internal sealed class HeadlessDbContextRuntime(DbContext db, HeadlessDbContextSe
 
         if (_stampTenantHandlerAttached)
         {
-            db.ChangeTracker.Tracked -= _StampTenantOnAdded;
+            db.ChangeTracker.Tracking -= _OnTracking;
+            db.ChangeTracker.StateChanging -= _OnStateChanging;
             _stampTenantHandlerAttached = false;
         }
 
@@ -80,33 +83,41 @@ internal sealed class HeadlessDbContextRuntime(DbContext db, HeadlessDbContextSe
         return ValueTask.CompletedTask;
     }
 
-    private void _StampTenantOnAdded(object? sender, EntityTrackedEventArgs e)
+    private void _OnTracking(object? sender, EntityTrackingEventArgs e) => _StampTenantOnAdded(e.Entry, e.State);
+
+    private void _OnStateChanging(object? sender, EntityStateChangingEventArgs e) =>
+        _StampTenantOnAdded(e.Entry, e.NewState);
+
+    private void _StampTenantOnAdded(EntityEntry entry, EntityState targetState)
     {
-        if (!services.IsTenantWriteGuardEnabled)
+        if (
+            targetState != EntityState.Added
+            || entry.Metadata.IsOwned()
+            || !entry.Metadata.IsTenantOwned()
+            || !services.IsTenantWriteGuardEnabled
+            || services.ServiceProvider.GetRequiredService<ITenantWriteGuardBypass>().IsActive
+        )
         {
             return;
         }
 
-        if (e.Entry.State != EntityState.Added || e.Entry.Entity is not IMultiTenant entity)
+        var property = entry.Property(entry.Metadata.GetTenantPropertyName()!);
+        var suppliedTenantId = HeadlessTenantModelConvention.ValidateTenantId((string?)property.CurrentValue);
+        if (!string.IsNullOrWhiteSpace(suppliedTenantId))
         {
             return;
         }
 
-        if (!string.IsNullOrWhiteSpace(entity.TenantId))
-        {
-            return;
-        }
-
-        var tenantId = services.TenantId;
-
+        var tenantId = TenantId;
         if (string.IsNullOrWhiteSpace(tenantId))
         {
-            return;
+            throw new MissingTenantContextException(
+                $"Tenant-owned Added entry '{entry.Metadata.Name}' requires an ambient tenant before tracking."
+            );
         }
 
-        // Name over selector: the expression-selector overload allocates a fresh expression tree on every
-        // tracked Added entity, and this runs from the ChangeTracker.Tracked hook.
-        ObjectPropertiesHelper.TrySetPropertyValue(entity, nameof(IMultiTenant.TenantId), tenantId);
+        // Required alternate keys enter EF's identity map during tracking, before Tracked/StateChanged fire.
+        property.CurrentValue = tenantId;
     }
 
     // Retry classification: CrossTenantWriteException is non-transient. Callers wrapping
@@ -150,24 +161,20 @@ internal sealed class HeadlessDbContextRuntime(DbContext db, HeadlessDbContextSe
         }
     }
 
-    public static void ConfigureConventions(ModelConfigurationBuilder builder)
+    public void ConfigureConventions(ModelConfigurationBuilder builder)
     {
         builder.AddBuildingBlocksPrimitivesConvertersMappings();
+        builder.Conventions.Add(provider => new HeadlessTenantModelConvention(
+            db,
+            provider.GetRequiredService<IDatabaseProvider>().Name
+        ));
     }
 
-    public void ProcessModelCreating(ModelBuilder builder)
+    public static void ProcessModelCreating(ModelBuilder builder)
     {
         _ConfigureEntityConventions(builder);
         _ConfigureDateTimeValueConverters(builder);
-        _ConfigureQueryFiltersForModel(builder, _GetRuntimeContext());
-    }
-
-    private IHeadlessDbContext _GetRuntimeContext()
-    {
-        return db as IHeadlessDbContext
-            ?? throw new InvalidOperationException(
-                $"{db.GetType().Name} must inherit from a Headless DbContext base type."
-            );
+        _ConfigureQueryFiltersForModel(builder);
     }
 
     private static void _ConfigureEntityConventions(ModelBuilder modelBuilder)
@@ -226,34 +233,22 @@ internal sealed class HeadlessDbContextRuntime(DbContext db, HeadlessDbContextSe
         }
     }
 
-    private static void _ConfigureQueryFiltersForModel(ModelBuilder modelBuilder, IHeadlessDbContext runtimeContext)
+    private static void _ConfigureQueryFiltersForModel(ModelBuilder modelBuilder)
     {
         foreach (var type in modelBuilder.Model.GetEntityTypes())
         {
             if (type.BaseType is null && !type.IsOwned() && type.ClrType.IsAssignableTo<IEntity>())
             {
-                _ConfigureQueryFiltersMethod
-                    .MakeGenericMethod(type.ClrType)
-                    .Invoke(null, [modelBuilder, runtimeContext]);
+                _ConfigureQueryFiltersMethod.MakeGenericMethod(type.ClrType).Invoke(null, [modelBuilder]);
             }
         }
     }
 
-    private static void _ConfigureQueryFilters<TEntity>(ModelBuilder modelBuilder, IHeadlessDbContext runtimeContext)
+    private static void _ConfigureQueryFilters<TEntity>(ModelBuilder modelBuilder)
         where TEntity : class
     {
         var entityType = typeof(TEntity);
         var entityBuilder = modelBuilder.Entity<TEntity>();
-
-        if (entityType.IsAssignableTo<IMultiTenant>())
-        {
-            var tenantIdName = _GetColumnName(entityBuilder.Metadata, nameof(IMultiTenant.TenantId));
-
-            entityBuilder.HasQueryFilter(
-                HeadlessQueryFilters.MultiTenancyFilter,
-                x => EF.Property<string?>(x, tenantIdName) == runtimeContext.TenantId
-            );
-        }
 
         if (entityType.IsAssignableTo<IDeleteAudit>())
         {

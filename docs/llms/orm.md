@@ -52,6 +52,7 @@ packages: EntityFramework.Core, EntityFramework, EntityFramework.CommitCoordinat
     - [Configuration](#configuration-3)
     - [Dependencies](#dependencies-3)
     - [Side Effects](#side-effects-3)
+    - [Cancellation (Couchbase)](#cancellation-couchbase)
 
 > ORM domain: `Headless.EntityFramework.Core` for reusable EF primitives, `Headless.EntityFramework` for relational stores with framework conventions, opt-in `Headless.EntityFramework.CommitCoordination` and `Headless.EntityFramework.Messaging` bridges, and `Headless.Couchbase` for document storage via Couchbase.
 
@@ -84,7 +85,9 @@ Use these packages for ORM-level persistence primitives. For raw SQL connection 
 - Always call `base.OnModelCreating(modelBuilder)` in `HeadlessDbContext` subclasses before applying your own entity configurations. Skipping it omits global filter wiring, convention configuration, and model processing from `HeadlessDbContextRuntime`.
 - Configure automatic audit capture in the EF model with `IsAudited()`, entity/property `ExcludeFromAudit()`, and `IsAuditSensitive(...)`. Domain entities carry no audit marker or attributes; unconfigured entities follow `AuditLogOptions.AuditByDefault`.
 - **Never pool `HeadlessDbContext`.** Do not register subclasses with `AddDbContextPool` or `AddPooledDbContextFactory`. The context holds a private `HeadlessDbContextRuntime` that captures the request-scoped outbox dispatcher and audit persistence. Pooling reuses a prior request's unit of work — a captive-dependency bug, not a perf trade-off.
-- Enable tenant write protection with `builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites()))` when the host uses root tenancy. Without it, the multi-tenancy query filter still scopes reads and bulk operations, but `SaveChanges` does not validate which tenant owns the entity.
+- Declare third-party roots with `IsTenantOwned()` after `base.OnModelCreating(modelBuilder)`. Finalized metadata drives tenant filters, the optional write guard, and SQL concurrency predicates. `IMultiTenant` remains the default ownership signal; `IsNotTenantOwned()` explicitly excludes a root.
+- Enable tenant validation and Added-transition stamping with `builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites()))` or `services.AddHeadlessTenantWriteGuard()`. SQL tenant concurrency predicates remain active without the guard.
+- Create a fresh `DbContext` for each tenant scope. `TenantId` reads the active ambient tenant dynamically, but query filters cannot sanitize entities already tracked by `FindAsync`.
 - **`IgnoreMultiTenancyFilter()` is read-side only.** It does not relax write protection under `GuardTenantWrites()`. When the same code path writes, also wrap the save in `ITenantWriteGuardBypass.BeginBypass()` — the two bypasses are independent.
 - Use `ExecuteTransactionAsync(...)` (from `DbContextTransactionExtensions`) for multi-step EF operations that must be atomic under retry execution strategies (e.g. SQL Server `EnableRetryOnFailure`).
 - Install `Headless.EntityFramework.CommitCoordination` and use `ExecuteCoordinatedTransactionAsync(...)` (from `HeadlessCoordinatedTransactionExtensions`) when the operation publishes integration events or enqueues durable jobs that must drain atomically on commit. On any `IHeadlessDbContext` (`HeadlessDbContext` or `HeadlessIdentityDbContext`) it self-sources the request scope and the operation lambda receives the concrete context type with no cast. Plain `DbContext`/`SqlConnection`/`NpgsqlConnection` overloads (in `Headless.CommitCoordination.*`) require the scope passed explicitly.
@@ -94,8 +97,9 @@ Use these packages for ORM-level persistence primitives. For raw SQL connection 
 - Apply module-specific EF mappings explicitly through `ModelBuilder` extensions inside `OnModelCreating`: `modelBuilder.AddHeadlessAuditLog(...)`, `modelBuilder.AddHeadlessFeatures(...)`, `modelBuilder.AddHeadlessPermissions(...)`, `modelBuilder.AddHeadlessSettings(...)`. These read schema and table names from validated `*StorageOptions`.
 - **Completed local drains survive persistence retry.** The pipeline retains captured occurrence IDs and skips a completed local drain on subsequent persistence retries. Handler failures have no per-handler checkpoint and can repeat handler entry. Local handlers must remain replay-safe and keep external effects out of the transaction. The transactional outbox can commit atomically with application state; delivery and external effects remain at-least-once and require idempotency.
 - **Coordinated write retry boundary.** Coordinated Jobs write attempts prevent automatic retries of a pipeline-owned save because their separate context is not retained in the business change tracker. A later failure propagates unchanged; recover with a fresh context and aggregate graph after a known rollback, or reconcile an unknown commit first. Outbox-only saves retain their existing retry behavior.
-- **Raw SQL bypasses both protection layers** (`ExecuteSql`, stored procedures, triggers). For tenant-owned tables, include a `WHERE TenantId = @currentTenantId` predicate or wrap the call in `ITenantWriteGuardBypass.BeginBypass()`.
-- **Attach-then-modify is a known gap in write protection.** `Attach` populates `OriginalValue` from caller state; the in-memory guard's `OriginalValue == currentTenantId` check can pass for a row owned by another tenant. A SQL-level predicate on the generated UPDATE/DELETE is the planned follow-up.
+- Raw SQL commands and stored procedures bypass query filters and the write guard. Supply explicit tenant predicates and authorization. `BeginBypass()` has no effect on raw SQL. Bulk `ExecuteUpdate` and `ExecuteDelete` consume query filters but skip the save guard.
+- Tenant concurrency tokens protect detached updates and deletes against a different persisted tenant. A zero-row SQL result remains `DbUpdateConcurrencyException`; never translate it into a tenancy exception or assume local handlers did not run.
+- Review consumer migrations for existing interface-owned columns as well as new metadata-owned columns. Tenant collations and trailing-space checks change the schema; no automatic backfill or default tenant is supplied.
 - Do not mix framework concurrency stamping with ASP.NET Identity `ConcurrencyStamp` ownership on identity entities.
 - Keep persistence concurrency versions provider-native: PostgreSQL maps a `uint` property to `xmin` with `IsRowVersion()`, while SQL Server maps a `byte[]` property to `rowversion`. Derive HTTP entity tags at the API boundary; do not model a provider-neutral `byte[]` property as a database-generated row version.
 - For Couchbase, use `CouchbaseBucketContext` + `IBucketContextProvider` and keep cluster/bucket names explicit. `DocumentSetExtensions` are constrained to `IEntity` models.
@@ -114,15 +118,15 @@ Use these packages for ORM-level persistence primitives. For raw SQL connection 
 
 ### Global query filters
 
-Three named global filters are wired automatically when entities implement the corresponding interfaces:
+Three named global filters apply according to finalized tenant metadata and the audit interfaces:
 
 | Interface | Filter name constant | Bypass extension |
 |---|---|---|
-| `IMultiTenant` | `HeadlessQueryFilters.MultiTenancyFilter` | `IgnoreMultiTenancyFilter()` |
+| `IsTenantOwned()` or default `IMultiTenant` ownership | `HeadlessQueryFilters.MultiTenancyFilter` | `IgnoreMultiTenancyFilter()` |
 | `IDeleteAudit` | `HeadlessQueryFilters.NotDeletedFilter` | `IgnoreNotDeletedFilter()` |
 | `ISuspendAudit` | `HeadlessQueryFilters.NotSuspendedFilter` | `IgnoreNotSuspendedFilter()` |
 
-Filter names are string constants (e.g. `"MultiTenantFilter"`) used by EF Core's named-filter API. All three apply automatically — no opt-in is required. `IQueryable<T>.ExecuteUpdate(...)` and `IQueryable<T>.ExecuteDelete(...)` consume the same `IQueryable<T>`, so the multi-tenancy filter scopes bulk operations to the current tenant by default.
+Filter names are string constants (e.g. `"MultiTenantFilter"`) used by EF Core's named-filter API. `IQueryable<T>.ExecuteUpdate(...)` and `IQueryable<T>.ExecuteDelete(...)` consume the same query filters, so bulk operations are tenant-scoped by default. They bypass `SaveChanges`, including its guard and automatic tenant concurrency predicates.
 
 Bypasses emit a `[SECURITY AUDIT]` trace through `Debug.WriteLine` with the caller member + file for auditability. They are scoped to a single `IQueryable<T>` chain.
 
@@ -260,10 +264,12 @@ Provides a framework-aware base `DbContext` with conventions for audit fields, E
 - Application-generated Guid keys: every `IEntity<Guid>` is configured `ValueGenerated.Never`; key is produced client-side at add time via a provider-keyed `IGuidGenerator` (`SqlServer` comb, `Version7` for others). Numeric keys are not generated by Headless.
 - Automatic audit fields for `ICreateAudit` / `IUpdateAudit` / `IDeleteAudit` / `ISuspendAudit` entities
 - EF-native automatic audit-log policy via `IsAudited()`, entity/property `ExcludeFromAudit()`, and `IsAuditSensitive(...)`; `EfAuditChangeCapture` reads the finalized model without reflecting over domain attributes
-- Three named global query filters: `MultiTenancyFilter` (`IMultiTenant`), `NotDeletedFilter` (`IDeleteAudit`), `NotSuspendedFilter` (`ISuspendAudit`); per-query bypass via `IgnoreMultiTenancyFilter()` / `IgnoreNotDeletedFilter()` / `IgnoreNotSuspendedFilter()`
+- Finalized tenant ownership via `IsTenantOwned()` and `IsNotTenantOwned()`, with mapped or shadow string properties and `IMultiTenant` defaults
+- Three named global query filters: `MultiTenancyFilter` (tenant-owned metadata), `NotDeletedFilter` (`IDeleteAudit`), `NotSuspendedFilter` (`ISuspendAudit`); per-query bypass via `IgnoreMultiTenancyFilter()` / `IgnoreNotDeletedFilter()` / `IgnoreNotSuspendedFilter()`
+- Selected unique indexes gain tenant scope through `IsTenantScoped()` without changing primary keys
 - Composable save pipeline driven by `HeadlessDbContextOptions` and an ordered chain of `IHeadlessSaveEntryProcessor` instances
 - `AddSaveEntryProcessor<TProcessor>(ServiceLifetime)` / `RemoveSaveEntryProcessor<TProcessor>()` for custom pipeline extension
-- Optional tenant write guard for `IMultiTenant` save protection (`CrossTenantWriteException`, `MissingTenantContextException`)
+- Tenant SQL concurrency predicates for updates and deletes, plus an optional tenant write guard (`CrossTenantWriteException`, `MissingTenantContextException`)
 - Two-tier event dispatch collected inside `SaveChanges`: domain events via `IDomainEventDispatcher` before commit (`.AddDomainEvents()`), integration events via `IHeadlessOutboxDispatcher` in-transaction before commit (`.AddIntegrationEventOutbox()`, from `Headless.EntityFramework.Messaging`)
 - `IHeadlessDbContextBuilder` returned by `AddHeadlessDbContextServices(...)` for chaining event tiers
 - Runtime guard that fails the save with a remediation message when an entity emits events but the matching tier is not registered
@@ -283,6 +289,7 @@ Provides a framework-aware base `DbContext` with conventions for audit fields, E
 - **Save completion is distinct from commit.** Owned saves defer EF acceptance until physical commit succeeds. Within a caller-owned transaction, each successful save clears its own batch before the caller commits; subsequent saves capture new occurrences only. A known outer rollback requires disposing the context and abandoning its aggregate graph, then recovering through a fresh unit of work and application-owned idempotency. Replaying a command can create new occurrence IDs. Unknown commit outcomes require durable outcome verification and never imply known rollback.
 - **Negative index pagination is page-from-end.** `ToIndexPageAsync(index: -1, size: N)` returns the final page, not just the last `N` rows, and normalizes the returned `IndexPage.Index` to the actual zero-based page index. EF queries use `Skip`/`Take` so providers can translate the slice to SQL.
 - **The EF model is the automatic audit policy source.** The fluent policy stays in this ORM package because built-in change capture is EF-specific, while audit storage remains provider-independent. Domain entities carry no audit marker or attributes, and there is no duplicate provider-neutral policy registry.
+- **Concurrency versions are provider-native.** Configure optimistic-concurrency properties explicitly for the selected database. PostgreSQL uses a `uint` property mapped to the `xmin` system column with `IsRowVersion()`; SQL Server uses a `byte[]` property mapped to `rowversion`. HTTP entity tags belong to `Headless.Api.Abstractions` and are derived from these versions at the API boundary.
 
 ### Installation
 
@@ -363,7 +370,7 @@ await dbContext.ExecuteCoordinatedTransactionAsync(
 
 #### Global Filters
 
-Three named filters are applied automatically when entities implement the corresponding interface. Bypass per-query with the matching extension method:
+The tenant filter follows finalized ownership metadata. Soft-delete and suspension filters follow their corresponding interfaces. Existing application filters are preserved. Bypass per-query with the matching extension method:
 
 ```csharp
 // Read soft-deleted entities for admin purposes
@@ -399,16 +406,20 @@ The raw PostgreSQL and SQL Server audit packages are storage providers. They can
 
 #### Tenant Write Guard
 
-Disabled by default. Opt in to scope writes to the current tenant:
+Disabled by default. Enable validation and tenant stamping with either registration:
 
 ```csharp
 builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites()));
+
+// Package-level alternative:
+services.AddHeadlessTenantWriteGuard();
 ```
 
-When enabled:
-- Missing ambient tenant on tenant-owned writes throws `MissingTenantContextException`.
-- Cross-tenant add, update, soft-delete, or physical delete throws `CrossTenantWriteException`.
-- Added `IMultiTenant` entities with no `TenantId` are stamped with `ICurrentTenant.Id`.
+When enabled, a missing tenant is stamped from `ICurrentTenant.Id` before the entry becomes Added, including detached-to-Added state transitions. Supplied tenant values are preserved. Adding under tenant A and saving under B fails instead of rewriting ownership.
+
+Missing ambient context or a missing required tenant on an Added entry throws `MissingTenantContextException`. Cross-tenant writes and existing-row original/current tenant mismatches throw `CrossTenantWriteException`. This covers updates, physical deletes, soft deletes, and changes confined to supported owned graphs. Required tenant keys can cause a failure during tracking, before `SaveChanges`.
+
+Metadata-only entities require the guard for automatic stamping. Without it, assign the mapped or shadow tenant before tracking. Legacy unguarded save-time stamping remains limited to `IMultiTenant` entities.
 
 For intentional host/admin writes, use `ITenantWriteGuardBypass.BeginBypass()`:
 
@@ -421,11 +432,55 @@ using (bypass.BeginBypass())
 }
 ```
 
-`IgnoreMultiTenancyFilter()` does not relax write protection — both bypasses must be applied independently when the same code path reads and writes across tenants.
+`IgnoreMultiTenancyFilter()` does not relax the write guard. `BeginBypass()` disables only the in-memory guard; SQL tenant predicates, required columns, and database constraints remain. Bypass does not supply a valid original tenant value.
 
-Known gaps: attach-then-modify and raw SQL are out of scope for both layers (see Agent Instructions).
+Every tenant-owned root uses its tenant property as a concurrency token alongside existing tokens. Generated updates and deletes match the original tenant, including detached writes. A forged tenant matching the ambient context cannot target a row belonging to another tenant. If SQL affects zero rows, EF throws `DbUpdateConcurrencyException` unchanged.
 
-For package-level wiring without the tenancy surface, `services.AddHeadlessTenantWriteGuard()` remains available.
+Early guard errors occur before local handler dispatch. SQL concurrency failures can occur after local handlers run because business persistence follows local dispatch. A failed database save prevents durable outbox persistence, but does not undo local or external handler effects.
+
+Bulk `ExecuteUpdate` and `ExecuteDelete` use query filters but skip the save guard and its generated concurrency predicates. Raw SQL commands and stored procedures bypass both filters and the guard. Supply explicit tenant predicates and authorization; wrapping raw SQL in `BeginBypass()` adds no protection.
+
+#### Tenant ownership
+
+Configure ownership after the base model call. These declarations take effect at model finalization, after application mappings:
+
+```csharp
+protected override void OnModelCreating(ModelBuilder modelBuilder)
+{
+	base.OnModelCreating(modelBuilder);
+	var row = modelBuilder.Entity<TenantRow>();
+	row.IsTenantOwned(nameof(TenantRow.Owner));
+	row.Property(x => x.Owner).HasColumnName("tenant_key").HasMaxLength(41);
+	row.Property(x => x.Code).HasMaxLength(100);
+	row.HasIndex(x => x.Code).IsUnique().HasDatabaseName("TenantCodeIndex").IsTenantScoped();
+
+	modelBuilder.Entity<ShadowTenantRow>().IsTenantOwned();
+	modelBuilder.Entity<ShadowTenantRow>().Property<string>("TenantId").HasMaxLength(41);
+}
+```
+
+`TenantRow` has `Id`, `Owner`, and `Code` properties; `ShadowTenantRow` has an `Id` and no tenant CLR member. Neither needs `IMultiTenant`. `IsTenantOwned(propertyName = "TenantId")` and `IsNotTenantOwned()` support generic and non-generic entity builders. Explicit root configuration overrides interface defaults. Metadata readers `IsTenantOwned()`, `GetTenantPropertyName()`, and `GetTenantOwnerEntityType()` expose the resolved policy.
+
+Metadata-only roots require a tenant. Existing `IMultiTenant` nullability remains unchanged outside the Identity opt-in, including nullable host rows. Configure ownership on the hierarchy root. Shared-row and JSON owned graphs inherit that policy and cannot declare a separate one.
+
+Supported roots are keyed, non-shared CLR types mapped to one table, with TPH for inheritance. Model finalization rejects keyless or shared CLR types, TPT/TPC, table fragments, separate roots sharing a table, and separately stored owned entities. Tenant properties must use unconverted, non-generated, variable-length strings with lossless provider storage.
+
+`IsTenantScoped()` selects one unique index and appends the tenant column once in ascending order. It preserves existing property order, directions, model/database names, filters, uniqueness, and supported annotations. Unselected indexes, primary keys, and relationships remain unchanged. Unsupported positional provider annotations fail model validation rather than changing index semantics.
+
+Tenant columns use SQL Server `Latin1_General_100_BIN2`, PostgreSQL `C`, or SQLite `BINARY` collation. Conflicting explicit collations and incompatible storage mappings are rejected. Tenant IDs ending in U+0020 are rejected at the EF read/write boundary and by database check constraints. Canonical IDs are never trimmed or normalized. Nullable interface-owned host rows remain valid.
+
+`TenantId` reads the active ambient tenant on each access. Use a fresh context for each tenant scope: changing `ICurrentTenant` cannot remove entities from the change tracker, and `FindAsync` can return an already tracked entity without running a filtered query.
+
+#### Tenant schema rollout
+
+Consumers own migrations and tenant assignment. For existing data:
+
+1. Add new tenant columns as nullable.
+2. Backfill from verified application ownership relationships. Do not assign a silent default tenant.
+3. Validate tenant identity, equality, lengths, and trailing U+0020 data. Resolve duplicate business names within each tenant and parent-child tenant mismatches.
+4. Apply required columns, canonical collations, check constraints, alternate keys, composite foreign keys, and selected unique indexes as applicable. Review generated SQL for the deployed provider before enabling the new model.
+
+Existing `IMultiTenant` columns also gain canonical collations, trailing-space checks, and tenant concurrency-token metadata. Include them in the migration review even when no entity opts in through the new API. The framework neither creates consumer migrations nor backfills rows.
 
 #### Module Model Mapping
 
@@ -463,6 +518,14 @@ builder.Services.AddHeadlessDbContextServices(options =>
 ```
 
 Custom processors are inserted before the terminal lifecycle and message-collector processors.
+
+#### Event Dispatch
+
+Within a pipeline-owned transaction, the order is: domain events via `IDomainEventDispatcher` → business `SaveChanges` → audit persistence → integration events via `IHeadlessOutboxDispatcher` → commit.
+
+Custom `IHeadlessOutboxDispatcher` implementations receive `IReadOnlyList<EventContext<object>>` in both dispatch methods. Preserve the snapshot through retries: the Messaging bridge uses `EventId` as `MessageId` and publishes `Payload` with the captured correlation, causation, and tenant.
+
+A completed local drain is not repeated by persistence retry; a failed local handler can run again. Atomic outbox persistence does not promise exactly-once delivery or external effects. Each successful save clears only its saved batch, including when a caller-owned transaction has not yet committed.
 
 #### Value Converters
 
