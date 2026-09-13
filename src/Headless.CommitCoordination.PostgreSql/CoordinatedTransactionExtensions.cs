@@ -134,17 +134,13 @@ public static partial class HeadlessNpgsqlCoordinatedTransactionExtensions
     }
 
     /// <summary>
-    /// Shared body for every <c>ExecuteCoordinatedTransactionAsync</c> overload: opens the connection when
-    /// closed, begins the transaction, enlists commit coordination, runs <paramref name="operation"/>, commits,
-    /// signals the outcome, and closes the connection if it was opened here.
+    /// Resolves the post-commit-fault logger up front (fail loud here, at a safe point) rather than with a
+    /// null-conditional inside the catch: a missing ILoggerFactory is a host misconfiguration, and surfacing it
+    /// before any commit is safe, whereas resolving it inside the post-commit catch could throw after the
+    /// transaction is already durable — exactly the caller-failure the catch exists to prevent. The transaction
+    /// body itself is the shared <see cref="CoordinatedTransactionRunner" />.
     /// </summary>
-    /// <remarks>
-    /// PostgreSQL has no commit edge to observe, so the helper owns both signals: <c>Committed</c> after
-    /// <c>CommitAsync</c> (without it the un-signalled dispose would discard the enlisted work on every successful
-    /// commit) and <c>RolledBack</c> when the operation or the commit throws, so the failure path never reads as
-    /// a forgotten signal.
-    /// </remarks>
-    private static async Task<TResult> _ExecuteCoreAsync<TResult>(
+    private static Task<TResult> _ExecuteCoreAsync<TResult>(
         NpgsqlConnection connection,
         IServiceProvider services,
         IsolationLevel isolation,
@@ -152,76 +148,20 @@ public static partial class HeadlessNpgsqlCoordinatedTransactionExtensions
         CancellationToken cancellationToken
     )
     {
-        // Resolve the post-commit-fault logger up front (fail loud here, at a safe point) rather than with a
-        // null-conditional inside the catch: a missing ILoggerFactory is a host misconfiguration, and surfacing it
-        // before any commit is safe, whereas resolving it inside the post-commit catch could throw after the
-        // transaction is already durable — exactly the caller-failure the catch exists to prevent.
         var logger = services
             .GetRequiredService<ILoggerFactory>()
             .CreateLogger("Headless.CommitCoordination.PostgreSql.CoordinatedTransaction");
 
-        var shouldClose = connection.State == ConnectionState.Closed;
-
-        if (shouldClose)
-        {
-            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        }
-
-        try
-        {
-            var transaction = await connection
-                .BeginTransactionAsync(isolation, cancellationToken)
-                .ConfigureAwait(false);
-
-            await using (transaction.ConfigureAwait(false))
-            {
-                // Enlist SYNCHRONOUSLY, in this frame, so the ambient coordinator flows to the operation's publishes.
-                var scope = connection.EnlistCommitCoordination(transaction, services, cancellationToken);
-
-                await using (scope.ConfigureAwait(false))
-                {
-                    TResult result;
-
-                    try
-                    {
-                        result = await operation(connection, cancellationToken).ConfigureAwait(false);
-                        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-                    }
-                    catch
-                    {
-                        // The physical rollback happens when the transaction disposes; the explicit signal discards
-                        // the enlisted work now and keeps the scope's forgotten-signal warning for hand-rolled
-                        // enlistments only. Nothing runs on rollback, so this cannot mask the caller's exception.
-                        await scope.SignalAsync(CommitOutcome.RolledBack).ConfigureAwait(false);
-                        throw;
-                    }
-
-                    try
-                    {
-                        // The drain runs to completion regardless of the caller's token: the commit is durable, and
-                        // aborting the drain would only log a spurious fault for work that was going to run.
-                        await scope.SignalAsync(CommitOutcome.Committed).ConfigureAwait(false);
-                    }
-                    catch (Exception ex)
-                    {
-                        // The transaction is ALREADY durably committed. The drain is the dispatch accelerator; a
-                        // fault here must not surface as a caller failure — a retry would re-run the operation and
-                        // double-apply. The enlisted work is relay-recoverable (durable rows committed
-                        // in-transaction + polling recovery), so log and return the committed result.
-                        LogPostCommitDrainFaulted(logger, ex);
-                    }
-
-                    return result;
-                }
-            }
-        }
-        finally
-        {
-            if (shouldClose)
-            {
-                await connection.CloseAsync().ConfigureAwait(false);
-            }
-        }
+        return CoordinatedTransactionRunner.ExecuteAsync(
+            connection,
+            isolation,
+            static (c, iso, ct) => c.BeginTransactionAsync(iso, ct),
+            (c, t) => c.EnlistCommitCoordination(t, services, cancellationToken),
+            operation,
+            logger,
+            static (l, ex) => LogPostCommitDrainFaulted(l, ex),
+            cancellationToken
+        );
     }
 
     [LoggerMessage(

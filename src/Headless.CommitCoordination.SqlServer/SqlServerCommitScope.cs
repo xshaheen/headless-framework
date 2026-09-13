@@ -5,49 +5,19 @@ using Microsoft.Extensions.Logging;
 namespace Headless.CommitCoordination.SqlServer;
 
 /// <summary>
-/// The scope handed to a caller that enlists a <c>SqlTransaction</c> directly. It delegates to the core scope and
-/// adds the explicit-signal contract's diagnostic: raw SqlClient exposes no commit edge this package observes, so
-/// the caller must signal the outcome; a dispose that arrives without a signal after the transaction has already
-/// completed is almost certainly a forgotten signal, and is logged as a warning before the enlisted work is
-/// discarded.
+/// The SQL Server flavour of the explicit-signal scope: the driver exposes no commit edge this package observes, so a
+/// caller who enlists a transaction directly must signal the outcome, and an un-signalled dispose after the
+/// transaction has already completed is logged as a forgotten signal.
 /// </summary>
-/// <remarks>
-/// An un-signalled dispose while the transaction is still open is the normal failure path (the operation threw
-/// before commit) and logs nothing. Disposal stays synchronous so the ambient pop runs in the caller's frame.
-/// </remarks>
 internal sealed partial class SqlServerCommitScope(
     ICommitScope inner,
     Func<bool> isTransactionCompleted,
     ILogger logger
-) : ICommitScope
+) : ExplicitSignalCommitScope(inner, isTransactionCompleted)
 {
-    public ICommitCoordinator Coordinator => inner.Coordinator;
-
-    public ValueTask SignalAsync(CommitOutcome outcome)
+    protected override void LogUnsignalledDisposeAfterCompletedTransaction()
     {
-        return inner.SignalAsync(outcome);
-    }
-
-    public void Dispose()
-    {
-        _WarnIfUnsignalledAfterCompletion();
-        inner.Dispose();
-    }
-
-    public ValueTask DisposeAsync()
-    {
-        _WarnIfUnsignalledAfterCompletion();
-
-        return inner.DisposeAsync();
-    }
-
-    private void _WarnIfUnsignalledAfterCompletion()
-    {
-        // Active here means nobody claimed an outcome; the dispose below will claim rollback and discard the work.
-        if (inner.Coordinator.State == CommitCoordinatorState.Active && isTransactionCompleted())
-        {
-            LogUnsignalledDisposeAfterCompletedTransaction(logger);
-        }
+        LogUnsignalledDisposeAfterCompletedTransaction(logger);
     }
 
     [LoggerMessage(

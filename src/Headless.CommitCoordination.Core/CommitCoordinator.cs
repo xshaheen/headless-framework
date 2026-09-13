@@ -193,14 +193,11 @@ internal sealed partial class CommitCoordinator(IRelationalCommitContext? relati
     /// </summary>
     internal static void DrainInBackground(CommitTerminalClaim claim)
     {
-        _ = Task.Run(() => DrainAsync(claim).AsTask())
-            .ContinueWith(
-                static (t, state) => LogBackgroundDrainFaulted((ILogger)state!, t.Exception),
-                claim.Coordinator._logger,
-                CancellationToken.None,
-                TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
-                TaskScheduler.Default
-            );
+        BackgroundFault.Observe(
+            Task.Run(() => DrainAsync(claim).AsTask()),
+            claim.Coordinator._logger,
+            static (logger, exception) => LogBackgroundDrainFaulted(logger, exception)
+        );
     }
 
     private bool _TryClaim(CommitOutcome outcome, out CommitTerminalClaim claim)
@@ -229,7 +226,8 @@ internal sealed partial class CommitCoordinator(IRelationalCommitContext? relati
         {
             callbacks = outcome == CommitOutcome.Committed ? _commitCallbacks : [];
             _commitCallbacks = [];
-            scopeState = [.. _scopeState.Values];
+            // Most scopes never call GetOrAdd; skip the copy on the framework's most frequent path.
+            scopeState = _scopeState.Count == 0 ? [] : [.. _scopeState.Values];
             _scopeState.Clear();
         }
 

@@ -155,19 +155,11 @@ internal sealed partial class CommitCoordinationTransactionInterceptor(
             return;
         }
 
-        _ = signal
-            .AsTask()
-            .ContinueWith(
-                static (t, state) =>
-                {
-                    var (logger, outcome) = ((ILogger, CommitOutcome))state!;
-                    LogDrainFaulted(logger, outcome, t.Exception!);
-                },
-                (_logger, outcome),
-                CancellationToken.None,
-                TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
-                TaskScheduler.Default
-            );
+        BackgroundFault.Observe(
+            signal.AsTask(),
+            (_logger, outcome),
+            static (state, exception) => LogDrainFaulted(state._logger, state.outcome, exception)
+        );
     }
 
     private void _Evict(DbTransaction transaction, ICommitScope scope)
