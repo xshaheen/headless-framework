@@ -31,7 +31,7 @@ public abstract class IdentityTenantConformanceTests<TFixture>(TFixture fixture)
     public async Task should_create_lookup_assign_claim_login_and_token_through_real_managers_per_tenant()
     {
         var ids = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var tenant in new[] { "acme", "ACME" })
+        foreach (var tenant in new[] { "tenant-a", "tenant-b" })
         {
             fixture.CurrentTenant.Id = tenant;
             await using var scope = fixture.Services.CreateAsyncScope();
@@ -50,7 +50,7 @@ public abstract class IdentityTenantConformanceTests<TFixture>(TFixture fixture)
                     user,
                     new UserLoginInfo(
                         "provider",
-                        string.Equals(tenant, "acme", StringComparison.Ordinal) ? "login-lower" : "login-upper",
+                        string.Equals(tenant, "tenant-a", StringComparison.Ordinal) ? "login-a" : "login-b",
                         "Provider"
                     )
                 )
@@ -67,7 +67,7 @@ public abstract class IdentityTenantConformanceTests<TFixture>(TFixture fixture)
                 .Errors.Should()
                 .Contain(x => x.Code == "DuplicateEmail");
         }
-        foreach (var tenant in new[] { "acme", "ACME" })
+        foreach (var tenant in new[] { "tenant-a", "tenant-b" })
         {
             fixture.CurrentTenant.Id = tenant;
             await using var scope = fixture.Services.CreateAsyncScope();
@@ -86,7 +86,7 @@ public abstract class IdentityTenantConformanceTests<TFixture>(TFixture fixture)
             (
                 await users.FindByLoginAsync(
                     "provider",
-                    string.Equals(tenant, "acme", StringComparison.Ordinal) ? "login-lower" : "login-upper"
+                    string.Equals(tenant, "tenant-a", StringComparison.Ordinal) ? "login-a" : "login-b"
                 )
             )!
                 .Id.Should()
@@ -94,13 +94,17 @@ public abstract class IdentityTenantConformanceTests<TFixture>(TFixture fixture)
             (
                 await users.FindByLoginAsync(
                     "provider",
-                    string.Equals(tenant, "acme", StringComparison.Ordinal) ? "login-upper" : "login-lower"
+                    string.Equals(tenant, "tenant-a", StringComparison.Ordinal) ? "login-b" : "login-a"
                 )
             )
                 .Should()
                 .BeNull();
             (await users.GetAuthenticationTokenAsync(user, "provider", "token")).Should().Be(tenant);
-            (await users.FindByIdAsync(ids[string.Equals(tenant, "acme", StringComparison.Ordinal) ? "ACME" : "acme"]))
+            (
+                await users.FindByIdAsync(
+                    ids[string.Equals(tenant, "tenant-a", StringComparison.Ordinal) ? "tenant-b" : "tenant-a"]
+                )
+            )
                 .Should()
                 .BeNull();
         }
@@ -109,14 +113,14 @@ public abstract class IdentityTenantConformanceTests<TFixture>(TFixture fixture)
     [Fact]
     public async Task should_support_passkey_lifecycle_in_fresh_store_scopes_and_isolate_lookup()
     {
-        var userId = await _CreateUserAsync("acme");
+        var userId = await _CreateUserAsync("tenant-a");
         byte[] credential = [1, 3, 5, 7];
         await _WithUserAsync(
-            "acme",
+            "tenant-a",
             userId,
             async (users, user) => _Success(await users.AddOrUpdatePasskeyAsync(user, _Passkey(credential)))
         );
-        fixture.CurrentTenant.Id = "ACME";
+        fixture.CurrentTenant.Id = "tenant-b";
         await using (var scope = fixture.Services.CreateAsyncScope())
         {
             (
@@ -128,7 +132,7 @@ public abstract class IdentityTenantConformanceTests<TFixture>(TFixture fixture)
                 .BeNull();
         }
         await _WithUserAsync(
-            "acme",
+            "tenant-a",
             userId,
             async (users, user) =>
             {
@@ -141,7 +145,7 @@ public abstract class IdentityTenantConformanceTests<TFixture>(TFixture fixture)
             }
         );
         await _WithUserAsync(
-            "acme",
+            "tenant-a",
             userId,
             async (users, user) =>
             {
@@ -152,7 +156,7 @@ public abstract class IdentityTenantConformanceTests<TFixture>(TFixture fixture)
             }
         );
         await _WithUserAsync(
-            "acme",
+            "tenant-a",
             userId,
             async (users, user) =>
             {
@@ -169,10 +173,10 @@ public abstract class IdentityTenantConformanceTests<TFixture>(TFixture fixture)
     [InlineData("passkey")]
     public async Task should_preserve_global_identity_keys_across_tenants(string kind)
     {
-        var first = await _CreateUserAsync("acme");
-        var second = await _CreateUserAsync("ACME");
+        var first = await _CreateUserAsync("tenant-a");
+        var second = await _CreateUserAsync("tenant-b");
         byte[] credential = [10, 20, 30];
-        fixture.CurrentTenant.Id = "acme";
+        fixture.CurrentTenant.Id = "tenant-a";
         await using (var scope = fixture.Services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<TenantIdentityContext<DefaultIdentityPolicy>>();
@@ -208,7 +212,7 @@ public abstract class IdentityTenantConformanceTests<TFixture>(TFixture fixture)
                 );
             }
         }
-        fixture.CurrentTenant.Id = "ACME";
+        fixture.CurrentTenant.Id = "tenant-b";
         await using var attack = fixture.Services.CreateAsyncScope();
         var target = attack.ServiceProvider.GetRequiredService<TenantIdentityContext<DefaultIdentityPolicy>>();
         if (string.Equals(kind, "passkey", StringComparison.Ordinal))
@@ -266,11 +270,11 @@ public abstract class IdentityTenantConformanceTests<TFixture>(TFixture fixture)
     [InlineData("passkey")]
     public async Task should_reject_direct_sql_cross_tenant_links_even_under_guard_bypass(string kind)
     {
-        var victimUser = await _CreateUserAsync("ACME");
-        var ownUser = await _CreateUserAsync("acme");
-        var victimRole = await _CreateRoleAsync("ACME");
-        var ownRole = await _CreateRoleAsync("acme");
-        fixture.CurrentTenant.Id = "acme";
+        var victimUser = await _CreateUserAsync("tenant-b");
+        var ownUser = await _CreateUserAsync("tenant-a");
+        var victimRole = await _CreateRoleAsync("tenant-b");
+        var ownRole = await _CreateRoleAsync("tenant-a");
+        fixture.CurrentTenant.Id = "tenant-a";
         await using var scope = fixture.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<TenantIdentityContext<DefaultIdentityPolicy>>();
         using var bypass = scope.ServiceProvider.GetRequiredService<ITenantWriteGuardBypass>().BeginBypass();
@@ -279,29 +283,37 @@ public abstract class IdentityTenantConformanceTests<TFixture>(TFixture fixture)
             "claim" => (
                 "AspNetUserClaims",
                 new[] { "UserId", "TenantId", "ClaimType", "ClaimValue" },
-                new object[] { victimUser, "acme", "raw", "bad" }
+                new object[] { victimUser, "tenant-a", "raw", "bad" }
             ),
-            "membership-user" => ("AspNetUserRoles", ["UserId", "RoleId", "TenantId"], [victimUser, ownRole, "acme"]),
-            "membership-role" => ("AspNetUserRoles", ["UserId", "RoleId", "TenantId"], [ownUser, victimRole, "acme"]),
+            "membership-user" => (
+                "AspNetUserRoles",
+                ["UserId", "RoleId", "TenantId"],
+                [victimUser, ownRole, "tenant-a"]
+            ),
+            "membership-role" => (
+                "AspNetUserRoles",
+                ["UserId", "RoleId", "TenantId"],
+                [ownUser, victimRole, "tenant-a"]
+            ),
             "login" => (
                 "AspNetUserLogins",
                 ["UserId", "LoginProvider", "ProviderKey", "TenantId"],
-                [victimUser, "raw", "raw", "acme"]
+                [victimUser, "raw", "raw", "tenant-a"]
             ),
             "role-claim" => (
                 "AspNetRoleClaims",
                 ["RoleId", "TenantId", "ClaimType", "ClaimValue"],
-                [victimRole, "acme", "raw", "bad"]
+                [victimRole, "tenant-a", "raw", "bad"]
             ),
             "token" => (
                 "AspNetUserTokens",
                 ["UserId", "LoginProvider", "Name", "Value", "TenantId"],
-                [victimUser, "raw", "raw", "bad", "acme"]
+                [victimUser, "raw", "raw", "bad", "tenant-a"]
             ),
             _ => (
                 "AspNetUserPasskeys",
                 ["UserId", "CredentialId", "Data", "TenantId"],
-                [victimUser, "7B"u8.ToArray(), "{}", "acme"]
+                [victimUser, "7B"u8.ToArray(), "{}", "tenant-a"]
             ),
         };
         var insert = async () => await _InsertAsync(db, table, columns, values);
@@ -324,20 +336,20 @@ public abstract class IdentityTenantConformanceTests<TFixture>(TFixture fixture)
     [Fact]
     public async Task should_reject_identity_add_under_a_and_save_under_b_before_persistence()
     {
-        fixture.CurrentTenant.Id = "acme";
+        fixture.CurrentTenant.Id = "tenant-a";
         await using var scope = fixture.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<TenantIdentityContext<DefaultIdentityPolicy>>();
         var role = new TenantIdentityRole { Name = "new-role" };
         db.Add(role);
-        db.Entry(role).Property("TenantId").CurrentValue.Should().Be("acme");
-        fixture.CurrentTenant.Id = "ACME";
+        db.Entry(role).Property("TenantId").CurrentValue.Should().Be("tenant-a");
+        fixture.CurrentTenant.Id = "tenant-b";
         await db.Invoking(x => x.SaveChangesAsync(AbortToken)).Should().ThrowAsync<CrossTenantWriteException>();
-        db.Entry(role).Property("TenantId").CurrentValue.Should().Be("acme");
+        db.Entry(role).Property("TenantId").CurrentValue.Should().Be("tenant-a");
         (await db.Roles.IgnoreQueryFilters().CountAsync(AbortToken)).Should().Be(0);
     }
 
     [Fact]
-    public void should_preserve_pk_shapes_and_generate_required_ak_fk_collation_and_indexes()
+    public void should_preserve_pk_shapes_and_generate_required_keys_and_indexes()
     {
         using var scope = fixture.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<TenantIdentityContext<DefaultIdentityPolicy>>();
@@ -361,10 +373,8 @@ public abstract class IdentityTenantConformanceTests<TFixture>(TFixture fixture)
             tables[name].PrimaryKey!.Columns.Should().Equal(key);
             var tenant = tables[name].Columns.Single(x => string.Equals(x.Name, "TenantId", StringComparison.Ordinal));
             tenant.IsNullable.Should().BeFalse();
-            tenant
-                .Collation.Should()
-                .Be(fixture.Provider == TenantDatabaseProvider.SqlServer ? "Latin1_General_100_BIN2" : "C");
-            tables[name].CheckConstraints.Should().NotBeEmpty();
+            tenant.Collation.Should().BeNull();
+            tables[name].CheckConstraints.Should().BeEmpty();
         }
         tables["AspNetUsers"].UniqueConstraints.Single().Columns.Should().Equal("TenantId", "Id");
         tables["AspNetRoles"].UniqueConstraints.Single().Columns.Should().Equal("TenantId", "Id");
@@ -387,13 +397,7 @@ public abstract class IdentityTenantConformanceTests<TFixture>(TFixture fixture)
             .Columns.Should()
             .Equal("NormalizedName", "TenantId");
         indexes.Single(x => string.Equals(x.Name, "EmailIndex", StringComparison.Ordinal)).IsUnique.Should().BeFalse();
-        fixture
-            .MigrationSql.Should()
-            .Contain("PRIMARY KEY")
-            .And.Contain("FOREIGN KEY")
-            .And.Contain("UNIQUE")
-            .And.Contain("COLLATE")
-            .And.Contain("CHECK");
+        fixture.MigrationSql.Should().Contain("PRIMARY KEY").And.Contain("FOREIGN KEY").And.Contain("UNIQUE");
     }
 
     [Fact]

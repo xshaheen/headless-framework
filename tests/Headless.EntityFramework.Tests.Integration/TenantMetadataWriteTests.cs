@@ -292,24 +292,6 @@ public sealed class TenantMetadataWriteTests(
         root.TenantId.Should().BeNull();
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task should_reject_trailing_space_on_write_even_under_bypass(bool bypassed)
-    {
-        var id = await _SeedAsync("tenant-a");
-        enabledFixture.CurrentTenant.Id = "tenant-a";
-        using var scope = enabledFixture.ServiceProvider.CreateScope();
-        await using var db = _CreateContext(scope.ServiceProvider);
-        using var bypass = bypassed
-            ? scope.ServiceProvider.GetRequiredService<ITenantWriteGuardBypass>().BeginBypass()
-            : null;
-        var root = await db.Set<MetadataRow>().SingleAsync(x => x.Id == id, AbortToken);
-        root.Owner = "tenant-a ";
-        var save = () => db.SaveChangesAsync(AbortToken);
-        await save.Should().ThrowAsync<InvalidOperationException>().WithMessage("*U+0020*");
-    }
-
     [Fact]
     public async Task should_remove_pre_tracking_handlers_on_runtime_disposal()
     {

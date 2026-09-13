@@ -43,7 +43,7 @@ Register with `services.AddHeadlessDbContext<TDbContext, TUser, TRole, TKey, ...
 - Opt in to tenant-owned Identity explicitly with `ConfigureTenantOwnedIdentity(modelBuilder)` after `base.OnModelCreating(modelBuilder)`. Register `AddHeadlessTenantWriteGuard()` for automatic tenant stamping before tracking. No tenancy interfaces are required.
 - Use fresh DI scopes for contexts, stores, `UserManager`, and `RoleManager` when changing tenants. Filters do not protect an already tracked `FindAsync` match. Existing Identity ownership is immutable through tenant alternate keys, even under write-guard bypass.
 - Preserve Identity primary-key shapes and global user/role IDs, external-login pairs, and passkey credential IDs. Tenant-scoped names do not make those global keys reusable across tenants.
-- Ship consumer migrations and explicit tenant backfills before enabling tenant-owned Identity. Validate canonical equality, lengths, trailing spaces, duplicate tenant names, and same-tenant relationships before enforcing constraints.
+- Ship consumer migrations and explicit tenant backfills before enabling tenant-owned Identity. Validate tenant IDs under the configured database equality, key lengths, duplicate tenant names, and same-tenant relationships.
 - For Identity-only projects that do not use the full framework save pipeline, this package is NOT appropriate — use `Microsoft.AspNetCore.Identity.EntityFrameworkCore` directly.
 
 ## Core Concepts
@@ -259,16 +259,16 @@ modelBuilder.Entity<AppUser>().Property<string>("TenantId").HasMaxLength(64);
 
 SQL Server validates the 900-byte budget for primary, alternate, and foreign keys and rejects unsafe configured lengths instead of silently shrinking them. The upstream passkey primary-key declaration `varbinary(1024)` is retained. That declaration does not mean SQL Server accepts a 1,024-byte credential ID: such an insert exceeds its 900-byte key limit. Ordinary shorter credentials work.
 
-Tenant columns use SQL Server `Latin1_General_100_BIN2` or PostgreSQL `C` collation. Only tenant collation changes; equality of other Identity key columns remains provider-defined. Trailing U+0020 in tenant IDs is rejected at EF read/write boundaries and by database checks. IDs are never trimmed or normalized.
+Consumers configure tenant column types, conversions, collations, and database validation in their own EF model and migrations. Headless does not choose a collation, add tenant-ID check constraints, or reject trailing spaces. It preserves supplied IDs without trimming or normalization. The write guard compares IDs ordinally in memory; queries, concurrency predicates, unique indexes, and foreign keys use database equality. Consumers must ensure that distinct canonical IDs remain distinct under that equality and that storage conversions preserve identity.
 
 Consumers own the schema migration and the tenant assignment for existing rows:
 
 1. Add new tenant columns as nullable.
 2. Backfill all Identity rows from verified ownership relationships, including dependents. Do not assign a silent default tenant.
-3. Validate tenant identity, equality, lengths, and trailing spaces. Resolve duplicate normalized names within each tenant and parent-child tenant mismatches.
-4. Apply required columns, canonical collations, checks, tenant alternate keys, replacement composite foreign keys, and tenant-scoped unique indexes. Review and execute the migration for the target provider before enabling the model.
+3. Validate tenant identity, equality, lengths, and the application's ID format. Resolve duplicate normalized names within each tenant and parent-child tenant mismatches.
+4. Apply required columns, consumer-configured storage rules, tenant alternate keys, replacement composite foreign keys, and tenant-scoped unique indexes. Review and execute the migration for the target provider before enabling the model.
 
-Review existing interface-owned tenant columns too: they gain canonical collation, trailing-space checks, and tenant concurrency-token metadata even outside Identity opt-in. No migration or backfill runs automatically.
+Existing interface-owned tenant columns gain tenant concurrency-token metadata even outside Identity opt-in, without forced changes to their types, collations, or check constraints. No migration or backfill runs automatically.
 
 ### Dependencies
 

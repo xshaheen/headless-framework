@@ -66,27 +66,27 @@ public sealed class TenantModelPolicyTests : TestBase
     }
 
     [Fact]
-    public void should_apply_canonical_column_policy_and_check_constraint()
+    public void should_leave_tenant_storage_configuration_to_the_consumer()
     {
         using var provider = _CreateProvider<DeclaredPolicy>();
         using var scope = provider.CreateScope();
         using var db = scope.ServiceProvider.GetRequiredService<PolicyContext<DeclaredPolicy>>();
         var entity = db.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(ExternalRow))!;
 
-        entity.FindProperty("Owner")!.GetCollation().Should().Be("C");
-        entity.GetCheckConstraints().Should().ContainSingle(x => x.Sql == "right(\"tenant_column\", 1) <> ' '");
+        entity.FindProperty("Owner")!.GetCollation().Should().BeNull();
+        entity.GetCheckConstraints().Should().BeEmpty();
     }
 
     [Fact]
-    public void should_reject_ambiguous_ambient_tenant_before_query_execution()
+    public void should_preserve_ambient_tenant_without_normalization()
     {
         using var provider = _CreateProvider<DeclaredPolicy>();
         using var scope = provider.CreateScope();
         scope.ServiceProvider.GetRequiredService<TestCurrentTenant>().Id = "tenant-a ";
         using var db = scope.ServiceProvider.GetRequiredService<PolicyContext<DeclaredPolicy>>();
 
-        var query = () => db.Set<ExternalRow>().ToQueryString();
-        query.Should().Throw<InvalidOperationException>().WithMessage("*U+0020*");
+        db.TenantId.Should().Be("tenant-a ");
+        db.Set<ExternalRow>().ToQueryString().Should().Contain("tenant-a ");
     }
 
     [Fact]
@@ -134,12 +134,20 @@ public sealed class TenantModelPolicyTests : TestBase
         _AssertInvalid<SeparateOwnedPolicy>("*separately stored owned entity*");
 
     [Fact]
-    public void should_reject_incompatible_tenant_collations() =>
-        _AssertInvalid<WrongCollationPolicy>("*requires collation 'C'*");
+    public void should_preserve_consumer_tenant_column_mapping()
+    {
+        using var provider = _CreateProvider<ConsumerStoragePolicy>();
+        using var scope = provider.CreateScope();
+        using var db = scope.ServiceProvider.GetRequiredService<PolicyContext<ConsumerStoragePolicy>>();
+        var property = db.GetService<IDesignTimeModel>()
+            .Model.FindEntityType(typeof(LegacyRow))!
+            .FindProperty("TenantId")!;
 
-    [Fact]
-    public void should_reject_fixed_length_column_types() =>
-        _AssertInvalid<FixedLengthPolicy>("*variable-length Unicode storage*");
+        property.GetCollation().Should().Be("en-US");
+        property.GetColumnType().Should().Be("character(16)");
+        property.IsFixedLength().Should().BeTrue();
+        property.IsConcurrencyToken.Should().BeTrue();
+    }
 
     [Fact]
     public void should_reject_tpt_inheritance() => _AssertInvalid<TptPolicy>("*requires a keyed*");
@@ -264,16 +272,15 @@ public sealed class TenantModelPolicyTests : TestBase
         }
     }
 
-    private sealed class WrongCollationPolicy : IPolicy
+    private sealed class ConsumerStoragePolicy : IPolicy
     {
         public static void Configure(ModelBuilder builder) =>
-            builder.Entity<LegacyRow>().Property(x => x.TenantId).UseCollation("en-US");
-    }
-
-    private sealed class FixedLengthPolicy : IPolicy
-    {
-        public static void Configure(ModelBuilder builder) =>
-            builder.Entity<LegacyRow>().Property(x => x.TenantId).HasColumnType("character(16)");
+            builder
+                .Entity<LegacyRow>()
+                .Property(x => x.TenantId)
+                .HasColumnType("character(16)")
+                .IsFixedLength()
+                .UseCollation("en-US");
     }
 
     private sealed class TptPolicy : IPolicy

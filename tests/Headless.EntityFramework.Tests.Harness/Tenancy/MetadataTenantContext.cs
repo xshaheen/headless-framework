@@ -20,7 +20,10 @@ public sealed class MetadataTenantContext(
         var row = modelBuilder.Entity<TenantRow>();
         row.ToTable("Rows");
         row.IsTenantOwned(nameof(TenantRow.Owner));
-        row.Property(x => x.Owner).HasColumnName("tenant_key").HasMaxLength(41);
+        row.Property(x => x.Owner)
+            .HasColumnName("tenant_key")
+            .HasMaxLength(41)
+            .HasConversion(value => "stored:" + value, value => value.Substring(7));
         row.Property(x => x.Stamp).IsConcurrencyToken();
         row.Property(x => x.Code).HasMaxLength(100);
         row.HasIndex(x => x.Code).IsUnique().HasDatabaseName("TenantCodeIndex").IsTenantScoped();

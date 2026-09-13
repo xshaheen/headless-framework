@@ -510,16 +510,16 @@ Ownership is a root-level model policy that controls query filters, optional wri
 
 Declare ownership after `base.OnModelCreating(modelBuilder)`. Shared-row and JSON owned graphs inherit root policy. Keyless/shared CLR types, TPT/TPC, table fragments, separate roots sharing a table, and separately stored owned graphs are rejected. Select unique indexes with `IsTenantScoped()` to append the tenant once in ascending order; ordinary primary keys and unselected indexes stay unchanged. See [ORM tenant ownership](orm.md#tenant-ownership) for APIs and examples.
 
-Canonical tenant columns use SQL Server `Latin1_General_100_BIN2` or PostgreSQL `C` collation. EF read/write boundaries reject IDs ending in U+0020, and database checks enforce that restriction for persisted values. Canonical IDs are never trimmed or normalized. Existing nullable interface-owned host rows remain valid.
+Consumers configure tenant column types, conversions, collations, and database validation in their own EF model and migrations. Headless does not choose a collation, add tenant-ID check constraints, or reject trailing spaces. It preserves supplied IDs without trimming or normalization. The write guard compares IDs ordinally in memory; queries, concurrency predicates, unique indexes, and foreign keys use database equality. Consumers must ensure that distinct canonical IDs remain distinct under that equality and that storage conversions preserve identity.
 
 Consumers own schema rollout for both new metadata ownership and affected existing `IMultiTenant` columns:
 
 1. Add new tenant columns as nullable.
 2. Backfill from verified ownership relationships. Do not assign a silent default tenant.
-3. Validate tenant identity, equality, lengths, trailing spaces, duplicate names within a tenant, and parent-child tenant consistency.
-4. Apply required columns, canonical collations, checks, alternate keys, composite foreign keys, and selected unique indexes as applicable before enabling the new model.
+3. Validate tenant identity, equality, lengths, the application's ID format, duplicate names within a tenant, and parent-child tenant consistency.
+4. Apply required columns, consumer-configured storage rules, alternate keys, composite foreign keys, and selected unique indexes as applicable before enabling the new model.
 
-Existing interface columns also gain canonical collation, trailing-space checks, and tenant concurrency-token metadata. Review generated migrations for every affected provider. No backfill or migration runs automatically.
+Existing interface columns gain tenant concurrency-token metadata without forced changes to their types, collations, or check constraints. Review generated migrations for every affected provider. No backfill or migration runs automatically.
 
 Identity has a separate explicit opt-in: call `ConfigureTenantOwnedIdentity(modelBuilder)` after the base model call. It scopes normalized user/role names and enforces same-tenant dependent relationships with composite foreign keys. IDs and existing login, membership, token, and passkey primary-key shapes remain unchanged; external-login pairs and passkey credential IDs remain global. See [Identity tenant configuration](identity.md#tenant-owned-identity) for required values, key limits, and rollout.
 

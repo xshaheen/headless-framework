@@ -3,7 +3,6 @@
 using Headless.EntityFramework;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;
-using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -12,7 +11,6 @@ using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
-using Npgsql;
 
 namespace Tests.Tenancy;
 
@@ -85,8 +83,6 @@ public abstract class MetadataTenantConformanceTests<TFixture>(TFixture fixture)
     [InlineData(true, false, "tenant-a", "tenant-b")]
     [InlineData(false, true, "tenant-a", "tenant-b")]
     [InlineData(true, true, "tenant-a", "tenant-b")]
-    [InlineData(false, false, "acme", "ACME")]
-    [InlineData(true, false, "acme", "ACME")]
     public async Task should_fence_detached_writes_with_both_concurrency_tokens(
         bool delete,
         bool shadow,
@@ -140,11 +136,11 @@ public abstract class MetadataTenantConformanceTests<TFixture>(TFixture fixture)
     }
 
     [Fact]
-    public async Task should_keep_case_distinct_tenants_separate_and_scope_selected_uniqueness()
+    public async Task should_keep_tenants_separate_and_scope_selected_uniqueness()
     {
-        await _SeedAsync("acme", code: "shared");
-        await _SeedAsync("ACME", code: "shared");
-        foreach (var tenant in new[] { "acme", "ACME" })
+        await _SeedAsync("tenant-a", code: "shared");
+        await _SeedAsync("tenant-b", code: "shared");
+        foreach (var tenant in new[] { "tenant-a", "tenant-b" })
         {
             fixture.CurrentTenant.Id = tenant;
             await using var scope = fixture.Services.CreateAsyncScope();
@@ -217,64 +213,27 @@ public abstract class MetadataTenantConformanceTests<TFixture>(TFixture fixture)
     }
 
     [Theory]
-    [InlineData("read")]
-    [InlineData("save")]
-    [InlineData("original")]
-    public async Task should_reject_trailing_space_at_ef_boundary(string operation)
+    [InlineData("tenant-a")]
+    [InlineData("tenant-a ")]
+    public async Task should_preserve_consumer_tenant_id_during_stamping_and_persistence(string tenant)
     {
-        var id = await _SeedAsync("tenant-a");
-        fixture.CurrentTenant.Id = string.Equals(operation, "original", StringComparison.Ordinal)
-            ? "tenant-a"
-            : "tenant-a ";
+        await _SeedAsync(tenant);
         await using var scope = fixture.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<MetadataTenantContext>();
-        if (string.Equals(operation, "read", StringComparison.Ordinal))
-        {
-            await db.Invoking(x => x.Set<TenantRow>().ToListAsync(AbortToken))
-                .Should()
-                .ThrowAsync<InvalidOperationException>()
-                .WithMessage("*U+0020*");
-            return;
-        }
-        var row = new TenantRow { Id = id, Owner = "tenant-a" };
-        db.Attach(row);
-        row.Name = "compromised";
-        if (string.Equals(operation, "original", StringComparison.Ordinal))
-        {
-            db.Entry(row).Property(x => x.Owner).OriginalValue = "tenant-a ";
-        }
-        await db.Invoking(x => x.SaveChangesAsync(AbortToken))
+        (await db.Set<TenantRow>().SingleAsync(AbortToken)).Owner.Should().Be(tenant);
+        (await db.Set<ShadowTenantRow>().Select(x => EF.Property<string>(x, "TenantId")).SingleAsync(AbortToken))
             .Should()
-            .ThrowAsync<InvalidOperationException>()
-            .WithMessage("*U+0020*");
+            .Be(tenant);
+        var sql = db.GetService<ISqlGenerationHelper>();
+        await db.Database.OpenConnectionAsync(AbortToken);
+        await using var command = db.Database.GetDbConnection().CreateCommand();
+        command.CommandText =
+            $"SELECT {sql.DelimitIdentifier("tenant_key")} FROM {sql.DelimitIdentifier("Rows", "tenancy")}";
+        (await command.ExecuteScalarAsync(AbortToken)).Should().Be("stored:" + tenant);
     }
 
     [Fact]
-    public async Task should_reject_trailing_space_direct_insert_with_database_constraint()
-    {
-        await using var scope = fixture.Services.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<MetadataTenantContext>();
-        var q = db.GetService<ISqlGenerationHelper>();
-        var sql =
-            $"INSERT INTO {q.DelimitIdentifier("ShadowRows", "tenancy")} ({q.DelimitIdentifier("Id")}, {q.DelimitIdentifier("Name")}, {q.DelimitIdentifier("Stamp")}, {q.DelimitIdentifier("tenant_key")}) VALUES ({{0}}, {{1}}, {{2}}, {{3}})";
-        var insert = () =>
-            db.Database.ExecuteSqlRawAsync(sql, [Guid.NewGuid(), "raw", "stamp", "tenant-a "], AbortToken);
-        var failure = (await insert.Should().ThrowAsync<System.Data.Common.DbException>()).Which;
-        if (failure is PostgresException postgres)
-        {
-            postgres.SqlState.Should().Be(PostgresErrorCodes.CheckViolation);
-            postgres.ConstraintName.Should().Be("CK_ShadowRows_tenant_key_TenantCanonical");
-        }
-        else
-        {
-            failure.Should().BeOfType<SqlException>().Which.Number.Should().Be(547);
-            failure.Message.Should().Contain("CK_ShadowRows_tenant_key_TenantCanonical");
-        }
-        (await db.Set<ShadowTenantRow>().IgnoreQueryFilters().CountAsync(AbortToken)).Should().Be(0);
-    }
-
-    [Fact]
-    public void should_generate_migration_collation_check_constraints_and_selected_index()
+    public void should_generate_selected_index_without_imposing_tenant_storage_constraints()
     {
         using var scope = fixture.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<MetadataTenantContext>();
@@ -287,15 +246,15 @@ public abstract class MetadataTenantConformanceTests<TFixture>(TFixture fixture)
             table
                 .Columns.Single(x => x.Name is "tenant_key" or nameof(HostTenantRow.TenantId))
                 .Collation.Should()
-                .Be(fixture.Provider == TenantDatabaseProvider.SqlServer ? "Latin1_General_100_BIN2" : "C");
-            table.CheckConstraints.Should().NotBeEmpty();
+                .BeNull();
+            table.CheckConstraints.Should().BeEmpty();
         }
         operations
             .OfType<CreateIndexOperation>()
             .Single(x => string.Equals(x.Name, "TenantCodeIndex", StringComparison.Ordinal))
             .Columns.Should()
             .Equal("Code", "tenant_key");
-        fixture.MigrationSql.Should().Contain("COLLATE").And.Contain("CHECK").And.Contain("TenantCodeIndex");
+        fixture.MigrationSql.Should().Contain("TenantCodeIndex");
     }
 
     private MetadataTenantContext _Context(IServiceProvider services, List<string> sql)

@@ -2,7 +2,6 @@
 
 using Headless.Abstractions;
 using Headless.Domain;
-using Headless.EntityFramework.Contexts.Runtime;
 using Headless.MultiTenancy;
 using Headless.Reflection;
 using Microsoft.EntityFrameworkCore;
@@ -209,7 +208,7 @@ public sealed class HeadlessEntitySaveEntryProcessor(
 
     private static string? _ReadTenantId(object? value)
     {
-        var tenantId = HeadlessTenantModelConvention.ValidateTenantId((string?)value);
+        var tenantId = (string?)value;
         return string.IsNullOrWhiteSpace(tenantId) ? null : tenantId;
     }
 

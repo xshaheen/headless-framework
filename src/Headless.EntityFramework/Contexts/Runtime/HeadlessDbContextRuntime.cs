@@ -38,7 +38,7 @@ internal sealed class HeadlessDbContextRuntime(DbContext db, HeadlessDbContextSe
     private bool _initialized;
     private bool _stampTenantHandlerAttached;
 
-    public string? TenantId => HeadlessTenantModelConvention.ValidateTenantId(services.TenantId);
+    public string? TenantId => services.TenantId;
 
     internal IServiceProvider ServiceProvider => services.ServiceProvider;
 
@@ -102,7 +102,7 @@ internal sealed class HeadlessDbContextRuntime(DbContext db, HeadlessDbContextSe
         }
 
         var property = entry.Property(entry.Metadata.GetTenantPropertyName()!);
-        var suppliedTenantId = HeadlessTenantModelConvention.ValidateTenantId((string?)property.CurrentValue);
+        var suppliedTenantId = (string?)property.CurrentValue;
         if (!string.IsNullOrWhiteSpace(suppliedTenantId))
         {
             return;
@@ -164,10 +164,7 @@ internal sealed class HeadlessDbContextRuntime(DbContext db, HeadlessDbContextSe
     public void ConfigureConventions(ModelConfigurationBuilder builder)
     {
         builder.AddBuildingBlocksPrimitivesConvertersMappings();
-        builder.Conventions.Add(provider => new HeadlessTenantModelConvention(
-            db,
-            provider.GetRequiredService<IDatabaseProvider>().Name
-        ));
+        builder.Conventions.Add(_ => new HeadlessTenantModelConvention(db));
     }
 
     public static void ProcessModelCreating(ModelBuilder builder)

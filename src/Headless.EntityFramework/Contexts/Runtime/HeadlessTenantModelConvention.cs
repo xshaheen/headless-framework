@@ -9,7 +9,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Conventions;
 
 namespace Headless.EntityFramework.Contexts.Runtime;
 
-internal sealed class HeadlessTenantModelConvention(DbContext db, string providerName) : IModelFinalizingConvention
+internal sealed class HeadlessTenantModelConvention(DbContext db) : IModelFinalizingConvention
 {
     public void ProcessModelFinalizing(
         IConventionModelBuilder modelBuilder,
@@ -45,20 +45,14 @@ internal sealed class HeadlessTenantModelConvention(DbContext db, string provide
                 property.IsNullable = false;
             }
 
-            if (
-                property.GetValueConverter() is not null
-                || (property.GetProviderClrType() is { } providerType && providerType != typeof(string))
-                || property.IsFixedLength() == true
-                || property.ValueGenerated != ValueGenerated.Never
-            )
+            if (property.ValueGenerated != ValueGenerated.Never)
             {
                 throw new InvalidOperationException(
-                    $"Tenant property '{root.Name}.{name}' requires an unconverted, variable-length, non-generated string mapping."
+                    $"Tenant property '{root.Name}.{name}' must not be database-generated."
                 );
             }
 
             property.IsConcurrencyToken = true;
-            _ConfigureCanonicalEquality(root, property);
             _ConfigureFilter(root, property);
         }
 
@@ -261,83 +255,5 @@ internal sealed class HeadlessTenantModelConvention(DbContext db, string provide
         }
 
         entity.SetQueryFilter(HeadlessQueryFilters.MultiTenancyFilter, Expression.Lambda(predicate, parameter));
-    }
-
-    private void _ConfigureCanonicalEquality(IMutableEntityType entity, IMutableProperty property)
-    {
-        // Character padding and lossy encodings can merge distinct canonical IDs even under a binary collation.
-        var storeType = property.GetColumnType()?.Split('(', 2)[0].Trim().ToLowerInvariant();
-        var supportedStorage = providerName switch
-        {
-            "Microsoft.EntityFrameworkCore.SqlServer" => property.IsUnicode() != false
-                && storeType is null or "nvarchar",
-            "Npgsql.EntityFrameworkCore.PostgreSQL" => storeType is null or "text" or "varchar" or "character varying",
-            "Microsoft.EntityFrameworkCore.Sqlite" => storeType is null or "text",
-            _ => false,
-        };
-        if (!supportedStorage)
-        {
-            throw new InvalidOperationException(
-                $"Tenant property '{entity.Name}.{property.Name}' requires lossless, variable-length Unicode storage for provider '{providerName}'."
-            );
-        }
-
-        var collation = providerName switch
-        {
-            "Microsoft.EntityFrameworkCore.SqlServer" => "Latin1_General_100_BIN2",
-            "Npgsql.EntityFrameworkCore.PostgreSQL" => "C",
-            "Microsoft.EntityFrameworkCore.Sqlite" => "BINARY",
-            _ => throw new InvalidOperationException(
-                $"Tenant ownership has no verified canonical string mapping for provider '{providerName}'."
-            ),
-        };
-        if (
-            property.GetCollation() is { } configured
-            && !string.Equals(configured, collation, StringComparison.Ordinal)
-        )
-        {
-            throw new InvalidOperationException(
-                $"Tenant property '{entity.Name}.{property.Name}' requires collation '{collation}', but '{configured}' was configured."
-            );
-        }
-
-        property.SetCollation(collation);
-        var table = StoreObjectIdentifier.Table(entity.GetTableName()!, entity.GetSchema());
-        var column = property.GetColumnName(table)!;
-        var quoted = string.Equals(providerName, "Microsoft.EntityFrameworkCore.SqlServer", StringComparison.Ordinal)
-            ? "[" + column.Replace("]", "]]", StringComparison.Ordinal) + "]"
-            : "\"" + column.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
-        var sql = providerName switch
-        {
-            "Microsoft.EntityFrameworkCore.SqlServer" => $"DATALENGTH({quoted}) = DATALENGTH(RTRIM({quoted}))",
-            "Npgsql.EntityFrameworkCore.PostgreSQL" => $"right({quoted}, 1) <> ' '",
-            _ => $"substr({quoted}, -1) <> ' '",
-        };
-        var constraintName = $"CK_{table.Name}_{column}_TenantCanonical";
-        if (entity.FindCheckConstraint(constraintName) is { } existing)
-        {
-            if (!string.Equals(existing.Sql, sql, StringComparison.Ordinal))
-            {
-                throw new InvalidOperationException(
-                    $"Check constraint '{constraintName}' conflicts with canonical tenant validation."
-                );
-            }
-
-            return;
-        }
-
-        entity.AddCheckConstraint(constraintName, sql);
-    }
-
-    internal static string? ValidateTenantId(string? tenantId)
-    {
-        if (tenantId?.EndsWith(' ') == true)
-        {
-            throw new InvalidOperationException(
-                "Tenant IDs ending in U+0020 are not supported by EF tenant isolation. Canonical IDs must not be trimmed or normalized."
-            );
-        }
-
-        return tenantId;
     }
 }

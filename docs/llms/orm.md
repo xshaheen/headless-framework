@@ -99,7 +99,7 @@ Use these packages for ORM-level persistence primitives. For raw SQL connection 
 - **Coordinated write retry boundary.** Coordinated Jobs write attempts prevent automatic retries of a pipeline-owned save because their separate context is not retained in the business change tracker. A later failure propagates unchanged; recover with a fresh context and aggregate graph after a known rollback, or reconcile an unknown commit first. Outbox-only saves retain their existing retry behavior.
 - Raw SQL commands and stored procedures bypass query filters and the write guard. Supply explicit tenant predicates and authorization. `BeginBypass()` has no effect on raw SQL. Bulk `ExecuteUpdate` and `ExecuteDelete` consume query filters but skip the save guard.
 - Tenant concurrency tokens protect detached updates and deletes against a different persisted tenant. A zero-row SQL result remains `DbUpdateConcurrencyException`; never translate it into a tenancy exception or assume local handlers did not run.
-- Review consumer migrations for existing interface-owned columns as well as new metadata-owned columns. Tenant collations and trailing-space checks change the schema; no automatic backfill or default tenant is supplied.
+- Consumers own tenant column storage and equality configuration. Review new required columns, keys, and indexes in migrations; no automatic backfill or default tenant is supplied.
 - Do not mix framework concurrency stamping with ASP.NET Identity `ConcurrencyStamp` ownership on identity entities.
 - Keep persistence concurrency versions provider-native: PostgreSQL maps a `uint` property to `xmin` with `IsRowVersion()`, while SQL Server maps a `byte[]` property to `rowversion`. Derive HTTP entity tags at the API boundary; do not model a provider-neutral `byte[]` property as a database-generated row version.
 - For Couchbase, use `CouchbaseBucketContext` + `IBucketContextProvider` and keep cluster/bucket names explicit. `DocumentSetExtensions` are constrained to `IEntity` models.
@@ -463,11 +463,11 @@ protected override void OnModelCreating(ModelBuilder modelBuilder)
 
 Metadata-only roots require a tenant. Existing `IMultiTenant` nullability remains unchanged outside the Identity opt-in, including nullable host rows. Configure ownership on the hierarchy root. Shared-row and JSON owned graphs inherit that policy and cannot declare a separate one.
 
-Supported roots are keyed, non-shared CLR types mapped to one table, with TPH for inheritance. Model finalization rejects keyless or shared CLR types, TPT/TPC, table fragments, separate roots sharing a table, and separately stored owned entities. Tenant properties must use unconverted, non-generated, variable-length strings with lossless provider storage.
+Supported roots are keyed, non-shared CLR types mapped to one table, with TPH for inheritance. Model finalization rejects keyless or shared CLR types, TPT/TPC, table fragments, separate roots sharing a table, and separately stored owned entities. Tenant properties must have CLR type `string` and must not be database-generated.
 
 `IsTenantScoped()` selects one unique index and appends the tenant column once in ascending order. It preserves existing property order, directions, model/database names, filters, uniqueness, and supported annotations. Unselected indexes, primary keys, and relationships remain unchanged. Unsupported positional provider annotations fail model validation rather than changing index semantics.
 
-Tenant columns use SQL Server `Latin1_General_100_BIN2`, PostgreSQL `C`, or SQLite `BINARY` collation. Conflicting explicit collations and incompatible storage mappings are rejected. Tenant IDs ending in U+0020 are rejected at the EF read/write boundary and by database check constraints. Canonical IDs are never trimmed or normalized. Nullable interface-owned host rows remain valid.
+Consumers configure tenant column types, conversions, collations, and database validation in their own EF model and migrations. Headless does not choose a collation, add tenant-ID check constraints, or reject trailing spaces. It preserves supplied IDs without trimming or normalization. The write guard compares IDs ordinally in memory; queries, concurrency predicates, unique indexes, and foreign keys use database equality. Consumers must ensure that distinct canonical IDs remain distinct under that equality and that storage conversions preserve identity.
 
 `TenantId` reads the active ambient tenant on each access. Use a fresh context for each tenant scope: changing `ICurrentTenant` cannot remove entities from the change tracker, and `FindAsync` can return an already tracked entity without running a filtered query.
 
@@ -477,10 +477,10 @@ Consumers own migrations and tenant assignment. For existing data:
 
 1. Add new tenant columns as nullable.
 2. Backfill from verified application ownership relationships. Do not assign a silent default tenant.
-3. Validate tenant identity, equality, lengths, and trailing U+0020 data. Resolve duplicate business names within each tenant and parent-child tenant mismatches.
-4. Apply required columns, canonical collations, check constraints, alternate keys, composite foreign keys, and selected unique indexes as applicable. Review generated SQL for the deployed provider before enabling the new model.
+3. Validate tenant identity, equality, lengths, and the application's ID format. Resolve duplicate business names within each tenant and parent-child tenant mismatches.
+4. Apply required columns, consumer-configured storage rules, alternate keys, composite foreign keys, and selected unique indexes as applicable. Review generated SQL for the deployed provider before enabling the new model.
 
-Existing `IMultiTenant` columns also gain canonical collations, trailing-space checks, and tenant concurrency-token metadata. Include them in the migration review even when no entity opts in through the new API. The framework neither creates consumer migrations nor backfills rows.
+Existing `IMultiTenant` columns gain tenant concurrency-token metadata without forced changes to their types, collations, or check constraints. The framework neither creates consumer migrations nor backfills rows.
 
 #### Module Model Mapping
 
