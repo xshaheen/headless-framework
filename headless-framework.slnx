@@ -117,7 +117,6 @@
         <Project Path="src/Headless.CommitCoordination.Abstractions/Headless.CommitCoordination.Abstractions.csproj" />
         <Project Path="src/Headless.CommitCoordination.Core/Headless.CommitCoordination.Core.csproj" />
         <Project Path="src/Headless.CommitCoordination.EntityFramework/Headless.CommitCoordination.EntityFramework.csproj" />
-        <Project Path="src/Headless.CommitCoordination.InMemory/Headless.CommitCoordination.InMemory.csproj" />
         <Project Path="src/Headless.CommitCoordination.PostgreSql/Headless.CommitCoordination.PostgreSql.csproj" />
         <Project Path="src/Headless.CommitCoordination.SqlServer/Headless.CommitCoordination.SqlServer.csproj" />
         <Project Path="tests/Headless.CommitCoordination.Conformance.Tests.Unit/Headless.CommitCoordination.Conformance.Tests.Unit.csproj" />
