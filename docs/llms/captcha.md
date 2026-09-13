@@ -5,56 +5,9 @@ packages: Captcha.Abstractions, Captcha.Core, Captcha.ReCaptcha, Captcha.Turnsti
 
 # Captcha
 
-## Table of Contents
-
-- [Quick Orientation](#quick-orientation)
-- [Agent Instructions](#agent-instructions)
-- [Core Concepts](#core-concepts)
-    - [The pass/fail abstraction](#the-passfail-abstraction)
-    - [Default vs. named providers](#default-vs-named-providers)
-    - [Keyed resolution](#keyed-resolution)
-    - [Provider-only data](#provider-only-data)
-- [Choosing a Provider](#choosing-a-provider)
-- [Headless.Captcha.Abstractions](#headlesscaptchaabstractions)
-    - [Problem Solved](#problem-solved)
-    - [Key Features](#key-features)
-    - [Design Notes](#design-notes)
-    - [Installation](#installation)
-    - [Quick Start](#quick-start)
-    - [Configuration](#configuration)
-    - [Dependencies](#dependencies)
-    - [Side Effects](#side-effects)
-- [Headless.Captcha.Core](#headlesscaptchacore)
-    - [Problem Solved](#problem-solved-1)
-    - [Key Features](#key-features-1)
-    - [Design Notes](#design-notes-1)
-    - [Installation](#installation-1)
-    - [Quick Start](#quick-start-1)
-    - [Configuration](#configuration-1)
-    - [Dependencies](#dependencies-1)
-    - [Side Effects](#side-effects-1)
-- [Headless.Captcha.ReCaptcha](#headlesscaptcharecaptcha)
-    - [Problem Solved](#problem-solved-2)
-    - [Key Features](#key-features-2)
-    - [Design Notes](#design-notes-2)
-    - [Installation](#installation-2)
-    - [Quick Start](#quick-start-2)
-    - [Configuration](#configuration-2)
-    - [Dependencies](#dependencies-2)
-    - [Side Effects](#side-effects-2)
-- [Headless.Captcha.Turnstile](#headlesscaptchaturnstile)
-    - [Problem Solved](#problem-solved-3)
-    - [Key Features](#key-features-3)
-    - [Design Notes](#design-notes-3)
-    - [Installation](#installation-3)
-    - [Quick Start](#quick-start-3)
-    - [Configuration](#configuration-3)
-    - [Dependencies](#dependencies-3)
-    - [Side Effects](#side-effects-3)
-
 > Unified CAPTCHA verification abstraction with Google reCAPTCHA (v2 + v3) and Cloudflare Turnstile providers, composed through one `AddHeadlessCaptcha` builder.
 
-## Quick Orientation
+## Orientation
 
 Install `Headless.Captcha.Abstractions` plus one or more provider packages. All registration flows through a single `services.AddHeadlessCaptcha(setup => ...)` call; provider packages contribute `Use*` extension members on the setup builder (`UseReCaptchaV2`, `UseReCaptchaV3`, `UseTurnstile`). Code against `ICaptchaVerifier` for the pass/fail outcome every provider returns; resolve a provider's concrete interface (`IReCaptchaV3Verifier`, `ITurnstileVerifier`) only when you need provider-only data.
 
@@ -64,7 +17,7 @@ Install `Headless.Captcha.Abstractions` plus one or more provider packages. All 
 
 `ICaptchaVerifier.VerifyAsync(CaptchaVerifyRequest, CancellationToken)` posts the client token to the provider's siteverify endpoint and returns a normalized `CaptchaVerifyResult` (`Success`, `HostName`, `ChallengeTimestamp`, `Action`, `ErrorCodes`). At most one provider may be the *default* (registered by calling a `Use*` member directly on the setup builder): it resolves both unkeyed (`ICaptchaVerifier`) and under its canonical `CaptchaConstants` key. Additional providers are *named* (added with `setup.AddNamed("name", i => i.Use*(...))`), keyed-only, and resolved through `ICaptchaProvider.GetVerifier(name)`. Both reCAPTCHA and Turnstile providers ship Razor tag helpers for rendering the client-side widget/script.
 
-## Agent Instructions
+## Agent Rules
 
 - Use `ICaptchaVerifier` from `Headless.Captcha.Abstractions` for pass/fail verification at application boundaries. Inject `IReCaptchaV3Verifier` (reCAPTCHA v3 `Score`) or `ITurnstileVerifier` (Turnstile `CData` / `Metadata`, `idempotency_key`) only where you actually read provider-only data — that code is provider-specific by definition.
 - Configure every provider in one `services.AddHeadlessCaptcha(setup => ...)` call. At least one provider is required; calling `AddHeadlessCaptcha` twice on the same service collection throws `InvalidOperationException`, and a throwing setup leaves the service collection unchanged (contributions are deferred until the gates pass).

@@ -5,52 +5,9 @@ packages: Testing, Testing.AspNetCore, Testing.Testcontainers, Messaging.Testing
 
 # Testing
 
-## Table of Contents
-
-- [Quick Orientation](#quick-orientation)
-- [Agent Instructions](#agent-instructions)
-- [Headless.Testing](#headlesstesting)
-    - [Problem Solved](#problem-solved)
-    - [Key Features](#key-features)
-    - [Installation](#installation)
-    - [Quick Start](#quick-start)
-    - [Quick Start](#quick-start-1)
-    - [Configuration](#configuration)
-    - [Dependencies](#dependencies)
-    - [Side Effects](#side-effects)
-- [Headless.Testing.AspNetCore](#headlesstestingaspnetcore)
-    - [Problem Solved](#problem-solved-1)
-    - [Key Features](#key-features-1)
-    - [Design Notes](#design-notes)
-    - [Installation](#installation-1)
-    - [Quick Start](#quick-start-2)
-    - [Quick Start](#quick-start-3)
-    - [Configuration](#configuration-1)
-    - [Dependencies](#dependencies-1)
-    - [Side Effects](#side-effects-1)
-- [Headless.Testing.Testcontainers](#headlesstestingtestcontainers)
-    - [Problem Solved](#problem-solved-2)
-    - [Key Features](#key-features-2)
-    - [Design Notes](#design-notes-1)
-    - [Installation](#installation-2)
-    - [Quick Start](#quick-start-4)
-    - [Prerequisites](#prerequisites)
-    - [Configuration](#configuration-2)
-    - [Dependencies](#dependencies-2)
-    - [Side Effects](#side-effects-2)
-- [Headless.Messaging.Testing](#headlessmessagingtesting)
-    - [Problem Solved](#problem-solved-3)
-    - [Key Features](#key-features-3)
-    - [Installation](#installation-3)
-    - [Quick Start](#quick-start-5)
-    - [Quick Start](#quick-start-6)
-    - [Configuration](#configuration-3)
-    - [Dependencies](#dependencies-3)
-    - [Side Effects](#side-effects-3)
-
 > Base classes and Docker-backed fixtures for xUnit unit and integration tests.
 
-## Quick Orientation
+## Orientation
 
 - `Headless.Testing` -- base classes (`TestBase`), retry attributes, fake helpers (`TestCurrentUser`, `TestCurrentTenant`), the `AddTestTimeProvider()` DI extension, and assertion extensions. Used for unit tests.
 - `Headless.Testing.AspNetCore` -- `HeadlessTestServer<TProgram>`, a `WebApplicationFactory<TProgram>` wrapper with deterministic time, DI-scope helpers, readiness polling, and Respawner-based database reset. Used for ASP.NET Core integration tests.
@@ -59,7 +16,7 @@ packages: Testing, Testing.AspNetCore, Testing.Testcontainers, Messaging.Testing
 
 Typical unit test inherits from `TestBase`, which provides `Logger`, `Faker`, and `AbortToken` out of the box. Integration tests typically build a shared xUnit collection fixture around `HeadlessTestServer<TProgram>` plus any required Testcontainers fixtures, then derive per-test classes from an `IntegrationTestBase : TestBase` that resets fixture state per test.
 
-## Agent Instructions
+## Agent Rules
 
 - Use `Headless.Testing` for all unit tests. Inherit from `TestBase` to get `Logger` (ILogger), `Faker` (Bogus), and `AbortToken` (CancellationToken) for free.
 - Use `RetryFactAttribute` / `RetryTheoryAttribute` for flaky tests (e.g., network-dependent). Set `MaxRetries` explicitly.

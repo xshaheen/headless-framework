@@ -5,63 +5,9 @@ packages: Settings.Abstractions, Settings.Core, Settings.Storage.EntityFramework
 
 # Settings
 
-## Table of Contents
-
-- [Quick Orientation](#quick-orientation)
-- [Agent Instructions](#agent-instructions)
-- [Core Concepts](#core-concepts)
-    - [Setting Definitions vs. Setting Values](#setting-definitions-vs-setting-values)
-    - [Value Providers and Resolution Order](#value-providers-and-resolution-order)
-    - [Static Store vs. Dynamic Store](#static-store-vs-dynamic-store)
-    - [Setting Value Caching](#setting-value-caching)
-    - [Startup Initialization](#startup-initialization)
-- [Choosing a Provider](#choosing-a-provider)
-- [Headless.Settings.Abstractions](#headlesssettingsabstractions)
-    - [Problem Solved](#problem-solved)
-    - [Key Features](#key-features)
-    - [Installation](#installation)
-    - [Quick Start](#quick-start)
-    - [Configuration](#configuration)
-    - [Dependencies](#dependencies)
-    - [Side Effects](#side-effects)
-- [Headless.Settings.Core](#headlesssettingscore)
-    - [Problem Solved](#problem-solved-1)
-    - [Key Features](#key-features-1)
-    - [Design Notes](#design-notes)
-    - [Installation](#installation-1)
-    - [Quick Start](#quick-start-1)
-    - [Configuration](#configuration-1)
-    - [Dependencies](#dependencies-1)
-    - [Side Effects](#side-effects-1)
-- [Headless.Settings.Storage.EntityFramework](#headlesssettingsstorageentityframework)
-    - [Problem Solved](#problem-solved-2)
-    - [Key Features](#key-features-2)
-    - [Design Notes](#design-notes-1)
-    - [Installation](#installation-2)
-    - [Quick Start](#quick-start-2)
-    - [Configuration](#configuration-2)
-    - [Dependencies](#dependencies-2)
-    - [Side Effects](#side-effects-2)
-- [Headless.Settings.Storage.PostgreSql](#headlesssettingsstoragepostgresql)
-    - [Problem Solved](#problem-solved-3)
-    - [Key Features](#key-features-3)
-    - [Installation](#installation-3)
-    - [Quick Start](#quick-start-3)
-    - [Configuration](#configuration-3)
-    - [Dependencies](#dependencies-3)
-    - [Side Effects](#side-effects-3)
-- [Headless.Settings.Storage.SqlServer](#headlesssettingsstoragesqlserver)
-    - [Problem Solved](#problem-solved-4)
-    - [Key Features](#key-features-4)
-    - [Installation](#installation-4)
-    - [Quick Start](#quick-start-4)
-    - [Configuration](#configuration-4)
-    - [Dependencies](#dependencies-4)
-    - [Side Effects](#side-effects-4)
-
 > Dynamic, hierarchical application settings with runtime read/write support and multiple value providers (DefaultValue, Configuration, Global, Tenant, User) resolved from lowest to highest priority.
 
-## Quick Orientation
+## Orientation
 
 Install three packages: an abstractions package, the core implementation, and exactly one storage provider:
 
@@ -83,7 +29,7 @@ builder.Services.AddSettingDefinitionProvider<AppSettingDefinitionProvider>();
 
 Define settings via `ISettingDefinitionProvider.Define()`. Read via `ISettingManager.GetAsync()`, write via `SetAsync()`. Provider hierarchy resolves from lowest to highest priority: DefaultValue → Configuration → Global → Tenant → User (User wins).
 
-## Agent Instructions
+## Agent Rules
 
 - Use this for **runtime-changeable settings**, not for static configuration. For static config, use `IOptions<T>` / `IConfiguration`.
 - Always install all three packages together. `Headless.Settings.Abstractions` alone gives nothing runnable; `Headless.Settings.Core` requires a storage backend.

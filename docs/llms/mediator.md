@@ -5,33 +5,15 @@ packages: Mediator
 
 # Mediator
 
-## Table of Contents
-
-- [Quick Orientation](#quick-orientation)
-- [Agent Instructions](#agent-instructions)
-- [Core Concepts](#core-concepts)
-    - [Pipeline and Behavior Model](#pipeline-and-behavior-model)
-    - [Request and Handler Contract](#request-and-handler-contract)
-    - [Boundary vs. Cross-Cut Distinction](#boundary-vs-cross-cut-distinction)
-- [Headless.Mediator](#headlessmediator)
-    - [Problem Solved](#problem-solved)
-    - [Key Features](#key-features)
-    - [Design Notes](#design-notes)
-    - [Installation](#installation)
-    - [Quick Start](#quick-start)
-    - [Configuration](#configuration)
-    - [Dependencies](#dependencies)
-    - [Side Effects](#side-effects)
-
 > HTTP-agnostic Mediator pipeline behaviors — validation, logging, and slow-request alerting — without coupling to ASP.NET Core.
 
-## Quick Orientation
+## Orientation
 
 `Headless.Mediator` provides `IPipelineBehavior<,>` registrations and setup extensions for the [Mediator](https://github.com/martinothamar/Mediator) source-generator library. The package is intentionally narrow: it ships behaviors for **validation** (`ValidationRequestPreProcessor<TMessage, TResponse>`) and **request/response logging** (`RequestLoggingBehavior`, `ResponseLoggingBehavior`, `CriticalRequestLoggingBehavior`), and no more. Everything else — authentication, tenancy enforcement, idempotency, HTTP response shaping — belongs at the HTTP boundary, not inside `mediator.Send()`.
 
 There is exactly one package in this domain. No provider choice is required.
 
-## Agent Instructions
+## Agent Rules
 
 - **Register behaviors with the canonical setup extensions, not manually:** use `services.AddMediatorValidationRequestBehavior()` and `services.AddMediatorLoggingBehaviors()`. Both extensions are idempotent (`TryAddEnumerable`).
 - **Register `IValidator<T>` implementations separately.** The validation pre-processor picks up every `IValidator<TMessage>` from DI; it does not self-register validators.

@@ -5,84 +5,9 @@ packages: FluentValidation, Generator.Primitives, Generator.Primitives.Abstracti
 
 # Utilities
 
-## Table of Contents
-
-- [Quick Orientation](#quick-orientation)
-- [Agent Instructions](#agent-instructions)
-- [Headless.FluentValidation](#headlessfluentvalidation)
-    - [Problem Solved](#problem-solved)
-    - [Key Features](#key-features)
-    - [Installation](#installation)
-    - [Quick Start](#quick-start)
-    - [Quick Start](#quick-start-1)
-    - [Available Validators](#available-validators)
-    - [Configuration](#configuration)
-    - [Dependencies](#dependencies)
-    - [Side Effects](#side-effects)
-- [Headless.Generator.Primitives](#headlessgeneratorprimitives)
-    - [Problem Solved](#problem-solved-1)
-    - [Key Features](#key-features-1)
-    - [Design Notes](#design-notes)
-    - [Installation](#installation-1)
-    - [Quick Start](#quick-start-2)
-    - [Configuration](#configuration-1)
-    - [Dependencies](#dependencies-1)
-    - [Side Effects](#side-effects-1)
-- [Headless.Generator.Primitives.Abstractions](#headlessgeneratorprimitivesabstractions)
-    - [Problem Solved](#problem-solved-2)
-    - [Key Features](#key-features-2)
-    - [Installation](#installation-2)
-    - [Quick Start](#quick-start-3)
-    - [Configuration](#configuration-2)
-    - [Dependencies](#dependencies-2)
-    - [Side Effects](#side-effects-2)
-- [Headless.Hosting](#headlesshosting)
-    - [Problem Solved](#problem-solved-3)
-    - [Key Features](#key-features-3)
-    - [Installation](#installation-3)
-    - [Quick Start](#quick-start-4)
-    - [Quick Start](#quick-start-5)
-    - [Configuration](#configuration-3)
-    - [Dependencies](#dependencies-3)
-    - [Side Effects](#side-effects-3)
-- [Headless.NetTopologySuite](#headlessnettopologysuite)
-    - [Problem Solved](#problem-solved-4)
-    - [Key Features](#key-features-4)
-    - [Installation](#installation-4)
-    - [Quick Start](#quick-start-6)
-    - [Quick Start](#quick-start-7)
-    - [Configuration](#configuration-4)
-    - [Dependencies](#dependencies-4)
-    - [Side Effects](#side-effects-4)
-- [Headless.Redis](#headlessredis)
-    - [Problem Solved](#problem-solved-5)
-    - [Key Features](#key-features-5)
-    - [Installation](#installation-5)
-    - [Quick Start](#quick-start-8)
-    - [Quick Start](#quick-start-9)
-    - [Configuration](#configuration-5)
-    - [Dependencies](#dependencies-5)
-    - [Side Effects](#side-effects-5)
-- [Headless.Sitemaps](#headlesssitemaps)
-    - [Problem Solved](#problem-solved-6)
-    - [Key Features](#key-features-6)
-    - [Installation](#installation-6)
-    - [Quick Start](#quick-start-10)
-    - [Configuration](#configuration-6)
-    - [Dependencies](#dependencies-6)
-    - [Side Effects](#side-effects-6)
-- [Headless.Slugs](#headlessslugs)
-    - [Problem Solved](#problem-solved-7)
-    - [Key Features](#key-features-7)
-    - [Installation](#installation-7)
-    - [Quick Start](#quick-start-11)
-    - [Configuration](#configuration-7)
-    - [Dependencies](#dependencies-7)
-    - [Side Effects](#side-effects-7)
-
 > Standalone utility packages for validation, strongly-typed IDs, hosting helpers, geospatial ops, Redis scripts, sitemaps, and slug generation.
 
-## Quick Orientation
+## Orientation
 
 Install individually as needed -- these packages are independent of each other:
 
@@ -96,7 +21,7 @@ Install individually as needed -- these packages are independent of each other:
 
 CAPTCHA verification (Google reCAPTCHA v2/v3, Cloudflare Turnstile) moved out of this domain — see [captcha.md](captcha.md).
 
-## Agent Instructions
+## Agent Rules
 
 - Use `Generator.Primitives` + `Generator.Primitives.Abstractions` **together** for strongly-typed domain primitives. Define a `readonly partial struct` implementing `IPrimitive<T>` with a static `Validate` method. The source generator handles everything else.
 - Use `Headless.FluentValidation` for validators, not raw `FluentValidation`. It provides `InternationalPhoneNumber()`, `EgyptianNationalId()`, `UniqueElements()`, `Latitude()`, `Longitude()`, `PageIndex()`, `PageSize()`, `Id()`, and more.

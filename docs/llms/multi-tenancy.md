@@ -5,67 +5,9 @@ packages: MultiTenancy.Abstractions, MultiTenancy, MultiTenancy.Storage.EntityFr
 
 # Multi-Tenancy
 
-## Table of Contents
-
-- [Quick Orientation](#quick-orientation)
-- [Agent Instructions](#agent-instructions)
-- [Core Concepts](#core-concepts)
-- [Choosing a Tenant Catalog Store](#choosing-a-tenant-catalog-store)
-- [HTTP Setup](#http-setup)
-- [Skipping Tenant Resolution](#skipping-tenant-resolution)
-- [HTTP Failure Mapping](#http-failure-mapping)
-- [HTTP Authorization Requirement](#http-authorization-requirement)
-    - [Limitations](#limitations)
-- [Tenant Semantics](#tenant-semantics)
-- [Tenant Catalog](#tenant-catalog)
-    - [Accessor-only setup](#accessor-only-setup)
-    - [Identifier-based resolution setup](#identifier-based-resolution-setup)
-    - [Mismatch enforcement (R19)](#mismatch-enforcement-r19)
-    - [Failure mapping](#failure-mapping)
-    - [Migration Guidance](#migration-guidance)
-    - [DoS and rate limiting](#dos-and-rate-limiting)
-- [EF Core Integration](#ef-core-integration)
-    - [Entity Ownership](#entity-ownership)
-    - [EF Tenant Write Guard](#ef-tenant-write-guard)
-- [Messaging Exhausted Callbacks](#messaging-exhausted-callbacks)
-    - [Defense Layers and Known Gaps](#defense-layers-and-known-gaps)
-- [Permissions and Caching](#permissions-and-caching)
-- [Non-HTTP Execution Paths](#non-http-execution-paths)
-    - [Background Jobs](#background-jobs)
-    - [Message Consumers](#message-consumers)
-    - [SignalR](#signalr)
-- [Testing host wiring](#testing-host-wiring)
-- [Failure Modes to Watch](#failure-modes-to-watch)
-- [Headless.MultiTenancy.Abstractions](#headlessmultitenancyabstractions)
-    - [Problem Solved](#problem-solved)
-    - [Key Features](#key-features)
-    - [Installation](#installation)
-    - [Quick Start](#quick-start)
-    - [Configuration](#configuration)
-    - [Dependencies](#dependencies)
-    - [Side Effects](#side-effects)
-- [Headless.MultiTenancy](#headlessmultitenancy)
-    - [Problem Solved](#problem-solved-1)
-    - [Key Features](#key-features-1)
-    - [Design Notes](#design-notes)
-    - [Installation](#installation-1)
-    - [Quick Start](#quick-start-1)
-    - [Configuration](#configuration-1)
-    - [Dependencies](#dependencies-1)
-    - [Side Effects](#side-effects-1)
-- [Headless.MultiTenancy.Storage.EntityFramework](#headlessmultitenancystorageentityframework)
-    - [Problem Solved](#problem-solved-2)
-    - [Key Features](#key-features-2)
-    - [Design Notes](#design-notes-1)
-    - [Installation](#installation-2)
-    - [Quick Start](#quick-start-2)
-    - [Configuration](#configuration-2)
-    - [Dependencies](#dependencies-2)
-    - [Side Effects](#side-effects-2)
-
 > End-to-end tenant context setup for HTTP requests, EF Core global filters, permission caching, non-HTTP execution paths, and the opt-in tenant catalog (identifier resolution and tenant metadata).
 
-## Quick Orientation
+## Orientation
 
 Headless multi-tenancy is built from these pieces:
 
@@ -106,7 +48,7 @@ app.UseAuthorization();
 
 `AddHeadless()` registers base API infrastructure only. It does not enable tenant posture. It also requires `Headless:StringEncryption` and `Headless:StringHash` to be configured.
 
-## Agent Instructions
+## Agent Rules
 
 - Use `ICurrentTenant` for tenant-aware application logic; do not pass tenant ID around manually once the execution context is established.
 - In tenant-aware hosts, prefer `builder.AddHeadlessTenancy(...)` so HTTP, Authorization, Messaging, and EF posture is visible in one block.

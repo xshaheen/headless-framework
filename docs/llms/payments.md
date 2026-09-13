@@ -5,41 +5,9 @@ packages: Payments.Paymob.CashIn, Payments.Paymob.CashOut, Payments.Paymob.Servi
 
 # Payments
 
-## Table of Contents
-
-- [Quick Orientation](#quick-orientation)
-- [Agent Instructions](#agent-instructions)
-- [Core Concepts](#core-concepts)
-- [Headless.Payments.Paymob.CashIn](#headlesspaymentspaymobcashin)
-    - [Problem Solved](#problem-solved)
-    - [Key Features](#key-features)
-    - [Design Notes](#design-notes)
-    - [Installation](#installation)
-    - [Quick Start](#quick-start)
-    - [Configuration](#configuration)
-    - [Dependencies](#dependencies)
-    - [Side Effects](#side-effects)
-- [Headless.Payments.Paymob.CashOut](#headlesspaymentspaymobcashout)
-    - [Problem Solved](#problem-solved-1)
-    - [Key Features](#key-features-1)
-    - [Design Notes](#design-notes-1)
-    - [Installation](#installation-1)
-    - [Quick Start](#quick-start-1)
-    - [Configuration](#configuration-1)
-    - [Dependencies](#dependencies-1)
-    - [Side Effects](#side-effects-1)
-- [Headless.Payments.Paymob.Services](#headlesspaymentspaymobservices)
-    - [Problem Solved](#problem-solved-2)
-    - [Key Features](#key-features-2)
-    - [Installation](#installation-2)
-    - [Quick Start](#quick-start-2)
-    - [Configuration](#configuration-2)
-    - [Dependencies](#dependencies-2)
-    - [Side Effects](#side-effects-2)
-
 > Paymob Accept payment gateway integration for Egypt/MENA: payment collection (CashIn), disbursements (CashOut), and higher-level service workflows.
 
-## Quick Orientation
+## Orientation
 
 Three packages cover different functions — they are not alternatives:
 
@@ -56,7 +24,7 @@ Register via:
 - `services.AddPaymobCashOut(options => ...)` — for disbursements.
 - `services.AddPaymobServices()` — registers `IPaymobCashInService`, `ICashOutService`, and `IPaymobCashInFeesCalculator` from the Services package (call it after the two broker registrations above).
 
-## Agent Instructions
+## Agent Rules
 
 - Use `IPaymobCashInService` (from `Headless.Payments.Paymob.Services`) for most card/wallet/kiosk cash-in flows. Only drop to `IPaymobCashInBroker` directly when you need raw Paymob API access (order management, legacy payment-key flow).
 - Use `ICashOutService` (from `Headless.Payments.Paymob.Services`) for typed disbursement flows. It translates each channel's request into the correct `CashOutDisburseRequest` factory call and maps status/error codes.

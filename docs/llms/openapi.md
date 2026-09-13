@@ -5,41 +5,9 @@ packages: OpenApi.Nswag, OpenApi.Nswag.OData, OpenApi.Scalar
 
 # OpenAPI
 
-## Table of Contents
-
-- [Quick Orientation](#quick-orientation)
-- [Agent Instructions](#agent-instructions)
-- [Core Concepts](#core-concepts)
-- [Headless.OpenApi.Nswag](#headlessopenapinswag)
-    - [Problem Solved](#problem-solved)
-    - [Key Features](#key-features)
-    - [Design Notes](#design-notes)
-    - [Installation](#installation)
-    - [Quick Start](#quick-start)
-    - [Configuration](#configuration)
-    - [Dependencies](#dependencies)
-    - [Side Effects](#side-effects)
-- [Headless.OpenApi.Nswag.OData](#headlessopenapinswagodata)
-    - [Problem Solved](#problem-solved-1)
-    - [Key Features](#key-features-1)
-    - [Installation](#installation-1)
-    - [Quick Start](#quick-start-1)
-    - [Configuration](#configuration-1)
-    - [Dependencies](#dependencies-1)
-    - [Side Effects](#side-effects-1)
-- [Headless.OpenApi.Scalar](#headlessopenapiscalar)
-    - [Problem Solved](#problem-solved-2)
-    - [Key Features](#key-features-2)
-    - [Design Notes](#design-notes-1)
-    - [Installation](#installation-2)
-    - [Quick Start](#quick-start-2)
-    - [Configuration](#configuration-2)
-    - [Dependencies](#dependencies-2)
-    - [Side Effects](#side-effects-2)
-
 > OpenAPI document generation via NSwag (with FluentValidation schema integration and framework processors) plus OData query-parameter documentation and Scalar UI rendering.
 
-## Quick Orientation
+## Orientation
 
 These three packages are **complementary**, not competing. Each has a distinct role:
 
@@ -66,7 +34,7 @@ app.MapScalarOpenApi();
 
 For versioned APIs, replace `app.MapNswagOpenApi()` with `app.MapNswagOpenApiVersions()`.
 
-## Agent Instructions
+## Agent Rules
 
 - Call `AddNswagOpenApi()` to register OpenAPI document generation. Do NOT call NSwag's `AddOpenApiDocument()` directly — the framework wires all processors in the correct order.
 - **Processor registration order matters**: `GenericNullabilitySchemaProcessor` is registered before `NullabilityAsRequiredSchemaProcessor` intentionally. If you inject processors via `setupGeneratorActions`, add them after the framework processors (they run last) unless the intent is to override defaults.

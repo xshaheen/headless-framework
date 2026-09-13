@@ -5,54 +5,9 @@ packages: PushNotifications.Abstractions, PushNotifications.Core, PushNotificati
 
 # Push Notifications
 
-## Table of Contents
-
-- [Quick Orientation](#quick-orientation)
-- [Agent Instructions](#agent-instructions)
-- [Core Concepts](#core-concepts)
-    - [Default and named clients](#default-and-named-clients)
-    - [Response Status Model](#response-status-model)
-    - [Provider Selection Model](#provider-selection-model)
-    - [Multicast and Batching](#multicast-and-batching)
-- [Choosing a Provider](#choosing-a-provider)
-- [Headless.PushNotifications.Abstractions](#headlesspushnotificationsabstractions)
-    - [Problem Solved](#problem-solved)
-    - [Key Features](#key-features)
-    - [Installation](#installation)
-    - [Quick Start](#quick-start)
-    - [Configuration](#configuration)
-    - [Dependencies](#dependencies)
-    - [Side Effects](#side-effects)
-- [Headless.PushNotifications.Core](#headlesspushnotificationscore)
-    - [Problem Solved](#problem-solved-1)
-    - [Key Features](#key-features-1)
-    - [Design Notes](#design-notes)
-    - [Installation](#installation-1)
-    - [Quick Start](#quick-start-1)
-    - [Configuration](#configuration-1)
-    - [Dependencies](#dependencies-1)
-    - [Side Effects](#side-effects-1)
-- [Headless.PushNotifications.Dev](#headlesspushnotificationsdev)
-    - [Problem Solved](#problem-solved-2)
-    - [Key Features](#key-features-2)
-    - [Installation](#installation-2)
-    - [Quick Start](#quick-start-2)
-    - [Configuration](#configuration-2)
-    - [Dependencies](#dependencies-2)
-    - [Side Effects](#side-effects-2)
-- [Headless.PushNotifications.Firebase](#headlesspushnotificationsfirebase)
-    - [Problem Solved](#problem-solved-3)
-    - [Key Features](#key-features-3)
-    - [Design Notes](#design-notes-1)
-    - [Installation](#installation-3)
-    - [Quick Start](#quick-start-3)
-    - [Configuration](#configuration-3)
-    - [Dependencies](#dependencies-3)
-    - [Side Effects](#side-effects-3)
-
 > Provider-agnostic push notification API with Firebase Cloud Messaging for production and a no-op implementation for development, supporting an optional default service plus any number of named (keyed) instances.
 
-## Quick Orientation
+## Orientation
 
 Install `Headless.PushNotifications.Abstractions` plus one provider package. Register with `AddHeadlessPushNotifications(setup => setup.Use…())` — at most one **default** `Use*` provider per call (the default is optional; a named-only host is supported), plus any number of **named** services via `setup.AddNamed(name, i => i.Use…())`. Code against `IPushNotificationService` for the default; resolve named services with `IPushNotificationServiceProvider.GetService("name")` or `[FromKeyedServices("name")] IPushNotificationService`. Never reference provider-specific types in application code — swap providers by changing DI registration only.
 
@@ -76,7 +31,7 @@ builder.Services.AddHeadlessPushNotifications(setup =>
 
 Use `IPushNotificationService.SendToDeviceAsync` for single-device delivery and `SendMulticastAsync` for batch sends. Always check `PushNotificationResponse.Status` — three states apply: `Success`, `Failure`, and `Unregistered`.
 
-## Agent Instructions
+## Agent Rules
 
 - Register at most one **default** provider per container: `services.AddHeadlessPushNotifications(setup => setup.Use…())`. The default is optional — zero defaults is allowed (a named-only host). Multiple default providers in one delegate, or a repeated `AddHeadlessPushNotifications` on the same `IServiceCollection`, throws `InvalidOperationException` at registration time. The available default `Use*` calls are `UseFirebase` and `UseNoop` — the same set is available on each named instance.
 - Add **named** services in the same call: `setup.AddNamed("name", i => i.Use…())`. Names must be non-whitespace and ordinal-unique within the call, and each named instance must select exactly one provider — a duplicate name, whitespace name, or zero/multiple providers throws at registration time. The default is optional; a named-only host (no default) is supported — the unkeyed `IPushNotificationService` is simply not registered when no default is configured.

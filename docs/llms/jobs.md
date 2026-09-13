@@ -5,100 +5,9 @@ packages: Jobs.Abstractions, Jobs.Core, Jobs.Dashboard, Jobs.SourceGenerator, Jo
 
 # Jobs (Background Jobs)
 
-## Table of Contents
-
-- [Quick Orientation](#quick-orientation)
-- [Agent Instructions](#agent-instructions)
-- [Core Concepts](#core-concepts)
-    - [Job Types](#job-types)
-    - [The `[JobFunction]` Attribute and Source Generator](#the-jobfunction-attribute-and-source-generator)
-    - [Typed Job Chains](#typed-job-chains)
-    - [Lease Model and Sliding Renewal](#lease-model-and-sliding-renewal)
-    - [Distributed Coordination and Node Identity](#distributed-coordination-and-node-identity)
-    - [Commit-Coordinated Enqueue (Atomic Enqueue)](#commit-coordinated-enqueue-atomic-enqueue)
-    - [Tenant Propagation](#tenant-propagation)
-- [Misfire recovery](#misfire-recovery)
-    - [Where the watermark starts](#where-the-watermark-starts)
-    - [When a definition enters recovery](#when-a-definition-enters-recovery)
-    - [Policies](#policies)
-    - [When a row already stands for the instant](#when-a-row-already-stands-for-the-instant)
-    - [Applying a recovery pass](#applying-a-recovery-pass)
-    - [Configuring it](#configuring-it)
-    - [What an executing job sees](#what-an-executing-job-sees)
-    - [Schedule-interpretation drift](#schedule-interpretation-drift)
-- [Choosing a Provider](#choosing-a-provider)
-- [Headless.Jobs.Abstractions](#headlessjobsabstractions)
-    - [Problem Solved](#problem-solved)
-    - [Key Features](#key-features)
-    - [Installation](#installation)
-    - [Quick Start](#quick-start)
-    - [Configuration](#configuration)
-    - [Dependencies](#dependencies)
-    - [Side Effects](#side-effects)
-- [Headless.Jobs.Core](#headlessjobscore)
-    - [Problem Solved](#problem-solved-1)
-    - [Key Features](#key-features-1)
-    - [Design Notes](#design-notes)
-    - [Installation](#installation-1)
-    - [Quick Start](#quick-start-1)
-    - [Middleware](#middleware)
-    - [Configuration](#configuration-1)
-    - [Dependencies](#dependencies-1)
-    - [Side Effects](#side-effects-1)
-- [Headless.Jobs.Dashboard](#headlessjobsdashboard)
-    - [Problem Solved](#problem-solved-2)
-    - [Key Features](#key-features-2)
-    - [Design Notes](#design-notes-1)
-    - [Installation](#installation-2)
-    - [Quick Start](#quick-start-2)
-    - [Configuration](#configuration-2)
-    - [Dependencies](#dependencies-2)
-    - [Side Effects](#side-effects-2)
-- [Headless.Jobs.SourceGenerator](#headlessjobssourcegenerator)
-    - [Problem Solved](#problem-solved-3)
-    - [Key Features](#key-features-3)
-    - [Installation](#installation-3)
-    - [Quick Start](#quick-start-3)
-    - [Configuration](#configuration-3)
-    - [Dependencies](#dependencies-3)
-    - [Side Effects](#side-effects-3)
-- [OpenTelemetry Instrumentation](#opentelemetry-instrumentation)
-    - [Problem Solved](#problem-solved-4)
-    - [Quick Start](#quick-start-4)
-    - [Configuration](#configuration-4)
-    - [Side Effects](#side-effects-4)
-- [Headless.Jobs.EntityFramework](#headlessjobsentityframework)
-    - [Problem Solved](#problem-solved-5)
-    - [Key Features](#key-features-4)
-    - [Design Notes](#design-notes-2)
-    - [Installation](#installation-4)
-    - [Quick Start](#quick-start-5)
-    - [Configuration](#configuration-5)
-    - [Dependencies](#dependencies-4)
-    - [Side Effects](#side-effects-5)
-    - [Error Handling and Retries](#error-handling-and-retries)
-- [Headless.Jobs.EntityFramework.PostgreSql](#headlessjobsentityframeworkpostgresql)
-    - [Problem Solved](#problem-solved-6)
-    - [Key Features](#key-features-5)
-    - [Design Notes](#design-notes-3)
-    - [Installation](#installation-5)
-    - [Quick Start](#quick-start-6)
-    - [Configuration](#configuration-6)
-    - [Dependencies](#dependencies-5)
-    - [Side Effects](#side-effects-6)
-- [Headless.Jobs.EntityFramework.SqlServer](#headlessjobsentityframeworksqlserver)
-    - [Problem Solved](#problem-solved-7)
-    - [Key Features](#key-features-6)
-    - [Design Notes](#design-notes-4)
-    - [Installation](#installation-6)
-    - [Quick Start](#quick-start-7)
-    - [Configuration](#configuration-7)
-    - [Dependencies](#dependencies-6)
-    - [Side Effects](#side-effects-7)
-
 > High-performance background job scheduler for .NET with cron expressions, time-based scheduling, compile-time source-generated registration, and distributed coordination.
 
-## Quick Orientation
+## Orientation
 
 Required packages: `Jobs.Core` + `Jobs.EntityFramework` (persistence) + `Jobs.SourceGenerator` (compile-time job registration). Add the PostgreSQL or SQL Server Jobs EF provider package for native atomic claims; otherwise the EF package uses its portable optimistic-CAS fallback.
 
@@ -135,7 +44,7 @@ builder
 
 Mark job methods with `[JobFunction("name")]` (or `[JobFunction("name", cronExpression: "* * * * *")]` for cron) and add `Jobs.SourceGenerator` for compile-time zero-reflection discovery.
 
-## Agent Instructions
+## Agent Rules
 
 - Treat `(Function, ContractVersion, Request bytes)` as a durable executable contract. A schema change needs an explicit version; do not infer it from CLR names or trace IDs. Initialize storage using the [current contract mappings](../solutions/guides/jobs-versioned-contracts.md) before starting workers or writers.
 - Do NOT use Hangfire or Quartz — use `Headless.Jobs` for all background jobs in this framework.

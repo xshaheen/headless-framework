@@ -5,46 +5,9 @@ packages: Serializer.Abstractions, Serializer.Json, Serializer.MessagePack
 
 # Serialization
 
-## Table of Contents
-
-- [Quick Orientation](#quick-orientation)
-- [Agent Instructions](#agent-instructions)
-- [Core Concepts](#core-concepts)
-    - [The `ISerializer` contract](#the-iserializer-contract)
-    - [Interface hierarchy](#interface-hierarchy)
-    - [Text vs binary trade-off](#text-vs-binary-trade-off)
-- [Choosing a Provider](#choosing-a-provider)
-- [Headless.Serializer.Abstractions](#headlessserializerabstractions)
-    - [Problem Solved](#problem-solved)
-    - [Key Features](#key-features)
-    - [Design Notes](#design-notes)
-    - [Installation](#installation)
-    - [Quick Start](#quick-start)
-    - [Configuration](#configuration)
-    - [Dependencies](#dependencies)
-    - [Side Effects](#side-effects)
-- [Headless.Serializer.Json](#headlessserializerjson)
-    - [Problem Solved](#problem-solved-1)
-    - [Key Features](#key-features-1)
-    - [Design Notes](#design-notes-1)
-    - [Installation](#installation-1)
-    - [Quick Start](#quick-start-1)
-    - [Configuration](#configuration-1)
-    - [Dependencies](#dependencies-1)
-    - [Side Effects](#side-effects-1)
-- [Headless.Serializer.MessagePack](#headlessserializermessagepack)
-    - [Problem Solved](#problem-solved-2)
-    - [Key Features](#key-features-2)
-    - [Design Notes](#design-notes-2)
-    - [Installation](#installation-2)
-    - [Quick Start](#quick-start-2)
-    - [Configuration](#configuration-2)
-    - [Dependencies](#dependencies-2)
-    - [Side Effects](#side-effects-2)
-
 > Provider-agnostic serialization contracts with System.Text.Json and MessagePack implementations for text and binary formats.
 
-## Quick Orientation
+## Orientation
 
 Install `Headless.Serializer.Abstractions` to depend on interfaces only (domain/application layers). Add one provider package for each format needed:
 
@@ -55,7 +18,7 @@ Code against `ISerializer` / `IJsonSerializer` / `IBinarySerializer` from Abstra
 
 Neither provider registers itself into DI automatically — you must call `services.AddSingleton<IJsonSerializer, SystemJsonSerializer>()` or `services.AddSingleton<IBinarySerializer, MessagePackBinarySerializer>()` explicitly.
 
-## Agent Instructions
+## Agent Rules
 
 - Always depend on `ISerializer`, `IJsonSerializer`, or `IBinarySerializer` from `Headless.Serializer.Abstractions`. Never reference `SystemJsonSerializer` or `MessagePackBinarySerializer` in application code.
 - Default to `Headless.Serializer.Json` for general use. Switch to `Headless.Serializer.MessagePack` only when binary performance or payload size matters (e.g., cache entries, internal message envelopes, high-throughput pipelines).
