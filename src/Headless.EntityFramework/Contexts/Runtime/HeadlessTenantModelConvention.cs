@@ -127,6 +127,7 @@ internal sealed class HeadlessTenantModelConvention(DbContext db, string provide
 
                 var name = index.Name;
                 var databaseName = index.GetDatabaseName();
+                var filter = index.GetFilter();
                 var annotations = index.GetAnnotations().ToArray();
                 var directions = index.IsDescending;
                 bool[]? scopedDirections = directions is null
@@ -148,6 +149,8 @@ internal sealed class HeadlessTenantModelConvention(DbContext db, string provide
                 }
                 scoped.IsDescending = scopedDirections;
                 scoped.SetDatabaseName(databaseName);
+                // SQL Server would otherwise exclude nullable host tenants when its index conventions run again.
+                scoped.SetFilter(filter);
             }
         }
     }

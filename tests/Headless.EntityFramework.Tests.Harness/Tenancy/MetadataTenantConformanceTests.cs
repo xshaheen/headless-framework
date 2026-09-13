@@ -281,11 +281,11 @@ public abstract class MetadataTenantConformanceTests<TFixture>(TFixture fixture)
         var model = db.GetService<IDesignTimeModel>().Model;
         var operations = db.GetService<IMigrationsModelDiffer>().GetDifferences(null, model.GetRelationalModel());
         var tables = operations.OfType<CreateTableOperation>().ToArray();
-        tables.Should().HaveCount(2);
+        tables.Should().HaveCount(3);
         foreach (var table in tables)
         {
             table
-                .Columns.Single(x => string.Equals(x.Name, "tenant_key", StringComparison.Ordinal))
+                .Columns.Single(x => x.Name is "tenant_key" or nameof(HostTenantRow.TenantId))
                 .Collation.Should()
                 .Be(fixture.Provider == TenantDatabaseProvider.SqlServer ? "Latin1_General_100_BIN2" : "C");
             table.CheckConstraints.Should().NotBeEmpty();

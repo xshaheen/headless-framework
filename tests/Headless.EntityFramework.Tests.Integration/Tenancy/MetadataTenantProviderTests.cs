@@ -1,5 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Testing.Tests;
+using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.Extensions.DependencyInjection;
+
 namespace Tests.Tenancy;
 
 [CollectionDefinition(DisableParallelization = true)]
@@ -18,3 +25,43 @@ public sealed class PostgreSqlMetadataTenantConformanceTests(PostgreSqlMetadataT
 [Collection<MetadataTenantCollection>]
 public sealed class SqlServerMetadataTenantConformanceTests(SqlServerMetadataTenantFixture fixture)
     : MetadataTenantConformanceTests<SqlServerMetadataTenantFixture>(fixture);
+
+[Collection<MetadataTenantCollection>]
+public sealed class SqlServerTenantIndexTests(SqlServerMetadataTenantFixture fixture) : TestBase
+{
+    public override async ValueTask InitializeAsync()
+    {
+        await base.InitializeAsync();
+        await fixture.ResetAsync(AbortToken);
+    }
+
+    [Fact]
+    public async Task should_preserve_absent_and_conventional_filters_when_scoping_nullable_tenant_indexes()
+    {
+        await using var scope = fixture.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<MetadataTenantContext>();
+        var entity = db.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(HostTenantRow))!;
+        var indexes = entity.GetIndexes().ToArray();
+        indexes.Single(x => x.Properties[0].Name == nameof(HostTenantRow.Code)).GetFilter().Should().BeNull();
+        indexes
+            .Single(x => x.Properties[0].Name == nameof(HostTenantRow.OptionalCode))
+            .GetFilter()
+            .Should()
+            .Be("[OptionalCode] IS NOT NULL");
+    }
+
+    [Fact]
+    public async Task should_reject_duplicate_host_business_keys_after_scoping_index()
+    {
+        fixture.CurrentTenant.Id = null;
+        await using var scope = fixture.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<MetadataTenantContext>();
+        Func<Task> insert = () =>
+            db.Database.ExecuteSqlInterpolatedAsync(
+                $"INSERT INTO [tenancy].[HostRows] ([Id], [Code], [TenantId]) VALUES ({Guid.NewGuid()}, {"host-code"}, NULL)",
+                AbortToken
+            );
+        await insert();
+        await insert.Should().ThrowAsync<SqlException>();
+    }
+}

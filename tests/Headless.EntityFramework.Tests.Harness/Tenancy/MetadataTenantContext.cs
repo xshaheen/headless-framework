@@ -32,6 +32,13 @@ public sealed class MetadataTenantContext(
         shadow.Property<string>("TenantId").HasColumnName("tenant_key").HasMaxLength(41);
         shadow.HasAlternateKey("TenantId", "Id");
         shadow.Property(x => x.Stamp).IsConcurrencyToken();
+        var host = modelBuilder.Entity<HostTenantRow>();
+        host.ToTable("HostRows");
+        host.Property(x => x.TenantId).HasMaxLength(41);
+        host.Property(x => x.Code).HasMaxLength(100);
+        host.Property(x => x.OptionalCode).HasMaxLength(100);
+        host.HasIndex(x => x.Code).IsUnique().IsTenantScoped();
+        host.HasIndex(x => x.OptionalCode).IsUnique().IsTenantScoped();
     }
 }
 
@@ -47,6 +54,14 @@ public sealed class TenantRow : IDeleteAudit
     public DateTimeOffset? DeletedAt { get; set; }
     public DateTimeOffset? RestoredAt { get; set; }
     public TenantDetail Detail { get; set; } = new();
+}
+
+public sealed class HostTenantRow : IMultiTenant
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string? TenantId { get; set; }
+    public string Code { get; set; } = "host-code";
+    public string? OptionalCode { get; set; }
 }
 
 public sealed class TenantDetail
