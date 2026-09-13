@@ -56,33 +56,20 @@ public interface IDataStorage
         return new InboxAdmissionResult(InboxAdmissionDisposition.Winner, stored);
     }
 
-    /// <summary>
-    /// Marks a claimed inbox generation as orphaned or resolved. Implementations must condition the mutation on
-    /// the exact row, lane, owner, and <c>LockedUntil</c> claim returned by pickup.
-    /// </summary>
-    ValueTask<bool> MarkReceivedInboxOrphanedAsync(
-        MediumMessage message,
-        bool orphaned,
-        CancellationToken cancellationToken = default
-    ) => ValueTask.FromResult(false);
-
     /// <summary>Defers a missing registration by the configured orphan probe interval and releases ownership atomically under the complete attempt fence. Does not consume failure retries.</summary>
-    ValueTask<bool> DeferReceivedInboxOrphanAsync(
-        MediumMessage message,
-        CancellationToken cancellationToken = default
-    ) => ValueTask.FromResult(false);
+    ValueTask<bool> DeferReceivedInboxOrphanAsync(MediumMessage message, CancellationToken cancellationToken = default);
 
     /// <summary>Confirms routability under the complete live attempt fence and clears orphan state. Returns true even when already routable; false forbids dispatch.</summary>
     ValueTask<bool> ConfirmReceivedInboxRoutableAsync(
         MediumMessage message,
         CancellationToken cancellationToken = default
-    ) => ValueTask.FromResult(false);
+    );
 
     /// <summary>Claims due known orphans using a separate capped batch per lane, minting fresh attempts in the existing generation.</summary>
     ValueTask<IEnumerable<MediumMessage>> GetReceivedInboxOrphansOfNeedRetryAsync(
         MessageLane lane,
         CancellationToken cancellationToken = default
-    ) => ValueTask.FromResult<IEnumerable<MediumMessage>>([]);
+    );
 
     /// <summary>
     /// Transitions the specified published message rows to the <c>Delayed</c> state for deferred dispatch.

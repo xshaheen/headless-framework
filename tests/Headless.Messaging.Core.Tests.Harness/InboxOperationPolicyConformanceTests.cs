@@ -197,7 +197,11 @@ public abstract class InboxOperationPolicyConformanceTests : TestBase
         await _LeaseAsync(storage, message);
         if (orphaned)
         {
-            (await storage.MarkReceivedInboxOrphanedAsync(message, true, AbortToken)).Should().BeTrue();
+            // Deferral releases the claim, so re-lease to keep an orphan under a live execution claim.
+            (await storage.DeferReceivedInboxOrphanAsync(message, AbortToken))
+                .Should()
+                .BeTrue();
+            await _LeaseAsync(storage, message);
         }
         (await operations.HoldAsync(_Request(incarnation, StatusName.Scheduled), AbortToken))
             .Outcome.Should()

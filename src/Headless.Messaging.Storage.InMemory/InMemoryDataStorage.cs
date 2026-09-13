@@ -627,40 +627,6 @@ internal sealed partial class InMemoryDataStorage(
         }
     }
 
-    public ValueTask<bool> MarkReceivedInboxOrphanedAsync(
-        MediumMessage message,
-        bool orphaned,
-        CancellationToken cancellationToken = default
-    )
-    {
-        lock (_receivedUpsertLock)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (!ReceivedMessages.TryGetValue(message.StorageId, out var current))
-            {
-                return ValueTask.FromResult(false);
-            }
-
-            lock (current)
-            {
-                if (current.InboxKey is null || !_MatchesInboxFence(current, message.InboxAttemptFence))
-                {
-                    return ValueTask.FromResult(false);
-                }
-
-                if (current.IsInboxOrphaned == orphaned)
-                {
-                    message.IsInboxOrphaned = orphaned;
-                    return ValueTask.FromResult(false);
-                }
-
-                current.IsInboxOrphaned = orphaned;
-                message.IsInboxOrphaned = orphaned;
-                return ValueTask.FromResult(true);
-            }
-        }
-    }
-
     public ValueTask<MediumMessage> StoreMessageAsync(
         string name,
         MediumMessage message,

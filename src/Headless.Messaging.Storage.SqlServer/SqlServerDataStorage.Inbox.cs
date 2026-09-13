@@ -211,24 +211,18 @@ internal sealed partial class SqlServerDataStorage
     public ValueTask<bool> DeferReceivedInboxOrphanAsync(
         MediumMessage message,
         CancellationToken cancellationToken = default
-    ) => _SetInboxRoutabilityAsync(message, orphaned: true, defer: true, acceptUnchanged: true, cancellationToken);
+    ) => _SetInboxRoutabilityAsync(message, orphaned: true, cancellationToken);
 
     public ValueTask<bool> ConfirmReceivedInboxRoutableAsync(
         MediumMessage message,
         CancellationToken cancellationToken = default
-    ) => _SetInboxRoutabilityAsync(message, orphaned: false, defer: false, acceptUnchanged: true, cancellationToken);
+    ) => _SetInboxRoutabilityAsync(message, orphaned: false, cancellationToken);
 
-    public ValueTask<bool> MarkReceivedInboxOrphanedAsync(
-        MediumMessage message,
-        bool orphaned,
-        CancellationToken cancellationToken = default
-    ) => _SetInboxRoutabilityAsync(message, orphaned, defer: false, acceptUnchanged: false, cancellationToken);
-
+    // Orphaning defers the probe and releases ownership; confirming keeps the live claim so the caller can dispatch.
+    // Both accept an already-matching orphan flag because the fence, not a state change, authorizes the caller.
     private async ValueTask<bool> _SetInboxRoutabilityAsync(
         MediumMessage message,
         bool orphaned,
-        bool defer,
-        bool acceptUnchanged,
         CancellationToken cancellationToken = default
     )
     {
@@ -241,9 +235,9 @@ internal sealed partial class SqlServerDataStorage
         var sql = $"""
             UPDATE {_receivedTable}
             SET [IsInboxOrphaned]=@IsInboxOrphaned,
-                [NextRetryAt]=CASE WHEN @Defer=1 THEN @NextRetryAt ELSE [NextRetryAt] END,
-                [Owner]=CASE WHEN @Defer=1 THEN NULL ELSE [Owner] END,
-                [LockedUntil]=CASE WHEN @Defer=1 THEN NULL ELSE [LockedUntil] END
+                [NextRetryAt]=CASE WHEN @IsInboxOrphaned=1 THEN @NextRetryAt ELSE [NextRetryAt] END,
+                [Owner]=CASE WHEN @IsInboxOrphaned=1 THEN NULL ELSE [Owner] END,
+                [LockedUntil]=CASE WHEN @IsInboxOrphaned=1 THEN NULL ELSE [LockedUntil] END
             WHERE [Id]=@Id
               AND [IntentType]=@IntentType
               AND [Generation]=@Generation
@@ -251,13 +245,10 @@ internal sealed partial class SqlServerDataStorage
               AND [AttemptId]=@AttemptId
               AND ([Owner]=@Owner OR ([Owner] IS NULL AND @Owner IS NULL))
               AND [LockedUntil]=@LockedUntil
-              AND [LockedUntil]>SYSUTCDATETIME()
-              AND (@AcceptUnchanged=1 OR [IsInboxOrphaned]<>@IsInboxOrphaned);
+              AND [LockedUntil]>SYSUTCDATETIME();
             """;
         object[] parameters =
         [
-            new SqlParameter("@Defer", SqlDbType.Bit) { Value = defer },
-            new SqlParameter("@AcceptUnchanged", SqlDbType.Bit) { Value = acceptUnchanged },
             new SqlParameter("@NextRetryAt", SqlDbType.DateTimeOffset) { Value = nextRetryAt },
             new SqlParameter("@IsInboxOrphaned", SqlDbType.Bit) { Value = orphaned },
             new SqlParameter("@Id", fence.StorageId),
@@ -287,7 +278,7 @@ internal sealed partial class SqlServerDataStorage
         if (changed == 1)
         {
             message.IsInboxOrphaned = orphaned;
-            if (defer)
+            if (orphaned)
             {
                 message.NextRetryAt = nextRetryAt;
                 message.Owner = null;

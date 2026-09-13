@@ -521,6 +521,9 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
                         continue;
                     }
 
+                    // Confirm accepts unchanged rows and clears the flag on the message, so capture the
+                    // pickup-projected state first: only a real orphan-to-routable transition is a recovery.
+                    var wasOrphaned = message.IsInboxOrphaned;
                     var routable = await connection
                         .ConfirmReceivedInboxRoutableAsync(message, CancellationToken.None)
                         .ConfigureAwait(false);
@@ -528,7 +531,10 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
                     {
                         continue;
                     }
-                    _RecordInboxRecovery(message, InboxMetricOutcome.Routable);
+                    if (wasOrphaned)
+                    {
+                        _RecordInboxRecovery(message, InboxMetricOutcome.Routable);
+                    }
                     message.Origin.Headers[Headers.Group] = descriptor.GroupName;
                 }
 

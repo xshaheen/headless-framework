@@ -1922,6 +1922,8 @@ History retention uses the shared `MessagingOptions` defaults: cleanup receipts/
 
 Fresh schemas directly create `([StatusName],[Added])` indexes for dashboard timelines/statistics. The initializer creates the final schema shape and does not carry legacy migration DDL.
 
+- **`DdlCommandTimeout`** (`TimeSpan?`, default `null`): timeout for schema-init DDL that grows with table size. That covers the history-table index builds on `InboxOperationReceipts` and `InboxAudit`, plus the `sp_getapplock` wait that serializes initializers. It is separate from the OLTP `MessagingOptions.CommandTimeout` (~30s) because upgraded schemas already hold an unbounded history backlog. The builds run offline, since `ONLINE = ON` depends on the edition, and block writes to that history table until they finish. Each index is its own command, run while the initializer lock is held. Inbox readiness is published only after the builds finish, so peer replicas wait instead of failing. `null` and `TimeSpan.Zero` mean **no timeout**. A negative value is rejected at validation time.
+
 ### Dependencies
 
 Microsoft.Data.SqlClient, `Headless.Messaging.Core`.

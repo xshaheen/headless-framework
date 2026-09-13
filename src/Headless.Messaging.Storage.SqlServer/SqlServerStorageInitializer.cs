@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
 using Microsoft.Data.SqlClient;
@@ -40,7 +41,9 @@ internal sealed class SqlServerStorageInitializer(
     /// Creates the messaging schema, tables, indexes, and the <c>HeadlessMessagingIdList</c>
     /// table-valued parameter type if they do not already exist. Concurrent initializers are serialized
     /// with a session-scoped <c>sp_getapplock</c>; each DDL block remains independently idempotent so a
-    /// later initialization can repair a partially completed schema.
+    /// later initialization can repair a partially completed schema. History-table indexes are built as
+    /// separate commands under <see cref="SqlServerOptions.DdlCommandTimeout"/> before inbox readiness is
+    /// published.
     /// </summary>
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
@@ -49,28 +52,177 @@ internal sealed class SqlServerStorageInitializer(
             return;
         }
 
-        var sql = _CreateDbTablesScript(options.Value.Schema);
+        var schema = options.Value.Schema;
+        var lockResource = $"headless_messaging_init:{schema}";
         await using var connection = new SqlConnection(options.Value.ConnectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
-        // No wrapping transaction: each idempotent block in the script is already protected by
-        // its own IF NOT EXISTS guard plus a narrow TRY/CATCH. The session-scoped application lock
-        // serializes the full repair sequence across concurrent startups. A wrapping transaction would
-        // interact poorly with sessions that have SET XACT_ABORT ON — statement-level errors
-        // doom the transaction (XACT_STATE = -1), the inner CATCH swallows the error, but the
-        // outer COMMIT then fails with 3930, masking the real cause. A mid-script abort
-        // (network drop, transient timeout) without the transaction just leaves a partially
-        // initialized schema that the next initialize pass re-creates piece-by-piece because
-        // every block is guarded by IF NOT EXISTS.
-        await connection
-            .ExecuteNonQueryAsync(
-                sql,
-                commandTimeout: messagingOptions.Value.CommandTimeout,
-                cancellationToken: cancellationToken
-            )
-            .ConfigureAwait(false);
+        try
+        {
+            // The lock wait uses the DDL timeout, not the OLTP one: a peer replica can hold this lock
+            // across a long history-index build below, so a 30s wait would fail this replica's startup
+            // while the peer legitimately builds.
+            await connection
+                .ExecuteNonQueryAsync(
+                    _CreateAcquireInitLockScript(lockResource),
+                    commandTimeout: _GetDdlCommandTimeout(),
+                    cancellationToken: cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            // No wrapping transaction: each idempotent block in the script is already protected by
+            // its own IF NOT EXISTS guard plus a narrow TRY/CATCH. The session-scoped application lock
+            // serializes the full repair sequence across concurrent startups. A wrapping transaction would
+            // interact poorly with sessions that have SET XACT_ABORT ON — statement-level errors
+            // doom the transaction (XACT_STATE = -1), the inner CATCH swallows the error, but the
+            // outer COMMIT then fails with 3930, masking the real cause. A mid-script abort
+            // (network drop, transient timeout) without the transaction just leaves a partially
+            // initialized schema that the next initialize pass re-creates piece-by-piece because
+            // every block is guarded by IF NOT EXISTS.
+            await connection
+                .ExecuteNonQueryAsync(
+                    _CreateDbTablesScript(schema),
+                    commandTimeout: messagingOptions.Value.CommandTimeout,
+                    cancellationToken: cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            // History tables grow without bound and already exist on upgraded schemas, so an index added
+            // to them is an offline build over the full backlog that can far exceed the OLTP
+            // CommandTimeout. Build each one as its own command under the DDL timeout, still holding the
+            // init lock. ONLINE = ON is edition-dependent, so the builds stay offline.
+            foreach (var indexSql in _CreateHistoryIndexScripts(schema))
+            {
+                await connection
+                    .ExecuteNonQueryAsync(
+                        indexSql,
+                        commandTimeout: _GetDdlCommandTimeout(),
+                        cancellationToken: cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
+
+            await connection
+                .ExecuteNonQueryAsync(
+                    _CreateInboxReadinessScript(schema),
+                    commandTimeout: messagingOptions.Value.CommandTimeout,
+                    cancellationToken: cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            await _ReleaseInitLockAsync(connection, lockResource).ConfigureAwait(false);
+        }
 
         logger.LogEnsuringTablesCreated();
+    }
+
+    // CommandTimeout 0 => no timeout (wait indefinitely). See SqlServerOptions.DdlCommandTimeout.
+    private TimeSpan _GetDdlCommandTimeout()
+    {
+        return options.Value.DdlCommandTimeout ?? TimeSpan.Zero;
+    }
+
+    private static string _CreateAcquireInitLockScript(string lockResource)
+    {
+        // @LockTimeout = -1 waits indefinitely server-side; the client DDL command timeout bounds the wait.
+        return $"""
+            DECLARE @lockResult int;
+            EXEC @lockResult = sp_getapplock @Resource = N'{lockResource}', @LockMode = N'Exclusive', @LockOwner = N'Session', @LockTimeout = -1;
+            IF @lockResult < 0
+            BEGIN
+                DECLARE @lockError nvarchar(200) = N'Headless.Messaging: failed to acquire init lock on the messaging schema (sp_getapplock returned ' + CAST(@lockResult AS nvarchar(11)) + N').';
+                THROW 50000, @lockError, 1;
+            END;
+            """;
+    }
+
+    private async Task _ReleaseInitLockAsync(SqlConnection connection, string lockResource)
+    {
+        // A broken connection is discarded by the pool, which ends the session and its lock. Releasing
+        // explicitly on a live connection matters because a pooled session is not reset until reuse.
+        if (connection.State != ConnectionState.Open)
+        {
+            return;
+        }
+
+        try
+        {
+            await connection
+                .ExecuteNonQueryAsync(
+                    $"""
+                    IF APPLOCK_MODE('public', N'{lockResource}', 'Session') <> 'NoLock'
+                        EXEC sp_releaseapplock @Resource = N'{lockResource}', @LockOwner = N'Session';
+                    """,
+                    commandTimeout: messagingOptions.Value.CommandTimeout,
+                    cancellationToken: CancellationToken.None
+                )
+                .ConfigureAwait(false);
+        }
+        catch (SqlException)
+        {
+            // intentional: a release failure must not replace the original initializer failure; closing
+            // the connection remains the backstop for this session-scoped lock.
+        }
+    }
+
+    private static string[] _CreateHistoryIndexScripts(string schema)
+    {
+        return
+        [
+            _CreateHistoryIndexScript(
+                schema,
+                "InboxOperationReceipts",
+                $"IX_{schema}_InboxReceipts_Type_CreatedAt",
+                "[OperationType],[CreatedAt]"
+            ),
+            _CreateHistoryIndexScript(
+                schema,
+                "InboxAudit",
+                $"IX_{schema}_InboxAudit_Type_CreatedAt",
+                "[OperationType],[CreatedAt]"
+            ),
+            _CreateHistoryIndexScript(schema, "InboxAudit", $"IX_{schema}_InboxAudit_Operation", "[OperationId]"),
+        ];
+    }
+
+    private static string _CreateHistoryIndexScript(string schema, string table, string indexName, string columns)
+    {
+        // 1913/2714 absorb a concurrent creator that raced past the IF NOT EXISTS probe.
+        return $"""
+            BEGIN TRY
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'{indexName}' AND object_id=OBJECT_ID(N'{schema}.{table}'))
+                    CREATE NONCLUSTERED INDEX [{indexName}] ON [{schema}].[{table}] ({columns});
+            END TRY
+            BEGIN CATCH
+                IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
+            END CATCH;
+            """;
+    }
+
+    private string _CreateInboxReadinessScript(string schema)
+    {
+        var receivedPrefix = $"{schema}_Received";
+
+        return $"""
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'UX_{receivedPrefix}_InboxRootKey' AND object_id=OBJECT_ID(N'{GetReceivedTableName()}'))
+               OR NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'UX_{receivedPrefix}_InboxLifecycleGeneration' AND object_id=OBJECT_ID(N'{GetReceivedTableName()}'))
+                THROW 50002, N'Headless.Messaging inbox schema is incomplete: the final inbox key index is missing.', 1;
+
+            IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name=N'CK_{receivedPrefix}_InboxRetentionV3')
+               OR COL_LENGTH(N'{GetReceivedTableName()}',N'LifecycleId') IS NULL
+               OR NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name=N'CK_{receivedPrefix}_InboxLifecycleV4' AND parent_object_id=OBJECT_ID(N'{GetReceivedTableName()}'))
+               OR COL_LENGTH(N'{schema}.InboxOperationReceipts',N'ExpectedStatus') IS NULL
+               OR COL_LENGTH(N'{schema}.InboxOperationReceipts',N'Outcome') IS NULL
+                THROW 50004, N'Headless.Messaging inbox schema is incomplete: the lifecycle, retention or operation receipt contract is missing.', 1;
+
+            MERGE [{schema}].[SchemaState] WITH (HOLDLOCK) AS target
+            USING (SELECT N'inbox' AS [Component], 4 AS [SchemaVersion], SYSDATETIMEOFFSET() AS [ReadyAt]) AS source
+            ON target.[Component]=source.[Component]
+            WHEN MATCHED THEN UPDATE SET [SchemaVersion]=source.[SchemaVersion],[ReadyAt]=source.[ReadyAt]
+            WHEN NOT MATCHED THEN INSERT ([Component],[SchemaVersion],[ReadyAt]) VALUES (source.[Component],source.[SchemaVersion],source.[ReadyAt]);
+            """;
     }
 
     private string _CreateDbTablesScript(string schema)
@@ -86,15 +238,10 @@ internal sealed class SqlServerStorageInitializer(
         //   2714 — "There is already an object named '...' in the database." (schema/table races)
         //   1913 — index already exists (index creation races)
         //   2627 — "Violation of PRIMARY KEY constraint." (lock-row INSERT races)
-        var lockResource = $"headless_messaging_init:{schema}";
+        // The caller holds the session init lock for this script, the history-index builds, and readiness.
         var batchSql = string.Create(
             CultureInfo.InvariantCulture,
             $"""
-            DECLARE @lockResult int;
-            EXEC @lockResult = sp_getapplock @Resource = N'{lockResource}', @LockMode = N'Exclusive', @LockOwner = N'Session', @LockTimeout = 30000;
-            IF @lockResult < 0 THROW 50000, N'Headless.Messaging: failed to acquire init lock on the messaging schema. Another initializer may be holding it.', 1;
-
-            BEGIN TRY
             BEGIN TRY
                 IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = '{schema}')
                 BEGIN
@@ -418,16 +565,6 @@ internal sealed class SqlServerStorageInitializer(
                 CREATE NONCLUSTERED INDEX [IX_{schema}_InboxAudit_Incarnation_CreatedAt]
                     ON [{schema}].[InboxAudit] ([GenerationIncarnationId],[CreatedAt]);
 
-            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'IX_{schema}_InboxReceipts_Type_CreatedAt' AND object_id=OBJECT_ID(N'{schema}.InboxOperationReceipts'))
-                CREATE NONCLUSTERED INDEX [IX_{schema}_InboxReceipts_Type_CreatedAt]
-                    ON [{schema}].[InboxOperationReceipts] ([OperationType],[CreatedAt]);
-            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'IX_{schema}_InboxAudit_Type_CreatedAt' AND object_id=OBJECT_ID(N'{schema}.InboxAudit'))
-                CREATE NONCLUSTERED INDEX [IX_{schema}_InboxAudit_Type_CreatedAt]
-                    ON [{schema}].[InboxAudit] ([OperationType],[CreatedAt]);
-            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'IX_{schema}_InboxAudit_Operation' AND object_id=OBJECT_ID(N'{schema}.InboxAudit'))
-                CREATE NONCLUSTERED INDEX [IX_{schema}_InboxAudit_Operation]
-                    ON [{schema}].[InboxAudit] ([OperationId]);
-
             IF OBJECT_ID(N'{schema}.SchemaState',N'U') IS NULL
             BEGIN
                 CREATE TABLE [{schema}].[SchemaState](
@@ -437,38 +574,6 @@ internal sealed class SqlServerStorageInitializer(
                     CONSTRAINT [PK_{schema}_SchemaState] PRIMARY KEY CLUSTERED ([Component])
                 );
             END;
-
-            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'UX_{receivedPrefix}_InboxRootKey' AND object_id=OBJECT_ID(N'{GetReceivedTableName()}'))
-               OR NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'UX_{receivedPrefix}_InboxLifecycleGeneration' AND object_id=OBJECT_ID(N'{GetReceivedTableName()}'))
-                THROW 50002, N'Headless.Messaging inbox schema is incomplete: the final inbox key index is missing.', 1;
-
-            IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name=N'CK_{receivedPrefix}_InboxRetentionV3')
-               OR COL_LENGTH(N'{GetReceivedTableName()}',N'LifecycleId') IS NULL
-               OR NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name=N'CK_{receivedPrefix}_InboxLifecycleV4' AND parent_object_id=OBJECT_ID(N'{GetReceivedTableName()}'))
-               OR COL_LENGTH(N'{schema}.InboxOperationReceipts',N'ExpectedStatus') IS NULL
-               OR COL_LENGTH(N'{schema}.InboxOperationReceipts',N'Outcome') IS NULL
-                THROW 50004, N'Headless.Messaging inbox schema is incomplete: the lifecycle, retention or operation receipt contract is missing.', 1;
-
-            MERGE [{schema}].[SchemaState] WITH (HOLDLOCK) AS target
-            USING (SELECT N'inbox' AS [Component], 4 AS [SchemaVersion], SYSDATETIMEOFFSET() AS [ReadyAt]) AS source
-            ON target.[Component]=source.[Component]
-            WHEN MATCHED THEN UPDATE SET [SchemaVersion]=source.[SchemaVersion],[ReadyAt]=source.[ReadyAt]
-            WHEN NOT MATCHED THEN INSERT ([Component],[SchemaVersion],[ReadyAt]) VALUES (source.[Component],source.[SchemaVersion],source.[ReadyAt]);
-
-                EXEC sp_releaseapplock @Resource = N'{lockResource}', @LockOwner = N'Session';
-            END TRY
-            BEGIN CATCH
-                -- Keep release failures from replacing the original DDL exception. Closing the
-                -- connection remains a backstop for this session-scoped lock.
-                BEGIN TRY
-                    IF APPLOCK_MODE('public', N'{lockResource}', 'Session') <> 'NoLock'
-                        EXEC sp_releaseapplock @Resource = N'{lockResource}', @LockOwner = N'Session';
-                END TRY
-                BEGIN CATCH
-                    -- intentional: preserve the original initializer failure
-                END CATCH;
-                THROW;
-            END CATCH;
 
             """
         );

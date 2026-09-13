@@ -55,7 +55,8 @@ public sealed class InMemoryInboxOperationPolicyTests : InboxOperationPolicyConf
         var storage = provider.GetRequiredService<IDataStorage>();
         var message = await _AdmitAsync(storage, lane);
         await _LeaseAsync(storage, message);
-        (await storage.MarkReceivedInboxOrphanedAsync(message, true, AbortToken)).Should().BeTrue();
+        (await storage.DeferReceivedInboxOrphanAsync(message, AbortToken)).Should().BeTrue();
+        await _LeaseAsync(storage, message);
         var operations = storage.GetInboxOperationsApi();
         var incarnation = message.InboxGeneration!.IncarnationId;
         (await operations.HoldAsync(_Request(incarnation, StatusName.Scheduled), AbortToken))

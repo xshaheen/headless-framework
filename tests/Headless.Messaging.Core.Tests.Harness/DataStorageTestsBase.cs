@@ -268,9 +268,17 @@ public abstract class DataStorageTestsBase : TestBase
             InboxAttemptFence = first.Message.InboxAttemptFence! with { AttemptId = Guid.NewGuid() },
         };
 
-        (await storage.MarkReceivedInboxOrphanedAsync(stale, orphaned: true, AbortToken)).Should().BeFalse();
-        (await storage.MarkReceivedInboxOrphanedAsync(first.Message, orphaned: true, AbortToken)).Should().BeTrue();
-        (await storage.MarkReceivedInboxOrphanedAsync(first.Message, orphaned: true, AbortToken)).Should().BeFalse();
+        (await storage.ConfirmReceivedInboxRoutableAsync(stale, AbortToken))
+            .Should()
+            .BeFalse("a stale attempt fence must not authorize dispatch");
+        (await storage.DeferReceivedInboxOrphanAsync(stale, AbortToken))
+            .Should()
+            .BeFalse("a stale attempt fence must not release the live claim");
+        (await storage.ConfirmReceivedInboxRoutableAsync(first.Message, AbortToken)).Should().BeTrue();
+        (await storage.ConfirmReceivedInboxRoutableAsync(first.Message, AbortToken))
+            .Should()
+            .BeTrue("confirming an already routable generation under its live fence is idempotent");
+        first.Message.LockedUntil.Should().NotBeNull("confirmation keeps the execution claim");
 
         var releaseStorage = storage.Should().BeAssignableTo<IGracefulLeaseReleaseStorage>().Subject;
         var exactIdentity = new MessageLeaseIdentity(

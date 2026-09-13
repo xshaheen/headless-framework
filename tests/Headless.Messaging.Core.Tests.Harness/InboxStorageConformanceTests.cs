@@ -131,7 +131,21 @@ public abstract class InboxStorageConformanceTests : TestBase
                 .BeTrue();
             if (i < 4)
             {
-                (await storage.MarkReceivedInboxOrphanedAsync(message, true, AbortToken)).Should().BeTrue();
+                // Deferral releases the claim; re-lease so the due-time mutation below runs under a live fence.
+                (await storage.DeferReceivedInboxOrphanAsync(message, AbortToken))
+                    .Should()
+                    .BeTrue();
+                var deferredAttempts = message.InlineAttempts++;
+                (
+                    await storage.LeaseReceiveAndReserveAttemptAsync(
+                        message,
+                        TimeSpan.FromMinutes(5),
+                        deferredAttempts,
+                        AbortToken
+                    )
+                )
+                    .Should()
+                    .BeTrue();
                 orphanIds.Add(message.StorageId);
             }
             else

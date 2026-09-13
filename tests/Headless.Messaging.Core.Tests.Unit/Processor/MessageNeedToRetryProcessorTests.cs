@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using System.Diagnostics.Metrics;
 using System.Reflection;
 using Headless.DistributedLocks;
 using Headless.Messaging;
@@ -56,7 +57,10 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         };
     }
 
-    private static ConsumerExecutorDescriptor _CreateInboxDescriptor(string group = "renamed-group")
+    private static ConsumerExecutorDescriptor _CreateInboxDescriptor(
+        string group = "renamed-group",
+        string consumerIdentity = "tests.retry.stable-consumer"
+    )
     {
         return new ConsumerExecutorDescriptor
         {
@@ -70,7 +74,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             ImplTypeInfo = typeof(object).GetTypeInfo(),
             MessageName = "test.messageName",
             GroupName = group,
-            ConsumerIdentity = "tests.retry.stable-consumer",
+            ConsumerIdentity = consumerIdentity,
             MessageContractVersion = "v1",
             Lane = MessageLane.Bus,
         };
@@ -544,6 +548,125 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         message.Origin.GetGroup().Should().Be(accepted ? "renamed-group" : "obsolete-group");
         await storage.Received(1).ConfirmReceivedInboxRoutableAsync(message, CancellationToken.None);
         await dispatcher.Received(accepted ? 1 : 0).EnqueueToExecute(message, null, Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData(false, 0)]
+    [InlineData(true, 1)]
+    public async Task inbox_retry_should_record_routable_recovery_only_when_message_was_orphaned(
+        bool wasOrphaned,
+        int expectedRoutableRecoveries
+    )
+    {
+        // The meter is process-global; a per-test consumer identity isolates measurements from parallel tests.
+        var consumerIdentity = $"tests.retry.routable-metric.{Guid.NewGuid():N}";
+        var message = _CreateMessage("obsolete-group");
+        message.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(1);
+        message.Owner = "node-a";
+        message.IsInboxOrphaned = wasOrphaned;
+        message.InboxKey = new InboxKey(
+            TenantId: null,
+            message.Origin.Id,
+            MessageLane.Bus,
+            message.Origin.Name,
+            "v1",
+            consumerIdentity,
+            Generation: 0
+        );
+
+        var storage = Substitute.For<IDataStorage>();
+        _SetupReceivedMessages(storage, message);
+        storage
+            .ConfirmReceivedInboxRoutableAsync(message, Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                // Mirrors the providers: an accepted confirm clears the flag on the in-flight message.
+                message.IsInboxOrphaned = false;
+                return ValueTask.FromResult(true);
+            });
+        var selector = Substitute.For<IConsumerServiceSelector>();
+        var descriptor = _CreateInboxDescriptor(consumerIdentity: consumerIdentity);
+        selector.SelectCandidates().Returns([descriptor]);
+        selector
+            .SelectBestCandidate("test.messageName", Arg.Any<IReadOnlyList<ConsumerExecutorDescriptor>>())
+            .Returns(descriptor);
+        var dispatcher = Substitute.For<IDispatcher>();
+        var capabilityModel = MessagingCapabilityModel.Compose([
+            MessagingProviderCapabilities.Storage(
+                "TestStorage",
+                [MessageLane.Bus, MessageLane.Queue],
+                supportsDelayedScheduling: true,
+                inboxCapability: MessagingInboxCapabilityTier.Transactional
+            ),
+        ]);
+        var sut = new MessageNeedToRetryProcessor(
+            Options.Create(new MessagingOptions()),
+            Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.Zero, AdaptivePolling = false }),
+            NullLogger<MessageNeedToRetryProcessor>.Instance,
+            dispatcher,
+            Substitute.For<IDistributedLock>(),
+            consumerResolver: new MethodMatcherCache(selector),
+            capabilityModel: capabilityModel
+        );
+        await using var context = _CreateContext(
+            new ServiceCollection().AddSingleton(storage).BuildServiceProvider(),
+            cancellationToken: AbortToken
+        );
+        var measurements = new ConcurrentBag<(string Name, KeyValuePair<string, object?>[] Tags)>();
+        using var listener = _StartInboxRecoveryListener(measurements, consumerIdentity);
+
+        await _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus);
+
+        measurements
+            .Count(measurement =>
+                string.Equals(measurement.Name, MessagingMetrics.InboxRecoveriesName, StringComparison.Ordinal)
+                && measurement.Tags.Any(tag =>
+                    string.Equals(tag.Key, MessagingTags.InboxOutcome, StringComparison.Ordinal)
+                    && string.Equals(tag.Value as string, "Routable", StringComparison.Ordinal)
+                )
+            )
+            .Should()
+            .Be(expectedRoutableRecoveries);
+        await storage.Received(1).ConfirmReceivedInboxRoutableAsync(message, CancellationToken.None);
+        await dispatcher.Received(1).EnqueueToExecute(message, null, Arg.Any<CancellationToken>());
+    }
+
+    private static MeterListener _StartInboxRecoveryListener(
+        ConcurrentBag<(string Name, KeyValuePair<string, object?>[] Tags)> captured,
+        string consumerIdentity
+    )
+    {
+        var listener = new MeterListener
+        {
+            InstrumentPublished = (instrument, l) =>
+            {
+                if (
+                    string.Equals(instrument.Meter.Name, MessagingDiagnostics.SourceName, StringComparison.Ordinal)
+                    && string.Equals(instrument.Name, MessagingMetrics.InboxRecoveriesName, StringComparison.Ordinal)
+                )
+                {
+                    l.EnableMeasurementEvents(instrument);
+                }
+            },
+        };
+        listener.SetMeasurementEventCallback<long>(
+            (instrument, _, tags, _) =>
+            {
+                foreach (var tag in tags)
+                {
+                    if (
+                        string.Equals(tag.Key, MessagingTags.InboxConsumer, StringComparison.Ordinal)
+                        && string.Equals(tag.Value as string, consumerIdentity, StringComparison.Ordinal)
+                    )
+                    {
+                        captured.Add((instrument.Name, tags.ToArray()));
+                        return;
+                    }
+                }
+            }
+        );
+        listener.Start();
+        return listener;
     }
 
     [Fact]

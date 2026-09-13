@@ -186,24 +186,18 @@ internal sealed partial class PostgreSqlDataStorage
     public ValueTask<bool> DeferReceivedInboxOrphanAsync(
         MediumMessage message,
         CancellationToken cancellationToken = default
-    ) => _SetInboxRoutabilityAsync(message, orphaned: true, defer: true, acceptUnchanged: true, cancellationToken);
+    ) => _SetInboxRoutabilityAsync(message, orphaned: true, cancellationToken);
 
     public ValueTask<bool> ConfirmReceivedInboxRoutableAsync(
         MediumMessage message,
         CancellationToken cancellationToken = default
-    ) => _SetInboxRoutabilityAsync(message, orphaned: false, defer: false, acceptUnchanged: true, cancellationToken);
+    ) => _SetInboxRoutabilityAsync(message, orphaned: false, cancellationToken);
 
-    public ValueTask<bool> MarkReceivedInboxOrphanedAsync(
-        MediumMessage message,
-        bool orphaned,
-        CancellationToken cancellationToken = default
-    ) => _SetInboxRoutabilityAsync(message, orphaned, defer: false, acceptUnchanged: false, cancellationToken);
-
+    // Orphaning defers the probe and releases ownership; confirming keeps the live claim so the caller can dispatch.
+    // Both accept an already-matching orphan flag because the fence, not a state change, authorizes the caller.
     private async ValueTask<bool> _SetInboxRoutabilityAsync(
         MediumMessage message,
         bool orphaned,
-        bool defer,
-        bool acceptUnchanged,
         CancellationToken cancellationToken = default
     )
     {
@@ -216,9 +210,9 @@ internal sealed partial class PostgreSqlDataStorage
         var sql = $"""
             UPDATE {_receivedTable}
             SET "IsInboxOrphaned"=@IsInboxOrphaned,
-                "NextRetryAt"=CASE WHEN @Defer THEN @NextRetryAt ELSE "NextRetryAt" END,
-                "Owner"=CASE WHEN @Defer THEN NULL ELSE "Owner" END,
-                "LockedUntil"=CASE WHEN @Defer THEN NULL ELSE "LockedUntil" END
+                "NextRetryAt"=CASE WHEN @IsInboxOrphaned THEN @NextRetryAt ELSE "NextRetryAt" END,
+                "Owner"=CASE WHEN @IsInboxOrphaned THEN NULL ELSE "Owner" END,
+                "LockedUntil"=CASE WHEN @IsInboxOrphaned THEN NULL ELSE "LockedUntil" END
             WHERE "Id"=@Id
               AND "IntentType"=@IntentType
               AND "Generation"=@Generation
@@ -226,13 +220,10 @@ internal sealed partial class PostgreSqlDataStorage
               AND "AttemptId"=@AttemptId
               AND "Owner" IS NOT DISTINCT FROM @Owner
               AND "LockedUntil"=@LockedUntil
-              AND "LockedUntil">statement_timestamp()
-              AND (@AcceptUnchanged OR "IsInboxOrphaned" IS DISTINCT FROM @IsInboxOrphaned);
+              AND "LockedUntil">statement_timestamp();
             """;
         object[] parameters =
         [
-            new NpgsqlParameter("@Defer", defer),
-            new NpgsqlParameter("@AcceptUnchanged", acceptUnchanged),
             new NpgsqlParameter("@NextRetryAt", NpgsqlDbType.TimestampTz) { Value = nextRetryAt },
             new NpgsqlParameter("@IsInboxOrphaned", orphaned),
             new NpgsqlParameter("@Id", fence.StorageId),
@@ -259,7 +250,7 @@ internal sealed partial class PostgreSqlDataStorage
         if (changed == 1)
         {
             message.IsInboxOrphaned = orphaned;
-            if (defer)
+            if (orphaned)
             {
                 message.NextRetryAt = nextRetryAt;
                 message.Owner = null;
