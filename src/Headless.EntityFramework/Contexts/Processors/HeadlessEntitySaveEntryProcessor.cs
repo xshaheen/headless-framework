@@ -130,8 +130,10 @@ public sealed class HeadlessEntitySaveEntryProcessor(
             var principal = _FindPrincipal(current, ownership, tracked, original: false);
             if (
                 principal is null
-                || current.State != EntityState.Added
+                || (
+                    current.State != EntityState.Added
                     && _FindPrincipal(current, ownership, tracked, original: true)?.Entity != principal.Entity
+                )
             )
             {
                 throw new CrossTenantWriteException(_GetEntityTypeName(entry), entry.State.ToString());
@@ -171,13 +173,17 @@ public sealed class HeadlessEntitySaveEntryProcessor(
                     foreignKey is null
                     || principalKey is null
                     || !comparer.Equals(foreignKey, principalKey)
-                    || dependent.State != EntityState.Added
+                    || (
+                        dependent.State != EntityState.Added
                         && !comparer.Equals(
                             dependent.OriginalValues[ownership.Properties[i]],
                             dependent.CurrentValues[ownership.Properties[i]]
                         )
-                    || candidate.State != EntityState.Added
+                    )
+                    || (
+                        candidate.State != EntityState.Added
                         && !comparer.Equals(candidate.OriginalValues[keyProperty], candidate.CurrentValues[keyProperty])
+                    )
                 )
                 {
                     matches = false;

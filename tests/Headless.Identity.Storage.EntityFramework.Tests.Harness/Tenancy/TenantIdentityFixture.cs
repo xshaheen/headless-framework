@@ -51,15 +51,15 @@ public sealed class TenantIdentityContext<TPolicy>(
         : TPolicy.CustomLengths ? "tenant_identity_bounded"
         : "tenant_identity";
 
-    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    protected override void OnModelCreating(ModelBuilder builder)
     {
-        base.OnModelCreating(modelBuilder);
-        ConfigureTenantOwnedIdentity(modelBuilder);
+        base.OnModelCreating(builder);
+        ConfigureTenantOwnedIdentity(builder);
         if (TPolicy.CustomLengths)
         {
-            modelBuilder.Entity<TenantIdentityUser>().Property(x => x.Id).HasMaxLength(96);
-            modelBuilder.Entity<TenantIdentityRole>().Property(x => x.Id).HasMaxLength(96);
-            modelBuilder.Entity<TenantIdentityUser>().Property<string>("TenantId").HasMaxLength(64);
+            builder.Entity<TenantIdentityUser>().Property(x => x.Id).HasMaxLength(96);
+            builder.Entity<TenantIdentityRole>().Property(x => x.Id).HasMaxLength(96);
+            builder.Entity<TenantIdentityUser>().Property<string>("TenantId").HasMaxLength(64);
         }
     }
 }

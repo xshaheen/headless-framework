@@ -24,6 +24,11 @@ public sealed class IdentityTenantModelTests : TestBase
     [Fact]
     public void should_preserve_original_v3_identity_schema_without_opt_in() => _AssertOriginalSchema<UnscopedV3>(true);
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Usage",
+        "MA0045",
+        Justification = "Model-only assertions exercise synchronous model construction and disposal without database I/O."
+    )]
     private static void _AssertOriginalSchema<TPolicy>(bool passkeys)
         where TPolicy : IPolicy
     {
@@ -76,6 +81,11 @@ public sealed class IdentityTenantModelTests : TestBase
     [Fact]
     public void should_scope_custom_generic_v3_entities_and_passkeys() => _AssertScoped<ScopedV3>(true);
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Usage",
+        "MA0045",
+        Justification = "Model-only assertions exercise synchronous model construction and disposal without database I/O."
+    )]
     private static void _AssertScoped<TPolicy>(bool passkeys)
         where TPolicy : IPolicy
     {
@@ -108,15 +118,18 @@ public sealed class IdentityTenantModelTests : TestBase
 
         var user = model.FindEntityType(typeof(User))!;
         user.GetIndexes()
-            .Single(x => x.GetDatabaseName() == "UserNameIndex")
+            .Single(x => string.Equals(x.GetDatabaseName(), "UserNameIndex", StringComparison.Ordinal))
             .Properties.Select(x => x.Name)
             .Should()
             .Equal("NormalizedUserName", "TenantId");
-        user.GetIndexes().Single(x => x.GetDatabaseName() == "EmailIndex").IsUnique.Should().BeFalse();
+        user.GetIndexes()
+            .Single(x => string.Equals(x.GetDatabaseName(), "EmailIndex", StringComparison.Ordinal))
+            .IsUnique.Should()
+            .BeFalse();
         model
             .FindEntityType(typeof(Role))!
             .GetIndexes()
-            .Single(x => x.GetDatabaseName() == "RoleNameIndex")
+            .Single(x => string.Equals(x.GetDatabaseName(), "RoleNameIndex", StringComparison.Ordinal))
             .Properties.Select(x => x.Name)
             .Should()
             .Equal("NormalizedName", "TenantId");
@@ -236,12 +249,18 @@ public sealed class IdentityTenantModelTests : TestBase
         var operations = db.GetService<IMigrationsModelDiffer>().GetDifferences(null, model.GetRelationalModel());
         var tables = operations.OfType<CreateTableOperation>().ToArray();
         tables.Should().HaveCount(8);
-        tables.Single(x => x.Name == "AspNetUsers").PrimaryKey!.Columns.Should().Equal("Id");
         tables
-            .Single(x => x.Name == "AspNetUsers")
+            .Single(x => string.Equals(x.Name, "AspNetUsers", StringComparison.Ordinal))
+            .PrimaryKey!.Columns.Should()
+            .Equal("Id");
+        tables
+            .Single(x => string.Equals(x.Name, "AspNetUsers", StringComparison.Ordinal))
             .UniqueConstraints.Should()
             .ContainSingle(x => x.Columns.SequenceEqual(new[] { "TenantId", "Id" }));
-        tables.Single(x => x.Name == "AspNetUserRoles").PrimaryKey!.Columns.Should().Equal("UserId", "RoleId");
+        tables
+            .Single(x => string.Equals(x.Name, "AspNetUserRoles", StringComparison.Ordinal))
+            .PrimaryKey!.Columns.Should()
+            .Equal("UserId", "RoleId");
         tables
             .SelectMany(x => x.ForeignKeys)
             .Should()
@@ -249,7 +268,7 @@ public sealed class IdentityTenantModelTests : TestBase
             .And.OnlyContain(x => x.Columns.Length == 2 && x.Columns[0] == "TenantId");
         tables
             .SelectMany(x => x.Columns)
-            .Where(x => x.Name == "TenantId")
+            .Where(x => string.Equals(x.Name, "TenantId", StringComparison.Ordinal))
             .Should()
             .OnlyContain(x => !x.IsNullable && x.MaxLength == 41);
     }
@@ -307,6 +326,11 @@ public sealed class IdentityTenantModelTests : TestBase
     public void should_reject_ambiguous_identity_relationships() =>
         _AssertInvalid<AmbiguousRelationship>("*ambiguous*");
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Usage",
+        "MA0045",
+        Justification = "This helper asserts synchronous model-construction failures; its services perform no database I/O."
+    )]
     private static void _AssertInvalid<TPolicy>(string message, bool sqlServer = true)
         where TPolicy : IPolicy
     {

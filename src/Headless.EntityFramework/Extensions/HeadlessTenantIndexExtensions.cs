@@ -14,7 +14,7 @@ public static class HeadlessTenantIndexExtensions
     /// <remarks>The entity must be tenant-owned and the final index must be unique. Existing key columns retain their order.</remarks>
     public static IndexBuilder IsTenantScoped(this IndexBuilder builder)
     {
-        builder.HasAnnotation(HeadlessTenantPolicyAnnotations.ScopedIndex, true);
+        builder.HasAnnotation(HeadlessTenantPolicyAnnotations.ScopedIndex, value: true);
         return builder;
     }
 

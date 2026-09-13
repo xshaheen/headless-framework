@@ -19,7 +19,7 @@ public sealed class TenantIndexPolicyTests : TestBase
         using var scope = provider.CreateScope();
         using var db = scope.ServiceProvider.GetRequiredService<IndexContext<SelectedIndex>>();
         var entity = db.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(Row))!;
-        var index = entity.GetIndexes().Single(x => x.Name == "BusinessKey");
+        var index = entity.GetIndexes().Single(x => string.Equals(x.Name, "BusinessKey", StringComparison.Ordinal));
 
         index.Properties.Select(x => x.Name).Should().Equal("Code", "Region", "TenantId");
         index.GetDatabaseName().Should().Be("UX_business");
@@ -31,7 +31,12 @@ public sealed class TenantIndexPolicyTests : TestBase
         index.GetNullSortOrder().Should().Equal(NullSortOrder.NullsLast);
         index["Application:Purpose"].Should().Be("lookup");
         entity.FindPrimaryKey()!.Properties.Select(x => x.Name).Should().Equal("Id");
-        entity.GetIndexes().Single(x => x.Name == "Unselected").Properties.Select(x => x.Name).Should().Equal("Region");
+        entity
+            .GetIndexes()
+            .Single(x => string.Equals(x.Name, "Unselected", StringComparison.Ordinal))
+            .Properties.Select(x => x.Name)
+            .Should()
+            .Equal("Region");
     }
 
     [Fact]
@@ -41,9 +46,12 @@ public sealed class TenantIndexPolicyTests : TestBase
         using var scope = provider.CreateScope();
         using var db = scope.ServiceProvider.GetRequiredService<IndexContext<ExplicitDirections>>();
         var indexes = db.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(Row))!.GetIndexes().ToArray();
-        indexes.Single(x => x.Name == "Mixed").IsDescending.Should().Equal(false, true, false);
         indexes
-            .Single(x => x.Name == "AlreadyScoped")
+            .Single(x => string.Equals(x.Name, "Mixed", StringComparison.Ordinal))
+            .IsDescending.Should()
+            .Equal(false, true, false);
+        indexes
+            .Single(x => string.Equals(x.Name, "AlreadyScoped", StringComparison.Ordinal))
             .Properties.Select(x => x.Name)
             .Should()
             .Equal("TenantId", "Code");
@@ -80,6 +88,11 @@ public sealed class TenantIndexPolicyTests : TestBase
     public void should_reject_fulltext_expression_indexes() =>
         _AssertInvalid<FulltextIndex>("*cannot preserve annotation 'Npgsql:TsVectorConfig'*");
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Usage",
+        "MA0045",
+        Justification = "This helper asserts synchronous model-construction failures; its services perform no database I/O."
+    )]
     private static void _AssertInvalid<TPolicy>(string message)
         where TPolicy : IPolicy
     {

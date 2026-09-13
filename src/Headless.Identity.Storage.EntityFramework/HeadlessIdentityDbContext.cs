@@ -303,7 +303,7 @@ public abstract class HeadlessIdentityDbContext<
     /// </remarks>
     /// <param name="builder">The model builder for this context.</param>
     protected void ConfigureTenantOwnedIdentity(ModelBuilder builder) =>
-        builder.HasAnnotation(HeadlessIdentityTenantModel.OptInAnnotation, true);
+        builder.HasAnnotation(HeadlessIdentityTenantModel.OptInAnnotation, value: true);
 
     /// <summary>
     /// Configures the EF Core model for this context, applying <see cref="DefaultSchema"/> when set,

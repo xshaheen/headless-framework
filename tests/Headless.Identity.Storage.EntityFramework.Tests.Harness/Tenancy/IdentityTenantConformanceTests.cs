@@ -48,7 +48,11 @@ public abstract class IdentityTenantConformanceTests<TFixture>(TFixture fixture)
             _Success(
                 await users.AddLoginAsync(
                     user,
-                    new UserLoginInfo("provider", tenant == "acme" ? "login-lower" : "login-upper", "Provider")
+                    new UserLoginInfo(
+                        "provider",
+                        string.Equals(tenant, "acme", StringComparison.Ordinal) ? "login-lower" : "login-upper",
+                        "Provider"
+                    )
                 )
             );
             _Success(await users.SetAuthenticationTokenAsync(user, "provider", "token", tenant));
@@ -79,14 +83,26 @@ public abstract class IdentityTenantConformanceTests<TFixture>(TFixture fixture)
             (await roles.GetClaimsAsync((await roles.FindByNameAsync("shared-role"))!))
                 .Should()
                 .ContainSingle(x => x.Value == tenant);
-            (await users.FindByLoginAsync("provider", tenant == "acme" ? "login-lower" : "login-upper"))!
+            (
+                await users.FindByLoginAsync(
+                    "provider",
+                    string.Equals(tenant, "acme", StringComparison.Ordinal) ? "login-lower" : "login-upper"
+                )
+            )!
                 .Id.Should()
                 .Be(user.Id);
-            (await users.FindByLoginAsync("provider", tenant == "acme" ? "login-upper" : "login-lower"))
+            (
+                await users.FindByLoginAsync(
+                    "provider",
+                    string.Equals(tenant, "acme", StringComparison.Ordinal) ? "login-upper" : "login-lower"
+                )
+            )
                 .Should()
                 .BeNull();
             (await users.GetAuthenticationTokenAsync(user, "provider", "token")).Should().Be(tenant);
-            (await users.FindByIdAsync(ids[tenant == "acme" ? "ACME" : "acme"])).Should().BeNull();
+            (await users.FindByIdAsync(ids[string.Equals(tenant, "acme", StringComparison.Ordinal) ? "ACME" : "acme"]))
+                .Should()
+                .BeNull();
         }
     }
 
@@ -160,7 +176,7 @@ public abstract class IdentityTenantConformanceTests<TFixture>(TFixture fixture)
         await using (var scope = fixture.Services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<TenantIdentityContext<DefaultIdentityPolicy>>();
-            if (kind == "role")
+            if (string.Equals(kind, "role", StringComparison.Ordinal))
             {
                 db.Add(
                     new TenantIdentityRole
@@ -172,7 +188,7 @@ public abstract class IdentityTenantConformanceTests<TFixture>(TFixture fixture)
                 );
                 await db.SaveChangesAsync(AbortToken);
             }
-            if (kind == "login")
+            if (string.Equals(kind, "login", StringComparison.Ordinal))
             {
                 db.Add(
                     new IdentityUserLogin<string>
@@ -184,7 +200,7 @@ public abstract class IdentityTenantConformanceTests<TFixture>(TFixture fixture)
                 );
                 await db.SaveChangesAsync(AbortToken);
             }
-            if (kind == "passkey")
+            if (string.Equals(kind, "passkey", StringComparison.Ordinal))
             {
                 var users = scope.ServiceProvider.GetRequiredService<UserManager<TenantIdentityUser>>();
                 _Success(
@@ -195,7 +211,7 @@ public abstract class IdentityTenantConformanceTests<TFixture>(TFixture fixture)
         fixture.CurrentTenant.Id = "ACME";
         await using var attack = fixture.Services.CreateAsyncScope();
         var target = attack.ServiceProvider.GetRequiredService<TenantIdentityContext<DefaultIdentityPolicy>>();
-        if (kind == "passkey")
+        if (string.Equals(kind, "passkey", StringComparison.Ordinal))
         {
             var users = attack.ServiceProvider.GetRequiredService<UserManager<TenantIdentityUser>>();
             var user = (await users.FindByIdAsync(second))!;
@@ -230,7 +246,9 @@ public abstract class IdentityTenantConformanceTests<TFixture>(TFixture fixture)
                     ProviderKey = "global",
                 },
             };
+#pragma warning disable VSTHRD103 // Exercise synchronous Add and tenant stamping before the database rejects the duplicate key.
             target.Add(duplicate);
+#pragma warning restore VSTHRD103
             var failure = (
                 await target.Invoking(x => x.SaveChangesAsync(AbortToken)).Should().ThrowAsync<DbUpdateException>()
             ).Which;
@@ -283,7 +301,7 @@ public abstract class IdentityTenantConformanceTests<TFixture>(TFixture fixture)
             _ => (
                 "AspNetUserPasskeys",
                 ["UserId", "CredentialId", "Data", "TenantId"],
-                [victimUser, new byte[] { 55, 66 }, "{}", "acme"]
+                [victimUser, "7B"u8.ToArray(), "{}", "acme"]
             ),
         };
         var insert = async () => await _InsertAsync(db, table, columns, values);
@@ -341,7 +359,7 @@ public abstract class IdentityTenantConformanceTests<TFixture>(TFixture fixture)
         foreach (var (name, key) in expected)
         {
             tables[name].PrimaryKey!.Columns.Should().Equal(key);
-            var tenant = tables[name].Columns.Single(x => x.Name == "TenantId");
+            var tenant = tables[name].Columns.Single(x => string.Equals(x.Name, "TenantId", StringComparison.Ordinal));
             tenant.IsNullable.Should().BeFalse();
             tenant
                 .Collation.Should()
@@ -360,9 +378,15 @@ public abstract class IdentityTenantConformanceTests<TFixture>(TFixture fixture)
                 && x.PrincipalColumns!.SequenceEqual(new[] { "TenantId", "Id" })
             );
         var indexes = operations.OfType<CreateIndexOperation>().ToArray();
-        indexes.Single(x => x.Name == "UserNameIndex").Columns.Should().Equal("NormalizedUserName", "TenantId");
-        indexes.Single(x => x.Name == "RoleNameIndex").Columns.Should().Equal("NormalizedName", "TenantId");
-        indexes.Single(x => x.Name == "EmailIndex").IsUnique.Should().BeFalse();
+        indexes
+            .Single(x => string.Equals(x.Name, "UserNameIndex", StringComparison.Ordinal))
+            .Columns.Should()
+            .Equal("NormalizedUserName", "TenantId");
+        indexes
+            .Single(x => string.Equals(x.Name, "RoleNameIndex", StringComparison.Ordinal))
+            .Columns.Should()
+            .Equal("NormalizedName", "TenantId");
+        indexes.Single(x => string.Equals(x.Name, "EmailIndex", StringComparison.Ordinal)).IsUnique.Should().BeFalse();
         fixture
             .MigrationSql.Should()
             .Contain("PRIMARY KEY")
@@ -508,7 +532,9 @@ public abstract class IdentityTenantConformanceTests<TFixture>(TFixture fixture)
             ", ",
             values.Select(
                 (_, index) =>
-                    columns[index] == "Data" && db.Database.IsNpgsql() ? $"CAST({{{index}}} AS jsonb)" : $"{{{index}}}"
+                    string.Equals(columns[index], "Data", StringComparison.Ordinal) && db.Database.IsNpgsql()
+                        ? $"CAST({{{index}}} AS jsonb)"
+                        : $"{{{index}}}"
             )
         );
         var sql = $"INSERT INTO {helper.DelimitIdentifier(table, "tenant_identity")} ({names}) VALUES ({parameters})";

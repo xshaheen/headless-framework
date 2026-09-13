@@ -18,7 +18,7 @@ public static class HeadlessTenantPolicyExtensions
     public static EntityTypeBuilder IsTenantOwned(this EntityTypeBuilder builder, string propertyName = "TenantId")
     {
         Argument.IsNotNullOrWhiteSpace(propertyName);
-        builder.HasAnnotation(HeadlessTenantPolicyAnnotations.IsOwned, true);
+        builder.HasAnnotation(HeadlessTenantPolicyAnnotations.IsOwned, value: true);
         return builder.HasAnnotation(HeadlessTenantPolicyAnnotations.PropertyName, propertyName);
     }
 
@@ -38,7 +38,7 @@ public static class HeadlessTenantPolicyExtensions
     public static EntityTypeBuilder IsNotTenantOwned(this EntityTypeBuilder builder)
     {
         builder.Metadata.RemoveAnnotation(HeadlessTenantPolicyAnnotations.PropertyName);
-        return builder.HasAnnotation(HeadlessTenantPolicyAnnotations.IsOwned, false);
+        return builder.HasAnnotation(HeadlessTenantPolicyAnnotations.IsOwned, value: false);
     }
 
     /// <summary>Explicitly excludes a root and its hierarchy from tenant isolation.</summary>

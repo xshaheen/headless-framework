@@ -84,7 +84,7 @@ internal sealed class HeadlessIdentityTenantModel(Type[] entityTypes, string pro
             _ReplaceRelationship(passkey, user, userKey, "UserId");
         }
 
-        if (providerName == "Microsoft.EntityFrameworkCore.SqlServer")
+        if (string.Equals(providerName, "Microsoft.EntityFrameworkCore.SqlServer", StringComparison.Ordinal))
         {
             foreach (var entity in entities.OfType<IMutableEntityType>())
             {
@@ -120,7 +120,7 @@ internal sealed class HeadlessIdentityTenantModel(Type[] entityTypes, string pro
         }
 
         var name = entity.GetTenantPropertyName() ?? "TenantId";
-        entity.SetAnnotation(HeadlessTenantPolicyAnnotations.IsOwned, true);
+        entity.SetAnnotation(HeadlessTenantPolicyAnnotations.IsOwned, value: true);
         entity.SetAnnotation(HeadlessTenantPolicyAnnotations.PropertyName, name);
         var property = entity.FindProperty(name) ?? entity.AddProperty(name, typeof(string));
         if (property.ClrType != typeof(string))
@@ -180,7 +180,10 @@ internal sealed class HeadlessIdentityTenantModel(Type[] entityTypes, string pro
     private static IMutableKey _AddTenantKey(IMutableEntityType entity)
     {
         var primaryKey = entity.FindPrimaryKey()!;
-        if (primaryKey.Properties.Count != 1 || primaryKey.Properties[0].Name != "Id")
+        if (
+            primaryKey.Properties.Count != 1
+            || !string.Equals(primaryKey.Properties[0].Name, "Id", StringComparison.Ordinal)
+        )
         {
             throw new InvalidOperationException(
                 $"Tenant-owned Identity principal '{entity.Name}' must retain its Id primary key."
@@ -199,7 +202,9 @@ internal sealed class HeadlessIdentityTenantModel(Type[] entityTypes, string pro
     {
         var indexes = entity
             .GetIndexes()
-            .Where(x => x.Properties.Count == 1 && x.Properties[0].Name == propertyName)
+            .Where(x =>
+                x.Properties.Count == 1 && string.Equals(x.Properties[0].Name, propertyName, StringComparison.Ordinal)
+            )
             .ToArray();
         if (indexes.Length != 1 || !indexes[0].IsUnique)
         {
@@ -208,7 +213,7 @@ internal sealed class HeadlessIdentityTenantModel(Type[] entityTypes, string pro
             );
         }
 
-        indexes[0].SetAnnotation(HeadlessTenantPolicyAnnotations.ScopedIndex, true);
+        indexes[0].SetAnnotation(HeadlessTenantPolicyAnnotations.ScopedIndex, value: true);
     }
 
     private static void _ReplaceRelationship(
@@ -222,7 +227,7 @@ internal sealed class HeadlessIdentityTenantModel(Type[] entityTypes, string pro
         if (
             candidates.Length != 1
             || candidates[0].Properties.Count != 1
-            || candidates[0].Properties[0].Name != idName
+            || !string.Equals(candidates[0].Properties[0].Name, idName, StringComparison.Ordinal)
             || !candidates[0].PrincipalKey.IsPrimaryKey()
         )
         {
@@ -260,7 +265,7 @@ internal sealed class HeadlessIdentityTenantModel(Type[] entityTypes, string pro
         if (bytes > 900)
         {
             throw new InvalidOperationException(
-                $"Identity key on '{entity.Name}' ({string.Join(", ", properties.Select(x => x.Name))}) requires {bytes} bytes, exceeding SQL Server's 900-byte primary/alternate/foreign-key budget. Configure compatible explicit key lengths before tenant opt-in."
+                $"Identity key on '{entity.Name}' ({string.Join(", ", properties.Select(x => x.Name))}) requires {bytes.ToString(CultureInfo.CurrentCulture)} bytes, exceeding SQL Server's 900-byte primary/alternate/foreign-key budget. Configure compatible explicit key lengths before tenant opt-in."
             );
         }
     }

@@ -130,7 +130,7 @@ public abstract class TenantDatabaseFixture(TenantDatabaseProvider provider) : I
         {
             var leaves = tables
                 .Where(t =>
-                    !tables.Any(other => other != t && other.ForeignKeyConstraints.Any(fk => fk.PrincipalTable == t))
+                    !tables.Exists(other => other != t && other.ForeignKeyConstraints.Any(fk => fk.PrincipalTable == t))
                 )
                 .ToArray();
             leaves.Should().NotBeEmpty("the conformance model has no FK cycles");

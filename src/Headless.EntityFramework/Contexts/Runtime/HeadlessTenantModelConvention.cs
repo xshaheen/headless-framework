@@ -32,8 +32,8 @@ internal sealed class HeadlessTenantModelConvention(DbContext db, string provide
             var clrPropertyType =
                 root.ClrType.GetProperty(name)?.PropertyType ?? root.ClrType.GetField(name)?.FieldType;
             if (
-                property is not null && property.ClrType != typeof(string)
-                || property is null && clrPropertyType is not null && clrPropertyType != typeof(string)
+                (property is not null && property.ClrType != typeof(string))
+                || (property is null && clrPropertyType is not null && clrPropertyType != typeof(string))
             )
             {
                 throw new InvalidOperationException($"Tenant property '{root.Name}.{name}' must be a string.");
@@ -47,7 +47,7 @@ internal sealed class HeadlessTenantModelConvention(DbContext db, string provide
 
             if (
                 property.GetValueConverter() is not null
-                || property.GetProviderClrType() is { } providerType && providerType != typeof(string)
+                || (property.GetProviderClrType() is { } providerType && providerType != typeof(string))
                 || property.IsFixedLength() == true
                 || property.ValueGenerated != ValueGenerated.Never
             )
@@ -80,8 +80,8 @@ internal sealed class HeadlessTenantModelConvention(DbContext db, string provide
 
             var owner = owned.GetTenantOwnerEntityType();
             if (
-                owned.GetTableName() != owner.GetTableName()
-                || owned.GetSchema() != owner.GetSchema()
+                !string.Equals(owned.GetTableName(), owner.GetTableName(), StringComparison.Ordinal)
+                || !string.Equals(owned.GetSchema(), owner.GetSchema(), StringComparison.Ordinal)
                 || owned.GetMappingFragments(StoreObjectType.Table).Any()
             )
             {
@@ -131,7 +131,13 @@ internal sealed class HeadlessTenantModelConvention(DbContext db, string provide
                 var directions = index.IsDescending;
                 bool[]? scopedDirections = directions is null
                     ? null
-                    : [.. directions.Count == 0 ? Enumerable.Repeat(true, index.Properties.Count) : directions, false];
+                    :
+                    [
+                        .. directions.Count == 0
+                            ? Enumerable.Repeat(element: true, index.Properties.Count)
+                            : directions,
+                        false,
+                    ];
                 using var batch = model.DelayConventions();
                 entity.RemoveIndex(index);
                 var scoped = name is null ? entity.AddIndex(properties) : entity.AddIndex(properties, name);
@@ -180,12 +186,14 @@ internal sealed class HeadlessTenantModelConvention(DbContext db, string provide
                 derived.FindAnnotation(HeadlessTenantPolicyAnnotations.IsOwned) is { Value: bool declared }
                 && (
                     declared != root.IsTenantOwned()
-                    || declared
+                    || (
+                        declared
                         && !string.Equals(
                             derived[HeadlessTenantPolicyAnnotations.PropertyName] as string,
                             root.GetTenantPropertyName(),
                             StringComparison.Ordinal
                         )
+                    )
                 )
             )
             {
@@ -218,8 +226,8 @@ internal sealed class HeadlessTenantModelConvention(DbContext db, string provide
                     x != root
                     && !x.IsOwned()
                     && x.BaseType is null
-                    && x.GetTableName() == root.GetTableName()
-                    && x.GetSchema() == root.GetSchema()
+                    && string.Equals(x.GetTableName(), root.GetTableName(), StringComparison.Ordinal)
+                    && string.Equals(x.GetSchema(), root.GetSchema(), StringComparison.Ordinal)
                 )
         )
         {
@@ -293,10 +301,9 @@ internal sealed class HeadlessTenantModelConvention(DbContext db, string provide
         property.SetCollation(collation);
         var table = StoreObjectIdentifier.Table(entity.GetTableName()!, entity.GetSchema());
         var column = property.GetColumnName(table)!;
-        var quoted =
-            providerName == "Microsoft.EntityFrameworkCore.SqlServer"
-                ? "[" + column.Replace("]", "]]", StringComparison.Ordinal) + "]"
-                : "\"" + column.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
+        var quoted = string.Equals(providerName, "Microsoft.EntityFrameworkCore.SqlServer", StringComparison.Ordinal)
+            ? "[" + column.Replace("]", "]]", StringComparison.Ordinal) + "]"
+            : "\"" + column.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
         var sql = providerName switch
         {
             "Microsoft.EntityFrameworkCore.SqlServer" => $"DATALENGTH({quoted}) = DATALENGTH(RTRIM({quoted}))",
@@ -306,7 +313,7 @@ internal sealed class HeadlessTenantModelConvention(DbContext db, string provide
         var constraintName = $"CK_{table.Name}_{column}_TenantCanonical";
         if (entity.FindCheckConstraint(constraintName) is { } existing)
         {
-            if (existing.Sql != sql)
+            if (!string.Equals(existing.Sql, sql, StringComparison.Ordinal))
             {
                 throw new InvalidOperationException(
                     $"Check constraint '{constraintName}' conflicts with canonical tenant validation."

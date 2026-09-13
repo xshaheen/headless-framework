@@ -61,7 +61,7 @@ public abstract class MetadataTenantConformanceTests<TFixture>(TFixture fixture)
             .IgnoreQueryFilters([HeadlessQueryFilters.MultiTenancyFilter])
             .ToListAsync(AbortToken);
         visible.Should().HaveCount(2).And.OnlyContain(x => !x.Hidden);
-        visible.Single(x => x.Owner == "tenant-b").Name = "compromised";
+        visible.Single(x => string.Equals(x.Owner, "tenant-b", StringComparison.Ordinal)).Name = "compromised";
         await db.Invoking(x => x.SaveChangesAsync(AbortToken)).Should().ThrowAsync<CrossTenantWriteException>();
     }
 
@@ -223,10 +223,12 @@ public abstract class MetadataTenantConformanceTests<TFixture>(TFixture fixture)
     public async Task should_reject_trailing_space_at_ef_boundary(string operation)
     {
         var id = await _SeedAsync("tenant-a");
-        fixture.CurrentTenant.Id = operation == "original" ? "tenant-a" : "tenant-a ";
+        fixture.CurrentTenant.Id = string.Equals(operation, "original", StringComparison.Ordinal)
+            ? "tenant-a"
+            : "tenant-a ";
         await using var scope = fixture.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<MetadataTenantContext>();
-        if (operation == "read")
+        if (string.Equals(operation, "read", StringComparison.Ordinal))
         {
             await db.Invoking(x => x.Set<TenantRow>().ToListAsync(AbortToken))
                 .Should()
@@ -237,7 +239,7 @@ public abstract class MetadataTenantConformanceTests<TFixture>(TFixture fixture)
         var row = new TenantRow { Id = id, Owner = "tenant-a" };
         db.Attach(row);
         row.Name = "compromised";
-        if (operation == "original")
+        if (string.Equals(operation, "original", StringComparison.Ordinal))
         {
             db.Entry(row).Property(x => x.Owner).OriginalValue = "tenant-a ";
         }
@@ -283,14 +285,14 @@ public abstract class MetadataTenantConformanceTests<TFixture>(TFixture fixture)
         foreach (var table in tables)
         {
             table
-                .Columns.Single(x => x.Name == "tenant_key")
+                .Columns.Single(x => string.Equals(x.Name, "tenant_key", StringComparison.Ordinal))
                 .Collation.Should()
                 .Be(fixture.Provider == TenantDatabaseProvider.SqlServer ? "Latin1_General_100_BIN2" : "C");
             table.CheckConstraints.Should().NotBeEmpty();
         }
         operations
             .OfType<CreateIndexOperation>()
-            .Single(x => x.Name == "TenantCodeIndex")
+            .Single(x => string.Equals(x.Name, "TenantCodeIndex", StringComparison.Ordinal))
             .Columns.Should()
             .Equal("Code", "tenant_key");
         fixture.MigrationSql.Should().Contain("COLLATE").And.Contain("CHECK").And.Contain("TenantCodeIndex");
