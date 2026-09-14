@@ -497,6 +497,8 @@ services.AddHeadlessMessaging(setup =>
 
 ### Configuration
 
+Configure tenant propagation and strict publishing through `AddHeadlessTenancy(tenancy => tenancy.Messaging(...))`. `MessagingOptions.TenantContextRequired` reports the configured requirement and has no public setter.
+
 `RequireRoutingAffinity()` on a Bus or Queue message registration requires a locally supported native mapping at startup; it does not require every publication to supply a key. Set `PublishOptions.RoutingAffinityKey` or `QueueOptions.RoutingAffinityKey` per publication. The frozen capability model snapshots registered destinations from inert options before clients or processors start. Keyed unknown destination overrides, invalid keys, and typed/raw conflicts fail before outbox insertion or transport effects. `MediumMessage.RoutingAffinityKey` reads the authoritative serialized envelope; InMemory, PostgreSQL, and SQL Server preserve it without a new storage column.
 
 A missing registration defers an inbox generation as an orphan without consuming the handler failure retry budget. Recovery requires the exact consumer identity, logical contract name, contract version, and lane. The probe claims a fresh attempt in the same generation and incarnation, then clears the orphan flag under the complete execution fence before dispatch. Registration absence on one host does not establish absence on every deployment.
@@ -756,7 +758,7 @@ The always-on `DeadOwnerRecoveryBridge` logs failures under its own category, `H
 
 ## Strict Publish Tenancy
 
-`MessagingOptions.TenantContextRequired` is the messaging sibling of the EF write guard (#234) and the HTTP authorization requirement. Defaults to `false` to preserve today's behavior. When set to `true`, every publish must resolve a tenant identifier:
+`MessagingOptions.TenantContextRequired` is the messaging sibling of the EF write guard (#234) and the HTTP authorization requirement. Defaults to `false` to preserve today's behavior. Enable it with `.Messaging(messaging => messaging.RequireTenantOnPublish())`; the property has no public setter. Every guarded publish must resolve a tenant identifier:
 
 1. `PublishOptions.TenantId` if set (the source of truth — see `Headers.TenantId` integrity rules in [Multi-Tenancy / Message Consumers](multi-tenancy.md#message-consumers)).
 2. Otherwise, the ambient `ICurrentTenant.Id`, unless `SuppressAmbientBusinessContext` is enabled.
@@ -772,18 +774,7 @@ builder.AddHeadlessTenancy(tenancy =>
 );
 ```
 
-Messaging-only setup must still go through the root tenancy seam — `AddTenantPropagation()` has been removed. Combine `AddHeadlessMessaging` with the root tenancy registration:
-
-```csharp
-builder.Services.AddHeadlessMessaging(options =>
-{
-    options.TenantContextRequired = true;
-});
-
-builder.AddHeadlessTenancy(tenancy =>
-    tenancy.Messaging(messaging => messaging.PropagateTenant().RequireTenantOnPublish())
-);
-```
+Configure messaging transport and storage with `AddHeadlessMessaging(...)`. Configure tenant propagation and enforcement only through `AddHeadlessTenancy(...)`.
 
 **Remediation for background workers / `IHostedService` callers (no ambient HTTP scope):**
 

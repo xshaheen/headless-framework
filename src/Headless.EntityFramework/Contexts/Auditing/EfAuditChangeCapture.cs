@@ -74,8 +74,8 @@ internal sealed class EfAuditChangeCapture(
         IProperty,
         PropertyAuditPolicy
     >.CreateValueCallback _CreatePropertyPolicy = static property => new PropertyAuditPolicy(
-        property.FindAnnotation(HeadlessAuditPolicyAnnotations.PropertyIsSensitive) is { Value: true },
-        property.FindAnnotation(HeadlessAuditPolicyAnnotations.PropertyIsExcluded) is { Value: true },
+        property.FindAnnotation(HeadlessModelAnnotations.AuditLog.PropertyIsSensitive) is { Value: true },
+        property.FindAnnotation(HeadlessModelAnnotations.AuditLog.PropertyIsExcluded) is { Value: true },
         _GetSensitiveDataStrategy(property)
     );
 
@@ -241,7 +241,7 @@ internal sealed class EfAuditChangeCapture(
     {
         for (var current = entityType; current is not null; current = current.BaseType)
         {
-            if (current.FindAnnotation(HeadlessAuditPolicyAnnotations.EntityIsAudited) is { Value: bool isAudited })
+            if (current.FindAnnotation(HeadlessModelAnnotations.AuditLog.EntityIsAudited) is { Value: bool isAudited })
             {
                 return isAudited;
             }
@@ -645,7 +645,8 @@ internal sealed class EfAuditChangeCapture(
 
     private static SensitiveDataStrategy? _GetSensitiveDataStrategy(IProperty property)
     {
-        return property.FindAnnotation(HeadlessAuditPolicyAnnotations.PropertySensitiveStrategy) is { Value: int value }
+        return
+            property.FindAnnotation(HeadlessModelAnnotations.AuditLog.PropertySensitiveStrategy) is { Value: int value }
             ? (SensitiveDataStrategy)value
             : null;
     }

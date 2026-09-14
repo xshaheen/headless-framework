@@ -2,13 +2,13 @@
 
 namespace Headless.EntityFramework;
 
-/// <summary>Options for the opt-in EF tenant write guard.</summary>
+/// <summary>Reports the EF tenant write guard state configured by <c>GuardTenantWrites()</c>.</summary>
 [PublicAPI]
 public sealed class TenantWriteGuardOptions
 {
     /// <summary>
-    /// Gets or sets a value indicating whether tenant-owned writes require an ambient tenant
+    /// Gets a value indicating whether tenant-owned writes require an ambient tenant
     /// unless a scoped bypass is active.
     /// </summary>
-    public bool IsEnabled { get; set; }
+    public bool IsEnabled { get; internal set; }
 }

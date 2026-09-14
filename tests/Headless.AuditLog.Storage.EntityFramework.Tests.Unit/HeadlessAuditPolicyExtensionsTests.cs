@@ -32,21 +32,24 @@ public sealed class HeadlessAuditPolicyExtensionsTests : TestBase
         excludedPropertyResult.Should().BeSameAs(excludedProperty);
         sensitivePropertyResult.Should().BeSameAs(sensitiveProperty);
 
-        includedEntity.Metadata.FindAnnotation(HeadlessAuditPolicyAnnotations.EntityIsAudited)!.Value.Should().Be(true);
+        includedEntity
+            .Metadata.FindAnnotation(HeadlessModelAnnotations.AuditLog.EntityIsAudited)!
+            .Value.Should()
+            .Be(true);
         excludedEntity
-            .Metadata.FindAnnotation(HeadlessAuditPolicyAnnotations.EntityIsAudited)!
+            .Metadata.FindAnnotation(HeadlessModelAnnotations.AuditLog.EntityIsAudited)!
             .Value.Should()
             .Be(false);
         excludedProperty
-            .Metadata.FindAnnotation(HeadlessAuditPolicyAnnotations.PropertyIsExcluded)!
+            .Metadata.FindAnnotation(HeadlessModelAnnotations.AuditLog.PropertyIsExcluded)!
             .Value.Should()
             .Be(true);
         sensitiveProperty
-            .Metadata.FindAnnotation(HeadlessAuditPolicyAnnotations.PropertyIsSensitive)!
+            .Metadata.FindAnnotation(HeadlessModelAnnotations.AuditLog.PropertyIsSensitive)!
             .Value.Should()
             .Be(true);
         sensitiveProperty
-            .Metadata.FindAnnotation(HeadlessAuditPolicyAnnotations.PropertySensitiveStrategy)!
+            .Metadata.FindAnnotation(HeadlessModelAnnotations.AuditLog.PropertySensitiveStrategy)!
             .Value.Should()
             .Be((int)SensitiveDataStrategy.Exclude);
     }

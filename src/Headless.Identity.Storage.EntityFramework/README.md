@@ -12,6 +12,7 @@ Entity Framework Core integration for ASP.NET Core Identity with framework EF Co
 - 8-type-parameter form (passkey hard-wired to `IdentityUserPasskey<TKey>`) and 9-type-parameter form (explicit `TUserPasskey`) for .NET 10 passkey-aware stores
 - `services.AddHeadlessDbContext<TDbContext, TUser, TRole, TKey, ...>()` registration extension — mirrors the plain `AddHeadlessDbContext` API with additional Identity type parameters
 - Full framework save pipeline: audit, soft delete, domain events, multi-tenancy query filters
+- Explicit `ConfigureTenantOwnedIdentity(ModelBuilder)` opt-in for tenant ownership without custom interfaces, tenant-scoped names, and database-enforced same-tenant relationships
 - `IDbContextFactory<TDbContext>` registered automatically (singleton) for factory-created, scope-owning contexts
 - `DefaultSchema` abstract member lets each derived context namespace all Identity tables under a custom schema
 - `IdentityOptions.Stores.SchemaVersion` defaulted to `IdentitySchemaVersions.Version3` (passkey table support) — guarded by sentinel so multiple `AddHeadlessDbContext` calls are idempotent
@@ -118,6 +119,69 @@ builder.Services.Configure<IdentityOptions>(o => o.Stores.SchemaVersion = Identi
 
 Service lifetimes default to `ServiceLifetime.Scoped` for both the context and its options. Override via the `contextLifetime` / `optionsLifetime` parameters when needed.
 
+### Tenant-owned Identity
+
+The protected `ConfigureTenantOwnedIdentity(ModelBuilder)` helper is defined on the nine-type-parameter base and inherited by the convenience form. Call it in your context after the base model call:
+
+```csharp
+protected override void OnModelCreating(ModelBuilder modelBuilder)
+{
+	base.OnModelCreating(modelBuilder);
+	ConfigureTenantOwnedIdentity(modelBuilder);
+}
+```
+
+Enable the write guard separately:
+
+```csharp
+builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites()));
+```
+
+The helper configures the actual generic user, role, user claim, role claim, login, membership, token, and present passkey types at model finalization. Every included type requires a mapped or shadow tenant string. Ordinary Identity models remain unchanged unless they opt in. Schema version 2 excludes passkeys; the helper does not add them back.
+
+| Model element | Tenant-owned behavior |
+|---|---|
+| Normalized username and role name | Unique indexes append the tenant column, so equal names can exist in different tenants |
+| Email | Existing non-unique email index remains; configured `IdentityOptions.User.RequireUniqueEmail` validation uses tenant-filtered manager/store queries |
+| User and role | Existing `Id` primary keys remain globally unique; alternate keys `(TenantId, Id)` support relationships |
+| Claims, logins, memberships, tokens, and present passkeys | Composite foreign keys include tenant plus the user or role ID, replacing the corresponding original foreign keys |
+| Login, membership, token, and passkey primary keys | Existing shapes remain; the external-login `(LoginProvider, ProviderKey)` pair and passkey credential ID remain globally unique |
+
+Composite foreign keys reject cross-tenant links even through direct SQL. Existing delete behavior and supported navigation customizations are preserved; ambiguous or incompatible relationship mappings fail model validation.
+
+With the guard enabled, missing tenants are captured before entries become Added. An add under A followed by a save under B fails. Without the guard, supply every tenant value before tracking, including shadow values. Existing user and role tenant ownership is immutable because it participates in alternate keys; write-guard bypass does not permit reassignment.
+
+Use fresh DI scopes for the context, stores, `UserManager`, and `RoleManager` across tenant changes. `TenantId` reads the active ambient tenant dynamically, but tracked entities remain in the context. `FindAsync` can return a tracked match without executing the tenant filter.
+
+Missing ambient context or a missing required tenant on an Added entry throws `MissingTenantContextException`. Cross-tenant writes and existing-row original/current mismatches throw `CrossTenantWriteException`. These guard failures precede local handler dispatch; required key values can fail during tracking. Generated updates and deletes include the original tenant alongside Identity's existing concurrency tokens. SQL zero-row results remain `DbUpdateConcurrencyException` at the context boundary and may occur after local handlers run. A failed save prevents durable outbox persistence, but cannot undo local or external handler effects.
+
+Read-filter bypass and write-guard bypass are independent. Neither removes SQL concurrency predicates or database constraints. Bulk query operations consume query filters but skip the save guard. Raw SQL commands require explicit tenant predicates and authorization; `BeginBypass()` has no effect on them.
+
+### Tenant key storage and rollout
+
+New tenant columns default to 41 characters (`DomainConstants.IdMaxLength`). Otherwise unbounded string Identity keys default to 128 characters within this opt-in. Compatible explicit lengths are preserved and propagated to dependent foreign-key columns. All Identity tenant columns must use one consistent length. Conflicting lengths and explicit unbounded store types such as `text` or `nvarchar(max)` are rejected.
+
+For a string-key model where `AppUser` derives from `IdentityUser<string>` and `AppRole` from `IdentityRole<string>`, compatible overrides can follow the helper call:
+
+```csharp
+modelBuilder.Entity<AppUser>().Property(x => x.Id).HasMaxLength(96);
+modelBuilder.Entity<AppRole>().Property(x => x.Id).HasMaxLength(96);
+modelBuilder.Entity<AppUser>().Property<string>("TenantId").HasMaxLength(64);
+```
+
+Headless does not estimate provider-specific key-size budgets. The EF provider and database enforce physical storage and index limits; consumers must verify configured lengths through migrations and representative writes. The upstream passkey primary-key declaration `varbinary(1024)` is retained. That declaration does not mean SQL Server accepts a 1,024-byte credential ID: such an insert exceeds its 900-byte key limit. Ordinary shorter credentials work.
+
+Consumers configure tenant column types, conversions, collations, and database validation in their own EF model and migrations. Headless does not choose a collation, add tenant-ID check constraints, or reject trailing spaces. It preserves supplied IDs without trimming or normalization. The write guard compares IDs ordinally in memory; queries, concurrency predicates, unique indexes, and foreign keys use database equality. Consumers must ensure that distinct canonical IDs remain distinct under that equality and that storage conversions preserve identity.
+
+Consumers own the schema migration and the tenant assignment for existing rows:
+
+1. Add new tenant columns as nullable.
+2. Backfill all Identity rows from verified ownership relationships, including dependents. Do not assign a silent default tenant.
+3. Validate tenant identity, equality, lengths, and the application's ID format. Resolve duplicate normalized names within each tenant and parent-child tenant mismatches.
+4. Apply required columns, consumer-configured storage rules, tenant alternate keys, replacement composite foreign keys, and tenant-scoped unique indexes. Review and execute the migration for the target provider before enabling the model.
+
+Existing interface-owned tenant columns gain tenant concurrency-token metadata even outside Identity opt-in, without forced changes to their types, collations, or check constraints. No migration or backfill runs automatically.
+
 ## Dependencies
 
 - `Headless.EntityFramework`
@@ -126,7 +190,7 @@ Service lifetimes default to `ServiceLifetime.Scoped` for both the context and i
 ## Side Effects
 
 - Calls `services.AddHeadlessDbContextServices()` — registers `HeadlessDbContextServices` (scoped), `IHeadlessSaveChangesPipeline`, `IHeadlessAuditPersistence`, `IAmbientDbTransactionAccessor`, `IAuditChangeCapture`, `ITenantWriteGuardBypass`, `TimeProvider` (`TimeProvider.System`), `ICurrentTenantAccessor`, `ICurrentTenant`, `ICurrentUser`, `ICorrelationIdProvider`, and related singletons.
-- Calls `services.AddEntityFrameworkCommitCoordination()` (commit-coordination interceptor registered once).
+- Uses the core no-op transaction-coordination seam by default; install `Headless.EntityFramework.CommitCoordination` when Identity saves must enlist buffered work in commit coordination.
 - Calls `services.AddDiRegisteredInterceptorsConfiguration<TDbContext>()` — registers `IDbContextOptionsConfiguration<TDbContext>` that attaches DI-registered interceptors to EF Core options.
 - Registers `TDbContext` via `services.AddDbContext<TDbContext>(...)` with the specified lifetimes.
 - Registers `IDbContextFactory<TDbContext>` as `HeadlessDbContextFactory<TDbContext>` (singleton, idempotent via `TryAddSingleton`).

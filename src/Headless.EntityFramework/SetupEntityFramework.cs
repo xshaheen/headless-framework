@@ -9,10 +9,8 @@ using Headless.EntityFramework.Contexts.Runtime;
 using Headless.MultiTenancy;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Options;
 
 namespace Headless.EntityFramework;
 
@@ -232,66 +230,13 @@ public static class SetupEntityFramework
         /// lack an ambient tenant context. Also implicitly calls
         /// <c>AddHeadlessDbContextServices()</c> when needed.
         /// </summary>
-        /// <param name="configure">Optional callback to adjust <see cref="TenantWriteGuardOptions"/>.</param>
         /// <returns>The service collection.</returns>
-        public IServiceCollection AddHeadlessTenantWriteGuard(Action<TenantWriteGuardOptions>? configure = null)
-        {
-            return services._AddHeadlessTenantWriteGuardCore(optionsBuilder =>
-            {
-                if (configure is not null)
-                {
-                    optionsBuilder.Configure(configure);
-                }
-            });
-        }
-
-        /// <summary>
-        /// Enables the EF Core tenant write guard, binding <see cref="TenantWriteGuardOptions"/> from the
-        /// supplied configuration section.
-        /// </summary>
-        /// <param name="configuration">Configuration section to bind to <see cref="TenantWriteGuardOptions"/>.</param>
-        /// <returns>The service collection.</returns>
-        /// <exception cref="ArgumentNullException"><paramref name="configuration"/> is <see langword="null"/>.</exception>
-        public IServiceCollection AddHeadlessTenantWriteGuard(IConfiguration configuration)
-        {
-            Argument.IsNotNull(configuration);
-
-            return services._AddHeadlessTenantWriteGuardCore(optionsBuilder => optionsBuilder.Bind(configuration));
-        }
-
-        /// <summary>
-        /// Enables the EF Core tenant write guard, with a factory callback that receives the
-        /// <see cref="IServiceProvider"/> for resolving options dependencies.
-        /// </summary>
-        /// <param name="configure">
-        /// Callback receiving <see cref="TenantWriteGuardOptions"/> and the scoped
-        /// <see cref="IServiceProvider"/>.
-        /// </param>
-        /// <returns>The service collection.</returns>
-        /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
-        public IServiceCollection AddHeadlessTenantWriteGuard(
-            Action<TenantWriteGuardOptions, IServiceProvider> configure
-        )
-        {
-            Argument.IsNotNull(configure);
-
-            return services._AddHeadlessTenantWriteGuardCore(optionsBuilder => optionsBuilder.Configure(configure));
-        }
-
-        private IServiceCollection _AddHeadlessTenantWriteGuardCore(
-            Action<OptionsBuilder<TenantWriteGuardOptions>> configure
-        )
+        internal IServiceCollection AddHeadlessTenantWriteGuard()
         {
             services.AddHeadlessDbContextServices();
 
-            // Sentinel — guard PostConfigure registration so repeated AddHeadlessTenantWriteGuard()
-            // calls do not enqueue the IsEnabled = true PostConfigure callback multiple times. The
-            // optioned configure?.Invoke(...) is still applied on every call so callers may layer
-            // overrides through repeated calls if they wish.
-            var alreadyRegistered = services.Any(d => d.ServiceType == typeof(HeadlessTenantWriteGuardSentinel));
-            configure(services.AddOptions<TenantWriteGuardOptions>());
-
-            if (alreadyRegistered)
+            // Register enablement once so repeated builder calls remain idempotent.
+            if (services.Any(d => d.ServiceType == typeof(HeadlessTenantWriteGuardSentinel)))
             {
                 return services;
             }

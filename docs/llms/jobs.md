@@ -673,7 +673,7 @@ Builders support sequential reuse and copy retry arrays when supplied and on eve
 
 ### Configuration
 
-None at the abstractions layer. All configuration is done in `Headless.Jobs.Core` via `AddHeadlessJobs(options => ...)`.
+Configure job services in `Headless.Jobs.Core` via `AddHeadlessJobs(...)`. Configure tenancy only through `AddHeadlessTenancy(tenancy => tenancy.Jobs(...))`. `JobsTenancyOptions` exposes the resulting propagation, required-tenant, and cross-tenant rejection flags with no public setters.
 
 ### Dependencies
 

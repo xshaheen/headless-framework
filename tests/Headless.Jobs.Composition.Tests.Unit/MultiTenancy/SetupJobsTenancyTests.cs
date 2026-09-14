@@ -19,6 +19,15 @@ namespace Tests.MultiTenancy;
 [Collection<JobsHelperCollection>]
 public sealed class SetupJobsTenancyTests : TestBase
 {
+    [Theory]
+    [InlineData(nameof(JobsTenancyOptions.PropagateTenant))]
+    [InlineData(nameof(JobsTenancyOptions.TenantContextRequired))]
+    [InlineData(nameof(JobsTenancyOptions.RejectCrossTenantEnqueue))]
+    public void should_expose_tenancy_options_as_read_only(string propertyName)
+    {
+        typeof(JobsTenancyOptions).GetProperty(propertyName)!.GetSetMethod().Should().BeNull();
+    }
+
     // AddHeadlessJobs (used by the real-host propagation test) freezes the process-global discovery registry;
     // re-arm it around each test so nothing leaks into the sibling Jobs tests in this collection.
     public SetupJobsTenancyTests() => JobFunctionProvider.ResetForTests(discoveryComplete: false);
