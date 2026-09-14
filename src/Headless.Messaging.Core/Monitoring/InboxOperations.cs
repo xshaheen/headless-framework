@@ -51,9 +51,17 @@ public sealed record InboxGenerationView(
     string? HoldReason
 );
 
+/// <summary>Target kind for generalized messaging operations.</summary>
+[PublicAPI]
+public enum MessagingOperationTargetKind
+{
+    Inbox = 0,
+    ScheduledDelivery = 1,
+}
+
 /// <summary>Authenticated authority shared by safe queries and audited mutations.</summary>
 [PublicAPI]
-public sealed record InboxAuthorizationContext(ClaimsPrincipal Principal)
+public sealed record OperatorAuthorizationContext(ClaimsPrincipal Principal)
 {
     internal const int ActorMaxLength = 200;
 
@@ -63,13 +71,13 @@ public sealed record InboxAuthorizationContext(ClaimsPrincipal Principal)
     {
         if (Principal?.Identity?.IsAuthenticated is not true)
         {
-            throw new UnauthorizedAccessException("Inbox operations require an authenticated principal.");
+            throw new UnauthorizedAccessException("Messaging operations require an authenticated principal.");
         }
 
         if (string.IsNullOrWhiteSpace(Actor) || Actor.Length > ActorMaxLength)
         {
             throw new UnauthorizedAccessException(
-                $"The authenticated inbox actor must have a name between 1 and {ActorMaxLength} characters."
+                $"The authenticated operator actor must have a name between 1 and {ActorMaxLength} characters."
             );
         }
     }
@@ -82,7 +90,7 @@ public sealed record InboxOperationRequest(
     Guid ExpectedIncarnationId,
     StatusName ExpectedStatus,
     string Reason,
-    InboxAuthorizationContext Authorization
+    OperatorAuthorizationContext Authorization
 )
 {
     internal const int ReasonMaxLength = 1000;
@@ -118,13 +126,15 @@ public sealed record InboxOperationRequest(
 }
 
 [PublicAPI]
-public enum InboxOperationType
+public enum MessagingOperationType
 {
     Hold = 0,
     ReleaseHold = 1,
     ForceReprocess = 2,
     Purge = 3,
     Cleanup = 4,
+    Revoke = 5,
+    DispatchNow = 6,
 }
 
 [PublicAPI]
@@ -142,7 +152,7 @@ public enum InboxOperationOutcome
 [PublicAPI]
 public sealed record InboxOperationResult(
     Guid OperationId,
-    InboxOperationType OperationType,
+    MessagingOperationType OperationType,
     InboxOperationOutcome Outcome,
     Guid ExpectedIncarnationId,
     StatusName ExpectedStatus,

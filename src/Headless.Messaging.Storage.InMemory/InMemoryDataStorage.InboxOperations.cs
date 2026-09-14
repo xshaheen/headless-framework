@@ -16,40 +16,61 @@ internal sealed partial class InMemoryDataStorage
     {
         public ValueTask<IndexPage<InboxGenerationView>> QueryAsync(
             InboxGenerationQuery query,
-            InboxAuthorizationContext authorization,
+            OperatorAuthorizationContext authorization,
             CancellationToken cancellationToken = default
         ) => storage._QueryInboxAsync(query, authorization, cancellationToken);
 
         public ValueTask<InboxOperationResult> HoldAsync(
             InboxOperationRequest request,
             CancellationToken cancellationToken = default
-        ) => storage._MutateInboxAsync(InboxOperationType.Hold, request, cancellationToken);
+        ) => storage._MutateInboxAsync(MessagingOperationType.Hold, request, cancellationToken);
 
         public ValueTask<InboxOperationResult> ReleaseHoldAsync(
             InboxOperationRequest request,
             CancellationToken cancellationToken = default
-        ) => storage._MutateInboxAsync(InboxOperationType.ReleaseHold, request, cancellationToken);
+        ) => storage._MutateInboxAsync(MessagingOperationType.ReleaseHold, request, cancellationToken);
 
         public ValueTask<InboxOperationResult> ForceReprocessAsync(
             InboxOperationRequest request,
             CancellationToken cancellationToken = default
-        ) => storage._MutateInboxAsync(InboxOperationType.ForceReprocess, request, cancellationToken);
+        ) => storage._MutateInboxAsync(MessagingOperationType.ForceReprocess, request, cancellationToken);
 
         public ValueTask<InboxOperationResult> PurgeAsync(
             InboxOperationRequest request,
             CancellationToken cancellationToken = default
-        ) => storage._MutateInboxAsync(InboxOperationType.Purge, request, cancellationToken);
+        ) => storage._MutateInboxAsync(MessagingOperationType.Purge, request, cancellationToken);
     }
 
     private sealed record InMemoryInboxAudit(
         Guid AuditId,
         Guid OperationId,
-        Guid IncarnationId,
-        InboxOperationType OperationType,
+        MessagingOperationTargetKind TargetKind,
+        Guid? IncarnationId,
+        MessagingOperationType OperationType,
         string Actor,
         string Reason,
         InboxOperationOutcome Outcome,
         DateTimeOffset CreatedAt
+    );
+
+    private sealed record InMemoryOperationReceipt(
+        Guid OperationId,
+        MessagingOperationTargetKind TargetKind,
+        MessagingOperationType OperationType,
+        InboxOperationOutcome Outcome,
+        string Actor,
+        string Reason,
+        DateTimeOffset CreatedAt,
+        Guid? GenerationIncarnationId = null,
+        StatusName? ExpectedStatus = null,
+        DateTimeOffset? ExpectedDueAt = null,
+        Guid? StorageId = null,
+        string? MessageName = null,
+        string? MessageId = null,
+        string? Lane = null,
+        Guid? ChildStorageId = null,
+        long? ChildGeneration = null,
+        Guid? ChildIncarnationId = null
     );
 
     public IInboxOperationsApi GetInboxOperationsApi() => new InMemoryInboxOperationsApi(this);
@@ -77,7 +98,9 @@ internal sealed partial class InMemoryDataStorage
             var candidates = _inboxAudit
                 .Where(x =>
                     x.CreatedAt
-                    <= (x.OperationType == InboxOperationType.Cleanup ? cutoffs.CleanupAudit : cutoffs.OperatorAudit)
+                    <= (
+                        x.OperationType == MessagingOperationType.Cleanup ? cutoffs.CleanupAudit : cutoffs.OperatorAudit
+                    )
                 )
                 .OrderBy(x => x.CreatedAt)
                 .ThenBy(x => x.AuditId)
@@ -107,7 +130,7 @@ internal sealed partial class InMemoryDataStorage
                 .Values.Where(x =>
                     x.CreatedAt
                         <= (
-                            x.OperationType == InboxOperationType.Cleanup
+                            x.OperationType == MessagingOperationType.Cleanup
                                 ? cutoffs.CleanupReceipt
                                 : cutoffs.OperatorReceipt
                         )
@@ -128,7 +151,7 @@ internal sealed partial class InMemoryDataStorage
 
     private ValueTask<IndexPage<InboxGenerationView>> _QueryInboxAsync(
         InboxGenerationQuery query,
-        InboxAuthorizationContext authorization,
+        OperatorAuthorizationContext authorization,
         CancellationToken cancellationToken
     )
     {
@@ -183,7 +206,7 @@ internal sealed partial class InMemoryDataStorage
     }
 
     private ValueTask<InboxOperationResult> _MutateInboxAsync(
-        InboxOperationType operationType,
+        MessagingOperationType operationType,
         InboxOperationRequest request,
         CancellationToken cancellationToken
     )
@@ -196,14 +219,31 @@ internal sealed partial class InMemoryDataStorage
             if (_inboxOperationReceipts.TryGetValue(request.OperationId, out var prior))
             {
                 var matches =
-                    prior.OperationType == operationType
-                    && prior.ExpectedIncarnationId == request.ExpectedIncarnationId
+                    prior.TargetKind == MessagingOperationTargetKind.Inbox
+                    && prior.OperationType == operationType
+                    && prior.GenerationIncarnationId == request.ExpectedIncarnationId
                     && prior.ExpectedStatus == request.ExpectedStatus
                     && string.Equals(prior.Actor, request.Actor, StringComparison.Ordinal)
                     && string.Equals(prior.Reason, request.Reason, StringComparison.Ordinal);
                 if (matches)
                 {
-                    return ValueTask.FromResult(prior with { IsReplay = true });
+                    return ValueTask.FromResult(
+                        new InboxOperationResult(
+                            prior.OperationId,
+                            prior.OperationType,
+                            prior.Outcome,
+                            request.ExpectedIncarnationId,
+                            request.ExpectedStatus,
+                            prior.StorageId,
+                            prior.ChildStorageId,
+                            prior.ChildGeneration,
+                            prior.ChildIncarnationId,
+                            prior.Actor,
+                            prior.Reason,
+                            prior.CreatedAt,
+                            IsReplay: true
+                        )
+                    );
                 }
 
                 var conflictAt = timeProvider.GetUtcNow();
@@ -226,6 +266,7 @@ internal sealed partial class InMemoryDataStorage
                     new InMemoryInboxAudit(
                         guidGenerator.Create(),
                         request.OperationId,
+                        MessagingOperationTargetKind.Inbox,
                         request.ExpectedIncarnationId,
                         operationType,
                         request.Actor,
@@ -261,21 +302,21 @@ internal sealed partial class InMemoryDataStorage
             {
                 switch (operationType)
                 {
-                    case InboxOperationType.Hold:
+                    case MessagingOperationType.Hold:
                         row.IsHeld = true;
                         row.HeldAt = now;
                         row.HeldBy = request.Actor;
                         row.HoldReason = request.Reason;
                         row.HoldOperationId = request.OperationId;
                         break;
-                    case InboxOperationType.ReleaseHold:
+                    case MessagingOperationType.ReleaseHold:
                         row.IsHeld = false;
                         row.HeldAt = null;
                         row.HeldBy = null;
                         row.HoldReason = null;
                         row.HoldOperationId = request.OperationId;
                         break;
-                    case InboxOperationType.ForceReprocess:
+                    case MessagingOperationType.ForceReprocess:
                         var child = _CreateForcedChild(row, request.OperationId, now);
                         row.IsCurrentGeneration = false;
                         ReceivedMessages[child.StorageId] = child;
@@ -283,13 +324,46 @@ internal sealed partial class InMemoryDataStorage
                         childGeneration = child.InboxGeneration!.Number;
                         childIncarnationId = child.InboxGeneration.IncarnationId;
                         break;
-                    case InboxOperationType.Purge:
+                    case MessagingOperationType.Purge:
                         ReceivedMessages.TryRemove(row.StorageId, out _);
                         _RemoveFromIdentityIndex(row);
                         break;
                 }
             }
 
+            var receipt = new InMemoryOperationReceipt(
+                request.OperationId,
+                MessagingOperationTargetKind.Inbox,
+                operationType,
+                outcome,
+                request.Actor,
+                request.Reason,
+                now,
+                GenerationIncarnationId: request.ExpectedIncarnationId,
+                ExpectedStatus: request.ExpectedStatus,
+                ExpectedDueAt: null,
+                StorageId: row?.StorageId,
+                MessageName: null,
+                MessageId: null,
+                Lane: null,
+                ChildStorageId: childStorageId,
+                ChildGeneration: childGeneration,
+                ChildIncarnationId: childIncarnationId
+            );
+            _inboxOperationReceipts.Add(request.OperationId, receipt);
+            _inboxAudit.Add(
+                new InMemoryInboxAudit(
+                    guidGenerator.Create(),
+                    request.OperationId,
+                    MessagingOperationTargetKind.Inbox,
+                    request.ExpectedIncarnationId,
+                    operationType,
+                    request.Actor,
+                    request.Reason,
+                    outcome,
+                    now
+                )
+            );
             var result = new InboxOperationResult(
                 request.OperationId,
                 operationType,
@@ -304,33 +378,20 @@ internal sealed partial class InMemoryDataStorage
                 request.Reason,
                 now
             );
-            _inboxOperationReceipts.Add(request.OperationId, result);
-            _inboxAudit.Add(
-                new InMemoryInboxAudit(
-                    guidGenerator.Create(),
-                    request.OperationId,
-                    request.ExpectedIncarnationId,
-                    operationType,
-                    request.Actor,
-                    request.Reason,
-                    outcome,
-                    now
-                )
-            );
             if (row?.InboxKey is { } key && outcome is InboxOperationOutcome.Applied)
             {
                 MessagingMetrics.RecordInbox(
-                    operationType is InboxOperationType.ForceReprocess
+                    operationType is MessagingOperationType.ForceReprocess
                         ? InboxMetricKind.Replay
                         : InboxMetricKind.Retention,
                     key.ConsumerIdentity,
                     key.Lane,
                     operationType switch
                     {
-                        InboxOperationType.Hold => InboxMetricOutcome.Held,
-                        InboxOperationType.ReleaseHold => InboxMetricOutcome.Released,
-                        InboxOperationType.ForceReprocess => InboxMetricOutcome.Replayed,
-                        InboxOperationType.Purge => InboxMetricOutcome.Purged,
+                        MessagingOperationType.Hold => InboxMetricOutcome.Held,
+                        MessagingOperationType.ReleaseHold => InboxMetricOutcome.Released,
+                        MessagingOperationType.ForceReprocess => InboxMetricOutcome.Replayed,
+                        MessagingOperationType.Purge => InboxMetricOutcome.Purged,
                         _ => throw new ArgumentOutOfRangeException(nameof(operationType), operationType, message: null),
                     },
                     MessagingInboxCapabilityTier.ProcessLocal,

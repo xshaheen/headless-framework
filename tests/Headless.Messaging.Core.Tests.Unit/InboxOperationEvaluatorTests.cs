@@ -9,18 +9,18 @@ namespace Tests;
 public sealed class InboxOperationEvaluatorTests : TestBase
 {
     [Theory]
-    [InlineData(InboxOperationType.Hold, false, false, InboxOperationOutcome.Applied)]
-    [InlineData(InboxOperationType.ReleaseHold, true, false, InboxOperationOutcome.Applied)]
-    [InlineData(InboxOperationType.Purge, false, false, InboxOperationOutcome.Applied)]
-    [InlineData(InboxOperationType.Purge, true, false, InboxOperationOutcome.Held)]
-    [InlineData(InboxOperationType.Hold, false, true, InboxOperationOutcome.Active)]
-    [InlineData(InboxOperationType.ReleaseHold, true, true, InboxOperationOutcome.Active)]
-    [InlineData(InboxOperationType.Purge, false, true, InboxOperationOutcome.Active)]
-    [InlineData(InboxOperationType.ForceReprocess, false, false, InboxOperationOutcome.Active)]
-    [InlineData(InboxOperationType.Cleanup, false, false, InboxOperationOutcome.Active)]
-    [InlineData((InboxOperationType)99, false, false, InboxOperationOutcome.Active)]
+    [InlineData(MessagingOperationType.Hold, false, false, InboxOperationOutcome.Applied)]
+    [InlineData(MessagingOperationType.ReleaseHold, true, false, InboxOperationOutcome.Applied)]
+    [InlineData(MessagingOperationType.Purge, false, false, InboxOperationOutcome.Applied)]
+    [InlineData(MessagingOperationType.Purge, true, false, InboxOperationOutcome.Held)]
+    [InlineData(MessagingOperationType.Hold, false, true, InboxOperationOutcome.Active)]
+    [InlineData(MessagingOperationType.ReleaseHold, true, true, InboxOperationOutcome.Active)]
+    [InlineData(MessagingOperationType.Purge, false, true, InboxOperationOutcome.Active)]
+    [InlineData(MessagingOperationType.ForceReprocess, false, false, InboxOperationOutcome.Active)]
+    [InlineData(MessagingOperationType.Cleanup, false, false, InboxOperationOutcome.Active)]
+    [InlineData((MessagingOperationType)99, false, false, InboxOperationOutcome.Active)]
     public void should_limit_orphan_exception_to_safe_unclaimed_operations(
-        InboxOperationType operation,
+        MessagingOperationType operation,
         bool isHeld,
         bool hasLiveClaim,
         InboxOperationOutcome expected
@@ -37,7 +37,7 @@ public sealed class InboxOperationEvaluatorTests : TestBase
     public void should_return_not_found_for_missing_state()
     {
         InboxOperationEvaluator
-            .Evaluate(InboxOperationType.Hold, StatusName.Failed, null)
+            .Evaluate(MessagingOperationType.Hold, StatusName.Failed, null)
             .Should()
             .Be(InboxOperationOutcome.NotFound);
     }
@@ -47,7 +47,7 @@ public sealed class InboxOperationEvaluatorTests : TestBase
     {
         var state = new InboxOperationState(StatusName.Scheduled, true, true, false, long.MaxValue);
         InboxOperationEvaluator
-            .Evaluate(InboxOperationType.Purge, StatusName.Failed, state)
+            .Evaluate(MessagingOperationType.Purge, StatusName.Failed, state)
             .Should()
             .Be(InboxOperationOutcome.StateConflict);
     }
@@ -62,28 +62,28 @@ public sealed class InboxOperationEvaluatorTests : TestBase
     {
         var state = new InboxOperationState(status, hasNextRetry, true, false, long.MaxValue);
         InboxOperationEvaluator
-            .Evaluate(InboxOperationType.Purge, status, state)
+            .Evaluate(MessagingOperationType.Purge, status, state)
             .Should()
             .Be(InboxOperationOutcome.Active);
     }
 
     [Theory]
-    [InlineData(InboxOperationType.Hold, false, true, 0L, InboxOperationOutcome.Applied)]
-    [InlineData(InboxOperationType.Hold, true, true, 0L, InboxOperationOutcome.StateConflict)]
-    [InlineData(InboxOperationType.Hold, false, false, long.MaxValue, InboxOperationOutcome.Applied)]
-    [InlineData(InboxOperationType.ReleaseHold, true, false, long.MaxValue, InboxOperationOutcome.Applied)]
-    [InlineData(InboxOperationType.ReleaseHold, false, true, 0L, InboxOperationOutcome.StateConflict)]
-    [InlineData(InboxOperationType.ForceReprocess, false, true, 0L, InboxOperationOutcome.Applied)]
-    [InlineData(InboxOperationType.ForceReprocess, true, true, 0L, InboxOperationOutcome.Applied)]
-    [InlineData(InboxOperationType.ForceReprocess, false, false, 0L, InboxOperationOutcome.StateConflict)]
-    [InlineData(InboxOperationType.ForceReprocess, false, true, long.MaxValue, InboxOperationOutcome.StateConflict)]
-    [InlineData(InboxOperationType.ForceReprocess, false, true, long.MaxValue - 1, InboxOperationOutcome.Applied)]
-    [InlineData(InboxOperationType.Purge, true, true, 0L, InboxOperationOutcome.Held)]
-    [InlineData(InboxOperationType.Purge, false, false, long.MaxValue, InboxOperationOutcome.Applied)]
-    [InlineData(InboxOperationType.Cleanup, true, false, long.MaxValue, InboxOperationOutcome.Applied)]
-    [InlineData((InboxOperationType)99, true, false, long.MaxValue, InboxOperationOutcome.Applied)]
+    [InlineData(MessagingOperationType.Hold, false, true, 0L, InboxOperationOutcome.Applied)]
+    [InlineData(MessagingOperationType.Hold, true, true, 0L, InboxOperationOutcome.StateConflict)]
+    [InlineData(MessagingOperationType.Hold, false, false, long.MaxValue, InboxOperationOutcome.Applied)]
+    [InlineData(MessagingOperationType.ReleaseHold, true, false, long.MaxValue, InboxOperationOutcome.Applied)]
+    [InlineData(MessagingOperationType.ReleaseHold, false, true, 0L, InboxOperationOutcome.StateConflict)]
+    [InlineData(MessagingOperationType.ForceReprocess, false, true, 0L, InboxOperationOutcome.Applied)]
+    [InlineData(MessagingOperationType.ForceReprocess, true, true, 0L, InboxOperationOutcome.Applied)]
+    [InlineData(MessagingOperationType.ForceReprocess, false, false, 0L, InboxOperationOutcome.StateConflict)]
+    [InlineData(MessagingOperationType.ForceReprocess, false, true, long.MaxValue, InboxOperationOutcome.StateConflict)]
+    [InlineData(MessagingOperationType.ForceReprocess, false, true, long.MaxValue - 1, InboxOperationOutcome.Applied)]
+    [InlineData(MessagingOperationType.Purge, true, true, 0L, InboxOperationOutcome.Held)]
+    [InlineData(MessagingOperationType.Purge, false, false, long.MaxValue, InboxOperationOutcome.Applied)]
+    [InlineData(MessagingOperationType.Cleanup, true, false, long.MaxValue, InboxOperationOutcome.Applied)]
+    [InlineData((MessagingOperationType)99, true, false, long.MaxValue, InboxOperationOutcome.Applied)]
     public void should_preserve_terminal_operation_policy(
-        InboxOperationType operation,
+        MessagingOperationType operation,
         bool isHeld,
         bool isCurrent,
         long generation,

@@ -552,6 +552,6 @@ public abstract class InboxOperationPolicyConformanceTests : TestBase
     protected static InboxOperationRequest _Request(Guid incarnation, StatusName status) =>
         new(Guid.NewGuid(), incarnation, status, "verify existing operation policy", _Authorization());
 
-    protected static InboxAuthorizationContext _Authorization() =>
+    protected static OperatorAuthorizationContext _Authorization() =>
         new(new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "policy-operator")], "test")));
 }

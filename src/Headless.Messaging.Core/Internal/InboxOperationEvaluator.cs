@@ -14,10 +14,21 @@ internal readonly record struct InboxOperationState(
     bool HasLiveClaim = false
 );
 
+internal readonly record struct ScheduledDeliveryOperationState(
+    StatusName Status,
+    int InlineAttempts,
+    int Retries,
+    DateTimeOffset? NextRetryAt,
+    bool HasLiveLease,
+    string ConfiguredVersion,
+    string MessageVersion,
+    DateTimeOffset DueAt
+);
+
 internal static class InboxOperationEvaluator
 {
     public static InboxOperationOutcome Evaluate(
-        InboxOperationType operationType,
+        MessagingOperationType operationType,
         StatusName expectedStatus,
         InboxOperationState? state
     )
@@ -35,7 +46,10 @@ internal static class InboxOperationEvaluator
         var allowsUnclaimedOrphan =
             row.IsOrphaned
             && !row.HasLiveClaim
-            && operationType is InboxOperationType.Hold or InboxOperationType.ReleaseHold or InboxOperationType.Purge;
+            && operationType
+                is MessagingOperationType.Hold
+                    or MessagingOperationType.ReleaseHold
+                    or MessagingOperationType.Purge;
         if (
             row.HasLiveClaim
             || (
@@ -49,12 +63,53 @@ internal static class InboxOperationEvaluator
 
         return operationType switch
         {
-            InboxOperationType.Hold when row.IsHeld => InboxOperationOutcome.StateConflict,
-            InboxOperationType.ReleaseHold when !row.IsHeld => InboxOperationOutcome.StateConflict,
-            InboxOperationType.ForceReprocess when !row.IsCurrentGeneration || row.Generation == long.MaxValue =>
+            MessagingOperationType.Hold when row.IsHeld => InboxOperationOutcome.StateConflict,
+            MessagingOperationType.ReleaseHold when !row.IsHeld => InboxOperationOutcome.StateConflict,
+            MessagingOperationType.ForceReprocess when !row.IsCurrentGeneration || row.Generation == long.MaxValue =>
                 InboxOperationOutcome.StateConflict,
-            InboxOperationType.Purge when row.IsHeld => InboxOperationOutcome.Held,
+            MessagingOperationType.Purge when row.IsHeld => InboxOperationOutcome.Held,
             _ => InboxOperationOutcome.Applied,
+        };
+    }
+
+    public static InboxOperationOutcome Evaluate(
+        MessagingOperationType operationType,
+        DateTimeOffset expectedDueAt,
+        ScheduledDeliveryOperationState? state
+    )
+    {
+        if (state is not { } row)
+        {
+            return InboxOperationOutcome.NotFound;
+        }
+
+        if (
+            !string.Equals(row.MessageVersion, row.ConfiguredVersion, StringComparison.Ordinal)
+            || row.Status is not (StatusName.Delayed or StatusName.Queued)
+            || row.Retries > 0
+            || row.NextRetryAt is not null
+        )
+        {
+            return InboxOperationOutcome.NotFound;
+        }
+
+        if (row.DueAt != expectedDueAt)
+        {
+            return InboxOperationOutcome.StateConflict;
+        }
+
+        if (row.InlineAttempts > 0)
+        {
+            return InboxOperationOutcome.Active;
+        }
+
+        return operationType switch
+        {
+            MessagingOperationType.Revoke => InboxOperationOutcome.Applied,
+            MessagingOperationType.DispatchNow => row.HasLiveLease
+                ? InboxOperationOutcome.Active
+                : InboxOperationOutcome.Applied,
+            _ => InboxOperationOutcome.StateConflict,
         };
     }
 }

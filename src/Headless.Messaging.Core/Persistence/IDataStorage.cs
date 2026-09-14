@@ -15,6 +15,12 @@ public interface IDataStorage
     /// <summary>Returns the audited, provider-neutral inbox administration API.</summary>
     IInboxOperationsApi GetInboxOperationsApi();
 
+    /// <summary>Returns the audited, provider-neutral scheduled delivery administration API.</summary>
+    IScheduledDeliveryOperationsApi GetScheduledDeliveryOperationsApi() =>
+        throw new NotSupportedException(
+            $"Messaging storage provider '{GetType().FullName}' does not support scheduled-delivery operations."
+        );
+
     /// <summary>Reads one provider-clock snapshot with the current history retention settings.</summary>
     /// <remarks>Use database time for SQL providers and the injected clock for InMemory. Reuse this snapshot throughout a collector invocation.</remarks>
     ValueTask<InboxHistoryRetentionCutoffs> GetInboxHistoryRetentionCutoffsAsync(
