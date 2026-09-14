@@ -60,7 +60,7 @@ internal sealed class HeadlessTenantModelConvention(DbContext db) : IModelFinali
 
         foreach (var owned in model.GetEntityTypes().Where(x => x.IsOwned()))
         {
-            if (owned.FindAnnotation(HeadlessTenantPolicyAnnotations.IsOwned) is not null)
+            if (owned.FindAnnotation(HeadlessModelAnnotations.Tenancy.IsOwned) is not null)
             {
                 throw new InvalidOperationException(
                     $"Owned entity '{owned.Name}' inherits tenant policy and cannot declare its own."
@@ -93,7 +93,7 @@ internal sealed class HeadlessTenantModelConvention(DbContext db) : IModelFinali
             foreach (
                 var index in entity
                     .GetDeclaredIndexes()
-                    .Where(x => x[HeadlessTenantPolicyAnnotations.ScopedIndex] is true)
+                    .Where(x => x[HeadlessModelAnnotations.Tenancy.ScopedIndex] is true)
                     .ToArray()
             )
             {
@@ -180,13 +180,13 @@ internal sealed class HeadlessTenantModelConvention(DbContext db) : IModelFinali
         foreach (var derived in root.GetDerivedTypes())
         {
             if (
-                derived.FindAnnotation(HeadlessTenantPolicyAnnotations.IsOwned) is { Value: bool declared }
+                derived.FindAnnotation(HeadlessModelAnnotations.Tenancy.IsOwned) is { Value: bool declared }
                 && (
                     declared != root.IsTenantOwned()
                     || (
                         declared
                         && !string.Equals(
-                            derived[HeadlessTenantPolicyAnnotations.PropertyName] as string,
+                            derived[HeadlessModelAnnotations.Tenancy.PropertyName] as string,
                             root.GetTenantPropertyName(),
                             StringComparison.Ordinal
                         )

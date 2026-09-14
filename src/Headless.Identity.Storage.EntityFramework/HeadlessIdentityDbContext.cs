@@ -294,7 +294,10 @@ public abstract class HeadlessIdentityDbContext<
                 typeof(TUserPasskey),
             ];
 
-            return new HeadlessIdentityTenantModel(types, provider.GetRequiredService<IDatabaseProvider>().Name);
+            return new HeadlessIdentityTenantModelConvention(
+                types,
+                provider.GetRequiredService<IDatabaseProvider>().Name
+            );
         });
 
         _runtime.ConfigureConventions(configurationBuilder);
@@ -309,7 +312,7 @@ public abstract class HeadlessIdentityDbContext<
     /// <param name="builder">The model builder for this context.</param>
     protected void ConfigureTenantOwnedIdentity(ModelBuilder builder)
     {
-        builder.HasAnnotation(HeadlessIdentityTenantModel.OptInAnnotation, value: true);
+        builder.HasAnnotation(HeadlessModelAnnotations.Identity.TenantOwned, value: true);
     }
 
     /// <summary>

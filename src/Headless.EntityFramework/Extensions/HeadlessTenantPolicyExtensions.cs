@@ -18,8 +18,8 @@ public static class HeadlessTenantPolicyExtensions
     public static EntityTypeBuilder IsTenantOwned(this EntityTypeBuilder builder, string propertyName = "TenantId")
     {
         Argument.IsNotNullOrWhiteSpace(propertyName);
-        builder.HasAnnotation(HeadlessTenantPolicyAnnotations.IsOwned, value: true);
-        return builder.HasAnnotation(HeadlessTenantPolicyAnnotations.PropertyName, propertyName);
+        builder.HasAnnotation(HeadlessModelAnnotations.Tenancy.IsOwned, value: true);
+        return builder.HasAnnotation(HeadlessModelAnnotations.Tenancy.PropertyName, propertyName);
     }
 
     /// <summary>Includes a hierarchy in tenant isolation, using a mapped or shadow string property.</summary>
@@ -37,8 +37,8 @@ public static class HeadlessTenantPolicyExtensions
     /// <summary>Explicitly excludes a root and its hierarchy from tenant isolation.</summary>
     public static EntityTypeBuilder IsNotTenantOwned(this EntityTypeBuilder builder)
     {
-        builder.Metadata.RemoveAnnotation(HeadlessTenantPolicyAnnotations.PropertyName);
-        return builder.HasAnnotation(HeadlessTenantPolicyAnnotations.IsOwned, value: false);
+        builder.Metadata.RemoveAnnotation(HeadlessModelAnnotations.Tenancy.PropertyName);
+        return builder.HasAnnotation(HeadlessModelAnnotations.Tenancy.IsOwned, value: false);
     }
 
     /// <summary>Explicitly excludes a root and its hierarchy from tenant isolation.</summary>
@@ -53,7 +53,7 @@ public static class HeadlessTenantPolicyExtensions
     public static bool IsTenantOwned(this IReadOnlyEntityType entityType)
     {
         var root = entityType.GetTenantOwnerEntityType();
-        return root[HeadlessTenantPolicyAnnotations.IsOwned] as bool?
+        return root[HeadlessModelAnnotations.Tenancy.IsOwned] as bool?
             ?? typeof(IMultiTenant).IsAssignableFrom(root.ClrType);
     }
 
@@ -62,7 +62,7 @@ public static class HeadlessTenantPolicyExtensions
     {
         var root = entityType.GetTenantOwnerEntityType();
         return root.IsTenantOwned()
-            ? root[HeadlessTenantPolicyAnnotations.PropertyName] as string ?? nameof(IMultiTenant.TenantId)
+            ? root[HeadlessModelAnnotations.Tenancy.PropertyName] as string ?? nameof(IMultiTenant.TenantId)
             : null;
     }
 
