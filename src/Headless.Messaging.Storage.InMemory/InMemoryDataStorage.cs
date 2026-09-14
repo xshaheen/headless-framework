@@ -45,7 +45,7 @@ internal sealed partial class InMemoryDataStorage(
 
     private readonly Dictionary<InboxKey, Guid> _inboxIdentityIndex = [];
 
-    private readonly Dictionary<Guid, InboxOperationResult> _inboxOperationReceipts = [];
+    private readonly Dictionary<Guid, InMemoryOperationReceipt> _inboxOperationReceipts = [];
 
     private readonly List<InMemoryInboxAudit> _inboxAudit = [];
 
@@ -1082,27 +1082,26 @@ internal sealed partial class InMemoryDataStorage(
                         var operationId = guidGenerator.Create();
                         const string actor = "headless.messaging.collector";
                         const string reason = "retention_expired";
-                        var result = new InboxOperationResult(
+                        var receipt = new InMemoryOperationReceipt(
                             operationId,
-                            InboxOperationType.Cleanup,
+                            MessagingOperationTargetKind.Inbox,
+                            MessagingOperationType.Cleanup,
                             InboxOperationOutcome.Applied,
-                            generation.IncarnationId,
-                            row.StatusName,
-                            row.StorageId,
-                            ChildStorageId: null,
-                            ChildGeneration: null,
-                            ChildIncarnationId: null,
                             actor,
                             reason,
-                            now
+                            now,
+                            GenerationIncarnationId: generation.IncarnationId,
+                            ExpectedStatus: row.StatusName,
+                            StorageId: row.StorageId
                         );
-                        _inboxOperationReceipts.Add(operationId, result);
+                        _inboxOperationReceipts.Add(operationId, receipt);
                         _inboxAudit.Add(
                             new InMemoryInboxAudit(
                                 guidGenerator.Create(),
                                 operationId,
+                                MessagingOperationTargetKind.Inbox,
                                 generation.IncarnationId,
-                                InboxOperationType.Cleanup,
+                                MessagingOperationType.Cleanup,
                                 actor,
                                 reason,
                                 InboxOperationOutcome.Applied,

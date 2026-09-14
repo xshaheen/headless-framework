@@ -9,6 +9,7 @@ Provides the foundational runtime for reliable distributed messaging with transa
 ## Key Features
 
 - `IMessageRevoker` deletes a scheduled row by `PublishReceipt.StorageId` before its first dispatch reservation. It returns `Revoked`, `NotFound`, or `AttemptReserved`, retains no audit record, and is not tenant-scoped. Use Jobs for keyed, replaceable, tenant-scoped, or transactional deadlines.
+- `IDataStorage.GetScheduledDeliveryOperationsApi()` (`IScheduledDeliveryOperationsApi`) is the audited, provider-neutral operator surface for pending scheduled deliveries: `QueryAsync` lists them (system-scoped, up to 200 rows a page), `RevokeAsync` deletes one using the same eligibility predicate and fence as `IMessageRevoker`, and `DispatchNowAsync` advances a pending row's due instant to the provider clock unless a dispatch lease is live. Every mutation carries a client-minted operation id, the storage id, and the caller's expected due instant, and shares one generalized ledger with the inbox operator surface. Providers without the capability throw a provider-naming `NotSupportedException`.
 - `PublishReceipt` carries the resolved wire `MessageId` and nullable durable `StorageId`. Direct delivery returns no storage handle. Middleware suppression before terminal publication returns both values null. A coordinated receipt remains subject to transaction commit or rollback and never implies consumer completion.
 - **Verb-Conveyed Lanes**: `IBus` selects broadcast Bus semantics and `IQueue` selects point-to-point Queue semantics; immutable delivery modes control persistence without changing the lane
 - **Outbox Delivery**: Transactional message publishing with database consistency
@@ -186,7 +187,9 @@ Known orphans are excluded from ordinary retry pickup. Each lane has an independ
 
 Orphans have no automatic expiry or terminalization. An orphan with no live execution claim permits `Hold`, `ReleaseHold`, and, when unheld, `Purge`, subject to the normal expected-status and incarnation checks. A live claim blocks these operator exceptions. `ForceReprocess` remains terminal-only. Holds block purge and terminal retention cleanup but do not pause execution: a held orphan can recover and keeps its hold after completion. Recovery claims and purge serialize against the same generation; only the winner can proceed.
 
-Operation history has separate retention from inbox generations. Configure these positive minimum residence durations through `setup.Options`:
+One generalized ledger backs both inbox and scheduled-delivery operator actions: the receipt and audit tables carry a `TargetKind` discriminator (`Inbox`, default; `ScheduledDelivery`), a nullable incarnation/expected-status pair, and nullable published-row snapshot columns. The schema change is additive -- physical table and column names are unchanged, so a replica still on the previous binary keeps working during a rolling deploy. Revoking a scheduled row is the same fenced delete `IMessageRevoker.RevokeAsync` performs, plus a receipt and audit written in the same transaction; revocation is never a visible status, so the ledger is the only trace once the row is gone. Dispatch-now moves a pending row's due instant to the provider clock; some node's delayed processor claims it on its next pass, typically within about a minute, so a dashboard-only host with no dispatcher cannot promise that latency.
+
+Operation history has separate retention from inbox generations, now covering both target kinds under the same four windows. Configure these positive minimum residence durations through `setup.Options`:
 
 | Option | Default |
 |---|---|

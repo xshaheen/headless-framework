@@ -17,12 +17,12 @@ internal sealed partial class SqlServerDataStorage
     // at most one batch. A single `<>` or multi-value IN predicate cannot keep CreatedAt order, so the
     // optimizer would scan or sort the whole expired backlog on every collector batch. Deriving the branches
     // from the enum keeps a newly added operation type from being silently excluded from retention.
-    private static readonly InboxOperationType[] _HistoryOperationTypes = Enum.GetValues<InboxOperationType>();
+    private static readonly MessagingOperationType[] _HistoryOperationTypes = Enum.GetValues<MessagingOperationType>();
 
     private static string _HistoryTypeParameter(int index) => "@Type" + index.ToString(CultureInfo.InvariantCulture);
 
-    private static string _HistoryCutoffParameter(InboxOperationType operationType) =>
-        operationType == InboxOperationType.Cleanup ? "@Cleanup" : "@Operator";
+    private static string _HistoryCutoffParameter(MessagingOperationType operationType) =>
+        operationType == MessagingOperationType.Cleanup ? "@Cleanup" : "@Operator";
 
     private static void _AddHistoryTypeParameters(SqlCommand command)
     {
@@ -139,7 +139,10 @@ internal sealed partial class SqlServerDataStorage
                 Math.Min(Math.Ceiling(messagingOptions.Value.CommandTimeout.TotalSeconds), int.MaxValue);
             command.Parameters.Add(new SqlParameter("@OperationId", operationId));
             command.Parameters.Add(
-                new SqlParameter("@CleanupType", SqlDbType.NVarChar, 50) { Value = nameof(InboxOperationType.Cleanup) }
+                new SqlParameter("@CleanupType", SqlDbType.NVarChar, 50)
+                {
+                    Value = nameof(MessagingOperationType.Cleanup),
+                }
             );
             command.Parameters.Add(new SqlParameter("@Cleanup", cutoffs.CleanupReceipt));
             command.Parameters.Add(new SqlParameter("@Operator", cutoffs.OperatorReceipt));

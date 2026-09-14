@@ -16,6 +16,7 @@ Provides real-time visibility into message processing, failures, retries, and sy
 - **Authorized Inbox Generations**: The received view shows bounded outcome, tier, generation, replay provenance, hold, expiry, and routability fields from the authenticated inbox operations projection. It does not project payloads or raw headers.
 - **Performance Metrics**: Consumer processing stats and bottlenecks
 - **5-Mode Auth**: None, Basic, API Key, Host, Custom (shared with Jobs Dashboard)
+- **Scheduled-delivery operator actions**: `GET /api/scheduled` lists pending scheduled deliveries (published rows in `Delayed`/`Queued` with no inline attempt, retry, or persisted retry time, presented as one `Pending` state); `POST /api/scheduled/revoke` and `POST /api/scheduled/dispatch-now` are audited, fenced mutations sharing the inbox operator ledger.
 
 ## Design Notes
 
@@ -25,7 +26,9 @@ Inbox operations are generation-fenced and audited. Terminal identity is retaine
 
 Inbox query and operation JSON uses camelCase properties and named string enum values, such as `"Failed"`, `"Succeeded"`, and `"Queue"`, independently of the host's JSON configuration. Operation requests must send `expectedStatus` as a string; responses use the same format for status, lane, operation type, and outcome, including conflict and not-found results.
 
-Inbox operations require an authenticated principal and a stable audit actor. The primary identity's name is used first, then its `NameIdentifier` or `sub` claim, then the authenticated dashboard username. The shared `host-user` placeholder cannot identify an operator. Authorization retains the host's claims and role mappings. Operation bodies require a JSON content type; unsupported media types return HTTP 415 and malformed JSON returns HTTP 422.
+Inbox and scheduled-delivery operations share one actor resolver and require an authenticated principal with a stable audit actor. The primary identity's name is used first, then its `NameIdentifier` or `sub` claim, then the authenticated dashboard username. An unauthenticated request returns HTTP 401 and ends the dashboard session. An authenticated principal with no usable name -- the no-auth mode's `anonymous` identity or the Host mode's shared `host-user` placeholder -- returns HTTP 403 with error code `g:operator_actor_required` and a body naming the remedy; the dashboard stays signed in. **Behavior change:** the inbox `host-user` case previously returned 401; it now returns 403, and `WithNoAuth()` deployments can no longer perform any operator action (read-only monitoring is unaffected). ApiKey and Custom identities are accepted as before and attribute actions to the deployment's shared secret identity. Authorization retains the host's claims and role mappings. Operation bodies require a JSON content type; unsupported media types return HTTP 415 and malformed JSON returns HTTP 422.
+
+The legacy `POST /api/published/requeue` and `POST /api/published/delete` bulk endpoints reject any id that matches the pending-scheduled-delivery predicate: each rejected id is reported in the response's `rejected` array alongside a message pointing at the audited `/api/scheduled/revoke` and `/api/scheduled/dispatch-now` actions, and the remaining ids are processed exactly as before. This fencing runs under the host principal, not the operator actor requirement, so it still functions under `WithNoAuth()` for non-pending rows.
 
 ## Installation
 

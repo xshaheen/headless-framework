@@ -421,17 +421,34 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
             ) AS "ConstraintCount", (
                 SELECT COUNT(*) FROM information_schema.columns
                 WHERE table_schema='messaging' AND table_name='inbox_operation_receipts'
-                  AND column_name IN ('ExpectedStatus','Outcome','ChildIncarnationId')
+                  AND column_name IN ('ExpectedStatus','Outcome','ChildIncarnationId','TargetKind','ExpectedDueAt','MessageName','MessageId','Lane')
             ) AS "ReceiptColumnCount"
             FROM messaging.schema_state AS state
             WHERE state."Component"='inbox';
             """
         );
 
-        schemaVersion.Should().Be(4);
+        schemaVersion.Should().Be(5);
         indexCount.Should().Be(2);
         constraintCount.Should().Be(2);
-        receiptColumnCount.Should().Be(3);
+        receiptColumnCount.Should().Be(8);
+    }
+
+    [Fact]
+    public async Task should_upgrade_inbox_schema_v4_to_v5_additively()
+    {
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        var version = await connection.ExecuteScalarAsync<int>(
+            "SELECT \"SchemaVersion\" FROM messaging.schema_state WHERE \"Component\"='inbox';"
+        );
+        version.Should().Be(5);
+
+        await GetInitializer().InitializeAsync(AbortToken);
+
+        version = await connection.ExecuteScalarAsync<int>(
+            "SELECT \"SchemaVersion\" FROM messaging.schema_state WHERE \"Component\"='inbox';"
+        );
+        version.Should().Be(5);
     }
 
     [Fact]
@@ -487,26 +504,26 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
     {
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.ExecuteAsync(
-            "UPDATE messaging.schema_state SET \"SchemaVersion\"=5 WHERE \"Component\"='inbox';"
+            "UPDATE messaging.schema_state SET \"SchemaVersion\"=6 WHERE \"Component\"='inbox';"
         );
 
         try
         {
             var act = async () => await GetInitializer().InitializeAsync(AbortToken);
 
-            await act.Should().ThrowAsync<PostgresException>().WithMessage("*newer than supported version 4*");
+            await act.Should().ThrowAsync<PostgresException>().WithMessage("*newer than supported version 5*");
             (
                 await connection.ExecuteScalarAsync<int>(
                     "SELECT \"SchemaVersion\" FROM messaging.schema_state WHERE \"Component\"='inbox';"
                 )
             )
                 .Should()
-                .Be(5, "a rejected older binary must not rewrite the newer readiness marker");
+                .Be(6, "a rejected older binary must not rewrite the newer readiness marker");
         }
         finally
         {
             await connection.ExecuteAsync(
-                "UPDATE messaging.schema_state SET \"SchemaVersion\"=4 WHERE \"Component\"='inbox';"
+                "UPDATE messaging.schema_state SET \"SchemaVersion\"=5 WHERE \"Component\"='inbox';"
             );
         }
     }

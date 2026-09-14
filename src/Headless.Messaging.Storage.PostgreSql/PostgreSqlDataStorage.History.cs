@@ -16,12 +16,12 @@ internal sealed partial class PostgreSqlDataStorage
     // multi-value IN predicate cannot keep that order, so the planner would scan or sort the whole expired
     // backlog on every collector batch. Deriving the branches from the enum keeps a newly added operation
     // type from being silently excluded from retention.
-    private static readonly InboxOperationType[] _HistoryOperationTypes = Enum.GetValues<InboxOperationType>();
+    private static readonly MessagingOperationType[] _HistoryOperationTypes = Enum.GetValues<MessagingOperationType>();
 
     private static string _HistoryTypeParameter(int index) => "@Type" + index.ToString(CultureInfo.InvariantCulture);
 
-    private static string _HistoryCutoffParameter(InboxOperationType operationType) =>
-        operationType == InboxOperationType.Cleanup ? "@Cleanup" : "@Operator";
+    private static string _HistoryCutoffParameter(MessagingOperationType operationType) =>
+        operationType == MessagingOperationType.Cleanup ? "@Cleanup" : "@Operator";
 
     private static void _AddHistoryTypeParameters(NpgsqlCommand command)
     {
@@ -139,7 +139,7 @@ internal sealed partial class PostgreSqlDataStorage
             command.CommandTimeout = (int)
                 Math.Min(Math.Ceiling(messagingOptions.Value.CommandTimeout.TotalSeconds), int.MaxValue);
             command.Parameters.AddWithValue("@OperationId", operationId);
-            command.Parameters.AddWithValue("@CleanupType", nameof(InboxOperationType.Cleanup));
+            command.Parameters.AddWithValue("@CleanupType", nameof(MessagingOperationType.Cleanup));
             command.Parameters.AddWithValue("@Cleanup", cutoffs.CleanupReceipt);
             command.Parameters.AddWithValue("@Operator", cutoffs.OperatorReceipt);
             var count = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);

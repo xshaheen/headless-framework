@@ -11,7 +11,7 @@ public interface IInboxOperationsApi
     /// <summary>Queries retained inbox generations without loading message payloads or arbitrary headers.</summary>
     ValueTask<IndexPage<InboxGenerationView>> QueryAsync(
         InboxGenerationQuery query,
-        InboxAuthorizationContext authorization,
+        OperatorAuthorizationContext authorization,
         CancellationToken cancellationToken = default
     );
 

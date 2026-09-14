@@ -20,7 +20,7 @@ internal sealed partial class SqlServerDataStorage
 
     public async ValueTask<IndexPage<InboxGenerationView>> QueryAsync(
         InboxGenerationQuery query,
-        InboxAuthorizationContext authorization,
+        OperatorAuthorizationContext authorization,
         CancellationToken cancellationToken = default
     )
     {
@@ -110,25 +110,25 @@ internal sealed partial class SqlServerDataStorage
     public ValueTask<InboxOperationResult> HoldAsync(
         InboxOperationRequest request,
         CancellationToken cancellationToken = default
-    ) => _ExecuteSqlServerInboxOperationAsync(InboxOperationType.Hold, request, cancellationToken);
+    ) => _ExecuteSqlServerInboxOperationAsync(MessagingOperationType.Hold, request, cancellationToken);
 
     public ValueTask<InboxOperationResult> ReleaseHoldAsync(
         InboxOperationRequest request,
         CancellationToken cancellationToken = default
-    ) => _ExecuteSqlServerInboxOperationAsync(InboxOperationType.ReleaseHold, request, cancellationToken);
+    ) => _ExecuteSqlServerInboxOperationAsync(MessagingOperationType.ReleaseHold, request, cancellationToken);
 
     public ValueTask<InboxOperationResult> ForceReprocessAsync(
         InboxOperationRequest request,
         CancellationToken cancellationToken = default
-    ) => _ExecuteSqlServerInboxOperationAsync(InboxOperationType.ForceReprocess, request, cancellationToken);
+    ) => _ExecuteSqlServerInboxOperationAsync(MessagingOperationType.ForceReprocess, request, cancellationToken);
 
     public ValueTask<InboxOperationResult> PurgeAsync(
         InboxOperationRequest request,
         CancellationToken cancellationToken = default
-    ) => _ExecuteSqlServerInboxOperationAsync(InboxOperationType.Purge, request, cancellationToken);
+    ) => _ExecuteSqlServerInboxOperationAsync(MessagingOperationType.Purge, request, cancellationToken);
 
     private async ValueTask<InboxOperationResult> _ExecuteSqlServerInboxOperationAsync(
-        InboxOperationType operationType,
+        MessagingOperationType operationType,
         InboxOperationRequest request,
         CancellationToken cancellationToken
     )
@@ -178,7 +178,7 @@ internal sealed partial class SqlServerDataStorage
         {
             switch (operationType)
             {
-                case InboxOperationType.Hold:
+                case MessagingOperationType.Hold:
                     await _ExecuteSqlServerMutationAsync(
                             connection,
                             transaction,
@@ -189,7 +189,7 @@ internal sealed partial class SqlServerDataStorage
                         )
                         .ConfigureAwait(false);
                     break;
-                case InboxOperationType.ReleaseHold:
+                case MessagingOperationType.ReleaseHold:
                     await _ExecuteSqlServerMutationAsync(
                             connection,
                             transaction,
@@ -200,7 +200,7 @@ internal sealed partial class SqlServerDataStorage
                         )
                         .ConfigureAwait(false);
                     break;
-                case InboxOperationType.ForceReprocess:
+                case MessagingOperationType.ForceReprocess:
                     childStorageId = guidGenerator.Create();
                     childIncarnationId = guidGenerator.Create();
                     childGeneration = checked(row.State.Generation + 1);
@@ -217,7 +217,7 @@ internal sealed partial class SqlServerDataStorage
                         )
                         .ConfigureAwait(false);
                     break;
-                case InboxOperationType.Purge:
+                case MessagingOperationType.Purge:
                     await _ExecuteSqlServerMutationAsync(
                             connection,
                             transaction,
@@ -254,7 +254,7 @@ internal sealed partial class SqlServerDataStorage
 
     private void _RecordSqlServerInboxOperation(
         SqlServerInboxOperationRow? row,
-        InboxOperationType operationType,
+        MessagingOperationType operationType,
         InboxOperationOutcome outcome
     )
     {
@@ -263,15 +263,15 @@ internal sealed partial class SqlServerDataStorage
             return;
         }
         MessagingMetrics.RecordInbox(
-            operationType is InboxOperationType.ForceReprocess ? InboxMetricKind.Replay : InboxMetricKind.Retention,
+            operationType is MessagingOperationType.ForceReprocess ? InboxMetricKind.Replay : InboxMetricKind.Retention,
             row.ConsumerIdentity,
             MessageLaneCompatibility.FromPersistedValue(row.IntentType),
             operationType switch
             {
-                InboxOperationType.Hold => InboxMetricOutcome.Held,
-                InboxOperationType.ReleaseHold => InboxMetricOutcome.Released,
-                InboxOperationType.ForceReprocess => InboxMetricOutcome.Replayed,
-                InboxOperationType.Purge => InboxMetricOutcome.Purged,
+                MessagingOperationType.Hold => InboxMetricOutcome.Held,
+                MessagingOperationType.ReleaseHold => InboxMetricOutcome.Released,
+                MessagingOperationType.ForceReprocess => InboxMetricOutcome.Replayed,
+                MessagingOperationType.Purge => InboxMetricOutcome.Purged,
                 _ => throw new ArgumentOutOfRangeException(nameof(operationType), operationType, message: null),
             },
             messagingOptions.Value.RequiredInboxCapability,
@@ -281,7 +281,7 @@ internal sealed partial class SqlServerDataStorage
 
     private static InboxOperationResult _ReplayOrConflict(
         InboxOperationResult prior,
-        InboxOperationType operationType,
+        MessagingOperationType operationType,
         InboxOperationRequest request
     )
     {
@@ -436,7 +436,7 @@ internal sealed partial class SqlServerDataStorage
     )
     {
         await using var command = new SqlCommand(
-            $"SELECT [GenerationIncarnationId],[OperationType],[ExpectedStatus],[Actor],[Reason],[Outcome],[StorageId],[ChildStorageId],[ChildGeneration],[ChildIncarnationId],[CreatedAt] FROM {InboxReceiptsTable} WITH (UPDLOCK,HOLDLOCK) WHERE [OperationId]=@OperationId;",
+            $"SELECT [GenerationIncarnationId],[OperationType],[ExpectedStatus],[Actor],[Reason],[Outcome],[StorageId],[ChildStorageId],[ChildGeneration],[ChildIncarnationId],[CreatedAt],[TargetKind] FROM {InboxReceiptsTable} WITH (UPDLOCK,HOLDLOCK) WHERE [OperationId]=@OperationId;",
             connection,
             transaction
         );
@@ -446,12 +446,16 @@ internal sealed partial class SqlServerDataStorage
         {
             return null;
         }
+        var targetKind = reader.GetString(11);
+        var incarnationId = targetKind == "Inbox" && !reader.IsDBNull(0) ? reader.GetGuid(0) : Guid.Empty;
+        var expectedStatus =
+            targetKind == "Inbox" && !reader.IsDBNull(2) ? Enum.Parse<StatusName>(reader.GetString(2)) : default;
         return new InboxOperationResult(
             operationId,
-            Enum.Parse<InboxOperationType>(reader.GetString(1)),
+            Enum.Parse<MessagingOperationType>(reader.GetString(1)),
             Enum.Parse<InboxOperationOutcome>(reader.GetString(5)),
-            reader.GetGuid(0),
-            Enum.Parse<StatusName>(reader.GetString(2)),
+            incarnationId,
+            expectedStatus,
             reader.IsDBNull(6) ? null : reader.GetGuid(6),
             reader.IsDBNull(7) ? null : reader.GetGuid(7),
             reader.IsDBNull(8) ? null : reader.GetInt64(8),
@@ -533,8 +537,8 @@ internal sealed partial class SqlServerDataStorage
     )
     {
         var sql = $"""
-            INSERT INTO {InboxReceiptsTable}([OperationId],[GenerationIncarnationId],[OperationType],[ExpectedStatus],[Actor],[Reason],[Outcome],[StorageId],[ChildStorageId],[ChildGeneration],[ChildIncarnationId],[CreatedAt]) VALUES (@OperationId,@IncarnationId,@OperationType,@ExpectedStatus,@Actor,@Reason,@Outcome,@StorageId,@ChildStorageId,@ChildGeneration,@ChildIncarnationId,@CreatedAt);
-            INSERT INTO {InboxAuditTable}([AuditId],[OperationId],[GenerationIncarnationId],[OperationType],[Actor],[Reason],[Outcome],[CreatedAt]) VALUES (@AuditId,@OperationId,@IncarnationId,@OperationType,@Actor,@Reason,@Outcome,@CreatedAt);
+            INSERT INTO {InboxReceiptsTable}([OperationId],[TargetKind],[GenerationIncarnationId],[OperationType],[ExpectedStatus],[Actor],[Reason],[Outcome],[StorageId],[ChildStorageId],[ChildGeneration],[ChildIncarnationId],[CreatedAt]) VALUES (@OperationId,N'Inbox',@IncarnationId,@OperationType,@ExpectedStatus,@Actor,@Reason,@Outcome,@StorageId,@ChildStorageId,@ChildGeneration,@ChildIncarnationId,@CreatedAt);
+            INSERT INTO {InboxAuditTable}([AuditId],[OperationId],[TargetKind],[GenerationIncarnationId],[OperationType],[Actor],[Reason],[Outcome],[CreatedAt]) VALUES (@AuditId,@OperationId,N'Inbox',@IncarnationId,@OperationType,@Actor,@Reason,@Outcome,@CreatedAt);
             """;
         await using var command = new SqlCommand(sql, connection, transaction);
         command.Parameters.Add(new SqlParameter("@AuditId", guidGenerator.Create()));
@@ -587,7 +591,7 @@ internal sealed partial class SqlServerDataStorage
     )
     {
         await using var command = new SqlCommand(
-            $"INSERT INTO {InboxAuditTable}([AuditId],[OperationId],[GenerationIncarnationId],[OperationType],[Actor],[Reason],[Outcome],[CreatedAt]) VALUES (@AuditId,@OperationId,@IncarnationId,@OperationType,@Actor,@Reason,@Outcome,CONVERT(datetimeoffset(7), SYSUTCDATETIME()));",
+            $"INSERT INTO {InboxAuditTable}([AuditId],[OperationId],[TargetKind],[GenerationIncarnationId],[OperationType],[Actor],[Reason],[Outcome],[CreatedAt]) VALUES (@AuditId,@OperationId,N'Inbox',@IncarnationId,@OperationType,@Actor,@Reason,@Outcome,CONVERT(datetimeoffset(7), SYSUTCDATETIME()));",
             connection,
             transaction
         );

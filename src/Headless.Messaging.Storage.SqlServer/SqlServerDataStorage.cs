@@ -39,6 +39,7 @@ internal sealed partial class SqlServerDataStorage(
         ICircuitRetryDeferralStorage,
         ITransactionalInboxStorage,
         IInboxOperationsApi,
+        IScheduledDeliveryOperationsApi,
         IDeliveryCoordinationResolver
 {
     /// <summary>
@@ -1468,6 +1469,8 @@ internal sealed partial class SqlServerDataStorage(
     }
 
     public IInboxOperationsApi GetInboxOperationsApi() => this;
+
+    public IScheduledDeliveryOperationsApi GetScheduledDeliveryOperationsApi() => this;
 
     // NOTE: ChangeReceiveStateAsync does not call this helper because the receive path additionally
     // writes ExceptionInfo, a column absent from the published table schema. Keep these two methods

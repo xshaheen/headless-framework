@@ -7,6 +7,12 @@ namespace Headless.Messaging.Storage.SqlServer;
 
 internal sealed partial class SqlServerDataStorage : IMessageRevocationStorage
 {
+    private const string _ScheduledEligibilityPredicate =
+        $"{_TerminalRowGuardSimple} AND InlineAttempts=0 AND Retries=0 AND NextRetryAt IS NULL";
+
+    private const string _ScheduledPendingPredicate =
+        "Version=@Version AND StatusName IN ('Delayed','Queued') AND InlineAttempts=0 AND Retries=0 AND NextRetryAt IS NULL";
+
     public async ValueTask<MessageRevocationResult> RevokeAsync(
         Guid storageId,
         CancellationToken cancellationToken = default
@@ -18,8 +24,7 @@ internal sealed partial class SqlServerDataStorage : IMessageRevocationStorage
             DELETE FROM {_publishedTable}
             OUTPUT deleted.Id INTO @Revoked
             WHERE Id=@Id AND Version=@Version
-              AND {_TerminalRowGuardSimple}
-              AND InlineAttempts=0 AND Retries=0 AND NextRetryAt IS NULL;
+              AND {_ScheduledEligibilityPredicate};
             SELECT CASE WHEN EXISTS (SELECT 1 FROM @Revoked) THEN 1
                         WHEN EXISTS (SELECT 1 FROM {_publishedTable} WHERE Id=@Id AND Version=@Version) THEN 2
                         ELSE 0 END;

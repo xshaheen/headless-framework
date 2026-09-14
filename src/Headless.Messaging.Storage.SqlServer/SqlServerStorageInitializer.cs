@@ -215,10 +215,13 @@ internal sealed class SqlServerStorageInitializer(
                OR NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name=N'CK_{receivedPrefix}_InboxLifecycleV4' AND parent_object_id=OBJECT_ID(N'{GetReceivedTableName()}'))
                OR COL_LENGTH(N'{schema}.InboxOperationReceipts',N'ExpectedStatus') IS NULL
                OR COL_LENGTH(N'{schema}.InboxOperationReceipts',N'Outcome') IS NULL
+               OR COL_LENGTH(N'{schema}.InboxOperationReceipts',N'TargetKind') IS NULL
+               OR COL_LENGTH(N'{schema}.InboxOperationReceipts',N'ExpectedDueAt') IS NULL
+               OR COL_LENGTH(N'{schema}.InboxAudit',N'TargetKind') IS NULL
                 THROW 50004, N'Headless.Messaging inbox schema is incomplete: the lifecycle, retention or operation receipt contract is missing.', 1;
 
             MERGE [{schema}].[SchemaState] WITH (HOLDLOCK) AS target
-            USING (SELECT N'inbox' AS [Component], 4 AS [SchemaVersion], SYSDATETIMEOFFSET() AS [ReadyAt]) AS source
+            USING (SELECT N'inbox' AS [Component], 5 AS [SchemaVersion], SYSDATETIMEOFFSET() AS [ReadyAt]) AS source
             ON target.[Component]=source.[Component]
             WHEN MATCHED THEN UPDATE SET [SchemaVersion]=source.[SchemaVersion],[ReadyAt]=source.[ReadyAt]
             WHEN NOT MATCHED THEN INSERT ([Component],[SchemaVersion],[ReadyAt]) VALUES (source.[Component],source.[SchemaVersion],source.[ReadyAt]);
@@ -254,8 +257,8 @@ internal sealed class SqlServerStorageInitializer(
 
             IF OBJECT_ID(N'{schema}.SchemaState',N'U') IS NOT NULL
                 EXEC(N'
-                    IF EXISTS (SELECT 1 FROM [{schema}].[SchemaState] WHERE [Component]=N''inbox'' AND [SchemaVersion] > 4)
-                        THROW 50003, N''Headless.Messaging inbox schema is newer than supported version 4. Upgrade the application before starting this binary.'', 1;
+                    IF EXISTS (SELECT 1 FROM [{schema}].[SchemaState] WHERE [Component]=N''inbox'' AND [SchemaVersion] > 5)
+                        THROW 50003, N''Headless.Messaging inbox schema is newer than supported version 5. Upgrade the application before starting this binary.'', 1;
                     DELETE FROM [{schema}].[SchemaState] WHERE [Component]=N''inbox'';
                 ');
 
@@ -529,13 +532,18 @@ internal sealed class SqlServerStorageInitializer(
             BEGIN
                 CREATE TABLE [{schema}].[InboxOperationReceipts](
                     [OperationId] [uniqueidentifier] NOT NULL,
-                    [GenerationIncarnationId] [uniqueidentifier] NOT NULL,
+                    [TargetKind] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NOT NULL CONSTRAINT [DF_{schema}_InboxOperationReceipts_TargetKind] DEFAULT N'Inbox',
+                    [GenerationIncarnationId] [uniqueidentifier] NULL,
                     [OperationType] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NOT NULL,
-                    [ExpectedStatus] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NOT NULL,
+                    [ExpectedStatus] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NULL,
+                    [ExpectedDueAt] [datetimeoffset](7) NULL,
                     [Actor] [nvarchar](200) COLLATE Latin1_General_100_BIN2 NOT NULL,
                     [Reason] [nvarchar](1000) NOT NULL,
                     [Outcome] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NOT NULL,
                     [StorageId] [uniqueidentifier] NULL,
+                    [MessageName] [nvarchar](200) NULL,
+                    [MessageId] [nvarchar](200) COLLATE Latin1_General_100_BIN2 NULL,
+                    [Lane] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NULL,
                     [ChildStorageId] [uniqueidentifier] NULL,
                     [ChildGeneration] [bigint] NULL,
                     [ChildIncarnationId] [uniqueidentifier] NULL,
@@ -549,7 +557,8 @@ internal sealed class SqlServerStorageInitializer(
                 CREATE TABLE [{schema}].[InboxAudit](
                     [AuditId] [uniqueidentifier] NOT NULL,
                     [OperationId] [uniqueidentifier] NOT NULL,
-                    [GenerationIncarnationId] [uniqueidentifier] NOT NULL,
+                    [TargetKind] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NOT NULL CONSTRAINT [DF_{schema}_InboxAudit_TargetKind] DEFAULT N'Inbox',
+                    [GenerationIncarnationId] [uniqueidentifier] NULL,
                     [OperationType] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NOT NULL,
                     [Actor] [nvarchar](200) COLLATE Latin1_General_100_BIN2 NOT NULL,
                     [Reason] [nvarchar](1000) NOT NULL,
@@ -564,6 +573,35 @@ internal sealed class SqlServerStorageInitializer(
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'IX_{schema}_InboxAudit_Incarnation_CreatedAt' AND object_id=OBJECT_ID(N'{schema}.InboxAudit'))
                 CREATE NONCLUSTERED INDEX [IX_{schema}_InboxAudit_Incarnation_CreatedAt]
                     ON [{schema}].[InboxAudit] ([GenerationIncarnationId],[CreatedAt]);
+
+            IF OBJECT_ID(N'{schema}.InboxOperationReceipts', N'U') IS NOT NULL
+            BEGIN
+                IF COL_LENGTH(N'{schema}.InboxOperationReceipts', N'TargetKind') IS NULL
+                    ALTER TABLE [{schema}].[InboxOperationReceipts] ADD [TargetKind] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NOT NULL CONSTRAINT [DF_{schema}_InboxOperationReceipts_TargetKind] DEFAULT N'Inbox';
+
+                IF COL_LENGTH(N'{schema}.InboxOperationReceipts', N'ExpectedDueAt') IS NULL
+                    ALTER TABLE [{schema}].[InboxOperationReceipts] ADD [ExpectedDueAt] [datetimeoffset](7) NULL;
+
+                IF COL_LENGTH(N'{schema}.InboxOperationReceipts', N'MessageName') IS NULL
+                    ALTER TABLE [{schema}].[InboxOperationReceipts] ADD [MessageName] [nvarchar](200) NULL;
+
+                IF COL_LENGTH(N'{schema}.InboxOperationReceipts', N'MessageId') IS NULL
+                    ALTER TABLE [{schema}].[InboxOperationReceipts] ADD [MessageId] [nvarchar](200) COLLATE Latin1_General_100_BIN2 NULL;
+
+                IF COL_LENGTH(N'{schema}.InboxOperationReceipts', N'Lane') IS NULL
+                    ALTER TABLE [{schema}].[InboxOperationReceipts] ADD [Lane] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NULL;
+
+                ALTER TABLE [{schema}].[InboxOperationReceipts] ALTER COLUMN [GenerationIncarnationId] [uniqueidentifier] NULL;
+                ALTER TABLE [{schema}].[InboxOperationReceipts] ALTER COLUMN [ExpectedStatus] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NULL;
+            END;
+
+            IF OBJECT_ID(N'{schema}.InboxAudit', N'U') IS NOT NULL
+            BEGIN
+                IF COL_LENGTH(N'{schema}.InboxAudit', N'TargetKind') IS NULL
+                    ALTER TABLE [{schema}].[InboxAudit] ADD [TargetKind] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NOT NULL CONSTRAINT [DF_{schema}_InboxAudit_TargetKind] DEFAULT N'Inbox';
+
+                ALTER TABLE [{schema}].[InboxAudit] ALTER COLUMN [GenerationIncarnationId] [uniqueidentifier] NULL;
+            END;
 
             IF OBJECT_ID(N'{schema}.SchemaState',N'U') IS NULL
             BEGIN

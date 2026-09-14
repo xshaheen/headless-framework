@@ -116,8 +116,26 @@ under Auto it upgrades the call to durable; with explicit Direct it is an error;
 timing is best-effort (not-before semantics). `ScheduledAt` accepts an absolute instant, including a past instant.
 Both verbs return `PublishReceipt`; durable delivery includes a `StorageId`, while direct delivery does not.
 `IMessageRevoker` deletes a scheduled row by that handle until its first dispatch reservation.
-Only `Revoked` proves prevention. `AttemptReserved` is not proof of delivery. Revocation retains no audit record.
+Only `Revoked` proves prevention. `AttemptReserved` is not proof of delivery. Application-level
+revocation through `IMessageRevoker` retains no audit record. The dashboard's audited operator
+revoke performs the identical fenced delete but also writes a receipt and audit in the same
+transaction — the two paths delete the same row the same way; only the evidence differs.
 Use Jobs for keyed, replaceable, tenant-scoped, or transactional business deadlines.
+
+### Operator ledger
+One generalized receipt-and-audit ledger, shared by the inbox operator surface and the
+scheduled-delivery operator surface, discriminated by `TargetKind` (`Inbox`, `ScheduledDelivery`).
+Every audited action — hold, release, force-reprocess, purge, revoke, dispatch-now — writes a
+receipt (replay/conflict detection by operation id) and an audit (append-only history) in the
+mutation's own transaction. Four retention windows (cleanup/operator × receipt/audit) govern the
+whole ledger regardless of target kind; a receipt outlives its row, an audit can outlive its
+receipt, and deleting history never releases a generation's hold.
+
+### Pending scheduled delivery
+A published row eligible for operator revoke or dispatch-now: it matches the configured messaging
+version, sits in `Delayed` or `Queued`, and has no inline attempt, no retry, and no persisted retry
+time. The dashboard presents both statuses as one `Pending` state. A row with a live dispatch lease
+is still pending but ineligible for dispatch-now (`Active`); revoke has no lease precondition.
 
 ## Flagged ambiguities
 
