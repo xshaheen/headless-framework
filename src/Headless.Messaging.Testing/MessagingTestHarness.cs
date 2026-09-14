@@ -540,11 +540,23 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         {
             result = await action().ConfigureAwait(false);
         }
-        catch
+        catch (Exception actionException)
         {
             // Disposal alone would roll back, but signalling here drains the rollback callbacks before the caller
             // observes the exception, so the captured rows are already discarded when the test asserts.
-            await scope.SignalAsync(CommitOutcome.RolledBack).ConfigureAwait(false);
+            try
+            {
+                await scope.SignalAsync(CommitOutcome.RolledBack).ConfigureAwait(false);
+            }
+            catch (Exception rollbackException)
+            {
+                throw new AggregateException(
+                    "Coordinated action failed and rollback signal also faulted.",
+                    actionException,
+                    rollbackException
+                );
+            }
+
             throw;
         }
 

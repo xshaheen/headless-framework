@@ -314,7 +314,8 @@ public sealed class JobsPostCommitSignalServiceTests : TestBase
     [Fact]
     public async Task should_abandon_the_drain_when_the_shutdown_budget_is_exhausted()
     {
-        var (service, _) = _CreateService(new FakeTimeProvider());
+        var (service, logger) = _CreateService(new FakeTimeProvider());
+        using var drops = new DroppedSignalCounter();
         var firstStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var firstCancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var secondProcessed = false;
@@ -357,6 +358,9 @@ public sealed class JobsPostCommitSignalServiceTests : TestBase
         await firstCancelled.Task.WaitAsync(_WaitTimeout, AbortToken);
         await service.ExecuteTask!.WaitAsync(_WaitTimeout, AbortToken);
         secondProcessed.Should().BeFalse();
+        service.PendingCount.Should().Be(0);
+        logger.Entries.Should().Contain(e => e.Level == LogLevel.Warning && e.Exception == null);
+        drops.Measurements.Should().ContainSingle().Which.Should().Be((1L, "stopping"));
     }
 
     [Fact]

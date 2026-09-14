@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.CommitCoordination;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Messages;
@@ -227,5 +228,28 @@ public sealed class CoordinatedHarnessTests : TestBase
         consumed.ResolvedDeliveryMode.Should().Be(DeliveryMode.Durable);
         harness.Published.Should().ContainSingle();
         harness.Consumed.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task should_preserve_action_exception_when_rollback_signal_also_faults()
+    {
+        await using var harness = await _CreatePublishOnlyHarnessAsync();
+
+        var actionEx = new InvalidOperationException("action failed");
+        var rollbackEx = new InvalidOperationException("rollback handler failed");
+
+        var act = () =>
+            harness.RunCoordinatedAsync(async () =>
+            {
+                var coordinator = harness.ServiceProvider.GetRequiredService<ICurrentCommitCoordinator>().Current;
+                coordinator.Should().NotBeNull();
+                coordinator!.OnRollback((_, _) => throw rollbackEx);
+
+                await Task.Yield();
+                throw actionEx;
+            });
+
+        var ex = await act.Should().ThrowAsync<AggregateException>();
+        ex.Which.InnerExceptions.Should().Contain([actionEx, rollbackEx]);
     }
 }
