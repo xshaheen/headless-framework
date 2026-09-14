@@ -907,6 +907,11 @@ Open duration escalates exponentially on repeated trips and resets after consecu
 
 Persisted received retries share the same lane-qualified probe generation as transport delivery. Open rows are durably deferred to the current circuit generation's next-probe boundary; in HalfOpen, one row or transport delivery owns the probe, while sibling claims retain their exact leases for normal store-authoritative expiry without blocking healthy pickup. Healthy groups in the same claimed batch dispatch before circuit dispositions, so an open group cannot monopolize retry pickup.
 
+Pause and resume work carries a monotonic circuit epoch, and a consumer-group handle applies intents
+in epoch order. A resume launched before `ForceOpenAsync`, another Open transition, or a restart
+pre-pause cannot reopen a newer Open generation. Force-open therefore leaves the transport paused
+even when recovery was already in flight.
+
 ### Global Configuration
 
 ```csharp

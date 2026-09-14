@@ -223,7 +223,7 @@ internal sealed partial class MessageNeedToRetryProcessor
         {
             if (Interlocked.Exchange(ref _released, 1) == 0)
             {
-                stateManager?.ReleaseHalfOpenProbe(probeKey);
+                stateManager?.ReleaseHalfOpenProbe(probeKey, Work.Decision.Epoch);
             }
         }
 

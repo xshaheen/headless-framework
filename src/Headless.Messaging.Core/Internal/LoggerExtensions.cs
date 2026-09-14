@@ -348,6 +348,32 @@ internal static partial class LoggerExtensions
     )]
     public static partial void ResumeConsumerClientFailed(this ILogger logger, Exception exception, string groupName);
 
+    [LoggerMessage(
+        EventId = 4113,
+        Level = LogLevel.Debug,
+        Message = "Skipping stale circuit intent for group '{GroupName}' (intent epoch {Epoch}, last applied {LastAppliedEpoch})."
+    )]
+    public static partial void StaleCircuitIntentSkipped(
+        this ILogger logger,
+        string groupName,
+        long epoch,
+        long lastAppliedEpoch
+    );
+
+    [LoggerMessage(
+        EventId = 4114,
+        Level = LogLevel.Debug,
+        Message = "Delivery admitted while circuit was open during pause latency for group '{GroupName}'."
+    )]
+    public static partial void DeliveryAdmittedDuringPauseLatency(this ILogger logger, string groupName);
+
+    [LoggerMessage(
+        EventId = 4115,
+        Level = LogLevel.Warning,
+        Message = "Delivery admitted while circuit was open after pause completed for group '{GroupName}'; transport is not paused."
+    )]
+    public static partial void DeliveryAdmittedWhileOpenAfterPause(this ILogger logger, string groupName);
+
     [LoggerMessage(EventId = 42, Level = LogLevel.Warning, Message = "RabbitMQ consumer cancelled. --> {Reason}")]
     public static partial void RabbitMqConsumerCancelled(this ILogger logger, string reason);
 

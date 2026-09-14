@@ -556,6 +556,10 @@ Per-consumer-group circuit breaker that pauses transport consumption when a depe
 
 Persisted received retries share the same lane-qualified probe generation as transport delivery. While Open, claimed rows are durably deferred to the current circuit generation's next eligible probe time and their exact lease is released atomically; once HalfOpen, only one row or transport delivery owns the probe, while sibling claims retain their exact leases for normal store-authoritative expiry without blocking healthy pickup. Healthy groups in the same batch dispatch before circuit dispositions, preventing an open group from monopolizing retry pickup.
 
+Pause and resume intents carry a monotonic circuit epoch. Any Open transition, including
+`ForceOpenAsync`, fences an in-flight HalfOpen recovery: the transport remains paused and the older
+resume is skipped.
+
 ### Global Configuration
 
 ```csharp
