@@ -760,7 +760,9 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     {
         // given — first open duration is short enough to fire; second open duration is longer
         var resumeCallCount = 0;
-        var halfOpenTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        // One release per resume: the callback runs on the thread pool after Advance fires the
+        // timer, so each HalfOpen entry must be awaited individually before asserting the count.
+        using var resumeSignals = new SemaphoreSlim(0);
 
         await using var sut = _Create(
             failureThreshold: 2,
@@ -772,8 +774,8 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
             onPause: epoch => ValueTask.CompletedTask,
             onResume: epoch =>
             {
-                resumeCallCount++;
-                halfOpenTcs.TrySetResult();
+                Interlocked.Increment(ref resumeCallCount);
+                resumeSignals.Release();
                 return ValueTask.CompletedTask;
             }
         );
@@ -790,15 +792,15 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         _timeProvider.Advance(TimeSpan.FromMilliseconds(60) - TimeSpan.FromTicks(1));
         sut.GetState(_Group).Should().Be(CircuitBreakerState.Open);
         _timeProvider.Advance(TimeSpan.FromTicks(1));
-        await halfOpenTcs.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        (await resumeSignals.WaitAsync(TimeSpan.FromSeconds(5), AbortToken)).Should().BeTrue();
 
         // Re-trip from HalfOpen and prove only the replacement timer fires.
         await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
         _timeProvider.Advance(TimeSpan.FromMilliseconds(120) - TimeSpan.FromTicks(1));
         sut.GetState(_Group).Should().Be(CircuitBreakerState.Open);
         _timeProvider.Advance(TimeSpan.FromTicks(1));
-        await halfOpenTcs.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
-        resumeCallCount.Should().Be(2);
+        (await resumeSignals.WaitAsync(TimeSpan.FromSeconds(5), AbortToken)).Should().BeTrue();
+        Volatile.Read(ref resumeCallCount).Should().Be(2);
     }
 
     [Fact]
