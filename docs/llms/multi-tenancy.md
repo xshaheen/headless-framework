@@ -62,7 +62,7 @@ app.UseAuthorization();
 - Use fresh context and Identity store/manager scopes across tenant changes; `FindAsync` can return tracked entities without executing filters. Register the guard for metadata-only Added stamping, or supply tenant values before tracking.
 - Raw SQL requires explicit tenant predicates and authorization. `BeginBypass()` has no effect on raw SQL and never removes SQL predicates or database constraints from tracked writes.
 - When using `IgnoreMultiTenancyFilter()`, add an inline `// MULTI-TENANCY-BYPASS: <reason>` comment naming the approved scenario (cross-tenant snapshot, admin lookup, system maintenance, etc.) so reviewers and post-incident readers can distinguish legitimate bypasses from drift.
-- Enable strict EF tenant writes with `.EntityFramework(ef => ef.GuardTenantWrites())` or the lower-level `services.AddHeadlessTenantWriteGuard()` when tenant-owned saves must fail without a matching tenant context.
+- Enable strict EF tenant writes with `.EntityFramework(ef => ef.GuardTenantWrites())` when tenant-owned saves must fail without a matching tenant context.
 - Use `ITenantWriteGuardBypass.BeginBypass()` only around intentional admin or host-level writes. `IgnoreMultiTenancyFilter()` affects reads only; it does not bypass guarded writes.
 - Permission cache scoping depends on `ICurrentTenant.Id`. Host-level operations with no tenant use the shared `t:` scope by design.
 - For background jobs, adopt the Jobs tenancy seam (`.Jobs(jobs => jobs.PropagateTenant().RequireTenantOnEnqueue())`) so time jobs capture the ambient tenant at schedule time and restore it around every execution attempt. Cron is always system-scope: fan out one explicit-tenant time job per tenant from application code — see [Background Jobs](#background-jobs).
@@ -150,7 +150,7 @@ app.UseAuthorization();
 
 `UseHeadlessTenancy()` reads the shared tenant posture manifest and applies HTTP tenant resolution only when HTTP tenancy was configured. It marks the middleware slot as applied so startup validation can fail fast when HTTP tenancy was configured but the middleware was omitted.
 
-`UseTenantResolution()` remains as a lower-level compatibility API. It reads the authenticated principal and:
+The middleware applied by `UseHeadlessTenancy()` reads the authenticated principal and:
 
 - Uses `tenant_id` by default
 - Uses `MultiTenancyOptions.ClaimType` when configured
@@ -201,7 +201,7 @@ app.MapGet("/webhook", (ICurrentTenant t) => Results.Ok()).SkipTenantResolution(
 
 For endpoints that may or may not carry a tenant claim depending on the caller, `[AllowMissingTenant]` is the right choice — it runs extraction and simply permits the authorization requirement to pass when no claim is found.
 
-**Ordering requirement** — `UseHeadlessTenancy()` (or the lower-level `UseTenantResolution()`) must run after `UseRouting()` so endpoint metadata is available when the middleware checks for `[SkipTenantResolution]`. Without that ordering, `HttpContext.GetEndpoint()` returns `null` and the skip marker silently has no effect — claim extraction runs as if the marker were absent. The recommended `UseAuthentication() -> UseHeadlessTenancy() -> UseAuthorization()` pipeline already satisfies this when `WebApplication` auto-injects routing for you, but consumers calling `UseRouting()` explicitly must place it before `UseHeadlessTenancy()`.
+**Ordering requirement** — `UseHeadlessTenancy()` must run after `UseRouting()` so endpoint metadata is available when the middleware checks for `[SkipTenantResolution]`. Without that ordering, `HttpContext.GetEndpoint()` returns `null` and the skip marker silently has no effect — claim extraction runs as if the marker were absent. The recommended `UseAuthentication() -> UseHeadlessTenancy() -> UseAuthorization()` pipeline already satisfies this when `WebApplication` auto-injects routing for you, but consumers calling `UseRouting()` explicitly must place it before `UseHeadlessTenancy()`.
 
 ## HTTP Failure Mapping
 
@@ -477,11 +477,7 @@ builder.Services.AddHeadlessDbContext<AppDbContext>(options => options.UseNpgsql
 builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites()));
 ```
 
-For package-level wiring without the root tenancy surface, the lower-level registration remains available:
-
-```csharp
-builder.Services.AddHeadlessTenantWriteGuard();
-```
+`GuardTenantWrites()` is the only registration API. `TenantWriteGuardOptions.IsEnabled` reports the configured state and has no public setter.
 
 When enabled, the guard reads finalized ownership metadata and rejects in-memory mismatches before local handler dispatch and persistence:
 
@@ -706,7 +702,7 @@ using (currentTenant.Change(tenantId))
 
 Use `.RequireTenantOnPublish()` to require every publish to resolve a tenant identifier. When enabled, the publish wrapper checks `PublishOptions.TenantId` first, then falls back to the ambient `ICurrentTenant.Id`. If neither resolves a value, the publish fails with `Headless.MultiTenancy.MissingTenantContextException`. This is the messaging sibling of the EF write guard (#234) and the HTTP authorization requirement.
 
-The lower-level equivalent is `MessagingOptions.TenantContextRequired = true`. Defaults to `false` to preserve today's behavior. The U2 raw-header integrity rules above (`ReservedTenantHeader`, `TenantIdMismatch`) always apply and run before the strict-tenancy fallback, so injection attempts cannot bypass the guard by enabling the flag.
+`MessagingOptions.TenantContextRequired` reports the configured state and has no public setter. It defaults to `false`. The raw-header integrity rules above (`ReservedTenantHeader`, `TenantIdMismatch`) always apply before the strict-tenancy fallback.
 
 To remediate a `MissingTenantContextException` from a background worker or `IHostedService`:
 

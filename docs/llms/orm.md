@@ -37,7 +37,7 @@ Use these packages for ORM-level persistence primitives. For raw SQL connection 
 - Configure automatic audit capture in the EF model with `IsAudited()`, entity/property `ExcludeFromAudit()`, and `IsAuditSensitive(...)`. Domain entities carry no audit marker or attributes; unconfigured entities follow `AuditLogOptions.AuditByDefault`.
 - **Never pool `HeadlessDbContext`.** Do not register subclasses with `AddDbContextPool` or `AddPooledDbContextFactory`. The context holds a private `HeadlessDbContextRuntime` that captures the request-scoped outbox dispatcher and audit persistence. Pooling reuses a prior request's unit of work — a captive-dependency bug, not a perf trade-off.
 - Declare third-party roots with `IsTenantOwned()` after `base.OnModelCreating(modelBuilder)`. Finalized metadata drives tenant filters, the optional write guard, and SQL concurrency predicates. `IMultiTenant` remains the default ownership signal; `IsNotTenantOwned()` explicitly excludes a root.
-- Enable tenant validation and Added-transition stamping with `builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites()))` or `services.AddHeadlessTenantWriteGuard()`. SQL tenant concurrency predicates remain active without the guard.
+- Enable tenant validation and Added-transition stamping with `builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites()))`. SQL tenant concurrency predicates remain active without the guard.
 - Create a fresh `DbContext` for each tenant scope. `TenantId` reads the active ambient tenant dynamically, but query filters cannot sanitize entities already tracked by `FindAsync`.
 - **`IgnoreMultiTenancyFilter()` is read-side only.** It does not relax write protection under `GuardTenantWrites()`. When the same code path writes, also wrap the save in `ITenantWriteGuardBypass.BeginBypass()` — the two bypasses are independent.
 - Use `ExecuteTransactionAsync(...)` (from `DbContextTransactionExtensions`) for multi-step EF operations that must be atomic under retry execution strategies (e.g. SQL Server `EnableRetryOnFailure`).
@@ -357,13 +357,10 @@ The raw PostgreSQL and SQL Server audit packages are storage providers. They can
 
 #### Tenant Write Guard
 
-Disabled by default. Enable validation and tenant stamping with either registration:
+Disabled by default. `TenantWriteGuardOptions.IsEnabled` is read-only to consumers. Enable validation and tenant stamping through the tenancy builder:
 
 ```csharp
 builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites()));
-
-// Package-level alternative:
-services.AddHeadlessTenantWriteGuard();
 ```
 
 When enabled, a missing tenant is stamped from `ICurrentTenant.Id` before the entry becomes Added, including detached-to-Added state transitions. Supplied tenant values are preserved. Adding under tenant A and saving under B fails instead of rewriting ownership.

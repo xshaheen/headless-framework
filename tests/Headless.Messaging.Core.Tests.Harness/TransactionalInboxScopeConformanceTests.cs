@@ -50,7 +50,7 @@ public abstract class TransactionalInboxScopeConformanceTests : TestBase
         services.AddLogging();
         services.AddSingleton(state);
         services.AddHeadlessDbContext<InboxScopeDbContext>(ConfigureContext);
-        services.AddHeadlessTenantWriteGuard();
+        builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites()));
         if (propagateTenant)
         {
             builder.AddHeadlessTenancy(tenancy => tenancy.Messaging(messaging => messaging.PropagateTenant()));

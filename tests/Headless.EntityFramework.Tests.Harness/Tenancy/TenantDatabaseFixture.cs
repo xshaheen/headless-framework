@@ -14,6 +14,7 @@ using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Testcontainers.MsSql;
 using Testcontainers.PostgreSql;
 using Tests.Fixtures;
@@ -104,12 +105,13 @@ public abstract class TenantDatabaseFixture(TenantDatabaseProvider provider) : I
 
     public ServiceProvider CreateServices(Action<IServiceCollection> configure)
     {
-        var services = new ServiceCollection();
+        var builder = Host.CreateApplicationBuilder();
+        var services = builder.Services;
         services.AddLogging();
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<ICurrentUser>(new TestCurrentUser());
         services.AddSingleton<IGuidGenerator>(new SequentialGuidGenerator(SequentialGuidType.Version7));
-        services.AddHeadlessTenantWriteGuard();
+        builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites()));
         services.AddSingleton<ICurrentTenant>(CurrentTenant);
         services.AddRecordingHeadlessDispatcher();
         configure(services);

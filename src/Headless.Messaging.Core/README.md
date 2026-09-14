@@ -334,6 +334,8 @@ When runtime delegates are attached during application startup, the messaging ru
 
 ## Configuration
 
+Configure tenant propagation and strict publishing through `AddHeadlessTenancy(tenancy => tenancy.Messaging(...))`. `MessagingOptions.TenantContextRequired` reports the configured requirement and has no public setter.
+
 `RequireRoutingAffinity()` on a Bus or Queue message registration requires a locally supported native mapping at startup; it does not require every publication to supply a key. Set `PublishOptions.RoutingAffinityKey` or `QueueOptions.RoutingAffinityKey` per publication. The frozen capability model snapshots registered destinations from inert options before clients or processors start. Keyed unknown destination overrides, invalid keys, and typed/raw conflicts fail before outbox insertion or transport effects. `MediumMessage.RoutingAffinityKey` reads the authoritative serialized envelope; InMemory, PostgreSQL, and SQL Server preserve it without a new storage column.
 
 Register in `Program.cs`:

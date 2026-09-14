@@ -5,7 +5,6 @@ using Headless.EntityFramework;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -57,7 +56,8 @@ public sealed class HeadlessTenantWriteGuardTests(
     public void should_register_disabled_tenant_write_guard_options_when_add_headless_db_context_services()
     {
         // given
-        var services = new ServiceCollection();
+        var builder = Host.CreateApplicationBuilder();
+        var services = builder.Services;
 
         // when
         services.AddHeadlessDbContextServices();
@@ -71,13 +71,14 @@ public sealed class HeadlessTenantWriteGuardTests(
     }
 
     [Fact]
-    public void should_enable_options_when_add_headless_tenant_write_guard()
+    public void should_enable_options_when_guard_tenant_writes()
     {
         // given
-        var services = new ServiceCollection();
+        var builder = Host.CreateApplicationBuilder();
+        var services = builder.Services;
 
         // when
-        services.AddHeadlessTenantWriteGuard();
+        builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites()));
 
         using var provider = services.BuildServiceProvider();
 
@@ -88,63 +89,25 @@ public sealed class HeadlessTenantWriteGuardTests(
     }
 
     [Fact]
-    public void should_keep_guard_enabled_when_add_headless_tenant_write_guard_with_noop_configurator()
+    public void should_expose_only_builder_registration_for_tenant_write_guard()
     {
-        // given
-        var services = new ServiceCollection();
-
-        // when
-        services.AddHeadlessTenantWriteGuard(_ => { });
-
-        using var provider = services.BuildServiceProvider();
-
-        // then
-        var options = provider.GetRequiredService<IOptions<TenantWriteGuardOptions>>().Value;
-        options.IsEnabled.Should().BeTrue();
-        provider.GetRequiredService<ITenantWriteGuardBypass>().IsActive.Should().BeFalse();
-    }
-
-    [Fact]
-    public void should_bind_configuration_and_keep_guard_enabled_when_add_headless_tenant_write_guard()
-    {
-        // given
-        var services = new ServiceCollection();
-        var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection([new KeyValuePair<string, string?>("IsEnabled", "false")])
-            .Build();
-
-        // when
-        services.AddHeadlessTenantWriteGuard(configuration);
-
-        using var provider = services.BuildServiceProvider();
-
-        // then
-        var options = provider.GetRequiredService<IOptions<TenantWriteGuardOptions>>().Value;
-        options.IsEnabled.Should().BeTrue();
-        provider.GetRequiredService<ITenantWriteGuardBypass>().IsActive.Should().BeFalse();
-    }
-
-    [Fact]
-    public void should_support_service_provider_aware_configuration_when_add_headless_tenant_write_guard()
-    {
-        // given
-        var marker = new TenantWriteGuardOptionsMarker(Guid.NewGuid());
-        Guid? resolvedMarkerId = null;
-        var services = new ServiceCollection();
-        services.AddSingleton(marker);
-
-        // when
-        services.AddHeadlessTenantWriteGuard(
-            (_, provider) => resolvedMarkerId = provider.GetRequiredService<TenantWriteGuardOptionsMarker>().Id
-        );
-
-        using var provider = services.BuildServiceProvider();
-        var options = provider.GetRequiredService<IOptions<TenantWriteGuardOptions>>().Value;
-
-        // then
-        options.IsEnabled.Should().BeTrue();
-        resolvedMarkerId.Should().Be(marker.Id);
-        provider.GetRequiredService<ITenantWriteGuardBypass>().IsActive.Should().BeFalse();
+        typeof(SetupEntityFramework)
+            .GetMethods()
+            .Should()
+            .NotContain(method => method.Name == "AddHeadlessTenantWriteGuard");
+        typeof(TenantWriteGuardOptions)
+            .GetProperty(nameof(TenantWriteGuardOptions.IsEnabled))!
+            .GetSetMethod()
+            .Should()
+            .BeNull();
+        typeof(HeadlessEntityFrameworkTenancyBuilder)
+            .GetMethods()
+            .Where(method => method.Name == nameof(HeadlessEntityFrameworkTenancyBuilder.GuardTenantWrites))
+            .Should()
+            .ContainSingle()
+            .Which.GetParameters()
+            .Should()
+            .BeEmpty();
     }
 
     [Fact]
@@ -171,13 +134,14 @@ public sealed class HeadlessTenantWriteGuardTests(
     }
 
     [Fact]
-    public void should_keep_guard_enabled_when_guard_tenant_writes_with_noop_configurator()
+    public void should_register_guard_once_when_tenancy_is_configured_repeatedly()
     {
         // given
         var builder = Host.CreateApplicationBuilder();
 
         // when
-        builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites(_ => { })));
+        builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites()));
+        builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites()));
 
         using var provider = builder.Services.BuildServiceProvider();
 
@@ -185,6 +149,12 @@ public sealed class HeadlessTenantWriteGuardTests(
         var options = provider.GetRequiredService<IOptions<TenantWriteGuardOptions>>().Value;
         options.IsEnabled.Should().BeTrue();
         provider.GetRequiredService<ITenantWriteGuardBypass>().IsActive.Should().BeFalse();
+        provider
+            .GetServices<IHeadlessTenancyValidator>()
+            .OfType<EntityFrameworkTenantWriteGuardStartupValidator>()
+            .Should()
+            .ContainSingle();
+        provider.GetServices<IPostConfigureOptions<TenantWriteGuardOptions>>().Should().ContainSingle();
     }
 
     [Fact]
@@ -292,8 +262,9 @@ public sealed class HeadlessTenantWriteGuardTests(
 
     private static ServiceProvider _BuildBypassProvider()
     {
-        var services = new ServiceCollection();
-        services.AddHeadlessTenantWriteGuard();
+        var builder = Host.CreateApplicationBuilder();
+        var services = builder.Services;
+        builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites()));
 
         return services.BuildServiceProvider();
     }
@@ -1022,6 +993,4 @@ public sealed class HeadlessTenantWriteGuardTests(
 
         return await db.Tests.IgnoreMultiTenancyFilter().AnyAsync(x => x.Id == entityId, AbortToken);
     }
-
-    private sealed record TenantWriteGuardOptionsMarker(Guid Id);
 }

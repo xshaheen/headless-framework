@@ -162,7 +162,7 @@ Exception mapping registered by `AddHeadlessProblemDetails()`:
 
 All other exceptions return `false`; the host default or a downstream handler renders them.
 
-`StatusCodesRewriterMiddleware` is required for the `g:tenant_required` discriminator on 403 authorization rejections. `Headless.Api.ServiceDefaults` wires it automatically; apps that skip ServiceDefaults must call `UseStatusCodesRewriter()` themselves. `TenantRequirement` must live in `DefaultPolicy` or `FallbackPolicy` — the startup validator does not inspect named policies. `UseHeadlessTenancy()` / `UseTenantResolution()` must run after `UseRouting()` so endpoint metadata is available when `[SkipTenantResolution]` is evaluated.
+`StatusCodesRewriterMiddleware` is required for the `g:tenant_required` discriminator on 403 authorization rejections. `Headless.Api.ServiceDefaults` wires it automatically; apps that skip ServiceDefaults must call `UseStatusCodesRewriter()` themselves. `TenantRequirement` must live in `DefaultPolicy` or `FallbackPolicy` — the startup validator does not inspect named policies. `UseHeadlessTenancy()` must run after `UseRouting()` so endpoint metadata is available when `[SkipTenantResolution]` is evaluated.
 
 `AddBasicSchema()` defaults to the canonical `Basic` authentication scheme and `AddApiKey()` defaults to `ApiKey`. `DynamicAuthenticationSchemeProvider` selects those same canonical names. API keys are read from the configured header by default; query-string keys are routed and accepted only when `ApiKeyAuthenticationSchemeOptions.AllowApiKeyInQueryString` is `true`.
 

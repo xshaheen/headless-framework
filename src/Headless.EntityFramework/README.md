@@ -156,13 +156,10 @@ The raw PostgreSQL and SQL Server audit packages are storage providers. They can
 
 ### Tenant Write Guard
 
-Disabled by default. Enable validation and tenant stamping with either registration:
+Disabled by default. `TenantWriteGuardOptions.IsEnabled` is read-only to consumers. Enable validation and tenant stamping through the tenancy builder:
 
 ```csharp
 builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites()));
-
-// Package-level alternative:
-services.AddHeadlessTenantWriteGuard();
 ```
 
 When enabled, a missing tenant is stamped from `ICurrentTenant.Id` before the entry becomes Added, including detached-to-Added state transitions. Supplied tenant values are preserved. Adding under tenant A and saving under B fails instead of rewriting ownership.

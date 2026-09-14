@@ -15,6 +15,16 @@ namespace Tests.Configuration;
 public sealed class MessagingOptionsCopyToTests : TestBase
 {
     [Fact]
+    public void should_expose_tenant_requirement_as_read_only()
+    {
+        typeof(MessagingOptions)
+            .GetProperty(nameof(MessagingOptions.TenantContextRequired))!
+            .GetSetMethod()
+            .Should()
+            .BeNull();
+    }
+
+    [Fact]
     public void should_copy_every_public_mutable_property_to_target()
     {
         // given

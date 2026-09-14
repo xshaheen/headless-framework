@@ -279,7 +279,10 @@ public abstract class HeadlessIdentityDbContext<
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
         base.ConfigureConventions(configurationBuilder);
-        configurationBuilder.Conventions.Add(provider => new HeadlessIdentityTenantModel(
+
+        configurationBuilder.Conventions.Add(provider =>
+        {
+            Type[] types =
             [
                 typeof(TUser),
                 typeof(TRole),
@@ -289,9 +292,11 @@ public abstract class HeadlessIdentityDbContext<
                 typeof(TRoleClaim),
                 typeof(TUserToken),
                 typeof(TUserPasskey),
-            ],
-            provider.GetRequiredService<IDatabaseProvider>().Name
-        ));
+            ];
+
+            return new HeadlessIdentityTenantModel(types, provider.GetRequiredService<IDatabaseProvider>().Name);
+        });
+
         _runtime.ConfigureConventions(configurationBuilder);
     }
 
@@ -302,8 +307,10 @@ public abstract class HeadlessIdentityDbContext<
     /// Enable the tenant write guard and use fresh contexts and Identity stores when changing tenants.
     /// </remarks>
     /// <param name="builder">The model builder for this context.</param>
-    protected void ConfigureTenantOwnedIdentity(ModelBuilder builder) =>
+    protected void ConfigureTenantOwnedIdentity(ModelBuilder builder)
+    {
         builder.HasAnnotation(HeadlessIdentityTenantModel.OptInAnnotation, value: true);
+    }
 
     /// <summary>
     /// Configures the EF Core model for this context, applying <see cref="DefaultSchema"/> when set,

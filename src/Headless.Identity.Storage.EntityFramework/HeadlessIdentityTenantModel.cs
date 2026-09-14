@@ -19,12 +19,14 @@ internal sealed class HeadlessIdentityTenantModel(Type[] entityTypes, string pro
     )
     {
         var model = (IMutableModel)modelBuilder.Metadata;
+
         if (model[OptInAnnotation] is not true)
         {
             return;
         }
 
         var entities = entityTypes.Select(model.FindEntityType).ToArray();
+
         var configuredTenantLengths = entities
             .OfType<IMutableEntityType>()
             .Select(x => x.FindProperty(x.GetTenantPropertyName() ?? "TenantId"))
@@ -33,6 +35,7 @@ internal sealed class HeadlessIdentityTenantModel(Type[] entityTypes, string pro
             .OfType<int>()
             .Distinct()
             .ToArray();
+
         if (configuredTenantLengths.Length > 1)
         {
             throw new InvalidOperationException(

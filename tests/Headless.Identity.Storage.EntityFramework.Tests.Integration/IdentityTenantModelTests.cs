@@ -12,6 +12,7 @@ using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace Tests;
 
@@ -343,12 +344,13 @@ public sealed class IdentityTenantModelTests : TestBase
     private static ServiceProvider _CreateProvider<TPolicy>(bool passkeys = true, bool sqlServer = false)
         where TPolicy : IPolicy
     {
-        var services = new ServiceCollection();
+        var builder = Host.CreateApplicationBuilder();
+        var services = builder.Services;
         services.AddLogging();
         services.AddScoped<TestCurrentTenant>();
         services.AddScoped<ICurrentTenant>(provider => provider.GetRequiredService<TestCurrentTenant>());
         services.AddHeadlessDbContextServices();
-        services.AddHeadlessTenantWriteGuard();
+        builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites()));
         services.Configure<IdentityOptions>(options =>
             options.Stores.SchemaVersion = passkeys ? IdentitySchemaVersions.Version3 : IdentitySchemaVersions.Version2
         );

@@ -207,19 +207,20 @@ public sealed class MessagingOptions
     public bool UseStorageLock { get; set; }
 
     /// <summary>
-    /// Gets or sets a value indicating whether publish calls require a resolved tenant identifier.
+    /// Gets a value indicating whether publish calls require a resolved tenant identifier.
     /// When <see langword="true"/>, the publish wrapper rejects calls where neither
     /// <see cref="MessageOptions.TenantId"/> nor the ambient <c>ICurrentTenant.Id</c> resolves a
     /// tenant, throwing <see cref="MissingTenantContextException"/>. Sibling of the EF write guard
     /// (#234) and the HTTP authorization requirement for cross-layer tenant safety.
     /// </summary>
     /// <remarks>
-    /// Defaults to <see langword="false"/> to preserve today's behavior. Background workers and
+    /// Enabled through <c>HeadlessTenancyBuilder.Messaging(m => m.RequireTenantOnPublish())</c>.
+    /// Defaults to <see langword="false"/>. Background workers and
     /// <c>IHostedService</c> callers without an ambient request scope must wrap publishes in
     /// <c>using (currentTenant.Change(tenantId))</c> or set <see cref="MessageOptions.TenantId"/>
     /// explicitly when this flag is enabled.
     /// </remarks>
-    public bool TenantContextRequired { get; set; }
+    public bool TenantContextRequired { get; internal set; }
 
     /// <summary>
     /// Gets or sets the maximum time the framework waits for a transport publish before treating it as a failed attempt.

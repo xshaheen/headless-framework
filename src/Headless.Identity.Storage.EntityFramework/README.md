@@ -134,9 +134,6 @@ protected override void OnModelCreating(ModelBuilder modelBuilder)
 Enable the write guard separately:
 
 ```csharp
-builder.Services.AddHeadlessTenantWriteGuard();
-
-// Alternative when composing root tenancy:
 builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites()));
 ```
 

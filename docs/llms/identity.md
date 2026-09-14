@@ -22,7 +22,7 @@ Register with `services.AddHeadlessDbContext<TDbContext, TUser, TRole, TKey, ...
 - `AddHeadlessDbContext` sets `IdentityOptions.Stores.SchemaVersion = IdentitySchemaVersions.Version3` once, guarded by a sentinel so multiple calls do not repeat it. If a host must target an older schema, add `services.Configure<IdentityOptions>(o => o.Stores.SchemaVersion = IdentitySchemaVersions.Version1)` **after** the `AddHeadlessDbContext` call (later `Configure` delegates win in the standard options pipeline).
 - All ORM conventions from `Headless.EntityFramework` apply: audit columns, soft-delete query filters, domain-event dispatch on `SaveChanges`, multi-tenancy tenant-write guard, and the `DefaultSchema` hook. Override `DefaultSchema` to namespace all Identity tables under a custom schema (e.g., `"identity"`).
 - Register Identity managers and stores separately through `services.AddIdentityCore<TUser>().AddRoles<TRole>().AddEntityFrameworkStores<TDbContext>()`. `AddHeadlessDbContext` registers the context, not `UserManager` or `RoleManager`.
-- Opt in to tenant-owned Identity explicitly with `ConfigureTenantOwnedIdentity(modelBuilder)` after `base.OnModelCreating(modelBuilder)`. Register `AddHeadlessTenantWriteGuard()` for automatic tenant stamping before tracking. No tenancy interfaces are required.
+- Opt in to tenant-owned Identity explicitly with `ConfigureTenantOwnedIdentity(modelBuilder)` after `base.OnModelCreating(modelBuilder)`. Use `.EntityFramework(ef => ef.GuardTenantWrites())` through `AddHeadlessTenancy(...)` for automatic tenant stamping before tracking. No tenancy interfaces are required.
 - Use fresh DI scopes for contexts, stores, `UserManager`, and `RoleManager` when changing tenants. Filters do not protect an already tracked `FindAsync` match. Existing Identity ownership is immutable through tenant alternate keys, even under write-guard bypass.
 - Preserve Identity primary-key shapes and global user/role IDs, external-login pairs, and passkey credential IDs. Tenant-scoped names do not make those global keys reusable across tenants.
 - Ship consumer migrations and explicit tenant backfills before enabling tenant-owned Identity. Validate tenant IDs under the configured database equality, key lengths, duplicate tenant names, and same-tenant relationships.
@@ -201,9 +201,6 @@ protected override void OnModelCreating(ModelBuilder modelBuilder)
 Enable the write guard separately:
 
 ```csharp
-builder.Services.AddHeadlessTenantWriteGuard();
-
-// Alternative when composing root tenancy:
 builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites()));
 ```
 
