@@ -236,7 +236,7 @@ modelBuilder.Entity<AppRole>().Property(x => x.Id).HasMaxLength(96);
 modelBuilder.Entity<AppUser>().Property<string>("TenantId").HasMaxLength(64);
 ```
 
-SQL Server validates the 900-byte budget for primary, alternate, and foreign keys and rejects unsafe configured lengths instead of silently shrinking them. The upstream passkey primary-key declaration `varbinary(1024)` is retained. That declaration does not mean SQL Server accepts a 1,024-byte credential ID: such an insert exceeds its 900-byte key limit. Ordinary shorter credentials work.
+Headless does not estimate provider-specific key-size budgets. The EF provider and database enforce physical storage and index limits; consumers must verify configured lengths through migrations and representative writes. The upstream passkey primary-key declaration `varbinary(1024)` is retained. That declaration does not mean SQL Server accepts a 1,024-byte credential ID: such an insert exceeds its 900-byte key limit. Ordinary shorter credentials work.
 
 Consumers configure tenant column types, conversions, collations, and database validation in their own EF model and migrations. Headless does not choose a collation, add tenant-ID check constraints, or reject trailing spaces. It preserves supplied IDs without trimming or normalization. The write guard compares IDs ordinally in memory; queries, concurrency predicates, unique indexes, and foreign keys use database equality. Consumers must ensure that distinct canonical IDs remain distinct under that equality and that storage conversions preserve identity.
 

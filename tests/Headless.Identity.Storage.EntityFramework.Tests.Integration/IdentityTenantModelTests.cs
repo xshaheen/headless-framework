@@ -289,9 +289,6 @@ public sealed class IdentityTenantModelTests : TestBase
     }
 
     [Fact]
-    public void should_reject_unsafe_sql_server_key_lengths() => _AssertInvalid<UnsafeLengths>("*900-byte*");
-
-    [Fact]
     public void should_reject_explicit_unbounded_tenant_store_type() =>
         _AssertInvalid<UnboundedTenantType>("*explicit bounded string column type*", sqlServer: false);
 
@@ -456,15 +453,6 @@ public sealed class IdentityTenantModelTests : TestBase
     {
         public static void Configure(ModelBuilder builder) =>
             builder.Entity<User>().Property(x => x.Id).HasColumnType("text");
-    }
-
-    private sealed class UnsafeLengths : IPolicy
-    {
-        public static void Configure(ModelBuilder builder)
-        {
-            builder.Entity<User>().Property(x => x.Id).HasMaxLength(256);
-            builder.Entity<Role>().Property(x => x.Id).HasMaxLength(256);
-        }
     }
 
     private sealed class ConflictingTenantLengths : IPolicy

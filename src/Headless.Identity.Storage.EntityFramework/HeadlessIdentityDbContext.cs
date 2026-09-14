@@ -4,7 +4,6 @@ using Headless.EntityFramework.Contexts.Runtime;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.EntityFramework;
@@ -280,7 +279,7 @@ public abstract class HeadlessIdentityDbContext<
     {
         base.ConfigureConventions(configurationBuilder);
 
-        configurationBuilder.Conventions.Add(provider =>
+        configurationBuilder.Conventions.Add(_ =>
         {
             Type[] types =
             [
@@ -294,10 +293,7 @@ public abstract class HeadlessIdentityDbContext<
                 typeof(TUserPasskey),
             ];
 
-            return new HeadlessIdentityTenantModelConvention(
-                types,
-                provider.GetRequiredService<IDatabaseProvider>().Name
-            );
+            return new HeadlessIdentityTenantModelConvention(types);
         });
 
         _runtime.ConfigureConventions(configurationBuilder);

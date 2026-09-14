@@ -9,8 +9,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Conventions;
 
 namespace Headless.EntityFramework;
 
-internal sealed class HeadlessIdentityTenantModelConvention(Type[] entityTypes, string providerName)
-    : IModelFinalizingConvention
+internal sealed class HeadlessIdentityTenantModelConvention(Type[] entityTypes) : IModelFinalizingConvention
 {
     public void ProcessModelFinalizing(
         IConventionModelBuilder modelBuilder,
@@ -28,7 +27,6 @@ internal sealed class HeadlessIdentityTenantModelConvention(Type[] entityTypes, 
 
         _ConfigureEntities(entities, _GetTenantLength(entities));
         _ConfigureRelationships(entities);
-        HeadlessIdentitySqlServerKeyValidator.Validate(providerName, entities);
     }
 
     private static int _GetTenantLength(IEnumerable<IMutableEntityType?> entities)
