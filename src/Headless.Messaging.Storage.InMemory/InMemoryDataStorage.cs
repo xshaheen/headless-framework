@@ -26,7 +26,8 @@ internal sealed partial class InMemoryDataStorage(
         IDelayedMessageClaimStorage,
         IGracefulLeaseReleaseStorage,
         ICircuitRetryDeferralStorage,
-        IDeliveryCoordinationResolver
+        IDeliveryCoordinationResolver,
+        ICoordinatedMessageStore
 {
     public ConcurrentDictionary<Guid, MemoryMessage> PublishedMessages { get; } = new();
 
@@ -63,9 +64,61 @@ internal sealed partial class InMemoryDataStorage(
             return DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.InactiveTransaction);
         }
 
+        // A relational handle means the caller's work commits in a database; in-memory rows cannot be atomic with
+        // it, so refusing is the only honest answer. Without one, the coordinator itself is the commit boundary and
+        // rows are captured on it through ICoordinatedMessageStore.
         return coordinator.TryGetCapability<IRelationalCommitContext>(out _)
             ? DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.StorageProvider)
-            : DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.MissingRelationalCapability);
+            : DeliveryCoordination.Compatible(coordinator, transaction: null);
+    }
+
+    ValueTask<MediumMessage> ICoordinatedMessageStore.StoreCoordinatedMessageAsync(
+        string name,
+        MediumMessage message,
+        DateTimeOffset? publishAt,
+        ICommitCoordinator coordinator,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // GetOrAdd runs before the row is built so the buffer's commit callback is registered before the outbox
+        // buffer's dispatcher hand-off, which OutboxMessageWriter enlists only after this call returns.
+        var buffer = coordinator.GetOrAdd(
+            this,
+            static (coordinator, storage) => new CoordinatedPublishBuffer(coordinator, storage)
+        );
+        var (stored, row) = _CreateRow(name, message, publishAt);
+        buffer.Add(row);
+
+        return ValueTask.FromResult(stored);
+    }
+
+    /// <summary>
+    /// Scope-local rows captured inside a non-relational coordinated scope. They join <see cref="PublishedMessages" />
+    /// only when the coordinator commits; a rollback disposes the buffer and the rows with it.
+    /// </summary>
+    // Same shape as MessageOutboxBuffer: rows wait in the scope-local buffer and are promoted on commit; a rollback
+    // never drains, so the buffered rows are simply dropped with the coordinator.
+    private sealed class CoordinatedPublishBuffer : InMemoryWorkBuffer<MemoryMessage>
+    {
+        private readonly InMemoryDataStorage _storage;
+
+        public CoordinatedPublishBuffer(ICommitCoordinator coordinator, InMemoryDataStorage storage)
+        {
+            _storage = storage;
+            coordinator.OnCommit(_PromoteAsync);
+        }
+
+        private ValueTask _PromoteAsync(CommitContext context, CancellationToken cancellationToken)
+        {
+            foreach (var row in Drain())
+            {
+                _storage.PublishedMessages[row.StorageId] = row;
+            }
+
+            return ValueTask.CompletedTask;
+        }
     }
 
     public void Clear()
@@ -657,6 +710,18 @@ internal sealed partial class InMemoryDataStorage(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        var (stored, row) = _CreateRow(name, message, publishAt);
+        PublishedMessages[stored.StorageId] = row;
+
+        return ValueTask.FromResult(stored);
+    }
+
+    private (MediumMessage Stored, MemoryMessage Row) _CreateRow(
+        string name,
+        MediumMessage message,
+        DateTimeOffset? publishAt
+    )
+    {
         var added = timeProvider.GetUtcNow();
         var statusName =
             publishAt is null ? StatusName.Scheduled
@@ -677,7 +742,7 @@ internal sealed partial class InMemoryDataStorage(
             InlineAttempts = 0,
         };
 
-        PublishedMessages[stored.StorageId] = new MemoryMessage
+        var row = new MemoryMessage
         {
             StorageId = stored.StorageId,
             Name = name,
@@ -695,7 +760,7 @@ internal sealed partial class InMemoryDataStorage(
             Version = messagingOptions.Value.Version,
         };
 
-        return ValueTask.FromResult(stored);
+        return (stored, row);
     }
 
     public ValueTask<MediumMessage> StoreMessageAsync(

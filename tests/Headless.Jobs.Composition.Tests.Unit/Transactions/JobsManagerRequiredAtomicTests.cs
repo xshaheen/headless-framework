@@ -4,10 +4,13 @@ using System.Data;
 using System.Text.Json;
 using Headless.CommitCoordination;
 using Headless.Jobs;
+using Headless.Jobs.DbContextFactory;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
+using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Models;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests.Transactions;
@@ -140,7 +143,13 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
         result.IsProvisional.Should().BeTrue();
         sut.Scheduler.DidNotReceive().Restart();
         sut.Coordinator!.OnCommitCount.Should().Be(1);
+        var restarted = _Restarted(sut);
         await sut.Coordinator.DrainCommitAsync(AbortToken);
+        // The commit callback only queues the schedule-changed signal; the hosted worker issues the restart.
+        sut.Scheduler.DidNotReceive().Restart();
+        sut.Signals.PendingCount.Should().Be(1);
+        await _StartWorkerAsync(sut);
+        await restarted.Task.WaitAsync(_WaitTimeout, AbortToken);
         sut.Scheduler.Received(1).Restart();
         await sut
             .Persistence.DidNotReceive()
@@ -169,7 +178,12 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
         var result = await sut.Time.CancelKeyedAsync(scope, key, 1, requireAtomicEnlistment: true, AbortToken);
         result.IsProvisional.Should().BeTrue();
         sut.Scheduler.DidNotReceive().Restart();
+        var restarted = _Restarted(sut);
         await sut.Coordinator!.DrainCommitAsync(AbortToken);
+        sut.Scheduler.DidNotReceive().Restart();
+        sut.Signals.PendingCount.Should().Be(1);
+        await _StartWorkerAsync(sut);
+        await restarted.Task.WaitAsync(_WaitTimeout, AbortToken);
         sut.Scheduler.Received(1).Restart();
     }
 
@@ -194,5 +208,110 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
             );
         await keyed.Should().ThrowAsync<InvalidOperationException>().WithMessage("*atomic*");
         (await provider.GetTimeJobByIdAsync(candidate.Id, AbortToken)).Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task required_atomic_cron_single_and_batch_calls_reject_missing_relational_capability(
+        bool nonRelational
+    )
+    {
+        var middlewareCalls = 0;
+        using var dispatch = _ReplaceScheduleDispatch(
+            (_, next, ct) =>
+            {
+                middlewareCalls++;
+                return next(ct);
+            }
+        );
+        var sut = _CreateSut(nonRelational ? CoordinatorMode.NonRelational : CoordinatorMode.None, withWriter: true);
+        var required = _CronJob();
+        required.RequireAtomicEnlistment = true;
+        var add = () => sut.Cron.AddAsync(required, AbortToken);
+        await add.Should().ThrowAsync<InvalidOperationException>().WithMessage("*atomic*");
+        // One required definition makes the whole batch atomic-or-nothing.
+        var batch = () => sut.Cron.AddBatchAsync([_CronJob(), required], AbortToken);
+        await batch.Should().ThrowAsync<InvalidOperationException>().WithMessage("*atomic*");
+        middlewareCalls.Should().Be(0);
+        sut.Writer.DidNotReceive().ValidateContext(Arg.Any<IRelationalCommitContext>(), Arg.Any<bool>());
+        await sut
+            .Persistence.DidNotReceive()
+            .InsertCronJobsAsync(
+                Arg.Any<CronJobEntity[]>(),
+                Arg.Any<CronSchedulePositionSeeder>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task required_atomic_cron_batch_with_one_required_definition_enlists_the_whole_batch()
+    {
+        var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: true);
+        var required = _CronJob();
+        required.RequireAtomicEnlistment = true;
+        var result = await sut.Cron.AddBatchAsync([_CronJob(), required], AbortToken);
+        result.Should().HaveCount(2);
+        await sut
+            .Writer.Received(1)
+            .WriteCronJobsAsync(
+                Arg.Is<CronJobEntity[]>(jobs => jobs.Length == 2),
+                Arg.Any<CronSchedulePositionSeeder>(),
+                Arg.Any<IRelationalCommitContext>(),
+                Arg.Any<CancellationToken>()
+            );
+        await sut
+            .Persistence.DidNotReceive()
+            .InsertCronJobsAsync(
+                Arg.Any<CronJobEntity[]>(),
+                Arg.Any<CronSchedulePositionSeeder>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task in_memory_provider_rejects_required_recurring_definitions_at_capture_and_the_flag_is_not_payload()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessJobs(options => options.DisableBackgroundServices());
+        await using var host = services.BuildServiceProvider();
+        var manager = host.GetRequiredService<ICronJobManager<CronJobEntity>>();
+        var required = _CronJob();
+        required.RequireAtomicEnlistment = true;
+        JsonSerializer.Serialize(required).Should().NotContain(nameof(CronJobEntity.RequireAtomicEnlistment));
+        // Capture runs before function validation, so the unregistered function never gets to fail first.
+        var add = () => manager.AddAsync(required, AbortToken);
+        await add.Should().ThrowAsync<InvalidOperationException>().WithMessage("*atomic*");
+        var batch = () => manager.AddBatchAsync([_CronJob(), required], AbortToken);
+        await batch.Should().ThrowAsync<InvalidOperationException>().WithMessage("*atomic*");
+        var provider = host.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+        (await provider.GetAllCronJobExpressionsAsync(AbortToken)).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void atomic_flags_are_not_mapped_to_columns()
+    {
+        // JobsDbContext resolves its EF option builder from the application service provider (same shape as the
+        // Sqlite EfFixture in Provider/TimeJobDeleteCascadeTests); only the model is inspected, no connection opens.
+        using var services = new ServiceCollection()
+            .AddEntityFrameworkSqlite()
+            .AddSingleton(new JobsEfCoreOptionBuilder<TimeJobEntity, CronJobEntity>())
+            .BuildServiceProvider();
+        var options = new DbContextOptionsBuilder<JobsDbContext>()
+            .UseSqlite("Data Source=:memory:")
+            .UseApplicationServiceProvider(services)
+            .Options;
+        using var context = new JobsDbContext(options);
+        context
+            .Model.FindEntityType(typeof(CronJobEntity))!
+            .FindProperty(nameof(CronJobEntity.RequireAtomicEnlistment))
+            .Should()
+            .BeNull();
+        context
+            .Model.FindEntityType(typeof(TimeJobEntity))!
+            .FindProperty(nameof(TimeJobEntity.RequireAtomicEnlistment))
+            .Should()
+            .BeNull();
     }
 }

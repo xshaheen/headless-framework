@@ -36,7 +36,6 @@ Headless.Captcha.Turnstile
 Headless.Checks
 Headless.CommitCoordination.Abstractions
 Headless.CommitCoordination.Core
-Headless.CommitCoordination.DurableWork
 Headless.CommitCoordination.EntityFramework
 Headless.CommitCoordination.InMemory
 Headless.CommitCoordination.PostgreSql

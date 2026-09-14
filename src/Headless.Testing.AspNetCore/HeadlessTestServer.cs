@@ -316,12 +316,15 @@ public sealed class HeadlessTestServer<TProgram>(
     }
 
     /// <summary>
-    /// Resets the messaging test harness if it is registered in the service provider.
+    /// Resets the messaging test harness if it is registered in the service provider, after its in-flight publish
+    /// and consume work has settled (see <see cref="MessagingTestHarness.ResetAsync"/>).
     /// </summary>
-    public void ResetMessagingHarness()
+    /// <param name="cancellationToken">Cancels the wait for in-flight work.</param>
+    public Task ResetMessagingHarnessAsync(CancellationToken cancellationToken = default)
     {
         var harness = Services.GetService<MessagingTestHarness>();
-        harness?.Clear();
+
+        return harness?.ResetAsync(cancellationToken: cancellationToken) ?? Task.CompletedTask;
     }
 
     /// <summary>Starts the test host, registers the fake time provider, and runs readiness checks.</summary>

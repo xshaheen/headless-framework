@@ -23,7 +23,7 @@ public sealed class QueueOptionsTests : TestBase
         // given
         var expected = new QueueOptions { DeliveryMode = DeliveryMode.Durable, Delay = TimeSpan.FromMinutes(1) };
         var equivalent = new QueueOptions { DeliveryMode = DeliveryMode.Durable, Delay = TimeSpan.FromMinutes(1) };
-        var differentMode = expected with { DeliveryMode = DeliveryMode.Auto };
+        var differentMode = expected with { DeliveryMode = DeliveryMode.Direct };
         var differentDelay = expected with { Delay = TimeSpan.FromMinutes(2) };
 
         // then

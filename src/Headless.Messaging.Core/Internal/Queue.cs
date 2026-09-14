@@ -38,7 +38,10 @@ internal sealed class Queue : IQueue
             new MessagingNullCommitCoordinator(),
             static () => null,
             static () => null,
-            telemetry
+            telemetry,
+            // Direct construction carries a transport-only capability model and no storage, so the durable host
+            // default would reject every enqueue; this constructor is the explicit fire-and-forget queue.
+            defaultDeliveryMode: DeliveryMode.Direct
         );
     }
 

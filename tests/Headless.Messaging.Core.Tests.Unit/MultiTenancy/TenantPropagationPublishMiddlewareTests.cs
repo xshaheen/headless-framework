@@ -24,7 +24,7 @@ public sealed class TenantPropagationPublishMiddlewareTests : TestBase
             new Payload("captured"),
             lane,
             options,
-            defaultDeliveryMode: DeliveryMode.Auto,
+            defaultDeliveryMode: DeliveryMode.Durable,
             now: DateTimeOffset.UnixEpoch,
             cancellationToken: AbortToken
         );
@@ -55,7 +55,7 @@ public sealed class TenantPropagationPublishMiddlewareTests : TestBase
             new Payload("hello"),
             MessageLane.Bus,
             options: null,
-            defaultDeliveryMode: DeliveryMode.Auto,
+            defaultDeliveryMode: DeliveryMode.Durable,
             now: DateTimeOffset.UnixEpoch,
             cancellationToken: AbortToken
         );
@@ -86,7 +86,7 @@ public sealed class TenantPropagationPublishMiddlewareTests : TestBase
             new Payload("hello"),
             MessageLane.Bus,
             new PublishOptions { TenantId = "system" },
-            defaultDeliveryMode: DeliveryMode.Auto,
+            defaultDeliveryMode: DeliveryMode.Durable,
             now: DateTimeOffset.UnixEpoch,
             cancellationToken: AbortToken
         );
@@ -108,7 +108,7 @@ public sealed class TenantPropagationPublishMiddlewareTests : TestBase
             new Payload("hello"),
             MessageLane.Bus,
             new PublishOptions { CorrelationId = "corr-1", MessageId = "msg-1" },
-            defaultDeliveryMode: DeliveryMode.Auto,
+            defaultDeliveryMode: DeliveryMode.Durable,
             now: DateTimeOffset.UnixEpoch,
             cancellationToken: AbortToken
         );
@@ -132,7 +132,7 @@ public sealed class TenantPropagationPublishMiddlewareTests : TestBase
             new Payload("hello"),
             MessageLane.Bus,
             options: null,
-            defaultDeliveryMode: DeliveryMode.Auto,
+            defaultDeliveryMode: DeliveryMode.Durable,
             now: DateTimeOffset.UnixEpoch,
             cancellationToken: AbortToken
         );
@@ -140,7 +140,7 @@ public sealed class TenantPropagationPublishMiddlewareTests : TestBase
             new Payload("hello"),
             MessageLane.Bus,
             options: null,
-            defaultDeliveryMode: DeliveryMode.Auto,
+            defaultDeliveryMode: DeliveryMode.Durable,
             now: DateTimeOffset.UnixEpoch,
             cancellationToken: AbortToken
         );
@@ -165,7 +165,7 @@ public sealed class TenantPropagationPublishMiddlewareTests : TestBase
             new Payload("hello"),
             MessageLane.Bus,
             options: null,
-            defaultDeliveryMode: DeliveryMode.Auto,
+            defaultDeliveryMode: DeliveryMode.Durable,
             now: DateTimeOffset.UnixEpoch,
             cancellationToken: AbortToken
         );
@@ -188,7 +188,7 @@ public sealed class TenantPropagationPublishMiddlewareTests : TestBase
             new Payload("hello"),
             MessageLane.Bus,
             options: null,
-            defaultDeliveryMode: DeliveryMode.Auto,
+            defaultDeliveryMode: DeliveryMode.Durable,
             now: DateTimeOffset.UnixEpoch,
             cancellationToken: AbortToken
         );

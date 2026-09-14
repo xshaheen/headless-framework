@@ -10,8 +10,9 @@ namespace Headless.CommitCoordination;
 /// <remarks>
 /// This buffer stores items in a <see cref="ConcurrentQueue{T}" /> and drains them atomically in
 /// registration order. It is not durable: if the process crashes after commit but before the registered
-/// commit callback drains the buffer, the buffered items are lost. Use
-/// <c>DurableWorkBuffer{TRow}</c> for at-least-once delivery guarantees.
+/// commit callback drains the buffer, the buffered items are lost. Consumers that need at-least-once delivery
+/// must commit a durable row (outbox or job row) inside the transaction and recover it with their own sweep;
+/// this buffer is only the post-commit fast path in front of that store.
 /// </remarks>
 /// <typeparam name="TWork">The type of work item buffered per transaction.</typeparam>
 [PublicAPI]

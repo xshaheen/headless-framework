@@ -235,7 +235,8 @@ public static class SetupMessaging
                 () => sp.GetService<OutboxMessageWriter>(),
                 sp.GetService<MessagingTelemetry>(),
                 options.TransportPublishTimeout,
-                sp.GetRequiredService<IOptions<MessagingOptions>>().Value.DefaultDeliveryMode
+                sp.GetRequiredService<IOptions<MessagingOptions>>().Value.DefaultDeliveryMode,
+                sp.GetServices<MessageRegistration>()
             );
         });
         services.TryAddSingleton<IBus>(sp => new Bus(sp.GetRequiredService<MessagePublisher>()));

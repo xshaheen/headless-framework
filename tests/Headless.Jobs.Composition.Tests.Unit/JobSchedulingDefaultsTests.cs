@@ -1,13 +1,16 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Jobs;
+using Headless.Jobs.BackgroundServices;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
+using Headless.Jobs.Internal;
 using Headless.Jobs.Models;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
@@ -216,6 +219,7 @@ public sealed class JobSchedulingDefaultsTests : TestBase
                     job.Retries == 6
                     && job.OnNodeDeath == NodeDeathPolicy.Skip
                     && job.RetryIntervals!.SequenceEqual(new[] { 2, 5 })
+                    && !job.RequireAtomicEnlistment
                 ),
                 AbortToken
             );
@@ -250,7 +254,10 @@ public sealed class JobSchedulingDefaultsTests : TestBase
     [InlineData(true, "typed-descriptor")]
     [InlineData(false, "requestless-descriptor")]
     [InlineData(true, "requestless-descriptor")]
-    public async Task recurring_facade_rejects_explicit_function_atomic_requirements(bool hostAtomic, string identity)
+    public async Task recurring_facade_carries_function_atomic_requirements_as_the_transient_flag(
+        bool hostAtomic,
+        string identity
+    )
     {
         var required = new JobOptions { RequireAtomicEnlistment = true };
         var policies = new JobSchedulingPolicies(
@@ -259,12 +266,59 @@ public sealed class JobSchedulingDefaultsTests : TestBase
             identity == "request" ? [] : new() { [identity == "typed-descriptor" ? _Typed : _Requestless] = required }
         );
         var (atomicScheduler, _, atomicCron) = _CreateScheduler(new FakeTimeProvider(), policies);
-        var schedule = () =>
+        await (
             identity == "requestless-descriptor"
                 ? atomicScheduler.ScheduleRecurringAsync(_Requestless, "0 * * * * *", AbortToken)
-                : atomicScheduler.ScheduleRecurringAsync(new Request(), "0 * * * * *", AbortToken);
-        await schedule.Should().ThrowAsync<NotSupportedException>();
-        await atomicCron.DidNotReceive().AddAsync(Arg.Any<CronJobEntity>(), Arg.Any<CancellationToken>());
+                : atomicScheduler.ScheduleRecurringAsync(new Request(), "0 * * * * *", AbortToken)
+        );
+        await atomicCron.Received(1).AddAsync(Arg.Is<CronJobEntity>(job => job.RequireAtomicEnlistment), AbortToken);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task recurring_call_options_require_atomic_enlistment_and_cannot_weaken_function_policy(
+        bool functionAtomic
+    )
+    {
+        var policies = new JobSchedulingPolicies(
+            new JobOptions(),
+            new() { [typeof(Request)] = new JobOptions { RequireAtomicEnlistment = functionAtomic } },
+            []
+        );
+        var (scheduler, _, cron) = _CreateScheduler(new FakeTimeProvider(), policies);
+        // The call flag alone requires enlistment, and an explicit `false` cannot weaken a function policy.
+        await scheduler.ScheduleRecurringAsync(
+            new Request(),
+            "0 * * * * *",
+            new RecurringJobOptions { RequireAtomicEnlistment = !functionAtomic },
+            AbortToken
+        );
+        await cron.Received(1).AddAsync(Arg.Is<CronJobEntity>(job => job.RequireAtomicEnlistment), AbortToken);
+    }
+
+    [Fact]
+    public async Task startup_seeding_of_attribute_defined_definitions_ignores_required_atomic_function_policy()
+    {
+        const string cronExpression = "0 */5 * * * *";
+        await using var host = _CreateHost(
+            options => options.ConfigureJob(_Requestless, job => job.RequireAtomicEnlistment()),
+            requestlessCronExpression: cronExpression
+        );
+        var seeder = new JobsInitializationHostedService(
+            host,
+            host.GetRequiredService<JobFunctionRegistry>(),
+            new JobsActivationBarrier(),
+            NullLogger<JobsInitializationHostedService>.Instance
+        );
+        // No coordinator and no application transaction: seeding bypasses scheduling policies and still writes the
+        // definition, because it runs before any application transaction can exist and definitions are idempotent.
+        await seeder.SeedDefinedCronJobsAsync(new SchedulerOptionsBuilder { UseStorageLock = false }, AbortToken);
+        var definitions = await host.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>()
+            .GetAllCronJobExpressionsAsync(AbortToken);
+        definitions
+            .Should()
+            .ContainSingle(job => job.Function == _Requestless.FunctionName && job.Expression == cronExpression);
     }
 
     [Fact]
@@ -607,7 +661,10 @@ public sealed class JobSchedulingDefaultsTests : TestBase
         }
     }
 
-    private static ServiceProvider _CreateHost(Action<JobsOptionsBuilder<TimeJobEntity, CronJobEntity>> configure)
+    private static ServiceProvider _CreateHost(
+        Action<JobsOptionsBuilder<TimeJobEntity, CronJobEntity>> configure,
+        string requestlessCronExpression = ""
+    )
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -624,7 +681,7 @@ public sealed class JobSchedulingDefaultsTests : TestBase
                         descriptor.FunctionName,
                         new()
                         {
-                            CronExpression = "",
+                            CronExpression = ReferenceEquals(descriptor, _Requestless) ? requestlessCronExpression : "",
                             Priority = JobPriority.Normal,
                             MaxConcurrency = 0,
                             Delegate = (_, _, _) => Task.CompletedTask,

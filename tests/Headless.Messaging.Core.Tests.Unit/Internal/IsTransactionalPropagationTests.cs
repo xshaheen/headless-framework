@@ -66,6 +66,40 @@ public sealed class IsTransactionalPropagationTests : TestBase
     }
 
     [Fact]
+    public async Task should_publish_directly_by_default_from_a_direct_construction_bus()
+    {
+        // given — the direct-construction Bus carries a transport-only capability model and no storage, so its
+        // default must be Direct rather than the durable host default.
+        var services = new ServiceCollection();
+        var pipeline = _BuildPublishPipeline(services);
+        await using var transport = new RecordingTransport();
+        var optionsAccessor = Options.Create(new MessagingOptions());
+        var publishRequestFactory = new MessagePublishRequestFactory(
+            new SequentialGuidGenerator(SequentialGuidType.SqlServer),
+            TimeProvider.System,
+            optionsAccessor,
+            _CreateRegistry(),
+            new NullCurrentTenant()
+        );
+        var publisher = new Bus(
+            new JsonUtf8Serializer(optionsAccessor),
+            transport,
+            publishRequestFactory,
+            pipeline,
+            TimeProvider.System
+        );
+
+        // when
+        var receipt = await publisher.PublishAsync(new TestMessage("hi"), cancellationToken: AbortToken);
+
+        // then
+        receipt.StorageId.Should().BeNull();
+        var sent = transport.Sent.Should().ContainSingle().Subject;
+        sent.Headers[Headers.RequestedDeliveryMode].Should().Be(nameof(DeliveryMode.Direct));
+        sent.Headers[Headers.ResolvedDeliveryMode].Should().Be(nameof(DeliveryMode.Direct));
+    }
+
+    [Fact]
     public async Task should_set_is_transactional_true_when_coordinator_has_relational_transaction()
     {
         // given — an ambient commit coordinator exposes a relational transaction: the publish is buffered
@@ -106,8 +140,8 @@ public sealed class IsTransactionalPropagationTests : TestBase
     [Fact]
     public async Task should_set_is_transactional_false_when_no_ambient_coordinator()
     {
-        // given — no ambient coordinator: publishes go straight to the dispatcher, so there is no
-        // commit-driven rollback semantic.
+        // given — no ambient coordinator: the default durable publish is stored standalone and handed to the
+        // dispatcher immediately, so there is no commit-driven rollback semantic.
         var observed = new TransactionalCapture();
         var services = new ServiceCollection();
         services.AddSingleton(observed);

@@ -2,7 +2,6 @@
 
 using System.Collections.Concurrent;
 using Headless.CommitCoordination;
-using Headless.CommitCoordination.DurableWork;
 using Microsoft.Extensions.Logging;
 
 namespace Tests;
@@ -10,7 +9,7 @@ namespace Tests;
 #pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
 
 /// <summary>
-/// In-memory scenarios that need a captured logger, attached capabilities, durable buffers, or a
+/// In-memory scenarios that need a captured logger or a
 /// synchronization context — concerns the portable <see cref="ICommitCoordinationFixture" /> can't
 /// supply, so they run directly against the coordinator/factory.
 /// </summary>
@@ -59,61 +58,6 @@ public sealed class InMemoryCommitCoordinationSpecificTests
     }
 
     [Fact]
-    public async Task should_coexist_durable_and_in_memory_buffers_when_relational_capability_present()
-    {
-        var capability = new StubRelationalCommitContext();
-        var stack = new CommitScopeStack();
-        var factory = new CommitScopeFactory(stack);
-
-        await using var scope = factory.BeginNew(_Services, [capability]);
-        var coordinator = scope.Coordinator;
-
-        var inMemory = coordinator.GetOrAdd(_ => new InMemoryWorkBuffer<string>());
-        var durable = coordinator.GetOrAdd(c => new RecordingDurableWorkBuffer(c));
-
-        inMemory.Add("queued");
-
-        // Durable enlist must not throw while the relational capability is present.
-        await durable.EnlistAsync("row-1", CancellationToken.None);
-
-        inMemory.Drain().Should().Equal(["queued"]);
-        durable.WrittenRows.Should().Equal(["row-1"]);
-
-        await scope.SignalAsync(CommitOutcome.Committed);
-    }
-
-    [Fact]
-    public async Task should_throw_at_enlist_when_durable_work_lacks_relational_capability_and_policy_is_throw()
-    {
-        var coordinator = new CommitCoordinator();
-        var durable = coordinator.GetOrAdd(c => new RecordingDurableWorkBuffer(
-            c,
-            DurableWorkProviderMismatchPolicy.Throw
-        ));
-
-        var act = () => durable.EnlistAsync("row-1", CancellationToken.None).AsTask();
-
-        await act.Should()
-            .ThrowAsync<InvalidOperationException>()
-            .WithMessage("Durable commit work requires IRelationalCommitContext.");
-    }
-
-    [Fact]
-    public async Task should_tolerate_missing_relational_capability_when_durable_policy_is_warn()
-    {
-        var coordinator = new CommitCoordinator();
-        var durable = coordinator.GetOrAdd(c => new RecordingDurableWorkBuffer(
-            c,
-            DurableWorkProviderMismatchPolicy.Warn
-        ));
-
-        await durable.EnlistAsync("row-1", CancellationToken.None);
-
-        durable.FallbackRows.Should().Equal(["row-1"]);
-        durable.WrittenRows.Should().BeEmpty();
-    }
-
-    [Fact]
     public void should_complete_commit_drain_without_deadlock_under_single_threaded_synchronization_context()
     {
         var original = SynchronizationContext.Current;
@@ -148,44 +92,6 @@ public sealed class InMemoryCommitCoordinationSpecificTests
         finally
         {
             SynchronizationContext.SetSynchronizationContext(original);
-        }
-    }
-
-    private sealed class StubRelationalCommitContext : IRelationalCommitContext
-    {
-        public System.Data.Common.DbConnection? Connection => null;
-
-        public System.Data.Common.DbTransaction? Transaction => null;
-    }
-
-    private sealed class RecordingDurableWorkBuffer(
-        ICommitCoordinator coordinator,
-        DurableWorkProviderMismatchPolicy policy = DurableWorkProviderMismatchPolicy.Throw
-    ) : DurableWorkBuffer<string>(coordinator, policy)
-    {
-        public List<string> WrittenRows { get; } = [];
-
-        public List<string> FallbackRows { get; } = [];
-
-        protected override ValueTask WriteRowAsync(
-            string row,
-            IRelationalCommitContext relationalContext,
-            CancellationToken cancellationToken
-        )
-        {
-            WrittenRows.Add(row);
-
-            return ValueTask.CompletedTask;
-        }
-
-        protected override ValueTask EnlistWithoutRelationalContextAsync(
-            string row,
-            CancellationToken cancellationToken
-        )
-        {
-            FallbackRows.Add(row);
-
-            return ValueTask.CompletedTask;
         }
     }
 

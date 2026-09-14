@@ -170,7 +170,7 @@ ASP.NET Core integration-test host wrapper with controllable time, DI-scope help
 - Database reset APIs default to the active xUnit test's cancellation token. The server retries
   database, I/O, socket, and broken-connection failures up to three times, replacing the reset
   connection between attempts.
-- `ResetMessagingHarness()` clears `MessagingTestHarness` observation buffers between tests.
+- `ResetMessagingHarnessAsync()` waits for the `MessagingTestHarness`'s in-flight publish and consume work, then clears its observation buffers and in-memory storage between tests.
 
 ### Design Notes
 
@@ -216,7 +216,7 @@ public sealed class TestFixture : IAsyncLifetime
     public async Task ResetStateAsync()
     {
         await App.ResetDatabaseAsync();
-        App.ResetMessagingHarness();
+        await App.ResetMessagingHarnessAsync();
     }
 
     public async ValueTask DisposeAsync() => await App.DisposeAsync();
@@ -246,7 +246,7 @@ public abstract class IntegrationTestBase(TestFixture fixture) : TestBase
 #### Test Fixture Composition
 
 - Use an xUnit **collection fixture** (`ICollectionFixture<TFixture>` + `[CollectionDefinition]`) rather than a class fixture. The integration host is expensive to construct, so sharing it across an entire test collection (often the whole assembly) is the right unit of reuse.
-- Expose a `Fixture.ResetStateAsync()` hook from the fixture that resets every piece of state that crosses tests: DB rows via `App.ResetDatabaseAsync()`, messaging observations via `App.ResetMessagingHarness()`, ambient `ICurrentTenant`/`ICurrentUser` scopes, time, and any test-owned WireMock servers.
+- Expose a `Fixture.ResetStateAsync()` hook from the fixture that resets every piece of state that crosses tests: DB rows via `App.ResetDatabaseAsync()`, messaging observations via `await App.ResetMessagingHarnessAsync()`, ambient `ICurrentTenant`/`ICurrentUser` scopes, time, and any test-owned WireMock servers.
 - Call `Fixture.ResetStateAsync()` from `IntegrationTestBase.InitializeAsync()` so tests run in any order without ordering coupling. Avoid relying on xUnit test ordering or `[Trait("Order", ...)]` for state setup.
 - Tag every integration class with `[Trait("Category", "Integration")]` so CI can run integration and unit lanes on different runners (only the integration lane needs Docker).
 
@@ -307,7 +307,7 @@ using (tenant.Change(tenantId, "Test Tenant"))
 
 - **Distributed caches.** Redis / hybrid caches are not touched by Respawner. Prefer registering `Headless.Caching.InMemory` (or the in-memory hybrid L1) for integration tests so the cache lives for the test run and dies with the host. When a test genuinely needs a distributed cache, clear it explicitly in `ResetStateAsync()`.
 - **In-process singletons.** Any state held on singleton services (caches, registries, schedulers) survives DB reset. Either reset them explicitly or design the test to seed them via the public API rather than relying on a pristine state.
-- **`MessagingTestHarness` observation buffers.** Call `App.ResetMessagingHarness()` in `ResetStateAsync()` -- otherwise `WaitForPublished<T>()` may match a message from a prior test.
+- **`MessagingTestHarness` observation buffers.** Call `await App.ResetMessagingHarnessAsync()` in `ResetStateAsync()` -- otherwise `WaitForPublished<T>()` may match a message from a prior test, or a store-first publish still in flight from the prior test lands in this one.
 - **Ambient `ICurrentTenant` / `ICurrentUser` scopes.** Disposable scopes opened by one test must not leak into the next; close them inside the test's own `using` block or reset them in `ResetStateAsync()`.
 - **External fakes** (WireMock, Stripe test server, etc.). Reset their recorded requests and reconfigure their stubs as part of `ResetStateAsync()`.
 
@@ -479,7 +479,7 @@ Asserting on messaging by querying the outbox table covers only messages that fl
 - `WaitForPublished<T>(MessageLane.Bus)` and `WaitForPublished<T>(MessageLane.Queue)` distinguish identical payloads sent through bus and queue paths.
 - Predicate overloads for filtering by payload shape.
 - `Published`, `Consumed`, `Faulted`, `Exhausted` collections for non-blocking assertions.
-- `Clear()` for clean test isolation; integrates with `HeadlessTestServer.ResetMessagingHarness()`.
+- `ResetAsync()` for clean test isolation — waits for in-flight store-first work (not for a delayed publish that is not yet due on the host `TimeProvider`), then clears observations and in-memory storage; integrates with `HeadlessTestServer.ResetMessagingHarnessAsync()`.
 
 ### Installation
 
@@ -528,7 +528,7 @@ A common reflex is to assert by selecting from the outbox table (`outbox.publish
 
 #### Isolation Between Tests
 
-Call `harness.Clear()` (or `App.ResetMessagingHarness()` when using `HeadlessTestServer`) from your fixture's `ResetStateAsync()` so observations from one test do not leak into the next. Both methods drop the accumulated `Published` / `Consumed` / `Faulted` / `Exhausted` collections without re-creating the transport decorators. Tests that observe asynchronous publish-then-consume flows should rely on the `WaitFor*` APIs rather than reading the collections immediately, since transport and consume observations can arrive on background processing threads.
+Call `await harness.ResetAsync()` (or `await App.ResetMessagingHarnessAsync()` when using `HeadlessTestServer`) from your fixture's `ResetStateAsync()` so observations from one test do not leak into the next. Both wait for in-flight store-first work to settle — a default publish returns once its row is stored, and the send and the consumer run afterwards on dispatcher threads — then drop the accumulated `Published` / `Consumed` / `Faulted` / `Exhausted` collections and the in-memory storage rows without re-creating the transport decorators. A publish that is not yet due is clock-parked and is not awaited: it is stored as `Queued` when due within a minute and as `Delayed` beyond that, the dispatcher holds it either way, and it publishes when due on the host `TimeProvider` (a `Queued` row counts as in flight only once it is due on that clock), so a shared harness should not carry pending delays across tests, or should advance a `FakeTimeProvider` past them before resetting. Tests that observe asynchronous publish-then-consume flows should rely on the `WaitFor*` APIs rather than reading the collections immediately, since transport and consume observations can arrive on background processing threads. A message the transport handed to a consumer just before the reset still runs afterwards, but the reset does not wait for it and its `Consumed` or `Faulted` observation is not recorded, so it cannot leak into the next test.
 
 ### Configuration
 
@@ -536,6 +536,7 @@ None. `MessagingTestHarness` has no configuration class or options object. The o
 
 ### Dependencies
 
+- `Headless.CommitCoordination.Core` — registered in the harness host so `RunCoordinatedAsync` can open a scope and a `Coordinated` type passes the messaging startup gate
 - `Headless.Messaging.Abstractions`
 - `Headless.Messaging.Core`
 

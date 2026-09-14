@@ -337,7 +337,6 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 ### Commit Coordination
 - `Headless.CommitCoordination.Abstractions` — Register-only commit coordinator contracts, work buffers, and capabilities.
 - `Headless.CommitCoordination.Core` — In-process coordinator, ambient stack, scope factory, and relational capability implementation.
-- `Headless.CommitCoordination.DurableWork` — Durable work buffer base with fail-closed relational provider policy.
 - `Headless.CommitCoordination.EntityFramework` — EF Core commit coordination registration points.
 - `Headless.EntityFramework.CommitCoordination` — Opt-in adapter that enlists the Headless EF save pipeline in commit coordination.
 - `Headless.CommitCoordination.InMemory` — Explicit in-process signal source for tests and owner-driven flows.

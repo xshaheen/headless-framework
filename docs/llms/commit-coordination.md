@@ -1,6 +1,6 @@
 ---
 domain: Commit Coordination
-packages: CommitCoordination.Abstractions, CommitCoordination.Core, CommitCoordination.DurableWork, CommitCoordination.EntityFramework, EntityFramework.CommitCoordination, CommitCoordination.InMemory, CommitCoordination.PostgreSql, CommitCoordination.SqlServer
+packages: CommitCoordination.Abstractions, CommitCoordination.Core, CommitCoordination.EntityFramework, EntityFramework.CommitCoordination, CommitCoordination.InMemory, CommitCoordination.PostgreSql, CommitCoordination.SqlServer
 ---
 
 # Commit Coordination
@@ -9,13 +9,25 @@ packages: CommitCoordination.Abstractions, CommitCoordination.Core, CommitCoordi
 
 ## Orientation
 
-Use Commit Coordination when a framework subsystem must defer work until the data it belongs to has durably committed. Messaging uses it to store outbox rows inside the relational transaction and dispatch only after commit. Jobs can use `DurableWorkBuffer<TRow>` to fail closed unless a relational capability is available.
+Use Commit Coordination when a framework subsystem must defer work until the data it belongs to has durably committed. Messaging uses it to store outbox rows inside the relational transaction and dispatch only after commit. Work that must write rows inside that transaction reaches the live connection through `IRelationalCommitContext`.
 
 The coordinator guarantees exactly-once callback invocation per coordinator instance. It does not guarantee exactly-once business effects for brokers, external services, or processes that crash after commit.
 
+Consumers map their own guarantee onto the scope state. Messaging's `DeliveryMode` (per call, then per type via `WithDeliveryMode`, then `MessagingOptions.DefaultDeliveryMode`, default `Durable`) resolves as follows, and every throw happens before storage or transport effects; a scope is compatible when the consumer's storage can join its boundary (relational storage on the same database, in-memory storage in a scope with no relational handle):
+
+| Requested mode | Compatible live coordinated scope | No scope | Incompatible scope |
+|---|---|---|---|
+| `Durable` (default) | capture in the caller's transaction, dispatch after commit | store first, the relay dispatches | throw |
+| `Coordinated` | capture in the caller's transaction, dispatch after commit | throw | throw |
+| `Direct` | transport now | transport now | transport now |
+
+`Coordinated` is additionally rejected at Messaging startup when no `ICommitScopeFactory` is registered or when durable consumers run below the `Transactional` inbox tier. Jobs' `RequireAtomicEnlistment` behaves like `Coordinated`; without it a job write enlists in a compatible live relational transaction and otherwise inserts directly. See [Delivery Modes](messaging.md#delivery-modes) and [Commit-Coordinated Enqueue](jobs.md#commit-coordinated-enqueue-atomic-enqueue).
+
+Two behaviors of this contract are documented, not defects. Commit callbacks are savepoint-blind: a callback registered inside a savepoint that is later rolled back still runs on the outer commit (details under [Core Design Notes](#design-notes-1)). The plain-`DbContext` `ExecuteCoordinatedTransactionAsync` helper runs under EF's execution strategy and replays the whole operation for a failure before `CommitAsync` starts, while the Headless save pipeline honors `CommitRetryGuard` and does not replay a participant write (details under the [EntityFramework Quick Start](#quick-start-2)).
+
 Messaging's transactional inbox uses the application `DbContext` transaction to commit the fenced inbox outcome, enlisted application state, and captured durable Bus/Queue rows together. User code is never wrapped in transparent execution-strategy replay. Handler entry, direct transport, and external or otherwise non-enlisted effects can repeat.
 
-**Commit detection is an acceleration hook, not a correctness mechanism.** A detected signal (SQL Server SqlClient diagnostic, EF interceptor) only dispatches deferred work *sooner*; correctness must not depend on it firing. The consumer commits a durable row inside the transaction and recovers it through an independent polling sweep, so if the signal is missed, delayed, or disabled, the work is still found and executed. In-memory accelerator buffers (`InMemoryWorkBuffer<T>`) therefore require the consumer to own that durable store plus recovery (messaging: outbox rows + retry sweep); `DurableWorkBuffer<TRow>` writes rows in-transaction and does not depend on detection at all.
+**Commit detection is an acceleration hook, not a correctness mechanism.** A detected signal (SQL Server SqlClient diagnostic, EF interceptor) only dispatches deferred work *sooner*; correctness must not depend on it firing. The consumer commits a durable row inside the transaction and recovers it through an independent polling sweep, so if the signal is missed, delayed, or disabled, the work is still found and executed. In-memory accelerator buffers (`InMemoryWorkBuffer<T>`) therefore require the consumer to own that durable store plus recovery (messaging: outbox rows + retry sweep); rows written in-transaction through `IRelationalCommitContext` do not depend on detection at all.
 
 ## Agent Rules
 
@@ -26,7 +38,7 @@ Messaging's transactional inbox uses the application `DbContext` transaction to 
 - Use `TryGetCapability<IRelationalCommitContext>` when work must write durable rows inside the active relational transaction.
 - Never make correctness depend on a detected commit signal. Detection (SQL Server diagnostic, EF interceptor) only dispatches sooner; back every in-memory accelerator buffer with a durable row committed in-transaction plus an independent polling/recovery sweep, so a missed, delayed, or disabled signal still executes the work.
 - Prefer the single-call `ExecuteCoordinatedTransactionAsync(...)` helper over hand-rolling `Begin` + `EnlistCommitCoordination`; it welds the enlist into the transaction so it cannot be forgotten. A `HeadlessDbContext` self-sources its request scope (no `IServiceProvider` argument); a plain `DbContext`, `SqlConnection`, or `NpgsqlConnection` cannot, so those overloads require the scope passed explicitly. Pass the **request-scoped** provider (e.g. `HttpContext.RequestServices` or an injected scoped `IServiceProvider`), never the root container — the post-commit drain resolves scoped services, and the root provider would resolve the wrong (or no) scope.
-- Durable jobs should keep `DurableWorkProviderMismatchPolicy.Throw`; fallback modes are for at-least-once accelerators that already have recovery.
+- Work that must be durable fails closed when `TryGetCapability<IRelationalCommitContext>` returns `false`; falling back to an in-memory buffer is acceptable only for accelerators that already own a durable store plus recovery.
 
 ## Core Concepts
 
@@ -40,7 +52,7 @@ Messaging's transactional inbox uses the application `DbContext` transaction to 
 
 ### Work Buffer
 
-`ICommitWorkBuffer` marks state that belongs to one commit scope. `InMemoryWorkBuffer<T>` is a thread-safe queue for post-commit accelerators. `DurableWorkBuffer<TRow>` writes rows while the relational transaction is still open.
+`ICommitWorkBuffer` marks state that belongs to one commit scope. `InMemoryWorkBuffer<T>` is a thread-safe queue for post-commit accelerators. Buffers that must be durable write their rows through `IRelationalCommitContext` while the relational transaction is still open.
 
 ### Capability
 
@@ -145,56 +157,6 @@ None.
 ### Side Effects
 
 Registers `ICurrentCommitCoordinator` and `ICommitScopeFactory` (the scope-opening seam for custom `ICommitSignalSource` implementations); the backing stack and factory types are internal.
-
-## Headless.CommitCoordination.DurableWork
-
-### Problem Solved
-
-Provides a base for durable work buffers that must write rows inside the active relational transaction.
-
-### Key Features
-
-- `DurableWorkBuffer<TRow>` base class.
-- `DurableWorkProviderMismatchPolicy.Throw` default.
-- Explicit `Warn` fallback for consumers that already have recovery.
-
-### Design Notes
-
-Durable work fails closed by default because running a job before its triggering data commits is a correctness bug. Rows are written inside the active relational transaction at enlist time, so a durable buffer does not depend on commit detection at all: the row commits atomically with the business data and is recovered by the consumer's relay regardless of whether any signal fires.
-
-### Installation
-
-```bash
-dotnet add package Headless.CommitCoordination.DurableWork
-```
-
-### Quick Start
-
-```csharp
-public sealed record JobRow(string Name);
-
-public sealed class JobWorkBuffer(ICommitCoordinator coordinator) : DurableWorkBuffer<JobRow>(coordinator)
-{
-    protected override ValueTask WriteRowAsync(JobRow row, IRelationalCommitContext context, CancellationToken ct)
-    {
-        // write row using context.Connection/context.Transaction
-        return ValueTask.CompletedTask;
-    }
-}
-```
-
-### Configuration
-
-Choose `DurableWorkProviderMismatchPolicy.Throw` or `Warn` per buffer.
-
-### Dependencies
-
-- `Headless.CommitCoordination.Abstractions`
-- `Microsoft.Extensions.Logging.Abstractions`
-
-### Side Effects
-
-None.
 
 ## Headless.CommitCoordination.EntityFramework
 

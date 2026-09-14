@@ -10,10 +10,20 @@ namespace Headless.CommitCoordination;
 /// Execution is driven by the infrastructure after the physical unit of work (database transaction) reaches a
 /// terminal outcome — commit or rollback — as signalled by the provider's <see cref="ICommitSignalSource" />.
 /// <para>
-/// Callbacks registered via <see cref="OnCommit" /> or <see cref="OnRollback" /> run at least once after the
-/// physical outcome is durable; they are not guaranteed to run exactly once (relay recovery may replay them if
-/// an in-process drain is interrupted). Consumers requiring exactly-once semantics must implement idempotency in
-/// their callbacks.
+/// Callbacks registered via <see cref="OnCommit" /> or <see cref="OnRollback" /> are <b>process-local</b>: the
+/// coordinator is an in-memory object, and each callback runs <b>once per coordinator instance</b>, after the
+/// physical outcome is durable, on the drain that the terminal signal triggers. Nothing persists the
+/// registrations, so a callback that has not yet run when the process crashes is lost; no relay or sweep
+/// recovers it. Durable delivery therefore never comes from a callback — it comes from the row the consumer
+/// commits inside the transaction (an outbox or job row) plus that consumer's own recovery sweep. A callback
+/// is only the fast path that dispatches such a row sooner.
+/// </para>
+/// <para>
+/// Callbacks are savepoint-blind. The coordinator observes the physical transaction's terminal outcome only,
+/// so a callback registered inside a savepoint that is later rolled back to still runs when the outer
+/// transaction commits. Consumers that register work inside savepoints must tolerate a callback whose
+/// originating writes were undone; this trade-off is deliberate and keeps the coordinator free of nested
+/// transaction tracking.
 /// </para>
 /// <para>
 /// Child coordinators (opened via <see cref="ICommitScopeFactory.Begin" /> when an ambient scope already exists)
@@ -33,12 +43,14 @@ public interface ICommitCoordinator
     /// Registers a callback to run after the physical unit of work commits.
     /// </summary>
     /// <remarks>
-    /// Registration is a no-op after the coordinator reaches a terminal state — callers must check
-    /// <see cref="State" /> or catch <see cref="InvalidOperationException" /> if calling after an outcome is
-    /// possible. Callbacks are invoked in registration order; each receives a <see cref="CommitContext" /> that
-    /// carries the service provider and the terminal outcome. The callback receives
-    /// <see cref="CancellationToken.None" /> — drains always run to completion to avoid abandoning
-    /// already-committed work (design decision D9).
+    /// Registration after the coordinator reaches a terminal state throws <see cref="InvalidOperationException" />
+    /// — callers that may register after an outcome must check <see cref="State" /> first or catch the
+    /// exception. Callbacks are invoked in registration order; each receives a <see cref="CommitContext" /> that
+    /// carries the service provider and the terminal outcome. The callback always receives
+    /// <see cref="CancellationToken.None" />: a drain runs to completion once the outcome is durable, because
+    /// cancelling it would abandon work whose data has already committed. The callback runs once on this
+    /// coordinator instance and is not replayed after a process crash; see the type remarks for what that
+    /// means for durability.
     /// </remarks>
     /// <param name="work">The callback to invoke after the transaction commits.</param>
     /// <returns>
@@ -106,8 +118,8 @@ public interface ICommitCoordinator
     /// <remarks>
     /// Capabilities are attached by the scope owner (typically a provider enlistment helper such as
     /// <c>EnlistCommitCoordination</c>) and are read-only to consumers. For example, a relational provider
-    /// attaches an <see cref="IRelationalCommitContext" /> so durable work buffers can reach the live
-    /// connection and transaction.
+    /// attaches an <see cref="IRelationalCommitContext" /> so work that must write rows inside the active
+    /// transaction can reach the live connection and transaction.
     /// </remarks>
     /// <typeparam name="TCapability">The capability interface to query, deriving from <see cref="ICommitCapability" />.</typeparam>
     /// <param name="capability">

@@ -4,6 +4,7 @@ using System.Data.Common;
 using Headless.Abstractions;
 using Headless.CommitCoordination;
 using Headless.Jobs;
+using Headless.Jobs.BackgroundServices;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
@@ -17,6 +18,19 @@ namespace Tests.Managers;
 
 public sealed class JobsManagerDeleteResultTests : TestBase
 {
+    // Signal workers are never started here, but the service owns a channel and a cancellation source.
+    private readonly List<JobsPostCommitSignalService> _workers = [];
+
+    protected override async ValueTask DisposeAsyncCore()
+    {
+        foreach (var worker in _workers)
+        {
+            worker.Dispose();
+        }
+
+        await base.DisposeAsyncCore();
+    }
+
     [Fact]
     public async Task should_return_failed_delete_result_when_provider_throws_database_exception()
     {
@@ -90,7 +104,7 @@ public sealed class JobsManagerDeleteResultTests : TestBase
         scheduler.DidNotReceive().Restart();
     }
 
-    private static (
+    private (
         ITimeJobManager<TimeJobEntity> Manager,
         IJobPersistenceProvider<TimeJobEntity, CronJobEntity> Provider,
         IJobsHostScheduler Scheduler
@@ -116,6 +130,13 @@ public sealed class JobsManagerDeleteResultTests : TestBase
             );
         }
 
+        var signals = new JobsPostCommitSignalService(
+            TestActivationBarrier.Opened(),
+            TimeProvider.System,
+            NullLogger<JobsPostCommitSignalService>.Instance
+        );
+        _workers.Add(signals);
+
         var manager = new JobsManager<TimeJobEntity, CronJobEntity>(
             provider,
             scheduler,
@@ -126,7 +147,7 @@ public sealed class JobsManagerDeleteResultTests : TestBase
             Substitute.For<IJobsDispatcher>(),
             Substitute.For<ICurrentCommitCoordinator>(),
             new CronScheduleCache(TimeZoneInfo.Utc),
-            new SchedulerOptionsBuilder(),
+            signals,
             functionRegistry,
             NullLogger<JobsManager<TimeJobEntity, CronJobEntity>>.Instance
         );

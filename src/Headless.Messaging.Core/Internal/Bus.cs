@@ -38,7 +38,10 @@ internal sealed class Bus : IBus
             new MessagingNullCommitCoordinator(),
             static () => null,
             static () => null,
-            telemetry
+            telemetry,
+            // Direct construction carries a transport-only capability model and no storage, so the durable host
+            // default would reject every publish; this constructor is the explicit fire-and-forget bus.
+            defaultDeliveryMode: DeliveryMode.Direct
         );
     }
 

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Text.Json.Serialization;
 using Headless.Jobs.Entities.BaseEntity;
 using Headless.Jobs.Enums;
 
@@ -19,6 +20,13 @@ public class CronJobEntity : BaseJobEntity
         clone.RetryIntervals = RetryIntervals?.ToArray();
         return clone;
     }
+
+    /// <summary>
+    /// Requires this scheduling call to enlist in a compatible live application transaction. Never persisted: the
+    /// requirement is transient call intent rather than definition payload, so it is excluded from JSON and columns.
+    /// </summary>
+    [JsonIgnore]
+    public bool RequireAtomicEnlistment { get; set; }
 
     /// <summary>
     /// Six-field (seconds-inclusive) NCrontab expression that drives occurrence generation.

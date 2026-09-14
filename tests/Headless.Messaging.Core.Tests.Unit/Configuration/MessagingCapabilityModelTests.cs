@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.CommitCoordination;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
@@ -9,6 +10,7 @@ using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Tests.Helpers;
 
 namespace Tests.Configuration;
 
@@ -656,6 +658,223 @@ public sealed class MessagingCapabilityModelTests : TestBase
         model.IsFrozen.Should().BeTrue();
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void should_reject_coordinated_delivery_without_a_commit_coordinator(bool hasDurableConsumers)
+    {
+        var model = MessagingCapabilityModel.Compose([
+            _Transport("Transport", [MessageLane.Bus], independentLaneTopology: true),
+            _Storage("TestStorage", MessagingInboxCapabilityTier.Transactional),
+        ]);
+
+        var act = () =>
+            model.ValidateStartup(
+                [new MessageRouteKey(typeof(SharedContract), "orders.changed", MessageLane.Bus)],
+                hasDurableConsumers,
+                MessagingInboxCapabilityTier.Transactional,
+                coordinatedDeliveryConfigured: true,
+                commitCoordinatorRegistered: false
+            );
+
+        act.Should()
+            .Throw<MessagingConfigurationException>()
+            .WithMessage("*Coordinated*ICommitScopeFactory*AddCommitCoordination*");
+    }
+
+    [Theory]
+    [InlineData(MessagingInboxCapabilityTier.ProcessLocal)]
+    [InlineData(MessagingInboxCapabilityTier.DurableDedupeOnly)]
+    public void should_reject_coordinated_delivery_with_durable_consumers_below_the_transactional_inbox_tier(
+        MessagingInboxCapabilityTier required
+    )
+    {
+        // Storage declares Transactional so the only violated rule is the host-required tier.
+        var model = MessagingCapabilityModel.Compose([
+            _Transport("Transport", [MessageLane.Bus], independentLaneTopology: true),
+            _Storage("TestStorage", MessagingInboxCapabilityTier.Transactional),
+        ]);
+
+        var act = () =>
+            model.ValidateStartup(
+                [new MessageRouteKey(typeof(SharedContract), "orders.changed", MessageLane.Bus)],
+                hasDurableConsumers: true,
+                required,
+                coordinatedDeliveryConfigured: true,
+                commitCoordinatorRegistered: true
+            );
+
+        act.Should().Throw<MessagingConfigurationException>().WithMessage($"*Coordinated*Transactional*{required}*");
+    }
+
+    [Theory]
+    [InlineData(true, MessagingInboxCapabilityTier.Transactional)]
+    [InlineData(false, MessagingInboxCapabilityTier.ProcessLocal)]
+    [InlineData(false, MessagingInboxCapabilityTier.DurableDedupeOnly)]
+    public void should_accept_coordinated_delivery_with_a_coordinator_when_the_inbox_tier_rule_holds(
+        bool hasDurableConsumers,
+        MessagingInboxCapabilityTier required
+    )
+    {
+        var model = MessagingCapabilityModel.Compose([
+            _Transport("Transport", [MessageLane.Bus], independentLaneTopology: true),
+            _Storage("TestStorage", MessagingInboxCapabilityTier.Transactional),
+        ]);
+
+        var act = () =>
+            model.ValidateStartup(
+                [new MessageRouteKey(typeof(SharedContract), "orders.changed", MessageLane.Bus)],
+                hasDurableConsumers,
+                required,
+                coordinatedDeliveryConfigured: true,
+                commitCoordinatorRegistered: true
+            );
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void should_ignore_the_coordinator_and_inbox_tier_rules_when_coordinated_delivery_is_not_configured()
+    {
+        var model = MessagingCapabilityModel.Compose([
+            _Transport("Transport", [MessageLane.Bus], independentLaneTopology: true),
+            _Storage("TestStorage", MessagingInboxCapabilityTier.ProcessLocal),
+        ]);
+
+        var act = () =>
+            model.ValidateStartup(
+                [new MessageRouteKey(typeof(SharedContract), "orders.changed", MessageLane.Bus)],
+                hasDurableConsumers: true,
+                MessagingInboxCapabilityTier.ProcessLocal,
+                coordinatedDeliveryConfigured: false,
+                commitCoordinatorRegistered: false
+            );
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public async Task should_fail_bootstrap_when_a_type_policy_is_coordinated_with_durable_consumers_below_transactional()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessMessaging(setup =>
+        {
+            setup.UseInMemory();
+            setup.UseProcessLocalInMemoryStorage();
+            setup.Bus.ForMessage<SharedContract>(message =>
+                message
+                    .Contract("orders.changed")
+                    .WithDeliveryMode(DeliveryMode.Coordinated)
+                    .Consumer<SharedConsumer>(consumer => consumer.ConsumerIdentity("orders-projection"))
+            );
+        });
+        services.AddCommitCoordination();
+        services.RemoveAll<IProcessingServer>();
+
+        await using var provider = services.BuildServiceProvider();
+        var act = () => provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
+
+        await act.Should()
+            .ThrowAsync<MessagingConfigurationException>()
+            .WithMessage("*Coordinated*Transactional*ProcessLocal*");
+    }
+
+    [Fact]
+    public async Task should_bootstrap_when_a_type_policy_is_coordinated_with_durable_consumers_at_transactional()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessMessaging(setup =>
+        {
+            setup.UseInMemory();
+            setup.Bus.ForMessage<SharedContract>(message =>
+                message
+                    .Contract("orders.changed")
+                    .WithDeliveryMode(DeliveryMode.Coordinated)
+                    .Consumer<SharedConsumer>(consumer => consumer.ConsumerIdentity("orders-projection"))
+            );
+        });
+        services.AddCommitCoordination();
+        services.AddMessagingProviderCapabilities(
+            _Storage("Transactional", MessagingInboxCapabilityTier.Transactional)
+        );
+        services.AddSingleton<IStorageInitializer>(new RecordingStorageInitializer(static () => { }));
+        services.RemoveAll<IProcessingServer>();
+
+        await using var provider = services.BuildServiceProvider();
+        var bootstrapper = provider.GetRequiredService<IBootstrapper>();
+
+        await bootstrapper.BootstrapAsync(AbortToken);
+
+        bootstrapper.IsStarted.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task should_fail_bootstrap_when_host_default_is_coordinated_without_commit_coordination(
+        bool nullCoordinatorRegisteredFirst
+    )
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        if (nullCoordinatorRegisteredFirst)
+        {
+            // Stands in for Jobs' JobsNullCommitCoordinator TryAdd: an ICurrentCommitCoordinator descriptor that is
+            // not a real coordinator must not satisfy the gate, regardless of registration order.
+            services.TryAddSingleton<ICurrentCommitCoordinator, NullCurrentCommitCoordinator>();
+        }
+
+        services.AddHeadlessMessaging(setup =>
+        {
+            setup.UseInMemory();
+            setup.UseProcessLocalInMemoryStorage();
+            setup.Options.DefaultDeliveryMode = DeliveryMode.Coordinated;
+            setup.Bus.ForMessage<SharedContract>(message => message.Contract("orders.changed"));
+        });
+        services.RemoveAll<IProcessingServer>();
+
+        await using var provider = services.BuildServiceProvider();
+        var act = () => provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
+
+        await act.Should()
+            .ThrowAsync<MessagingConfigurationException>()
+            .WithMessage("*Coordinated*ICommitScopeFactory*AddCommitCoordination*");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task should_bootstrap_when_host_default_is_coordinated_and_commit_coordination_is_registered(
+        bool nullCoordinatorRegisteredFirst
+    )
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        if (nullCoordinatorRegisteredFirst)
+        {
+            services.TryAddSingleton<ICurrentCommitCoordinator, NullCurrentCommitCoordinator>();
+        }
+
+        services.AddHeadlessMessaging(setup =>
+        {
+            setup.UseInMemory();
+            setup.UseProcessLocalInMemoryStorage();
+            setup.Options.DefaultDeliveryMode = DeliveryMode.Coordinated;
+            setup.Bus.ForMessage<SharedContract>(message => message.Contract("orders.changed"));
+        });
+        services.AddCommitCoordination();
+        services.RemoveAll<IProcessingServer>();
+
+        await using var provider = services.BuildServiceProvider();
+        var bootstrapper = provider.GetRequiredService<IBootstrapper>();
+
+        await bootstrapper.BootstrapAsync(AbortToken);
+
+        bootstrapper.IsStarted.Should().BeTrue();
+    }
+
     private static MessagingProviderCapabilities _Transport(
         string provider,
         IReadOnlyCollection<MessageLane> lanes,
@@ -713,6 +932,11 @@ public sealed class MessagingCapabilityModelTests : TestBase
             Interlocked.Increment(ref recorder.MiddlewareCalls);
             return next();
         }
+    }
+
+    private sealed class NullCurrentCommitCoordinator : ICurrentCommitCoordinator
+    {
+        public ICommitCoordinator? Current => null;
     }
 
     private sealed class RecordingStorageInitializer(Action initialize) : IStorageInitializer

@@ -409,6 +409,32 @@ public sealed class MessageObservationStoreTests : TestBase
         store.Faulted.Should().BeEmpty();
     }
 
+    [Fact]
+    public void clear_advances_the_generation()
+    {
+        var store = new MessageObservationStore();
+        var before = store.Generation;
+
+        store.Clear();
+
+        store.Generation.Should().Be(before + 1);
+    }
+
+    [Fact]
+    public async Task clear_releases_a_pending_published_record_wait()
+    {
+        // given: a consumer waiting for a Published record that will never arrive once the round is cleared
+        var store = new MessageObservationStore();
+        var wait = store.WaitForPublishedRecordAsync("straggler", TimeSpan.FromSeconds(30), AbortToken);
+        wait.IsCompleted.Should().BeFalse();
+
+        // when
+        store.Clear();
+
+        // then: the wait ends now instead of after the full timeout
+        await wait.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+    }
+
     // --- Helpers ---
 
     private class SimpleMessage

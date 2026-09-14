@@ -419,7 +419,6 @@ Messaging في Headless مجرد عائلة من عائلات الإطار، م�
 |---------|-------|
 | [Headless.CommitCoordination.Abstractions](src/Headless.CommitCoordination.Abstractions/README.md) | عقود commit coordination |
 | [Headless.CommitCoordination.Core](src/Headless.CommitCoordination.Core/README.md) | Ambient scopes وربط الشغل بحدود المعاملة |
-| [Headless.CommitCoordination.DurableWork](src/Headless.CommitCoordination.DurableWork/README.md) | Durable work stores تُكتب داخل نفس المعاملة |
 | [Headless.CommitCoordination.EntityFramework](src/Headless.CommitCoordination.EntityFramework/README.md) | ربط EF Core بحدود commit/rollback |
 | [Headless.CommitCoordination.InMemory](src/Headless.CommitCoordination.InMemory/README.md) | إشارات داخل نفس العملية |
 | [Headless.CommitCoordination.PostgreSql](src/Headless.CommitCoordination.PostgreSql/README.md) | نقاط تسجيل PostgreSQL |

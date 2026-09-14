@@ -36,8 +36,6 @@ namespace Headless.Jobs;
 /// </summary>
 public static class SetupJobs
 {
-    private static readonly TimeSpan _MaximumPostCommitDrainTimeout = TimeSpan.FromMinutes(5);
-
     /// <summary>
     /// Registers the Jobs subsystem using the default <see cref="TimeJobEntity"/> and
     /// <see cref="CronJobEntity"/> entity types. Equivalent to
@@ -113,14 +111,6 @@ public static class SetupJobs
             "SchedulerOptionsBuilder.LeaseDuration must be greater than TimeSpan.Zero."
         );
         _ = schedulerOptionsBuilder.ResolveCancellationObservationInterval();
-        Ensure.True(
-            schedulerOptionsBuilder.PostCommitDrainTimeout > TimeSpan.Zero,
-            "SchedulerOptionsBuilder.PostCommitDrainTimeout must be greater than TimeSpan.Zero."
-        );
-        Ensure.True(
-            schedulerOptionsBuilder.PostCommitDrainTimeout <= _MaximumPostCommitDrainTimeout,
-            "SchedulerOptionsBuilder.PostCommitDrainTimeout must not exceed 5 minutes."
-        );
         Ensure.True(
             schedulerOptionsBuilder.MaxConcurrency > 0,
             "SchedulerOptionsBuilder.MaxConcurrency must be greater than zero."
@@ -225,6 +215,12 @@ public static class SetupJobs
 
         // Core initialization — opens the activation barrier when its drain completes.
         services.AddHostedService<JobsInitializationHostedService>();
+
+        // Post-commit worker for coordinated enqueues — registered even with DisableBackgroundServices(): the
+        // managers hand it a signal from the commit callback regardless, and on such hosts its side effects reduce to
+        // no-op dispatch/scheduler calls plus a dashboard notify, so one callback shape serves every host.
+        services.AddSingleton<JobsPostCommitSignalService>();
+        services.AddHostedService(provider => provider.GetRequiredService<JobsPostCommitSignalService>());
 
         // Only register background services if enabled (default is true)
         if (optionInstance.RegisterBackgroundServices)

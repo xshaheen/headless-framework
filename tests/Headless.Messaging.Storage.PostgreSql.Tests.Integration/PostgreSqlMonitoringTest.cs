@@ -376,7 +376,7 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
     public async Task should_project_delivery_metadata_without_failing_on_malformed_envelopes()
     {
         var explicitMessage = _CreateMessage();
-        explicitMessage.Headers[Headers.RequestedDeliveryMode] = nameof(DeliveryMode.Auto);
+        explicitMessage.Headers[Headers.RequestedDeliveryMode] = nameof(DeliveryMode.Coordinated);
         explicitMessage.Headers[Headers.ResolvedDeliveryMode] = nameof(DeliveryMode.Durable);
 
         var explicitPublished = await _storage!.StoreMessageAsync(
@@ -425,7 +425,7 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
         );
 
         var explicitView = publishedPage.Items.Single(x => x.StorageId == explicitPublished.StorageId);
-        explicitView.RequestedDeliveryMode.Should().Be(DeliveryMode.Auto);
+        explicitView.RequestedDeliveryMode.Should().Be(DeliveryMode.Coordinated);
         explicitView.ResolvedDeliveryMode.Should().Be(DeliveryMode.Durable);
 
         var malformedView = publishedPage.Items.Single(x => x.StorageId == malformedPublished.StorageId);

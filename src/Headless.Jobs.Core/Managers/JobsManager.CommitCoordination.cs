@@ -3,6 +3,7 @@
 using System.Data;
 using System.Data.Common;
 using Headless.CommitCoordination;
+using Headless.Jobs.BackgroundServices;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Interfaces;
 using Microsoft.Extensions.Logging;
@@ -10,8 +11,9 @@ using Microsoft.Extensions.Logging;
 namespace Headless.Jobs.Managers;
 
 // Commit-coordination routing for atomic enqueue: synchronous capture of the ambient coordinator, the fail-loud
-// mis-wire/dead-transaction checks, post-commit side-effect deferral, and the coordinated cron side effects. The main
-// JobsManager partial holds the add-job flow that routes through this seam.
+// mis-wire/dead-transaction checks, the synchronous commit callback that hands post-commit work to the hosted worker,
+// and the signal kinds it hands over. The main JobsManager partial holds the add-job flow that routes through this
+// seam.
 internal sealed partial class JobsManager<TTimeJob, TCronJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
@@ -145,153 +147,168 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
         );
     }
 
-    // Liveness bound for the post-commit drain. The coordinator drains OnCommit callbacks with CancellationToken.None
-    // (a committed job's dispatch must not be abandoned because the request was cancelled), so the incoming token can
-    // never carry a deadline. Without an independent one, a hung dispatch / notify / cache call would hold the commit
-    // thread, DI scope, and DB connection indefinitely. Mirrors MessageOutboxBuffer's configurable flush timeout.
+    // Bound for the one side effect that stays on the commit path (the cron-expressions cache invalidation). The
+    // coordinator drains OnCommit callbacks with CancellationToken.None, so the incoming token never carries a
+    // deadline; without an independent one a stalled cache would hold the commit thread, DI scope, and connection.
+    private static readonly TimeSpan _CronCacheInvalidationDeadline = JobsPostCommitSignalService.SignalDeadline;
 
-    // Registers a coordinated enqueue's side effects to run after the caller's transaction commits. The row is already
-    // durable when these run, so a failure cannot roll the commit back: it is logged against the job scope and the
-    // scheduler's polling sweep is the recovery path (KTD-4). Swallowing keeps one subsystem's deferred failure from
-    // aborting the shared commit; the OnCommit interceptor would otherwise absorb it without the job identity.
-    private void _DeferSideEffects(
-        ICommitCoordinator coordinator,
-        string jobScope,
-        Func<CancellationToken, Task> sideEffects
-    )
+    // Registers a coordinated write's post-commit signal. The callback is synchronous: it hands the worker a signal
+    // and returns, so dispatch, scheduler restart, and dashboard notification never run on the caller's commit. The
+    // row is already durable when the worker runs them, so a dropped or failed signal cannot roll the commit back —
+    // the scheduler's polling sweep is the recovery path (KTD-4).
+    private void _SignalOnCommit(ICommitCoordinator coordinator, JobsPostCommitSignal signal)
     {
         // The IDisposable unsubscribe handle is intentionally discarded (as in MessageOutboxBuffer): once the row is
-        // written the side effects must fire unconditionally on commit, so there is nothing to cancel.
+        // written the signal must fire unconditionally on commit, so there is nothing to cancel.
         coordinator.OnCommit(
-            // The drain passes CancellationToken.None (discarded), so bound the work with an independent deadline; the
-            // side effects observe the timeout token, not the drain's.
-            async (_, _) =>
+            (_, _) =>
             {
-                var timeoutCts = new CancellationTokenSource(_postCommitDrainTimeout, timeProvider);
-                var disposeTimeoutCts = true;
-                Task? sideEffectsTask = null;
+                _postCommitSignals.TrySignal(signal);
 
-                try
-                {
-                    sideEffectsTask = sideEffects(timeoutCts.Token);
-                    await sideEffectsTask
-                        .WaitAsync(_postCommitDrainTimeout, timeProvider, CancellationToken.None)
-                        .ConfigureAwait(false);
-                }
-                catch (TimeoutException e) when (sideEffectsTask is { IsFaulted: true })
-                {
-                    // Preserve a side effect's own TimeoutException as a recoverable failure; only WaitAsync's
-                    // deadline below is the post-commit drain timeout.
-                    Log.DeferredJobSideEffectsFailed(_logger, jobScope, e);
-                }
-                catch (TimeoutException) when (sideEffectsTask is not null)
-                {
-                    // WaitAsync supplies the hard bound when a side effect ignores cancellation. The CTS was armed
-                    // before that wait, so the same deadline also asks cooperative work to stop.
-                    Log.DeferredJobSideEffectsTimedOut(_logger, jobScope, _postCommitDrainTimeout);
-
-                    // The abandoned task may still observe its token after the drain returns, so keep the CTS alive
-                    // until that task settles. Its continuation also surfaces any late fault instead of letting it go
-                    // unobserved.
-                    _ObserveLateSideEffects(sideEffectsTask, timeoutCts, _logger, jobScope);
-                    disposeTimeoutCts = false;
-                }
-                catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
-                {
-                    // The deadline elapsed before the side effects finished (e.g. a hung dispatch). The row is
-                    // committed and the fallback poll sweep recovers the deferred work, so this is a bounded-wait
-                    // timeout — not the recoverable failure the Warning below is for.
-                    Log.DeferredJobSideEffectsTimedOut(_logger, jobScope, _postCommitDrainTimeout);
-                }
-                catch (Exception e)
-                {
-                    Log.DeferredJobSideEffectsFailed(_logger, jobScope, e);
-                }
-                finally
-                {
-                    if (disposeTimeoutCts)
-                    {
-                        timeoutCts.Dispose();
-                    }
-                }
+                return ValueTask.CompletedTask;
             }
         );
     }
 
-    private static void _ObserveLateSideEffects(
-        Task sideEffectsTask,
-        CancellationTokenSource timeoutCts,
-        ILogger logger,
-        string jobScope
+    // Cron variant: the cron-expressions cache invalidation (which the direct path's InsertCronJobsAsync runs after
+    // SaveChanges) fires inline on commit — never on a pre-commit snapshot, and never through the drop-on-full channel,
+    // because the poll sweep reads THROUGH that distributed cache and would not recover a dropped invalidation (R10).
+    // It is bounded so a stalled cache releases the commit; the durable store stays authoritative either way.
+    private void _SignalCronOnCommit(
+        ICommitCoordinator coordinator,
+        ICoordinatedJobWriter<TTimeJob, TCronJob> writer,
+        JobsPostCommitSignal signal
     )
     {
-        _ = sideEffectsTask.ContinueWith(
-            static (completedTask, state) =>
+        coordinator.OnCommit(
+            async (_, _) =>
             {
-                var (source, continuationLogger, continuationJobScope) = ((CancellationTokenSource, ILogger, string))
-                    state!;
-
-                try
-                {
-                    if (completedTask.Exception is { } exception)
-                    {
-                        Log.DeferredJobSideEffectsFailed(continuationLogger, continuationJobScope, exception);
-                    }
-                }
-                finally
-                {
-                    source.Dispose();
-                }
-            },
-            (timeoutCts, logger, jobScope),
-            CancellationToken.None,
-            TaskContinuationOptions.ExecuteSynchronously,
-            TaskScheduler.Default
+                await _InvalidateCronExpressionsCacheBoundedAsync(writer, signal.JobScope).ConfigureAwait(false);
+                _postCommitSignals.TrySignal(signal);
+            }
         );
     }
 
-    // Coordinated single-cron side effects, deferred to commit. The coordinated write is a pure row write, so the
-    // cron-expressions cache invalidation (which the direct path's InsertCronJobsAsync runs after SaveChanges) must fire
-    // here — post-commit — never on a pre-commit snapshot (KTD-4).
-    private async Task _RunCoordinatedCronJobSideEffectsAsync(
+    private async Task _InvalidateCronExpressionsCacheBoundedAsync(
         ICoordinatedJobWriter<TTimeJob, TCronJob> writer,
-        TCronJob entity,
-        DateTime? persistedNextDueUtc,
-        CancellationToken cancellationToken
+        string jobScope
     )
     {
-        // Honor the drain deadline (the cron side-effect calls below are not themselves cancellable, so the token is
-        // checked between steps) — symmetric with the time-job side-effect path.
-        cancellationToken.ThrowIfCancellationRequested();
-        await writer.InvalidateCronExpressionsCacheAsync().ConfigureAwait(false);
+        Task? invalidation = null;
 
-        // The store-anchored position the write persisted, captured before the deferral. Recomputing it here from this
-        // node's clock would arm the wake against a projection the row does not carry.
-        _jobsHostScheduler.RestartIfNeeded(persistedNextDueUtc);
-        cancellationToken.ThrowIfCancellationRequested();
-        await notificationHubSender.AddCronJobNotifyAsync(entity).ConfigureAwait(false);
+        try
+        {
+            invalidation = writer.InvalidateCronExpressionsCacheAsync();
+            await invalidation.WaitAsync(_CronCacheInvalidationDeadline, timeProvider).ConfigureAwait(false);
+        }
+        catch (TimeoutException) when (invalidation is { IsCompleted: false })
+        {
+            // The removal is not cancellable, so it completes unobserved; only its late fault is worth a log line.
+            Log.CronCacheInvalidationTimedOut(_logger, jobScope, _CronCacheInvalidationDeadline);
+            LateFaultObserver.ObserveLateFault(invalidation, _logger, jobScope, Log.CronCacheInvalidationFailed);
+        }
+        catch (Exception e)
+        {
+            Log.CronCacheInvalidationFailed(_logger, jobScope, e);
+        }
     }
 
-    // Coordinated batch-cron side effects, deferred to commit (cache invalidation post-commit per KTD-4).
-    private async Task _RunCoordinatedCronJobsBatchSideEffectsAsync(
-        ICoordinatedJobWriter<TTimeJob, TCronJob> writer,
-        List<TCronJob> validEntities,
+    // Signal kinds. Each carries what the worker needs to run the existing side-effect methods against rows that are
+    // already committed; the worker supplies the clock read at processing time.
+
+    private sealed record TimeJobCommittedSignal(
+        JobsManager<TTimeJob, TCronJob> Manager,
+        TTimeJob Entity,
+        DateTime ExecutionTimeUtc
+    ) : JobsPostCommitSignal(Entity.Id.ToString())
+    {
+        public override Task RunAsync(DateTimeOffset now, CancellationToken cancellationToken)
+        {
+            return Manager._RunTimeJobSideEffectsAsync(Entity, now, ExecutionTimeUtc, cancellationToken);
+        }
+    }
+
+    private readonly record struct CommittedTimeJob(Guid Id, DateTime ExecutionTimeUtc);
+
+    private sealed record TimeJobsBatchCommittedSignal(JobsManager<TTimeJob, TCronJob> Manager, CommittedTimeJob[] Jobs)
+        : JobsPostCommitSignal($"time batch ({Jobs.Length})")
+    {
+        public override Task RunAsync(DateTimeOffset now, CancellationToken cancellationToken)
+        {
+            // Split immediate vs. later against the worker's clock, not the enqueue-time one: a commit can land long
+            // after the enqueue, and a job that became due meanwhile must be acquired now rather than scheduled.
+            var nowUtc = now.UtcDateTime;
+            var immediateTickers = new List<Guid>();
+            var earliestForNonImmediate = default(DateTime);
+
+            foreach (var job in Jobs)
+            {
+                if (job.ExecutionTimeUtc <= nowUtc.AddSeconds(1))
+                {
+                    immediateTickers.Add(job.Id);
+                }
+                else if (earliestForNonImmediate == default || job.ExecutionTimeUtc <= earliestForNonImmediate)
+                {
+                    earliestForNonImmediate = job.ExecutionTimeUtc;
+                }
+            }
+
+            return Manager._RunTimeJobsBatchSideEffectsAsync(
+                immediateTickers,
+                earliestForNonImmediate,
+                cancellationToken
+            );
+        }
+    }
+
+    private sealed record CronJobsCommittedSignal(
+        JobsManager<TTimeJob, TCronJob> Manager,
+        TCronJob[] Entities,
+        DateTime? PersistedEarliestNextDueUtc,
+        string Scope
+    ) : JobsPostCommitSignal(Scope)
+    {
+        public override Task RunAsync(DateTimeOffset now, CancellationToken cancellationToken)
+        {
+            return Manager._RunCommittedCronJobsSideEffectsAsync(
+                Entities,
+                PersistedEarliestNextDueUtc,
+                cancellationToken
+            );
+        }
+    }
+
+    // Cron side effects after commit (the cache invalidation already ran on the commit callback).
+    private async Task _RunCommittedCronJobsSideEffectsAsync(
+        TCronJob[] entities,
         DateTime? persistedEarliestNextDueUtc,
         CancellationToken cancellationToken
     )
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        await writer.InvalidateCronExpressionsCacheAsync().ConfigureAwait(false);
-
-        if (validEntities.Count != 0)
+        if (entities.Length == 0)
         {
-            _jobsHostScheduler.RestartIfNeeded(persistedEarliestNextDueUtc);
+            return;
+        }
 
-            foreach (var entity in validEntities)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                await notificationHubSender.AddCronJobNotifyAsync(entity).ConfigureAwait(false);
-            }
+        // The store-anchored position the write persisted. Recomputing it here from this node's clock would arm the
+        // wake against a projection the row does not carry.
+        _jobsHostScheduler.RestartIfNeeded(persistedEarliestNextDueUtc);
+
+        foreach (var entity in entities)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await notificationHubSender.AddCronJobNotifyAsync(entity).ConfigureAwait(false);
+        }
+    }
+
+    private sealed record ScheduleChangedSignal(JobsManager<TTimeJob, TCronJob> Manager, string RunId)
+        : JobsPostCommitSignal(RunId)
+    {
+        public override Task RunAsync(DateTimeOffset now, CancellationToken cancellationToken)
+        {
+            Manager._jobsHostScheduler.Restart();
+
+            return Task.CompletedTask;
         }
     }
 
@@ -299,16 +316,16 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
     {
         [LoggerMessage(
             LogLevel.Warning,
-            "Deferred post-commit side effects failed for {JobScope}. The job row is committed; the scheduler's "
-                + "polling sweep is the recovery path."
+            "Cron-expressions cache invalidation failed after committing {JobScope}. The definition row is committed; "
+                + "the cache entry is stale until it expires or the next definition write invalidates it."
         )]
-        public static partial void DeferredJobSideEffectsFailed(ILogger logger, string jobScope, Exception exception);
+        public static partial void CronCacheInvalidationFailed(ILogger logger, string jobScope, Exception exception);
 
         [LoggerMessage(
             LogLevel.Warning,
-            "Deferred post-commit side effects for {JobScope} did not finish within {Timeout}. The job row is "
-                + "committed; the scheduler's polling sweep is the recovery path."
+            "Cron-expressions cache invalidation for {JobScope} did not finish within {Deadline}; the commit was "
+                + "released and the removal completes unobserved."
         )]
-        public static partial void DeferredJobSideEffectsTimedOut(ILogger logger, string jobScope, TimeSpan timeout);
+        public static partial void CronCacheInvalidationTimedOut(ILogger logger, string jobScope, TimeSpan deadline);
     }
 }

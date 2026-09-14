@@ -474,7 +474,6 @@ Tie side effects to transaction boundaries — buffer work (outbox dispatch, dur
 |---------|-------------|
 | [Headless.CommitCoordination.Abstractions](src/Headless.CommitCoordination.Abstractions/README.md) | Commit coordination contracts (provider-free) |
 | [Headless.CommitCoordination.Core](src/Headless.CommitCoordination.Core/README.md) | In-process coordinator, ambient stack, and scope factory |
-| [Headless.CommitCoordination.DurableWork](src/Headless.CommitCoordination.DurableWork/README.md) | Base for durable work buffers writing inside the active transaction |
 | [Headless.CommitCoordination.EntityFramework](src/Headless.CommitCoordination.EntityFramework/README.md) | Bridges EF Core commit/rollback edges to commit coordination |
 | [Headless.CommitCoordination.InMemory](src/Headless.CommitCoordination.InMemory/README.md) | In-process signal source for tests and owner-driven flows |
 | [Headless.CommitCoordination.PostgreSql](src/Headless.CommitCoordination.PostgreSql/README.md) | PostgreSQL commit coordination registration points |

@@ -275,8 +275,14 @@ public sealed class MessagingOptions
     public MessagingInboxCapabilityTier RequiredInboxCapability { get; set; } =
         MessagingInboxCapabilityTier.Transactional;
 
-    /// <summary>Gets or sets the delivery mode inherited by publications without a per-call override.</summary>
-    public DeliveryMode DefaultDeliveryMode { get; set; } = DeliveryMode.Auto;
+    /// <summary>
+    /// Gets or sets the delivery mode inherited by publications without a per-call override. Defaults to
+    /// <see cref="DeliveryMode.Durable"/>: every default publish is stored before dispatch, inside the caller's
+    /// transaction when a compatible coordination scope is active and standalone otherwise. Select
+    /// <see cref="DeliveryMode.Direct"/> to make fire-and-forget the host default, or
+    /// <see cref="DeliveryMode.Coordinated"/> to reject any publish that is not atomic with a caller transaction.
+    /// </summary>
+    public DeliveryMode DefaultDeliveryMode { get; set; } = DeliveryMode.Durable;
 
     /// <summary>
     /// Gets the global circuit breaker configuration that applies to all consumer groups.

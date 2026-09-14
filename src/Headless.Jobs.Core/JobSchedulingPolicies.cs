@@ -71,7 +71,10 @@ internal sealed class JobSchedulingPolicies
                 Retries = call?.Retries,
                 RetryIntervals = call?.RetryIntervals,
                 OnNodeDeath = call?.OnNodeDeath,
+                RequireAtomicEnlistment = call?.RequireAtomicEnlistment ?? false,
             },
+            // Recurring definitions take the requirement from the call or the function policy only: the host default
+            // describes one-shot deadlines, and a definition is usually created at bootstrap, outside any transaction.
             includeHostAtomicRequirement: false
         );
 

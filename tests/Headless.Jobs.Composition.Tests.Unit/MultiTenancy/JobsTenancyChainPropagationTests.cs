@@ -3,6 +3,7 @@
 using Headless.Abstractions;
 using Headless.CommitCoordination;
 using Headless.Jobs;
+using Headless.Jobs.BackgroundServices;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Exceptions;
 using Headless.Jobs.Interfaces;
@@ -19,12 +20,20 @@ namespace Tests.MultiTenancy;
 [Collection<JobsHelperCollection>]
 public sealed class JobsTenancyChainPropagationTests : TestBase
 {
+    // Signal workers are never started here, but the service owns a channel and a cancellation source.
+    private readonly List<JobsPostCommitSignalService> _workers = [];
+
     private const string _Function = "chain-tenancy-fn";
 
     public JobsTenancyChainPropagationTests() => _RegisterFunction();
 
     protected override ValueTask DisposeAsyncCore()
     {
+        foreach (var worker in _workers)
+        {
+            worker.Dispose();
+        }
+
         JobFunctionProvider.ResetForTests();
         return base.DisposeAsyncCore();
     }
@@ -325,7 +334,7 @@ public sealed class JobsTenancyChainPropagationTests : TestBase
         };
     }
 
-    private static (
+    private (
         ITimeJobManager<TimeJobEntity> Manager,
         IJobPersistenceProvider<TimeJobEntity, CronJobEntity> Persistence
     ) _CreateManager(string? ambient, bool rejectCrossTenant = false)
@@ -335,6 +344,13 @@ public sealed class JobsTenancyChainPropagationTests : TestBase
         tenant.Id.Returns(ambient);
         var dispatcher = Substitute.For<IJobsDispatcher>();
         dispatcher.IsEnabled.Returns(false);
+
+        var signals = new JobsPostCommitSignalService(
+            TestActivationBarrier.Opened(),
+            TimeProvider.System,
+            Substitute.For<ILogger<JobsPostCommitSignalService>>()
+        );
+        _workers.Add(signals);
 
         var manager = new JobsManager<TimeJobEntity, CronJobEntity>(
             persistence,
@@ -346,7 +362,7 @@ public sealed class JobsTenancyChainPropagationTests : TestBase
             dispatcher,
             Substitute.For<ICurrentCommitCoordinator>(),
             new CronScheduleCache(TimeZoneInfo.Utc),
-            new SchedulerOptionsBuilder(),
+            signals,
             JobFunctionProvider.CreateHostRegistry(configuration: null),
             Substitute.For<ILogger<JobsManager<TimeJobEntity, CronJobEntity>>>(),
             currentTenant: tenant,

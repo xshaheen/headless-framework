@@ -22,6 +22,14 @@ public interface IBusMessageBuilder<TMessage>
     /// <summary>Requires a locally supported native affinity mapping for this route at startup.</summary>
     IBusMessageBuilder<TMessage> RequireRoutingAffinity();
 
+    /// <summary>
+    /// Pins the delivery mode for every Bus publish of this message type. A per-call
+    /// <see cref="MessageOptions.DeliveryMode"/> still overrides it; without one this policy overrides the host
+    /// <see cref="MessagingOptions.DefaultDeliveryMode"/>. A <see cref="DeliveryMode.Coordinated"/> policy makes
+    /// startup fail unless a commit coordinator is registered.
+    /// </summary>
+    IBusMessageBuilder<TMessage> WithDeliveryMode(DeliveryMode mode);
+
     /// <summary>Registers and configures a Bus consumer.</summary>
     IBusMessageBuilder<TMessage> Consumer<TConsumer>(Action<IBusConsumerBuilder<TConsumer>> configure)
         where TConsumer : class, IConsume<TMessage>;
@@ -42,6 +50,14 @@ public interface IQueueMessageBuilder<TMessage>
     /// <summary>Requires a locally supported native affinity mapping for this route at startup.</summary>
     IQueueMessageBuilder<TMessage> RequireRoutingAffinity();
 
+    /// <summary>
+    /// Pins the delivery mode for every Queue enqueue of this message type. A per-call
+    /// <see cref="MessageOptions.DeliveryMode"/> still overrides it; without one this policy overrides the host
+    /// <see cref="MessagingOptions.DefaultDeliveryMode"/>. A <see cref="DeliveryMode.Coordinated"/> policy makes
+    /// startup fail unless a commit coordinator is registered.
+    /// </summary>
+    IQueueMessageBuilder<TMessage> WithDeliveryMode(DeliveryMode mode);
+
     /// <summary>Registers and configures a Queue consumer.</summary>
     IQueueMessageBuilder<TMessage> Consumer<TConsumer>(Action<IQueueConsumerBuilder<TConsumer>> configure)
         where TConsumer : class, IConsume<TMessage>;
@@ -57,8 +73,15 @@ internal abstract class MessageBuilder<TMessage>(IServiceCollection services, Me
     private string _contractVersion = MessageOptions.InitialContractVersion;
     private Func<object, string?>? _correlationSelector;
     private bool _requiresRoutingAffinity;
+    private DeliveryMode? _deliveryMode;
 
     protected void SetRoutingAffinityRequired() => _requiresRoutingAffinity = true;
+
+    protected void SetDeliveryMode(DeliveryMode mode)
+    {
+        Argument.IsInEnum(mode);
+        _deliveryMode = mode;
+    }
 
     protected MessageRegistration BuildRegistration()
     {
@@ -72,7 +95,8 @@ internal abstract class MessageBuilder<TMessage>(IServiceCollection services, Me
             providerConfigs,
             _consumers.ConvertAll(x => x.Build(providerConfigs)),
             _contractVersion,
-            _requiresRoutingAffinity
+            _requiresRoutingAffinity,
+            _deliveryMode
         );
     }
 
@@ -122,6 +146,12 @@ internal sealed class BusMessageBuilder<TMessage>(IServiceCollection services)
         return this;
     }
 
+    public IBusMessageBuilder<TMessage> WithDeliveryMode(DeliveryMode mode)
+    {
+        SetDeliveryMode(mode);
+        return this;
+    }
+
     public IBusMessageBuilder<TMessage> CorrelationFrom(Func<TMessage, string?> selector)
     {
         SetCorrelationFrom(selector);
@@ -153,6 +183,12 @@ internal sealed class QueueMessageBuilder<TMessage>(IServiceCollection services)
     public IQueueMessageBuilder<TMessage> RequireRoutingAffinity()
     {
         SetRoutingAffinityRequired();
+        return this;
+    }
+
+    public IQueueMessageBuilder<TMessage> WithDeliveryMode(DeliveryMode mode)
+    {
+        SetDeliveryMode(mode);
         return this;
     }
 

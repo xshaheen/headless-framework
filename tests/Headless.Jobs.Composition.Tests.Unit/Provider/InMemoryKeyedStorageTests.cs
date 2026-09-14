@@ -139,7 +139,10 @@ public sealed class InMemoryKeyedStorageTests : TestBase
         job = (await store.GetTimeJobByIdAsync(job.Id, AbortToken))!;
         var gate = (Lock)
             typeof(JobsInMemoryPersistenceProvider<TimeJobEntity, CronJobEntity>)
-                .GetField("_keyedOperations", BindingFlags.NonPublic | BindingFlags.Instance)!
+                .GetField(
+                    "_keyedOperations",
+                    BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+                )!
                 .GetValue(store)!;
         var held = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using var release = new ManualResetEventSlim();

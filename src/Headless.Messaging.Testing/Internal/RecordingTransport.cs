@@ -19,6 +19,7 @@ internal sealed class RecordingBusTransport(
     public async Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
     {
         OperateResult result;
+        RecordingTransportRecorder.StampResetGeneration(message, store);
         using (RecordingTransportRecorder.SuppressNestedRecording())
         {
             result = await inner.SendAsync(message, cancellationToken).ConfigureAwait(false);
@@ -48,6 +49,7 @@ internal sealed class RecordingQueueTransport(
     public async Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
     {
         OperateResult result;
+        RecordingTransportRecorder.StampResetGeneration(message, store);
         using (RecordingTransportRecorder.SuppressNestedRecording())
         {
             result = await inner.SendAsync(message, cancellationToken).ConfigureAwait(false);
@@ -67,6 +69,17 @@ internal sealed class RecordingQueueTransport(
 
 internal static class RecordingTransportRecorder
 {
+    /// <summary>
+    /// Stamps the store's current reset generation on the outgoing message so the recording consume pipeline can
+    /// recognise a message that a reset has since cleared and neither wait for its Published record nor record it.
+    /// </summary>
+    public static void StampResetGeneration(TransportMessage message, MessageObservationStore store)
+    {
+        message.Headers[RecordingHeaders.ResetGeneration] = store.Generation.ToString(
+            System.Globalization.CultureInfo.InvariantCulture
+        );
+    }
+
     private static readonly ConcurrentDictionary<string, Type?> _TypeCache = new(StringComparer.Ordinal);
     private static readonly AsyncLocal<int> _NestedRecordingSuppression = new();
 

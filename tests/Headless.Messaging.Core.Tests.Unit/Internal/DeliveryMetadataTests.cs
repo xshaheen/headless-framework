@@ -12,13 +12,13 @@ public sealed class DeliveryMetadataTests
     {
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
-            [Headers.RequestedDeliveryMode] = nameof(DeliveryMode.Auto),
+            [Headers.RequestedDeliveryMode] = nameof(DeliveryMode.Coordinated),
             [Headers.ResolvedDeliveryMode] = nameof(DeliveryMode.Direct),
         };
 
         var delivery = DeliveryMetadata.Read(headers);
 
-        delivery.RequestedDeliveryMode.Should().Be(DeliveryMode.Auto);
+        delivery.RequestedDeliveryMode.Should().Be(DeliveryMode.Coordinated);
         delivery.ResolvedDeliveryMode.Should().Be(DeliveryMode.Direct);
     }
 

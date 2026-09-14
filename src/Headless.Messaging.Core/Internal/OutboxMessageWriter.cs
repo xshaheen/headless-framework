@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.CommitCoordination;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Transactions;
@@ -36,16 +37,19 @@ internal sealed class OutboxMessageWriter(
                 var coordinator =
                     decision.Coordination.Coordinator
                     ?? throw new InvalidOperationException("Coordinated delivery is missing its commit coordinator.");
-                var transaction =
-                    decision.Coordination.Transaction
-                    ?? throw new InvalidOperationException(
-                        "Coordinated delivery is missing its relational transaction."
-                    );
-                var mediumMessage = await _StoreMessageAsync(publishRequest, decision, transaction, cancellationToken)
+                var mediumMessage = await _StoreCoordinatedMessageAsync(
+                        publishRequest,
+                        decision,
+                        coordinator,
+                        cancellationToken
+                    )
                     .ConfigureAwait(false);
 
                 _TracingAfter(traceHandle, publishRequest.Message, publishRequest.Lane);
 
+                // Obtained after the store call on purpose: a non-relational store enlists its own commit buffer
+                // inside StoreCoordinatedMessageAsync, and callbacks drain in registration order, so the row is
+                // already visible when this buffer hands it to the dispatcher.
                 var bufferState = new MessageOutboxBufferState(dispatcher);
                 var buffer = coordinator.GetOrAdd(
                     bufferState,
@@ -95,6 +99,37 @@ internal sealed class OutboxMessageWriter(
     }
 
     private readonly record struct MessageOutboxBufferState(IDispatcher Dispatcher);
+
+    private ValueTask<MediumMessage> _StoreCoordinatedMessageAsync(
+        PreparedPublishMessage publishRequest,
+        DeliveryDecision decision,
+        ICommitCoordinator coordinator,
+        CancellationToken cancellationToken
+    )
+    {
+        if (decision.Coordination.Transaction is { } transaction)
+        {
+            return _StoreMessageAsync(publishRequest, decision, transaction, cancellationToken);
+        }
+
+        // A compatible scope without a relational handle is only valid for a storage that captures rows on the
+        // coordinator itself; anything else must fail here rather than fall through to a standalone durable write
+        // that would survive the caller's rollback.
+        if (storage is not ICoordinatedMessageStore coordinatedStore)
+        {
+            throw new InvalidOperationException(
+                $"Coordinated delivery is missing its relational transaction and '{storage.GetType().Name}' cannot capture rows on the commit coordinator."
+            );
+        }
+
+        return coordinatedStore.StoreCoordinatedMessageAsync(
+            publishRequest.MessageName,
+            _CreateStorageEnvelope(publishRequest),
+            decision.PublishAt,
+            coordinator,
+            cancellationToken
+        );
+    }
 
     private ValueTask<MediumMessage> _StoreMessageAsync(
         PreparedPublishMessage publishRequest,

@@ -31,7 +31,9 @@ internal interface IMessageCapabilityGate : IMessagingCapabilityModel
     void ValidateStartup(
         IEnumerable<MessageRouteKey> routes,
         bool hasDurableConsumers,
-        MessagingInboxCapabilityTier requiredInboxCapability
+        MessagingInboxCapabilityTier requiredInboxCapability,
+        bool coordinatedDeliveryConfigured,
+        bool commitCoordinatorRegistered
     );
 
     void EnsureDirectSupported(MessageLane lane);
@@ -125,10 +127,22 @@ public sealed class MessagingCapabilityModel : IMessagingCapabilityModel, IMessa
     }
 
     /// <summary>Validates the frozen model against every registered semantic route.</summary>
+    /// <param name="routes">Every registered semantic route.</param>
+    /// <param name="hasDurableConsumers">Whether any durable consumer is registered.</param>
+    /// <param name="requiredInboxCapability">The inbox tier the host requires from storage.</param>
+    /// <param name="coordinatedDeliveryConfigured">
+    /// Whether the host default or any per-type policy is <see cref="DeliveryMode.Coordinated"/>.
+    /// </param>
+    /// <param name="commitCoordinatorRegistered">
+    /// Whether a real commit coordinator (<c>ICommitScopeFactory</c>) is registered; the null-coordinator
+    /// sentinels that Messaging and Jobs register as fallbacks do not count.
+    /// </param>
     internal void ValidateStartup(
         IEnumerable<MessageRouteKey> routes,
         bool hasDurableConsumers = false,
-        MessagingInboxCapabilityTier requiredInboxCapability = MessagingInboxCapabilityTier.Transactional
+        MessagingInboxCapabilityTier requiredInboxCapability = MessagingInboxCapabilityTier.Transactional,
+        bool coordinatedDeliveryConfigured = false,
+        bool commitCoordinatorRegistered = false
     )
     {
         Argument.IsNotNull(routes);
@@ -137,6 +151,15 @@ public sealed class MessagingCapabilityModel : IMessagingCapabilityModel, IMessa
         var routeArray = routes.ToArray();
         _RequireRole(MessagingProviderRole.Transport, "Messaging requires a transport provider contribution.");
         _RequireRole(MessagingProviderRole.Storage, "Messaging requires exactly one storage provider contribution.");
+
+        if (coordinatedDeliveryConfigured)
+        {
+            _EnsureCoordinatedDeliverySupported(
+                commitCoordinatorRegistered,
+                hasDurableConsumers,
+                requiredInboxCapability
+            );
+        }
 
         if (hasDurableConsumers)
         {
@@ -171,6 +194,36 @@ public sealed class MessagingCapabilityModel : IMessagingCapabilityModel, IMessa
             throw new MessagingConfigurationException(
                 $"Transport provider '{transport.Provider}' does not support independent Bus and Queue lane topology "
                     + $"for logical name '{route.MessageName}'."
+            );
+        }
+    }
+
+    // Fails at startup what would otherwise fail on every publish: without a real coordinator no scope can ever be
+    // active, so every Coordinated publish is rejected; below the Transactional inbox tier a consumer's publish
+    // cannot join the inbox transaction, so every Coordinated publish from a handler is rejected on every attempt.
+    private static void _EnsureCoordinatedDeliverySupported(
+        bool commitCoordinatorRegistered,
+        bool hasDurableConsumers,
+        MessagingInboxCapabilityTier requiredInboxCapability
+    )
+    {
+        if (!commitCoordinatorRegistered)
+        {
+            throw new MessagingConfigurationException(
+                "Coordinated delivery is configured (DefaultDeliveryMode or a WithDeliveryMode(DeliveryMode.Coordinated) "
+                    + "registration), but no commit coordinator is registered: ICommitScopeFactory is missing. "
+                    + "Call services.AddCommitCoordination() or a provider registration such as "
+                    + "AddEntityFrameworkCommitCoordination(), or select Durable delivery."
+            );
+        }
+
+        if (hasDurableConsumers && requiredInboxCapability is not MessagingInboxCapabilityTier.Transactional)
+        {
+            throw new MessagingConfigurationException(
+                "Coordinated delivery with durable consumers requires "
+                    + $"RequiredInboxCapability = {nameof(MessagingInboxCapabilityTier.Transactional)}, but the host requires "
+                    + $"{requiredInboxCapability}. A consumer's Coordinated publish must join the inbox transaction, which a weaker "
+                    + "tier cannot provide, so select the Transactional tier or Durable delivery."
             );
         }
     }
@@ -387,8 +440,17 @@ public sealed class MessagingCapabilityModel : IMessagingCapabilityModel, IMessa
     void IMessageCapabilityGate.ValidateStartup(
         IEnumerable<MessageRouteKey> routes,
         bool hasDurableConsumers,
-        MessagingInboxCapabilityTier requiredInboxCapability
-    ) => ValidateStartup(routes, hasDurableConsumers, requiredInboxCapability);
+        MessagingInboxCapabilityTier requiredInboxCapability,
+        bool coordinatedDeliveryConfigured,
+        bool commitCoordinatorRegistered
+    ) =>
+        ValidateStartup(
+            routes,
+            hasDurableConsumers,
+            requiredInboxCapability,
+            coordinatedDeliveryConfigured,
+            commitCoordinatorRegistered
+        );
 
     void IMessageCapabilityGate.EnsureDirectSupported(MessageLane lane) => EnsureDirectSupported(lane);
 

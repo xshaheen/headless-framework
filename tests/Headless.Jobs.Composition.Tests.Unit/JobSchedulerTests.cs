@@ -623,7 +623,8 @@ public sealed class JobSchedulerTests : TestBase
                 nameof(RecurringJobOptions.Description),
                 nameof(RecurringJobOptions.Retries),
                 nameof(RecurringJobOptions.RetryIntervals),
-                nameof(RecurringJobOptions.OnNodeDeath)
+                nameof(RecurringJobOptions.OnNodeDeath),
+                nameof(RecurringJobOptions.RequireAtomicEnlistment)
             );
     }
 
