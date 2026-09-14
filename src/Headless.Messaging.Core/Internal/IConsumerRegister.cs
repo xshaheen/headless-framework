@@ -1392,7 +1392,15 @@ internal sealed class ConsumerRegister(
         public SemaphoreSlim ApplyGate { get; } = new(1, 1);
 #pragma warning restore CA2213
 
-        public long LastAppliedEpoch { get; set; }
+#pragma warning disable IDE0032 // Uses Volatile read/write for cross-thread visibility between ApplyGate and admission logging.
+        private long _lastAppliedEpoch;
+#pragma warning restore IDE0032
+
+        public long LastAppliedEpoch
+        {
+            get => Volatile.Read(ref _lastAppliedEpoch);
+            set => Volatile.Write(ref _lastAppliedEpoch, value);
+        }
 
         private readonly List<IConsumerClient> _clients = [];
 

@@ -45,10 +45,11 @@ internal interface ICircuitBreakerStateManager : ICircuitBreakerMonitor
 
     /// <summary>
     /// Attempts to acquire the single HalfOpen probe slot for the specified group.
-    /// Returns <see langword="true"/> when the group is not HalfOpen, or when the probe
-    /// slot was acquired successfully.
+    /// Returns the current admission epoch when the probe slot was acquired successfully
+    /// or when the group is not HalfOpen; returns <see langword="null"/> when the probe slot is already held.
     /// </summary>
     /// <param name="groupName">The consumer group name.</param>
+    /// <returns>The admission epoch if admitted, or <see langword="null"/> if the probe is taken.</returns>
     long? TryAcquireHalfOpenProbe(string groupName);
 
     /// <summary>
