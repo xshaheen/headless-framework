@@ -189,5 +189,18 @@ public sealed class ScheduledDeliveryOperationEvaluatorTests : TestBase
             .Evaluate(operationType, _Now, otherVersion)
             .Should()
             .Be(InboxOperationOutcome.NotFound);
+
+        // Null due instant
+        var nullDue = new ScheduledDeliveryOperationState(
+            Status: StatusName.Delayed,
+            InlineAttempts: 0,
+            Retries: 0,
+            NextRetryAt: null,
+            HasLiveLease: false,
+            ConfiguredVersion: _Version,
+            MessageVersion: _Version,
+            DueAt: null
+        );
+        MessagingOperationEvaluator.Evaluate(operationType, _Now, nullDue).Should().Be(InboxOperationOutcome.NotFound);
     }
 }

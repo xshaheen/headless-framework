@@ -22,7 +22,7 @@ internal readonly record struct ScheduledDeliveryOperationState(
     bool HasLiveLease,
     string ConfiguredVersion,
     string MessageVersion,
-    DateTimeOffset DueAt
+    DateTimeOffset? DueAt
 );
 
 internal static class MessagingOperationEvaluator
@@ -88,12 +88,13 @@ internal static class MessagingOperationEvaluator
             || row.Status is not (StatusName.Delayed or StatusName.Queued)
             || row.Retries > 0
             || row.NextRetryAt is not null
+            || row.DueAt is null
         )
         {
             return InboxOperationOutcome.NotFound;
         }
 
-        if (row.DueAt != expectedDueAt)
+        if (row.DueAt.Value != expectedDueAt)
         {
             return InboxOperationOutcome.StateConflict;
         }

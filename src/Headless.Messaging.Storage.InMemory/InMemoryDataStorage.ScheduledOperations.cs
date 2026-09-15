@@ -57,6 +57,7 @@ internal sealed partial class InMemoryDataStorage
                 && message.Retries == 0
                 && message.NextRetryAt is null
                 && message.ExpiresAt is not null
+                && message.Lane is MessageLane.Bus or MessageLane.Queue
             );
 
             if (!string.IsNullOrWhiteSpace(query.MessageName))
@@ -189,6 +190,7 @@ internal sealed partial class InMemoryDataStorage
             var now = timeProvider.GetUtcNow();
             ScheduledDeliveryOperationState? state = null;
             MemoryMessage? row = null;
+            InboxOperationOutcome? outcome = null;
 
             if (PublishedMessages.TryGetValue(request.StorageId, out var candidate))
             {
@@ -209,31 +211,31 @@ internal sealed partial class InMemoryDataStorage
                             hasLiveLease,
                             messagingOptions.Value.Version,
                             current.Version,
-                            current.ExpiresAt ?? DateTimeOffset.MinValue
+                            current.ExpiresAt
                         );
+                        outcome = MessagingOperationEvaluator.Evaluate(operationType, request.ExpectedDueAt, state);
+                        if (outcome == InboxOperationOutcome.Applied)
+                        {
+                            if (operationType == MessagingOperationType.Revoke)
+                            {
+                                PublishedMessages.TryRemove(
+                                    new KeyValuePair<Guid, MemoryMessage>(request.StorageId, row)
+                                );
+                            }
+                            else if (operationType == MessagingOperationType.DispatchNow)
+                            {
+                                row.StatusName = StatusName.Delayed;
+                                row.ExpiresAt = now;
+                                row.LockedUntil = null;
+                                row.Owner = null;
+                            }
+                        }
                     }
                 }
             }
 
-            var outcome = MessagingOperationEvaluator.Evaluate(operationType, request.ExpectedDueAt, state);
-
-            if (outcome == InboxOperationOutcome.Applied && row is not null)
-            {
-                lock (row)
-                {
-                    if (operationType == MessagingOperationType.Revoke)
-                    {
-                        PublishedMessages.TryRemove(new KeyValuePair<Guid, MemoryMessage>(request.StorageId, row));
-                    }
-                    else if (operationType == MessagingOperationType.DispatchNow)
-                    {
-                        row.StatusName = StatusName.Delayed;
-                        row.ExpiresAt = now;
-                        row.LockedUntil = null;
-                        row.Owner = null;
-                    }
-                }
-            }
+            var finalOutcome =
+                outcome ?? MessagingOperationEvaluator.Evaluate(operationType, request.ExpectedDueAt, state);
 
             var messageName = row?.Name;
             var messageId =
@@ -246,7 +248,7 @@ internal sealed partial class InMemoryDataStorage
                 request.OperationId,
                 MessagingOperationTargetKind.ScheduledDelivery,
                 operationType,
-                outcome,
+                finalOutcome,
                 request.Actor,
                 request.Reason,
                 now,
@@ -267,21 +269,21 @@ internal sealed partial class InMemoryDataStorage
                     operationType,
                     request.Actor,
                     request.Reason,
-                    outcome,
+                    finalOutcome,
                     now
                 )
             );
 
-            if (outcome == InboxOperationOutcome.Applied && messageLane is { } appliedLane)
+            if (finalOutcome == InboxOperationOutcome.Applied && messageLane is { } appliedLane)
             {
-                MessagingMetrics.RecordScheduledOperation(operationType, appliedLane, outcome, "InMemory");
+                MessagingMetrics.RecordScheduledOperation(operationType, appliedLane, finalOutcome, "InMemory");
             }
 
             return ValueTask.FromResult(
                 new ScheduledDeliveryOperationResult(
                     request.OperationId,
                     operationType,
-                    outcome,
+                    finalOutcome,
                     request.StorageId,
                     request.ExpectedDueAt,
                     messageName,

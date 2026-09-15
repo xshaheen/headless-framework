@@ -11,7 +11,7 @@ internal sealed partial class SqlServerDataStorage : IMessageRevocationStorage
         $"{_TerminalRowGuardSimple} AND InlineAttempts=0 AND Retries=0 AND NextRetryAt IS NULL";
 
     private const string _ScheduledPendingPredicate =
-        "Version=@Version AND StatusName IN ('Delayed','Queued') AND InlineAttempts=0 AND Retries=0 AND NextRetryAt IS NULL";
+        "Version=@Version AND StatusName IN ('Delayed','Queued') AND InlineAttempts=0 AND Retries=0 AND NextRetryAt IS NULL AND ExpiresAt IS NOT NULL AND IntentType IN (0, 1)";
 
     public async ValueTask<MessageRevocationResult> RevokeAsync(
         Guid storageId,

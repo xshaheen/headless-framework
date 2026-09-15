@@ -350,7 +350,7 @@ internal sealed partial class SqlServerDataStorage
         var retries = reader.GetInt32(3);
         var nextRetryAt = reader.IsDBNull(4) ? (DateTimeOffset?)null : reader.GetFieldValue<DateTimeOffset>(4);
         var hasLiveLease = reader.GetBoolean(5);
-        var dueAt = reader.IsDBNull(6) ? DateTimeOffset.MinValue : reader.GetFieldValue<DateTimeOffset>(6);
+        var dueAt = reader.IsDBNull(6) ? (DateTimeOffset?)null : reader.GetFieldValue<DateTimeOffset>(6);
         var name = reader.GetString(7);
         var messageId = reader.GetString(8);
         var lane = MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(9));

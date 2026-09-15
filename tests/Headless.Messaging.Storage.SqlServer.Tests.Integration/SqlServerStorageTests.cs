@@ -410,18 +410,100 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
     [Fact]
     public async Task should_upgrade_inbox_schema_v4_to_v5_additively()
     {
+        var schema = $"up_{Guid.NewGuid():N}";
         await using var connection = new SqlConnection(fixture.ConnectionString);
-        var version = await connection.ExecuteScalarAsync<int>(
-            "SELECT SchemaVersion FROM messaging.SchemaState WHERE Component=N'inbox';"
-        );
-        version.Should().Be(5);
+        await connection.OpenAsync(AbortToken);
+        try
+        {
+            await connection.ExecuteAsync(
+                $"""
+                EXEC(N'CREATE SCHEMA [{schema}];');
+                CREATE TABLE [{schema}].[InboxOperationReceipts](
+                    [OperationId] [uniqueidentifier] NOT NULL PRIMARY KEY,
+                    [GenerationIncarnationId] [uniqueidentifier] NOT NULL,
+                    [OperationType] [varchar](50) COLLATE Latin1_General_100_BIN2 NOT NULL,
+                    [ExpectedStatus] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NOT NULL,
+                    [Actor] [nvarchar](200) COLLATE Latin1_General_100_BIN2 NOT NULL,
+                    [Reason] [nvarchar](1000) NOT NULL,
+                    [Outcome] [varchar](50) COLLATE Latin1_General_100_BIN2 NOT NULL,
+                    [StorageId] [uniqueidentifier] NULL,
+                    [ChildStorageId] [uniqueidentifier] NULL,
+                    [ChildGeneration] [bigint] NULL,
+                    [ChildIncarnationId] [uniqueidentifier] NULL,
+                    [CreatedAt] [datetimeoffset](7) NOT NULL
+                );
+                CREATE TABLE [{schema}].[InboxAudit](
+                    [AuditId] [uniqueidentifier] NOT NULL PRIMARY KEY,
+                    [OperationId] [uniqueidentifier] NOT NULL,
+                    [GenerationIncarnationId] [uniqueidentifier] NOT NULL,
+                    [OperationType] [varchar](50) COLLATE Latin1_General_100_BIN2 NOT NULL,
+                    [Actor] [nvarchar](200) COLLATE Latin1_General_100_BIN2 NOT NULL,
+                    [Reason] [nvarchar](1000) NOT NULL,
+                    [Outcome] [varchar](50) COLLATE Latin1_General_100_BIN2 NOT NULL,
+                    [CreatedAt] [datetimeoffset](7) NOT NULL
+                );
+                CREATE TABLE [{schema}].[SchemaState](
+                    [Component] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NOT NULL PRIMARY KEY,
+                    [SchemaVersion] [int] NOT NULL,
+                    [ReadyAt] [datetimeoffset](7) NOT NULL
+                );
+                INSERT INTO [{schema}].[SchemaState] ([Component], [SchemaVersion], [ReadyAt])
+                VALUES (N'inbox', 4, SYSDATETIMEOFFSET());
+                """
+            );
 
-        await GetInitializer().InitializeAsync(AbortToken);
+            var opId = Guid.NewGuid();
+            var incId = Guid.NewGuid();
+            await connection.ExecuteAsync(
+                $"""
+                INSERT INTO [{schema}].[InboxOperationReceipts] (
+                    [OperationId], [GenerationIncarnationId], [OperationType], [ExpectedStatus], [Actor], [Reason], [Outcome], [CreatedAt]
+                ) VALUES (
+                    @OpId, @IncId, 'Hold', N'Succeeded', N'test-actor', N'test-reason', 'Applied', SYSDATETIMEOFFSET()
+                );
+                """,
+                new { OpId = opId, IncId = incId }
+            );
 
-        version = await connection.ExecuteScalarAsync<int>(
-            "SELECT SchemaVersion FROM messaging.SchemaState WHERE Component=N'inbox';"
-        );
-        version.Should().Be(5);
+            var initializer = _CreateInitializer(fixture.ConnectionString, schema);
+            await initializer.InitializeAsync(AbortToken);
+
+            var version = await connection.ExecuteScalarAsync<int>(
+                $"SELECT SchemaVersion FROM [{schema}].[SchemaState] WHERE Component=N'inbox';"
+            );
+            var isNullable = await connection.ExecuteScalarAsync<int>(
+                $"""
+                SELECT COLUMNPROPERTY(OBJECT_ID(N'[{schema}].[InboxOperationReceipts]'), 'GenerationIncarnationId', 'AllowsNull');
+                """
+            );
+            var targetKind = await connection.ExecuteScalarAsync<string>(
+                $"""
+                SELECT TargetKind FROM [{schema}].[InboxOperationReceipts] WHERE OperationId=@OpId;
+                """,
+                new { OpId = opId }
+            );
+
+            version.Should().Be(5);
+            isNullable.Should().Be(1);
+            targetKind.Should().Be("Inbox");
+        }
+        finally
+        {
+            await connection.ExecuteAsync(
+                $"""
+                DROP TABLE IF EXISTS [{schema}].InboxAudit;
+                DROP TABLE IF EXISTS [{schema}].InboxOperationReceipts;
+                DROP TABLE IF EXISTS [{schema}].SchemaState;
+                DROP TABLE IF EXISTS [{schema}].Published;
+                DROP TABLE IF EXISTS [{schema}].Received;
+                DROP TABLE IF EXISTS [{schema}].Lock;
+                DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingIdList];
+                DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingOwnerList];
+                DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingPoisonMessageList];
+                IF SCHEMA_ID(N'{schema}') IS NOT NULL EXEC(N'DROP SCHEMA [{schema}];');
+                """
+            );
+        }
     }
 
     [Fact]
@@ -2065,6 +2147,15 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
             ? await storage.GetPublishedMessagesOfNeedRetryAsync(lane, AbortToken)
             : await storage.GetReceivedMessagesOfNeedRetryAsync(lane, AbortToken);
         return messages.ToList();
+    }
+
+    private static SqlServerStorageInitializer _CreateInitializer(string connectionString, string schema = "messaging")
+    {
+        return new SqlServerStorageInitializer(
+            NullLogger<SqlServerStorageInitializer>.Instance,
+            Options.Create(new SqlServerOptions { ConnectionString = connectionString, Schema = schema }),
+            Options.Create(new MessagingOptions())
+        );
     }
 
     #endregion

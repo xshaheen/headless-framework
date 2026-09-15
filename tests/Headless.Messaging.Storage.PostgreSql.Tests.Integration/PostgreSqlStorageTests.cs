@@ -437,18 +437,82 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
     [Fact]
     public async Task should_upgrade_inbox_schema_v4_to_v5_additively()
     {
+        var schema = $"upgrade_{Guid.NewGuid():N}";
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        var version = await connection.ExecuteScalarAsync<int>(
-            "SELECT \"SchemaVersion\" FROM messaging.schema_state WHERE \"Component\"='inbox';"
-        );
-        version.Should().Be(5);
+        await connection.OpenAsync(AbortToken);
+        try
+        {
+            await connection.ExecuteAsync(
+                $"""
+                CREATE SCHEMA "{schema}";
+                CREATE TABLE "{schema}"."inbox_operation_receipts"(
+                    "OperationId" UUID PRIMARY KEY NOT NULL,
+                    "GenerationIncarnationId" UUID NOT NULL,
+                    "OperationType" VARCHAR(50) COLLATE "C" NOT NULL,
+                    "ExpectedStatus" VARCHAR(50) COLLATE "C" NOT NULL,
+                    "Actor" VARCHAR(200) COLLATE "C" NOT NULL,
+                    "Reason" VARCHAR(1000) NOT NULL,
+                    "Outcome" VARCHAR(50) COLLATE "C" NOT NULL,
+                    "StorageId" UUID NULL,
+                    "ChildStorageId" UUID NULL,
+                    "ChildGeneration" BIGINT NULL,
+                    "ChildIncarnationId" UUID NULL,
+                    "CreatedAt" TIMESTAMPTZ NOT NULL
+                );
+                CREATE TABLE "{schema}"."inbox_audit"(
+                    "AuditId" UUID PRIMARY KEY NOT NULL,
+                    "OperationId" UUID NOT NULL,
+                    "GenerationIncarnationId" UUID NOT NULL,
+                    "OperationType" VARCHAR(50) COLLATE "C" NOT NULL,
+                    "Actor" VARCHAR(200) COLLATE "C" NOT NULL,
+                    "Reason" VARCHAR(1000) NOT NULL,
+                    "Outcome" VARCHAR(50) COLLATE "C" NOT NULL,
+                    "CreatedAt" TIMESTAMPTZ NOT NULL
+                );
+                CREATE TABLE "{schema}"."schema_state"(
+                    "Component" VARCHAR(50) COLLATE "C" PRIMARY KEY NOT NULL,
+                    "SchemaVersion" INT NOT NULL,
+                    "ReadyAt" TIMESTAMPTZ NOT NULL
+                );
+                INSERT INTO "{schema}"."schema_state" ("Component", "SchemaVersion", "ReadyAt")
+                VALUES ('inbox', 4, statement_timestamp());
+                """
+            );
 
-        await GetInitializer().InitializeAsync(AbortToken);
+            var opId = Guid.NewGuid();
+            var incId = Guid.NewGuid();
+            await connection.ExecuteAsync(
+                $"""
+                INSERT INTO "{schema}"."inbox_operation_receipts" (
+                    "OperationId", "GenerationIncarnationId", "OperationType", "ExpectedStatus", "Actor", "Reason", "Outcome", "CreatedAt"
+                ) VALUES (
+                    @OpId, @IncId, 'Hold', 'Succeeded', 'test-actor', 'test-reason', 'Applied', statement_timestamp()
+                );
+                """,
+                new { OpId = opId, IncId = incId }
+            );
 
-        version = await connection.ExecuteScalarAsync<int>(
-            "SELECT \"SchemaVersion\" FROM messaging.schema_state WHERE \"Component\"='inbox';"
-        );
-        version.Should().Be(5);
+            var initializer = _CreateInitializer(fixture.ConnectionString, schema);
+            await initializer.InitializeAsync(AbortToken);
+
+            var (version, isNullable, targetKind) = await connection.QuerySingleAsync<(int, string, string)>(
+                $"""
+                SELECT
+                    (SELECT "SchemaVersion" FROM "{schema}"."schema_state" WHERE "Component"='inbox'),
+                    (SELECT is_nullable FROM information_schema.columns WHERE table_schema='{schema}' AND table_name='inbox_operation_receipts' AND column_name='GenerationIncarnationId'),
+                    (SELECT "TargetKind" FROM "{schema}"."inbox_operation_receipts" WHERE "OperationId"=@OpId)
+                """,
+                new { OpId = opId }
+            );
+
+            version.Should().Be(5);
+            isNullable.Should().Be("YES");
+            targetKind.Should().Be("Inbox");
+        }
+        finally
+        {
+            await connection.ExecuteAsync($"DROP SCHEMA IF EXISTS \"{schema}\" CASCADE;");
+        }
     }
 
     [Fact]
