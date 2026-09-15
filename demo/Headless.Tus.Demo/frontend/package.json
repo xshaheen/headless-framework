@@ -11,7 +11,7 @@
   "dependencies": {
     "@tanstack/react-query": "^5.102.8",
     "@uppy/core": "^5.2.0",
-    "@uppy/dashboard": "^5.1.1",
+    "@uppy/dashboard": "^6.0.0",
     "@uppy/react": "^5.2.0",
     "@uppy/tus": "^5.1.1",
     "pretty-bytes": "^7.1.2",
