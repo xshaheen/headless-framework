@@ -136,15 +136,17 @@ internal sealed class JobSchedulingPolicies
         if (options.IdempotencyKey is { } key)
         {
             // Same bounded-string rules as every other durable Jobs identity, so one validator and one collation
-            // story cover JobKey, contract names, and idempotency keys.
+            // story cover JobKey, contract names, and idempotency keys. TTL bounds live in JobContract beside the
+            // other identity rules; every public surface that accepts a TTL validates through the same member.
             JobContract.ValidateName(key);
-            if (options.IdempotencyTtl is not { } ttl || ttl < _IdempotencyTtlMinimum || ttl > _IdempotencyTtlMaximum)
+            if (options.IdempotencyTtl is not { } ttl)
             {
                 throw new ArgumentException(
-                    $"An idempotency key requires a TTL between {_IdempotencyTtlMinimum} and {_IdempotencyTtlMaximum}.",
+                    "An idempotency key requires a TTL; supply both or neither.",
                     nameof(options)
                 );
             }
+            JobContract.ValidateIdempotencyTtl(ttl);
         }
         else if (options.IdempotencyTtl is not null)
         {
@@ -154,8 +156,4 @@ internal sealed class JobSchedulingPolicies
             );
         }
     }
-
-    private static readonly TimeSpan _IdempotencyTtlMinimum = TimeSpan.FromSeconds(1);
-
-    private static readonly TimeSpan _IdempotencyTtlMaximum = TimeSpan.FromDays(30);
 }

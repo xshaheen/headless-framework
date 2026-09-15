@@ -171,9 +171,10 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         CancellationToken cancellationToken
     )
     {
-        // Same bounded-string rules as every other durable Jobs identity; validated here (not only at option
-        // resolution) because the manager is a public surface that receives the key directly.
+        // Same bounded-string and TTL rules as every other durable Jobs identity; validated here (not only at
+        // option resolution) because the manager is a public surface that receives both values directly.
         JobContract.ValidateName(idempotencyKey);
+        JobContract.ValidateIdempotencyTtl(idempotencyTtl);
         return _AddTimeJobCoreAsync(entity, (idempotencyKey, idempotencyTtl), cancellationToken);
     }
 
@@ -183,7 +184,13 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         CancellationToken cancellationToken
     )
     {
-        var coordinated = _TryCaptureCoordinatedContext(JobAtomicity.IsRequired([entity]));
+        // The idempotent coordinated branch is savepoint-wrapped (like keyed scheduling), so a savepoint-incapable
+        // transaction must fail at capture — synchronously, before pipeline work — rather than after the schedule
+        // pipeline has run and the coordinator is already retry-prevented.
+        var coordinated = _TryCaptureCoordinatedContext(
+            JobAtomicity.IsRequired([entity]),
+            requireSavepoints: idempotency is not null
+        );
         var now = timeProvider.GetUtcNow();
         _StampTimeJobTree(entity, now, assignIds: true);
 
@@ -244,6 +251,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                     // Dedup hit: the reservation owns the first caller's job. Surface its ID through the returned
                     // entity and arm nothing — the creator's side effects already cover this key. Treat the call
                     // as persisted so the restore-finally does not scramble the observed entity's tenants.
+                    _logger.IdempotentEnqueueHit(entity.Function, result.JobId);
                     entity.Id = result.JobId;
                     persisted = true;
                     return entity;
@@ -1618,6 +1626,14 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
 internal static partial class JobsManagerTenancyLog
 {
+    [LoggerMessage(
+        EventId = 3235,
+        EventName = "IdempotentEnqueueHit",
+        Level = LogLevel.Debug,
+        Message = "Idempotent enqueue for function '{Function}' observed a live reservation and returned the reserved job {JobId}; no row was inserted."
+    )]
+    public static partial void IdempotentEnqueueHit(this ILogger logger, string function, Guid jobId);
+
     [LoggerMessage(
         EventId = 3223,
         EventName = "JobChainDescendantSystemScope",

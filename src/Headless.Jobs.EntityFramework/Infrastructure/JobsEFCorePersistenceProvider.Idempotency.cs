@@ -29,6 +29,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         JobAtomicity.RejectDirect([job]);
         JobIntentFingerprint.RejectOrdinaryMutation(job);
         JobContract.ValidateName(idempotencyKey);
+        JobContract.ValidateIdempotencyTtl(idempotencyTtl);
 
         var (result, _) = await _ExecuteKeyedTransactionAsync(
                 async (context, ct) =>

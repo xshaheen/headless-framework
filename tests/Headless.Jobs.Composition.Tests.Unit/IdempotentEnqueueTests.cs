@@ -146,6 +146,29 @@ public sealed class IdempotentEnqueueTests : TestBase
     }
 
     [Fact]
+    public async Task should_validate_ttl_on_the_manager_surface_not_only_option_resolution()
+    {
+        // The manager is a public surface: a zero/negative/oversized TTL must fail loudly there, because a
+        // zero-TTL reservation expires instantly and silently disables deduplication (the worst failure mode).
+        var (provider, _, _) = _Host();
+        var manager = provider.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
+        var entity = new TimeJobEntity
+        {
+            Function = _Function,
+            ContractVersion = "v1",
+            Request = [],
+            ExecutionTime = DateTime.UtcNow.AddMinutes(5),
+        };
+        var zeroTtl = () => manager.AddIdempotentAsync(entity, "manager-ttl", TimeSpan.Zero, AbortToken);
+        var negativeTtl = () => manager.AddIdempotentAsync(entity, "manager-ttl", TimeSpan.FromSeconds(-5), AbortToken);
+        var oversizedTtl = () => manager.AddIdempotentAsync(entity, "manager-ttl", TimeSpan.FromDays(31), AbortToken);
+        await zeroTtl.Should().ThrowAsync<ArgumentException>();
+        await negativeTtl.Should().ThrowAsync<ArgumentException>();
+        await oversizedTtl.Should().ThrowAsync<ArgumentException>();
+        provider.Dispose();
+    }
+
+    [Fact]
     public async Task should_reject_keyed_and_chain_scheduling_with_an_idempotency_key()
     {
         var (provider, scheduler, _) = _Host();
