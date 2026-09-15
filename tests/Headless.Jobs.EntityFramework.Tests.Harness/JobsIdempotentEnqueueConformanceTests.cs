@@ -10,6 +10,8 @@ using Headless.Jobs.Models;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -37,6 +39,48 @@ public abstract class JobsIdempotentEnqueueConformanceTests<TFixture>(TFixture f
 
     private static JobOptions _Options(string key, TimeSpan? ttl = null) =>
         new() { IdempotencyKey = key, IdempotencyTtl = ttl ?? _Ttl };
+
+    public virtual async Task model_created_reservation_table_matches_the_documented_upgrade_dd()
+    {
+        // Drift guard for the upgrade artifact in the EF README: the table the model materializes must match
+        // what hand-applying the documented CREATE TABLE produces — composite PK column order, identity column
+        // collations, and the ExpiresAt index — or an upgraded database and a fresh one behave differently.
+        var ct = AbortToken;
+        using var host = await _StartHostAsync("idem-schema", ct);
+        try
+        {
+            await using var db = await host
+                .Services.GetRequiredService<IDbContextFactory<JobsDbContext>>()
+                .CreateDbContextAsync(ct);
+            // Collations are omitted from the runtime model; the design-time model is the finalized one the
+            // schema is generated from (same discipline as JobsIdempotencyModelConfiguration.ValidateOrdinalScope).
+            var entity = db.GetService<IDesignTimeModel>()
+                .Model.FindEntityType(typeof(JobIdempotencyReservationEntity))!;
+            var table = StoreObjectIdentifier.Table(entity.GetTableName()!, entity.GetSchema());
+            var primaryKey = entity.FindPrimaryKey()!;
+            primaryKey
+                .Properties.Select(property => property.GetColumnName(table)!)
+                .Should()
+                .Equal("ScopeKey", "Function", "ContractVersion", "IdempotencyKey");
+            foreach (var name in new[] { "ScopeKey", "Function", "ContractVersion", "IdempotencyKey" })
+            {
+                var property = entity.FindProperty(name)!;
+                property.GetMaxLength().Should().NotBeNull($"column {name} must be length-bounded");
+                property
+                    .GetCollation(table)
+                    .Should()
+                    .NotBeNull($"identity column {name} must carry an explicit ordinal collation");
+            }
+            entity
+                .FindIndex(entity.FindProperty(nameof(JobIdempotencyReservationEntity.ExpiresAt))!)
+                .Should()
+                .NotBeNull("the ExpiresAt index is the documented sweeper seam");
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
 
     public virtual async Task same_key_inside_ttl_dedups_to_first_job()
     {
@@ -230,34 +274,28 @@ public abstract class JobsIdempotentEnqueueConformanceTests<TFixture>(TFixture f
 
             (await act.Should().ThrowAsync<InvalidOperationException>()).Which.Should().BeSameAs(sentinel);
             (await fixture.CountTimeJobsAsync(ct)).Should().Be(0);
+            // The reservation must be gone WITH the job: read the reservation set directly on the post-rollback
+            // state. A reset-and-recreate second half would be vacuous — the reset itself destroys any wrongly
+            // surviving reservation, so only this direct read proves the claim.
+            await using var db = await host
+                .Services.GetRequiredService<IDbContextFactory<JobsDbContext>>()
+                .CreateDbContextAsync(ct);
+            (await db.Set<JobIdempotencyReservationEntity>().ToListAsync(ct))
+                .Should()
+                .BeEmpty("a rolled-back coordinated enqueue must discard its reservation");
 
-            // The reservation must be gone with the job: the same key must open a fresh reservation now. The
-            // fresh host shares the fixture database, so reset it before recreating the schema.
-            await host.StopAsync(ct);
-            await fixture.ResetDatabaseAsync(ct);
-            using var fresh = fixture.BuildCoordinatedEnqueueHost("idem-e2");
-            await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(fresh, ct);
-            await fresh.StartAsync(ct);
-            try
-            {
-                var scheduler2 = fresh.Services.GetRequiredService<IJobScheduler>();
-                var recreated = await scheduler2.EnqueueAsync(
-                    new CoordinatedFacadeRequest(Guid.NewGuid(), "recreated"),
-                    _Options("rollback-key"),
-                    ct
-                );
-                recreated.Should().NotBeEmpty();
-                (await fixture.CountTimeJobsAsync(ct)).Should().Be(1, "only the recreated job exists");
-            }
-            finally
-            {
-                await fresh.StopAsync(ct);
-            }
+            // The same key must now open a fresh reservation on the SAME database (no reset), proving the table
+            // is truly empty rather than recreated.
+            var recreated = await scheduler.EnqueueAsync(
+                new CoordinatedFacadeRequest(Guid.NewGuid(), "recreated"),
+                _Options("rollback-key"),
+                ct
+            );
+            recreated.Should().NotBeEmpty();
+            (await fixture.CountTimeJobsAsync(ct)).Should().Be(1, "only the recreated job exists");
         }
         finally
         {
-            // The rollback phase stops the first host explicitly before the fresh-host phase; stopping twice is
-            // harmless (IHostAsyncLifetimeServiceProvider tolerates it), so keep the safety net.
             await host.StopAsync(ct);
         }
     }

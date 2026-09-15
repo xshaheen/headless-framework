@@ -71,7 +71,17 @@ internal static class JobsIdempotencyModelConfiguration
         };
 
         var model = context.GetService<IDesignTimeModel>().Model;
-        var entity = model.FindEntityType(typeof(JobIdempotencyReservationEntity))!;
+        var entity = model.FindEntityType(typeof(JobIdempotencyReservationEntity));
+        if (entity is null || entity.GetTableName() is null)
+        {
+            // Unlike the keyed twin (whose entity is the consumer's own TTimeJob, always mapped), the reservation
+            // entity is mapped only by the built-in customizer or FinalizeJobsModel — fail with the fix, not an NRE.
+            throw new InvalidOperationException(
+                "Idempotent enqueue requires the reservation mapping. Call modelBuilder.FinalizeJobsModel<TTimeJob>(this) "
+                    + "at the end of OnModelCreating after all consumer mappings, then initialize the database from that model."
+            );
+        }
+
         var table = StoreObjectIdentifier.Table(entity.GetTableName()!, entity.GetSchema());
         foreach (
             var name in new[]
