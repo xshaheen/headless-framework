@@ -206,13 +206,9 @@ internal sealed class SqlServerStorageInitializer(
         var receivedPrefix = $"{schema}_Received";
 
         return $"""
-            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'UX_{receivedPrefix}_InboxRootKey' AND object_id=OBJECT_ID(N'{GetReceivedTableName()}'))
-               OR NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'UX_{receivedPrefix}_InboxLifecycleGeneration' AND object_id=OBJECT_ID(N'{GetReceivedTableName()}'))
-                THROW 50002, N'Headless.Messaging inbox schema is incomplete: the final inbox key index is missing.', 1;
-
-            IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name=N'CK_{receivedPrefix}_InboxRetentionV3')
+            IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name=N'CK_{receivedPrefix}_InboxIdentity')
                OR COL_LENGTH(N'{GetReceivedTableName()}',N'LifecycleId') IS NULL
-               OR NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name=N'CK_{receivedPrefix}_InboxLifecycleV4' AND parent_object_id=OBJECT_ID(N'{GetReceivedTableName()}'))
+               OR NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name=N'CK_{receivedPrefix}_InboxLifecycle' AND parent_object_id=OBJECT_ID(N'{GetReceivedTableName()}'))
                OR COL_LENGTH(N'{schema}.InboxOperationReceipts',N'ExpectedStatus') IS NULL
                OR COL_LENGTH(N'{schema}.InboxOperationReceipts',N'Outcome') IS NULL
                OR COL_LENGTH(N'{schema}.InboxOperationReceipts',N'TargetKind') IS NULL
@@ -221,7 +217,7 @@ internal sealed class SqlServerStorageInitializer(
                 THROW 50004, N'Headless.Messaging inbox schema is incomplete: the lifecycle, retention or operation receipt contract is missing.', 1;
 
             MERGE [{schema}].[SchemaState] WITH (HOLDLOCK) AS target
-            USING (SELECT N'inbox' AS [Component], 5 AS [SchemaVersion], SYSDATETIMEOFFSET() AS [ReadyAt]) AS source
+            USING (SELECT N'inbox' AS [Component], 1 AS [SchemaVersion], SYSDATETIMEOFFSET() AS [ReadyAt]) AS source
             ON target.[Component]=source.[Component]
             WHEN MATCHED THEN UPDATE SET [SchemaVersion]=source.[SchemaVersion],[ReadyAt]=source.[ReadyAt]
             WHEN NOT MATCHED THEN INSERT ([Component],[SchemaVersion],[ReadyAt]) VALUES (source.[Component],source.[SchemaVersion],source.[ReadyAt]);
@@ -257,8 +253,8 @@ internal sealed class SqlServerStorageInitializer(
 
             IF OBJECT_ID(N'{schema}.SchemaState',N'U') IS NOT NULL
                 EXEC(N'
-                    IF EXISTS (SELECT 1 FROM [{schema}].[SchemaState] WHERE [Component]=N''inbox'' AND [SchemaVersion] > 5)
-                        THROW 50003, N''Headless.Messaging inbox schema is newer than supported version 5. Upgrade the application before starting this binary.'', 1;
+                    IF EXISTS (SELECT 1 FROM [{schema}].[SchemaState] WHERE [Component]=N''inbox'' AND [SchemaVersion] > 1)
+                        THROW 50003, N''Headless.Messaging inbox schema is newer than supported version 1. Upgrade the application before starting this binary.'', 1;
                     DELETE FROM [{schema}].[SchemaState] WHERE [Component]=N''inbox'';
                 ');
 
@@ -362,20 +358,12 @@ internal sealed class SqlServerStorageInitializer(
                     )
                 )');
 
-            IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_{receivedPrefix}_InboxRetentionV3')
-                EXEC(N'ALTER TABLE {GetReceivedTableName()} ADD CONSTRAINT [CK_{receivedPrefix}_InboxRetentionV3] CHECK (
-                    [IsInboxRecord]=0 OR [InboxRetentionSeconds] BETWEEN 1 AND 2147483647
-                )');
-
-            IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_{receivedPrefix}_InboxLifecycleV4'
+            IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_{receivedPrefix}_InboxLifecycle'
                 AND parent_object_id = OBJECT_ID(N'{GetReceivedTableName()}'))
-                EXEC(N'ALTER TABLE {GetReceivedTableName()} ADD CONSTRAINT [CK_{receivedPrefix}_InboxLifecycleV4] CHECK (
+                EXEC(N'ALTER TABLE {GetReceivedTableName()} ADD CONSTRAINT [CK_{receivedPrefix}_InboxLifecycle] CHECK (
                     [IsInboxRecord]=0 OR ([LifecycleId] IS NOT NULL
                         AND ([ReplayParentIncarnationId] IS NOT NULL OR [LifecycleId]=[GenerationIncarnationId]))
                 )');
-
-            IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UX_{receivedPrefix}_InboxKey' AND object_id = OBJECT_ID(N'{GetReceivedTableName()}'))
-                DROP INDEX [UX_{receivedPrefix}_InboxKey] ON {GetReceivedTableName()};
 
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UX_{receivedPrefix}_InboxLifecycleGeneration' AND object_id = OBJECT_ID(N'{GetReceivedTableName()}'))
                 EXEC(N'CREATE UNIQUE NONCLUSTERED INDEX [UX_{receivedPrefix}_InboxLifecycleGeneration]
@@ -573,39 +561,6 @@ internal sealed class SqlServerStorageInitializer(
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'IX_{schema}_InboxAudit_Incarnation_CreatedAt' AND object_id=OBJECT_ID(N'{schema}.InboxAudit'))
                 CREATE NONCLUSTERED INDEX [IX_{schema}_InboxAudit_Incarnation_CreatedAt]
                     ON [{schema}].[InboxAudit] ([GenerationIncarnationId],[CreatedAt]);
-
-            IF OBJECT_ID(N'{schema}.InboxOperationReceipts', N'U') IS NOT NULL
-            BEGIN
-                IF COL_LENGTH(N'{schema}.InboxOperationReceipts', N'TargetKind') IS NULL
-                    ALTER TABLE [{schema}].[InboxOperationReceipts] ADD [TargetKind] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NOT NULL CONSTRAINT [DF_{schema}_InboxOperationReceipts_TargetKind] DEFAULT N'Inbox';
-
-                IF COL_LENGTH(N'{schema}.InboxOperationReceipts', N'ExpectedDueAt') IS NULL
-                    ALTER TABLE [{schema}].[InboxOperationReceipts] ADD [ExpectedDueAt] [datetimeoffset](7) NULL;
-
-                IF COL_LENGTH(N'{schema}.InboxOperationReceipts', N'MessageName') IS NULL
-                    ALTER TABLE [{schema}].[InboxOperationReceipts] ADD [MessageName] [nvarchar](200) NULL;
-
-                IF COL_LENGTH(N'{schema}.InboxOperationReceipts', N'MessageId') IS NULL
-                    ALTER TABLE [{schema}].[InboxOperationReceipts] ADD [MessageId] [nvarchar](200) COLLATE Latin1_General_100_BIN2 NULL;
-
-                IF COL_LENGTH(N'{schema}.InboxOperationReceipts', N'Lane') IS NULL
-                    ALTER TABLE [{schema}].[InboxOperationReceipts] ADD [Lane] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NULL;
-
-                IF COLUMNPROPERTY(OBJECT_ID(N'{schema}.InboxOperationReceipts'), 'GenerationIncarnationId', 'AllowsNull') = 0
-                    ALTER TABLE [{schema}].[InboxOperationReceipts] ALTER COLUMN [GenerationIncarnationId] [uniqueidentifier] NULL;
-
-                IF COLUMNPROPERTY(OBJECT_ID(N'{schema}.InboxOperationReceipts'), 'ExpectedStatus', 'AllowsNull') = 0
-                    ALTER TABLE [{schema}].[InboxOperationReceipts] ALTER COLUMN [ExpectedStatus] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NULL;
-            END;
-
-            IF OBJECT_ID(N'{schema}.InboxAudit', N'U') IS NOT NULL
-            BEGIN
-                IF COL_LENGTH(N'{schema}.InboxAudit', N'TargetKind') IS NULL
-                    ALTER TABLE [{schema}].[InboxAudit] ADD [TargetKind] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NOT NULL CONSTRAINT [DF_{schema}_InboxAudit_TargetKind] DEFAULT N'Inbox';
-
-                IF COLUMNPROPERTY(OBJECT_ID(N'{schema}.InboxAudit'), 'GenerationIncarnationId', 'AllowsNull') = 0
-                    ALTER TABLE [{schema}].[InboxAudit] ALTER COLUMN [GenerationIncarnationId] [uniqueidentifier] NULL;
-            END;
 
             IF OBJECT_ID(N'{schema}.SchemaState',N'U') IS NULL
             BEGIN

@@ -416,7 +416,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
                 SELECT COUNT(*) FROM pg_indexes
                 WHERE schemaname='messaging' AND indexname IN ('uq_received_inbox_root_key','uq_received_inbox_lifecycle_generation')
             ) AS "IndexCount", (
-                SELECT COUNT(*) FROM pg_constraint WHERE conname IN ('ck_received_inbox_retention_v3','ck_received_inbox_lifecycle_v4')
+                SELECT COUNT(*) FROM pg_constraint WHERE conname IN ('ck_received_inbox_identity','ck_received_inbox_lifecycle')
                   AND conrelid='messaging.received'::regclass
             ) AS "ConstraintCount", (
                 SELECT COUNT(*) FROM information_schema.columns
@@ -428,91 +428,10 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
             """
         );
 
-        schemaVersion.Should().Be(5);
+        schemaVersion.Should().Be(1);
         indexCount.Should().Be(2);
         constraintCount.Should().Be(2);
         receiptColumnCount.Should().Be(8);
-    }
-
-    [Fact]
-    public async Task should_upgrade_inbox_schema_v4_to_v5_additively()
-    {
-        var schema = $"upgrade_{Guid.NewGuid():N}";
-        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(AbortToken);
-        try
-        {
-            await connection.ExecuteAsync(
-                $"""
-                CREATE SCHEMA "{schema}";
-                CREATE TABLE "{schema}"."inbox_operation_receipts"(
-                    "OperationId" UUID PRIMARY KEY NOT NULL,
-                    "GenerationIncarnationId" UUID NOT NULL,
-                    "OperationType" VARCHAR(50) COLLATE "C" NOT NULL,
-                    "ExpectedStatus" VARCHAR(50) COLLATE "C" NOT NULL,
-                    "Actor" VARCHAR(200) COLLATE "C" NOT NULL,
-                    "Reason" VARCHAR(1000) NOT NULL,
-                    "Outcome" VARCHAR(50) COLLATE "C" NOT NULL,
-                    "StorageId" UUID NULL,
-                    "ChildStorageId" UUID NULL,
-                    "ChildGeneration" BIGINT NULL,
-                    "ChildIncarnationId" UUID NULL,
-                    "CreatedAt" TIMESTAMPTZ NOT NULL
-                );
-                CREATE TABLE "{schema}"."inbox_audit"(
-                    "AuditId" UUID PRIMARY KEY NOT NULL,
-                    "OperationId" UUID NOT NULL,
-                    "GenerationIncarnationId" UUID NOT NULL,
-                    "OperationType" VARCHAR(50) COLLATE "C" NOT NULL,
-                    "Actor" VARCHAR(200) COLLATE "C" NOT NULL,
-                    "Reason" VARCHAR(1000) NOT NULL,
-                    "Outcome" VARCHAR(50) COLLATE "C" NOT NULL,
-                    "CreatedAt" TIMESTAMPTZ NOT NULL
-                );
-                CREATE TABLE "{schema}"."schema_state"(
-                    "Component" VARCHAR(50) COLLATE "C" PRIMARY KEY NOT NULL,
-                    "SchemaVersion" INT NOT NULL,
-                    "ReadyAt" TIMESTAMPTZ NOT NULL
-                );
-                INSERT INTO "{schema}"."schema_state" ("Component", "SchemaVersion", "ReadyAt")
-                VALUES ('inbox', 4, statement_timestamp());
-                """
-            );
-
-            var opId = Guid.NewGuid();
-            var incId = Guid.NewGuid();
-            await connection.ExecuteAsync(
-                $"""
-                INSERT INTO "{schema}"."inbox_operation_receipts" (
-                    "OperationId", "GenerationIncarnationId", "OperationType", "ExpectedStatus", "Actor", "Reason", "Outcome", "CreatedAt"
-                ) VALUES (
-                    @OpId, @IncId, 'Hold', 'Succeeded', 'test-actor', 'test-reason', 'Applied', statement_timestamp()
-                );
-                """,
-                new { OpId = opId, IncId = incId }
-            );
-
-            var initializer = _CreateInitializer(fixture.ConnectionString, schema);
-            await initializer.InitializeAsync(AbortToken);
-
-            var (version, isNullable, targetKind) = await connection.QuerySingleAsync<(int, string, string)>(
-                $"""
-                SELECT
-                    (SELECT "SchemaVersion" FROM "{schema}"."schema_state" WHERE "Component"='inbox'),
-                    (SELECT is_nullable FROM information_schema.columns WHERE table_schema='{schema}' AND table_name='inbox_operation_receipts' AND column_name='GenerationIncarnationId'),
-                    (SELECT "TargetKind" FROM "{schema}"."inbox_operation_receipts" WHERE "OperationId"=@OpId)
-                """,
-                new { OpId = opId }
-            );
-
-            version.Should().Be(5);
-            isNullable.Should().Be("YES");
-            targetKind.Should().Be("Inbox");
-        }
-        finally
-        {
-            await connection.ExecuteAsync($"DROP SCHEMA IF EXISTS \"{schema}\" CASCADE;");
-        }
     }
 
     [Fact]
@@ -568,26 +487,26 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
     {
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.ExecuteAsync(
-            "UPDATE messaging.schema_state SET \"SchemaVersion\"=6 WHERE \"Component\"='inbox';"
+            "UPDATE messaging.schema_state SET \"SchemaVersion\"=2 WHERE \"Component\"='inbox';"
         );
 
         try
         {
             var act = async () => await GetInitializer().InitializeAsync(AbortToken);
 
-            await act.Should().ThrowAsync<PostgresException>().WithMessage("*newer than supported version 5*");
+            await act.Should().ThrowAsync<PostgresException>().WithMessage("*newer than supported version 1*");
             (
                 await connection.ExecuteScalarAsync<int>(
                     "SELECT \"SchemaVersion\" FROM messaging.schema_state WHERE \"Component\"='inbox';"
                 )
             )
                 .Should()
-                .Be(6, "a rejected older binary must not rewrite the newer readiness marker");
+                .Be(2, "a rejected older binary must not rewrite the newer readiness marker");
         }
         finally
         {
             await connection.ExecuteAsync(
-                "UPDATE messaging.schema_state SET \"SchemaVersion\"=5 WHERE \"Component\"='inbox';"
+                "UPDATE messaging.schema_state SET \"SchemaVersion\"=1 WHERE \"Component\"='inbox';"
             );
         }
     }
@@ -2062,11 +1981,11 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
                 """
                 SELECT conname FROM pg_constraint
                 WHERE conrelid = format('%I.received', @Schema)::regclass
-                  AND conname IN ('ck_received_inbox_identity', 'ck_received_inbox_retention_v3');
+                  AND conname IN ('ck_received_inbox_identity', 'ck_received_inbox_lifecycle');
                 """,
                 new { Schema = schema }
             );
-            constraints.Should().BeEquivalentTo("ck_received_inbox_identity", "ck_received_inbox_retention_v3");
+            constraints.Should().BeEquivalentTo("ck_received_inbox_identity", "ck_received_inbox_lifecycle");
         }
         finally
         {

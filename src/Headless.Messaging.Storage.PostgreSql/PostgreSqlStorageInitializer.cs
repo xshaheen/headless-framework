@@ -420,10 +420,10 @@ internal sealed class PostgreSqlStorageInitializer(
                 SELECT (
                     EXISTS (
                         SELECT 1 FROM pg_constraint
-                        WHERE conname='ck_received_inbox_retention_v3'
+                        WHERE conname='ck_received_inbox_identity'
                           AND conrelid=format('%I.received', @Schema)::regclass
                     )
-                    AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname='ck_received_inbox_lifecycle_v4'
+                    AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname='ck_received_inbox_lifecycle'
                         AND conrelid = format('%I.received', @Schema)::regclass)
                     AND EXISTS (SELECT 1 FROM information_schema.columns
                         WHERE table_schema=@Schema AND table_name='received' AND column_name='LifecycleId')
@@ -463,7 +463,7 @@ internal sealed class PostgreSqlStorageInitializer(
 
         var sql = $"""
             INSERT INTO "{postgreSqlOptions.Value.Schema}"."schema_state" ("Component","SchemaVersion","ReadyAt")
-            VALUES ('inbox', 5, statement_timestamp())
+            VALUES ('inbox', 1, statement_timestamp())
             ON CONFLICT ("Component") DO UPDATE
             SET "SchemaVersion"=EXCLUDED."SchemaVersion", "ReadyAt"=EXCLUDED."ReadyAt";
             """;
@@ -492,8 +492,8 @@ internal sealed class PostgreSqlStorageInitializer(
                     FROM "{schema}"."schema_state"
                     WHERE "Component"='inbox';
 
-                    IF current_schema_version > 5 THEN
-                        RAISE EXCEPTION 'Headless.Messaging inbox schema version % is newer than supported version 5. Upgrade the application before starting this binary.', current_schema_version;
+                    IF current_schema_version > 1 THEN
+                        RAISE EXCEPTION 'Headless.Messaging inbox schema version % is newer than supported version 1. Upgrade the application before starting this binary.', current_schema_version;
                     END IF;
                 END IF;
             END
@@ -564,22 +564,9 @@ internal sealed class PostgreSqlStorageInitializer(
 
             DO $headless$
             BEGIN
-                IF NOT EXISTS (
-                    SELECT 1 FROM pg_constraint WHERE conname = 'ck_received_inbox_retention_v3'
-                    AND conrelid = '{GetReceivedTableName()}'::regclass
-                ) THEN
-                    ALTER TABLE {GetReceivedTableName()} ADD CONSTRAINT "ck_received_inbox_retention_v3" CHECK (
-                        NOT "IsInboxRecord" OR "InboxRetentionSeconds" BETWEEN 1 AND 2147483647
-                    );
-                END IF;
-            END
-            $headless$;
-
-            DO $headless$
-            BEGIN
-                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_received_inbox_lifecycle_v4'
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_received_inbox_lifecycle'
                     AND conrelid = '{GetReceivedTableName()}'::regclass) THEN
-                    ALTER TABLE {GetReceivedTableName()} ADD CONSTRAINT "ck_received_inbox_lifecycle_v4" CHECK (
+                    ALTER TABLE {GetReceivedTableName()} ADD CONSTRAINT "ck_received_inbox_lifecycle" CHECK (
                         NOT "IsInboxRecord" OR ("LifecycleId" IS NOT NULL
                             AND ("ReplayParentIncarnationId" IS NOT NULL OR "LifecycleId" = "GenerationIncarnationId"))
                     );
@@ -587,7 +574,6 @@ internal sealed class PostgreSqlStorageInitializer(
             END
             $headless$;
 
-            DROP INDEX IF EXISTS "{schema}"."uq_received_inbox_key";
             CREATE UNIQUE INDEX IF NOT EXISTS "uq_received_inbox_root_key" ON {GetReceivedTableName()}
                 ("TenantPresent","TenantId","MessageId","IntentType","ContractIdentity","ContractVersion","ConsumerIdentity","Generation")
                 WHERE "IsInboxRecord" AND "ReplayParentIncarnationId" IS NULL;
@@ -647,66 +633,6 @@ internal sealed class PostgreSqlStorageInitializer(
                     REFERENCES "{schema}"."inbox_operation_receipts"("OperationId") ON DELETE RESTRICT
             );
             CREATE INDEX IF NOT EXISTS "idx_inbox_audit_incarnation_created" ON "{schema}"."inbox_audit" ("GenerationIncarnationId","CreatedAt");
-
-            DO $headless$
-            BEGIN
-                IF EXISTS (
-                    SELECT 1 FROM information_schema.columns
-                    WHERE table_schema = '{schema}' AND table_name = 'inbox_operation_receipts' AND column_name = 'GenerationIncarnationId' AND is_nullable = 'NO'
-                ) THEN
-                    ALTER TABLE "{schema}"."inbox_operation_receipts" ALTER COLUMN "GenerationIncarnationId" DROP NOT NULL;
-                END IF;
-                IF EXISTS (
-                    SELECT 1 FROM information_schema.columns
-                    WHERE table_schema = '{schema}' AND table_name = 'inbox_operation_receipts' AND column_name = 'ExpectedStatus' AND is_nullable = 'NO'
-                ) THEN
-                    ALTER TABLE "{schema}"."inbox_operation_receipts" ALTER COLUMN "ExpectedStatus" DROP NOT NULL;
-                END IF;
-                IF NOT EXISTS (
-                    SELECT 1 FROM information_schema.columns
-                    WHERE table_schema = '{schema}' AND table_name = 'inbox_operation_receipts' AND column_name = 'TargetKind'
-                ) THEN
-                    ALTER TABLE "{schema}"."inbox_operation_receipts" ADD COLUMN "TargetKind" VARCHAR(50) COLLATE "C" NOT NULL DEFAULT 'Inbox';
-                END IF;
-                IF NOT EXISTS (
-                    SELECT 1 FROM information_schema.columns
-                    WHERE table_schema = '{schema}' AND table_name = 'inbox_operation_receipts' AND column_name = 'ExpectedDueAt'
-                ) THEN
-                    ALTER TABLE "{schema}"."inbox_operation_receipts" ADD COLUMN "ExpectedDueAt" TIMESTAMPTZ NULL;
-                END IF;
-                IF NOT EXISTS (
-                    SELECT 1 FROM information_schema.columns
-                    WHERE table_schema = '{schema}' AND table_name = 'inbox_operation_receipts' AND column_name = 'MessageName'
-                ) THEN
-                    ALTER TABLE "{schema}"."inbox_operation_receipts" ADD COLUMN "MessageName" VARCHAR(200) NULL;
-                END IF;
-                IF NOT EXISTS (
-                    SELECT 1 FROM information_schema.columns
-                    WHERE table_schema = '{schema}' AND table_name = 'inbox_operation_receipts' AND column_name = 'MessageId'
-                ) THEN
-                    ALTER TABLE "{schema}"."inbox_operation_receipts" ADD COLUMN "MessageId" VARCHAR(200) COLLATE "C" NULL;
-                END IF;
-                IF NOT EXISTS (
-                    SELECT 1 FROM information_schema.columns
-                    WHERE table_schema = '{schema}' AND table_name = 'inbox_operation_receipts' AND column_name = 'Lane'
-                ) THEN
-                    ALTER TABLE "{schema}"."inbox_operation_receipts" ADD COLUMN "Lane" VARCHAR(50) COLLATE "C" NULL;
-                END IF;
-
-                IF EXISTS (
-                    SELECT 1 FROM information_schema.columns
-                    WHERE table_schema = '{schema}' AND table_name = 'inbox_audit' AND column_name = 'GenerationIncarnationId' AND is_nullable = 'NO'
-                ) THEN
-                    ALTER TABLE "{schema}"."inbox_audit" ALTER COLUMN "GenerationIncarnationId" DROP NOT NULL;
-                END IF;
-                IF NOT EXISTS (
-                    SELECT 1 FROM information_schema.columns
-                    WHERE table_schema = '{schema}' AND table_name = 'inbox_audit' AND column_name = 'TargetKind'
-                ) THEN
-                    ALTER TABLE "{schema}"."inbox_audit" ADD COLUMN "TargetKind" VARCHAR(50) COLLATE "C" NOT NULL DEFAULT 'Inbox';
-                END IF;
-            END
-            $headless$;
 
             CREATE TABLE IF NOT EXISTS "{schema}"."schema_state"(
                 "Component" VARCHAR(50) COLLATE "C" PRIMARY KEY NOT NULL,
