@@ -24,6 +24,7 @@ internal sealed class JobsModelCustomizer<TTimeJob, TCronJob>(ModelCustomizerDep
         builder.ApplyConfiguration(new TimeJobConfigurations<TTimeJob>(contractCollation: contractCollation));
         builder.ApplyConfiguration(new CronJobConfigurations<TCronJob>(contractCollation: contractCollation));
         builder.ApplyConfiguration(new CronJobOccurrenceConfigurations<TCronJob>(contractCollation: contractCollation));
+        JobsIdempotencyModelConfiguration.Configure(builder, contractCollation);
 
         base.Customize(builder, context);
         // Consumer OnModelCreating may rename any column. Build owned SQL only after those mappings have settled.

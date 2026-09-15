@@ -28,6 +28,18 @@ internal interface ICoordinatedJobWriter<in TTimeJob, in TCronJob>
     /// <summary>Validates actual configured database compatibility and exact live caller handles before middleware.</summary>
     void ValidateContext(IRelationalCommitContext relationalContext, bool requireSavepoints = false);
 
+    /// <summary>
+    /// Executes the idempotent enqueue inside the caller transaction: reserves the key and inserts the job, or
+    /// observes the live reservation's job ID. The result remains provisional until outer commit.
+    /// </summary>
+    Task<JobIdempotencyEnqueueResult> WriteIdempotentTimeJobAsync(
+        TTimeJob job,
+        string idempotencyKey,
+        TimeSpan idempotencyTtl,
+        IRelationalCommitContext relationalContext,
+        CancellationToken cancellationToken = default
+    );
+
     /// <summary>Executes keyed scheduling inside the caller transaction. The result remains provisional until outer commit.</summary>
     Task<JobScheduleResult> WriteKeyedTimeJobAsync(
         JobKey key,

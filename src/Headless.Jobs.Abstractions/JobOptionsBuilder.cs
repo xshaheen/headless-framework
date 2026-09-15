@@ -22,6 +22,8 @@ public sealed class JobOptionsBuilder
     private string? _description;
     private string? _tenantId;
     private bool _isSystemJob;
+    private string? _idempotencyKey;
+    private TimeSpan? _idempotencyTtl;
 
     /// <summary>Creates an empty builder that preserves the canonical options defaults.</summary>
     public JobOptionsBuilder() { }
@@ -90,6 +92,24 @@ public sealed class JobOptionsBuilder
         return this;
     }
 
+    /// <summary>
+    /// Opens an enqueue idempotency window; a repeat enqueue with the same resolved identity inside the window
+    /// returns the first call's job ID without inserting a second job. Null clears the window.
+    /// </summary>
+    /// <remarks>Applies to one-shot enqueue/schedule calls only; keyed, recurring, and chain scheduling reject it.</remarks>
+    public JobOptionsBuilder WithIdempotencyKey(string? idempotencyKey)
+    {
+        _idempotencyKey = idempotencyKey;
+        return this;
+    }
+
+    /// <summary>Lifetime of the idempotency window; required with a key and bounded to 1 second through 30 days.</summary>
+    public JobOptionsBuilder WithIdempotencyTtl(TimeSpan? idempotencyTtl)
+    {
+        _idempotencyTtl = idempotencyTtl;
+        return this;
+    }
+
     /// <summary>Creates an independent options snapshot, leaving this builder available for sequential reuse.</summary>
     /// <returns>The canonical options record with its own retry array, when supplied.</returns>
     public JobOptions Build() =>
@@ -104,5 +124,7 @@ public sealed class JobOptionsBuilder
             Description = _description,
             TenantId = _tenantId,
             IsSystemJob = _isSystemJob,
+            IdempotencyKey = _idempotencyKey,
+            IdempotencyTtl = _idempotencyTtl,
         };
 }

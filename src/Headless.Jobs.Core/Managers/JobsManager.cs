@@ -71,6 +71,17 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         return _AddTimeJobAsync(entity, cancellationToken);
     }
 
+    Task<TTimeJob> ITimeJobManager<TTimeJob>.AddIdempotentAsync(
+        TTimeJob entity,
+        string idempotencyKey,
+        TimeSpan idempotencyTtl,
+        CancellationToken cancellationToken
+    )
+    {
+        JobIntentFingerprint.RejectOrdinaryMutation(entity);
+        return _AddIdempotentTimeJobAsync(entity, idempotencyKey, idempotencyTtl, cancellationToken);
+    }
+
     Task<JobResult<TCronJob>> ICronJobManager<TCronJob>.UpdateAsync(
         TCronJob cronJob,
         CancellationToken cancellationToken
@@ -150,7 +161,27 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         return _DeleteCronJobsBatchAsync(ids, cancellationToken);
     }
 
-    private async Task<TTimeJob> _AddTimeJobAsync(TTimeJob entity, CancellationToken cancellationToken)
+    private async Task<TTimeJob> _AddTimeJobAsync(TTimeJob entity, CancellationToken cancellationToken) =>
+        await _AddTimeJobCoreAsync(entity, idempotency: null, cancellationToken).ConfigureAwait(false);
+
+    private Task<TTimeJob> _AddIdempotentTimeJobAsync(
+        TTimeJob entity,
+        string idempotencyKey,
+        TimeSpan idempotencyTtl,
+        CancellationToken cancellationToken
+    )
+    {
+        // Same bounded-string rules as every other durable Jobs identity; validated here (not only at option
+        // resolution) because the manager is a public surface that receives the key directly.
+        JobContract.ValidateName(idempotencyKey);
+        return _AddTimeJobCoreAsync(entity, (idempotencyKey, idempotencyTtl), cancellationToken);
+    }
+
+    private async Task<TTimeJob> _AddTimeJobCoreAsync(
+        TTimeJob entity,
+        (string Key, TimeSpan Ttl)? idempotency,
+        CancellationToken cancellationToken
+    )
     {
         var coordinated = _TryCaptureCoordinatedContext(JobAtomicity.IsRequired([entity]));
         var now = timeProvider.GetUtcNow();
@@ -181,6 +212,59 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             _NormalizeDescendantExecutionTimes(entity);
 
             var executionTime = entity.ExecutionTime.Value;
+
+            // The idempotent branch runs after the schedule pipeline and tenant resolution (the reservation
+            // identity needs the final tenant scope) but before any write: a hit must not insert a row, arm
+            // dispatch/restart/notify side effects, or emit a second set of enqueue effects.
+            if (idempotency is { } window)
+            {
+                JobIdempotencyEnqueueResult result;
+                if (coordinated is { } writeContext)
+                {
+                    _PrepareCoordinatedWrite(writeContext);
+                    result = await writeContext
+                        .Writer.WriteIdempotentTimeJobAsync(
+                            entity,
+                            window.Key,
+                            window.Ttl,
+                            writeContext.Relational,
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
+                }
+                else
+                {
+                    result = await persistenceProvider
+                        .AddIdempotentTimeJobAsync(entity, window.Key, window.Ttl, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+
+                if (!result.Created)
+                {
+                    // Dedup hit: the reservation owns the first caller's job. Surface its ID through the returned
+                    // entity and arm nothing — the creator's side effects already cover this key. Treat the call
+                    // as persisted so the restore-finally does not scramble the observed entity's tenants.
+                    entity.Id = result.JobId;
+                    persisted = true;
+                    return entity;
+                }
+
+                persisted = true;
+
+                if (coordinated is { } creatorContext)
+                {
+                    // The worker re-reads the clock when it runs the signal: the commit can land much later than
+                    // the enqueue (same rationale as the plain path below).
+                    _SignalOnCommit(
+                        creatorContext.Coordinator,
+                        new TimeJobCommittedSignal(this, entity, executionTime)
+                    );
+                    return entity;
+                }
+
+                await _RunTimeJobSideEffectsAsync(entity, now, executionTime, cancellationToken).ConfigureAwait(false);
+                return entity;
+            }
 
             if (coordinated is { } context)
             {

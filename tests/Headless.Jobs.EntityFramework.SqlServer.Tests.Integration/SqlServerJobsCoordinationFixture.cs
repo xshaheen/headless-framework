@@ -49,6 +49,7 @@ public sealed class SqlServerJobsCoordinationFixture
         + "DROP TABLE IF EXISTS [consumer_jobs].[consumer_time_jobs];"
         + "IF EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'consumer_jobs') DROP SCHEMA [consumer_jobs];"
         + "DROP TABLE IF EXISTS [jobs].[TimeJobs];"
+        + "DROP TABLE IF EXISTS [jobs].[TimeJobIdempotencyReservations];"
         + "DROP TABLE IF EXISTS [jobs].[CronJobs];"
         + "DROP TABLE IF EXISTS [jobs].[ApplicationProbe];"
         + "IF EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'jobs') DROP SCHEMA [jobs];"

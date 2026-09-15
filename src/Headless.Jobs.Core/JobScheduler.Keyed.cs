@@ -162,6 +162,15 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob>
     )
     {
         options = _policies.Resolve(descriptor, options);
+        // Keyed scheduling already has its own deduplication identity; a second window on top of it is ambiguous
+        // (which identity wins on a repeat?), so reject the combination before any entity is built.
+        if (options.IdempotencyKey is not null)
+        {
+            throw new ArgumentException(
+                "Keyed scheduling carries its own deduplication identity and does not accept an idempotency key.",
+                nameof(options)
+            );
+        }
         var entity = new TTimeJob
         {
             Function = descriptor.FunctionName,

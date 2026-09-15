@@ -610,7 +610,9 @@ public sealed class JobSchedulerTests : TestBase
                 nameof(JobOptions.OnNodeDeath),
                 nameof(JobOptions.TenantId),
                 nameof(JobOptions.IsSystemJob),
-                nameof(JobOptions.RequireAtomicEnlistment)
+                nameof(JobOptions.RequireAtomicEnlistment),
+                nameof(JobOptions.IdempotencyKey),
+                nameof(JobOptions.IdempotencyTtl)
             );
         typeof(RecurringJobOptions)
             .GetProperties(BindingFlags.Instance | BindingFlags.Public)

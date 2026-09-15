@@ -20,6 +20,13 @@ public static class JobContract
 
     internal static string ValidateVersion(string value) => _Validate(value, VersionMaxLength, nameof(value));
 
+    /// <summary>
+    /// Canonical non-null reservation scope: <c>S</c> for system scope and <c>T:{tenant-id}</c> for tenant scope.
+    /// Stored on the reservation row so uniqueness never depends on nullable-column unique-index semantics, which
+    /// differ between PostgreSQL and SQL Server.
+    /// </summary>
+    internal static string CanonicalScopeKey(string? tenantId) => tenantId is null ? "S" : "T:" + tenantId;
+
     private static string _Validate(string value, int maximumLength, string parameterName)
     {
         if (

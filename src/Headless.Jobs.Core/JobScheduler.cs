@@ -302,27 +302,39 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
         CancellationToken cancellationToken
     )
     {
-        options = _policies.Resolve(descriptor, options);
+        // Resolve returns a non-null record even for a null call, so the idempotency guard below reads a definite
+        // value (the parameter stays nullable for the caller).
+        var resolved = _policies.Resolve(descriptor, options);
         var entity = new TTimeJob
         {
             Function = descriptor.FunctionName,
             ContractVersion = descriptor.ContractVersion,
-            CorrelationId = options?.CorrelationId,
-            CausationId = options?.CausationId,
+            CorrelationId = resolved.CorrelationId,
+            CausationId = resolved.CausationId,
             Request =
                 descriptor.RequestType == null ? null : JobsHelper.CreateJobRequest(request, _serializationOptions),
             ExecutionTime = executionTime,
-            Description = options?.Description,
-            Retries = options?.Retries ?? 0,
-            RetryIntervals = options?.RetryIntervals,
-            OnNodeDeath = options?.OnNodeDeath ?? Enums.NodeDeathPolicy.Retry,
-            TenantId = options?.TenantId,
-            IsSystemJob = options?.IsSystemJob ?? false,
-            RequireAtomicEnlistment = options?.RequireAtomicEnlistment ?? false,
+            Description = resolved.Description,
+            Retries = resolved.Retries ?? 0,
+            RetryIntervals = resolved.RetryIntervals,
+            OnNodeDeath = resolved.OnNodeDeath ?? Enums.NodeDeathPolicy.Retry,
+            TenantId = resolved.TenantId,
+            IsSystemJob = resolved.IsSystemJob,
+            RequireAtomicEnlistment = resolved.RequireAtomicEnlistment,
         };
 
-        var persisted = await _timeJobManager.AddAsync(entity, cancellationToken).ConfigureAwait(false);
-        return persisted.Id;
+        if (resolved.IdempotencyKey is not { } idempotencyKey)
+        {
+            var persisted = await _timeJobManager.AddAsync(entity, cancellationToken).ConfigureAwait(false);
+            return persisted.Id;
+        }
+        // The identity contract needs the resolved entity (function, contract version, final tenant scope), and
+        // policy resolution above already validated the key/TTL pair, so the entity is fully built when the
+        // manager dedups the reservation against it.
+        var idempotent = await _timeJobManager
+            .AddIdempotentAsync(entity, idempotencyKey, resolved.IdempotencyTtl!.Value, cancellationToken)
+            .ConfigureAwait(false);
+        return idempotent.Id;
     }
 
     private async Task<Guid> _ScheduleRecurringAsync<TArgs>(
@@ -359,6 +371,15 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
     {
         var descriptor = _ResolveNodeDescriptor(node);
         var options = _policies.Resolve(descriptor, node.Options);
+        // A chain is one atomic multi-node tree with a single root identity; per-node idempotency windows would
+        // dedup arbitrary subtrees against the root's all-or-nothing insert. Reject before any entity is built.
+        if (options.IdempotencyKey is not null)
+        {
+            throw new ArgumentException(
+                "Chain nodes do not accept idempotency keys; the chain insert is already atomic.",
+                nameof(node)
+            );
+        }
 
         var entity = new TTimeJob
         {

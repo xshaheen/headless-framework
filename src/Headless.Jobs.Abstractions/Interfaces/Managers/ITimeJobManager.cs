@@ -58,6 +58,30 @@ public interface ITimeJobManager<TTimeJob>
     /// </exception>
     Task<TTimeJob> AddAsync(TTimeJob entity, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Enqueues a time job behind an idempotency reservation: creates the job and its reservation atomically, or
+    /// observes a live reservation and returns its job without inserting anything.
+    /// </summary>
+    /// <remarks>
+    /// Same transactional routing as <see cref="AddAsync"/> (ambient coordinator when live, direct insert
+    /// otherwise), with the reservation mutation enlisted in the same transaction so a rollback removes both.
+    /// Tenant capture and the schedule pipeline run before the reservation identity is formed. On a dedup hit the
+    /// returned entity's identifier is the reserved job's ID (overwritten from the reservation) and no
+    /// dispatch/restart/notify side effects are armed. The entity's identifier becomes the reserved job ID on
+    /// creation.
+    /// </remarks>
+    /// <exception cref="Headless.Jobs.Exceptions.JobValidatorException">The job failed validation (unknown function).</exception>
+    /// <exception cref="InvalidOperationException">
+    /// A relational coordinator is active but its transaction is dead/completed, or the configured persistence provider
+    /// cannot write inside it (a mis-wire).
+    /// </exception>
+    Task<TTimeJob> AddIdempotentAsync(
+        TTimeJob entity,
+        string idempotencyKey,
+        TimeSpan idempotencyTtl,
+        CancellationToken cancellationToken = default
+    );
+
     /// <summary>Updates an existing time job and returns the result.</summary>
     Task<JobResult<TTimeJob>> UpdateAsync(TTimeJob timeJob, CancellationToken cancellationToken = default);
 

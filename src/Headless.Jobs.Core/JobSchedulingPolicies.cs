@@ -89,6 +89,10 @@ internal sealed class JobSchedulingPolicies
             RetryIntervals = (call?.RetryIntervals ?? function?.RetryIntervals ?? _defaults.RetryIntervals)?.ToArray(),
             OnNodeDeath =
                 call?.OnNodeDeath ?? function?.OnNodeDeath ?? _defaults.OnNodeDeath ?? Enums.NodeDeathPolicy.Retry,
+            // The idempotency window is per call by contract: it is never inherited from host/function policy
+            // (Snapshot rejects it there), so only the call's own key and TTL survive resolution.
+            IdempotencyKey = call?.IdempotencyKey,
+            IdempotencyTtl = call?.IdempotencyTtl,
             RequireAtomicEnlistment =
                 (call?.RequireAtomicEnlistment ?? false)
                 || (function?.RequireAtomicEnlistment ?? false)
@@ -108,6 +112,7 @@ internal sealed class JobSchedulingPolicies
             || options.Description is not null
             || options.TenantId is not null
             || options.IsSystemJob
+            || options.IdempotencyKey is not null
         )
         {
             throw new ArgumentException(
@@ -128,5 +133,29 @@ internal sealed class JobSchedulingPolicies
         {
             throw new ArgumentException("The node-death policy must be a defined value.", nameof(options));
         }
+        if (options.IdempotencyKey is { } key)
+        {
+            // Same bounded-string rules as every other durable Jobs identity, so one validator and one collation
+            // story cover JobKey, contract names, and idempotency keys.
+            JobContract.ValidateName(key);
+            if (options.IdempotencyTtl is not { } ttl || ttl < _IdempotencyTtlMinimum || ttl > _IdempotencyTtlMaximum)
+            {
+                throw new ArgumentException(
+                    $"An idempotency key requires a TTL between {_IdempotencyTtlMinimum} and {_IdempotencyTtlMaximum}.",
+                    nameof(options)
+                );
+            }
+        }
+        else if (options.IdempotencyTtl is not null)
+        {
+            throw new ArgumentException(
+                "An idempotency TTL requires its idempotency key; supply both or neither.",
+                nameof(options)
+            );
+        }
     }
+
+    private static readonly TimeSpan _IdempotencyTtlMinimum = TimeSpan.FromSeconds(1);
+
+    private static readonly TimeSpan _IdempotencyTtlMaximum = TimeSpan.FromDays(30);
 }
