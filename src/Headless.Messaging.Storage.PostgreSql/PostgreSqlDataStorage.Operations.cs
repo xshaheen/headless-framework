@@ -165,7 +165,7 @@ internal sealed partial class PostgreSqlDataStorage
                 cancellationToken
             )
             .ConfigureAwait(false);
-        var outcome = InboxOperationEvaluator.Evaluate(operationType, request.ExpectedStatus, row?.State);
+        var outcome = MessagingOperationEvaluator.Evaluate(operationType, request.ExpectedStatus, row?.State);
         Guid? childStorageId = null;
         long? childGeneration = null;
         Guid? childIncarnationId = null;
@@ -433,9 +433,9 @@ internal sealed partial class PostgreSqlDataStorage
             return null;
         }
         var targetKind = reader.GetString(11);
-        var incarnationId = targetKind == "Inbox" && !reader.IsDBNull(0) ? reader.GetGuid(0) : Guid.Empty;
-        var expectedStatus =
-            targetKind == "Inbox" && !reader.IsDBNull(2) ? Enum.Parse<StatusName>(reader.GetString(2)) : default;
+        var isInbox = string.Equals(targetKind, "Inbox", StringComparison.Ordinal);
+        var incarnationId = isInbox && !reader.IsDBNull(0) ? reader.GetGuid(0) : Guid.Empty;
+        var expectedStatus = isInbox && !reader.IsDBNull(2) ? Enum.Parse<StatusName>(reader.GetString(2)) : default;
         return new InboxOperationResult(
             operationId,
             Enum.Parse<MessagingOperationType>(reader.GetString(1)),

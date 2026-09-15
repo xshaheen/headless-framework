@@ -155,7 +155,7 @@ internal sealed partial class SqlServerDataStorage
             )
             .ConfigureAwait(false);
 
-        var outcome = InboxOperationEvaluator.Evaluate(operationType, request.ExpectedDueAt, row?.State);
+        var outcome = MessagingOperationEvaluator.Evaluate(operationType, request.ExpectedDueAt, row?.State);
 
         if (outcome is InboxOperationOutcome.Applied && row is not null)
         {

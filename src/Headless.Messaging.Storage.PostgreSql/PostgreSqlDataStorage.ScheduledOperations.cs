@@ -142,7 +142,7 @@ internal sealed partial class PostgreSqlDataStorage
         var row = await _ReadScheduledOperationRowAsync(connection, transaction, request.StorageId, cancellationToken)
             .ConfigureAwait(false);
 
-        var outcome = InboxOperationEvaluator.Evaluate(operationType, request.ExpectedDueAt, row?.State);
+        var outcome = MessagingOperationEvaluator.Evaluate(operationType, request.ExpectedDueAt, row?.State);
 
         if (outcome is InboxOperationOutcome.Applied && row is not null)
         {
@@ -217,9 +217,7 @@ internal sealed partial class PostgreSqlDataStorage
         if (query.StorageIds is { Count: > 0 } storageIds)
         {
             var idsArray = storageIds as Guid[] ?? [.. storageIds];
-            command.Parameters.Add(
-                new NpgsqlParameter("@StorageIds", NpgsqlDbType.Array | NpgsqlDbType.Uuid) { Value = idsArray }
-            );
+            command.Parameters.Add(new NpgsqlParameter("@StorageIds", idsArray));
         }
     }
 

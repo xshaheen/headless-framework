@@ -109,7 +109,7 @@ export function describeOutcome(
   outcome: ScheduledDeliveryOutcome,
   isReplay: boolean,
 ): string {
-  if (isReplay) {
+  if (isReplay && outcome === 'Applied') {
     return 'Already applied — this replays the result of an earlier identical request.'
   }
 
@@ -135,5 +135,10 @@ export function describeOutcome(
 
 /** Outcomes after which the view reloads the list so the operator sees current state before retrying. */
 export function shouldReloadAfterOutcome(outcome: ScheduledDeliveryOutcome): boolean {
-  return outcome === 'StateConflict' || outcome === 'NotFound' || outcome === 'OperationConflict'
+  return (
+    outcome === 'Applied' ||
+    outcome === 'StateConflict' ||
+    outcome === 'NotFound' ||
+    outcome === 'OperationConflict'
+  )
 }

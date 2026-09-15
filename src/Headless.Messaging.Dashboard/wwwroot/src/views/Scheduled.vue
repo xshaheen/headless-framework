@@ -251,7 +251,7 @@ function confirmAction(action: ScheduledDeliveryAction, row: ScheduledDeliveryVi
       const path = action === 'revoke' ? '/scheduled/revoke' : '/scheduled/dispatch-now'
       const result = await httpService.post<ScheduledDeliveryOperationResult>(path, request)
       const message = describeOutcome(action, result.outcome, result.isReplay)
-      if (result.outcome === 'Applied' || result.isReplay) {
+      if (result.outcome === 'Applied') {
         alertStore.showSuccess(message)
       } else {
         alertStore.showError(message)
@@ -260,10 +260,26 @@ function confirmAction(action: ScheduledDeliveryAction, row: ScheduledDeliveryVi
         await loadRows()
       }
     } catch (error) {
-      if (error instanceof HttpError && error.status === 403) {
-        const problem = error.body as OperatorActorRequiredProblem | null
-        alertStore.showError(problem?.remedy ?? 'Operator actions require an authenticated actor.')
-        return
+      if (error instanceof HttpError) {
+        if (error.status === 403) {
+          const problem = error.body as OperatorActorRequiredProblem | null
+          alertStore.showError(problem?.remedy ?? 'Operator actions require an authenticated actor.')
+          return
+        }
+
+        const result = error.body as ScheduledDeliveryOperationResult | null
+        if (result?.outcome) {
+          const message = describeOutcome(action, result.outcome, result.isReplay)
+          if (result.outcome === 'Applied') {
+            alertStore.showSuccess(message)
+          } else {
+            alertStore.showError(message)
+          }
+          if (shouldReloadAfterOutcome(result.outcome)) {
+            await loadRows()
+          }
+          return
+        }
       }
       console.error(`Failed to ${action} scheduled delivery:`, error)
       alertStore.showError(`Failed to ${label.confirmText.toLowerCase()} the scheduled delivery`)

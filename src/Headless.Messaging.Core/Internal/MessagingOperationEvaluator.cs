@@ -25,7 +25,7 @@ internal readonly record struct ScheduledDeliveryOperationState(
     DateTimeOffset DueAt
 );
 
-internal static class InboxOperationEvaluator
+internal static class MessagingOperationEvaluator
 {
     public static InboxOperationOutcome Evaluate(
         MessagingOperationType operationType,

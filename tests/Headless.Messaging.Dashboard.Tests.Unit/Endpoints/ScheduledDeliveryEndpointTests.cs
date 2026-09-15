@@ -203,7 +203,10 @@ public sealed class ScheduledDeliveryEndpointTests : TestBase
         await using var app = _CreateTestApp(_dataStorage, authenticate: false);
         await app.StartAsync(AbortToken);
         using var client = app.GetTestClient();
-        using var request = new HttpRequestMessage(path == "/api/scheduled" ? HttpMethod.Get : HttpMethod.Post, path);
+        using var request = new HttpRequestMessage(
+            string.Equals(path, "/api/scheduled", StringComparison.Ordinal) ? HttpMethod.Get : HttpMethod.Post,
+            path
+        );
         if (request.Method == HttpMethod.Post)
         {
             request.Content = JsonContent.Create(new { });
@@ -239,6 +242,46 @@ public sealed class ScheduledDeliveryEndpointTests : TestBase
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(AbortToken));
         document.RootElement.GetProperty("code").GetString().Should().Be("g:operator_actor_required");
+        _dataStorage.DidNotReceive().GetScheduledDeliveryOperationsApi();
+    }
+
+    [Fact]
+    public async Task should_return_403_with_remedy_under_no_auth_mode_when_scheduled_revoke()
+    {
+        var config = new MessagingDashboardOptionsBuilder().WithNoAuth();
+        await using var app = _CreateTestApp(
+            _dataStorage,
+            authenticate: false,
+            config: config,
+            useAuthenticationMiddleware: true
+        );
+        await app.StartAsync(AbortToken);
+        using var client = app.GetTestClient();
+        var response = await client.PostAsJsonAsync(
+            "/api/scheduled/revoke",
+            new
+            {
+                operationId = Guid.NewGuid(),
+                storageId = Guid.NewGuid(),
+                expectedDueAt = DateTimeOffset.UtcNow.ToString("o"),
+                reason = "Dashboard revoke",
+            },
+            AbortToken
+        );
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(AbortToken));
+        document.RootElement.GetProperty("code").GetString().Should().Be("g:operator_actor_required");
+        document
+            .RootElement.GetProperty("remedy")
+            .GetString()
+            .Should()
+            .Be(DashboardOperatorAuthority.OperatorActorRequiredRemedy);
+        document
+            .RootElement.GetProperty("message")
+            .GetString()
+            .Should()
+            .Be(DashboardOperatorAuthority.OperatorActorRequiredMessage);
         _dataStorage.DidNotReceive().GetScheduledDeliveryOperationsApi();
     }
 

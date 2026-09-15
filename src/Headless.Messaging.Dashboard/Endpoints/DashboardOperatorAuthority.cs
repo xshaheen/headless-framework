@@ -9,6 +9,7 @@ using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Microsoft.AspNetCore.Http;
 
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Messaging.Dashboard;
 
 internal enum OperatorAuthorityStatus
@@ -29,9 +30,11 @@ internal sealed record OperatorAuthorityResult(
     public static OperatorAuthorityResult Success(OperatorAuthorizationContext authorization) =>
         new(OperatorAuthorityStatus.Success, authorization);
 
-    public static OperatorAuthorityResult Unauthenticated() => new(OperatorAuthorityStatus.Unauthenticated, null);
+    public static OperatorAuthorityResult Unauthenticated() =>
+        new(OperatorAuthorityStatus.Unauthenticated, Authorization: null);
 
-    public static OperatorAuthorityResult PlaceholderActor() => new(OperatorAuthorityStatus.PlaceholderActor, null);
+    public static OperatorAuthorityResult PlaceholderActor() =>
+        new(OperatorAuthorityStatus.PlaceholderActor, Authorization: null);
 }
 
 public sealed record OperatorActorRequiredProblem(string Code, string Remedy, string Message);
@@ -42,6 +45,9 @@ internal static class DashboardOperatorAuthority
 
     public const string OperatorActorRequiredRemedy =
         "Operator actions require an authenticated principal with a stable actor name. Configure Basic or Host authentication with a name or sub claim.";
+
+    public const string OperatorActorRequiredMessage =
+        "An authenticated operator actor is required to execute operator actions.";
 
     internal static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -76,11 +82,15 @@ internal static class DashboardOperatorAuthority
             candidateActor =
                 claimsIdentity
                     .FindFirst(claim =>
-                        claim.Type == ClaimTypes.NameIdentifier && !string.IsNullOrWhiteSpace(claim.Value)
+                        string.Equals(claim.Type, ClaimTypes.NameIdentifier, StringComparison.Ordinal)
+                        && !string.IsNullOrWhiteSpace(claim.Value)
                     )
                     ?.Value
                 ?? claimsIdentity
-                    .FindFirst(claim => claim.Type == "sub" && !string.IsNullOrWhiteSpace(claim.Value))
+                    .FindFirst(claim =>
+                        string.Equals(claim.Type, "sub", StringComparison.Ordinal)
+                        && !string.IsNullOrWhiteSpace(claim.Value)
+                    )
                     ?.Value;
 
             if (string.IsNullOrWhiteSpace(candidateActor))
@@ -116,7 +126,7 @@ internal static class DashboardOperatorAuthority
             new OperatorActorRequiredProblem(
                 OperatorActorRequiredCode,
                 OperatorActorRequiredRemedy,
-                OperatorActorRequiredRemedy
+                OperatorActorRequiredMessage
             ),
             JsonOptions,
             statusCode: StatusCodes.Status403Forbidden

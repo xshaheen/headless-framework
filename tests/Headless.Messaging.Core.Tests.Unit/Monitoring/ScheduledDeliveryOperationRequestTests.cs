@@ -4,6 +4,7 @@ using System.Security.Claims;
 using Headless.Messaging.Monitoring;
 using Headless.Testing.Tests;
 
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Tests;
 
 public sealed class ScheduledDeliveryOperationRequestTests : TestBase

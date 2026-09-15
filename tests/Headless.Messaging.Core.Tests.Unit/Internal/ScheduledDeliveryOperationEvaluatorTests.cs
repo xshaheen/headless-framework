@@ -4,6 +4,7 @@ using Headless.Messaging.Internal;
 using Headless.Messaging.Monitoring;
 using Headless.Testing.Tests;
 
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Tests;
 
 public sealed class ScheduledDeliveryOperationEvaluatorTests : TestBase
@@ -30,7 +31,7 @@ public sealed class ScheduledDeliveryOperationEvaluatorTests : TestBase
             DueAt: _Now
         );
 
-        InboxOperationEvaluator.Evaluate(operationType, _Now, state).Should().Be(expected);
+        MessagingOperationEvaluator.Evaluate(operationType, _Now, state).Should().Be(expected);
     }
 
     [Fact]
@@ -47,12 +48,12 @@ public sealed class ScheduledDeliveryOperationEvaluatorTests : TestBase
             DueAt: _Now
         );
 
-        InboxOperationEvaluator
+        MessagingOperationEvaluator
             .Evaluate(MessagingOperationType.Revoke, _Now, state)
             .Should()
             .Be(InboxOperationOutcome.Applied);
 
-        InboxOperationEvaluator
+        MessagingOperationEvaluator
             .Evaluate(MessagingOperationType.DispatchNow, _Now, state)
             .Should()
             .Be(InboxOperationOutcome.Active);
@@ -74,7 +75,7 @@ public sealed class ScheduledDeliveryOperationEvaluatorTests : TestBase
             DueAt: _Now
         );
 
-        InboxOperationEvaluator.Evaluate(operationType, _Now, state).Should().Be(InboxOperationOutcome.Active);
+        MessagingOperationEvaluator.Evaluate(operationType, _Now, state).Should().Be(InboxOperationOutcome.Active);
     }
 
     [Theory]
@@ -94,7 +95,7 @@ public sealed class ScheduledDeliveryOperationEvaluatorTests : TestBase
         );
 
         var differentDue = _Now.AddMinutes(5);
-        InboxOperationEvaluator
+        MessagingOperationEvaluator
             .Evaluate(operationType, differentDue, state)
             .Should()
             .Be(InboxOperationOutcome.StateConflict);
@@ -105,7 +106,7 @@ public sealed class ScheduledDeliveryOperationEvaluatorTests : TestBase
     [InlineData(MessagingOperationType.DispatchNow)]
     public void should_evaluate_not_found_when_state_is_null(MessagingOperationType operationType)
     {
-        InboxOperationEvaluator.Evaluate(operationType, _Now, null).Should().Be(InboxOperationOutcome.NotFound);
+        MessagingOperationEvaluator.Evaluate(operationType, _Now, null).Should().Be(InboxOperationOutcome.NotFound);
     }
 
     [Theory]
@@ -126,7 +127,10 @@ public sealed class ScheduledDeliveryOperationEvaluatorTests : TestBase
             MessageVersion: _Version,
             DueAt: _Now
         );
-        InboxOperationEvaluator.Evaluate(operationType, _Now, succeeded).Should().Be(InboxOperationOutcome.NotFound);
+        MessagingOperationEvaluator
+            .Evaluate(operationType, _Now, succeeded)
+            .Should()
+            .Be(InboxOperationOutcome.NotFound);
 
         // Terminal row: Failed
         var failed = new ScheduledDeliveryOperationState(
@@ -139,7 +143,7 @@ public sealed class ScheduledDeliveryOperationEvaluatorTests : TestBase
             MessageVersion: _Version,
             DueAt: _Now
         );
-        InboxOperationEvaluator.Evaluate(operationType, _Now, failed).Should().Be(InboxOperationOutcome.NotFound);
+        MessagingOperationEvaluator.Evaluate(operationType, _Now, failed).Should().Be(InboxOperationOutcome.NotFound);
 
         // Retry backlog: Retries > 0
         var retried = new ScheduledDeliveryOperationState(
@@ -152,7 +156,7 @@ public sealed class ScheduledDeliveryOperationEvaluatorTests : TestBase
             MessageVersion: _Version,
             DueAt: _Now
         );
-        InboxOperationEvaluator.Evaluate(operationType, _Now, retried).Should().Be(InboxOperationOutcome.NotFound);
+        MessagingOperationEvaluator.Evaluate(operationType, _Now, retried).Should().Be(InboxOperationOutcome.NotFound);
 
         // Retry backlog: NextRetryAt is set
         var pendingRetry = new ScheduledDeliveryOperationState(
@@ -165,7 +169,10 @@ public sealed class ScheduledDeliveryOperationEvaluatorTests : TestBase
             MessageVersion: _Version,
             DueAt: _Now
         );
-        InboxOperationEvaluator.Evaluate(operationType, _Now, pendingRetry).Should().Be(InboxOperationOutcome.NotFound);
+        MessagingOperationEvaluator
+            .Evaluate(operationType, _Now, pendingRetry)
+            .Should()
+            .Be(InboxOperationOutcome.NotFound);
 
         // Mismatched version
         var otherVersion = new ScheduledDeliveryOperationState(
@@ -178,6 +185,9 @@ public sealed class ScheduledDeliveryOperationEvaluatorTests : TestBase
             MessageVersion: "v2",
             DueAt: _Now
         );
-        InboxOperationEvaluator.Evaluate(operationType, _Now, otherVersion).Should().Be(InboxOperationOutcome.NotFound);
+        MessagingOperationEvaluator
+            .Evaluate(operationType, _Now, otherVersion)
+            .Should()
+            .Be(InboxOperationOutcome.NotFound);
     }
 }

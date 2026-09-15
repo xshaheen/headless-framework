@@ -103,22 +103,30 @@ describe('outcome messages keyed by action plus outcome', () => {
     expect(dispatchMessage.length).toBeGreaterThan(0)
   })
 
-  it('gives a replayed request its own message regardless of outcome', () => {
+  it('gives a replayed Applied request its own message', () => {
     const message = describeOutcome('revoke', 'Applied', true)
 
     expect(message).toContain('replays')
+    expect(message).toContain('Already applied')
+  })
+
+  it('preserves outcome-specific message for replayed non-Applied request', () => {
+    const message = describeOutcome('revoke', 'OperationConflict', true)
+
+    expect(message).toContain('different request already used this operation id')
+    expect(message).not.toContain('Already applied')
   })
 })
 
 describe('list reload after an outcome', () => {
-  it.each(['StateConflict', 'NotFound', 'OperationConflict'] as const)(
+  it.each(['Applied', 'StateConflict', 'NotFound', 'OperationConflict'] as const)(
     'reloads the list after %s so the operator sees current state',
     (outcome) => {
       expect(shouldReloadAfterOutcome(outcome)).toBe(true)
     },
   )
 
-  it.each(['Applied', 'Active'] as const)('does not reload after %s', (outcome) => {
+  it.each(['Active'] as const)('does not reload after %s', (outcome) => {
     expect(shouldReloadAfterOutcome(outcome)).toBe(false)
   })
 })

@@ -6,7 +6,7 @@ using Headless.Testing.Tests;
 
 namespace Tests;
 
-public sealed class InboxOperationEvaluatorTests : TestBase
+public sealed class MessagingOperationEvaluatorTests : TestBase
 {
     [Theory]
     [InlineData(MessagingOperationType.Hold, false, false, InboxOperationOutcome.Applied)]
@@ -29,14 +29,14 @@ public sealed class InboxOperationEvaluatorTests : TestBase
         foreach (var status in new[] { StatusName.Scheduled, StatusName.Failed })
         {
             var state = new InboxOperationState(status, true, isHeld, true, 0, true, hasLiveClaim);
-            InboxOperationEvaluator.Evaluate(operation, status, state).Should().Be(expected);
+            MessagingOperationEvaluator.Evaluate(operation, status, state).Should().Be(expected);
         }
     }
 
     [Fact]
     public void should_return_not_found_for_missing_state()
     {
-        InboxOperationEvaluator
+        MessagingOperationEvaluator
             .Evaluate(MessagingOperationType.Hold, StatusName.Failed, null)
             .Should()
             .Be(InboxOperationOutcome.NotFound);
@@ -46,7 +46,7 @@ public sealed class InboxOperationEvaluatorTests : TestBase
     public void should_check_expected_status_before_activity_and_operation_guards()
     {
         var state = new InboxOperationState(StatusName.Scheduled, true, true, false, long.MaxValue);
-        InboxOperationEvaluator
+        MessagingOperationEvaluator
             .Evaluate(MessagingOperationType.Purge, StatusName.Failed, state)
             .Should()
             .Be(InboxOperationOutcome.StateConflict);
@@ -61,7 +61,7 @@ public sealed class InboxOperationEvaluatorTests : TestBase
     public void should_check_activity_before_operation_guards(StatusName status, bool hasNextRetry)
     {
         var state = new InboxOperationState(status, hasNextRetry, true, false, long.MaxValue);
-        InboxOperationEvaluator
+        MessagingOperationEvaluator
             .Evaluate(MessagingOperationType.Purge, status, state)
             .Should()
             .Be(InboxOperationOutcome.Active);
@@ -93,7 +93,7 @@ public sealed class InboxOperationEvaluatorTests : TestBase
         foreach (var status in new[] { StatusName.Succeeded, StatusName.Failed })
         {
             var state = new InboxOperationState(status, false, isHeld, isCurrent, generation);
-            InboxOperationEvaluator.Evaluate(operation, status, state).Should().Be(expected);
+            MessagingOperationEvaluator.Evaluate(operation, status, state).Should().Be(expected);
         }
     }
 }

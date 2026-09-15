@@ -293,7 +293,7 @@ internal sealed partial class InMemoryDataStorage
                     row.IsInboxOrphaned,
                     row.LockedUntil > now
                 );
-            var outcome = InboxOperationEvaluator.Evaluate(operationType, request.ExpectedStatus, state);
+            var outcome = MessagingOperationEvaluator.Evaluate(operationType, request.ExpectedStatus, state);
             Guid? childStorageId = null;
             long? childGeneration = null;
             Guid? childIncarnationId = null;

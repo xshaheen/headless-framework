@@ -591,8 +591,11 @@ internal sealed class SqlServerStorageInitializer(
                 IF COL_LENGTH(N'{schema}.InboxOperationReceipts', N'Lane') IS NULL
                     ALTER TABLE [{schema}].[InboxOperationReceipts] ADD [Lane] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NULL;
 
-                ALTER TABLE [{schema}].[InboxOperationReceipts] ALTER COLUMN [GenerationIncarnationId] [uniqueidentifier] NULL;
-                ALTER TABLE [{schema}].[InboxOperationReceipts] ALTER COLUMN [ExpectedStatus] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NULL;
+                IF COLUMNPROPERTY(OBJECT_ID(N'{schema}.InboxOperationReceipts'), 'GenerationIncarnationId', 'AllowsNull') = 0
+                    ALTER TABLE [{schema}].[InboxOperationReceipts] ALTER COLUMN [GenerationIncarnationId] [uniqueidentifier] NULL;
+
+                IF COLUMNPROPERTY(OBJECT_ID(N'{schema}.InboxOperationReceipts'), 'ExpectedStatus', 'AllowsNull') = 0
+                    ALTER TABLE [{schema}].[InboxOperationReceipts] ALTER COLUMN [ExpectedStatus] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NULL;
             END;
 
             IF OBJECT_ID(N'{schema}.InboxAudit', N'U') IS NOT NULL
@@ -600,7 +603,8 @@ internal sealed class SqlServerStorageInitializer(
                 IF COL_LENGTH(N'{schema}.InboxAudit', N'TargetKind') IS NULL
                     ALTER TABLE [{schema}].[InboxAudit] ADD [TargetKind] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NOT NULL CONSTRAINT [DF_{schema}_InboxAudit_TargetKind] DEFAULT N'Inbox';
 
-                ALTER TABLE [{schema}].[InboxAudit] ALTER COLUMN [GenerationIncarnationId] [uniqueidentifier] NULL;
+                IF COLUMNPROPERTY(OBJECT_ID(N'{schema}.InboxAudit'), 'GenerationIncarnationId', 'AllowsNull') = 0
+                    ALTER TABLE [{schema}].[InboxAudit] ALTER COLUMN [GenerationIncarnationId] [uniqueidentifier] NULL;
             END;
 
             IF OBJECT_ID(N'{schema}.SchemaState',N'U') IS NULL

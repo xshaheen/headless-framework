@@ -52,10 +52,11 @@ internal sealed partial class InMemoryDataStorage
             var now = timeProvider.GetUtcNow();
             var rows = PublishedMessages.Values.Where(message =>
                 string.Equals(message.Version, messagingOptions.Value.Version, StringComparison.Ordinal)
-                && message.StatusName is (StatusName.Delayed or StatusName.Queued)
+                && message.StatusName is StatusName.Delayed or StatusName.Queued
                 && message.InlineAttempts == 0
                 && message.Retries == 0
                 && message.NextRetryAt is null
+                && message.ExpiresAt is not null
             );
 
             if (!string.IsNullOrWhiteSpace(query.MessageName))
@@ -214,7 +215,7 @@ internal sealed partial class InMemoryDataStorage
                 }
             }
 
-            var outcome = InboxOperationEvaluator.Evaluate(operationType, request.ExpectedDueAt, state);
+            var outcome = MessagingOperationEvaluator.Evaluate(operationType, request.ExpectedDueAt, state);
 
             if (outcome == InboxOperationOutcome.Applied && row is not null)
             {

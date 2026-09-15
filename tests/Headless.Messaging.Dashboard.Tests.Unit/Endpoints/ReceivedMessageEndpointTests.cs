@@ -497,7 +497,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
         Func<InboxOperationRequest, bool> matches = request =>
             request.OperationId == operationId
             && request.ExpectedIncarnationId == incarnationId
-            && request.Actor == "dashboard-operator";
+            && string.Equals(request.Actor, "dashboard-operator", StringComparison.Ordinal);
         switch (operationType)
         {
             case MessagingOperationType.ForceReprocess:
@@ -783,7 +783,10 @@ public sealed class ReceivedMessageEndpointTests : TestBase
             ClaimTypes.Name,
             "host_role"
         );
-        identity.RemoveClaim(identity.FindFirst(claimType)!);
+        if (identity.FindFirst(claimType) is { } existingClaim)
+        {
+            identity.RemoveClaim(existingClaim);
+        }
         identity.AddClaim(new Claim(claimType, value));
         await using var app = _CreateTestApp(
             _dataStorage,
