@@ -13,7 +13,7 @@
     "@uppy/core": "^5.2.0",
     "@uppy/dashboard": "^5.1.1",
     "@uppy/react": "^5.2.0",
-    "@uppy/tus": "^5.1.1",
+    "@uppy/tus": "^6.0.0",
     "pretty-bytes": "^7.1.2",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
