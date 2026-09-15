@@ -364,6 +364,39 @@ public sealed class JobsPostCommitSignalServiceTests : TestBase
     }
 
     [Fact]
+    public async Task should_log_a_late_fault_from_a_signal_abandoned_by_shutdown_budget_exhaustion()
+    {
+        var (service, logger) = _CreateService(new FakeTimeProvider());
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var lateFault = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await service.StartAsync(AbortToken);
+        // The side effect ignores the drain token; it faults only after the budget cancellation abandoned it.
+        service.TrySignal(
+            new TestPostCommitSignal(
+                "late",
+                (_, _) =>
+                {
+                    started.TrySetResult();
+                    return lateFault.Task;
+                }
+            )
+        );
+        await started.Task.WaitAsync(_WaitTimeout, AbortToken);
+        using var shutdownBudget = new CancellationTokenSource();
+
+        var stop = service.StopAsync(shutdownBudget.Token);
+        await shutdownBudget.CancelAsync();
+        await stop.WaitAsync(_WaitTimeout, AbortToken);
+
+        var boom = new InvalidOperationException("late boom after shutdown");
+        lateFault.SetException(boom);
+
+        var entry = await logger.WaitForAsync(e => e.Exception is not null, AbortToken);
+        entry.Level.Should().Be(LogLevel.Warning);
+        entry.Exception.Should().BeOfType<AggregateException>().Which.InnerExceptions.Should().Contain(boom);
+    }
+
+    [Fact]
     public async Task should_stay_closed_when_activation_failed()
     {
         var barrier = new JobsActivationBarrier();

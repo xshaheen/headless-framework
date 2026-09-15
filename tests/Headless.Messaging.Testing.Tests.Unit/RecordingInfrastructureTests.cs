@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics;
 using System.Globalization;
 using System.Reflection;
 using Headless.Messaging;
@@ -340,6 +341,37 @@ public sealed class RecordingInfrastructureTests : TestBase
         // then: the consumer ran, nothing was recorded, and the pipeline did not sit out the wait budget
         inner.CallCount.Should().Be(1);
         store.Consumed.Should().BeEmpty();
+        store.Faulted.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task recording_consume_middleware_pipeline_runs_the_consumer_when_the_published_record_wait_elapses()
+    {
+        // given: a current-round message (no ResetGeneration stamp mismatch, no Clear) whose Published record never
+        // arrives, so WaitForPublishedRecordAsync must run out its full budget rather than short-circuit.
+        var store = new MessageObservationStore();
+        var medium = _MakeMediumMessage(id: "never-published");
+        var context = _MakeConsumerContext(medium);
+        var inner = new FakePipeline(new ConsumerExecutedResult(null, null, "never-published", null, null));
+        var waitBudget = TimeSpan.FromMilliseconds(200);
+        var pipeline = new RecordingConsumeMiddlewarePipeline(
+            inner,
+            store,
+            awaitPublishedRecord: true,
+            publishedRecordTimeout: waitBudget
+        );
+
+        // when
+        var elapsed = Stopwatch.StartNew();
+        await pipeline.ExecuteAsync(context, new SimplePayload { Value = "orphan" }, typeof(SimplePayload), AbortToken);
+        elapsed.Stop();
+
+        // then: the elapsed wait was swallowed, the consumer ran, and the round was still live so it was recorded.
+        // A cleared-round short-circuit would finish in milliseconds; BeCloseTo proves the budget genuinely elapsed
+        // while tolerating timer resolution firing marginally around the nominal budget.
+        elapsed.Elapsed.Should().BeCloseTo(waitBudget, TimeSpan.FromMilliseconds(50));
+        inner.CallCount.Should().Be(1);
+        store.Consumed.Should().ContainSingle();
         store.Faulted.Should().BeEmpty();
     }
 

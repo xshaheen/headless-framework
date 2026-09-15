@@ -234,6 +234,13 @@ internal sealed partial class JobsPostCommitSignalService(
         catch (OperationCanceledException) when (drainToken.IsCancellationRequested)
         {
             Log.PostCommitSignalAbandonedOnShutdown(_logger, signal.JobScope);
+
+            // Mirror the deadline branch: the wait was abandoned, not the side effect. A fault surfacing after
+            // shutdown-budget cancellation must still be observed rather than die unobserved with the host.
+            if (work is { IsCompleted: false })
+            {
+                LateFaultObserver.ObserveLateFault(work, _logger, signal.JobScope, Log.PostCommitSignalFailed);
+            }
         }
         catch (TimeoutException) when (work is { IsCompleted: false })
         {

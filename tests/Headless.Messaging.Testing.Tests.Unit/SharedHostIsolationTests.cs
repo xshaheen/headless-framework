@@ -55,6 +55,31 @@ public sealed class GatedConsumer : IConsume<GammaEvent>
     }
 }
 
+public sealed record DeltaEvent(string Id);
+
+/// <summary>
+/// Same shape as <see cref="GatedConsumer"/> but a distinct type: the fixture registers each gated consumer as a
+/// singleton, and a one-shot gate released by one test would let a later test's message flow straight through.
+/// </summary>
+public sealed class DeltaGatedConsumer : IConsume<DeltaEvent>
+{
+    private readonly TaskCompletionSource _started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource _gate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public Task Started => _started.Task;
+
+    public void Release()
+    {
+        _gate.TrySetResult();
+    }
+
+    public async ValueTask ConsumeAsync(ConsumeContext<DeltaEvent> context, CancellationToken cancellationToken)
+    {
+        _started.TrySetResult();
+        await _gate.Task.WaitAsync(cancellationToken);
+    }
+}
+
 // ─── Fixture ─────────────────────────────────────────────────────────────────
 
 public sealed class SharedHarnessFixture : IAsyncLifetime
@@ -66,6 +91,7 @@ public sealed class SharedHarnessFixture : IAsyncLifetime
         Harness = await MessagingTestHarness.CreateAsync(services =>
         {
             services.AddSingleton<GatedConsumer>();
+            services.AddSingleton<DeltaGatedConsumer>();
             services.AddHeadlessMessaging(setup =>
             {
                 setup.UseInMemory();
@@ -85,6 +111,13 @@ public sealed class SharedHarnessFixture : IAsyncLifetime
                     message
                         .Contract("gamma-messageName")
                         .Consumer<GatedConsumer>(consumer => consumer.ConsumerIdentity("tests.messaging-testing.gamma"))
+                );
+                setup.Bus.ForMessage<DeltaEvent>(message =>
+                    message
+                        .Contract("delta-messageName")
+                        .Consumer<DeltaGatedConsumer>(consumer =>
+                            consumer.ConsumerIdentity("tests.messaging-testing.delta")
+                        )
                 );
             });
         });
@@ -175,6 +208,31 @@ public sealed class SharedHostIsolationTests(SharedHarnessFixture fixture)
 
         _harness.Consumed.Should().BeEmpty();
         _harness.Published.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_timeout_naming_the_stuck_row_when_in_flight_work_never_settles()
+    {
+        await _harness.ResetAsync(cancellationToken: AbortToken);
+        var consumer = _harness.GetRequiredService<DeltaGatedConsumer>();
+
+        await _harness.Publisher.PublishAsync(new DeltaEvent("D1"), cancellationToken: AbortToken);
+        await consumer.Started.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // The consumer holds its received row Scheduled for as long as the gate stays closed, so the settle
+        // wait must run out of budget instead of observing an idle store.
+        try
+        {
+            var act = () => _harness.ResetAsync(TimeSpan.FromSeconds(1), AbortToken);
+            var ex = await act.Should().ThrowAsync<TimeoutException>();
+
+            ex.Which.Message.Should().Contain("never settled").And.Contain("delta-messageName");
+        }
+        finally
+        {
+            // Release the stall so the shared harness settles before the next test's reset.
+            consumer.Release();
+        }
     }
 
     [Fact]
