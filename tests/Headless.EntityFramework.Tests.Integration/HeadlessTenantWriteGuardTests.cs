@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Reflection;
 using Headless.Abstractions;
 using Headless.EntityFramework;
 using Headless.MultiTenancy;
@@ -96,7 +97,10 @@ public sealed class HeadlessTenantWriteGuardTests(
             .Should()
             .NotContain(method => method.Name == "AddHeadlessTenantWriteGuard");
         typeof(TenantWriteGuardOptions)
-            .GetProperty(nameof(TenantWriteGuardOptions.IsEnabled))!
+            .GetProperty(
+                nameof(TenantWriteGuardOptions.IsEnabled),
+                BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly
+            )!
             .GetSetMethod()
             .Should()
             .BeNull();
