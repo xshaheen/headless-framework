@@ -337,6 +337,8 @@ When runtime delegates are attached during application startup, the messaging ru
 
 ## Configuration
 
+Configure tenant propagation and strict publishing through `AddHeadlessTenancy(tenancy => tenancy.Messaging(...))`. `MessagingOptions.TenantContextRequired` reports the configured requirement and has no public setter.
+
 `RequireRoutingAffinity()` on a Bus or Queue message registration requires a locally supported native mapping at startup; it does not require every publication to supply a key. Set `PublishOptions.RoutingAffinityKey` or `QueueOptions.RoutingAffinityKey` per publication. The frozen capability model snapshots registered destinations from inert options before clients or processors start. Keyed unknown destination overrides, invalid keys, and typed/raw conflicts fail before outbox insertion or transport effects. `MediumMessage.RoutingAffinityKey` reads the authoritative serialized envelope; InMemory, PostgreSQL, and SQL Server preserve it without a new storage column.
 
 Register in `Program.cs`:
@@ -558,6 +560,10 @@ Per-consumer-group circuit breaker that pauses transport consumption when a depe
 **State machine:** Closed → Open (pause transport) → HalfOpen (probe) → Closed (resume) or Open (re-trip). Open duration escalates exponentially on repeated trips and resets after consecutive successful close cycles.
 
 Persisted received retries share the same lane-qualified probe generation as transport delivery. While Open, claimed rows are durably deferred to the current circuit generation's next eligible probe time and their exact lease is released atomically; once HalfOpen, only one row or transport delivery owns the probe, while sibling claims retain their exact leases for normal store-authoritative expiry without blocking healthy pickup. Healthy groups in the same batch dispatch before circuit dispositions, preventing an open group from monopolizing retry pickup.
+
+Pause and resume intents carry a monotonic circuit epoch. Any Open transition, including
+`ForceOpenAsync`, fences an in-flight HalfOpen recovery: the transport remains paused and the older
+resume is skipped.
 
 ### Global Configuration
 

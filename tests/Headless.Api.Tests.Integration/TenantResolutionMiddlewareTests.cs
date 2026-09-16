@@ -19,6 +19,16 @@ namespace Tests;
 
 public sealed class TenantResolutionMiddlewareTests : TestBase
 {
+    [Theory]
+    [InlineData("AddTenantResolution")]
+    [InlineData("UseTenantResolution")]
+    [InlineData("AddTenantCatalogResolution")]
+    [InlineData("UseTenantCatalogResolution")]
+    public void should_hide_direct_tenant_resolution_setup(string methodName)
+    {
+        typeof(SetupMiddlewares).GetMethods().Should().NotContain(method => method.Name == methodName);
+    }
+
     [Fact]
     public async Task should_resolve_default_tenant_claim_and_not_bleed_between_requests()
     {
@@ -206,7 +216,7 @@ public sealed class TenantResolutionMiddlewareTests : TestBase
 
     private async Task<WebApplication> _CreateAppAsync(
         Action<MultiTenancyOptions>? configure = null,
-        TenancySetup setup = TenancySetup.Direct,
+        TenancySetup setup = TenancySetup.RootHttp,
         bool addInfrastructure = true,
         bool registerAuthentication = true,
         bool useAuthentication = true,
@@ -250,10 +260,6 @@ public sealed class TenantResolutionMiddlewareTests : TestBase
         {
             builder.AddHeadlessTenancy(_ => { });
         }
-        else if (configure is not null)
-        {
-            builder.AddHeadlessMultiTenancy(configure);
-        }
 
         if (registerAuthentication)
         {
@@ -269,7 +275,7 @@ public sealed class TenantResolutionMiddlewareTests : TestBase
 
         if (applyTenantMiddleware && applyTenantMiddlewareBeforeAuthentication)
         {
-            _UseTenantMiddleware(app, setup);
+            app.UseHeadlessTenancy();
         }
 
         if (useAuthentication)
@@ -279,7 +285,7 @@ public sealed class TenantResolutionMiddlewareTests : TestBase
 
         if (applyTenantMiddleware && !applyTenantMiddlewareBeforeAuthentication)
         {
-            _UseTenantMiddleware(app, setup);
+            app.UseHeadlessTenancy();
         }
 
         if (useAuthorization)
@@ -323,21 +329,8 @@ public sealed class TenantResolutionMiddlewareTests : TestBase
         return (await response.Content.ReadFromJsonAsync<TenantResponse>(cancellationToken: AbortToken))!;
     }
 
-    private static void _UseTenantMiddleware(WebApplication app, TenancySetup setup)
-    {
-        if (setup is TenancySetup.RootHttp or TenancySetup.RootNoHttp)
-        {
-            app.UseHeadlessTenancy();
-        }
-        else
-        {
-            app.UseTenantResolution();
-        }
-    }
-
     private enum TenancySetup
     {
-        Direct,
         RootHttp,
         RootNoHttp,
     }

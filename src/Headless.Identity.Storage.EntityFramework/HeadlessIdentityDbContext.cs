@@ -128,8 +128,8 @@ public abstract class HeadlessIdentityDbContext<
     public abstract string? DefaultSchema { get; }
 
     /// <summary>
-    /// Gets the tenant identifier resolved from the ambient tenant context at the time this
-    /// context was created, or <see langword="null"/> when running outside a tenant scope.
+    /// Gets the active ambient tenant identifier on each read,
+    /// or <see langword="null"/> when running outside a tenant scope.
     /// </summary>
     public string? TenantId => _runtime.TenantId;
 
@@ -278,7 +278,37 @@ public abstract class HeadlessIdentityDbContext<
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
         base.ConfigureConventions(configurationBuilder);
-        HeadlessDbContextRuntime.ConfigureConventions(configurationBuilder);
+
+        configurationBuilder.Conventions.Add(_ =>
+        {
+            Type[] types =
+            [
+                typeof(TUser),
+                typeof(TRole),
+                typeof(TUserClaim),
+                typeof(TUserRole),
+                typeof(TUserLogin),
+                typeof(TRoleClaim),
+                typeof(TUserToken),
+                typeof(TUserPasskey),
+            ];
+
+            return new HeadlessIdentityTenantModelConvention(types);
+        });
+
+        _runtime.ConfigureConventions(configurationBuilder);
+    }
+
+    /// <summary>Requires tenant ownership for the configured Identity entities and enforces same-tenant relationships.</summary>
+    /// <remarks>
+    /// Call after the base model-building call. Finalization scopes username and role-name uniqueness while retaining
+    /// primary keys and global external-login uniqueness. Existing data requires a consumer-owned tenant backfill.
+    /// Enable the tenant write guard and use fresh contexts and Identity stores when changing tenants.
+    /// </remarks>
+    /// <param name="builder">The model builder for this context.</param>
+    protected void ConfigureTenantOwnedIdentity(ModelBuilder builder)
+    {
+        builder.HasAnnotation(HeadlessModelAnnotations.Identity.TenantOwned, value: true);
     }
 
     /// <summary>
@@ -295,6 +325,6 @@ public abstract class HeadlessIdentityDbContext<
         }
 
         base.OnModelCreating(builder);
-        _runtime.ProcessModelCreating(builder);
+        HeadlessDbContextRuntime.ProcessModelCreating(builder);
     }
 }

@@ -85,7 +85,7 @@ public sealed class HeadlessAuditLogModelBuilderExtensionsTests : TestBase
 
     private static void _AssertAuditPolicy(IEntityType entity, bool expected)
     {
-        var annotation = entity.FindAnnotation(HeadlessAuditPolicyAnnotations.EntityIsAudited);
+        var annotation = entity.FindAnnotation(HeadlessModelAnnotations.AuditLog.EntityIsAudited);
         annotation.Should().NotBeNull();
         annotation!.Value.Should().Be(expected);
     }

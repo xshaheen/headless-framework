@@ -18,6 +18,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Npgsql;
 
 namespace Tests;
@@ -515,15 +516,19 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         bool includeJobs = false
     )
     {
-        var services = new ServiceCollection();
+        var builder = Host.CreateApplicationBuilder();
+        var services = builder.Services;
         services.AddLogging();
+        if (requireTenant)
+        {
+            builder.AddHeadlessTenancy(tenancy => tenancy.Messaging(messaging => messaging.RequireTenantOnPublish()));
+        }
 
         services.AddHeadlessDbContextServices().AddDomainEvents().AddIntegrationEventOutbox();
 
         services.AddHeadlessMessaging(setup =>
         {
             setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
-            setup.Options.TenantContextRequired = requireTenant;
             setup.Bus.ForMessage<OrderShipped>(message =>
             {
                 message.Contract("orders.shipped", "2");

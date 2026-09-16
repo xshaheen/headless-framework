@@ -41,6 +41,8 @@ internal sealed class CircuitBreakerStateManager(
 
     private readonly CancellationTokenSource _disposalCts = new();
 
+    private long _epochCounter;
+
     private int _disposed;
 
     /// <summary>
@@ -71,7 +73,7 @@ internal sealed class CircuitBreakerStateManager(
     };
 
     /// <inheritdoc />
-    public void RegisterGroupCallbacks(string groupName, Func<ValueTask> onPause, Func<ValueTask> onResume)
+    public void RegisterGroupCallbacks(string groupName, Func<long, ValueTask> onPause, Func<long, ValueTask> onResume)
     {
         var state = _GetOrAddState(groupName);
         var groupLock = state.SyncLock;
@@ -130,19 +132,19 @@ internal sealed class CircuitBreakerStateManager(
         }
 
         var groupLock = state.SyncLock;
-        Func<ValueTask>? pauseCallback = null;
+        Func<long, ValueTask>? pauseCallback = null;
         var tripped = false;
         var closedFromHalfOpen = false;
         TimeSpan? openDuration = null;
-        Timer? closedTimerToDispose = null;
-        Timer? openTimerToDispose = null;
+        ITimer? closedTimerToDispose = null;
+        ITimer? openTimerToDispose = null;
         (
             CircuitBreakerState PreviousState,
             TimeSpan OpenDuration,
-            int Generation,
+            long Epoch,
             int Failures,
             int Escalation,
-            Timer? OldTimerToDispose
+            ITimer? OldTimerToDispose
         ) openInfo = default;
 
         lock (groupLock)
@@ -153,6 +155,7 @@ internal sealed class CircuitBreakerStateManager(
                     // Non-transient failure during probe: the message is bad but the dependency is healthy.
                     // Close the circuit so normal processing resumes.
                     state.ProbeAcquired = false;
+                    state.ProbeAcquiredEpoch = null;
                     (openDuration, closedTimerToDispose) = _TransitionToClosed(state, probeSucceeded: false);
                     closedFromHalfOpen = true;
                     break;
@@ -160,6 +163,7 @@ internal sealed class CircuitBreakerStateManager(
                 case CircuitBreakerState.HalfOpen when isTransient:
                     // Transient failure during probe: dependency still unhealthy — re-open.
                     state.ProbeAcquired = false;
+                    state.ProbeAcquiredEpoch = null;
                     openInfo = _TransitionToOpen(state);
                     openTimerToDispose = openInfo.OldTimerToDispose;
                     pauseCallback = state.OnPause;
@@ -218,7 +222,7 @@ internal sealed class CircuitBreakerStateManager(
         // Create timer and emit metrics outside the lock
         if (tripped)
         {
-            _CreateAndAssignOpenTimer(state, openInfo.OpenDuration, openInfo.Generation);
+            await _CreateAndAssignOpenTimer(state, openInfo.OpenDuration, openInfo.Epoch).ConfigureAwait(false);
             metrics.RecordTrip(groupName);
         }
 
@@ -229,7 +233,7 @@ internal sealed class CircuitBreakerStateManager(
 
         if (pauseCallback is not null)
         {
-            await pauseCallback().ConfigureAwait(false);
+            await pauseCallback(openInfo.Epoch).ConfigureAwait(false);
         }
     }
 
@@ -243,8 +247,9 @@ internal sealed class CircuitBreakerStateManager(
         }
 
         var groupLock = state.SyncLock;
-        Func<ValueTask>? resumeCallback = null;
+        Func<long, ValueTask>? resumeCallback = null;
         TaskCompletionSource? resumeTcs = null;
+        long resumeEpoch = 0;
         CircuitRetryDecision decision;
         var transitionedToHalfOpen = false;
 
@@ -263,20 +268,23 @@ internal sealed class CircuitBreakerStateManager(
                     return new CircuitRetryDecision(
                         CircuitRetryDecisionKind.Defer,
                         _GetNextProbeAt(state),
-                        ProbeOutcome: null
+                        ProbeOutcome: null,
+                        state.CurrentEpoch
                     );
                 }
 
-                // The timer callback may be queued but not yet running. Advance the same generation
+                // The timer callback may be queued but not yet running. Advance the same epoch
                 // under the group lock so a persisted retry can become the probe without waiting for
                 // a fresh broker delivery. The queued callback observes State != Open and exits.
+                state.CurrentEpoch = _NextEpoch();
                 state.State = CircuitBreakerState.HalfOpen;
                 transitionedToHalfOpen = true;
                 resumeCallback = state.OnResume;
                 if (resumeCallback is not null)
                 {
+                    resumeEpoch = state.CurrentEpoch;
                     resumeTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-                    state.ResumeTask = resumeTcs.Task;
+                    state.InFlightResumes.TryAdd(resumeTcs.Task, 0);
                 }
             }
 
@@ -287,10 +295,12 @@ internal sealed class CircuitBreakerStateManager(
             if (!state.ProbeAcquired)
             {
                 state.ProbeAcquired = true;
+                state.ProbeAcquiredEpoch = state.CurrentEpoch;
                 decision = new CircuitRetryDecision(
                     CircuitRetryDecisionKind.ProbeAcquired,
                     NextProbeAt: null,
-                    state.RetryProbeOutcome.Task
+                    state.RetryProbeOutcome.Task,
+                    state.CurrentEpoch
                 );
             }
             else
@@ -298,7 +308,8 @@ internal sealed class CircuitBreakerStateManager(
                 decision = new CircuitRetryDecision(
                     CircuitRetryDecisionKind.ProbePending,
                     NextProbeAt: null,
-                    state.RetryProbeOutcome.Task
+                    state.RetryProbeOutcome.Task,
+                    state.CurrentEpoch
                 );
             }
         }
@@ -306,18 +317,18 @@ internal sealed class CircuitBreakerStateManager(
         if (transitionedToHalfOpen)
         {
             logger.CircuitHalfOpen(circuitGroup);
-            _StartResumeCallback(circuitGroup, resumeCallback, resumeTcs);
+            _StartResumeCallback(state, circuitGroup, resumeCallback, resumeEpoch, resumeTcs);
         }
 
         return decision;
     }
 
     /// <inheritdoc />
-    public bool TryAcquireHalfOpenProbe(string groupName)
+    public long? TryAcquireHalfOpenProbe(string groupName)
     {
         if (!_groups.TryGetValue(groupName, out var state))
         {
-            return true;
+            return 0;
         }
 
         var groupLock = state.SyncLock;
@@ -326,24 +337,51 @@ internal sealed class CircuitBreakerStateManager(
         {
             if (state.State is not CircuitBreakerState.HalfOpen)
             {
-                return true;
+                return state.CurrentEpoch;
             }
 
             if (state.ProbeAcquired)
             {
-                return false;
+                return null;
             }
 
             state.RetryProbeOutcome ??= new TaskCompletionSource<CircuitRetryProbeOutcome>(
                 TaskCreationOptions.RunContinuationsAsynchronously
             );
             state.ProbeAcquired = true;
+            state.ProbeAcquiredEpoch = state.CurrentEpoch;
+            return state.CurrentEpoch;
+        }
+    }
+
+    /// <inheritdoc />
+    public bool TryGetOpenEpoch(string groupName, out long epoch)
+    {
+        Argument.IsNotNull(groupName);
+
+        if (!_groups.TryGetValue(groupName, out var state))
+        {
+            epoch = 0;
+            return false;
+        }
+
+        var groupLock = state.SyncLock;
+
+        lock (groupLock)
+        {
+            if (state.State is not CircuitBreakerState.Open)
+            {
+                epoch = 0;
+                return false;
+            }
+
+            epoch = state.CurrentEpoch;
             return true;
         }
     }
 
     /// <inheritdoc />
-    public void ReleaseHalfOpenProbe(string groupName)
+    public void ReleaseHalfOpenProbe(string groupName, long epoch)
     {
         if (!_groups.TryGetValue(groupName, out var state))
         {
@@ -354,7 +392,13 @@ internal sealed class CircuitBreakerStateManager(
 
         lock (groupLock)
         {
+            if (state.State is not CircuitBreakerState.HalfOpen || state.ProbeAcquiredEpoch != epoch)
+            {
+                return;
+            }
+
             state.ProbeAcquired = false;
+            state.ProbeAcquiredEpoch = null;
             _CompleteRetryProbeOutcome(state, CircuitRetryProbeOutcomeKind.Uncertain, nextProbeAt: null);
         }
     }
@@ -376,7 +420,7 @@ internal sealed class CircuitBreakerStateManager(
 
         var groupLock = state.SyncLock;
         TimeSpan? openDuration = null;
-        Timer? closedTimerToDispose = null;
+        ITimer? closedTimerToDispose = null;
         var transitionedToClosed = false;
 
         lock (groupLock)
@@ -388,6 +432,7 @@ internal sealed class CircuitBreakerStateManager(
             else if (state.State is CircuitBreakerState.HalfOpen)
             {
                 state.ProbeAcquired = false;
+                state.ProbeAcquiredEpoch = null;
                 (openDuration, closedTimerToDispose) = _TransitionToClosed(state, probeSucceeded: true);
                 transitionedToClosed = true;
             }
@@ -441,21 +486,41 @@ internal sealed class CircuitBreakerStateManager(
         }
 
         var groupLock = state.SyncLock;
-        Timer? timerToDispose;
+        ITimer? timerToDispose;
+        Task[] resumeTasks;
 
         lock (groupLock)
         {
             state.OnPause = null;
             state.OnResume = null;
             _CompleteRetryProbeOutcome(state, CircuitRetryProbeOutcomeKind.Uncertain, nextProbeAt: null);
+            state.CurrentEpoch = _NextEpoch();
             timerToDispose = state.OpenTimer;
             state.OpenTimer = null;
+            resumeTasks = [.. state.InFlightResumes.Keys];
         }
 
-        // Await timer disposal outside the lock so in-flight callbacks can complete
+        // Await timer disposal outside the lock so in-flight callbacks can complete.
         if (timerToDispose is not null)
         {
             await timerToDispose.DisposeAsync().ConfigureAwait(false);
+        }
+
+        foreach (var resumeTask in resumeTasks)
+        {
+            try
+            {
+                await resumeTask.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // The resume owner has already logged callback failures. Removal only needs the
+                // lifecycle guarantee that the callback is no longer running.
+            }
+            catch (Exception ex)
+            {
+                logger.IgnoringResumeTaskFailureDuringRemoval(ex);
+            }
         }
     }
 
@@ -469,8 +534,8 @@ internal sealed class CircuitBreakerStateManager(
 
         var safeGroupName = LogSanitizer.Sanitize(groupName);
         var groupLock = state.SyncLock;
-        Timer? oldTimer;
-        (TimeSpan OpenDuration, int Generation) timerInfo;
+        ITimer? oldTimer;
+        (TimeSpan OpenDuration, long Epoch) timerInfo;
 
         lock (groupLock)
         {
@@ -480,6 +545,7 @@ internal sealed class CircuitBreakerStateManager(
             }
 
             state.ProbeAcquired = false;
+            state.ProbeAcquiredEpoch = null;
 
             // Transition back to Open preserving history.
             // Do NOT increment EscalationLevel — the probe was aborted by teardown,
@@ -488,8 +554,7 @@ internal sealed class CircuitBreakerStateManager(
             state.State = CircuitBreakerState.Open;
             state.OpenedAt = timeProvider.GetTimestamp();
             state.OpenedAtUtc = timeProvider.GetUtcNow();
-            state.TimerGeneration++;
-            var gen = state.TimerGeneration;
+            state.CurrentEpoch = _NextEpoch();
             var openDuration = _GetOpenDuration(state);
             _CompleteRetryProbeOutcome(state, CircuitRetryProbeOutcomeKind.Reopened, _GetNextProbeAt(state));
 
@@ -498,7 +563,7 @@ internal sealed class CircuitBreakerStateManager(
             oldTimer = state.OpenTimer;
             state.OpenTimer = null;
 
-            timerInfo = (openDuration, gen);
+            timerInfo = (openDuration, state.CurrentEpoch);
         }
 
         logger.CircuitReopenedAfterProbeAbort(safeGroupName);
@@ -509,7 +574,7 @@ internal sealed class CircuitBreakerStateManager(
             await oldTimer.DisposeAsync().ConfigureAwait(false);
         }
 
-        _CreateAndAssignOpenTimer(state, timerInfo.OpenDuration, timerInfo.Generation);
+        await _CreateAndAssignOpenTimer(state, timerInfo.OpenDuration, timerInfo.Epoch).ConfigureAwait(false);
 
         // Record a trip metric — we are re-entering Open (counts for operator visibility)
         metrics.RecordTrip(groupName);
@@ -626,9 +691,10 @@ internal sealed class CircuitBreakerStateManager(
         }
 
         var groupLock = state.SyncLock;
-        Func<ValueTask>? resumeCallback;
-        Timer? timerToDispose;
+        Func<long, ValueTask>? resumeCallback;
+        ITimer? timerToDispose;
         CircuitBreakerState previousState;
+        long resumeEpoch;
 
         lock (groupLock)
         {
@@ -640,10 +706,12 @@ internal sealed class CircuitBreakerStateManager(
             }
 
             state.State = CircuitBreakerState.Closed;
+            state.CurrentEpoch = _NextEpoch();
             state.ConsecutiveFailures = 0;
             state.EscalationLevel = 0;
             state.SuccessfulCyclesAfterClose = 0;
             state.ProbeAcquired = false;
+            state.ProbeAcquiredEpoch = null;
             _CompleteRetryProbeOutcome(state, CircuitRetryProbeOutcomeKind.Closed, nextProbeAt: null);
             state.OpenedAt = null;
             state.OpenedAtUtc = null;
@@ -651,6 +719,7 @@ internal sealed class CircuitBreakerStateManager(
             state.OpenTimer = null;
 
             resumeCallback = state.OnResume;
+            resumeEpoch = state.CurrentEpoch;
         }
 
         logger.CircuitClosedByManualReset(previousState, LogSanitizer.Sanitize(groupName));
@@ -662,7 +731,7 @@ internal sealed class CircuitBreakerStateManager(
 
         if (resumeCallback is not null)
         {
-            await resumeCallback().ConfigureAwait(false);
+            await resumeCallback(resumeEpoch).ConfigureAwait(false);
         }
 
         return true;
@@ -691,9 +760,9 @@ internal sealed class CircuitBreakerStateManager(
         }
 
         var groupLock = state.SyncLock;
-        Func<ValueTask>? pauseCallback;
-        Timer? timerToDispose;
-        (TimeSpan OpenDuration, int Generation) timerInfo;
+        Func<long, ValueTask>? pauseCallback;
+        ITimer? timerToDispose;
+        (TimeSpan OpenDuration, long Epoch) timerInfo;
         CircuitBreakerState previousState;
         int escalationLevel;
 
@@ -714,13 +783,13 @@ internal sealed class CircuitBreakerStateManager(
             state.ConsecutiveFailures = 0;
             state.SuccessfulCyclesAfterClose = 0;
             state.ProbeAcquired = false;
+            state.ProbeAcquiredEpoch = null;
 
             var openDuration = _GetOpenDuration(state);
             _CompleteRetryProbeOutcome(state, CircuitRetryProbeOutcomeKind.Reopened, _GetNextProbeAt(state));
 
-            // Increment generation and dispose existing timer
-            state.TimerGeneration++;
-            timerInfo = (openDuration, state.TimerGeneration);
+            state.CurrentEpoch = _NextEpoch();
+            timerInfo = (openDuration, state.CurrentEpoch);
             timerToDispose = state.OpenTimer;
             state.OpenTimer = null;
 
@@ -740,12 +809,12 @@ internal sealed class CircuitBreakerStateManager(
             await timerToDispose.DisposeAsync().ConfigureAwait(false);
         }
 
-        _CreateAndAssignOpenTimer(state, timerInfo.OpenDuration, timerInfo.Generation);
+        await _CreateAndAssignOpenTimer(state, timerInfo.OpenDuration, timerInfo.Epoch).ConfigureAwait(false);
         metrics.RecordTrip(groupName);
 
         if (pauseCallback is not null)
         {
-            await pauseCallback().ConfigureAwait(false);
+            await pauseCallback(timerInfo.Epoch).ConfigureAwait(false);
         }
 
         return true;
@@ -778,18 +847,18 @@ internal sealed class CircuitBreakerStateManager(
         foreach (var state in _groups.Values)
         {
             var groupLock = state.SyncLock;
-            Timer? timerToDispose;
-            Task? resumeTask;
+            ITimer? timerToDispose;
+            Task[] resumeTasks;
 
             lock (groupLock)
             {
                 state.OnPause = null;
                 state.OnResume = null;
+                state.CurrentEpoch = _NextEpoch();
                 _CompleteRetryProbeOutcome(state, CircuitRetryProbeOutcomeKind.Uncertain, nextProbeAt: null);
                 timerToDispose = state.OpenTimer;
                 state.OpenTimer = null;
-                resumeTask = state.ResumeTask;
-                state.ResumeTask = null;
+                resumeTasks = [.. state.InFlightResumes.Keys];
             }
 
             if (timerToDispose is not null)
@@ -797,9 +866,9 @@ internal sealed class CircuitBreakerStateManager(
                 await timerToDispose.DisposeAsync().ConfigureAwait(false);
             }
 
-            // Await any pending resume task to ensure no callback runs after disposal.
-            // The task is already canceled via _disposalCts, so it should complete quickly.
-            if (resumeTask is not null)
+            // Await every pending resume. The TCS makes queued-but-not-started work observable
+            // even when cancellation causes Task.Run to skip its body.
+            foreach (var resumeTask in resumeTasks)
             {
                 try
                 {
@@ -817,7 +886,7 @@ internal sealed class CircuitBreakerStateManager(
 
     /// <summary>
     /// Synchronously disposes all per-group <see cref="Timer"/> instances and blocks on any
-    /// in-flight <see cref="GroupCircuitState.ResumeTask"/> to ensure <see cref="_disposalCts"/>
+    /// in-flight resume tasks to ensure <see cref="_disposalCts"/>
     /// is not disposed while a background task still holds a reference to its token.
     /// Prefer <see cref="DisposeAsync"/> when an async context is available.
     /// </summary>
@@ -833,26 +902,26 @@ internal sealed class CircuitBreakerStateManager(
         foreach (var state in _groups.Values)
         {
             var groupLock = state.SyncLock;
-            Timer? timerToDispose;
-            Task? resumeTask;
+            ITimer? timerToDispose;
+            Task[] resumeTasks;
 
             lock (groupLock)
             {
                 state.OnPause = null;
                 state.OnResume = null;
+                state.CurrentEpoch = _NextEpoch();
                 _CompleteRetryProbeOutcome(state, CircuitRetryProbeOutcomeKind.Uncertain, nextProbeAt: null);
                 timerToDispose = state.OpenTimer;
                 state.OpenTimer = null;
-                resumeTask = state.ResumeTask;
-                state.ResumeTask = null;
+                resumeTasks = [.. state.InFlightResumes.Keys];
             }
 
             timerToDispose?.Dispose();
 
-            // Block on any in-flight ResumeTask so _disposalCts isn't disposed while
+            // Block on every in-flight resume so _disposalCts isn't disposed while
             // the task still holds a reference to its token, which would cause
             // ObjectDisposedException inside the background task.
-            if (resumeTask is { IsCompleted: false })
+            foreach (var resumeTask in resumeTasks)
             {
                 try
                 {
@@ -874,6 +943,11 @@ internal sealed class CircuitBreakerStateManager(
     // -------------------------------------------------------------------------
     // Private helpers
     // -------------------------------------------------------------------------
+
+    private long _NextEpoch()
+    {
+        return Interlocked.Increment(ref _epochCounter);
+    }
 
     /// <summary>
     /// Hard cap on the number of tracked groups. If exceeded, new groups receive the no-op state
@@ -972,10 +1046,10 @@ internal sealed class CircuitBreakerStateManager(
     private (
         CircuitBreakerState PreviousState,
         TimeSpan OpenDuration,
-        int Generation,
+        long Epoch,
         int Failures,
         int Escalation,
-        Timer? OldTimerToDispose
+        ITimer? OldTimerToDispose
     ) _TransitionToOpen(GroupCircuitState state)
     {
         var previousState = state.State;
@@ -989,10 +1063,7 @@ internal sealed class CircuitBreakerStateManager(
 
         _CompleteRetryProbeOutcome(state, CircuitRetryProbeOutcomeKind.Reopened, _GetNextProbeAt(state));
 
-        // Increment generation before creating the new timer so that any in-flight callback
-        // from the previous timer sees a stale generation and exits early.
-        state.TimerGeneration++;
-        var generation = state.TimerGeneration;
+        state.CurrentEpoch = _NextEpoch();
 
         // Return the existing timer for disposal outside the lock to avoid potential
         // lock-ordering issues with Timer internals. Safety against stale callbacks comes
@@ -1000,7 +1071,14 @@ internal sealed class CircuitBreakerStateManager(
         var oldTimer = state.OpenTimer;
         state.OpenTimer = null;
 
-        return (previousState, openDuration, generation, state.ConsecutiveFailures, state.EscalationLevel, oldTimer);
+        return (
+            previousState,
+            openDuration,
+            state.CurrentEpoch,
+            state.ConsecutiveFailures,
+            state.EscalationLevel,
+            oldTimer
+        );
     }
 
     /// <summary>
@@ -1008,24 +1086,37 @@ internal sealed class CircuitBreakerStateManager(
     /// to store it. This avoids holding the lock during Timer construction (heap allocation
     /// and TimerQueue registration which may acquire internal runtime locks).
     /// </summary>
-    private void _CreateAndAssignOpenTimer(GroupCircuitState state, TimeSpan openDuration, int generation)
+    private async ValueTask _CreateAndAssignOpenTimer(GroupCircuitState state, TimeSpan openDuration, long epoch)
     {
-        var callbackState = new TimerCallbackState(state, generation);
-        var timer = new Timer(_OnOpenTimerElapsed, callbackState, openDuration, Timeout.InfiniteTimeSpan);
+        var callbackState = new TimerCallbackState(state, epoch);
+        var timer = timeProvider.CreateTimer(
+            _OnOpenTimerElapsed,
+            callbackState,
+            openDuration,
+            Timeout.InfiniteTimeSpan
+        );
+        var stale = false;
 
         var groupLock = state.SyncLock;
 
         lock (groupLock)
         {
-            // If the generation has moved on (another thread transitioned the state while we
+            // If the epoch has moved on (another thread transitioned the state while we
             // were outside the lock), this timer is already stale — dispose it immediately.
-            if (state.TimerGeneration != generation || Volatile.Read(ref _disposed) != 0)
+            if (state.CurrentEpoch != epoch || Volatile.Read(ref _disposed) != 0)
             {
-                timer.Dispose();
-                return;
+                stale = true;
             }
+            else
+            {
+                state.OpenTimer = timer;
+            }
+        }
 
-            state.OpenTimer = timer;
+        // Disposal happens outside the lock; an early return inside it would leak the stale timer.
+        if (stale)
+        {
+            await timer.DisposeAsync().ConfigureAwait(false);
         }
     }
 
@@ -1033,7 +1124,7 @@ internal sealed class CircuitBreakerStateManager(
     /// Must be called while holding the group lock. Performs no logging or I/O.
     /// Callers must log the transition after releasing the lock.
     /// </summary>
-    private (TimeSpan? OpenDuration, Timer? TimerToDispose) _TransitionToClosed(
+    private (TimeSpan? OpenDuration, ITimer? TimerToDispose) _TransitionToClosed(
         GroupCircuitState state,
         bool probeSucceeded
     )
@@ -1079,50 +1170,55 @@ internal sealed class CircuitBreakerStateManager(
             return;
         }
 
-        var (state, expectedGeneration) = (TimerCallbackState)timerState!;
+        var (state, expectedEpoch) = (TimerCallbackState)timerState!;
         var groupName = state.GroupName;
 
         var groupLock = state.SyncLock;
-        Func<ValueTask>? resumeCallback;
+        Func<long, ValueTask>? resumeCallback;
         TaskCompletionSource? resumeTcs = null;
+        long resumeEpoch = 0;
 
         lock (groupLock)
         {
-            if (state.State is not CircuitBreakerState.Open || state.TimerGeneration != expectedGeneration)
+            if (state.State is not CircuitBreakerState.Open || state.CurrentEpoch != expectedEpoch)
             {
                 // Circuit was already closed or re-opened — ignore stale timer callback.
-                // The generation check prevents a queued callback from a previous timer
-                // (which Timer.Dispose does not cancel) from prematurely transitioning
-                // a circuit that has since re-opened with a new generation.
+                // The epoch check prevents a queued callback from a previous timer
+                // (which timer disposal does not cancel) from prematurely transitioning
+                // a circuit that has since re-opened with a newer epoch.
                 return;
             }
 
+            state.CurrentEpoch = _NextEpoch();
             state.State = CircuitBreakerState.HalfOpen;
             state.RetryProbeOutcome = new TaskCompletionSource<CircuitRetryProbeOutcome>(
                 TaskCreationOptions.RunContinuationsAsynchronously
             );
             resumeCallback = state.OnResume;
 
-            // Pre-assign ResumeTask BEFORE launching Task.Run so that DisposeAsync always
-            // sees the in-flight task. Without this, DisposeAsync could acquire the lock
-            // between Task.Run launch and the assignment, see null, and return — allowing
+            // Pre-register the resume BEFORE launching Task.Run so that disposal always
+            // sees it. Without this, disposal could acquire the lock
+            // between Task.Run launch and the registration, see no work, and return — allowing
             // the resume callback to run after disposal.
             if (resumeCallback is not null)
             {
                 var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-                state.ResumeTask = tcs.Task;
+                state.InFlightResumes.TryAdd(tcs.Task, 0);
                 resumeTcs = tcs;
+                resumeEpoch = state.CurrentEpoch;
             }
         }
 
         logger.CircuitHalfOpen(groupName);
 
-        _StartResumeCallback(groupName, resumeCallback, resumeTcs);
+        _StartResumeCallback(state, groupName, resumeCallback, resumeEpoch, resumeTcs);
     }
 
     private void _StartResumeCallback(
+        GroupCircuitState state,
         string groupName,
-        Func<ValueTask>? resumeCallback,
+        Func<long, ValueTask>? resumeCallback,
+        long epoch,
         TaskCompletionSource? resumeTcs
     )
     {
@@ -1133,8 +1229,8 @@ internal sealed class CircuitBreakerStateManager(
             // can race with Dispose (callback captures resumeCallback before Dispose nulls it).
             var ct = _disposalCts.Token;
 
-            // Fire-and-forget: the work is tracked via resumeTcs.Task (assigned to state.ResumeTask),
-            // not the Task.Run return value. The discard suppresses VSTHRD110/MA0134.
+            // Fire-and-forget: the work is tracked through resumeTcs.Task in the group's
+            // in-flight set. The discard suppresses VSTHRD110/MA0134.
             _ = Task.Run(
                     async () =>
                     {
@@ -1147,7 +1243,7 @@ internal sealed class CircuitBreakerStateManager(
 
                             try
                             {
-                                await resumeCallback().ConfigureAwait(false);
+                                await resumeCallback(epoch).ConfigureAwait(false);
                             }
                             catch (Exception ex)
                             {
@@ -1157,12 +1253,13 @@ internal sealed class CircuitBreakerStateManager(
                                 }
 
                                 logger.ResumeCallbackFailed(ex, LogSanitizer.Sanitize(groupName));
-                                await _ReopenAfterResumeFailureAsync(groupName).ConfigureAwait(false);
+                                await _ReopenAfterResumeFailureAsync(groupName, epoch).ConfigureAwait(false);
                             }
                         }
                         finally
                         {
                             resumeTcs!.TrySetResult();
+                            state.InFlightResumes.TryRemove(resumeTcs.Task, out _);
                         }
                     },
                     ct
@@ -1170,8 +1267,13 @@ internal sealed class CircuitBreakerStateManager(
                 .ContinueWith(
                     // If Task.Run itself is canceled before the body runs (ct already canceled),
                     // the TCS would never complete — complete it here as a fallback.
-                    static (_, s) => ((TaskCompletionSource)s!).TrySetResult(),
-                    resumeTcs,
+                    static (_, s) =>
+                    {
+                        var (source, currentState) = ((TaskCompletionSource, GroupCircuitState))s!;
+                        source.TrySetResult();
+                        currentState.InFlightResumes.TryRemove(source.Task, out byte _);
+                    },
+                    (resumeTcs, state),
                     CancellationToken.None,
                     TaskContinuationOptions.OnlyOnCanceled,
                     TaskScheduler.Default
@@ -1179,7 +1281,7 @@ internal sealed class CircuitBreakerStateManager(
         }
     }
 
-    private async Task _ReopenAfterResumeFailureAsync(string groupName)
+    private async Task _ReopenAfterResumeFailureAsync(string groupName, long failedEpoch)
     {
         if (_disposalCts.IsCancellationRequested)
         {
@@ -1192,24 +1294,25 @@ internal sealed class CircuitBreakerStateManager(
         }
 
         var groupLock = state.SyncLock;
-        Func<ValueTask>? pauseCallback;
+        Func<long, ValueTask>? pauseCallback;
         (
             CircuitBreakerState PreviousState,
             TimeSpan OpenDuration,
-            int Generation,
+            long Epoch,
             int Failures,
             int Escalation,
-            Timer? OldTimerToDispose
+            ITimer? OldTimerToDispose
         ) openInfo;
 
         lock (groupLock)
         {
-            if (state.State is not CircuitBreakerState.HalfOpen)
+            if (state.State is not CircuitBreakerState.HalfOpen || state.CurrentEpoch != failedEpoch)
             {
                 return;
             }
 
             state.ProbeAcquired = false;
+            state.ProbeAcquiredEpoch = null;
             openInfo = _TransitionToOpen(state);
             pauseCallback = state.OnPause;
         }
@@ -1228,7 +1331,7 @@ internal sealed class CircuitBreakerStateManager(
             await openInfo.OldTimerToDispose.DisposeAsync().ConfigureAwait(false);
         }
 
-        _CreateAndAssignOpenTimer(state, openInfo.OpenDuration, openInfo.Generation);
+        await _CreateAndAssignOpenTimer(state, openInfo.OpenDuration, openInfo.Epoch).ConfigureAwait(false);
         metrics.RecordTrip(groupName);
 
         if (pauseCallback is not null)
@@ -1240,7 +1343,7 @@ internal sealed class CircuitBreakerStateManager(
 
             try
             {
-                await pauseCallback().ConfigureAwait(false);
+                await pauseCallback(openInfo.Epoch).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -1267,10 +1370,10 @@ internal sealed class CircuitBreakerStateManager(
 
     /// <summary>
     /// Callback state for <see cref="_OnOpenTimerElapsed"/>. Captures the expected
-    /// <see cref="GroupCircuitState.TimerGeneration"/> so stale timer callbacks from
+    /// <see cref="GroupCircuitState.CurrentEpoch"/> so stale timer callbacks from
     /// a previous Open cycle are rejected even when the circuit has re-opened.
     /// </summary>
-    private sealed record TimerCallbackState(GroupCircuitState State, int Generation);
+    private sealed record TimerCallbackState(GroupCircuitState State, long Epoch);
 
     private sealed class GroupCircuitState
     {
@@ -1333,29 +1436,30 @@ internal sealed class CircuitBreakerStateManager(
         /// </summary>
         public DateTimeOffset? OpenedAtUtc { get; set; }
 
-        public Func<ValueTask>? OnPause { get; set; }
-        public Func<ValueTask>? OnResume { get; set; }
+        public Func<long, ValueTask>? OnPause { get; set; }
+        public Func<long, ValueTask>? OnResume { get; set; }
 
-        public Timer? OpenTimer { get; set; }
-
-        /// <summary>
-        /// Task reference for the in-flight resume callback launched by <see cref="_OnOpenTimerElapsed"/>.
-        /// <see cref="DisposeAsync"/> awaits this to prevent the callback from running after disposal.
-        /// </summary>
-        public Task? ResumeTask { get; set; }
+        public ITimer? OpenTimer { get; set; }
 
         /// <summary>
-        /// Monotonically increasing counter incremented each time <see cref="_TransitionToOpen"/> creates
-        /// a new timer. Used by <see cref="_CreateAndAssignOpenTimer"/> to detect whether the state was
-        /// re-transitioned while the timer was being constructed outside the lock.
+        /// All resume callbacks launched for this generation of group state. Disposal and removal
+        /// wait on every entry; the per-epoch fence handles the transition order itself.
         /// </summary>
-        public int TimerGeneration { get; set; }
+        public ConcurrentDictionary<Task, byte> InFlightResumes { get; } = new();
+
+        /// <summary>
+        /// The manager-wide intent epoch currently represented by this circuit state. It is
+        /// assigned under <see cref="SyncLock"/> and never repeats across group lifetimes.
+        /// </summary>
+        public long CurrentEpoch { get; set; }
 
         /// <summary>
         /// Whether a HalfOpen probe has been acquired. Guards single-probe semantics.
         /// Must only be read/written while holding the group lock.
         /// </summary>
         public bool ProbeAcquired { get; set; }
+
+        public long? ProbeAcquiredEpoch { get; set; }
 
         /// <summary>
         /// Shared completion for claims that joined the current HalfOpen probe generation.
@@ -1480,6 +1584,13 @@ internal static partial class CircuitBreakerStateManagerLog
         Message = "Ignoring resume task failure during circuit-breaker disposal."
     )]
     public static partial void IgnoringResumeTaskFailureDuringDisposal(this ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 4112,
+        Level = LogLevel.Debug,
+        Message = "Ignoring resume task failure during consumer-group removal."
+    )]
+    public static partial void IgnoringResumeTaskFailureDuringRemoval(this ILogger logger, Exception exception);
 
     [LoggerMessage(
         EventId = 4108,

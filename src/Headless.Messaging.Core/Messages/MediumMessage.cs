@@ -75,5 +75,11 @@ public class MediumMessage
     /// <summary>Whether persisted recovery currently has no matching stable consumer registration.</summary>
     public bool IsInboxOrphaned { get; set; }
 
+    /// <summary>
+    /// The circuit epoch assigned to the dispatch admission that owns a HalfOpen probe release.
+    /// This is in-memory handoff state only; storage providers must not persist it.
+    /// </summary>
+    public long ProbeEpoch { get; set; }
+
     public string? ExceptionInfo { get; set; }
 }

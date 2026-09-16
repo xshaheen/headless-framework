@@ -58,11 +58,10 @@ public sealed class HeadlessEntityFrameworkTenancyBuilder
     }
 
     /// <summary>Enables the EF tenant write guard.</summary>
-    /// <param name="configure">Optional write guard options.</param>
     /// <returns>The same Entity Framework tenancy builder.</returns>
-    public HeadlessEntityFrameworkTenancyBuilder GuardTenantWrites(Action<TenantWriteGuardOptions>? configure = null)
+    public HeadlessEntityFrameworkTenancyBuilder GuardTenantWrites()
     {
-        _builder.Services.AddHeadlessTenantWriteGuard(configure);
+        _builder.Services.AddHeadlessTenantWriteGuard();
         _builder.Services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IHeadlessTenancyValidator, EntityFrameworkTenantWriteGuardStartupValidator>()
         );

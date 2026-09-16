@@ -498,6 +498,8 @@ services.AddHeadlessMessaging(setup =>
 
 ### Configuration
 
+Configure tenant propagation and strict publishing through `AddHeadlessTenancy(tenancy => tenancy.Messaging(...))`. `MessagingOptions.TenantContextRequired` reports the configured requirement and has no public setter.
+
 `RequireRoutingAffinity()` on a Bus or Queue message registration requires a locally supported native mapping at startup; it does not require every publication to supply a key. Set `PublishOptions.RoutingAffinityKey` or `QueueOptions.RoutingAffinityKey` per publication. The frozen capability model snapshots registered destinations from inert options before clients or processors start. Keyed unknown destination overrides, invalid keys, and typed/raw conflicts fail before outbox insertion or transport effects. `MediumMessage.RoutingAffinityKey` reads the authoritative serialized envelope; InMemory, PostgreSQL, and SQL Server preserve it without a new storage column.
 
 A missing registration defers an inbox generation as an orphan without consuming the handler failure retry budget. Recovery requires the exact consumer identity, logical contract name, contract version, and lane. The probe claims a fresh attempt in the same generation and incarnation, then clears the orphan flag under the complete execution fence before dispatch. Registration absence on one host does not establish absence on every deployment.
@@ -761,7 +763,7 @@ The always-on `DeadOwnerRecoveryBridge` logs failures under its own category, `H
 
 ## Strict Publish Tenancy
 
-`MessagingOptions.TenantContextRequired` is the messaging sibling of the EF write guard (#234) and the HTTP authorization requirement. Defaults to `false` to preserve today's behavior. When set to `true`, every publish must resolve a tenant identifier:
+`MessagingOptions.TenantContextRequired` is the messaging sibling of the EF write guard (#234) and the HTTP authorization requirement. Defaults to `false` to preserve today's behavior. Enable it with `.Messaging(messaging => messaging.RequireTenantOnPublish())`; the property has no public setter. Every guarded publish must resolve a tenant identifier:
 
 1. `PublishOptions.TenantId` if set (the source of truth — see `Headers.TenantId` integrity rules in [Multi-Tenancy / Message Consumers](multi-tenancy.md#message-consumers)).
 2. Otherwise, the ambient `ICurrentTenant.Id`, unless `SuppressAmbientBusinessContext` is enabled.
@@ -777,18 +779,7 @@ builder.AddHeadlessTenancy(tenancy =>
 );
 ```
 
-Messaging-only setup must still go through the root tenancy seam — `AddTenantPropagation()` has been removed. Combine `AddHeadlessMessaging` with the root tenancy registration:
-
-```csharp
-builder.Services.AddHeadlessMessaging(options =>
-{
-    options.TenantContextRequired = true;
-});
-
-builder.AddHeadlessTenancy(tenancy =>
-    tenancy.Messaging(messaging => messaging.PropagateTenant().RequireTenantOnPublish())
-);
-```
+Configure messaging transport and storage with `AddHeadlessMessaging(...)`. Configure tenant propagation and enforcement only through `AddHeadlessTenancy(...)`.
 
 **Remediation for background workers / `IHostedService` callers (no ambient HTTP scope):**
 
@@ -911,6 +902,11 @@ Per-consumer-group circuit breaker that pauses transport consumption when a depe
 Open duration escalates exponentially on repeated trips and resets after consecutive successful close cycles.
 
 Persisted received retries share the same lane-qualified probe generation as transport delivery. Open rows are durably deferred to the current circuit generation's next-probe boundary; in HalfOpen, one row or transport delivery owns the probe, while sibling claims retain their exact leases for normal store-authoritative expiry without blocking healthy pickup. Healthy groups in the same claimed batch dispatch before circuit dispositions, so an open group cannot monopolize retry pickup.
+
+Pause and resume work carries a monotonic circuit epoch, and a consumer-group handle applies intents
+in epoch order. A resume launched before `ForceOpenAsync`, another Open transition, or a restart
+pre-pause cannot reopen a newer Open generation. Force-open therefore leaves the transport paused
+even when recovery was already in flight.
 
 ### Global Configuration
 

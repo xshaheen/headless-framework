@@ -137,6 +137,12 @@ version, sits in `Delayed` or `Queued`, and has no inline attempt, no retry, and
 time. The dashboard presents both statuses as one `Pending` state. A row with a live dispatch lease
 is still pending but ineligible for dispatch-now (`Active`); revoke has no lease precondition.
 
+### Circuit epoch
+A monotonic per-lane-qualified-circuit counter assigned to each pause/resume intent change. Callbacks,
+timers, retry decisions, and probe releases carry the epoch captured when their work was scheduled.
+The consumer-group apply gate rejects epochs older than its last completed apply, so an in-flight
+recovery cannot undo a newer Open state.
+
 ## Flagged ambiguities
 
 - "Generation" had been used loosely for both a node's Incarnation and the durable counter that

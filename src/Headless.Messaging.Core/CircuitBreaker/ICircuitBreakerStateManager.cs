@@ -32,7 +32,7 @@ internal interface ICircuitBreakerStateManager : ICircuitBreakerMonitor
     /// <param name="groupName">The consumer group name.</param>
     /// <param name="onPause">Invoked when the circuit transitions to <see cref="CircuitBreakerState.Open"/>.</param>
     /// <param name="onResume">Invoked when the circuit transitions to <see cref="CircuitBreakerState.HalfOpen"/>.</param>
-    void RegisterGroupCallbacks(string groupName, Func<ValueTask> onPause, Func<ValueTask> onResume);
+    void RegisterGroupCallbacks(string groupName, Func<long, ValueTask> onPause, Func<long, ValueTask> onResume);
 
     /// <summary>
     /// Reports a failure for the specified consumer group. If the exception is transient and
@@ -45,11 +45,12 @@ internal interface ICircuitBreakerStateManager : ICircuitBreakerMonitor
 
     /// <summary>
     /// Attempts to acquire the single HalfOpen probe slot for the specified group.
-    /// Returns <see langword="true"/> when the group is not HalfOpen, or when the probe
-    /// slot was acquired successfully.
+    /// Returns the current admission epoch when the probe slot was acquired successfully
+    /// or when the group is not HalfOpen; returns <see langword="null"/> when the probe slot is already held.
     /// </summary>
     /// <param name="groupName">The consumer group name.</param>
-    bool TryAcquireHalfOpenProbe(string groupName);
+    /// <returns>The admission epoch if admitted, or <see langword="null"/> if the probe is taken.</returns>
+    long? TryAcquireHalfOpenProbe(string groupName);
 
     /// <summary>
     /// Releases a previously acquired HalfOpen probe slot without changing circuit state.
@@ -57,7 +58,7 @@ internal interface ICircuitBreakerStateManager : ICircuitBreakerMonitor
     /// reporting path.
     /// </summary>
     /// <param name="groupName">The consumer group name.</param>
-    void ReleaseHalfOpenProbe(string groupName);
+    void ReleaseHalfOpenProbe(string groupName, long epoch);
 
     /// <summary>
     /// Reports a successful message processing for the specified consumer group.
@@ -82,6 +83,12 @@ internal interface ICircuitBreakerStateManager : ICircuitBreakerMonitor
     /// </summary>
     /// <param name="groupName">The consumer group name.</param>
     ValueTask AbortHalfOpenProbeAsync(string groupName);
+
+    /// <summary>
+    /// Returns the epoch of the group's current Open state. Restart uses it to apply the
+    /// replacement transport's pre-pause through the same fence that judges later intents.
+    /// </summary>
+    bool TryGetOpenEpoch(string groupName, out long epoch);
 }
 
 internal enum CircuitRetryDecisionKind
@@ -101,7 +108,8 @@ internal enum CircuitRetryDecisionKind
 internal readonly record struct CircuitRetryDecision(
     CircuitRetryDecisionKind Kind,
     DateTimeOffset? NextProbeAt,
-    Task<CircuitRetryProbeOutcome>? ProbeOutcome
+    Task<CircuitRetryProbeOutcome>? ProbeOutcome,
+    long Epoch = 0
 )
 {
     public static CircuitRetryDecision Closed { get; } =
