@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.Testing;
 using Headless.Testing.Tests;
@@ -435,7 +436,47 @@ public sealed class MessageObservationStoreTests : TestBase
         await wait.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
     }
 
+    // --- Published arrival map growth ---
+
+    [Fact]
+    public async Task published_arrival_map_stays_bounded_across_records_and_timed_out_waits()
+    {
+        // given: records memoize one completed arrival per distinct id (a late waiter for an already-recorded
+        // message returns instantly instead of burning its budget), so the map holds exactly the distinct ids
+        var store = new MessageObservationStore();
+
+        for (var i = 0; i < 5; i++)
+        {
+            store.Record(_MakeMessage(typeof(SimpleMessage), $"published-{i}"), MessageObservationType.Published);
+            // A duplicate record for the same id must not grow the map further.
+            store.Record(_MakeMessage(typeof(SimpleMessage), $"published-{i}"), MessageObservationType.Published);
+        }
+
+        _PublishedArrivalCount(store).Should().Be(5);
+
+        // when: waits on ids whose records never arrive each run out their budget and are swallowed
+        for (var i = 0; i < 3; i++)
+        {
+            await store.WaitForPublishedRecordAsync($"unknown-{i}", TimeSpan.FromMilliseconds(20), AbortToken);
+        }
+
+        // then: each wait reclaimed its own entry in the finally, so timed-out waits left nothing behind
+        _PublishedArrivalCount(store).Should().Be(5);
+    }
+
     // --- Helpers ---
+
+    private static int _PublishedArrivalCount(MessageObservationStore store)
+    {
+        var field = typeof(MessageObservationStore).GetField(
+            "_publishedArrivals",
+            BindingFlags.Instance | BindingFlags.NonPublic
+        );
+
+        field.Should().NotBeNull("the store is expected to keep a private _publishedArrivals map");
+
+        return ((System.Collections.ICollection)field!.GetValue(store)!).Count;
+    }
 
     private class SimpleMessage
     {

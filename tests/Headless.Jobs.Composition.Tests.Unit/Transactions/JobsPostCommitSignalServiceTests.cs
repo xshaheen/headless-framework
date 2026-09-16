@@ -402,22 +402,28 @@ public sealed class JobsPostCommitSignalServiceTests : TestBase
         var barrier = new JobsActivationBarrier();
         barrier.MarkFailed(new InvalidOperationException("activation failed"));
         var (service, logger) = _CreateService(new FakeTimeProvider(), barrier);
+        using var drops = new DroppedSignalCounter();
         var processed = false;
 
         await service.StartAsync(AbortToken);
         await service.ExecuteTask!.WaitAsync(_WaitTimeout, AbortToken);
-        service.TrySignal(
-            new TestPostCommitSignal(
-                "late",
-                (_, _) =>
-                {
-                    processed = true;
-                    return Task.CompletedTask;
-                }
+        service
+            .TrySignal(
+                new TestPostCommitSignal(
+                    "late",
+                    (_, _) =>
+                    {
+                        processed = true;
+                        return Task.CompletedTask;
+                    }
+                )
             )
-        );
+            .Should()
+            .BeFalse();
 
+        // The exited loop closed the writer, so the late signal is reported as a stopping drop, not accepted.
         processed.Should().BeFalse();
+        drops.Measurements.Should().ContainSingle().Which.Should().Be((1L, "stopping"));
         logger
             .Entries.Should()
             .ContainSingle(e => e.Level == LogLevel.Warning && e.Exception is InvalidOperationException);

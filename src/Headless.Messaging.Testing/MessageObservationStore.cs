@@ -59,6 +59,9 @@ internal sealed class MessageObservationStore(TimeProvider? timeProvider = null)
 
         if (type is MessageObservationType.Published && message.MessageId.Length > 0)
         {
+            // GetOrAdd, not TryGetValue: the send thread records Published while the listener thread races to start
+            // its wait, so record-before-waiter is a common interleaving — memoizing the completion makes that waiter
+            // return instantly. TryGetValue-only would strand it for the full budget instead.
             _publishedArrivals.GetOrAdd(message.MessageId, static _ => _CreateArrival()).TrySetResult();
         }
 
@@ -198,6 +201,15 @@ internal sealed class MessageObservationStore(TimeProvider? timeProvider = null)
         catch (TimeoutException)
         {
             // The consumer must still run; a Published record that never arrives shows up in the test's own assertions.
+        }
+        finally
+        {
+            // Reclaim this handshake's entry on every exit so the map cannot grow across waits — completed or not,
+            // the pair-form TryRemove only matches this exact instance, so a concurrent waiter's fresh signal is
+            // never stolen. A later waiter for an already-recorded id GetOrAdds a fresh TCS that will not complete;
+            // it runs out its budget and the wait is swallowed — the same path as a record that never arrives, and
+            // the waiter-side GetOrAdd above only runs once per consume, so the leak stays bounded per round.
+            _publishedArrivals.TryRemove(new KeyValuePair<string, TaskCompletionSource>(messageId, arrival));
         }
     }
 

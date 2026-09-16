@@ -152,6 +152,12 @@ internal sealed partial class JobsPostCommitSignalService(
         }
         catch (OperationCanceledException)
         {
+            // Stopped before activation. StopAsync has usually completed the writer already; a dispose without a stop
+            // cancels the same token without ever touching it. Close the writer on every reader exit so TrySignal
+            // reports drops instead of accepting signals this exited loop will never read.
+            Volatile.Write(ref _stopping, 1);
+            _channel.Writer.TryComplete();
+
             return;
         }
 
@@ -160,6 +166,12 @@ internal sealed partial class JobsPostCommitSignalService(
             // The failure already aborted host startup through the initializer; stay closed rather than acquire rows
             // under an unverified schedule interpretation.
             Log.StoppedOnActivationFailure(_logger, activationFailure);
+
+            // Activation failure aborts host startup before StopAsync can run, so without this the writer stays open
+            // and TrySignal keeps accepting signals this exited loop will never read. The drop warning/counter is the
+            // only contract difference; the poll sweep recovers the rows either way.
+            Volatile.Write(ref _stopping, 1);
+            _channel.Writer.TryComplete();
 
             return;
         }
