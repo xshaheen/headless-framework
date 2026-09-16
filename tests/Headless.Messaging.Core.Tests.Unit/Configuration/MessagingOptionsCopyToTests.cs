@@ -18,7 +18,10 @@ public sealed class MessagingOptionsCopyToTests : TestBase
     public void should_expose_tenant_requirement_as_read_only()
     {
         typeof(MessagingOptions)
-            .GetProperty(nameof(MessagingOptions.TenantContextRequired))!
+            .GetProperty(
+                nameof(MessagingOptions.TenantContextRequired),
+                BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly
+            )!
             .GetSetMethod()
             .Should()
             .BeNull();
