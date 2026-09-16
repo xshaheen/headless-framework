@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
+using Headless.Messaging.Monitoring;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Messaging;
@@ -42,6 +43,7 @@ internal static class MessagingMetrics
     internal const string InboxReplaysName = "messaging.inbox.replays";
     internal const string InboxRetentionName = "messaging.inbox.retention";
     internal const string InboxCapabilitiesName = "messaging.inbox.capabilities";
+    internal const string OperatorOperationsName = "messaging.operator.operations";
 
     // --- Dimension (tag) names --------------------------------------------------------------------------------
 
@@ -124,6 +126,9 @@ internal static class MessagingMetrics
     private static readonly Counter<long> _InboxCapabilities = MessagingDiagnostics.Meter.CreateCounter<long>(
         InboxCapabilitiesName
     );
+    private static readonly Counter<long> _OperatorOperations = MessagingDiagnostics.Meter.CreateCounter<long>(
+        OperatorOperationsName
+    );
 
     /// <summary>Whether any messaging instrument currently has a subscribed listener.</summary>
     internal static bool AnyEnabled =>
@@ -187,6 +192,30 @@ internal static class MessagingMetrics
         }
 
         instrument.Add(1, tags);
+    }
+
+    internal static void RecordScheduledOperation(
+        MessagingOperationType operationType,
+        MessageLane lane,
+        InboxOperationOutcome outcome,
+        string provider
+    )
+    {
+        if (!_OperatorOperations.Enabled)
+        {
+            return;
+        }
+
+        var tags = new TagList
+        {
+            { "messaging.target.kind", "ScheduledDelivery" },
+            { TagOperation, operationType.ToString("G") },
+            { MessagingTags.Lane, LaneTagEnricher.ToTagValues(lane).Lane },
+            { MessagingTags.InboxOutcome, outcome.ToString("G") },
+            { MessagingTags.InboxProvider, provider },
+        };
+
+        _OperatorOperations.Add(1, tags);
     }
 
     // --- Record helpers ---------------------------------------------------------------------------------------

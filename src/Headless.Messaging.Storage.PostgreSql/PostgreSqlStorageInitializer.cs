@@ -420,10 +420,10 @@ internal sealed class PostgreSqlStorageInitializer(
                 SELECT (
                     EXISTS (
                         SELECT 1 FROM pg_constraint
-                        WHERE conname='ck_received_inbox_retention_v3'
+                        WHERE conname='ck_received_inbox_identity'
                           AND conrelid=format('%I.received', @Schema)::regclass
                     )
-                    AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname='ck_received_inbox_lifecycle_v4'
+                    AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname='ck_received_inbox_lifecycle'
                         AND conrelid = format('%I.received', @Schema)::regclass)
                     AND EXISTS (SELECT 1 FROM information_schema.columns
                         WHERE table_schema=@Schema AND table_name='received' AND column_name='LifecycleId')
@@ -434,6 +434,18 @@ internal sealed class PostgreSqlStorageInitializer(
                     AND EXISTS (
                         SELECT 1 FROM information_schema.columns
                         WHERE table_schema=@Schema AND table_name='inbox_operation_receipts' AND column_name='Outcome'
+                    )
+                    AND EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_schema=@Schema AND table_name='inbox_operation_receipts' AND column_name='TargetKind'
+                    )
+                    AND EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_schema=@Schema AND table_name='inbox_operation_receipts' AND column_name='ExpectedDueAt'
+                    )
+                    AND EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_schema=@Schema AND table_name='inbox_audit' AND column_name='TargetKind'
                     )
                 )::int;
                 """,
@@ -451,7 +463,7 @@ internal sealed class PostgreSqlStorageInitializer(
 
         var sql = $"""
             INSERT INTO "{postgreSqlOptions.Value.Schema}"."schema_state" ("Component","SchemaVersion","ReadyAt")
-            VALUES ('inbox', 4, statement_timestamp())
+            VALUES ('inbox', 1, statement_timestamp())
             ON CONFLICT ("Component") DO UPDATE
             SET "SchemaVersion"=EXCLUDED."SchemaVersion", "ReadyAt"=EXCLUDED."ReadyAt";
             """;
@@ -480,8 +492,8 @@ internal sealed class PostgreSqlStorageInitializer(
                     FROM "{schema}"."schema_state"
                     WHERE "Component"='inbox';
 
-                    IF current_schema_version > 4 THEN
-                        RAISE EXCEPTION 'Headless.Messaging inbox schema version % is newer than supported version 4. Upgrade the application before starting this binary.', current_schema_version;
+                    IF current_schema_version > 1 THEN
+                        RAISE EXCEPTION 'Headless.Messaging inbox schema version % is newer than supported version 1. Upgrade the application before starting this binary.', current_schema_version;
                     END IF;
                 END IF;
             END
@@ -552,22 +564,9 @@ internal sealed class PostgreSqlStorageInitializer(
 
             DO $headless$
             BEGIN
-                IF NOT EXISTS (
-                    SELECT 1 FROM pg_constraint WHERE conname = 'ck_received_inbox_retention_v3'
-                    AND conrelid = '{GetReceivedTableName()}'::regclass
-                ) THEN
-                    ALTER TABLE {GetReceivedTableName()} ADD CONSTRAINT "ck_received_inbox_retention_v3" CHECK (
-                        NOT "IsInboxRecord" OR "InboxRetentionSeconds" BETWEEN 1 AND 2147483647
-                    );
-                END IF;
-            END
-            $headless$;
-
-            DO $headless$
-            BEGIN
-                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_received_inbox_lifecycle_v4'
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_received_inbox_lifecycle'
                     AND conrelid = '{GetReceivedTableName()}'::regclass) THEN
-                    ALTER TABLE {GetReceivedTableName()} ADD CONSTRAINT "ck_received_inbox_lifecycle_v4" CHECK (
+                    ALTER TABLE {GetReceivedTableName()} ADD CONSTRAINT "ck_received_inbox_lifecycle" CHECK (
                         NOT "IsInboxRecord" OR ("LifecycleId" IS NOT NULL
                             AND ("ReplayParentIncarnationId" IS NOT NULL OR "LifecycleId" = "GenerationIncarnationId"))
                     );
@@ -575,7 +574,6 @@ internal sealed class PostgreSqlStorageInitializer(
             END
             $headless$;
 
-            DROP INDEX IF EXISTS "{schema}"."uq_received_inbox_key";
             CREATE UNIQUE INDEX IF NOT EXISTS "uq_received_inbox_root_key" ON {GetReceivedTableName()}
                 ("TenantPresent","TenantId","MessageId","IntentType","ContractIdentity","ContractVersion","ConsumerIdentity","Generation")
                 WHERE "IsInboxRecord" AND "ReplayParentIncarnationId" IS NULL;
@@ -603,13 +601,18 @@ internal sealed class PostgreSqlStorageInitializer(
 
             CREATE TABLE IF NOT EXISTS "{schema}"."inbox_operation_receipts"(
                 "OperationId" UUID PRIMARY KEY NOT NULL,
-                "GenerationIncarnationId" UUID NOT NULL,
+                "TargetKind" VARCHAR(50) COLLATE "C" NOT NULL DEFAULT 'Inbox',
+                "GenerationIncarnationId" UUID NULL,
                 "OperationType" VARCHAR(50) COLLATE "C" NOT NULL,
-                "ExpectedStatus" VARCHAR(50) COLLATE "C" NOT NULL,
+                "ExpectedStatus" VARCHAR(50) COLLATE "C" NULL,
+                "ExpectedDueAt" TIMESTAMPTZ NULL,
                 "Actor" VARCHAR(200) COLLATE "C" NOT NULL,
                 "Reason" VARCHAR(1000) NOT NULL,
                 "Outcome" VARCHAR(50) COLLATE "C" NOT NULL,
                 "StorageId" UUID NULL,
+                "MessageName" VARCHAR(200) NULL,
+                "MessageId" VARCHAR(200) COLLATE "C" NULL,
+                "Lane" VARCHAR(50) COLLATE "C" NULL,
                 "ChildStorageId" UUID NULL,
                 "ChildGeneration" BIGINT NULL,
                 "ChildIncarnationId" UUID NULL,
@@ -619,7 +622,8 @@ internal sealed class PostgreSqlStorageInitializer(
             CREATE TABLE IF NOT EXISTS "{schema}"."inbox_audit"(
                 "AuditId" UUID PRIMARY KEY NOT NULL,
                 "OperationId" UUID NOT NULL,
-                "GenerationIncarnationId" UUID NOT NULL,
+                "TargetKind" VARCHAR(50) COLLATE "C" NOT NULL DEFAULT 'Inbox',
+                "GenerationIncarnationId" UUID NULL,
                 "OperationType" VARCHAR(50) COLLATE "C" NOT NULL,
                 "Actor" VARCHAR(200) COLLATE "C" NOT NULL,
                 "Reason" VARCHAR(1000) NOT NULL,

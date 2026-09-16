@@ -20,7 +20,7 @@ internal sealed partial class PostgreSqlDataStorage
 
     public async ValueTask<IndexPage<InboxGenerationView>> QueryAsync(
         InboxGenerationQuery query,
-        InboxAuthorizationContext authorization,
+        OperatorAuthorizationContext authorization,
         CancellationToken cancellationToken = default
     )
     {
@@ -111,25 +111,25 @@ internal sealed partial class PostgreSqlDataStorage
     public ValueTask<InboxOperationResult> HoldAsync(
         InboxOperationRequest request,
         CancellationToken cancellationToken = default
-    ) => _ExecuteInboxOperationAsync(InboxOperationType.Hold, request, cancellationToken);
+    ) => _ExecuteInboxOperationAsync(MessagingOperationType.Hold, request, cancellationToken);
 
     public ValueTask<InboxOperationResult> ReleaseHoldAsync(
         InboxOperationRequest request,
         CancellationToken cancellationToken = default
-    ) => _ExecuteInboxOperationAsync(InboxOperationType.ReleaseHold, request, cancellationToken);
+    ) => _ExecuteInboxOperationAsync(MessagingOperationType.ReleaseHold, request, cancellationToken);
 
     public ValueTask<InboxOperationResult> ForceReprocessAsync(
         InboxOperationRequest request,
         CancellationToken cancellationToken = default
-    ) => _ExecuteInboxOperationAsync(InboxOperationType.ForceReprocess, request, cancellationToken);
+    ) => _ExecuteInboxOperationAsync(MessagingOperationType.ForceReprocess, request, cancellationToken);
 
     public ValueTask<InboxOperationResult> PurgeAsync(
         InboxOperationRequest request,
         CancellationToken cancellationToken = default
-    ) => _ExecuteInboxOperationAsync(InboxOperationType.Purge, request, cancellationToken);
+    ) => _ExecuteInboxOperationAsync(MessagingOperationType.Purge, request, cancellationToken);
 
     private async ValueTask<InboxOperationResult> _ExecuteInboxOperationAsync(
-        InboxOperationType operationType,
+        MessagingOperationType operationType,
         InboxOperationRequest request,
         CancellationToken cancellationToken
     )
@@ -165,7 +165,7 @@ internal sealed partial class PostgreSqlDataStorage
                 cancellationToken
             )
             .ConfigureAwait(false);
-        var outcome = InboxOperationEvaluator.Evaluate(operationType, request.ExpectedStatus, row?.State);
+        var outcome = MessagingOperationEvaluator.Evaluate(operationType, request.ExpectedStatus, row?.State);
         Guid? childStorageId = null;
         long? childGeneration = null;
         Guid? childIncarnationId = null;
@@ -174,7 +174,7 @@ internal sealed partial class PostgreSqlDataStorage
         {
             switch (operationType)
             {
-                case InboxOperationType.Hold:
+                case MessagingOperationType.Hold:
                     await _ExecutePostgreSqlMutationAsync(
                             connection,
                             transaction,
@@ -185,7 +185,7 @@ internal sealed partial class PostgreSqlDataStorage
                         )
                         .ConfigureAwait(false);
                     break;
-                case InboxOperationType.ReleaseHold:
+                case MessagingOperationType.ReleaseHold:
                     await _ExecutePostgreSqlMutationAsync(
                             connection,
                             transaction,
@@ -196,7 +196,7 @@ internal sealed partial class PostgreSqlDataStorage
                         )
                         .ConfigureAwait(false);
                     break;
-                case InboxOperationType.ForceReprocess:
+                case MessagingOperationType.ForceReprocess:
                     childStorageId = guidGenerator.Create();
                     childIncarnationId = guidGenerator.Create();
                     childGeneration = checked(row.State.Generation + 1);
@@ -212,7 +212,7 @@ internal sealed partial class PostgreSqlDataStorage
                         )
                         .ConfigureAwait(false);
                     break;
-                case InboxOperationType.Purge:
+                case MessagingOperationType.Purge:
                     await _ExecutePostgreSqlMutationAsync(
                             connection,
                             transaction,
@@ -249,7 +249,7 @@ internal sealed partial class PostgreSqlDataStorage
 
     private void _RecordPostgreSqlInboxOperation(
         InboxOperationRow? row,
-        InboxOperationType operationType,
+        MessagingOperationType operationType,
         InboxOperationOutcome outcome
     )
     {
@@ -258,13 +258,13 @@ internal sealed partial class PostgreSqlDataStorage
             return;
         }
         var kind =
-            operationType is InboxOperationType.ForceReprocess ? InboxMetricKind.Replay : InboxMetricKind.Retention;
+            operationType is MessagingOperationType.ForceReprocess ? InboxMetricKind.Replay : InboxMetricKind.Retention;
         var metricOutcome = operationType switch
         {
-            InboxOperationType.Hold => InboxMetricOutcome.Held,
-            InboxOperationType.ReleaseHold => InboxMetricOutcome.Released,
-            InboxOperationType.ForceReprocess => InboxMetricOutcome.Replayed,
-            InboxOperationType.Purge => InboxMetricOutcome.Purged,
+            MessagingOperationType.Hold => InboxMetricOutcome.Held,
+            MessagingOperationType.ReleaseHold => InboxMetricOutcome.Released,
+            MessagingOperationType.ForceReprocess => InboxMetricOutcome.Replayed,
+            MessagingOperationType.Purge => InboxMetricOutcome.Purged,
             _ => throw new ArgumentOutOfRangeException(nameof(operationType), operationType, message: null),
         };
         MessagingMetrics.RecordInbox(
@@ -279,7 +279,7 @@ internal sealed partial class PostgreSqlDataStorage
 
     private static InboxOperationResult _ReplayOrConflict(
         InboxOperationResult prior,
-        InboxOperationType operationType,
+        MessagingOperationType operationType,
         InboxOperationRequest request
     )
     {
@@ -422,7 +422,7 @@ internal sealed partial class PostgreSqlDataStorage
     )
     {
         await using var command = new NpgsqlCommand(
-            $"SELECT \"GenerationIncarnationId\",\"OperationType\",\"ExpectedStatus\",\"Actor\",\"Reason\",\"Outcome\",\"StorageId\",\"ChildStorageId\",\"ChildGeneration\",\"ChildIncarnationId\",\"CreatedAt\" FROM {InboxReceiptsTable} WHERE \"OperationId\"=@OperationId FOR UPDATE;",
+            $"SELECT \"GenerationIncarnationId\",\"OperationType\",\"ExpectedStatus\",\"Actor\",\"Reason\",\"Outcome\",\"StorageId\",\"ChildStorageId\",\"ChildGeneration\",\"ChildIncarnationId\",\"CreatedAt\",\"TargetKind\" FROM {InboxReceiptsTable} WHERE \"OperationId\"=@OperationId FOR UPDATE;",
             connection,
             transaction
         );
@@ -432,12 +432,16 @@ internal sealed partial class PostgreSqlDataStorage
         {
             return null;
         }
+        var targetKind = reader.GetString(11);
+        var isInbox = string.Equals(targetKind, "Inbox", StringComparison.Ordinal);
+        var incarnationId = isInbox && !reader.IsDBNull(0) ? reader.GetGuid(0) : Guid.Empty;
+        var expectedStatus = isInbox && !reader.IsDBNull(2) ? Enum.Parse<StatusName>(reader.GetString(2)) : default;
         return new InboxOperationResult(
             operationId,
-            Enum.Parse<InboxOperationType>(reader.GetString(1)),
+            Enum.Parse<MessagingOperationType>(reader.GetString(1)),
             Enum.Parse<InboxOperationOutcome>(reader.GetString(5)),
-            reader.GetGuid(0),
-            Enum.Parse<StatusName>(reader.GetString(2)),
+            incarnationId,
+            expectedStatus,
             reader.IsDBNull(6) ? null : reader.GetGuid(6),
             reader.IsDBNull(7) ? null : reader.GetGuid(7),
             reader.IsDBNull(8) ? null : reader.GetInt64(8),
@@ -505,10 +509,10 @@ internal sealed partial class PostgreSqlDataStorage
     )
     {
         var sql = $"""
-            INSERT INTO {InboxReceiptsTable}("OperationId","GenerationIncarnationId","OperationType","ExpectedStatus","Actor","Reason","Outcome","StorageId","ChildStorageId","ChildGeneration","ChildIncarnationId","CreatedAt")
-            VALUES (@OperationId,@IncarnationId,@OperationType,@ExpectedStatus,@Actor,@Reason,@Outcome,@StorageId,@ChildStorageId,@ChildGeneration,@ChildIncarnationId,@CreatedAt);
-            INSERT INTO {InboxAuditTable}("AuditId","OperationId","GenerationIncarnationId","OperationType","Actor","Reason","Outcome","CreatedAt")
-            VALUES (@AuditId,@OperationId,@IncarnationId,@OperationType,@Actor,@Reason,@Outcome,@CreatedAt);
+            INSERT INTO {InboxReceiptsTable}("OperationId","TargetKind","GenerationIncarnationId","OperationType","ExpectedStatus","Actor","Reason","Outcome","StorageId","ChildStorageId","ChildGeneration","ChildIncarnationId","CreatedAt")
+            VALUES (@OperationId,'Inbox',@IncarnationId,@OperationType,@ExpectedStatus,@Actor,@Reason,@Outcome,@StorageId,@ChildStorageId,@ChildGeneration,@ChildIncarnationId,@CreatedAt);
+            INSERT INTO {InboxAuditTable}("AuditId","OperationId","TargetKind","GenerationIncarnationId","OperationType","Actor","Reason","Outcome","CreatedAt")
+            VALUES (@AuditId,@OperationId,'Inbox',@IncarnationId,@OperationType,@Actor,@Reason,@Outcome,@CreatedAt);
             """;
         await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("@AuditId", guidGenerator.Create());
@@ -552,7 +556,7 @@ internal sealed partial class PostgreSqlDataStorage
     )
     {
         await using var command = new NpgsqlCommand(
-            $"INSERT INTO {InboxAuditTable}(\"AuditId\",\"OperationId\",\"GenerationIncarnationId\",\"OperationType\",\"Actor\",\"Reason\",\"Outcome\",\"CreatedAt\") VALUES (@AuditId,@OperationId,@IncarnationId,@OperationType,@Actor,@Reason,@Outcome,transaction_timestamp());",
+            $"INSERT INTO {InboxAuditTable}(\"AuditId\",\"OperationId\",\"TargetKind\",\"GenerationIncarnationId\",\"OperationType\",\"Actor\",\"Reason\",\"Outcome\",\"CreatedAt\") VALUES (@AuditId,@OperationId,'Inbox',@IncarnationId,@OperationType,@Actor,@Reason,@Outcome,transaction_timestamp());",
             connection,
             transaction
         );

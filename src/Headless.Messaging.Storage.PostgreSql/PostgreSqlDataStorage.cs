@@ -40,6 +40,7 @@ internal sealed partial class PostgreSqlDataStorage(
         ICircuitRetryDeferralStorage,
         ITransactionalInboxStorage,
         IInboxOperationsApi,
+        IScheduledDeliveryOperationsApi,
         IDeliveryCoordinationResolver
 {
     /// <summary>
@@ -115,6 +116,8 @@ internal sealed partial class PostgreSqlDataStorage(
     }
 
     public IInboxOperationsApi GetInboxOperationsApi() => this;
+
+    public IScheduledDeliveryOperationsApi GetScheduledDeliveryOperationsApi() => this;
 
     /// <summary>
     /// Bulk-transitions the specified published messages to <c>Delayed</c> status.

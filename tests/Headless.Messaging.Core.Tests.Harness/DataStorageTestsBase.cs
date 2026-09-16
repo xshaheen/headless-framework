@@ -565,7 +565,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         var principal = new ClaimsPrincipal(
             new ClaimsIdentity([new Claim(ClaimTypes.Name, "operator-a")], authenticationType: "test")
         );
-        var authorization = new InboxAuthorizationContext(principal);
+        var authorization = new OperatorAuthorizationContext(principal);
         var operationId = Guid.NewGuid();
         var incarnation = admitted.Message.InboxGeneration!.IncarnationId;
         var request = new InboxOperationRequest(
@@ -682,7 +682,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         var storage = GetStorage();
         var operations = storage.GetInboxOperationsApi();
         var origin = CreateMessage($"inbox-lifecycles-{Guid.NewGuid():N}", "orders.created");
-        var authorization = new InboxAuthorizationContext(
+        var authorization = new OperatorAuthorizationContext(
             new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "lifecycle-operator")], "test"))
         );
         var firstRoot = await _AdmitInboxAsync(storage, origin, lane: lane, generation: rootGeneration);

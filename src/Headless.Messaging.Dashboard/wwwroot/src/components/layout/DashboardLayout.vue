@@ -36,6 +36,7 @@ const navigationLinks: NavLink[] = [
     badgeColor: 'error',
     badgeHideWhenZero: true,
   },
+  { icon: 'mdi-clock-outline', text: 'Scheduled', path: '/scheduled' },
   { icon: 'mdi-alert-circle-outline', text: 'Unknown Lanes', path: '/unknown-lanes' },
   { icon: 'mdi-account-group', text: 'Subscribers', path: '/subscribers' },
   { icon: 'mdi-server-network', text: 'Nodes', path: '/nodes' },
