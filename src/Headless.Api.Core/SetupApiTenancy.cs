@@ -561,6 +561,128 @@ public sealed class HeadlessTenantCatalogResolutionBuilder
 
         _services.TryAddEnumerable(ServiceDescriptor.Singleton<ITenantIdentifierSource, RouteTenantIdentifierSource>());
     }
+
+    /// <summary>Registers the built-in header tenant identifier source with the default header name (R3).</summary>
+    /// <returns>The same builder, to allow chaining.</returns>
+    /// <remarks>
+    /// Reads the <c>X-Tenant</c> header (see
+    /// <see cref="HeaderTenantIdentifierSourceOptions.DefaultHeaderName"/>). Repeat registrations of
+    /// the source type deduplicate while options contributions accumulate (KTD3). A header can only
+    /// select an existing enabled tenant through the catalog and R19 still applies to authenticated
+    /// callers — but it bypasses any perimeter control bound to a tenant's hostname, so register a host
+    /// source first where hostnames carry such controls.
+    /// </remarks>
+    public HeadlessTenantCatalogResolutionBuilder AddHeaderSource()
+    {
+        _AddHeaderSourceCore();
+
+        return this;
+    }
+
+    /// <summary>Registers the built-in header tenant identifier source with one header name (R3).</summary>
+    /// <param name="headerName">
+    /// The header name to contribute to <see cref="HeaderTenantIdentifierSourceOptions.HeaderNames"/>.
+    /// Must be an HTTP token (validated at startup, R7).
+    /// </param>
+    /// <returns>The same builder, to allow chaining.</returns>
+    /// <exception cref="ArgumentException"><paramref name="headerName"/> is <see langword="null"/> or whitespace.</exception>
+    /// <remarks>
+    /// Replaces the list while it is still the untouched default, and appends once it has been
+    /// customized (KTD3): <c>AddHeaderSource("X-Legacy")</c> reads only <c>X-Legacy</c>, while
+    /// <c>AddHeaderSource("X-Tenant").AddHeaderSource("X-Legacy-Tenant")</c> yields one source reading
+    /// both under a single duplicate-detection scope. The default is never silently kept beside a
+    /// requested name, so a client cannot select a tenant through a header the operator did not configure.
+    /// </remarks>
+    public HeadlessTenantCatalogResolutionBuilder AddHeaderSource(string headerName)
+    {
+        Argument.IsNotNullOrWhiteSpace(headerName);
+
+        _AddHeaderSourceCore(options => options.ContributeHeaderName(headerName));
+
+        return this;
+    }
+
+    /// <summary>Registers the built-in header tenant identifier source, configuring its options (R3).</summary>
+    /// <param name="configure">Callback to configure <see cref="HeaderTenantIdentifierSourceOptions"/>.</param>
+    /// <returns>The same builder, to allow chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// The callback runs as one additional <c>Configure</c> action per call; repeat registrations of
+    /// the source type keep the first descriptor's position (KTD3). Options are validated at startup —
+    /// an empty list or a name that is not an HTTP token fails the host (R7).
+    /// </remarks>
+    public HeadlessTenantCatalogResolutionBuilder AddHeaderSource(Action<HeaderTenantIdentifierSourceOptions> configure)
+    {
+        Argument.IsNotNull(configure);
+
+        _AddHeaderSourceCore(configure);
+
+        return this;
+    }
+
+    /// <summary>
+    /// Registers the built-in header tenant identifier source, binding its options from configuration (R3).
+    /// </summary>
+    /// <param name="configuration">
+    /// The configuration section holding <see cref="HeaderTenantIdentifierSourceOptions"/> — for example
+    /// <c>Tenant:Header</c> with a <c>HeaderNames</c> array. A section that lists names replaces the
+    /// untouched default list (and appends to a customized one); a section without <c>HeaderNames</c>
+    /// keeps the default.
+    /// </param>
+    /// <returns>The same builder, to allow chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="configuration"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// Binds as an additional options contribution; repeat registrations of the source type keep the
+    /// first descriptor's position (KTD3).
+    /// </remarks>
+    public HeadlessTenantCatalogResolutionBuilder AddHeaderSource(IConfiguration configuration)
+    {
+        Argument.IsNotNull(configuration);
+
+        _services
+            .AddOptions<HeaderTenantIdentifierSourceOptions, HeaderTenantIdentifierSourceOptionsValidator>()
+            // The binder adds into the existing list, so a bound list would otherwise be appended to
+            // the default rather than replace it — clear the untouched default first, only when the
+            // section actually lists names, so an empty section keeps the default.
+            .Configure(options =>
+            {
+                if (
+                    options.HasUntouchedDefaultHeaderNames
+                    && configuration.GetSection(nameof(HeaderTenantIdentifierSourceOptions.HeaderNames)).Exists()
+                )
+                {
+                    options.HeaderNames = [];
+                }
+            })
+            .Bind(configuration);
+
+        _services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<ITenantIdentifierSource, HeaderTenantIdentifierSource>()
+        );
+
+        return this;
+    }
+
+    /// <summary>
+    /// Shared core of the <c>AddHeaderSource</c> overloads: registers the validated options type
+    /// plus (optionally) one <c>Configure</c> contribution, and the deduplicating source descriptor.
+    /// </summary>
+    private void _AddHeaderSourceCore(Action<HeaderTenantIdentifierSourceOptions>? configure = null)
+    {
+        var optionsBuilder = _services.AddOptions<
+            HeaderTenantIdentifierSourceOptions,
+            HeaderTenantIdentifierSourceOptionsValidator
+        >();
+
+        if (configure is not null)
+        {
+            optionsBuilder.Configure(configure);
+        }
+
+        _services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<ITenantIdentifierSource, HeaderTenantIdentifierSource>()
+        );
+    }
 }
 
 /// <summary>Records that Headless authorization should require a resolved tenant.</summary>

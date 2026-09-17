@@ -10,12 +10,14 @@ namespace Tests.MultiTenancy;
 /// Pins R7 for the host source: an empty template list fails startup validation, an unparsable
 /// template fails with the parser's message surfaced verbatim (so the operator sees which template
 /// and which rule), and multiple valid templates pass. Also pins R7 for the route source: a blank
-/// route value name fails validation while the default passes.
+/// route value name fails validation while the default passes. And for the header source: an empty
+/// header-name list, a blank name, or a name that is not an HTTP token fails, naming the offender.
 /// </summary>
 public sealed class TenantIdentifierSourceOptionsValidatorTests : TestBase
 {
     private readonly HostTenantIdentifierSourceOptionsValidator _sut = new();
     private readonly RouteTenantIdentifierSourceOptionsValidator _routeSut = new();
+    private readonly HeaderTenantIdentifierSourceOptionsValidator _headerSut = new();
 
     [Fact]
     public void should_accept_two_valid_host_templates()
@@ -92,5 +94,66 @@ public sealed class TenantIdentifierSourceOptionsValidatorTests : TestBase
         var result = _routeSut.TestValidate(options);
 
         result.ShouldHaveValidationErrorFor(x => x.RouteValueName);
+    }
+
+    // --- header source (R7) ---
+
+    [Fact]
+    public void should_accept_the_default_header_name()
+    {
+        var options = new HeaderTenantIdentifierSourceOptions();
+
+        var result = _headerSut.TestValidate(options);
+
+        result.ShouldNotHaveAnyValidationErrors();
+    }
+
+    [Fact]
+    public void should_accept_two_valid_header_names()
+    {
+        var options = new HeaderTenantIdentifierSourceOptions { HeaderNames = ["X-Tenant", "X-Legacy-Tenant"] };
+
+        var result = _headerSut.TestValidate(options);
+
+        result.ShouldNotHaveAnyValidationErrors();
+    }
+
+    [Fact]
+    public void should_reject_an_empty_header_name_list()
+    {
+        var options = new HeaderTenantIdentifierSourceOptions { HeaderNames = [] };
+
+        var result = _headerSut.TestValidate(options);
+
+        result.ShouldHaveValidationErrorFor(x => x.HeaderNames);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData(null)]
+    public void should_reject_a_blank_header_name(string? headerName)
+    {
+        var options = new HeaderTenantIdentifierSourceOptions { HeaderNames = [headerName!] };
+
+        var result = _headerSut.TestValidate(options);
+
+        result.Errors.Should().ContainSingle();
+    }
+
+    [Theory]
+    [InlineData("X Tenant")]
+    [InlineData("X-Tenant:")]
+    [InlineData("X-Tenant\r\n")]
+    [InlineData("X\"Tenant")]
+    [InlineData("X-Ténant")]
+    public void should_reject_a_header_name_that_is_not_an_http_token_naming_it(string headerName)
+    {
+        var options = new HeaderTenantIdentifierSourceOptions { HeaderNames = [headerName] };
+
+        var result = _headerSut.TestValidate(options);
+
+        var failure = result.Errors.Should().ContainSingle().Subject;
+        failure.ErrorMessage.Should().Contain(headerName).And.Contain("token");
     }
 }
