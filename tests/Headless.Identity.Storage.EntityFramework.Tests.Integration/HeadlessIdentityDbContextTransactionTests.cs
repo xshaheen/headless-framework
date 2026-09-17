@@ -9,18 +9,18 @@ using Tests.Fixture;
 namespace Tests;
 
 /// <summary>
-/// Proves the scope-free <c>ExecuteCoordinatedTransactionAsync</c> binds to and runs on a
-/// <c>HeadlessIdentityDbContext</c> — which implements <c>IHeadlessDbContext</c> but derives from
-/// <c>IdentityDbContext</c>, not <c>HeadlessDbContext</c>. Guards the generalized
-/// <c>where TContext : DbContext, IHeadlessDbContext</c> overloads against a regression back to the concrete
-/// <c>this HeadlessDbContext</c> receiver (which would silently exclude the Identity context at compile time).
+/// Proves the scope-free <c>ExecuteTransactionAsync</c> binds to and runs on a <c>HeadlessIdentityDbContext</c> —
+/// which implements <c>IHeadlessDbContext</c> but derives from <c>IdentityDbContext</c>, not
+/// <c>HeadlessDbContext</c>. Guards the generalized <c>where TContext : DbContext, IHeadlessDbContext</c>
+/// receiver against a regression back to the concrete <c>HeadlessDbContext</c> (which would silently exclude the
+/// Identity context at compile time).
 /// </summary>
 [Collection<IdentityTestFixture>]
-public sealed class HeadlessIdentityDbContextCoordinatedTransactionTests : TestBase
+public sealed class HeadlessIdentityDbContextTransactionTests : TestBase
 {
     private readonly IdentityTestFixture _fixture;
 
-    public HeadlessIdentityDbContextCoordinatedTransactionTests(IdentityTestFixture fixture)
+    public HeadlessIdentityDbContextTransactionTests(IdentityTestFixture fixture)
     {
         _fixture = fixture;
 
@@ -30,17 +30,17 @@ public sealed class HeadlessIdentityDbContextCoordinatedTransactionTests : TestB
     }
 
     [Fact]
-    public async Task scope_free_coordinated_transaction_commits_on_identity_context()
+    public async Task scope_free_unit_of_work_commits_on_identity_context()
     {
         // given
         await using var scope = _fixture.ServiceProvider.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<TestIdentityDbContext>();
-        var entity = new HarnessTestEntity { Name = "coordinated", TenantId = "T1" };
+        var entity = new HarnessTestEntity { Name = "unit-of-work", TenantId = "T1" };
 
-        // when — the scope-free helper opens a coordinated transaction on the Identity context (self-sourcing the
-        // scoped provider), runs the operation, and commits. This compiles only because the overloads target
+        // when — the scope-free helper begins a unit of work on the Identity context (self-sourcing the scoped
+        // manager), runs the operation, and completes. This compiles only because the receiver targets
         // `IHeadlessDbContext`, not the concrete `HeadlessDbContext`.
-        await db.ExecuteCoordinatedTransactionAsync(
+        await db.ExecuteTransactionAsync(
             async (context, ct) =>
             {
                 context.TestEntities.Add(entity);

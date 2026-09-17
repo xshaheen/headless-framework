@@ -3,7 +3,6 @@
 using System.Diagnostics;
 using System.Reflection;
 using Headless.Abstractions;
-using Headless.CommitCoordination;
 using Headless.Domain;
 using Headless.EntityFramework;
 using Headless.Messaging;
@@ -14,6 +13,7 @@ using Headless.Messaging.Persistence;
 using Headless.Messaging.Serialization;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;
+using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -135,13 +135,12 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
     [Fact]
     public async Task should_fail_loud_when_save_emitting_events_under_a_consumer_opened_plain_transaction()
     {
-        // given — a CONSUMER opens its own PLAIN EF transaction (BeginTransactionAsync) WITHOUT calling
-        // EnlistCommitCoordination, then saves with integration events. The pipeline reuses the consumer's
-        // transaction via the current-transaction branch, but no commit coordinator is ambient — dispatching the
-        // outbox here would be non-atomic with the consumer's transaction. The dispatcher now FAILS LOUD (#1)
-        // rather than silently writing the row on an autonomous connection. Atomic enlistment requires either the
-        // pipeline-owned save (no consumer transaction) or an explicit EnlistCommitCoordination (see the
-        // enlisted_publish_* tests).
+        // given — a CONSUMER opens its own PLAIN EF transaction (BeginTransactionAsync) WITHOUT enlisting it in a
+        // unit of work, then saves with integration events. The pipeline reuses the consumer's transaction via the
+        // current-transaction branch, but no unit of work owns it — dispatching the outbox here would be non-atomic
+        // with the consumer's transaction. The pipeline FAILS LOUD before any dispatch rather than silently writing
+        // the row on an autonomous connection. Atomic enlistment requires either the pipeline-owned save (no
+        // consumer transaction) or an explicit BeginAsync(db) / Enlist(db, tx) (see the enlisted_publish_* tests).
         const string marker = "evt-consumer-plain";
         await using var provider = await _BuildProviderAsync();
         await using var scope = provider.CreateAsyncScope();
@@ -155,9 +154,7 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         var act = async () => await db.SaveChangesAsync(AbortToken);
 
         // then — fails loud with an actionable wiring error and writes no outbox row.
-        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage(
-            "*not enlisted in commit coordination*"
-        );
+        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*IUnitOfWorkManager.BeginAsync(db)*");
         await transaction.RollbackAsync(AbortToken);
         (await _CountPublishedContainingAsync(marker)).Should().Be(0);
     }
@@ -165,17 +162,17 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
     [Fact]
     public async Task should_dispatch_the_event_atomically_when_coordinated_transaction_wrapping_a_save()
     {
-        // given — the welded ExecuteCoordinatedTransactionAsync helper opens the coordinated transaction and
-        // pushes the ambient coordinator. The inner SaveChanges runs WITHIN that transaction (current-transaction
-        // branch) and emits an integration event. This pins that the #1 guard sees the ambient (outer) coordinator
-        // via AsyncLocal and PASSES — the event buffers on that coordinator and drains atomically on commit.
+        // given — the welded ExecuteTransactionAsync helper begins the unit of work on the context (owned mode).
+        // The inner SaveChanges runs WITHIN that transaction (current-transaction branch) and emits an integration
+        // event. This pins that the caller-owned guard recognizes the unit that owns the transaction and PASSES —
+        // the event enlists on that unit and drains atomically on commit.
         const string marker = "evt-coordinated-nested";
         await using var provider = await _BuildProviderAsync();
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<BridgeTestDbContext>();
 
         // when
-        await db.ExecuteCoordinatedTransactionAsync(
+        await db.ExecuteTransactionAsync(
             async (ctx, ct) =>
             {
                 var order = new OrderEntity { Name = "coordinated-nested" };
@@ -196,11 +193,10 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
     [Fact]
     public async Task pipeline_owned_save_writes_business_and_outbox_rows_atomically_on_commit()
     {
-        // given — no ambient transaction: the pipeline opens its OWN coordinated transaction (Option 1). The
-        // outbox row is enlisted in it and drains post-commit. This asserts the atomic-COMMIT half of the
-        // contract: a successful save persists exactly one business row AND one outbox row together. The
-        // rollback-DISCARD half (the pipeline's coordinated transaction rolling back drops the enlisted outbox
-        // work) is covered at the seam by the commit-coordination conformance / EF interceptor tests.
+        // given — no ambient transaction: the pipeline opens its OWN transaction and enlists it in the scope's unit
+        // of work. The outbox row is enlisted in it and drains post-commit. This asserts the atomic-COMMIT half of
+        // the contract: a successful save persists exactly one business row AND one outbox row together. The
+        // rollback-DISCARD half is covered by should_rollback_business_and_outbox_when_bridge_fails_after_persisting.
         const string marker = "evt-pipeline-atomic";
         await using var provider = await _BuildProviderAsync();
         await using var scope = provider.CreateAsyncScope();
@@ -209,7 +205,7 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         order.EmitIntegrationEvent(new OrderShipped($"{marker}-1"));
         db.Orders.Add(order);
 
-        // when — pipeline opens the coordinated transaction, writes business + outbox rows, commits atomically.
+        // when — pipeline opens the transaction, writes business + outbox rows, commits atomically.
         await db.SaveChangesAsync(AbortToken);
 
         // then — the outbox row is durable post-commit, alongside the committed business row.
@@ -222,30 +218,29 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
     [Fact]
     public async Task should_discard_the_outbox_row_when_enlisted_publish_rolled_back()
     {
-        // given — the consumer enlist seam (DatabaseFacade.EnlistCommitCoordination) pushes the ambient coordinator
-        // SYNCHRONOUSLY in this frame, so the outbox writer stores the row INSIDE the transaction (not on an
-        // autonomous connection). This is the decisive proof that ICurrentCommitCoordinator.Current flowed: if the
-        // ambient scope were stranded (the AsyncLocal-set-inside-an-async-method bug), the writer would fall back to
-        // an autonomous write and the row would SURVIVE the rollback. It must instead be discarded with the tx.
+        // given — observed mode: the consumer enlists its own transaction with Enlist(db, tx), so the outbox writer
+        // stores the row INSIDE the transaction (not on an autonomous connection). This is the decisive proof that
+        // the write enlisted: if it had fallen back to an autonomous write, the row would SURVIVE the rollback. It
+        // must instead be discarded with the transaction.
         const string marker = "evt-enlist-rollback";
         await using var provider = await _BuildProviderAsync();
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<BridgeTestDbContext>();
         var bus = scope.ServiceProvider.GetRequiredService<IBus>();
+        var unitOfWorkManager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
 
         await using var transaction = await db.Database.BeginTransactionAsync(AbortToken);
+        await using var unitOfWork = unitOfWorkManager.Enlist(db, transaction);
 
-        await using (db.Database.EnlistCommitCoordination(transaction, scope.ServiceProvider, AbortToken))
-        {
-            // when — publish enlists the row inside the transaction, then the consumer rolls back.
-            await bus.PublishAsync(
-                new OrderShipped($"{marker}-1"),
-                new PublishOptions { DeliveryMode = DeliveryMode.Durable },
-                AbortToken
-            );
+        // when — publish enlists the row inside the transaction, then the consumer rolls back.
+        await bus.PublishAsync(
+            new OrderShipped($"{marker}-1"),
+            new PublishOptions { DeliveryMode = DeliveryMode.Durable },
+            AbortToken
+        );
 
-            await transaction.RollbackAsync(AbortToken);
-        }
+        await transaction.RollbackAsync(AbortToken);
+        await unitOfWork.RollbackAsync();
 
         // then — the enlisted row rolled back with the transaction.
         (await _CountPublishedContainingAsync(marker))
@@ -256,27 +251,28 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
     [Fact]
     public async Task should_persist_the_outbox_row_atomically_when_enlisted_publish_committed()
     {
-        // given — same enlist seam, but commit. Proves the in-tx write path (not the autonomous fallback): the row
-        // is only visible after commit and survives. Paired with the rollback test, this pins atomic enlistment.
+        // given — same observed-mode enlistment, but commit. Proves the in-tx write path (not the autonomous
+        // fallback): the row is only visible after commit and survives. Paired with the rollback test, this pins
+        // atomic enlistment.
         const string marker = "evt-enlist-commit";
         await using var provider = await _BuildProviderAsync();
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<BridgeTestDbContext>();
         var bus = scope.ServiceProvider.GetRequiredService<IBus>();
+        var unitOfWorkManager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
 
         await using var transaction = await db.Database.BeginTransactionAsync(AbortToken);
+        await using var unitOfWork = unitOfWorkManager.Enlist(db, transaction);
 
-        await using (db.Database.EnlistCommitCoordination(transaction, scope.ServiceProvider, AbortToken))
-        {
-            await bus.PublishAsync(
-                new OrderShipped($"{marker}-1"),
-                new PublishOptions { DeliveryMode = DeliveryMode.Durable },
-                AbortToken
-            );
+        await bus.PublishAsync(
+            new OrderShipped($"{marker}-1"),
+            new PublishOptions { DeliveryMode = DeliveryMode.Durable },
+            AbortToken
+        );
 
-            // when — commit the enlisting transaction.
-            await transaction.CommitAsync(AbortToken);
-        }
+        // when — commit the enlisting transaction, then complete the unit so after-commit work drains.
+        await transaction.CommitAsync(AbortToken);
+        await unitOfWork.CompleteAsync(AbortToken);
 
         // then — the enlisted row committed atomically with the transaction.
         (await _CountPublishedContainingAsync(marker))
@@ -299,33 +295,34 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         await using (var scope = provider.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<BridgeTestDbContext>();
+            var unitOfWorkManager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
             await using var transaction = await db.Database.BeginTransactionAsync(AbortToken);
-            await using (db.Database.EnlistCommitCoordination(transaction, scope.ServiceProvider, AbortToken))
+            await using var unitOfWork = unitOfWorkManager.Enlist(db, transaction);
+            var order = new OrderEntity { Name = "two-saves" };
+            db.Orders.Add(order);
+            for (var i = 0; i < 2; i++)
             {
-                var order = new OrderEntity { Name = "two-saves" };
-                db.Orders.Add(order);
-                for (var i = 0; i < 2; i++)
+                if (i == 1)
                 {
-                    if (i == 1)
-                    {
-                        db.Orders.Add(new OrderEntity { Name = "second-business-batch" });
-                    }
-                    order.EmitIntegrationEvent(new OrderShipped($"evt-two-saves-{i}"));
-                    saved.Add(order.GetIntegrationEvents().Single());
-                    await _SaveAsync(db, synchronous);
-                    order.GetIntegrationEvents().Should().BeEmpty();
+                    db.Orders.Add(new OrderEntity { Name = "second-business-batch" });
                 }
+                order.EmitIntegrationEvent(new OrderShipped($"evt-two-saves-{i}"));
+                saved.Add(order.GetIntegrationEvents().Single());
+                await _SaveAsync(db, synchronous);
+                order.GetIntegrationEvents().Should().BeEmpty();
+            }
 
-                (await _ReadPublishedAsync(provider, "evt-two-saves")).Should().BeEmpty();
-                (await _CountOrdersAsync()).Should().Be(0);
-                if (commit)
-                {
-                    await transaction.CommitAsync(AbortToken);
-                }
-                else
-                {
-                    await transaction.RollbackAsync(AbortToken);
-                }
+            (await _ReadPublishedAsync(provider, "evt-two-saves")).Should().BeEmpty();
+            (await _CountOrdersAsync()).Should().Be(0);
+            if (commit)
+            {
+                await transaction.CommitAsync(AbortToken);
+                await unitOfWork.CompleteAsync(AbortToken);
+            }
+            else
+            {
+                await transaction.RollbackAsync(AbortToken);
+                await unitOfWork.RollbackAsync();
             }
         }
 
@@ -647,7 +644,7 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         services.AddScoped<IHeadlessOutboxDispatcher>(provider => new FaultingDispatcher(
             new OutboxIntegrationEventDispatcher(
                 provider.GetRequiredService<IBus>(),
-                provider.GetRequiredService<ICurrentCommitCoordinator>(),
+                provider.GetRequiredService<IUnitOfWorkManager>(),
                 new IntegrationEventPublishInvokerCache()
             ),
             fault

@@ -18,19 +18,17 @@ public sealed class IdentityTestFixture
 {
     protected override void ConfigureDbContext(IServiceCollection services)
     {
-        services
-            .AddHeadlessDbContext<
-                TestIdentityDbContext,
-                TestUser,
-                TestRole,
-                string,
-                IdentityUserClaim<string>,
-                IdentityUserRole<string>,
-                IdentityUserLogin<string>,
-                IdentityRoleClaim<string>,
-                IdentityUserToken<string>,
-                IdentityUserPasskey<string>
-            >(options => options.UseNpgsql(SqlConnectionString))
-            .AddCommitCoordination();
+        services.AddHeadlessDbContext<
+            TestIdentityDbContext,
+            TestUser,
+            TestRole,
+            string,
+            IdentityUserClaim<string>,
+            IdentityUserRole<string>,
+            IdentityUserLogin<string>,
+            IdentityRoleClaim<string>,
+            IdentityUserToken<string>,
+            IdentityUserPasskey<string>
+        >(options => options.UseNpgsql(SqlConnectionString));
     }
 }

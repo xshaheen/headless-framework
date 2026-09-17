@@ -1,27 +1,29 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.CommitCoordination;
 using Headless.Domain;
+using Headless.EntityFramework.Contexts.Runtime;
 using Headless.Messaging;
+using Headless.UnitOfWork;
 
 namespace Headless.EntityFramework;
 
 /// <summary>
 /// Default <see cref="IHeadlessOutboxDispatcher"/>: writes integration events to the messaging outbox enlisted
-/// in the EF save transaction, so outbox rows persist atomically with the business data.
+/// in the EF save's unit of work, so outbox rows persist atomically with the business data.
 /// </summary>
 /// <remarks>
-/// The save pipeline opens a coordinated EF transaction before this dispatcher runs, so a commit coordinator is
-/// already ambient. Publishing each event through <see cref="IBus"/> with durable delivery lets the outbox writer enlist the
-/// stored rows on that coordinator; the registered EF transaction interceptor dispatches them to the broker
-/// post-commit and discards them on rollback. This dispatcher therefore only fans the events out to the bus.
-/// Register via <c>AddHeadlessDbContextServices(...).AddIntegrationEventOutbox()</c>. Requires a messaging
-/// setup (<c>AddHeadlessMessaging</c>) with an outbox storage provider.
+/// The save pipeline makes its transaction the scope's current unit of work before this dispatcher runs (its own
+/// transaction, or the caller's unit begun with <c>IUnitOfWorkManager.BeginAsync(db)</c>). Publishing each event
+/// through <see cref="IBus"/> with durable delivery lets the outbox writer place the stored rows inside that unit's
+/// transaction; the unit dispatches them to the broker after the commit and discards them on rollback. This
+/// dispatcher therefore only fans the events out to the bus. Register via
+/// <c>AddHeadlessDbContextServices(...).AddIntegrationEventOutbox()</c>. Requires a messaging setup
+/// (<c>AddHeadlessMessaging</c>) with an outbox storage provider.
 /// </remarks>
 internal sealed class OutboxIntegrationEventDispatcher(
     IBus bus,
-    ICurrentCommitCoordinator currentCommitCoordinator,
+    IUnitOfWorkManager unitOfWorkManager,
     IntegrationEventPublishInvokerCache invokerCache
 ) : IHeadlessOutboxDispatcher
 {
@@ -32,14 +34,14 @@ internal sealed class OutboxIntegrationEventDispatcher(
     {
         Argument.IsNotNull(integrationEvents);
 
-        // An empty list can't dispatch anything non-atomically, so the coordination guard only matters when there
+        // An empty list can't dispatch anything non-atomically, so the unit-of-work guard only matters when there
         // is real work — bail before it.
         if (integrationEvents.Count == 0)
         {
             return;
         }
 
-        _EnsureCoordinated();
+        _EnsureUnitOfWorkOwnsTheTransaction();
 
         foreach (var integrationEvent in integrationEvents)
         {
@@ -67,23 +69,18 @@ internal sealed class OutboxIntegrationEventDispatcher(
         DispatchAsync(integrationEvents, CancellationToken.None).GetAwaiter().GetResult();
     }
 
-    // Fail loud rather than dispatch non-atomically. The save pipeline enlists commit coordination only when it
-    // owns the transaction (the new-transaction path); when the caller opened the transaction itself, no
-    // coordinator is ambient and publishing here would store + enqueue the integration event immediately —
-    // breaking the atomic "dispatch on commit, discard on rollback" guarantee. Surface the mis-wire instead of
-    // silently shipping a message a caller rollback can no longer recall.
-    private void _EnsureCoordinated()
+    // Fail loud rather than dispatch non-atomically. The save pipeline guards this before the domain-event drain,
+    // but handlers can add integration events during the drain, so the check is repeated at dispatch time: with no
+    // resource-bearing unit of work current in this scope, publishing here would store + enqueue the integration
+    // event immediately — breaking the atomic "dispatch on commit, discard on rollback" guarantee. Surface the
+    // mis-wire instead of silently shipping a message a caller rollback can no longer recall.
+    private void _EnsureUnitOfWorkOwnsTheTransaction()
     {
-        if (currentCommitCoordinator.Current is not null)
+        if (unitOfWorkManager.Current?.Resource is not null)
         {
             return;
         }
 
-        throw new InvalidOperationException(
-            "Integration events were emitted while saving inside a caller-managed transaction that is not "
-                + "enlisted in commit coordination, so the outbox would dispatch non-atomically. Either let the "
-                + "Headless save pipeline own the transaction (do not open your own before SaveChanges), or call "
-                + "Database.EnlistCommitCoordination(transaction, services) on your transaction before saving."
-        );
+        throw new InvalidOperationException(HeadlessUnitOfWorkMessages.CallerOwnedTransactionWithoutUnitOfWork);
     }
 }

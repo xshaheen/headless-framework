@@ -271,7 +271,7 @@ public sealed partial class OutboxBridgeIntegrationTests
     {
         public async ValueTask ConsumeAsync(ConsumeContext<OrderShipped> context, CancellationToken cancellationToken)
         {
-            await db.ExecuteCoordinatedTransactionAsync(
+            await db.ExecuteTransactionAsync(
                 async (caller, token) =>
                 {
                     if (!await caller.DeadlineReceipts.AnyAsync(row => row.Id == context.MessageId, token))
