@@ -16,6 +16,7 @@ using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
 using Headless.MultiTenancy;
+using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -97,21 +98,25 @@ public interface IJobsCoordinationFixture
     /// <summary>Provider DDL that creates the atomicity probe table if absent and clears its rows.</summary>
     string CreateProbeTableSql { get; }
 
-    /// <summary>Registers this backend's commit-coordination provider (e.g. <c>services.AddPostgreSqlCommitCoordination()</c>).</summary>
-    void ConfigureCommitCoordination(IServiceCollection services);
+    /// <summary>Registers this backend's unit-of-work provider (e.g. <c>services.AddPostgreSqlUnitOfWork()</c>).</summary>
+    void ConfigureUnitOfWork(IServiceCollection services);
 
     /// <summary>Wires this backend's relational messaging storage against <see cref="ConnectionString" />.</summary>
     void ConfigureMessagingStorage(MessagingSetupBuilder setup);
 
     /// <summary>
-    /// Opens a provider connection, begins a commit-coordinated transaction, enlists it, and runs
-    /// <paramref name="operation" /> with the live connection + ambient transaction. The helper owns enlist/commit;
-    /// an operation exception propagates and rolls the transaction back — the AsyncLocal-capture regression net
-    /// (a stranded capture would take the direct path and leave a row after rollback) relies on this.
+    /// Opens a fresh DI scope on <paramref name="services" />, begins an owned unit of work on a provider connection
+    /// through that scope's <c>IUnitOfWorkManager</c>, and runs <paramref name="operation" /> with the SAME scope's
+    /// <see cref="IServiceProvider" /> plus the live connection/transaction. Resolving a manager
+    /// (<c>ITimeJobManager&lt;&gt;</c>/<c>ICronJobManager&lt;&gt;</c>/<c>IJobScheduler</c>) from the returned scope
+    /// sees this unit as <c>IUnitOfWorkManager.Current</c>, so its Add path enlists in the SAME transaction the raw
+    /// SQL below runs in. The helper owns commit/rollback: an operation exception propagates and rolls the unit's
+    /// transaction back — the regression net (a stranded capture would take the direct path and leave a row after
+    /// rollback) relies on this.
     /// </summary>
     Task RunCoordinatedTransactionAsync(
         IServiceProvider services,
-        Func<DbConnection, DbTransaction, CancellationToken, Task> operation,
+        Func<IServiceProvider, DbConnection, DbTransaction, CancellationToken, Task> operation,
         CancellationToken cancellationToken
     );
 }
@@ -278,10 +283,10 @@ public static class JobsCoordinationFixtureExtensions
     public const string CoordinatedFacadeFunctionName = "Coordinated_Facade_Enqueue_Sample";
 
     /// <summary>
-    /// Builds (but does not start) a host wired like <see cref="BuildHost" /> plus commit coordination, so the
-    /// <c>JobsManager</c> coordinated-enqueue path is active and <c>ExecuteCoordinatedTransactionAsync</c> can enlist.
-    /// A test time-job function is registered before the host's startup <c>Build()</c> so <c>AddAsync</c> validation
-    /// passes (empty cron expression so the startup seeder ignores it).
+    /// Builds (but does not start) a host wired like <see cref="BuildHost" /> plus the unit-of-work provider, so the
+    /// <c>JobsManagerFacade</c> coordinated-enqueue path is active and <c>RunCoordinatedTransactionAsync</c> can
+    /// enlist. A test time-job function is registered before the host's startup <c>Build()</c> so <c>AddAsync</c>
+    /// validation passes (empty cron expression so the startup seeder ignores it).
     /// </summary>
     internal static IHost BuildCoordinatedEnqueueHost(
         this IJobsCoordinationFixture fixture,
@@ -391,9 +396,9 @@ public static class JobsCoordinationFixtureExtensions
             });
         }
 
-        // AddCommitCoordination wins over the Jobs null-coordinator fallback (AddSingleton over TryAddSingleton),
-        // so ICurrentCommitCoordinator resolves to the real scope stack that EnlistCommitCoordination pushes onto.
-        fixture.ConfigureCommitCoordination(builder.Services);
+        // AddUnitOfWork() is idempotent (KTD9): this registers the scoped IUnitOfWorkManager the JobsManagerFacade
+        // resolves .Current from, and RunCoordinatedTransactionAsync begins the unit through the same manager type.
+        fixture.ConfigureUnitOfWork(builder.Services);
 
         // Same purpose as on BuildHost: a deliberately skewed node clock, so a write that is supposed to be anchored
         // on the STORE's instant cannot pass by accidentally agreeing with this process's clock.
@@ -1199,4 +1204,25 @@ internal sealed class JobsSideEffectsProbe : IJobsHostScheduler, IJobsNotificati
     {
         return Task.CompletedTask;
     }
+}
+
+/// <summary>
+/// Wraps the live connection/transaction <see cref="IJobsCoordinationFixture.RunCoordinatedTransactionAsync" />
+/// hands to a test body as an <see cref="IRelationalUnitOfWorkResource" />, for scenarios that call an
+/// <c>ICoordinatedJobWriter</c> directly rather than through a manager resolved from the scope.
+/// </summary>
+public sealed class FixedRelationalResource(DbConnection connection, DbTransaction transaction)
+    : IRelationalUnitOfWorkResource
+{
+    public DbConnection Connection { get; } = connection;
+
+    public DbTransaction Transaction { get; } = transaction;
+
+    public bool IsOwned => false;
+
+    public bool IsTransactionCompleted => false;
+
+    public ValueTask CommitAsync(CancellationToken cancellationToken) => ValueTask.CompletedTask;
+
+    public ValueTask RollbackAsync(CancellationToken cancellationToken) => ValueTask.CompletedTask;
 }

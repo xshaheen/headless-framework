@@ -1,13 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
-using Headless.CommitCoordination;
 using Headless.Coordination;
 using Headless.Jobs;
 using Headless.Jobs.Entities;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Testing.Testcontainers;
+using Headless.UnitOfWork;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -48,6 +48,9 @@ public sealed class SqlServerJobsCoordinationFixture
         "DROP TABLE IF EXISTS [jobs].[CronJobOccurrences];"
         + "DROP TABLE IF EXISTS [consumer_jobs].[consumer_time_jobs];"
         + "IF EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'consumer_jobs') DROP SCHEMA [consumer_jobs];"
+        // Stale leftover from a reused container (HeadlessSqlServerFixture.WithReuse(true)) predating a schema no
+        // current Jobs code creates; drop it defensively so a dirty reused container cannot block the schema drop.
+        + "DROP TABLE IF EXISTS [jobs].[TimeJobIdempotencyReservations];"
         + "DROP TABLE IF EXISTS [jobs].[TimeJobs];"
         + "DROP TABLE IF EXISTS [jobs].[CronJobs];"
         + "DROP TABLE IF EXISTS [jobs].[ApplicationProbe];"
@@ -97,9 +100,9 @@ public sealed class SqlServerJobsCoordinationFixture
         return new SqlConnection(ConnectionString);
     }
 
-    public void ConfigureCommitCoordination(IServiceCollection services)
+    public void ConfigureUnitOfWork(IServiceCollection services)
     {
-        services.AddSqlServerCommitCoordination();
+        services.AddSqlServerUnitOfWork();
     }
 
     public void ConfigureMessagingStorage(MessagingSetupBuilder setup)
@@ -109,30 +112,26 @@ public sealed class SqlServerJobsCoordinationFixture
 
     public async Task RunCoordinatedTransactionAsync(
         IServiceProvider services,
-        Func<DbConnection, DbTransaction, CancellationToken, Task> operation,
+        Func<IServiceProvider, DbConnection, DbTransaction, CancellationToken, Task> operation,
         CancellationToken cancellationToken
     )
     {
+        // A fresh scope so the manager begun below is the SAME scope's IUnitOfWorkManager a resolved
+        // ITimeJobManager<>/ICronJobManager<>/IJobScheduler facade reads .Current from.
+        await using var scope = services.CreateAsyncScope();
+        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
         await using var connection = new SqlConnection(ConnectionString);
 
-        await connection.ExecuteCoordinatedTransactionAsync(
-            async (conn, ct) =>
+        await manager.RunAsync(
+            connection,
+            async (unitOfWork, ct) =>
             {
-                // Reach the live transaction through the same relational handle production participants use.
-                var coordinator =
-                    services.GetRequiredService<ICurrentCommitCoordinator>().Current
-                    ?? throw new InvalidOperationException("No ambient coordinator — the helper did not enlist.");
+                var resource =
+                    unitOfWork.Resource as IRelationalUnitOfWorkResource
+                    ?? throw new InvalidOperationException("The begun unit of work exposed no relational resource.");
 
-                if (coordinator.Relational?.Transaction is not { } transaction)
-                {
-                    throw new InvalidOperationException(
-                        "The coordinated scope exposed no live relational transaction."
-                    );
-                }
-
-                await operation(conn, transaction, ct);
+                await operation(scope.ServiceProvider, resource.Connection, resource.Transaction, ct);
             },
-            services,
             cancellationToken: cancellationToken
         );
     }

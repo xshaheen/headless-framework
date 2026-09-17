@@ -88,13 +88,13 @@ public abstract class JobsTenancyConformanceTests<TFixture>(TFixture fixture) : 
 
         try
         {
-            var manager = host.Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
             var job = _TenantTimeJob("tenant-a");
 
             await fixture.RunCoordinatedTransactionAsync(
                 host.Services,
-                async (connection, transaction, innerCt) =>
+                async (scopedServices, connection, transaction, innerCt) =>
                 {
+                    var manager = scopedServices.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
                     await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, innerCt);
                     (await manager.AddAsync(job, innerCt)).Should().NotBeNull();
                 },
@@ -119,14 +119,14 @@ public abstract class JobsTenancyConformanceTests<TFixture>(TFixture fixture) : 
 
         try
         {
-            var manager = host.Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
             var first = _TenantTimeJob("tenant-a");
             var second = _TenantTimeJob("tenant-b");
 
             await fixture.RunCoordinatedTransactionAsync(
                 host.Services,
-                async (connection, transaction, innerCt) =>
+                async (scopedServices, connection, transaction, innerCt) =>
                 {
+                    var manager = scopedServices.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
                     await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, innerCt);
                     (await manager.AddBatchAsync([first, second], innerCt)).Should().HaveCount(2);
                 },
@@ -152,15 +152,15 @@ public abstract class JobsTenancyConformanceTests<TFixture>(TFixture fixture) : 
 
         try
         {
-            var scheduler = host.Services.GetRequiredService<IJobScheduler>();
             var request = new CoordinatedFacadeRequest(Guid.NewGuid(), "tenant scheduler");
             var options = new JobOptions { TenantId = "tenant-a" };
             var scheduledId = Guid.Empty;
 
             await fixture.RunCoordinatedTransactionAsync(
                 host.Services,
-                async (connection, transaction, innerCt) =>
+                async (scopedServices, connection, transaction, innerCt) =>
                 {
+                    var scheduler = scopedServices.GetRequiredService<IJobScheduler>();
                     await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, innerCt);
                     scheduledId = await scheduler.EnqueueAsync(request, options, innerCt);
                     scheduledId.Should().NotBeEmpty();
@@ -191,7 +191,6 @@ public abstract class JobsTenancyConformanceTests<TFixture>(TFixture fixture) : 
 
         try
         {
-            var manager = host.Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
             var currentTenant = host.Services.GetRequiredService<ICurrentTenant>();
             var job = _TenantTimeJob(tenantId: null);
 
@@ -199,8 +198,9 @@ public abstract class JobsTenancyConformanceTests<TFixture>(TFixture fixture) : 
             {
                 await fixture.RunCoordinatedTransactionAsync(
                     host.Services,
-                    async (connection, transaction, innerCt) =>
+                    async (scopedServices, connection, transaction, innerCt) =>
                     {
+                        var manager = scopedServices.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
                         await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, innerCt);
                         (await manager.AddAsync(job, innerCt)).Should().NotBeNull();
                     },
@@ -309,15 +309,15 @@ public abstract class JobsTenancyConformanceTests<TFixture>(TFixture fixture) : 
 
         try
         {
-            var manager = host.Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
             var job = _TenantTimeJob("tenant-a");
             var sentinel = new InvalidOperationException("force rollback");
 
             var act = () =>
                 fixture.RunCoordinatedTransactionAsync(
                     host.Services,
-                    async (connection, transaction, innerCt) =>
+                    async (scopedServices, connection, transaction, innerCt) =>
                     {
+                        var manager = scopedServices.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
                         await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, innerCt);
                         await manager.AddAsync(job, innerCt);
 
