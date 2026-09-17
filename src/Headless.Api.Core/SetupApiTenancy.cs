@@ -9,6 +9,7 @@ using Headless.MultiTenancy;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -469,7 +470,9 @@ public sealed class HeadlessTenantCatalogResolutionBuilder
     /// <see cref="RouteTenantIdentifierSourceOptions.DefaultRouteValueName"/>). Repeat registrations of
     /// the source type deduplicate while options contributions accumulate (KTD3). Requires
     /// <see cref="SetupApiTenancy.UseHeadlessTenantCatalogResolution"/> to run after
-    /// <c>UseRouting()</c>, or every request resolves as host context (R10).
+    /// <c>UseRouting()</c>, or every request resolves as host context (R10). Every overload also wraps
+    /// the routing <see cref="LinkGenerator"/> once so generated links keep the tenant segment (R13);
+    /// see <see cref="RouteTenantIdentifierSourceOptions.PromoteAmbientRouteValue"/> to opt out.
     /// </remarks>
     public HeadlessTenantCatalogResolutionBuilder AddRouteSource()
     {
@@ -539,6 +542,7 @@ public sealed class HeadlessTenantCatalogResolutionBuilder
             .Bind(configuration);
 
         _services.TryAddEnumerable(ServiceDescriptor.Singleton<ITenantIdentifierSource, RouteTenantIdentifierSource>());
+        _DecorateLinkGeneratorOnce();
 
         return this;
     }
@@ -560,6 +564,51 @@ public sealed class HeadlessTenantCatalogResolutionBuilder
         }
 
         _services.TryAddEnumerable(ServiceDescriptor.Singleton<ITenantIdentifierSource, RouteTenantIdentifierSource>());
+        _DecorateLinkGeneratorOnce();
+    }
+
+    /// <summary>
+    /// Wraps the routing <see cref="LinkGenerator"/> with
+    /// <see cref="TenantAmbientRouteValueLinkGenerator"/> exactly once across every
+    /// <c>AddRouteSource</c> call (R13, KTD7).
+    /// </summary>
+    /// <remarks>
+    /// The wrap cannot be made conditional on
+    /// <see cref="RouteTenantIdentifierSourceOptions.PromoteAmbientRouteValue"/> here because options
+    /// contributions (including <c>IConfiguration</c> binds) are only evaluated once the container is
+    /// built; the decorator reads the switch per call instead. Consumers that replace the
+    /// <see cref="LinkGenerator"/> registration after registering the route source remove the wrap.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// No unkeyed <see cref="LinkGenerator"/> registration exists to decorate — impossible after
+    /// <c>AddRouting()</c> unless a keyed-only or removed registration left the collection in that state.
+    /// </exception>
+    private void _DecorateLinkGeneratorOnce()
+    {
+        // AddRouting() is TryAdd-based: repeating it here only guarantees the LinkGenerator descriptor
+        // exists to wrap, whether or not AddControllers()/AddRouting() ran before the route source, and
+        // a later call of either cannot undo the wrap.
+        _services.AddRouting();
+
+        if (
+            _services.Any(descriptor =>
+                descriptor.ServiceType == typeof(TenantAmbientRouteValueLinkGenerator.RegistrationMarker)
+            )
+        )
+        {
+            return;
+        }
+
+        _services.AddSingleton(TenantAmbientRouteValueLinkGenerator.RegistrationMarker.Instance);
+
+        if (!_services.TryDecorate<LinkGenerator, TenantAmbientRouteValueLinkGenerator>())
+        {
+            throw new InvalidOperationException(
+                "AddRouteSource() could not decorate the routing LinkGenerator: no unkeyed LinkGenerator "
+                    + "registration exists even though AddRouting() was called. Register the route source "
+                    + "after any code that removes or re-keys the LinkGenerator service."
+            );
+        }
     }
 
     /// <summary>Registers the built-in header tenant identifier source with the default header name (R3).</summary>

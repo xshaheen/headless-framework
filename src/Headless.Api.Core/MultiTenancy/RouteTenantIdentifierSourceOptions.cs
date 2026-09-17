@@ -23,6 +23,27 @@ public sealed class RouteTenantIdentifierSourceOptions
     /// <summary>The route value name holding the tenant identifier; the route pattern must capture it.</summary>
     public string RouteValueName { get; set; } = DefaultRouteValueName;
 
+    /// <summary>
+    /// Whether generated links keep the current request's tenant route value when the caller
+    /// supplies none (R13). Defaults to <see langword="true"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Registering the route source wraps the routing <c>LinkGenerator</c> so that <c>Url.Action</c>,
+    /// <c>GetPathByAction</c>, and <c>GetPathByName</c> — which ASP.NET Core would otherwise generate
+    /// without the leading <c>{tenant}</c> segment when linking to another endpoint — promote the
+    /// current request's value named by <see cref="RouteValueName"/> into the explicit values. An
+    /// explicit value for that name always wins, so a link to a different tenant is unaffected.
+    /// </para>
+    /// <para>
+    /// The switch is honored at link-generation time, not at registration: the wrapper is always
+    /// installed with the route source (through every <c>AddRouteSource</c> overload, including an
+    /// <c>IConfiguration</c> bind resolved later) and passes every call through untouched when this
+    /// is <see langword="false"/>, restoring the ASP.NET Core default behavior.
+    /// </para>
+    /// </remarks>
+    public bool PromoteAmbientRouteValue { get; set; } = true;
+
     /// <summary>The default <see cref="RouteValueName"/> when no configuration contribution overrides it.</summary>
     public const string DefaultRouteValueName = "tenant";
 }
