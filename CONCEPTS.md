@@ -335,6 +335,15 @@ Settings/Features/Permissions keyed by the canonical id. See
 [docs/llms/multi-tenancy.md](docs/llms/multi-tenancy.md#tenant-catalog) for setup, the extension
 tiers, and staleness bounds.
 
+### Tenant identifier source
+
+The pre-authentication seam (`ITenantIdentifierSource` in `Headless.Api.Core`) that reads a raw
+tenant identifier from an HTTP request — a host label, a route value, or a header value — and hands
+it to the tenant catalog. Sources are consulted in registration order and the first non-blank
+identifier wins; a source may also report an ambiguous request (for example a duplicated header),
+which is rejected before any catalog lookup. Sources never normalize or validate identifiers; the
+catalog owns that. Built-in sources: host template, route value, header, delegate (issue #252).
+
 ## Jobs (tenancy)
 
 ### System job
