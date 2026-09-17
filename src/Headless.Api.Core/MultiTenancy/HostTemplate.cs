@@ -33,8 +33,14 @@ internal sealed class HostTemplate
 
     // NonBacktracking cannot be combined with Compiled; the grammar is backtracking-free, so the
     // automaton engine is a strict improvement over a compiled backtracking regex here (KTD2).
+    // CultureInvariant: hostnames are ASCII case-insensitive (RFC 4343), so the process culture must
+    // not change which literal labels match — under tr-TR, IgnoreCase alone folds 'I'/'i' through the
+    // Turkish dotted/dotless forms and a literal label containing 'i' stops matching its uppercase form.
     private const RegexOptions _MatchOptions =
-        RegexOptions.NonBacktracking | RegexOptions.IgnoreCase | RegexOptions.ExplicitCapture;
+        RegexOptions.NonBacktracking
+        | RegexOptions.IgnoreCase
+        | RegexOptions.CultureInvariant
+        | RegexOptions.ExplicitCapture;
 
     private readonly Regex _regex;
 

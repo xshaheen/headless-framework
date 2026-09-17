@@ -12,13 +12,15 @@ namespace Headless.Api.MultiTenancy;
 /// Tenant identifier source reading one or more request headers (R3): exactly one value across the
 /// configured <see cref="HeaderTenantIdentifierSourceOptions.HeaderNames"/> is yielded raw and
 /// unchanged; an absent or whitespace-only value is <see cref="TenantIdentifierSourceResult.None"/>;
-/// any second value is <see cref="TenantIdentifierSourceResult.Invalid"/>.
+/// any second non-blank value is <see cref="TenantIdentifierSourceResult.Invalid"/>.
 /// </summary>
 /// <remarks>
 /// <para>
 /// Ambiguity is counted, not compared (KTD4): a header line repeated with the same value is as
 /// ambiguous as two differing lines, and a second configured name present beside the first counts
-/// the same way. One header line whose value contains a comma is a single value — the source never
+/// the same way. Blank lines count as absent, so a blank line beside one real value does not make it
+/// ambiguous, and a name listed more than once (case-insensitively) is read once. One header line
+/// whose value contains a comma is a single value — the source never
 /// splits on commas — so <c>a,b</c> reaches the catalog unchanged, where it can only ever match a
 /// tenant whose identifier literally contains a comma.
 /// </para>
@@ -40,7 +42,10 @@ internal sealed class HeaderTenantIdentifierSource(IOptions<HeaderTenantIdentifi
     : ITenantIdentifierSource
 {
     // Snapshotted once: startup validation proved the list is non-empty and every name is a token (R7).
-    private readonly string[] _headerNames = [.. options.Value.HeaderNames];
+    // Distinct because the same name can reach the list through several registration paths (a repeated
+    // AddHeaderSource(string), a configuration bind, two binds of one section); that is benign intent,
+    // not an operator error, and reading one header twice must not count its single value as ambiguous.
+    private readonly string[] _headerNames = [.. options.Value.HeaderNames.Distinct(StringComparer.OrdinalIgnoreCase)];
 
     /// <inheritdoc/>
     public TenantIdentifierSourceResult GetIdentifier(HttpContext context)
@@ -54,19 +59,26 @@ internal sealed class HeaderTenantIdentifierSource(IOptions<HeaderTenantIdentifi
 
         foreach (var headerName in _headerNames)
         {
-            if (!context.Request.Headers.TryGetValue(headerName, out var values) || values.Count == 0)
+            if (!context.Request.Headers.TryGetValue(headerName, out var values))
             {
                 continue;
             }
 
-            count += values.Count;
-
-            if (count > 1)
+            foreach (var value in values)
             {
-                return TenantIdentifierSourceResult.Invalid;
-            }
+                // Blank equals absent, so a blank line must not make a lone value elsewhere ambiguous.
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    continue;
+                }
 
-            identifier = values[0];
+                if (++count > 1)
+                {
+                    return TenantIdentifierSourceResult.Invalid;
+                }
+
+                identifier = value;
+            }
         }
 
         return count == 1 ? TenantIdentifierSourceResult.Found(identifier) : TenantIdentifierSourceResult.None;

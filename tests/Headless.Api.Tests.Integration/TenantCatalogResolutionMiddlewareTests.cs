@@ -29,6 +29,7 @@ using Tests.Helpers;
 
 namespace Tests;
 
+[Collection(TenantCatalogOrderingWarningCollection.Name)]
 public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
 {
     private const string IdentifierHeader = "X-Test-Catalog-Identifier";
@@ -400,6 +401,9 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
         using var response = await _SendAsync(client, identifier: "acme", user: "alice", tenantId: "ten_999");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // R17: the post-authorization mismatch rewrite is a catalog rejection too — non-cacheable at the writer.
+        response.Headers.CacheControl.Should().NotBeNull();
+        response.Headers.CacheControl!.NoStore.Should().BeTrue();
     }
 
     [Fact]

@@ -14,7 +14,7 @@ namespace Tests.MultiTenancy;
 /// <summary>
 /// Pins the R3 header source behavior in isolation: exactly one value across the configured names is
 /// yielded raw, an absent or whitespace-only value is <see cref="TenantIdentifierSourceResultKind.None"/>,
-/// any second value (repeated lines or two configured names both present) is
+/// any second non-blank value (repeated lines or two configured names both present) is
 /// <see cref="TenantIdentifierSourceResultKind.Invalid"/>, and every consult appends the configured
 /// names to the response <c>Vary</c> header regardless of outcome (KTD4). Also pins the KTD3 builder
 /// registration semantics for <c>AddHeaderSource</c>.
@@ -109,6 +109,57 @@ public sealed class HeaderTenantIdentifierSourceTests : TestBase
         var source = _CreateSource(HeaderTenantIdentifierSourceOptions.DefaultHeaderName, LegacyHeader);
         var context = new DefaultHttpContext();
         context.Request.Headers[LegacyHeader] = "acme";
+
+        var result = source.GetIdentifier(context);
+
+        result.Kind.Should().Be(TenantIdentifierSourceResultKind.Found);
+        result.Identifier.Should().Be("acme");
+    }
+
+    [Fact]
+    public void should_find_the_identifier_when_a_configured_name_is_listed_twice()
+    {
+        // The same name can reach the list through several registration paths; reading one header
+        // twice must not count its single value as ambiguous.
+        var source = _CreateSource(HeaderTenantIdentifierSourceOptions.DefaultHeaderName, "x-tenant");
+        var context = new DefaultHttpContext();
+        context.Request.Headers[HeaderTenantIdentifierSourceOptions.DefaultHeaderName] = "acme";
+
+        var result = source.GetIdentifier(context);
+
+        result.Kind.Should().Be(TenantIdentifierSourceResultKind.Found);
+        result.Identifier.Should().Be("acme");
+        _VaryEntries(context).Should().Equal(HeaderTenantIdentifierSourceOptions.DefaultHeaderName);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void should_find_the_identifier_when_another_configured_name_is_blank(string blank)
+    {
+        // Blank equals absent: a blank line under one name must not make the lone value under the
+        // other name ambiguous.
+        var source = _CreateSource(HeaderTenantIdentifierSourceOptions.DefaultHeaderName, LegacyHeader);
+        var context = new DefaultHttpContext();
+        // Add rather than the indexer: the indexer drops an empty value instead of storing it, and the
+        // test needs the empty line present the way Kestrel keeps an `X-Tenant:` request line.
+#pragma warning disable ASP0019
+        context.Request.Headers.Add(HeaderTenantIdentifierSourceOptions.DefaultHeaderName, blank);
+#pragma warning restore ASP0019
+        context.Request.Headers[LegacyHeader] = "acme";
+
+        var result = source.GetIdentifier(context);
+
+        result.Kind.Should().Be(TenantIdentifierSourceResultKind.Found);
+        result.Identifier.Should().Be("acme");
+    }
+
+    [Fact]
+    public void should_find_the_identifier_when_the_header_is_repeated_with_a_blank_line()
+    {
+        var source = _CreateSource();
+        var context = new DefaultHttpContext();
+        context.Request.Headers[HeaderTenantIdentifierSourceOptions.DefaultHeaderName] = new StringValues(["", "acme"]);
 
         var result = source.GetIdentifier(context);
 
@@ -232,6 +283,38 @@ public sealed class HeaderTenantIdentifierSourceTests : TestBase
         _ResolveOptions(services)
             .HeaderNames.Should()
             .Equal(HeaderTenantIdentifierSourceOptions.DefaultHeaderName, LegacyHeader);
+    }
+
+    [Fact]
+    public void should_not_append_a_string_overload_name_that_is_already_listed()
+    {
+        // Header names are case-insensitive on the wire: a repeat contribution restates the same intent,
+        // and listing it twice would otherwise count one header's single value as ambiguous.
+        var services = new ServiceCollection();
+        var builder = new HeadlessTenantCatalogResolutionBuilder(services);
+
+        builder.AddHeaderSource(HeaderTenantIdentifierSourceOptions.DefaultHeaderName).AddHeaderSource("x-tenant");
+
+        var options = _ResolveOptions(services);
+        var source = new HeaderTenantIdentifierSource(Options.Create(options));
+        var context = new DefaultHttpContext();
+        context.Request.Headers[HeaderTenantIdentifierSourceOptions.DefaultHeaderName] = "acme";
+
+        var result = source.GetIdentifier(context);
+
+        options.HeaderNames.Should().Equal(HeaderTenantIdentifierSourceOptions.DefaultHeaderName);
+        result.Kind.Should().Be(TenantIdentifierSourceResultKind.Found);
+        result.Identifier.Should().Be("acme");
+    }
+
+    [Fact]
+    public void should_leave_the_list_unchanged_when_contributing_an_already_listed_name()
+    {
+        var options = new HeaderTenantIdentifierSourceOptions { HeaderNames = ["X-Custom", LegacyHeader] };
+
+        options.ContributeHeaderName("x-custom");
+
+        options.HeaderNames.Should().Equal("X-Custom", LegacyHeader);
     }
 
     [Fact]

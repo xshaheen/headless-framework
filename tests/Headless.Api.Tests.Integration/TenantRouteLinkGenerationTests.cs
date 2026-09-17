@@ -256,6 +256,7 @@ public sealed class TenantRouteLinkGenerationTests : TestBase
 
     // --- app factory and helpers ---
 
+    /// <summary>Builds the MVC + tenancy host every scenario sends through.</summary>
     /// <param name="configureSources">
     /// Source registration; defaults to a single <c>AddRouteSource()</c>. Must register the route
     /// source, or nothing wraps the <see cref="LinkGenerator"/>.

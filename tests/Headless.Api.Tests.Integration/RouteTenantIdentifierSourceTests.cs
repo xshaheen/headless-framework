@@ -33,6 +33,7 @@ namespace Tests;
 /// Error-level <c>HEADLESS_TENANT_CATALOG_ROUTE_SOURCE_MISORDERED</c> event once per process with
 /// no request data (R18).
 /// </summary>
+[Collection(TenantCatalogOrderingWarningCollection.Name)]
 public sealed class RouteTenantIdentifierSourceTests : TestBase
 {
     private const string MisorderedEventName = "HEADLESS_TENANT_CATALOG_ROUTE_SOURCE_MISORDERED";

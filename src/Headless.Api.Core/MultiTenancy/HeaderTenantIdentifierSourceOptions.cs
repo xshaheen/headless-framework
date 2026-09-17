@@ -10,10 +10,10 @@ namespace Headless.Api.MultiTenancy;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Every configured name shares one duplicate-detection scope: exactly one value across all of them
-/// is the identifier, and any second value (a repeated line, or two names both present) is ambiguous
-/// and rejects the request (KTD4). Each name is also appended to the response <c>Vary</c> header on
-/// every consult.
+/// Every configured name shares one duplicate-detection scope: exactly one non-blank value across all
+/// of them is the identifier, and any second value (a repeated line, or two names both present) is
+/// ambiguous and rejects the request (KTD4). A name listed more than once is read once. Each name is
+/// also appended to the response <c>Vary</c> header on every consult.
 /// </para>
 /// <para>
 /// Options contributions accumulate across <c>AddHeaderSource</c> calls (KTD3), with one refinement so
@@ -45,7 +45,7 @@ public sealed class HeaderTenantIdentifierSourceOptions
 
     /// <summary>
     /// The request header names read for the identifier, in order. Must contain at least one valid
-    /// HTTP token (validated at startup); every entry is snapshotted once by the source.
+    /// HTTP token (validated at startup); the source snapshots the distinct names (case-insensitively) once.
     /// </summary>
     public IList<string> HeaderNames { get; set; }
 
@@ -60,7 +60,7 @@ public sealed class HeaderTenantIdentifierSourceOptions
 
     /// <summary>
     /// Contributes one header name under the KTD3 rule: replaces the untouched default list, otherwise
-    /// appends.
+    /// appends — unless the name is already listed (case-insensitively), which is a no-op.
     /// </summary>
     internal void ContributeHeaderName(string headerName)
     {
@@ -68,8 +68,10 @@ public sealed class HeaderTenantIdentifierSourceOptions
         {
             HeaderNames = [headerName];
         }
-        else
+        else if (!HeaderNames.Contains(headerName, StringComparer.OrdinalIgnoreCase))
         {
+            // Header names are case-insensitive on the wire, so a repeat contribution is the same
+            // intent restated, not a second header to read.
             HeaderNames.Add(headerName);
         }
     }

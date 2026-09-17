@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Globalization;
 using Headless.Api.MultiTenancy;
 using Headless.Testing.Tests;
 
@@ -38,6 +39,39 @@ public sealed class HostTemplateTests : TestBase
 
         matched.Should().BeTrue();
         identifier.Should().Be(expectedIdentifier);
+    }
+
+    [Fact]
+    public void should_match_literal_labels_case_insensitively_under_a_turkish_culture()
+    {
+        // Hostnames are ASCII case-insensitive regardless of process culture. Without
+        // CultureInvariant, IgnoreCase folds 'I'/'i' through the Turkish dotted/dotless forms under
+        // tr-TR, so the literal label "api" fails to match "API". CurrentCulture is per-thread/async
+        // flow, so this swap does not leak into tests running in parallel.
+        var originalCulture = CultureInfo.CurrentCulture;
+        var originalUiCulture = CultureInfo.CurrentUICulture;
+
+        try
+        {
+            var turkish = CultureInfo.GetCultureInfo("tr-TR");
+            CultureInfo.CurrentCulture = turkish;
+            CultureInfo.CurrentUICulture = turkish;
+
+            var parsed = HostTemplate.TryParse("api.{tenant}.example.com", out var hostTemplate, out var error);
+
+            parsed.Should().BeTrue(error ?? "TryParse failed.");
+            hostTemplate.Should().NotBeNull();
+
+            var matched = hostTemplate!.Match("API.ACME.EXAMPLE.COM", out var identifier);
+
+            matched.Should().BeTrue();
+            identifier.Should().Be("ACME");
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+            CultureInfo.CurrentUICulture = originalUiCulture;
+        }
     }
 
     [Theory]

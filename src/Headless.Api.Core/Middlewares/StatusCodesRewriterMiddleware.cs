@@ -20,7 +20,7 @@ namespace Headless.Api.Middlewares;
 /// A request carrying a <c>TenantIdentifierMismatchFeature</c> (R19) is rewritten whatever status the
 /// authorization pipeline produced — not only a bare 403, since a cookie-style scheme forbids with a
 /// 302 — because the secure-by-default mismatch rejection must stay byte-identical to the generic
-/// unknown/disabled rejection (<see cref="TenantCatalogRejectionWriter.BuildMismatch"/>). Both the
+/// unknown/disabled rejection (<see cref="TenantCatalogRejectionWriter.RejectMismatchAsync"/>). Both the
 /// status and the body are overridden.
 /// All writes are routed through <see cref="Microsoft.AspNetCore.Http.IProblemDetailsService"/> when
 /// registered, falling back to <c>Results.Problem</c> for minimal-host scenarios.
@@ -52,13 +52,11 @@ internal sealed class StatusCodesRewriterMiddleware(
         {
             context.Response.Clear();
 
-            var (mismatchStatusCode, mismatchProblemDetails) = TenantCatalogRejectionWriter.BuildMismatch(
-                problemDetailsCreator,
-                catalogOptions.Value.DetailedResolutionErrors
-            );
-
+            // RejectMismatchAsync also stamps Cache-Control: no-store (R17) — the same rejection path
+            // TenantResolutionMiddleware's claim-vs-feature fast path takes, so both mismatch rewrites stay
+            // byte-identical, headers included.
             await TenantCatalogRejectionWriter
-                .WriteAsync(context, mismatchStatusCode, mismatchProblemDetails)
+                .RejectMismatchAsync(context, problemDetailsCreator, catalogOptions.Value.DetailedResolutionErrors)
                 .ConfigureAwait(false);
 
             return;
