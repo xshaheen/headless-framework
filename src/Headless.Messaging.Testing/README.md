@@ -13,7 +13,7 @@ Integration-testing a messaging pipeline typically requires a running broker and
 - **Lane-Aware Observations**: registrations use `setup.Bus` / `setup.Queue`, while observations use `WaitForPublished<T>(MessageLane.Bus)` / `MessageLane.Queue`; identical payloads on the two lanes remain distinct
 - **Full Pipeline Coverage**: Decorates the real bus/queue transports and consume pipeline, so middleware, serialization, and consumer logic all execute
 - **Store-First By Default**: keeps the production `DeliveryMode.Durable` default, so a plain publish is stored first and dispatched from storage exactly as in the application; `RecordedMessage.RequestedDeliveryMode` / `ResolvedDeliveryMode` report what was asked for and what ran
-- **Coordinated Delivery**: `RunCoordinatedAsync(...)` opens a commit-coordination scope so tests can publish types registered `WithDeliveryMode(DeliveryMode.Coordinated)` and observe commit versus rollback
+- **Required Enlistment**: `RunInUnitOfWorkAsync(...)` creates a service scope, begins a resource-less unit of work on it, and runs the delegate with that scope's provider, so tests can publish types registered `WithEnlistment(TransactionEnlistment.Required)` and observe completion versus rollback
 - **Isolated Per Test**: Each `MessagingTestHarness` instance owns its own observation store; `ResetAsync()` drains in-flight work before clearing a shared one
 - **Host Integration**: `AddMessagingTestHarness()` extension decorates an existing DI container for use with `WebApplicationFactory`, `IHost`, or `WebApplication`
 - **Predicate Overloads**: Wait for a specific message matching a condition, not just any message of a type
@@ -22,9 +22,9 @@ Integration-testing a messaging pipeline typically requires a running broker and
 
 Use the testing package for application tests that need to assert published messages or consumed messages. Provider conformance still belongs in provider-specific or shared harness tests.
 
-The harness does not weaken delivery: `MessagingOptions.DefaultDeliveryMode` stays `Durable`, so `PublishAsync` returns once the row is in in-memory storage and the transport send, the `Published` observation, and consumption follow on dispatcher threads. Assert through `WaitFor*` rather than reading the collections right after a publish. `ResetAsync()` waits until no published row is `Scheduled`/`Queued` and no received row is `Scheduled` (those states bracket every send and consumer execution), drops transport messages no consumer picked up, and only then clears observations and storage. A publish that is not yet due is clock-parked and is not awaited: it is stored as `Queued` when due within a minute and as `Delayed` beyond that, the dispatcher holds it either way, and it publishes when due on the host `TimeProvider` (a `Queued` row counts as in flight only once it is due on that clock), so a shared harness should not carry pending delays across tests, or should advance a `FakeTimeProvider` past them before resetting. `RunCoordinatedAsync` opens a non-relational scope through `ICommitScopeFactory`: in-memory storage captures the publishes on it, commit stores and dispatches them, rollback discards them. A `Coordinated` request resolves to `Durable` once its scope check passes, so such a message records `RequestedDeliveryMode = Coordinated` and `ResolvedDeliveryMode = Durable`.
+The harness does not weaken delivery: `MessagingOptions.DefaultDeliveryMode` stays `Durable`, so `PublishAsync` returns once the row is in in-memory storage and the transport send, the `Published` observation, and consumption follow on dispatcher threads. Assert through `WaitFor*` rather than reading the collections right after a publish. `ResetAsync()` waits until no published row is `Scheduled`/`Queued` and no received row is `Scheduled` (those states bracket every send and consumer execution), drops transport messages no consumer picked up, and only then clears observations and storage. A publish that is not yet due is clock-parked and is not awaited: it is stored as `Queued` when due within a minute and as `Delayed` beyond that, the dispatcher holds it either way, and it publishes when due on the host `TimeProvider` (a `Queued` row counts as in flight only once it is due on that clock), so a shared harness should not carry pending delays across tests, or should advance a `FakeTimeProvider` past them before resetting. `RunInUnitOfWorkAsync` begins the unit of work with `IUnitOfWorkManager.BeginAsync()` (resource-less); in-memory storage is the one storage that can join a resource-less unit, so publishes made inside the delegate through that scope's `IBus`/`IQueue` enlist on it. The unit completes on success and is abandoned (rolled back) on an exception from the delegate. `TransactionEnlistment` only decides whether a write must enlist — `ResolvedDeliveryMode` is still `Durable` either way, since `DeliveryMode` no longer has a distinct value for enlisted delivery.
 
-Two consequences of running on in-memory storage. First, the in-memory transport hands a message to its consumer inside the send, before the sending thread records `Published`; the harness's consume decorator therefore waits for the message's `Published` record before running the consumer, so for any one message `Published` is always observable before `Consumed` or `Faulted`, and `harness.Published` is safe to read after `WaitForConsumed`. Second, in-memory storage offers only the `ProcessLocal` inbox tier, and the messaging startup gate refuses a `Coordinated` registration beside durable consumers below `Transactional` (a consumer's coordinated publish must join the inbox transaction). Test `Coordinated` types in a publish-only harness host and assert through `WaitForPublished`; exercise consumers through `RunCoordinatedAsync` with default `Durable` types, which enlist in the same scope.
+Two consequences of running on in-memory storage. First, the in-memory transport hands a message to its consumer inside the send, before the sending thread records `Published`; the harness's consume decorator therefore waits for the message's `Published` record before running the consumer, so for any one message `Published` is always observable before `Consumed` or `Faulted`, and `harness.Published` is safe to read after `WaitForConsumed`. Second, `harness.Publisher` and `harness.Queue` resolve from a harness-owned scope that carries no active unit of work, so their publishes are always autonomous durable writes — a type registered `WithEnlistment(TransactionEnlistment.Required)` throws when published through them directly, exactly like production with no active unit of work. Exercise a `Required` type by resolving `IBus`/`IQueue` inside `harness.RunInUnitOfWorkAsync(...)` instead, from the delegate's own scope provider, so the resolved facade sees the unit of work the harness began.
 
 ## Installation
 
@@ -75,7 +75,7 @@ harness.Published.Should().ContainSingle(m => m.MessageType == typeof(OrderCreat
 harness.Faulted.Should().BeEmpty();
 ```
 
-Each entry is a `RecordedMessage` with `MessageType`, `Message`, `MessageId`, `CorrelationId`, `Headers`, `MessageName`, `Lane`, `RequestedDeliveryMode`, `ResolvedDeliveryMode`, `Timestamp`, and (for faulted or exhausted observations) `Exception`. A default publish records `Durable` for both modes; a `Coordinated` request records `Coordinated` / `Durable`; only an explicit `Direct` publish records `Direct`.
+Each entry is a `RecordedMessage` with `MessageType`, `Message`, `MessageId`, `CorrelationId`, `Headers`, `MessageName`, `Lane`, `RequestedDeliveryMode`, `ResolvedDeliveryMode`, `Timestamp`, and (for faulted or exhausted observations) `Exception`. A default or `Required`-enlisted publish records `Durable` for both `RequestedDeliveryMode` and `ResolvedDeliveryMode` — `TransactionEnlistment` does not change the recorded delivery mode; only an explicit `Direct` publish records `Direct`.
 
 ### WaitFor* Methods
 
@@ -99,9 +99,9 @@ await harness.WaitForFaulted<BadMessage>(TimeSpan.FromSeconds(5));
 await harness.WaitForExhausted<BadMessage>(TimeSpan.FromSeconds(5));
 ```
 
-### Coordinated Delivery
+### Required Enlistment
 
-`RunCoordinatedAsync` opens a commit-coordination scope around the delegate, commits when it completes, and rolls back when it throws. A type registered `WithDeliveryMode(DeliveryMode.Coordinated)` publishes only inside such a scope; outside it the publish throws `InvalidOperationException`. Register such a type in a publish-only harness host: in-memory storage cannot provide the `Transactional` inbox tier, so the startup gate rejects a `Coordinated` registration beside durable consumers (see Design Notes). Consumers are exercised through the same scope with default `Durable` types.
+`RunInUnitOfWorkAsync` creates a service scope, begins a resource-less unit of work on it (`IUnitOfWorkManager.BeginAsync()`), and runs the delegate with that scope's provider: completing the unit dispatches everything captured on it, and an exception from the delegate abandons (rolls back) the unit. A type registered `WithEnlistment(TransactionEnlistment.Required)` publishes only while a compatible unit of work is active; outside one — including through `harness.Publisher`/`harness.Queue`, which carry no unit of work — the publish throws `InvalidOperationException`. Resolve `IBus`/`IQueue` from the delegate's own scope provider so the resolved facade sees the unit `RunInUnitOfWorkAsync` began.
 
 ```csharp
 await using var harness = await MessagingTestHarness.CreateAsync(services =>
@@ -109,29 +109,31 @@ await using var harness = await MessagingTestHarness.CreateAsync(services =>
     services.AddHeadlessMessaging(options =>
     {
         options.Bus.ForMessage<OrderCreated>(message =>
-            message.Contract("orders.created").WithDeliveryMode(DeliveryMode.Coordinated)
+            message.Contract("orders.created").WithEnlistment(TransactionEnlistment.Required)
         );
         options.UseInMemory();
         options.UseInMemoryStorage();
     });
 });
 
-// Commit: the captured row is stored and dispatched.
-await harness.RunCoordinatedAsync(() => harness.Publisher.PublishAsync(new OrderCreated("ORD-1")));
+// Completion: the captured row is stored and dispatched.
+await harness.RunInUnitOfWorkAsync(async sp =>
+{
+    var bus = sp.GetRequiredService<IBus>();
+    await bus.PublishAsync(new OrderCreated("ORD-1"));
+});
 var recorded = await harness.WaitForPublished<OrderCreated>(TimeSpan.FromSeconds(5));
-recorded.RequestedDeliveryMode.Should().Be(DeliveryMode.Coordinated);
 recorded.ResolvedDeliveryMode.Should().Be(DeliveryMode.Durable);
 
-// Rollback: the delegate throws, the scope rolls back, nothing is recorded.
-var act = () => harness.RunCoordinatedAsync(async () =>
+// Rollback: the delegate throws, the unit is abandoned, nothing is recorded.
+var act = () => harness.RunInUnitOfWorkAsync(async sp =>
 {
-    await harness.Publisher.PublishAsync(new OrderCreated("ORD-2"));
+    var bus = sp.GetRequiredService<IBus>();
+    await bus.PublishAsync(new OrderCreated("ORD-2"));
     throw new InvalidOperationException("business rule failed");
 });
 await act.Should().ThrowAsync<InvalidOperationException>();
 ```
-
-A `RunCoordinatedAsync<TResult>(Func<Task<TResult>>)` overload returns the delegate's result after the commit.
 
 ### TestConsumer\<T\>
 
@@ -348,7 +350,7 @@ None. `MessagingTestHarness` has no configuration class or options object. The o
 
 ## Dependencies
 
-- `Headless.CommitCoordination.Core` — registered in the harness host so `RunCoordinatedAsync` can open a scope and a `Coordinated` type passes the messaging startup gate
+- `Headless.UnitOfWork` — the harness registers the unit-of-work manager itself (`AddUnitOfWork()`, idempotent) so `RunInUnitOfWorkAsync` can begin one regardless of registration order with the host's `AddHeadlessMessaging(...)` call
 - `Headless.Messaging.Core`
 - `Headless.Messaging.InMemory`
 - `Headless.Messaging.Storage.InMemory`
@@ -357,5 +359,5 @@ None. `MessagingTestHarness` has no configuration class or options object. The o
 
 - `MessagingTestHarness.CreateAsync(...)` builds and owns an in-process `ServiceProvider` until the harness is disposed.
 - `AddMessagingTestHarness()` decorates an existing host's messaging registrations and must run after `AddHeadlessMessaging(...)`.
-- Both entry points call `services.AddCommitCoordination()`, so the host resolves a real `ICommitScopeFactory` / `ICurrentCommitCoordinator` instead of Messaging's null-coordinator fallback.
+- Both entry points call `services.AddUnitOfWork()` (idempotent), so the host always resolves a real `IUnitOfWorkManager`.
 - Transport parallelism is disabled inside the harness to keep observations deterministic.

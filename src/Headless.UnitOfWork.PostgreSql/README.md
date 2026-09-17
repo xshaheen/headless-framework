@@ -35,7 +35,8 @@ services.AddPostgreSqlUnitOfWork();
 
 // unitOfWork is the scoped IUnitOfWorkManager; bus and jobs are the scoped facades.
 await using var unit = await unitOfWork.BeginAsync(connection, cancellationToken: ct);
-await using (var command = new NpgsqlCommand("INSERT INTO orders (id) VALUES (@id)", connection, (NpgsqlTransaction)unit.Resource!.Transaction))
+var relational = (IRelationalUnitOfWorkResource)unit.Resource!;
+await using (var command = new NpgsqlCommand("INSERT INTO orders (id) VALUES (@id)", connection, (NpgsqlTransaction)relational.Transaction))
 {
     command.Parameters.AddWithValue("id", orderId);
     await command.ExecuteNonQueryAsync(ct);

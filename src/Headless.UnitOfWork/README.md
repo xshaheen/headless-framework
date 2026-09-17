@@ -31,8 +31,8 @@ using Headless.UnitOfWork;
 
 services.AddUnitOfWork();
 
-await using var uow = await unitOfWorkManager.BeginAsync(ct);
-uow.OnCompleted(() => cache.RemoveAsync(key));
+await using var uow = await unitOfWorkManager.BeginAsync(cancellationToken: ct);
+uow.OnCompleted(async () => await cache.RemoveAsync(key));
 await uow.CompleteAsync(ct);
 ```
 

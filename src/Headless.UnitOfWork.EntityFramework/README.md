@@ -17,7 +17,7 @@ Gives a plain EF Core `DbContext` the three unit-of-work entry points it needs: 
 
 **Nesting is join-by-default.** A second `BeginAsync(db)` while a unit is active on the same context returns a child view over the same engine and the *same live resource* — no second transaction is begun (the factory returns the root's resource, the manager's identity comparison opens the child). Child registrations transfer to the root on child complete; an abandoned child drops its registrations and aborts the root. A resource-bearing begin under a resource-less root opens an independent nested unit.
 
-**The retrying-strategy split is deliberate.** `BeginAsync(db)` throws EF's own `ExecutionStrategyExistingTransaction`-shaped message plus the `RunAsync` remedy because a user-initiated transaction cannot survive a strategy retry. `RunAsync` runs the begin *inside* the strategy, so retries replay the whole block with a fresh unit each attempt; the abandoned attempt's unit is unwound (rolled back) before the replay begins, or the replayed begin would meet a still-open transaction on the same context. The replay filter mirrors `ExecuteCoordinatedTransactionAsync`: `CompleteAsync` started or `IsRetryPrevented` ⇒ rethrow outside the strategy. Reconcile an ambiguous post-commit fault by a client-generated key or another durable idempotency key before retrying the business operation.
+**The retrying-strategy split is deliberate.** `BeginAsync(db)` throws EF's own `ExecutionStrategyExistingTransaction`-shaped message plus the `RunAsync` remedy because a user-initiated transaction cannot survive a strategy retry. `RunAsync` runs the begin *inside* the strategy, so retries replay the whole block with a fresh unit each attempt; the abandoned attempt's unit is unwound (rolled back) before the replay begins, or the replayed begin would meet a still-open transaction on the same context. The replay filter is: `CompleteAsync` started or `IsRetryPrevented` ⇒ rethrow outside the strategy. Reconcile an ambiguous post-commit fault by a client-generated key or another durable idempotency key before retrying the business operation.
 
 **Observed mode is the advanced seam.** The save pipeline and the messaging inbox runners commit their own transactions and already know the outcome; they enlist, commit, then call `CompleteAsync` to drain. A dispose without either verb, after the transaction already finished, logs the forgotten-completion warning — durable rows are recovered by the relay, the process-local drain is not.
 
@@ -42,7 +42,7 @@ services.AddEntityFrameworkUnitOfWork();
 await using var unitOfWork = await unitOfWorkManager.BeginAsync(db, cancellationToken: ct);
 db.Orders.Add(order);
 await db.SaveChangesAsync(ct);
-unitOfWork.OnCompleted(() => bus.PublishAsync(new OrderPlaced(order.Id), ct));
+unitOfWork.OnCompleted(async () => await bus.PublishAsync(new OrderPlaced(order.Id), ct));
 await unitOfWork.CompleteAsync(ct);
 
 // Retrying strategy configured? Run the unit as a retriable block instead:
@@ -52,7 +52,7 @@ await unitOfWorkManager.RunAsync(
     {
         db.Orders.Add(order);
         await db.SaveChangesAsync(ct);
-        unitOfWork.OnCompleted(() => bus.PublishAsync(new OrderPlaced(order.Id), ct));
+        unitOfWork.OnCompleted(async () => await bus.PublishAsync(new OrderPlaced(order.Id), ct));
     },
     cancellationToken: ct
 );

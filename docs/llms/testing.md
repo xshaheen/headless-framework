@@ -536,7 +536,7 @@ None. `MessagingTestHarness` has no configuration class or options object. The o
 
 ### Dependencies
 
-- `Headless.CommitCoordination.Core` — registered in the harness host so `RunCoordinatedAsync` can open a scope and a `Coordinated` type passes the messaging startup gate
+- `Headless.UnitOfWork` — the scoped `IUnitOfWorkManager` the harness registers internally so `RunInUnitOfWorkAsync` can begin a resource-less unit of work for the action it runs
 - `Headless.Messaging.Abstractions`
 - `Headless.Messaging.Core`
 

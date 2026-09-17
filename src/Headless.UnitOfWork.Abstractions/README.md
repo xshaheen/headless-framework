@@ -11,7 +11,7 @@ Defines the public unit-of-work contracts without provider dependencies: the sco
 - `IUnitOfWorkResource` (`IsOwned`, `IsTransactionCompleted`, `CommitAsync`, `RollbackAsync`) and `IRelationalUnitOfWorkResource` (`Connection`, `Transaction`, non-null while active).
 - `UnitOfWorkState` (`Active = 0`, `Completed = 1`, `Failed = 2`); `UnitOfWorkFailure` with `UnitOfWorkFailureReason` (`RolledBack`, `Abandoned`, `Faulted`, `ScopeDisposed`, `ChildAbandoned`).
 - `UnitOfWorkOptions`: intentionally empty today; propagation knobs land here additively.
-- `TransactionEnlistment { WhenAvailable = 0, Required = 1, Never = 2 }`: the one shared knob replacing `DeliveryMode.Coordinated` and `bool RequireAtomicEnlistment`.
+- `TransactionEnlistment { WhenAvailable = 0, Required = 1, Never = 2 }`: the one shared knob unifying what used to be two separate per-domain atomicity flags (Messaging's delivery-mode-based enlistment requirement and Jobs' atomic-enlistment flag) into a single enum with one guarantee matrix for both.
 
 ## Design Notes
 
@@ -34,7 +34,7 @@ public sealed class PlaceOrderHandler(IUnitOfWorkManager unitOfWork, AppDbContex
 {
     public async Task<Result<OrderId>> Handle(PlaceOrder cmd, CancellationToken ct)
     {
-        await using var uow = await unitOfWork.BeginAsync(ct); // or BeginAsync(db, ct) from the EF provider
+        await using var uow = await unitOfWork.BeginAsync(cancellationToken: ct); // or BeginAsync(db, ct) from the EF provider
         await bus.PublishAsync(new OrderPlaced(orderId), ct);  // joins the active unit
         await uow.CompleteAsync(ct);                           // commit, then dispatch
         return Result.Ok(orderId);

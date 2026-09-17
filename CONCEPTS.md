@@ -103,31 +103,14 @@ remains the request's origin metadata; the declared callback contract selects ty
 the concrete response type remains payload metadata.
 
 ### Delivery mode
-The delivery choices on publish/enqueue are `Durable`, `Coordinated`, and `Direct`. Precedence is
-per call (`MessageOptions.DeliveryMode`), then per message type (`WithDeliveryMode(...)` on the lane
+The delivery choices on publish/enqueue are `Durable` and `Direct`. Precedence is per call
+(`MessageOptions.DeliveryMode`), then per message type (`WithDeliveryMode(...)` on the lane
 registration), then the host `MessagingOptions.DefaultDeliveryMode`, which defaults to `Durable`.
-No mode sends directly by omission. The coordination state is read from the framework commit
-coordinator (the only source of ambient durability — `Transaction.Current` alone does not count);
-a scope is compatible when the configured storage can join its boundary (relational storage on the
-same database, in-memory storage in a scope with no relational handle). Every throw below happens
-before storage or transport effects:
+No mode sends directly by omission. Whether a durable publish enlists in the caller's active
+transaction is a separate axis, `TransactionEnlistment` (see [Unit of Work](#unit-of-work) below);
+`Direct` bypasses storage and enlistment entirely, even inside an active unit of work.
 
-| Requested mode | Compatible live coordinated scope | No scope | Incompatible scope |
-|---|---|---|---|
-| `Durable` (default) | capture in the caller's transaction, dispatch after commit | store first, the relay dispatches | throw |
-| `Coordinated` | capture in the caller's transaction, dispatch after commit | throw | throw |
-| `Direct` | transport now | transport now | transport now |
-
-`Coordinated` is also gated at startup: it fails bootstrap when no `ICommitScopeFactory` is registered
-or when durable consumers run below the `Transactional` inbox tier. Direct bypasses storage and
-coordination compatibility checks even inside a transaction — an explicit, diagnostically-logged
-escape from atomicity, and the opt-out for high-rate events that would otherwise pay one storage
-write and a relay hop per message under the default. The mutually exclusive `Delay` and `ScheduledAt`
-options require storage: `Durable` and `Coordinated` honor them; with `Direct` they are an error; dispatch
-timing is best-effort (not-before semantics). `ScheduledAt` accepts an absolute instant, including a past instant.
-Telemetry reports the requested mode as `durable` / `coordinated` / `direct` and the resolved mode as
-`durable` / `direct`. The Jobs equivalent is `RequireAtomicEnlistment`, which behaves like `Coordinated`;
-without it a job write enlists in a compatible live relational transaction and otherwise inserts directly.
+Telemetry reports the requested and resolved mode as `durable` / `direct` only.
 Both verbs return `PublishReceipt`; durable delivery includes a `StorageId`, while direct delivery does not.
 `IMessageRevoker` deletes a scheduled row by that handle until its first dispatch reservation.
 Only `Revoked` proves prevention. `AttemptReserved` is not proof of delivery. Revocation retains no audit record.
@@ -139,46 +122,65 @@ Use Jobs for keyed, replaceable, tenant-scoped, or transactional business deadli
   issues incarnations — these are distinct: Incarnation is the per-node value, the generation
   table/counter is the authority.
 
-## Commit Coordination
+## Unit of Work
 
-### Commit coordinator
+See [docs/llms/unit-of-work.md](docs/llms/unit-of-work.md) for the full domain doc, agent rules, and package contracts.
 
-The register-only, process-local object (`ICommitCoordinator`) that collects commit callbacks for one
-physical unit of work. Each callback runs once per coordinator instance after the outcome is durable,
-in registration order, without a cancellation token; a fault in one does not stop the rest. Nothing
-runs on rollback, nothing is persisted, and a callback that has not run when the process crashes is
-lost. This is once-per-instance callback invocation, not exactly-once business effects: durability
-comes from the row committed inside the transaction plus the consumer's own recovery sweep. Every
-scope is an independent root; opening one inside another does not join it.
+### Unit of work
 
-### Commit scope
+The owner-side handle (`IUnitOfWork`) for one physical transaction/coordination window, obtained
+from the **scoped** `IUnitOfWorkManager` (`IUnitOfWorkManager.Current`, a plain field — never an
+`AsyncLocal`, never ambient). Application code opens it explicitly, on the line it chooses
+(`unitOfWork.BeginAsync(...)`); nothing opens one on the developer's behalf. `CompleteAsync` commits
+the resource's transaction (owned mode, from `BeginAsync`) or observes a transaction the caller
+already committed (observed mode, from `Enlist`), then drains `OnCompleted` registrations. Dispose
+without `CompleteAsync` is an implicit rollback that drains `OnFailed` registrations instead.
+Nesting is join-by-default: beginning again on the same resource returns a child view whose
+completions transfer to the parent on complete and whose abandonment aborts the root; a
+resource-bearing begin under a resource-less root opens an independent nested unit.
 
-The owner-side handle (`ICommitScope`) opened by `ICommitScopeFactory.Open(IRelationalCommitContext?)`
-for one unit of work. The owner signals the terminal outcome with `SignalAsync(CommitOutcome)`: the EF
-interceptor does this on EF's commit and rollback edges; on raw SQL Server and PostgreSQL the helper,
-or the caller that enlisted directly, signals explicitly. Signals are idempotent per outcome (a repeat
-is silent, a conflict is logged and ignored) and an un-signalled dispose is a rollback.
+### Unit-of-work manager
 
-### Coordination state
+The scoped `IUnitOfWorkManager` is the single entry point application code interacts with — one
+unit-of-work slot per DI scope. Resolving it (or a scoped facade over it, such as `IBus`/`IQueue`)
+from the root provider is a captive-dependency error that scope validation reports; a singleton or
+hosted service that needs one creates its own scope. On the manager's own disposal, any still-active
+unit of work is rolled back, its `OnFailed` callbacks run with `Reason = ScopeDisposed`, and a
+leak warning is logged — a stranded unit of work is never silent.
 
-The tri-state a consumer reads to place a write in the guarantee matrix (see Delivery mode): no
-ambient scope, a compatible live scope (the consumer's storage can join its boundary), or an
-incompatible one (another database, a completed transaction, a relational scope with in-memory
-storage). Messaging's `DeliveryMode` and Jobs' `RequireAtomicEnlistment` are the two consumer
-mappings of that state to an outcome.
+### Transaction enlistment
 
-### Relational handle
+The axis a participant (a published message, an enqueued job) uses to state how eagerly it requires
+an active unit of work: `TransactionEnlistment { WhenAvailable, Required, Never }`. Precedence is
+per call, then per type/function, then the host default. The guarantee matrix:
 
-`IRelationalCommitContext`, exposed as `ICommitCoordinator.Relational`: the live BCL `DbConnection`
-and `DbTransaction` the scope was opened with, or `null` for a non-relational unit of work. Durable
-rows (outbox, jobs) are written through it so they share the caller's transaction.
+| Enlistment | Active unit of work, joinable compatible resource | No unit of work, or one with no joinable resource | Unit of work with incompatible resource |
+|---|---|---|---|
+| `WhenAvailable` (default) | enlist in the transaction, dispatch/signal after commit | autonomous durable write, relay/poller recovers it | throw |
+| `Required` | same | throw | throw |
+| `Never` | autonomous | autonomous | autonomous |
 
-### Scope-local state
+`Required` is checked at the call itself and throws before any effect when no active unit of work is
+compatible — there is no separate startup gate, because the scoped manager always exists
+(`AddUnitOfWork()` is idempotent and called by every consumer package's setup). Messaging's
+`MessageOptions.Enlistment` and Jobs' `JobOptions.Enlistment` / `RecurringJobOptions.Enlistment` are
+the two consumer mappings of this matrix to an outcome.
 
-Typed state owned by one coordinator through `GetOrAdd<TState>`: at most one instance per type,
-created atomically, disposed after the terminal outcome on commit and rollback alike. Holds a
-per-transaction buffer or the `CommitRetryGuard`; it must not be used as an arbitrary
-service-locator bag.
+### Unit-of-work resource
+
+`IRelationalUnitOfWorkResource`, exposed as `IUnitOfWork.Resource` (cast from the base
+`IUnitOfWorkResource`): the live `DbConnection` and `DbTransaction` the unit was begun or enlisted
+with, or `null` for a resource-less unit. Durable rows (outbox, jobs) are written through it so they
+share the caller's transaction. Owned vs. observed is a flag on the resource instance: an owned
+resource's commit/rollback drive the real transaction, an observed resource's are no-ops because the
+caller commits it.
+
+### Unit-local state
+
+Typed state owned by one unit of work through `GetOrAdd<TState>`: at most one instance per type,
+created atomically, disposed after the terminal outcome on commit and rollback alike. Used for
+per-transaction buffers or the retry-prevention marker (`PreventRetry()` / `IsRetryPrevented`); it
+must not be used as an arbitrary service-locator bag.
 
 ## Startup validation
 
@@ -282,7 +284,7 @@ keyed rows remain indefinitely; ordinary edits, resets, retries, and hard deleti
 
 ### Transactional deadline capability
 
-`RequireAtomicEnlistment` requires a Jobs write — a one-shot deadline or a recurring definition — to use
+`TransactionEnlistment.Required` requires a Jobs write — a one-shot deadline or a recurring definition — to use
 the exact live relational transaction that owns the application update. The requirement is transient;
 it is not job payload, definition payload, or persisted intent. A keyed result returned inside that
 transaction is provisional until the caller commits, and rollback removes the write. Scheduler wake-up
