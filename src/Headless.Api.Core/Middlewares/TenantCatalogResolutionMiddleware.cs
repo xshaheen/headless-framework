@@ -22,11 +22,14 @@ namespace Headless.Api.Middlewares;
 /// Registered through its own pipeline hook — <c>SetupApiTenancy.UseHeadlessTenantCatalogResolution</c> —
 /// separate from the existing post-auth claim hook (<c>UseHeadlessTenancy</c>). Documented ordering
 /// contract: after <c>UseRouting()</c> (so <see cref="SkipTenantResolutionAttribute"/> endpoint metadata
-/// is resolvable) and before <c>UseAuthentication()</c> (KTD2). Placing it ahead of <c>UseRouting()</c>
-/// does not disable resolution — identifier sources read the raw request and need no routing, so
-/// rejection and R19 enforcement stay intact and only the <see cref="SkipTenantResolutionAttribute"/>
-/// opt-out is lost, alongside a once-per-process warning. With zero registered sources, or when
-/// every source returns <see cref="TenantIdentifierSourceResultKind.None"/>, this middleware no-ops and
+/// is resolvable and route values exist) and before <c>UseAuthentication()</c> (KTD2). Placing it ahead
+/// of <c>UseRouting()</c> does not disable resolution for sources that read the raw request — rejection
+/// and R19 enforcement stay intact and only the <see cref="SkipTenantResolutionAttribute"/> opt-out is
+/// lost — but a registered <see cref="RouteTenantIdentifierSource"/> finds nothing when misordered,
+/// because route values only exist after routing has matched, so every such request runs as host
+/// context; that misordering is escalated to a once-per-process Error-level event (R10). With zero
+/// registered sources, or when every source returns
+/// <see cref="TenantIdentifierSourceResultKind.None"/>, this middleware no-ops and
 /// the request continues as host context (R5). A source result of
 /// <see cref="TenantIdentifierSourceResultKind.Invalid"/> (present but ambiguous input) rejects with the
 /// catalog's invalid-identifier outcome before any store call, and later sources never run (R5).
@@ -48,9 +51,15 @@ internal sealed partial class TenantCatalogResolutionMiddleware(
     ILogger<TenantCatalogResolutionMiddleware> logger
 )
 {
-    // Fires exactly once per process for HEADLESS_TENANT_CATALOG_MIDDLEWARE_ORDERING. 0 = not yet
-    // warned, 1 = warned. CompareExchange ensures the warning is emitted by at most one request.
+    // Fires exactly once per process for HEADLESS_TENANT_CATALOG_MIDDLEWARE_ORDERING and
+    // HEADLESS_TENANT_CATALOG_ROUTE_SOURCE_MISORDERED. 0 = not yet warned, 1 = warned.
+    // CompareExchange ensures one of the two events is emitted by at most one request.
     private static int _orderingWarningEmitted;
+
+    // Evaluated once at construction: whether the registered sources include a route source, whose
+    // input only exists after UseRouting() — that misordering silently degrades every request to
+    // host context and is escalated to an Error-level event (R10, KTD5).
+    private readonly bool _hasRouteSource = sources.OfType<RouteTenantIdentifierSource>().Any();
 
     /// <summary>Resolves the tenant identifier for the request and either sets the ambient tenant or rejects it.</summary>
     /// <param name="context">The current HTTP context.</param>
@@ -304,6 +313,16 @@ internal sealed partial class TenantCatalogResolutionMiddleware(
             return;
         }
 
+        // A registered route source escalates the signal from Warning to Error: unlike the raw-request
+        // sources, its input only exists after routing, so a misordered route source is not a lost
+        // opt-out but route resolution finding nothing on every request — each one silently running as
+        // host context (R10, KTD5). Both events share this once-per-process guard, so only one fires.
+        if (_hasRouteSource)
+        {
+            LogRouteSourceMisorderedError(logger);
+            return;
+        }
+
         LogMiddlewareOrderingWarning(logger);
     }
 
@@ -318,4 +337,17 @@ internal sealed partial class TenantCatalogResolutionMiddleware(
     )]
     // ReSharper disable once InconsistentNaming
     private static partial void LogMiddlewareOrderingWarning(ILogger logger);
+
+    [LoggerMessage(
+        EventId = 2,
+        EventName = "HEADLESS_TENANT_CATALOG_ROUTE_SOURCE_MISORDERED",
+        Level = LogLevel.Error,
+        Message = "A route tenant identifier source is registered, but "
+            + "UseHeadlessTenantCatalogResolution() ran before UseRouting(), so route resolution found "
+            + "nothing and every request ran as host context. Place UseHeadlessTenantCatalogResolution() "
+            + "AFTER UseRouting() and BEFORE UseAuthentication(). This error is emitted once per "
+            + "process and never logs the request path or route values."
+    )]
+    // ReSharper disable once InconsistentNaming
+    private static partial void LogRouteSourceMisorderedError(ILogger logger);
 }

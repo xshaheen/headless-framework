@@ -9,11 +9,13 @@ namespace Tests.MultiTenancy;
 /// <summary>
 /// Pins R7 for the host source: an empty template list fails startup validation, an unparsable
 /// template fails with the parser's message surfaced verbatim (so the operator sees which template
-/// and which rule), and multiple valid templates pass.
+/// and which rule), and multiple valid templates pass. Also pins R7 for the route source: a blank
+/// route value name fails validation while the default passes.
 /// </summary>
 public sealed class TenantIdentifierSourceOptionsValidatorTests : TestBase
 {
     private readonly HostTenantIdentifierSourceOptionsValidator _sut = new();
+    private readonly RouteTenantIdentifierSourceOptionsValidator _routeSut = new();
 
     [Fact]
     public void should_accept_two_valid_host_templates()
@@ -65,5 +67,30 @@ public sealed class TenantIdentifierSourceOptionsValidatorTests : TestBase
         var result = _sut.TestValidate(options);
 
         result.ShouldHaveValidationErrorFor(x => x.Templates);
+    }
+
+    // --- route source (R7) ---
+
+    [Fact]
+    public void should_accept_the_default_route_value_name()
+    {
+        var options = new RouteTenantIdentifierSourceOptions();
+
+        var result = _routeSut.TestValidate(options);
+
+        result.ShouldNotHaveAnyValidationErrors();
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData(null)]
+    public void should_reject_a_blank_route_value_name(string? routeValueName)
+    {
+        var options = new RouteTenantIdentifierSourceOptions { RouteValueName = routeValueName! };
+
+        var result = _routeSut.TestValidate(options);
+
+        result.ShouldHaveValidationErrorFor(x => x.RouteValueName);
     }
 }

@@ -461,6 +461,106 @@ public sealed class HeadlessTenantCatalogResolutionBuilder
 
         _services.TryAddEnumerable(ServiceDescriptor.Singleton<ITenantIdentifierSource, HostTenantIdentifierSource>());
     }
+
+    /// <summary>Registers the built-in route tenant identifier source with the default route value name (R2).</summary>
+    /// <returns>The same builder, to allow chaining.</returns>
+    /// <remarks>
+    /// Reads the <c>tenant</c> route value (see
+    /// <see cref="RouteTenantIdentifierSourceOptions.DefaultRouteValueName"/>). Repeat registrations of
+    /// the source type deduplicate while options contributions accumulate (KTD3). Requires
+    /// <see cref="SetupApiTenancy.UseHeadlessTenantCatalogResolution"/> to run after
+    /// <c>UseRouting()</c>, or every request resolves as host context (R10).
+    /// </remarks>
+    public HeadlessTenantCatalogResolutionBuilder AddRouteSource()
+    {
+        _AddRouteSourceCore();
+
+        return this;
+    }
+
+    /// <summary>Registers the built-in route tenant identifier source with a route value name (R2).</summary>
+    /// <param name="routeValueName">
+    /// The route value name to read — for example <c>org</c> for an endpoint mapped at
+    /// <c>/{org}/orders</c>. Must not be blank; validated at startup (R7).
+    /// </param>
+    /// <returns>The same builder, to allow chaining.</returns>
+    /// <exception cref="ArgumentException"><paramref name="routeValueName"/> is <see langword="null"/> or whitespace.</exception>
+    /// <remarks>
+    /// The name is one additional options contribution per call; repeat registrations of the source
+    /// type keep the first descriptor's position and the last name contribution wins (KTD3).
+    /// </remarks>
+    public HeadlessTenantCatalogResolutionBuilder AddRouteSource(string routeValueName)
+    {
+        Argument.IsNotNullOrWhiteSpace(routeValueName);
+
+        _AddRouteSourceCore(options => options.RouteValueName = routeValueName);
+
+        return this;
+    }
+
+    /// <summary>Registers the built-in route tenant identifier source, configuring its options (R2).</summary>
+    /// <param name="configure">Callback to configure <see cref="RouteTenantIdentifierSourceOptions"/>.</param>
+    /// <returns>The same builder, to allow chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// The callback runs as one additional <c>Configure</c> action per call; repeat registrations of
+    /// the source type keep the first descriptor's position (KTD3). A blank route value name fails
+    /// host startup (R7).
+    /// </remarks>
+    public HeadlessTenantCatalogResolutionBuilder AddRouteSource(Action<RouteTenantIdentifierSourceOptions> configure)
+    {
+        Argument.IsNotNull(configure);
+
+        _AddRouteSourceCore(configure);
+
+        return this;
+    }
+
+    /// <summary>
+    /// Registers the built-in route tenant identifier source, binding its options from configuration (R2).
+    /// </summary>
+    /// <param name="configuration">
+    /// The configuration section holding <see cref="RouteTenantIdentifierSourceOptions"/> — for
+    /// example <c>Tenant:Route</c> with a <c>RouteValueName</c> key. The bound name must not be
+    /// blank, or host startup fails (R7).
+    /// </param>
+    /// <returns>The same builder, to allow chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="configuration"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// Binds as an additional options contribution; repeat registrations of the source type keep the
+    /// first descriptor's position (KTD3).
+    /// </remarks>
+    public HeadlessTenantCatalogResolutionBuilder AddRouteSource(IConfiguration configuration)
+    {
+        Argument.IsNotNull(configuration);
+
+        _services
+            .AddOptions<RouteTenantIdentifierSourceOptions, RouteTenantIdentifierSourceOptionsValidator>()
+            .Bind(configuration);
+
+        _services.TryAddEnumerable(ServiceDescriptor.Singleton<ITenantIdentifierSource, RouteTenantIdentifierSource>());
+
+        return this;
+    }
+
+    /// <summary>
+    /// Shared core of the <c>AddRouteSource</c> overloads: registers the validated options type
+    /// plus (optionally) one <c>Configure</c> contribution, and the deduplicating source descriptor.
+    /// </summary>
+    private void _AddRouteSourceCore(Action<RouteTenantIdentifierSourceOptions>? configure = null)
+    {
+        var optionsBuilder = _services.AddOptions<
+            RouteTenantIdentifierSourceOptions,
+            RouteTenantIdentifierSourceOptionsValidator
+        >();
+
+        if (configure is not null)
+        {
+            optionsBuilder.Configure(configure);
+        }
+
+        _services.TryAddEnumerable(ServiceDescriptor.Singleton<ITenantIdentifierSource, RouteTenantIdentifierSource>());
+    }
 }
 
 /// <summary>Records that Headless authorization should require a resolved tenant.</summary>
