@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
@@ -11,7 +10,6 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Tests;
 
@@ -45,7 +43,7 @@ internal sealed class EfUnitOfWorkHost(
     {
         var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
-        var loggerProvider = new CapturingLoggerProvider(new ConcurrentQueue<LogEntry>());
+        var loggerProvider = new CapturingLoggerProvider();
         var services = new ServiceCollection();
         services.AddLogging(builder => builder.AddProvider(loggerProvider));
         services.AddUnitOfWork();
@@ -104,57 +102,19 @@ internal sealed class EfUnitOfWorkSession(AsyncServiceScope scope, CapturingLogg
 
     public ProbeDbContext Db { get; } = scope.ServiceProvider.GetRequiredService<ProbeDbContext>();
 
-    public IReadOnlyCollection<LogEntry> Logs => provider.Entries;
+    /// <summary>
+    /// The unit-of-work manager's entries only: EF's info-level SQL chatter flows through the same provider
+    /// and must not pollute the assertions on the forgotten-completion warning.
+    /// </summary>
+    public IReadOnlyCollection<LogEntry> Logs =>
+        provider
+            .Entries.Where(e => e.Category.StartsWith("Headless.UnitOfWork", StringComparison.Ordinal))
+            .Select(e => new LogEntry(e.Level, e.EventId, e.Message))
+            .ToArray();
 
     public async ValueTask DisposeAsync()
     {
         await scope.DisposeAsync();
-    }
-}
-
-/// <summary>
-/// An <see cref="ILoggerProvider" /> that records every entry the host logs (any category), so scenarios can
-/// assert on the manager's forgotten-completion warning without referencing the internal manager type. Each
-/// host owns exactly one provider, so entries are scenario-isolated.
-/// </summary>
-internal sealed class CapturingLoggerProvider(ConcurrentQueue<LogEntry> entries) : ILoggerProvider
-{
-    public IReadOnlyCollection<LogEntry> Entries => entries;
-
-    public ILogger CreateLogger(string categoryName)
-    {
-        // Only the unit-of-work manager's entries are asserted on; EF's info-level SQL chatter flows
-        // through the same pipeline and must not pollute the captured log.
-        return categoryName.StartsWith("Headless.UnitOfWork", StringComparison.Ordinal)
-            ? new CapturingLogger(entries)
-            : NullLogger.Instance;
-    }
-
-    public void Dispose() { }
-
-    private sealed class CapturingLogger(ConcurrentQueue<LogEntry> entries) : ILogger
-    {
-        public IDisposable? BeginScope<TState>(TState state)
-            where TState : notnull
-        {
-            return null;
-        }
-
-        public bool IsEnabled(LogLevel logLevel)
-        {
-            return true;
-        }
-
-        public void Log<TState>(
-            LogLevel logLevel,
-            EventId eventId,
-            TState state,
-            Exception? exception,
-            Func<TState, Exception?, string> formatter
-        )
-        {
-            entries.Enqueue(new LogEntry(logLevel, eventId, formatter(state, exception)));
-        }
     }
 }
 
