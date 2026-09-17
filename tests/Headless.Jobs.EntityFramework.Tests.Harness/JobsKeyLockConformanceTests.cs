@@ -115,10 +115,7 @@ public abstract class JobsKeyLockConformanceTests(Action<DbContextOptionsBuilder
         await _ScalarAsync(waiter, $"INSERT INTO {ProbeTable} (id) VALUES (2)");
         await waitingTransaction.CommitAsync(AbortToken);
         Convert
-            .ToInt32(
-                await _ScalarAsync(waiter, $"SELECT COUNT(*) FROM {ProbeTable}"),
-                System.Globalization.CultureInfo.InvariantCulture
-            )
+            .ToInt32(await _ScalarAsync(waiter, $"SELECT COUNT(*) FROM {ProbeTable}"), CultureInfo.InvariantCulture)
             .Should()
             .Be(2);
         await _ScalarAsync(waiter, $"DROP TABLE {ProbeTable}");

@@ -603,7 +603,7 @@ internal sealed class SubscribeExecutor(
             return;
         }
 
-        circuitBreakerStateManager.ReleaseHalfOpenProbe(CircuitBreakerGroupKeys.For(message));
+        circuitBreakerStateManager.ReleaseHalfOpenProbe(CircuitBreakerGroupKeys.For(message), message.ProbeEpoch);
     }
 
     private async Task<bool> _LeaseAsync(MediumMessage message, CancellationToken cancellationToken)

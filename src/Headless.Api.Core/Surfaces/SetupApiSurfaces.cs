@@ -32,21 +32,21 @@ public static class SetupApiSurfaces
     /// <exception cref="InvalidOperationException">An identity is duplicated or document inference has closed registration.</exception>
     public static IServiceCollection AddHeadlessApiSurfaces(
         this IServiceCollection services,
-        Action<Surfaces.ApiSurfacesBuilder> configure
+        Action<ApiSurfacesBuilder> configure
     )
     {
         Argument.IsNotNull(services);
         Argument.IsNotNull(configure);
 
         ApiSurfaceRegistration.EnsureOpen(services);
-        var builder = new Surfaces.ApiSurfacesBuilder();
+        var builder = new ApiSurfacesBuilder();
         configure(builder);
         var validation = new ApiSurfacesBuilderValidator().Validate(builder);
         if (!validation.IsValid)
         {
             throw new OptionsValidationException(
-                Microsoft.Extensions.Options.Options.DefaultName,
-                typeof(Surfaces.ApiSurfacesBuilder),
+                Options.DefaultName,
+                typeof(ApiSurfacesBuilder),
                 validation.Errors.Select(error => error.ErrorMessage)
             );
         }
@@ -82,7 +82,7 @@ public static class SetupApiSurfaces
         {
             services.AddSingleton(surface);
         }
-        services.TryAddSingleton<Surfaces.ApiSurfaceRegistry>();
+        services.TryAddSingleton<ApiSurfaceRegistry>();
 
         return services;
     }

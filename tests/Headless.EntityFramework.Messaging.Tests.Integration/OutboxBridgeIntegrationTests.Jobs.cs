@@ -69,7 +69,7 @@ public sealed partial class OutboxBridgeIntegrationTests
                     new JobKey(marker),
                     DeadlineRegistration.Descriptor,
                     provider.GetRequiredService<DeadlineEvidence>().Due,
-                    new Headless.Jobs.Models.JobOptions { Enlistment = TransactionEnlistment.Required },
+                    new JobOptions { Enlistment = TransactionEnlistment.Required },
                     AbortToken
                 );
         await schedule
@@ -288,7 +288,7 @@ public sealed partial class OutboxBridgeIntegrationTests
                             new JobKey(context.MessageId),
                             DeadlineRegistration.Descriptor,
                             evidence.Due,
-                            new Headless.Jobs.Models.JobOptions
+                            new JobOptions
                             {
                                 Enlistment = TransactionEnlistment.Required,
                                 CorrelationId = context.CorrelationId,

@@ -14,20 +14,26 @@ namespace Headless.Api.Middlewares;
 
 /// <summary>
 /// Pre-auth tenant catalog identifier resolution. Consults registered <see cref="ITenantIdentifierSource"/>s
-/// in registration order (first non-<see langword="null"/> identifier wins), resolves through
-/// <see cref="ITenantCatalogService"/>, and either sets the ambient tenant and continues, or short-circuits
-/// with a fail-closed <c>ProblemDetails</c> response before the endpoint executes (R6, R11).
+/// in registration order (the first <see cref="TenantIdentifierSourceResultKind.Found"/> result wins),
+/// resolves through <see cref="ITenantCatalogService"/>, and either sets the ambient tenant and continues,
+/// or short-circuits with a fail-closed <c>ProblemDetails</c> response before the endpoint executes (R6, R11).
 /// </summary>
 /// <remarks>
 /// Registered through its own pipeline hook — <c>SetupApiTenancy.UseHeadlessTenantCatalogResolution</c> —
 /// separate from the existing post-auth claim hook (<c>UseHeadlessTenancy</c>). Documented ordering
 /// contract: after <c>UseRouting()</c> (so <see cref="SkipTenantResolutionAttribute"/> endpoint metadata
-/// is resolvable) and before <c>UseAuthentication()</c> (KTD2). Placing it ahead of <c>UseRouting()</c>
-/// does not disable resolution — identifier sources read the raw request and need no routing, so
-/// rejection and R19 enforcement stay intact and only the <see cref="SkipTenantResolutionAttribute"/>
-/// opt-out is lost, alongside a once-per-process warning. With zero registered sources, or when
-/// every source returns <see langword="null"/>, this middleware no-ops and the request continues as host
-/// context (R5). Store or cache infrastructure faults from <see cref="ITenantCatalogService.ResolveAsync"/>
+/// is resolvable and route values exist) and before <c>UseAuthentication()</c> (KTD2). Placing it ahead
+/// of <c>UseRouting()</c> does not disable resolution for sources that read the raw request — rejection
+/// and R19 enforcement stay intact and only the <see cref="SkipTenantResolutionAttribute"/> opt-out is
+/// lost — but a registered <see cref="RouteTenantIdentifierSource"/> finds nothing when misordered,
+/// because route values only exist after routing has matched, so every such request runs as host
+/// context; that misordering is escalated to a once-per-process Error-level event (R10). With zero
+/// registered sources, or when every source returns
+/// <see cref="TenantIdentifierSourceResultKind.None"/>, this middleware no-ops and
+/// the request continues as host context (R5). A source result of
+/// <see cref="TenantIdentifierSourceResultKind.Invalid"/> (present but ambiguous input) rejects with the
+/// catalog's invalid-identifier outcome before any store call, and later sources never run (R5).
+/// Store or cache infrastructure faults from <see cref="ITenantCatalogService.ResolveAsync"/>
 /// propagate unchanged — they are never mapped to a tenant rejection code (KTD4).
 /// <see cref="IProblemDetailsCreator"/> is resolved lazily from <see cref="HttpContext.RequestServices"/>
 /// inside the rejection branch only, rather than as a constructor dependency — a host that never rejects
@@ -45,9 +51,15 @@ internal sealed partial class TenantCatalogResolutionMiddleware(
     ILogger<TenantCatalogResolutionMiddleware> logger
 )
 {
-    // Fires exactly once per process for HEADLESS_TENANT_CATALOG_MIDDLEWARE_ORDERING. 0 = not yet
-    // warned, 1 = warned. CompareExchange ensures the warning is emitted by at most one request.
+    // Fires exactly once per process for HEADLESS_TENANT_CATALOG_MIDDLEWARE_ORDERING and
+    // HEADLESS_TENANT_CATALOG_ROUTE_SOURCE_MISORDERED. 0 = not yet warned, 1 = warned.
+    // CompareExchange ensures one of the two events is emitted by at most one request.
     private static int _orderingWarningEmitted;
+
+    // Evaluated once at construction: whether the registered sources include a route source, whose
+    // input only exists after UseRouting() — that misordering silently degrades every request to
+    // host context and is escalated to an Error-level event (R10, KTD5).
+    private readonly bool _hasRouteSource = sources.OfType<RouteTenantIdentifierSource>().Any();
 
     /// <summary>Resolves the tenant identifier for the request and either sets the ambient tenant or rejects it.</summary>
     /// <param name="context">The current HTTP context.</param>
@@ -97,19 +109,38 @@ internal sealed partial class TenantCatalogResolutionMiddleware(
 
         foreach (var source in sources)
         {
-            identifier = source.GetIdentifier(context);
+            var result = source.GetIdentifier(context);
 
-            if (!string.IsNullOrWhiteSpace(identifier))
+            if (result.Kind is TenantIdentifierSourceResultKind.Invalid)
             {
+                // Present but ambiguous (R5): reject with the catalog's invalid-identifier outcome
+                // BEFORE any catalog call, and never fall through to later sources.
+                var problemDetailsCreator = context.RequestServices.GetRequiredService<IProblemDetailsCreator>();
+
+                await TenantCatalogRejectionWriter
+                    .RejectAsync(
+                        context,
+                        TenantResolutionKind.Invalid,
+                        problemDetailsCreator,
+                        options.Value.DetailedResolutionErrors
+                    )
+                    .ConfigureAwait(false);
+
+                return;
+            }
+
+            if (result.Kind is TenantIdentifierSourceResultKind.Found)
+            {
+                identifier = result.Identifier;
                 break;
             }
 
-            identifier = null;
+            // None: continue with the next registered source.
         }
 
         if (identifier is null)
         {
-            // Zero sources registered, or every source returned null/empty/whitespace — no-op, host context (R5).
+            // Zero sources registered, or every source returned None — no-op, host context (R5).
             await _InvokeNextAsync(context, endpointWasUnresolved).ConfigureAwait(false);
             return;
         }
@@ -282,6 +313,16 @@ internal sealed partial class TenantCatalogResolutionMiddleware(
             return;
         }
 
+        // A registered route source escalates the signal from Warning to Error: unlike the raw-request
+        // sources, its input only exists after routing, so a misordered route source is not a lost
+        // opt-out but route resolution finding nothing on every request — each one silently running as
+        // host context (R10, KTD5). Both events share this once-per-process guard, so only one fires.
+        if (_hasRouteSource)
+        {
+            LogRouteSourceMisorderedError(logger);
+            return;
+        }
+
         LogMiddlewareOrderingWarning(logger);
     }
 
@@ -296,4 +337,18 @@ internal sealed partial class TenantCatalogResolutionMiddleware(
     )]
     // ReSharper disable once InconsistentNaming
     private static partial void LogMiddlewareOrderingWarning(ILogger logger);
+
+    [LoggerMessage(
+        EventId = 2,
+        EventName = "HEADLESS_TENANT_CATALOG_ROUTE_SOURCE_MISORDERED",
+        Level = LogLevel.Error,
+        Message = "A route tenant identifier source is registered, but "
+            + "UseHeadlessTenantCatalogResolution() ran before UseRouting(), so the route source never "
+            + "found a tenant: requests it should have scoped ran as host context unless a later source "
+            + "resolved them. Place UseHeadlessTenantCatalogResolution() "
+            + "AFTER UseRouting() and BEFORE UseAuthentication(). This error is emitted once per "
+            + "process and never logs the request path or route values."
+    )]
+    // ReSharper disable once InconsistentNaming
+    private static partial void LogRouteSourceMisorderedError(ILogger logger);
 }

@@ -161,7 +161,7 @@ public sealed class TenantCatalogRewriterPostureTests : TestBase
 
             tenancy.Http(http =>
                 http.ResolveFromCatalog(catalogHttp =>
-                    catalogHttp.AddSource(new PostureHeaderTenantIdentifierSource(_IdentifierHeader))
+                    catalogHttp.AddSource(new StubHeaderIdentifierSource(_IdentifierHeader))
                 )
             );
         });
@@ -245,14 +245,6 @@ public sealed class TenantCatalogRewriterPostureTests : TestBase
         }
 
         return Encoding.UTF8.GetString(stream.ToArray());
-    }
-}
-
-internal sealed class PostureHeaderTenantIdentifierSource(string headerName) : ITenantIdentifierSource
-{
-    public string? GetIdentifier(HttpContext context)
-    {
-        return context.Request.Headers.TryGetValue(headerName, out var values) ? values.ToString() : null;
     }
 }
 

@@ -577,8 +577,8 @@ internal sealed class ConsumerRegister(
             _groupHandles[handleName] = handle;
             _circuitBreakerStateManager?.RegisterGroupCallbacks(
                 handleName,
-                onPause: () => _PauseGroupAsync(handle),
-                onResume: () => _ResumeGroupAsync(handle)
+                onPause: epoch => _PauseGroupAsync(handle, epoch),
+                onResume: epoch => _ResumeGroupAsync(handle, epoch)
             );
 
             // Normalize HalfOpen → Open: the aborted probe is invalid on rebuilt transport clients.
@@ -589,9 +589,9 @@ internal sealed class ConsumerRegister(
 
                 // If the circuit is Open (or was just re-normalized from HalfOpen),
                 // pre-pause the new handle so newly created clients get paused via AddClientAsync.
-                if (_circuitBreakerStateManager.IsOpen(handleName))
+                if (_circuitBreakerStateManager.TryGetOpenEpoch(handleName, out var openEpoch))
                 {
-                    handle.IsPaused = true;
+                    await _PauseGroupAsync(handle, openEpoch).ConfigureAwait(false);
                 }
             }
 
@@ -789,7 +789,61 @@ internal sealed class ConsumerRegister(
         }
     }
 
-    private async ValueTask _PauseGroupAsync(GroupHandle handle)
+    private ValueTask _PauseGroupAsync(GroupHandle handle, long epoch)
+    {
+        return _ApplyGroupIntentAsync(handle, pause: true, epoch);
+    }
+
+    private ValueTask _ResumeGroupAsync(GroupHandle handle, long epoch)
+    {
+        return _ApplyGroupIntentAsync(handle, pause: false, epoch);
+    }
+
+    private async ValueTask _ApplyGroupIntentAsync(GroupHandle handle, bool pause, long epoch)
+    {
+        if (
+            handle.IsDisposing
+            || (LifecycleState)Volatile.Read(ref _state) is LifecycleState.Disposing or LifecycleState.Disposed
+        )
+        {
+            return;
+        }
+
+        try
+        {
+            await handle.ApplyGate.WaitAsync(handle.Cts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        try
+        {
+            if (handle.IsDisposing || epoch < handle.LastAppliedEpoch)
+            {
+                _logger.StaleCircuitIntentSkipped(handle.GroupName, epoch, handle.LastAppliedEpoch);
+                return;
+            }
+
+            if (pause)
+            {
+                await _PauseClientsAsync(handle).ConfigureAwait(false);
+            }
+            else
+            {
+                await _ResumeClientsAsync(handle).ConfigureAwait(false);
+            }
+
+            handle.LastAppliedEpoch = epoch;
+        }
+        finally
+        {
+            handle.ApplyGate.Release();
+        }
+    }
+
+    private async ValueTask _PauseClientsAsync(GroupHandle handle)
     {
         _logger.CircuitBreakerOpenedPausingConsumers(handle.GroupName);
 
@@ -816,15 +870,8 @@ internal sealed class ConsumerRegister(
             .ConfigureAwait(false);
     }
 
-    private async ValueTask _ResumeGroupAsync(GroupHandle handle)
+    private async ValueTask _ResumeClientsAsync(GroupHandle handle)
     {
-        // A circuit resume can arrive from a retry cycle still draining after Quiesce() closed this
-        // register's gate; reopening transport would feed a dispatcher that is already draining.
-        if ((LifecycleState)Volatile.Read(ref _state) is LifecycleState.Disposing or LifecycleState.Disposed)
-        {
-            return;
-        }
-
         _logger.ResumingConsumersHalfOpen(handle.GroupName);
 
         // No CTS recreation needed — the original CTS was never cancelled during pause,
@@ -877,7 +924,8 @@ internal sealed class ConsumerRegister(
     {
         async Task onMessageCallback(TransportMessage transportMessage, object? sender)
         {
-            var probeAcquired = false;
+            long? probeEpoch = null;
+            var admissionEpoch = 0L;
             var probeOutcomeTransferred = false;
             var transportSettled = false;
             MessagingTraceHandle traceHandle = default;
@@ -891,14 +939,37 @@ internal sealed class ConsumerRegister(
             {
                 if (_circuitBreakerStateManager is not null)
                 {
-                    probeAcquired = _circuitBreakerStateManager.TryAcquireHalfOpenProbe(handleName);
+                    probeEpoch = _circuitBreakerStateManager.TryAcquireHalfOpenProbe(handleName);
 
-                    if (!probeAcquired)
+                    if (probeEpoch is null)
                     {
                         // Settlement is must-complete: never abandon a reject on host shutdown.
                         await client.RejectAsync(sender, CancellationToken.None).ConfigureAwait(false);
 
                         return;
+                    }
+
+                    admissionEpoch = probeEpoch.Value;
+                    if (_circuitBreakerStateManager.TryGetOpenEpoch(handleName, out var openEpoch))
+                    {
+                        var handle = _groupHandles.TryGetValue(handleName, out var currentHandle)
+                            ? currentHandle
+                            : null;
+                        var safeGroupName = LogSanitizer.Sanitize(handleName);
+                        if (handle?.IsPauseAppliedForEpoch(openEpoch) == true)
+                        {
+                            if (_logger.IsEnabled(LogLevel.Warning))
+                            {
+                                _logger.DeliveryAdmittedWhileOpenAfterPause(safeGroupName);
+                            }
+                        }
+                        else
+                        {
+                            if (_logger.IsEnabled(LogLevel.Debug))
+                            {
+                                _logger.DeliveryAdmittedDuringPauseLatency(safeGroupName);
+                            }
+                        }
                     }
                 }
 
@@ -1111,6 +1182,9 @@ internal sealed class ConsumerRegister(
                         _TracingAfter(traceHandle, transportMessage, _serverAddress);
                         consumeOutcomeRecorded = true;
 
+                        // The executor releases the HalfOpen probe with this epoch; without it the
+                        // release is a no-op and the probe slot stays held on this path.
+                        runtimeMessage.ProbeEpoch = admissionEpoch;
                         await _dispatcher
                             .EnqueueToExecute(runtimeMessage, executor, CancellationToken.None)
                             .ConfigureAwait(false);
@@ -1179,6 +1253,7 @@ internal sealed class ConsumerRegister(
 
                     if (admission.ShouldDispatch)
                     {
+                        admission.Message.ProbeEpoch = admissionEpoch;
                         await _dispatcher
                             .EnqueueToExecute(admission.Message, executor, CancellationToken.None)
                             .ConfigureAwait(false);
@@ -1210,9 +1285,9 @@ internal sealed class ConsumerRegister(
             }
             finally
             {
-                if (probeAcquired && !probeOutcomeTransferred)
+                if (probeEpoch is not null && !probeOutcomeTransferred)
                 {
-                    _circuitBreakerStateManager?.ReleaseHalfOpenProbe(handleName);
+                    _circuitBreakerStateManager?.ReleaseHalfOpenProbe(handleName, admissionEpoch);
                 }
             }
         }
@@ -1318,6 +1393,23 @@ internal sealed class ConsumerRegister(
         private bool _disposing;
         private bool _isPaused;
 
+        // SemaphoreSlim.Dispose never completes queued waiters and breaks the holder's release.
+        // This handle-generation gate is intentionally left undisposed; disposal is signalled by
+        // _disposing and checked before waiting and after acquiring the gate.
+#pragma warning disable CA2213 // Never dispose: queued waiters must observe disposal and release.
+        public SemaphoreSlim ApplyGate { get; } = new(1, 1);
+#pragma warning restore CA2213
+
+#pragma warning disable IDE0032 // Uses Volatile read/write for cross-thread visibility between ApplyGate and admission logging.
+        private long _lastAppliedEpoch;
+#pragma warning restore IDE0032
+
+        public long LastAppliedEpoch
+        {
+            get => Volatile.Read(ref _lastAppliedEpoch);
+            set => Volatile.Write(ref _lastAppliedEpoch, value);
+        }
+
         private readonly List<IConsumerClient> _clients = [];
 
         public required ILogger Logger { get; init; }
@@ -1343,6 +1435,25 @@ internal sealed class ConsumerRegister(
                 {
                     _isPaused = value;
                 }
+            }
+        }
+
+        public bool IsDisposing
+        {
+            get
+            {
+                lock (_clientsLock)
+                {
+                    return _disposing;
+                }
+            }
+        }
+
+        public bool IsPauseAppliedForEpoch(long epoch)
+        {
+            lock (_clientsLock)
+            {
+                return LastAppliedEpoch == epoch && _isPaused;
             }
         }
 

@@ -129,8 +129,6 @@ public sealed class JobsNotificationHubSenderTests : TestBase
             TaskCreationOptions.RunContinuationsAsynchronously
         );
 
-        public ConcurrentQueue<LogEntry> Entries { get; } = new();
-
         public IDisposable BeginScope<TState>(TState state)
             where TState : notnull
         {
@@ -152,7 +150,6 @@ public sealed class JobsNotificationHubSenderTests : TestBase
         {
             var entry = new LogEntry(logLevel, eventId.Id, formatter(state, exception), exception);
 
-            Entries.Enqueue(entry);
             _firstEntry.TrySetResult(entry);
         }
 

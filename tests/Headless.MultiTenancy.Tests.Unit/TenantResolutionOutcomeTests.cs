@@ -105,9 +105,11 @@ public sealed class TenantResolutionOutcomeTests
     public void should_keep_none_as_the_zero_value_of_the_kind_enum()
     {
         ((int)TenantResolutionKind.None).Should().Be(0);
-        Enum.GetValues<TenantResolutionKind>()
+        Enum.GetNames<TenantResolutionKind>()
+            .Where(name => name != nameof(TenantResolutionKind.None))
+            .Select(Enum.Parse<TenantResolutionKind>)
             .Should()
-            .NotContain(kind => kind != TenantResolutionKind.None && (int)kind == 0);
+            .AllSatisfy(kind => ((int)kind).Should().NotBe(0));
     }
 
     [Fact]

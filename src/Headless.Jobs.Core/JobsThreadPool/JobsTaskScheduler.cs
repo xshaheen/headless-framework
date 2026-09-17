@@ -251,6 +251,7 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
             }
 
             activeWorkers = Interlocked.Increment(ref _activeWorkers);
+            // ReSharper disable once MethodSupportsCancellation
             _workerTasks[workerId] = Task.Run(() => _WorkerLoopAsync(workerId));
         }
 

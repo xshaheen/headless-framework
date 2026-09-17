@@ -2,7 +2,6 @@
 
 using System.Diagnostics;
 using System.Net;
-using System.Security.Claims;
 using System.Text.Json.Serialization;
 using Headless.Dashboard.Authentication;
 using Headless.Messaging.Configuration;
@@ -24,7 +23,7 @@ using Microsoft.Extensions.DependencyInjection;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Messaging.Dashboard;
 
-public static class MessagingDashboardEndpoints
+public static partial class MessagingDashboardEndpoints
 {
     internal const string PingHttpClientName = "Headless.Messaging.Dashboard.Ping";
     private const int _MaxPageSize = 200;
@@ -37,7 +36,7 @@ public static class MessagingDashboardEndpoints
         {
             new JsonStringEnumConverter<StatusName>(allowIntegerValues: false),
             new JsonStringEnumConverter<MessageLane>(allowIntegerValues: false),
-            new JsonStringEnumConverter<InboxOperationType>(allowIntegerValues: false),
+            new JsonStringEnumConverter<MessagingOperationType>(allowIntegerValues: false),
             new JsonStringEnumConverter<InboxOperationOutcome>(allowIntegerValues: false),
         },
     };
@@ -159,6 +158,21 @@ public static class MessagingDashboardEndpoints
             .MapPost("/inbox/release", _InboxRelease)
             .WithName("Messaging_InboxRelease")
             .WithSummary("Release an inbox retention hold");
+
+        // Scheduled deliveries
+        apiGroup
+            .MapGet("/scheduled", _ScheduledList)
+            .WithName("Messaging_ScheduledList")
+            .WithSummary("List pending scheduled messages");
+        apiGroup
+            .MapPost("/scheduled/revoke", _ScheduledRevoke)
+            .WithName("Messaging_ScheduledRevoke")
+            .WithSummary("Revoke a pending scheduled message");
+        apiGroup
+            .MapPost("/scheduled/dispatch-now", _ScheduledDispatchNow)
+            .WithName("Messaging_ScheduledDispatchNow")
+            .WithSummary("Dispatch a pending scheduled message immediately");
+
         apiGroup
             .MapGet("/received/{status}", _ReceivedList)
             .WithName("Messaging_ReceivedList")
@@ -454,6 +468,12 @@ public static class MessagingDashboardEndpoints
         );
     }
 
+    // Bulk requeue and delete never touch a pending scheduled row (KTD10): an id that matches the
+    // #888 eligibility predicate is reported as rejected and left untouched, pointing the operator at
+    // the audited scheduled-delivery actions instead of the unfenced, unaudited bulk path.
+    private const string _PendingScheduledRejectionMessage =
+        "Pending scheduled deliveries must be revoked or dispatched through the audited scheduled-delivery operations.";
+
     private static async Task<IResult> _PublishedRequeue(HttpContext httpContext, IServiceProvider sp)
     {
         var storageIds = await _ReadStorageIdsAsync(httpContext).ConfigureAwait(false);
@@ -468,16 +488,27 @@ public static class MessagingDashboardEndpoints
         }
 
         var dataStorage = sp.GetRequiredService<IDataStorage>();
+        var pendingScheduledIds = await _GetPendingScheduledIdsAsync(
+                dataStorage,
+                storageIds,
+                httpContext.RequestAborted
+            )
+            .ConfigureAwait(false);
+        var eligibleIds = storageIds.Where(id => !pendingScheduledIds.Contains(id)).ToArray();
+
         var monitoringApi = dataStorage.GetMonitoringApi();
         var dispatcher = sp.GetRequiredService<IDispatcher>();
         var busTransport = sp.GetService<IBusTransport>();
         var queueTransport = sp.GetService<IQueueTransport>();
 
-        var messages = await monitoringApi
-            .GetPublishedMessagesAsync(storageIds, httpContext.RequestAborted)
-            .ConfigureAwait(false);
+        var messages =
+            eligibleIds.Length > 0
+                ? await monitoringApi
+                    .GetPublishedMessagesAsync(eligibleIds, httpContext.RequestAborted)
+                    .ConfigureAwait(false)
+                : [];
 
-        var rejected = new List<Guid>();
+        var rejected = new List<Guid>(pendingScheduledIds);
         var requeued = new List<Guid>();
 
         foreach (var message in messages)
@@ -501,7 +532,14 @@ public static class MessagingDashboardEndpoints
 
         if (rejected.Count > 0)
         {
-            return Results.UnprocessableEntity(new { rejected, requeued });
+            return Results.UnprocessableEntity(
+                new
+                {
+                    rejected,
+                    requeued,
+                    message = pendingScheduledIds.Count > 0 ? _PendingScheduledRejectionMessage : null,
+                }
+            );
         }
 
         return Results.NoContent();
@@ -521,9 +559,33 @@ public static class MessagingDashboardEndpoints
         }
 
         var dataStorage = sp.GetRequiredService<IDataStorage>();
-        _ = await dataStorage
-            .DeletePublishedMessagesAsync(storageIds, httpContext.RequestAborted)
+        var pendingScheduledIds = await _GetPendingScheduledIdsAsync(
+                dataStorage,
+                storageIds,
+                httpContext.RequestAborted
+            )
             .ConfigureAwait(false);
+        var eligibleIds = storageIds.Where(id => !pendingScheduledIds.Contains(id)).ToArray();
+
+        var deletedCount =
+            eligibleIds.Length > 0
+                ? await dataStorage
+                    .DeletePublishedMessagesAsync(eligibleIds, httpContext.RequestAborted)
+                    .ConfigureAwait(false)
+                : 0;
+
+        if (pendingScheduledIds.Count > 0)
+        {
+            return Results.UnprocessableEntity(
+                new
+                {
+                    rejected = pendingScheduledIds,
+                    deleted = deletedCount,
+                    message = _PendingScheduledRejectionMessage,
+                }
+            );
+        }
+
         return Results.NoContent();
     }
 
@@ -576,9 +638,9 @@ public static class MessagingDashboardEndpoints
         int currentPage = 1
     )
     {
-        if (!_TryCreateInboxAuthority(httpContext, out var authorization))
+        if (!_TryResolveOperatorAuthority(httpContext, out var authorization, out var authorityFailure))
         {
-            return Results.Unauthorized();
+            return authorityFailure!;
         }
         var result = await sp.GetRequiredService<IDataStorage>()
             .GetInboxOperationsApi()
@@ -607,9 +669,9 @@ public static class MessagingDashboardEndpoints
         Func<IInboxOperationsApi, InboxOperationRequest, CancellationToken, ValueTask<InboxOperationResult>> execute
     )
     {
-        if (!_TryCreateInboxAuthority(httpContext, out var authorization))
+        if (!_TryResolveOperatorAuthority(httpContext, out var authorization, out var authorityFailure))
         {
-            return Results.Unauthorized();
+            return authorityFailure!;
         }
         if (!httpContext.Request.HasJsonContentType())
         {
@@ -668,51 +730,33 @@ public static class MessagingDashboardEndpoints
         }
     }
 
-    private static bool _TryCreateInboxAuthority(HttpContext httpContext, out InboxAuthorizationContext authorization)
+    /// <summary>
+    /// Shared actor resolver (KTD9) for inbox and scheduled-delivery mutation and query endpoints. An
+    /// unauthenticated principal yields 401 (session ends); an authenticated principal without a usable
+    /// actor name (the no-auth <c>anonymous</c> identity or the Host <c>host-user</c> placeholder) yields
+    /// 403 with <see cref="DashboardOperatorAuthority.OperatorActorRequiredCode"/> so the dashboard stays
+    /// signed in. The legacy requeue and delete endpoints intentionally do not call this (R13).
+    /// </summary>
+    private static bool _TryResolveOperatorAuthority(
+        HttpContext httpContext,
+        out OperatorAuthorizationContext authorization,
+        out IResult? failure
+    )
     {
-        authorization = new InboxAuthorizationContext(httpContext.User);
-        if (httpContext.User.Identity is not { IsAuthenticated: true } identity)
+        var result = DashboardOperatorAuthority.Resolve(httpContext);
+        if (result.IsSuccess)
         {
-            return false;
-        }
-
-        if (!string.IsNullOrWhiteSpace(identity.Name))
-        {
+            authorization = result.Authorization;
+            failure = null;
             return true;
         }
 
-        if (identity is not ClaimsIdentity claimsIdentity)
-        {
-            return false;
-        }
-
-        var actor =
-            claimsIdentity
-                .FindFirst(claim => claim.Type == ClaimTypes.NameIdentifier && !string.IsNullOrWhiteSpace(claim.Value))
-                ?.Value
-            ?? claimsIdentity.FindFirst(claim => claim.Type == "sub" && !string.IsNullOrWhiteSpace(claim.Value))?.Value;
-        if (string.IsNullOrWhiteSpace(actor))
-        {
-            actor = httpContext.Items[AuthMiddleware.AuthenticatedKey] is true
-                ? httpContext.Items[AuthMiddleware.UsernameKey] as string
-                : null;
-            // Host authentication's shared placeholder cannot identify an operator in the audit trail.
-            if (string.IsNullOrWhiteSpace(actor) || string.Equals(actor, "host-user", StringComparison.Ordinal))
-            {
-                return false;
-            }
-        }
-
-        // Preserve host claims and role mappings without changing the request's principal.
-        var principal = new ClaimsPrincipal(httpContext.User.Identities.Select(static identity => identity.Clone()));
-        var auditIdentity = (ClaimsIdentity)principal.Identity!;
-        foreach (var claim in auditIdentity.FindAll(auditIdentity.NameClaimType).ToArray())
-        {
-            auditIdentity.RemoveClaim(claim);
-        }
-        auditIdentity.AddClaim(new Claim(auditIdentity.NameClaimType, actor));
-        authorization = new InboxAuthorizationContext(principal);
-        return true;
+        authorization = null!;
+        failure =
+            result.Status == OperatorAuthorityStatus.Unauthenticated
+                ? Results.Unauthorized()
+                : DashboardOperatorAuthority.CreateForbiddenResult();
+        return false;
     }
 
     private sealed class InboxDashboardOperationRequest

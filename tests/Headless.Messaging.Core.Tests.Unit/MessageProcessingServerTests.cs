@@ -115,7 +115,7 @@ public sealed class MessageProcessingServerTests : TestBase
 
     private sealed class RejectingServiceProvider : IServiceProvider
     {
-        public object? GetService(Type serviceType)
+        public object GetService(Type serviceType)
         {
             throw new InvalidOperationException($"Retry pickup unexpectedly resolved {serviceType} after quiesce.");
         }

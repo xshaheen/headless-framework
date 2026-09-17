@@ -264,7 +264,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
         operations
             .QueryAsync(
                 Arg.Any<InboxGenerationQuery>(),
-                Arg.Any<InboxAuthorizationContext>(),
+                Arg.Any<OperatorAuthorizationContext>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(
@@ -306,7 +306,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
                 ValueTask.FromResult(
                     new InboxOperationResult(
                         operationId,
-                        InboxOperationType.Hold,
+                        MessagingOperationType.Hold,
                         outcome,
                         incarnationId,
                         status,
@@ -364,7 +364,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
         using var mutationDocument = JsonDocument.Parse(await mutation.Content.ReadAsStringAsync(AbortToken));
         var mutationResult = mutationDocument.RootElement;
         mutationResult.GetProperty("expectedStatus").GetString().Should().Be(status.ToString());
-        mutationResult.GetProperty("operationType").GetString().Should().Be(nameof(InboxOperationType.Hold));
+        mutationResult.GetProperty("operationType").GetString().Should().Be(nameof(MessagingOperationType.Hold));
         mutationResult.GetProperty("outcome").GetString().Should().Be(outcome.ToString());
         await operations
             .Received(1)
@@ -395,7 +395,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
                 ValueTask.FromResult(
                     new InboxOperationResult(
                         operationId,
-                        InboxOperationType.Purge,
+                        MessagingOperationType.Purge,
                         InboxOperationOutcome.Applied,
                         incarnationId,
                         StatusName.Failed,
@@ -442,12 +442,12 @@ public sealed class ReceivedMessageEndpointTests : TestBase
     }
 
     [Theory]
-    [InlineData("/api/received/reexecute", InboxOperationType.ForceReprocess)]
-    [InlineData("/api/inbox/hold", InboxOperationType.Hold)]
-    [InlineData("/api/inbox/release", InboxOperationType.ReleaseHold)]
+    [InlineData("/api/received/reexecute", MessagingOperationType.ForceReprocess)]
+    [InlineData("/api/inbox/hold", MessagingOperationType.Hold)]
+    [InlineData("/api/inbox/release", MessagingOperationType.ReleaseHold)]
     public async Task should_route_generation_actions_through_audited_inbox_operations(
         string path,
-        InboxOperationType operationType
+        MessagingOperationType operationType
     )
     {
         var operationId = Guid.NewGuid();
@@ -497,10 +497,10 @@ public sealed class ReceivedMessageEndpointTests : TestBase
         Func<InboxOperationRequest, bool> matches = request =>
             request.OperationId == operationId
             && request.ExpectedIncarnationId == incarnationId
-            && request.Actor == "dashboard-operator";
+            && string.Equals(request.Actor, "dashboard-operator", StringComparison.Ordinal);
         switch (operationType)
         {
-            case InboxOperationType.ForceReprocess:
+            case MessagingOperationType.ForceReprocess:
                 await operations
                     .Received(1)
                     .ForceReprocessAsync(
@@ -508,7 +508,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
                         Arg.Any<CancellationToken>()
                     );
                 break;
-            case InboxOperationType.Hold:
+            case MessagingOperationType.Hold:
                 await operations
                     .Received(1)
                     .HoldAsync(
@@ -516,7 +516,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
                         Arg.Any<CancellationToken>()
                     );
                 break;
-            case InboxOperationType.ReleaseHold:
+            case MessagingOperationType.ReleaseHold:
                 await operations
                     .Received(1)
                     .ReleaseHoldAsync(
@@ -585,7 +585,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
         operations
             .QueryAsync(
                 Arg.Any<InboxGenerationQuery>(),
-                Arg.Any<InboxAuthorizationContext>(),
+                Arg.Any<OperatorAuthorizationContext>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult(new IndexPage<InboxGenerationView>([], 0, 20, 0)));
@@ -608,7 +608,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
             .Received(1)
             .QueryAsync(
                 Arg.Any<InboxGenerationQuery>(),
-                Arg.Is<InboxAuthorizationContext>(authorization => authorization.Actor == "api-user"),
+                Arg.Is<OperatorAuthorizationContext>(authorization => authorization.Actor == "api-user"),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -644,17 +644,17 @@ public sealed class ReceivedMessageEndpointTests : TestBase
         var principal = new ClaimsPrincipal(identity);
         principal.AddIdentity(new ClaimsIdentity([new Claim("extra", "preserved")], "secondary"));
         var operations = Substitute.For<IInboxOperationsApi>();
-        InboxAuthorizationContext? queryAuthority = null;
+        OperatorAuthorizationContext? queryAuthority = null;
         InboxOperationRequest? mutationRequest = null;
         operations
             .QueryAsync(
                 Arg.Any<InboxGenerationQuery>(),
-                Arg.Any<InboxAuthorizationContext>(),
+                Arg.Any<OperatorAuthorizationContext>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(call =>
             {
-                queryAuthority = call.Arg<InboxAuthorizationContext>();
+                queryAuthority = call.Arg<OperatorAuthorizationContext>();
                 queryAuthority.Validate();
                 return ValueTask.FromResult(new IndexPage<InboxGenerationView>([], 0, 20, 0));
             });
@@ -667,7 +667,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
                 return ValueTask.FromResult(
                     new InboxOperationResult(
                         mutationRequest.OperationId,
-                        InboxOperationType.Hold,
+                        MessagingOperationType.Hold,
                         InboxOperationOutcome.Applied,
                         mutationRequest.ExpectedIncarnationId,
                         mutationRequest.ExpectedStatus,
@@ -720,9 +720,12 @@ public sealed class ReceivedMessageEndpointTests : TestBase
     }
 
     [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task should_reject_inbox_actor_without_authenticated_stable_identity(bool authenticated)
+    [InlineData(true, HttpStatusCode.Forbidden)]
+    [InlineData(false, HttpStatusCode.Unauthorized)]
+    public async Task should_reject_inbox_actor_without_authenticated_stable_identity(
+        bool authenticated,
+        HttpStatusCode expectedStatusCode
+    )
     {
         var principal = new ClaimsPrincipal(
             new ClaimsIdentity(
@@ -752,9 +755,15 @@ public sealed class ReceivedMessageEndpointTests : TestBase
         using var content = new StringContent("{}", Encoding.UTF8, "text/plain");
         using var mutation = await client.PostAsync("/api/inbox/hold", content, AbortToken);
 
-        query.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        mutation.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        query.StatusCode.Should().Be(expectedStatusCode);
+        mutation.StatusCode.Should().Be(expectedStatusCode);
         _dataStorage.DidNotReceive().GetInboxOperationsApi();
+
+        if (authenticated)
+        {
+            using var mutationDocument = JsonDocument.Parse(await mutation.Content.ReadAsStringAsync(AbortToken));
+            mutationDocument.RootElement.GetProperty("code").GetString().Should().Be("g:operator_actor_required");
+        }
     }
 
     [Theory]
@@ -774,7 +783,10 @@ public sealed class ReceivedMessageEndpointTests : TestBase
             ClaimTypes.Name,
             "host_role"
         );
-        identity.RemoveClaim(identity.FindFirst(claimType)!);
+        if (identity.FindFirst(claimType) is { } existingClaim)
+        {
+            identity.RemoveClaim(existingClaim);
+        }
         identity.AddClaim(new Claim(claimType, value));
         await using var app = _CreateTestApp(
             _dataStorage,

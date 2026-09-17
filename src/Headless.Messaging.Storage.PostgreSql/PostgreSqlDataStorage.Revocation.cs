@@ -7,6 +7,12 @@ namespace Headless.Messaging.Storage.PostgreSql;
 
 internal sealed partial class PostgreSqlDataStorage : IMessageRevocationStorage
 {
+    private const string _ScheduledEligibilityPredicate =
+        $"{_TerminalRowGuardSimple} AND \"InlineAttempts\"=0 AND \"Retries\"=0 AND \"NextRetryAt\" IS NULL";
+
+    private const string _ScheduledPendingPredicate =
+        "\"Version\"=@Version AND \"StatusName\" IN ('Delayed','Queued') AND \"InlineAttempts\"=0 AND \"Retries\"=0 AND \"NextRetryAt\" IS NULL AND \"ExpiresAt\" IS NOT NULL AND \"IntentType\" IN (0, 1)";
+
     public async ValueTask<MessageRevocationResult> RevokeAsync(
         Guid storageId,
         CancellationToken cancellationToken = default
@@ -17,8 +23,7 @@ internal sealed partial class PostgreSqlDataStorage : IMessageRevocationStorage
             WITH revoked AS (
                 DELETE FROM {_publishedTable}
                 WHERE "Id"=@Id AND "Version"=@Version
-                  AND {_TerminalRowGuardSimple}
-                  AND "InlineAttempts"=0 AND "Retries"=0 AND "NextRetryAt" IS NULL
+                  AND {_ScheduledEligibilityPredicate}
                 RETURNING "Id"
             )
             SELECT CASE WHEN EXISTS (SELECT 1 FROM revoked) THEN 1

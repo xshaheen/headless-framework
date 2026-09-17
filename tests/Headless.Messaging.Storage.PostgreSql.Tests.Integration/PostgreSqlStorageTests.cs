@@ -416,22 +416,22 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
                 SELECT COUNT(*) FROM pg_indexes
                 WHERE schemaname='messaging' AND indexname IN ('uq_received_inbox_root_key','uq_received_inbox_lifecycle_generation')
             ) AS "IndexCount", (
-                SELECT COUNT(*) FROM pg_constraint WHERE conname IN ('ck_received_inbox_retention_v3','ck_received_inbox_lifecycle_v4')
+                SELECT COUNT(*) FROM pg_constraint WHERE conname IN ('ck_received_inbox_identity','ck_received_inbox_lifecycle')
                   AND conrelid='messaging.received'::regclass
             ) AS "ConstraintCount", (
                 SELECT COUNT(*) FROM information_schema.columns
                 WHERE table_schema='messaging' AND table_name='inbox_operation_receipts'
-                  AND column_name IN ('ExpectedStatus','Outcome','ChildIncarnationId')
+                  AND column_name IN ('ExpectedStatus','Outcome','ChildIncarnationId','TargetKind','ExpectedDueAt','MessageName','MessageId','Lane')
             ) AS "ReceiptColumnCount"
             FROM messaging.schema_state AS state
             WHERE state."Component"='inbox';
             """
         );
 
-        schemaVersion.Should().Be(4);
+        schemaVersion.Should().Be(1);
         indexCount.Should().Be(2);
         constraintCount.Should().Be(2);
-        receiptColumnCount.Should().Be(3);
+        receiptColumnCount.Should().Be(8);
     }
 
     [Fact]
@@ -487,26 +487,26 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
     {
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.ExecuteAsync(
-            "UPDATE messaging.schema_state SET \"SchemaVersion\"=5 WHERE \"Component\"='inbox';"
+            "UPDATE messaging.schema_state SET \"SchemaVersion\"=2 WHERE \"Component\"='inbox';"
         );
 
         try
         {
             var act = async () => await GetInitializer().InitializeAsync(AbortToken);
 
-            await act.Should().ThrowAsync<PostgresException>().WithMessage("*newer than supported version 4*");
+            await act.Should().ThrowAsync<PostgresException>().WithMessage("*newer than supported version 1*");
             (
                 await connection.ExecuteScalarAsync<int>(
                     "SELECT \"SchemaVersion\" FROM messaging.schema_state WHERE \"Component\"='inbox';"
                 )
             )
                 .Should()
-                .Be(5, "a rejected older binary must not rewrite the newer readiness marker");
+                .Be(2, "a rejected older binary must not rewrite the newer readiness marker");
         }
         finally
         {
             await connection.ExecuteAsync(
-                "UPDATE messaging.schema_state SET \"SchemaVersion\"=4 WHERE \"Component\"='inbox';"
+                "UPDATE messaging.schema_state SET \"SchemaVersion\"=1 WHERE \"Component\"='inbox';"
             );
         }
     }
@@ -1981,11 +1981,11 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
                 """
                 SELECT conname FROM pg_constraint
                 WHERE conrelid = format('%I.received', @Schema)::regclass
-                  AND conname IN ('ck_received_inbox_identity', 'ck_received_inbox_retention_v3');
+                  AND conname IN ('ck_received_inbox_identity', 'ck_received_inbox_lifecycle');
                 """,
                 new { Schema = schema }
             );
-            constraints.Should().BeEquivalentTo("ck_received_inbox_identity", "ck_received_inbox_retention_v3");
+            constraints.Should().BeEquivalentTo("ck_received_inbox_identity", "ck_received_inbox_lifecycle");
         }
         finally
         {

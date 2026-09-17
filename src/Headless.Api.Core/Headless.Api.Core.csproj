@@ -14,6 +14,7 @@
     <InternalsVisibleTo Include="Headless.Api.Tests.Integration" />
     <InternalsVisibleTo Include="Headless.Api.Mvc.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Api.Idempotency.Tests.Integration" />
+    <InternalsVisibleTo Include="Headless.Api.Tests.Unit" />
   </ItemGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />

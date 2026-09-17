@@ -150,16 +150,12 @@ public sealed class DynamicFeatureDefinitionStore(
     private string? _cacheStamp;
     private DateTimeOffset? _lastCheckTime;
     private readonly SemaphoreSlim _syncSemaphore = new(1, 1);
-    private volatile ImmutableDictionary<string, FeatureGroupDefinition> _groupMemoryCache = ImmutableDictionary<
-        string,
-        FeatureGroupDefinition
-    >.Empty.WithComparers(StringComparer.Ordinal);
     private volatile ImmutableDictionary<string, FeatureDefinition> _featureMemoryCache = ImmutableDictionary<
         string,
         FeatureDefinition
     >.Empty.WithComparers(StringComparer.Ordinal);
 
-    // List projections of the two dictionaries above, rebuilt alongside them. Callers ask for the whole
+    // List projections rebuilt alongside the feature dictionary. Callers ask for the whole
     // catalog on every feature check, and materializing it per call dominated the lock-free read path.
     private volatile IReadOnlyList<FeatureGroupDefinition> _groupListCache = [];
     private volatile IReadOnlyList<FeatureDefinition> _featureListCache = [];
@@ -271,7 +267,6 @@ public sealed class DynamicFeatureDefinitionStore(
 
         // Swap references to new immutable caches. Each assignment is atomic, but the updates are not atomic as a unit,
         // so readers may briefly observe one cache updated while the other is stale. This transient state is acceptable here.
-        _groupMemoryCache = groups;
         _featureMemoryCache = features;
         _groupListCache = [.. groups.Values];
         _featureListCache = [.. features.Values];

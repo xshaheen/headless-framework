@@ -40,9 +40,7 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
         _ResolveChainTenants(entity);
         if (!_functionRegistry.Functions.ContainsKey(entity.Function))
         {
-            throw new Headless.Jobs.Exceptions.JobValidatorException(
-                $"Cannot find JobFunction with name {entity.Function}"
-            );
+            throw new Exceptions.JobValidatorException($"Cannot find JobFunction with name {entity.Function}");
         }
         JobIntentFingerprint.Normalize(entity);
         JobScheduleResult result;

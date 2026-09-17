@@ -680,7 +680,7 @@ public sealed class TenantCatalogServiceTests : TestBase
         // having expired between them
         _store
             .FindByIdentifierAsync("acme", AbortToken)
-            .Returns((TenantInfo?)null, new TenantInfo("ten_1", "acme", "Acme", isEnabled: true));
+            .Returns(null, new TenantInfo("ten_1", "acme", "Acme", isEnabled: true));
 
         // when
         var first = await _sut.ResolveAsync("acme", AbortToken);

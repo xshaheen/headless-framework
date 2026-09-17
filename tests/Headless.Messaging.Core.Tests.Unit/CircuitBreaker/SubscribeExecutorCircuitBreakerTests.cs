@@ -299,10 +299,12 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
             .Returns(ValueTask.FromResult(false));
 
         // when
-        await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), AbortToken);
+        var message = _CreateMediumMessage();
+        message.ProbeEpoch = 57L;
+        await executor.ExecuteAsync(message, _EmptyScope, _CreateDescriptor(), AbortToken);
 
         // then
-        cbMock.Received(1).ReleaseHalfOpenProbe(_CircuitBreakerGroupName);
+        cbMock.Received(1).ReleaseHalfOpenProbe(_CircuitBreakerGroupName, 57L);
         await cbMock.DidNotReceiveWithAnyArgs().ReportSuccessAsync(default!, AbortToken);
         await cbMock.DidNotReceiveWithAnyArgs().ReportFailureAsync(default!, default!, AbortToken);
     }
@@ -348,7 +350,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), AbortToken);
 
         // then
-        cbMock.Received(1).ReleaseHalfOpenProbe(_CircuitBreakerGroupName);
+        cbMock.Received(1).ReleaseHalfOpenProbe(_CircuitBreakerGroupName, 0L);
         await cbMock.DidNotReceiveWithAnyArgs().ReportSuccessAsync(default!, AbortToken);
         await cbMock.DidNotReceiveWithAnyArgs().ReportFailureAsync(default!, default!, AbortToken);
     }

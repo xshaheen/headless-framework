@@ -372,7 +372,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
     {
         while (true)
         {
-            var waitForResume = false;
+            bool waitForResume;
             await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
 
             try

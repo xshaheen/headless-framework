@@ -1553,7 +1553,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
     {
         public string DisplayOwner => owner;
 
-        public bool TryGetStampOwner([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out string? stampOwner)
+        public bool TryGetStampOwner([NotNullWhen(true)] out string? stampOwner)
         {
             stampOwner = owner;
             return true;

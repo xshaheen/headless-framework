@@ -205,7 +205,7 @@ public sealed class SkipTenantResolutionTests : TestBase
     {
         /// <summary>
         /// When true, registers HeadlessTenancy with claim-based HTTP resolution and a FallbackPolicy requiring a tenant.
-        /// When false, the app wires authentication, raw <c>UseTenantResolution()</c>, and plain <c>AddAuthorization()</c>.
+        /// When false, the app wires authentication, <c>UseHeadlessTenancy()</c>, and plain <c>AddAuthorization()</c>.
         /// </summary>
         public bool RequireTenancyAuthorization { get; set; }
 
@@ -244,6 +244,8 @@ public sealed class SkipTenantResolutionTests : TestBase
             hl.OpenTelemetry.Enabled = false;
             hl.OpenApi.Enabled = false;
         });
+
+        builder.AddHeadlessTenancy(tenancy => tenancy.Http(http => http.ResolveFromClaims()));
 
         if (options.RequireTenancyAuthorization)
         {
@@ -301,14 +303,14 @@ public sealed class SkipTenantResolutionTests : TestBase
         {
             if (options.ApplyTenantMiddlewareBeforeAuthentication)
             {
-                app.UseTenantResolution();
+                app.UseHeadlessTenancy();
             }
 
             app.UseAuthentication();
 
             if (!options.ApplyTenantMiddlewareBeforeAuthentication)
             {
-                app.UseTenantResolution();
+                app.UseHeadlessTenancy();
             }
 
             app.UseAuthorization();

@@ -63,7 +63,7 @@ public sealed class JobSchedulerExtensionsTests : TestBase
         call.GetMethodInfo().Name.Should().Be(methodName);
         call.GetMethodInfo().IsGenericMethod.Should().Be(typed);
         var arguments = call.GetArguments();
-        arguments[0].Should().BeSameAs(typed ? _Request : (object)_Descriptor);
+        arguments[0].Should().BeSameAs(typed ? _Request : _Descriptor);
         arguments.Should().HaveElementAt(arguments.Length - 1, AbortToken);
         var options = arguments[^2].Should().BeOfType<JobOptions>().Which;
         options

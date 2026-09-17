@@ -46,9 +46,7 @@ public sealed class EntityFrameworkInfrastructureBehaviorTests : TestBase
     {
         var builder = Host.CreateApplicationBuilder();
         builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites()));
-        builder.Services.AddSingleton<IOptions<TenantWriteGuardOptions>>(
-            Options.Create(new TenantWriteGuardOptions { IsEnabled = false })
-        );
+        builder.Services.AddSingleton(Options.Create(new TenantWriteGuardOptions { IsEnabled = false }));
         await using var provider = builder.Services.BuildServiceProvider();
         var context = new HeadlessTenancyValidationContext(
             provider,

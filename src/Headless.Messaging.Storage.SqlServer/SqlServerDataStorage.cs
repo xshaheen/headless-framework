@@ -39,6 +39,7 @@ internal sealed partial class SqlServerDataStorage(
         ICircuitRetryDeferralStorage,
         ITransactionalInboxStorage,
         IInboxOperationsApi,
+        IScheduledDeliveryOperationsApi,
         IDeliveryCoordinationResolver
 {
     /// <summary>
@@ -359,9 +360,7 @@ internal sealed partial class SqlServerDataStorage(
             },
             new SqlParameter("@InboxIntentType", SqlDbType.SmallInt)
             {
-                Value = inboxFence is null
-                    ? (object)DBNull.Value
-                    : MessageLaneCompatibility.ToPersistedValue(inboxFence.Lane),
+                Value = inboxFence is null ? DBNull.Value : MessageLaneCompatibility.ToPersistedValue(inboxFence.Lane),
             },
             new SqlParameter("@InboxGeneration", SqlDbType.BigInt)
             {
@@ -1080,9 +1079,7 @@ internal sealed partial class SqlServerDataStorage(
             },
             new SqlParameter("@InboxIntentType", SqlDbType.SmallInt)
             {
-                Value = inboxFence is null
-                    ? (object)DBNull.Value
-                    : MessageLaneCompatibility.ToPersistedValue(inboxFence.Lane),
+                Value = inboxFence is null ? DBNull.Value : MessageLaneCompatibility.ToPersistedValue(inboxFence.Lane),
             },
             new SqlParameter("@InboxGeneration", SqlDbType.BigInt)
             {
@@ -1172,9 +1169,7 @@ internal sealed partial class SqlServerDataStorage(
             },
             new SqlParameter("@InboxIntentType", SqlDbType.SmallInt)
             {
-                Value = inboxFence is null
-                    ? (object)DBNull.Value
-                    : MessageLaneCompatibility.ToPersistedValue(inboxFence.Lane),
+                Value = inboxFence is null ? DBNull.Value : MessageLaneCompatibility.ToPersistedValue(inboxFence.Lane),
             },
             new SqlParameter("@InboxGeneration", SqlDbType.BigInt)
             {
@@ -1289,7 +1284,7 @@ internal sealed partial class SqlServerDataStorage(
                         new SqlParameter($"@InboxIntentType{parameterSuffix}", SqlDbType.SmallInt)
                         {
                             Value = inboxFence is null
-                                ? (object)DBNull.Value
+                                ? DBNull.Value
                                 : MessageLaneCompatibility.ToPersistedValue(inboxFence.Lane),
                         }
                     );
@@ -1475,6 +1470,8 @@ internal sealed partial class SqlServerDataStorage(
 
     public IInboxOperationsApi GetInboxOperationsApi() => this;
 
+    public IScheduledDeliveryOperationsApi GetScheduledDeliveryOperationsApi() => this;
+
     // NOTE: ChangeReceiveStateAsync does not call this helper because the receive path additionally
     // writes ExceptionInfo, a column absent from the published table schema. Keep these two methods
     // in sync when adding columns.
@@ -1508,9 +1505,7 @@ internal sealed partial class SqlServerDataStorage(
             },
             new SqlParameter("@InboxIntentType", SqlDbType.SmallInt)
             {
-                Value = inboxFence is null
-                    ? (object)DBNull.Value
-                    : MessageLaneCompatibility.ToPersistedValue(inboxFence.Lane),
+                Value = inboxFence is null ? DBNull.Value : MessageLaneCompatibility.ToPersistedValue(inboxFence.Lane),
             },
             new SqlParameter("@InboxGeneration", SqlDbType.BigInt)
             {

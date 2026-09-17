@@ -250,7 +250,7 @@ const statusTabs = computed(() => [
     badgeCount: stats.value.publishedDelayed,
     badgeColor: 'warning',
     tooltip:
-      'Messages scheduled for future delivery (delay > 1 min). Shorter delays show as "Queued" — check the database.',
+      'Messages scheduled for future delivery (delay > 1 min). Shorter delays show as "Queued". See the Scheduled view to revoke or dispatch a pending row.',
   },
   {
     label: 'Scheduled',

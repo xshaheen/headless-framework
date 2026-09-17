@@ -224,7 +224,7 @@ public sealed class NatsFixture : HeadlessNatsFixture
         if (failEnvelopeBuild)
         {
             options.Value.CustomHeadersBuilder = static (_, _, _) =>
-                [new KeyValuePair<string, string>(Headless.Messaging.Headers.MessageId, string.Empty)];
+                [new KeyValuePair<string, string>(Headers.MessageId, string.Empty)];
         }
 #pragma warning disable CA2000 // Ownership transfers to the returned conformance session or the catch cleanup path.
         var pool = new Headless.Messaging.Nats.NatsConnectionPool(

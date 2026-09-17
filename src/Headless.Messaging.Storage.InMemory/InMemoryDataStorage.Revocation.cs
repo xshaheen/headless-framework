@@ -7,6 +7,13 @@ namespace Headless.Messaging.Storage.InMemory;
 
 internal sealed partial class InMemoryDataStorage : IMessageRevocationStorage
 {
+    private bool _IsRevocationEligible(MemoryMessage message) =>
+        string.Equals(message.Version, messagingOptions.Value.Version, StringComparison.Ordinal)
+        && message.StatusName is not (StatusName.Succeeded or StatusName.Failed)
+        && message.InlineAttempts == 0
+        && message.Retries == 0
+        && message.NextRetryAt is null;
+
     public ValueTask<MessageRevocationResult> RevokeAsync(Guid storageId, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -27,12 +34,7 @@ internal sealed partial class InMemoryDataStorage : IMessageRevocationStorage
                 return ValueTask.FromResult(MessageRevocationResult.NotFound);
             }
 
-            if (
-                message.StatusName is StatusName.Succeeded or StatusName.Failed
-                || message.InlineAttempts != 0
-                || message.Retries != 0
-                || message.NextRetryAt is not null
-            )
+            if (!_IsRevocationEligible(message))
             {
                 return ValueTask.FromResult(MessageRevocationResult.AttemptReserved);
             }

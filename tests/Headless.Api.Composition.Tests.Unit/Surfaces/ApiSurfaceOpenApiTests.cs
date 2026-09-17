@@ -103,9 +103,7 @@ public sealed class ApiSurfaceOpenApiTests : TestBase
                 .Should()
                 .Be(customize ? "Custom title" : "Final portal title");
             var paths = document.RootElement.GetProperty("paths").EnumerateObject().Select(x => x.Name).ToArray();
-            paths
-                .Should()
-                .BeEquivalentTo(customize ? ["/portal/visible"] : new[] { "/portal/visible", "/portal/hidden" });
+            paths.Should().BeEquivalentTo(customize ? ["/portal/visible"] : ["/portal/visible", "/portal/hidden"]);
             json.Should().NotContain("ConsolePayload");
             using var console = JsonDocument.Parse(await client.GetStringAsync("/openapi/console.json", AbortToken));
             console
@@ -197,7 +195,7 @@ public sealed class ApiSurfaceOpenApiTests : TestBase
             var name = selectPortal ? "portal" : "v1";
             using var document = JsonDocument.Parse(await client.GetStringAsync($"/openapi/{name}.json", AbortToken));
             var paths = document.RootElement.GetProperty("paths").EnumerateObject().Select(path => path.Name);
-            paths.Should().BeEquivalentTo(selectPortal ? ["/portal"] : new[] { "/portal", "/console" });
+            paths.Should().BeEquivalentTo(selectPortal ? ["/portal"] : ["/portal", "/console"]);
             using var console = await client.GetAsync("/openapi/console.json", AbortToken);
             console.StatusCode.Should().Be(HttpStatusCode.NotFound);
         }

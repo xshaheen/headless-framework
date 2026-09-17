@@ -192,7 +192,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                         result = await operation(context, ct).ConfigureAwait(false);
                         commitStarted = true;
                         await transaction.CommitAsync(ct).ConfigureAwait(false);
-                        return (Result: result, Error: (ExceptionDispatchInfo?)null);
+                        return (Result: result, Error: null);
                     }
                     catch (Exception exception) when (commitStarted)
                     {

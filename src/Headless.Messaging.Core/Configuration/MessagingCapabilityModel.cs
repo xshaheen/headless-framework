@@ -48,7 +48,7 @@ internal interface IMessageCapabilityGate : IMessagingCapabilityModel
 
 /// <summary>Composes immutable provider contributions into the runtime capability authority.</summary>
 [PublicAPI]
-public sealed class MessagingCapabilityModel : IMessagingCapabilityModel, IMessageCapabilityGate
+public sealed class MessagingCapabilityModel : IMessageCapabilityGate
 {
     private readonly FrozenDictionary<MessagingProviderRole, MessagingProviderCapabilities[]> _providersByRole;
 

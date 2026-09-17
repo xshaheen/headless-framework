@@ -136,7 +136,9 @@ public sealed class InMemoryKeyedStorageTests : TestBase
         {
             await store.AddTimeJobsAsync([job], AbortToken);
         }
+
         job = (await store.GetTimeJobByIdAsync(job.Id, AbortToken))!;
+
         var gate = (Lock)
             typeof(JobsInMemoryPersistenceProvider<TimeJobEntity, CronJobEntity>)
                 .GetField(
@@ -144,8 +146,10 @@ public sealed class InMemoryKeyedStorageTests : TestBase
                     BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
                 )!
                 .GetValue(store)!;
+
         var held = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using var release = new ManualResetEventSlim();
+
         // A blocking lock holder must not depend on thread-pool availability on small CI runners.
         var holder = Task.Factory.StartNew(
             () =>
@@ -227,6 +231,7 @@ public sealed class InMemoryKeyedStorageTests : TestBase
                 JobsKeyedSchedulingScenarios.Candidate(),
                 cancellationToken: AbortToken
             );
+
         var nullScope = () => store.CancelKeyedTimeJobAsync(null!, key, 1, AbortToken);
         var nullCancelKey = () => store.CancelKeyedTimeJobAsync(new JobKeyScope("deadline"), null!, 1, AbortToken);
         (await nullJob.Should().ThrowAsync<ArgumentNullException>()).Which.ParamName.Should().Be("job");

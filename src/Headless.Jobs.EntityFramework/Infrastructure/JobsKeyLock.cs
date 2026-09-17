@@ -23,7 +23,7 @@ internal static class JobsKeyLock
     {
         // Length-delimited scope avoids ambiguous separators. A digest collision only serializes unrelated keys.
         var identity = string.Create(
-            System.Globalization.CultureInfo.InvariantCulture,
+            CultureInfo.InvariantCulture,
             $"jobs:key:{scope.TenantId?.Length ?? -1}:{scope.TenantId}{scope.Function.Length}:{scope.Function}{key.Value.Length}:{key.Value}"
         );
         return _AcquireAsync(context, [identity], cancellationToken);

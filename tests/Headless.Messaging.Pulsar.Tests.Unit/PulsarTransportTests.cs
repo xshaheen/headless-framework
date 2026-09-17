@@ -25,7 +25,7 @@ public sealed class PulsarTransportTests : TestBase
     [Fact]
     public async Task should_pass_affinity_to_native_producer_message_builder()
     {
-        var producer = Substitute.For<global::Pulsar.Client.Api.IProducer<byte[]>>();
+        var producer = Substitute.For<Pulsar.Client.Api.IProducer<byte[]>>();
         _connectionFactory.CreateProducerAsync("headless-bus-orders").Returns(producer);
         await using var transport = new PulsarTransport(_logger, _connectionFactory);
         var message = new TransportMessage(

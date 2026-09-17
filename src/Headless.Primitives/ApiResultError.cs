@@ -126,7 +126,7 @@ public sealed record AggregateError : ApiResultError
     private static IReadOnlyList<ApiResultError> _CopyErrors(IReadOnlyList<ApiResultError> errors)
     {
         var checkedErrors = Argument.IsNotNullOrEmpty(errors);
-        Argument.HasNoNulls<ApiResultError>(checkedErrors);
+        Argument.HasNoNulls(checkedErrors);
         return [.. checkedErrors];
     }
 
@@ -324,7 +324,7 @@ public sealed record ConflictError : ApiResultError
     public ConflictError(params IReadOnlyCollection<ErrorDescriptor> errors)
     {
         var checkedErrors = Argument.IsNotNullOrEmpty(errors);
-        Argument.HasNoNulls<ErrorDescriptor>(checkedErrors);
+        Argument.HasNoNulls(checkedErrors);
         Errors = [.. checkedErrors];
     }
 
@@ -447,7 +447,7 @@ public sealed record ValidationError : ApiResultError
     private static IReadOnlyList<ErrorDescriptor> _CopyFieldErrors(IReadOnlyList<ErrorDescriptor> errors)
     {
         var checkedErrors = Argument.IsNotNullOrEmpty(errors);
-        Argument.HasNoNulls<ErrorDescriptor>(checkedErrors);
+        Argument.HasNoNulls(checkedErrors);
         return [.. checkedErrors];
     }
 }

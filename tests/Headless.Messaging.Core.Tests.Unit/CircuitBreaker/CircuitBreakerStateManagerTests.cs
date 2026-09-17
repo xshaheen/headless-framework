@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics.Metrics;
+using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Exceptions;
@@ -16,6 +17,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
 {
     private const string _Group = "test.group";
     private readonly List<IMeterFactory> _meterFactories = [];
+    private FakeTimeProvider _timeProvider = new();
 
     // -------------------------------------------------------------------------
     // Helpers
@@ -41,13 +43,12 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         // Owned by the test: disposed in DisposeAsyncCore so the meter stays alive for the test.
         var meterFactory = CircuitBreakerTestHelpers.CreateMeterFactory();
         _meterFactories.Add(meterFactory);
-
         return new CircuitBreakerStateManager(
             Options.Create(opts),
             registry ?? new ConsumerCircuitBreakerRegistry(),
             new NullLogger<CircuitBreakerStateManager>(),
             new CircuitBreakerMetrics(meterFactory),
-            timeProvider ?? TimeProvider.System
+            timeProvider ?? (_timeProvider = new FakeTimeProvider())
         );
     }
 
@@ -95,12 +96,12 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         await using var sut = _Create(failureThreshold: 5);
         sut.RegisterGroupCallbacks(
             _Group,
-            onPause: () =>
+            onPause: epoch =>
             {
                 pauseCalled = true;
                 return ValueTask.CompletedTask;
             },
-            onResume: () => ValueTask.CompletedTask
+            onResume: epoch => ValueTask.CompletedTask
         );
 
         // when — exactly at threshold
@@ -148,8 +149,8 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         await using var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromMilliseconds(30));
         sut.RegisterGroupCallbacks(
             _Group,
-            onPause: () => ValueTask.CompletedTask,
-            onResume: () =>
+            onPause: epoch => ValueTask.CompletedTask,
+            onResume: epoch =>
             {
                 resumeCalled = true;
                 halfOpenTcs.TrySetResult();
@@ -159,6 +160,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
 
         // when — trip the circuit then wait for resume callback
         await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(30));
         await halfOpenTcs.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         // then — circuit is now HalfOpen (IsOpen still returns true to prevent new messages)
@@ -174,8 +176,8 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         await using var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromMilliseconds(30));
         sut.RegisterGroupCallbacks(
             _Group,
-            onPause: () => ValueTask.CompletedTask,
-            onResume: () =>
+            onPause: epoch => ValueTask.CompletedTask,
+            onResume: epoch =>
             {
                 halfOpenTcs.TrySetResult();
                 return ValueTask.CompletedTask;
@@ -183,6 +185,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         );
 
         await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(30));
         await halfOpenTcs.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         // when
@@ -190,16 +193,21 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         var secondProbe = sut.TryAcquireHalfOpenProbe(_Group);
 
         // then
-        firstProbe.Should().BeTrue();
-        secondProbe.Should().BeFalse();
+        firstProbe.Should().NotBeNull();
+        secondProbe.Should().BeNull();
     }
 
     [Fact]
     public async Task retry_decision_uses_authoritative_next_probe_boundary()
     {
-        var beforeOpen = DateTimeOffset.UtcNow;
-        await using var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromMinutes(1));
-        sut.RegisterGroupCallbacks(_Group, () => ValueTask.CompletedTask, () => ValueTask.CompletedTask);
+        var timeProvider = new FakeTimeProvider();
+        var beforeOpen = timeProvider.GetUtcNow();
+        await using var sut = _Create(
+            failureThreshold: 1,
+            openDuration: TimeSpan.FromMinutes(1),
+            timeProvider: timeProvider
+        );
+        sut.RegisterGroupCallbacks(_Group, _ => ValueTask.CompletedTask, _ => ValueTask.CompletedTask);
         await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
 
         var decision = sut.GetRetryDecision(MessageLane.Bus, _Group);
@@ -207,7 +215,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         decision.Kind.Should().Be(CircuitRetryDecisionKind.Closed, "the lane-qualified group is independent");
 
         var laneGroup = CircuitBreakerGroupKeys.For(MessageLane.Bus, _Group);
-        sut.RegisterGroupCallbacks(laneGroup, () => ValueTask.CompletedTask, () => ValueTask.CompletedTask);
+        sut.RegisterGroupCallbacks(laneGroup, _ => ValueTask.CompletedTask, _ => ValueTask.CompletedTask);
         await sut.ReportFailureAsync(laneGroup, new TimeoutException(), AbortToken);
 
         decision = sut.GetRetryDecision(MessageLane.Bus, _Group);
@@ -229,8 +237,8 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         );
         sut.RegisterGroupCallbacks(
             laneGroup,
-            () => ValueTask.CompletedTask,
-            () =>
+            _ => ValueTask.CompletedTask,
+            _ =>
             {
                 resumed.TrySetResult();
                 return ValueTask.CompletedTask;
@@ -254,14 +262,15 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         await using var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromMilliseconds(30));
         sut.RegisterGroupCallbacks(
             laneGroup,
-            () => ValueTask.CompletedTask,
-            () =>
+            _ => ValueTask.CompletedTask,
+            _ =>
             {
                 halfOpen.TrySetResult();
                 return ValueTask.CompletedTask;
             }
         );
         await sut.ReportFailureAsync(laneGroup, new TimeoutException(), AbortToken);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(30));
         await halfOpen.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         var retryProbe = sut.GetRetryDecision(MessageLane.Bus, _Group);
@@ -269,7 +278,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
 
         retryProbe.Kind.Should().Be(CircuitRetryDecisionKind.ProbeAcquired);
         sibling.Kind.Should().Be(CircuitRetryDecisionKind.ProbePending);
-        sut.TryAcquireHalfOpenProbe(laneGroup).Should().BeFalse("transport shares the same probe slot");
+        sut.TryAcquireHalfOpenProbe(laneGroup).Should().BeNull("transport shares the same probe slot");
 
         await sut.ReportSuccessAsync(laneGroup, AbortToken);
         var outcome = await sibling.ProbeOutcome!.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
@@ -339,12 +348,58 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         );
         var sibling = await _OpenAndAcquireProbeWithPendingSiblingAsync(sut, laneGroup, timeProvider);
 
-        sut.ReleaseHalfOpenProbe(laneGroup);
+        sut.ReleaseHalfOpenProbe(laneGroup, sibling.Epoch);
 
         var outcome = await sibling.ProbeOutcome!.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
         outcome.Kind.Should().Be(CircuitRetryProbeOutcomeKind.Uncertain);
         outcome.NextProbeAt.Should().BeNull();
         sut.GetState(laneGroup).Should().Be(CircuitBreakerState.HalfOpen, "release does not change state");
+    }
+
+    [Fact]
+    public async Task stale_probe_release_does_not_clear_newer_halfopen_probe()
+    {
+        var laneGroup = CircuitBreakerGroupKeys.For(MessageLane.Bus, _Group);
+        await using var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromMinutes(1));
+        sut.RegisterGroupCallbacks(laneGroup, _ => ValueTask.CompletedTask, _ => ValueTask.CompletedTask);
+        await sut.ReportFailureAsync(laneGroup, new TimeoutException(), AbortToken);
+        _timeProvider.Advance(TimeSpan.FromMinutes(1));
+
+        var abandonedProbe = sut.GetRetryDecision(MessageLane.Bus, _Group);
+        abandonedProbe.Kind.Should().Be(CircuitRetryDecisionKind.ProbeAcquired);
+
+        await sut.ForceOpenAsync(laneGroup, AbortToken);
+        _timeProvider.Advance(TimeSpan.FromMinutes(2));
+        var newerProbe = sut.GetRetryDecision(MessageLane.Bus, _Group);
+        newerProbe.Kind.Should().Be(CircuitRetryDecisionKind.ProbeAcquired);
+
+        sut.ReleaseHalfOpenProbe(laneGroup, abandonedProbe.Epoch);
+
+        sut.TryAcquireHalfOpenProbe(laneGroup).Should().BeNull();
+        var newerPending = sut.GetRetryDecision(MessageLane.Bus, _Group);
+        newerPending.ProbeOutcome!.IsCompleted.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task closed_admission_release_does_not_clear_later_halfopen_probe()
+    {
+        var laneGroup = CircuitBreakerGroupKeys.For(MessageLane.Bus, _Group);
+        await using var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromMinutes(1));
+        sut.RegisterGroupCallbacks(laneGroup, _ => ValueTask.CompletedTask, _ => ValueTask.CompletedTask);
+
+        var closedEpoch = sut.TryAcquireHalfOpenProbe(laneGroup);
+        closedEpoch.Should().NotBeNull();
+
+        await sut.ForceOpenAsync(laneGroup, AbortToken);
+        _timeProvider.Advance(TimeSpan.FromMinutes(1));
+        var halfOpenProbe = sut.GetRetryDecision(MessageLane.Bus, _Group);
+        halfOpenProbe.Kind.Should().Be(CircuitRetryDecisionKind.ProbeAcquired);
+
+        sut.ReleaseHalfOpenProbe(laneGroup, closedEpoch!.Value);
+
+        sut.TryAcquireHalfOpenProbe(laneGroup).Should().BeNull();
+        var pending = sut.GetRetryDecision(MessageLane.Bus, _Group);
+        pending.ProbeOutcome!.IsCompleted.Should().BeFalse();
     }
 
     [Fact]
@@ -392,7 +447,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         FakeTimeProvider timeProvider
     )
     {
-        sut.RegisterGroupCallbacks(laneGroup, () => ValueTask.CompletedTask, () => ValueTask.CompletedTask);
+        sut.RegisterGroupCallbacks(laneGroup, _ => ValueTask.CompletedTask, _ => ValueTask.CompletedTask);
         await sut.ReportFailureAsync(laneGroup, new TimeoutException(), AbortToken);
         timeProvider.Advance(TimeSpan.FromMinutes(1));
 
@@ -414,8 +469,8 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         await using var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromMilliseconds(30));
         sut.RegisterGroupCallbacks(
             _Group,
-            onPause: () => ValueTask.CompletedTask,
-            onResume: () =>
+            onPause: epoch => ValueTask.CompletedTask,
+            onResume: epoch =>
             {
                 halfOpenTcs.TrySetResult();
                 return ValueTask.CompletedTask;
@@ -424,6 +479,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
 
         // open then wait for HalfOpen
         await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(30));
         await halfOpenTcs.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         // when — probe succeeds
@@ -443,12 +499,12 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
 
         sut.RegisterGroupCallbacks(
             _Group,
-            onPause: () =>
+            onPause: epoch =>
             {
                 pauseCount++;
                 return ValueTask.CompletedTask;
             },
-            onResume: () =>
+            onResume: epoch =>
             {
                 halfOpenTcs.TrySetResult();
                 return ValueTask.CompletedTask;
@@ -457,6 +513,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
 
         // open then wait for HalfOpen
         await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(30));
         await halfOpenTcs.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         // when — probe fails with a transient error
@@ -479,8 +536,8 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         await using var sut = _Create(failureThreshold: 2, openDuration: TimeSpan.FromMilliseconds(30));
         sut.RegisterGroupCallbacks(
             _Group,
-            onPause: () => ValueTask.CompletedTask,
-            onResume: () =>
+            onPause: epoch => ValueTask.CompletedTask,
+            onResume: epoch =>
             {
                 halfOpenTcs.TrySetResult();
                 return ValueTask.CompletedTask;
@@ -490,6 +547,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         // open then wait for HalfOpen
         await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
         await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(30));
         await halfOpenTcs.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         // when — non-transient failure (bad message, not broker issue)
@@ -516,8 +574,8 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         );
         sut.RegisterGroupCallbacks(
             _Group,
-            onPause: () => ValueTask.CompletedTask,
-            onResume: () =>
+            onPause: epoch => ValueTask.CompletedTask,
+            onResume: epoch =>
             {
                 halfOpenTcs.TrySetResult();
                 return ValueTask.CompletedTask;
@@ -526,21 +584,26 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
 
         // first open: duration = 20ms (level 0 → 1)
         await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(20));
 
         // wait for HalfOpen, then fail transient → second open: duration = 40ms (level 1 → 2)
         await halfOpenTcs.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         halfOpenTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(40));
 
         // wait for HalfOpen again, then fail transient → third open: duration = 80ms (level 2 → 3)
         await halfOpenTcs.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         halfOpenTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
 
-        // the third open should still be open (80ms hasn't passed yet from NOW)
+        // the third open is still Open at its exact boundary
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(80) - TimeSpan.FromTicks(1));
         sut.IsOpen(_Group).Should().BeTrue();
+        sut.GetState(_Group).Should().Be(CircuitBreakerState.Open);
 
         // wait for it to expire
+        _timeProvider.Advance(TimeSpan.FromTicks(1));
         await halfOpenTcs.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         sut.IsOpen(_Group).Should().BeTrue(); // HalfOpen counts as open
     }
@@ -550,35 +613,38 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     {
         // given
         var halfOpenTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var timeProvider = new FakeTimeProvider();
 
         await using var sut = _Create(
             failureThreshold: 1,
             openDuration: TimeSpan.FromMilliseconds(20),
-            successfulCyclesToResetEscalation: 3
+            successfulCyclesToResetEscalation: 3,
+            timeProvider: timeProvider
         );
         sut.RegisterGroupCallbacks(
             _Group,
-            onPause: () => ValueTask.CompletedTask,
-            onResume: () =>
+            onPause: epoch => ValueTask.CompletedTask,
+            onResume: epoch =>
             {
                 halfOpenTcs.TrySetResult();
                 return ValueTask.CompletedTask;
             }
         );
 
-        // helper: open → wait for HalfOpen → close via success
-        async Task cycleAsync()
+        // helper: open with the escalation-aware duration, wait, then close via success
+        async Task cycleAsync(int openDurationMilliseconds)
         {
             await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
+            timeProvider.Advance(TimeSpan.FromMilliseconds(openDurationMilliseconds));
             await halfOpenTcs.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
             halfOpenTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             await sut.ReportSuccessAsync(_Group, AbortToken);
         }
 
         // open, half-open, close × 3 → escalation should reset
-        await cycleAsync();
-        await cycleAsync();
-        await cycleAsync();
+        await cycleAsync(20);
+        await cycleAsync(40);
+        await cycleAsync(80);
 
         // after 3 healthy cycles, circuit should be closed
         sut.IsOpen(_Group).Should().BeFalse();
@@ -589,38 +655,43 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     {
         // given
         var halfOpenTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var timeProvider = new FakeTimeProvider();
 
         await using var sut = _Create(
             failureThreshold: 1,
             openDuration: TimeSpan.FromMilliseconds(20),
-            successfulCyclesToResetEscalation: 3
+            successfulCyclesToResetEscalation: 3,
+            timeProvider: timeProvider
         );
         sut.RegisterGroupCallbacks(
             _Group,
-            onPause: () => ValueTask.CompletedTask,
-            onResume: () =>
+            onPause: epoch => ValueTask.CompletedTask,
+            onResume: epoch =>
             {
                 halfOpenTcs.TrySetResult();
                 return ValueTask.CompletedTask;
             }
         );
 
-        async Task cycleAsync()
+        async Task cycleAsync(int openDurationMilliseconds)
         {
             await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
+            timeProvider.Advance(TimeSpan.FromMilliseconds(openDurationMilliseconds));
             await halfOpenTcs.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
             halfOpenTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             await sut.ReportSuccessAsync(_Group, AbortToken);
         }
 
-        await cycleAsync();
-        await cycleAsync();
+        await cycleAsync(20);
+        await cycleAsync(40);
 
         // Break the healthy streak with another outage.
         await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
+        timeProvider.Advance(TimeSpan.FromMilliseconds(80));
         await halfOpenTcs.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         halfOpenTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
+        timeProvider.Advance(TimeSpan.FromMilliseconds(160));
         await halfOpenTcs.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         halfOpenTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -637,16 +708,18 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         // given — 3 successful cycles normally resets escalation, but non-transient
         // failure closes are NOT recovery signals and must not count toward that threshold.
         var halfOpenTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var timeProvider = new FakeTimeProvider();
 
         await using var sut = _Create(
             failureThreshold: 1,
             openDuration: TimeSpan.FromMilliseconds(20),
-            successfulCyclesToResetEscalation: 3
+            successfulCyclesToResetEscalation: 3,
+            timeProvider: timeProvider
         );
         sut.RegisterGroupCallbacks(
             _Group,
-            onPause: () => ValueTask.CompletedTask,
-            onResume: () =>
+            onPause: epoch => ValueTask.CompletedTask,
+            onResume: epoch =>
             {
                 halfOpenTcs.TrySetResult();
                 return ValueTask.CompletedTask;
@@ -655,9 +728,11 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
 
         // Escalate: open → half-open → transient failure (re-open) to bump escalation
         await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
+        timeProvider.Advance(TimeSpan.FromMilliseconds(20));
         await halfOpenTcs.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         halfOpenTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
+        timeProvider.Advance(TimeSpan.FromMilliseconds(40));
         await halfOpenTcs.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         halfOpenTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -672,6 +747,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
 
             // Re-open for the next cycle
             await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
+            timeProvider.Advance(TimeSpan.FromMilliseconds(80 * Math.Pow(2, i)));
             await halfOpenTcs.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
             halfOpenTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         }
@@ -685,7 +761,9 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     {
         // given — first open duration is short enough to fire; second open duration is longer
         var resumeCallCount = 0;
-        var halfOpenTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        // One release per resume: the callback runs on the thread pool after Advance fires the
+        // timer, so each HalfOpen entry must be awaited individually before asserting the count.
+        using var resumeSignals = new SemaphoreSlim(0);
 
         await using var sut = _Create(
             failureThreshold: 2,
@@ -694,11 +772,11 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         );
         sut.RegisterGroupCallbacks(
             _Group,
-            onPause: () => ValueTask.CompletedTask,
-            onResume: () =>
+            onPause: epoch => ValueTask.CompletedTask,
+            onResume: epoch =>
             {
-                resumeCallCount++;
-                halfOpenTcs.TrySetResult();
+                Interlocked.Increment(ref resumeCallCount);
+                resumeSignals.Release();
                 return ValueTask.CompletedTask;
             }
         );
@@ -707,16 +785,121 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         await _ReportTransientFailuresAsync(sut, _Group, 2);
         sut.IsOpen(_Group).Should().BeTrue();
 
-        // wait briefly, then immediately re-trip to reset the timer before it fires
-        await Task.Delay(10, AbortToken);
-        // add more failures to re-open (re-escalation while already open just replaces timer)
+        // Drive the first timer to HalfOpen, then re-trip it deterministically.
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(30));
         await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
 
-        // wait for the escalated timer to fire
-        await halfOpenTcs.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        // The second open is escalated to 60ms.
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(60) - TimeSpan.FromTicks(1));
+        sut.GetState(_Group).Should().Be(CircuitBreakerState.Open);
+        _timeProvider.Advance(TimeSpan.FromTicks(1));
+        (await resumeSignals.WaitAsync(TimeSpan.FromSeconds(5), AbortToken)).Should().BeTrue();
 
-        // then — resume should have been called exactly once (new timer, not the stale one)
-        resumeCallCount.Should().Be(1);
+        // Re-trip from HalfOpen and prove only the replacement timer fires.
+        await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(120) - TimeSpan.FromTicks(1));
+        sut.GetState(_Group).Should().Be(CircuitBreakerState.Open);
+        _timeProvider.Advance(TimeSpan.FromTicks(1));
+        (await resumeSignals.WaitAsync(TimeSpan.FromSeconds(5), AbortToken)).Should().BeTrue();
+        Volatile.Read(ref resumeCallCount).Should().Be(2);
+    }
+
+    [Fact]
+    public async Task timer_does_not_transition_one_tick_before_open_duration()
+    {
+        var timeProvider = new FakeTimeProvider();
+        await using var sut = _Create(
+            failureThreshold: 1,
+            openDuration: TimeSpan.FromMinutes(1),
+            timeProvider: timeProvider
+        );
+        sut.RegisterGroupCallbacks(_Group, _ => ValueTask.CompletedTask, _ => ValueTask.CompletedTask);
+        await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
+
+        timeProvider.Advance(TimeSpan.FromMinutes(1) - TimeSpan.FromTicks(1));
+
+        sut.GetState(_Group).Should().Be(CircuitBreakerState.Open);
+    }
+
+    [Fact]
+    public async Task timer_transitions_at_exact_open_duration()
+    {
+        var timeProvider = new FakeTimeProvider();
+        var resumed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var sut = _Create(
+            failureThreshold: 1,
+            openDuration: TimeSpan.FromMinutes(1),
+            timeProvider: timeProvider
+        );
+        sut.RegisterGroupCallbacks(
+            _Group,
+            _ => ValueTask.CompletedTask,
+            _ =>
+            {
+                resumed.TrySetResult();
+                return ValueTask.CompletedTask;
+            }
+        );
+        await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
+
+        timeProvider.Advance(TimeSpan.FromMinutes(1));
+
+        sut.GetState(_Group).Should().Be(CircuitBreakerState.HalfOpen);
+        await resumed.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+    }
+
+    [Fact]
+    public async Task timer_does_not_transition_when_captured_epoch_moves()
+    {
+        var timeProvider = new FakeTimeProvider();
+        await using var sut = _Create(
+            failureThreshold: 1,
+            openDuration: TimeSpan.FromMinutes(1),
+            timeProvider: timeProvider
+        );
+        sut.RegisterGroupCallbacks(_Group, _ => ValueTask.CompletedTask, _ => ValueTask.CompletedTask);
+        await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
+
+        // There is no production path that leaves an armed timer alive after ForceOpen; move the
+        // state's epoch directly to exercise the timer callback's last defense against a race.
+        var groupsValue = typeof(CircuitBreakerStateManager)
+            .GetField("_groups", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly)!
+            .GetValue(sut)!;
+
+        var groupsType = groupsValue.GetType();
+        var state = groupsType.GetProperty("Item")!.GetValue(groupsValue, [_Group]);
+        state!.GetType().GetProperty("CurrentEpoch")!.SetValue(state, 999L);
+
+        timeProvider.Advance(TimeSpan.FromMinutes(1));
+
+        sut.GetState(_Group).Should().Be(CircuitBreakerState.Open);
+    }
+
+    [Fact]
+    public async Task dispose_prevents_timer_transition_after_open_duration()
+    {
+        var timeProvider = new FakeTimeProvider();
+        var resumeCalled = false;
+        await using var sut = _Create(
+            failureThreshold: 1,
+            openDuration: TimeSpan.FromMinutes(1),
+            timeProvider: timeProvider
+        );
+        sut.RegisterGroupCallbacks(
+            _Group,
+            _ => ValueTask.CompletedTask,
+            _ =>
+            {
+                resumeCalled = true;
+                return ValueTask.CompletedTask;
+            }
+        );
+        await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
+        await sut.DisposeAsync();
+
+        timeProvider.Advance(TimeSpan.FromMinutes(1));
+
+        resumeCalled.Should().BeFalse();
     }
 
     [Fact]
@@ -727,12 +910,12 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         await using var sut = _Create(failureThreshold: 1);
         sut.RegisterGroupCallbacks(
             _Group,
-            onPause: () =>
+            onPause: epoch =>
             {
                 pauseInvoked = true;
                 return ValueTask.CompletedTask;
             },
-            onResume: () => ValueTask.CompletedTask
+            onResume: epoch => ValueTask.CompletedTask
         );
 
         // when
@@ -751,8 +934,8 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         await using var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromMilliseconds(30));
         sut.RegisterGroupCallbacks(
             _Group,
-            onPause: () => ValueTask.CompletedTask,
-            onResume: () =>
+            onPause: epoch => ValueTask.CompletedTask,
+            onResume: epoch =>
             {
                 resumeInvoked = true;
                 halfOpenTcs.TrySetResult();
@@ -762,10 +945,333 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
 
         // when — trip then wait for resume callback
         await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(31));
         await halfOpenTcs.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         // then
         resumeInvoked.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task timer_resume_receives_epoch_newer_than_pause()
+    {
+        // given
+        var pauseEpoch = 0L;
+        var resumeEpoch = 0L;
+        var halfOpenTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromMilliseconds(20));
+        sut.RegisterGroupCallbacks(
+            _Group,
+            onPause: epoch =>
+            {
+                pauseEpoch = epoch;
+                return ValueTask.CompletedTask;
+            },
+            onResume: epoch =>
+            {
+                resumeEpoch = epoch;
+                halfOpenTcs.TrySetResult();
+                return ValueTask.CompletedTask;
+            }
+        );
+
+        // when
+        await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(30));
+        await halfOpenTcs.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // then
+        resumeEpoch.Should().BePositive();
+        resumeEpoch.Should().BeGreaterThan(pauseEpoch);
+    }
+
+    [Fact]
+    public async Task retry_decision_launches_resume_with_new_epoch()
+    {
+        // given
+        var laneGroup = CircuitBreakerGroupKeys.For(MessageLane.Queue, _Group);
+        var pauseEpoch = 0L;
+        var resumeEpoch = 0L;
+        var resumeStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseResume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var timeProvider = new FakeTimeProvider();
+        await using var sut = _Create(
+            failureThreshold: 1,
+            openDuration: TimeSpan.FromMinutes(1),
+            timeProvider: timeProvider
+        );
+        sut.RegisterGroupCallbacks(
+            laneGroup,
+            onPause: epoch =>
+            {
+                pauseEpoch = epoch;
+                return ValueTask.CompletedTask;
+            },
+            onResume: async epoch =>
+            {
+                resumeEpoch = epoch;
+                resumeStarted.TrySetResult();
+                await releaseResume.Task;
+            }
+        );
+
+        await sut.ReportFailureAsync(laneGroup, new TimeoutException(), AbortToken);
+        timeProvider.Advance(TimeSpan.FromMinutes(1));
+
+        // when
+        var decision = sut.GetRetryDecision(MessageLane.Queue, _Group);
+
+        // then
+        decision.Kind.Should().Be(CircuitRetryDecisionKind.ProbeAcquired);
+        sut.GetState(laneGroup).Should().Be(CircuitBreakerState.HalfOpen);
+        await resumeStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        resumeEpoch.Should().BePositive();
+        resumeEpoch.Should().BeGreaterThan(pauseEpoch);
+
+        releaseResume.TrySetResult();
+    }
+
+    [Fact]
+    public async Task reset_invokes_resume_with_new_epoch()
+    {
+        // given
+        var pauseEpoch = 0L;
+        var resumeEpoch = 0L;
+        var resumeStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseResume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var sut = _Create(failureThreshold: 1);
+        sut.RegisterGroupCallbacks(
+            _Group,
+            onPause: epoch =>
+            {
+                pauseEpoch = epoch;
+                return ValueTask.CompletedTask;
+            },
+            onResume: async epoch =>
+            {
+                resumeEpoch = epoch;
+                resumeStarted.TrySetResult();
+                await releaseResume.Task;
+            }
+        );
+
+        await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
+
+        // when
+        var resetTask = sut.ResetAsync(_Group, AbortToken).AsTask();
+        await resumeStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        releaseResume.TrySetResult();
+        var reset = await resetTask.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // then
+        reset.Should().BeTrue();
+        sut.GetState(_Group).Should().Be(CircuitBreakerState.Closed);
+        await resumeStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        resumeEpoch.Should().BePositive();
+        resumeEpoch.Should().BeGreaterThan(pauseEpoch);
+
+        releaseResume.TrySetResult();
+    }
+
+    [Fact]
+    public async Task dispose_waits_for_every_blocked_resume()
+    {
+        // given
+        var laneGroup = CircuitBreakerGroupKeys.For(MessageLane.Queue, _Group);
+        var firstStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFirst = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseSecond = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var timeProvider = new FakeTimeProvider();
+        await using var sut = _Create(
+            failureThreshold: 1,
+            openDuration: TimeSpan.FromMinutes(1),
+            timeProvider: timeProvider
+        );
+        sut.RegisterGroupCallbacks(
+            laneGroup,
+            onPause: _ => ValueTask.CompletedTask,
+            onResume: async epoch =>
+            {
+                if (epoch == 2)
+                {
+                    firstStarted.TrySetResult();
+                    await releaseFirst.Task;
+                }
+                else
+                {
+                    secondStarted.TrySetResult();
+                    await releaseSecond.Task;
+                }
+            }
+        );
+
+        await sut.ReportFailureAsync(laneGroup, new TimeoutException(), AbortToken);
+        timeProvider.Advance(TimeSpan.FromMinutes(1));
+        _ = sut.GetRetryDecision(MessageLane.Queue, _Group);
+        await firstStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        await sut.ForceOpenAsync(laneGroup, AbortToken);
+        timeProvider.Advance(TimeSpan.FromMinutes(1));
+        _ = sut.GetRetryDecision(MessageLane.Queue, _Group);
+        await secondStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // when
+        var disposal = sut.DisposeAsync().AsTask();
+
+        // then
+        disposal.IsCompleted.Should().BeFalse();
+        releaseFirst.TrySetResult();
+        disposal.IsCompleted.Should().BeFalse();
+        releaseSecond.TrySetResult();
+        await disposal.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+    }
+
+    [Fact]
+    public async Task remove_group_waits_for_in_flight_resume_and_bumps_epoch()
+    {
+        // given
+        var laneGroup = CircuitBreakerGroupKeys.For(MessageLane.Queue, _Group);
+        var openEpochBeforeRemove = 0L;
+        var resumeStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseResume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var timeProvider = new FakeTimeProvider();
+        await using var sut = _Create(
+            failureThreshold: 1,
+            openDuration: TimeSpan.FromMinutes(1),
+            timeProvider: timeProvider
+        );
+        sut.RegisterGroupCallbacks(
+            laneGroup,
+            onPause: epoch =>
+            {
+                openEpochBeforeRemove = epoch;
+                return ValueTask.CompletedTask;
+            },
+            onResume: async _ =>
+            {
+                resumeStarted.TrySetResult();
+                await releaseResume.Task;
+            }
+        );
+
+        await sut.ReportFailureAsync(laneGroup, new TimeoutException(), AbortToken);
+        timeProvider.Advance(TimeSpan.FromMinutes(1));
+        _ = sut.GetRetryDecision(MessageLane.Queue, _Group);
+        await resumeStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // when
+        var removal = sut.RemoveGroupAsync(laneGroup).AsTask();
+        removal.IsCompleted.Should().BeFalse();
+        releaseResume.TrySetResult();
+        await removal.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // then
+        sut.TryGetOpenEpoch(laneGroup, out _).Should().BeFalse();
+
+        var epochAfterReopen = 0L;
+        sut.RegisterGroupCallbacks(
+            laneGroup,
+            onPause: epoch =>
+            {
+                epochAfterReopen = epoch;
+                return ValueTask.CompletedTask;
+            },
+            onResume: _ => ValueTask.CompletedTask
+        );
+        await sut.ForceOpenAsync(laneGroup, AbortToken);
+        epochAfterReopen.Should().BeGreaterThan(openEpochBeforeRemove);
+    }
+
+    [Fact]
+    public async Task current_resume_failure_reopens_and_pauses()
+    {
+        // given
+        var laneGroup = CircuitBreakerGroupKeys.For(MessageLane.Queue, _Group);
+        var pauseCount = 0;
+        var reopened = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var timeProvider = new FakeTimeProvider();
+        await using var sut = _Create(
+            failureThreshold: 1,
+            openDuration: TimeSpan.FromMinutes(1),
+            timeProvider: timeProvider
+        );
+        sut.RegisterGroupCallbacks(
+            laneGroup,
+            onPause: _ =>
+            {
+                if (Interlocked.Increment(ref pauseCount) == 2)
+                {
+                    reopened.TrySetResult();
+                }
+
+                return ValueTask.CompletedTask;
+            },
+            onResume: _ => throw new InvalidOperationException("resume failed")
+        );
+
+        await sut.ReportFailureAsync(laneGroup, new TimeoutException(), AbortToken);
+        timeProvider.Advance(TimeSpan.FromMinutes(1));
+
+        // when
+        _ = sut.GetRetryDecision(MessageLane.Queue, _Group);
+
+        // then
+        await reopened.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        sut.GetState(laneGroup).Should().Be(CircuitBreakerState.Open);
+        pauseCount.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task stale_resume_failure_does_not_reopen_or_pause_again()
+    {
+        // given
+        var laneGroup = CircuitBreakerGroupKeys.For(MessageLane.Queue, _Group);
+        var staleResumeEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseStaleResume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var staleResumeFinished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var pauseCount = 0;
+        var timeProvider = new FakeTimeProvider();
+        await using var sut = _Create(
+            failureThreshold: 1,
+            openDuration: TimeSpan.FromMinutes(1),
+            timeProvider: timeProvider
+        );
+        sut.RegisterGroupCallbacks(
+            laneGroup,
+            onPause: _ =>
+            {
+                Interlocked.Increment(ref pauseCount);
+                return ValueTask.CompletedTask;
+            },
+            onResume: async _ =>
+            {
+                staleResumeEntered.TrySetResult();
+                try
+                {
+                    await releaseStaleResume.Task;
+                    throw new InvalidOperationException("stale resume failed");
+                }
+                finally
+                {
+                    staleResumeFinished.TrySetResult();
+                }
+            }
+        );
+
+        await sut.ReportFailureAsync(laneGroup, new TimeoutException(), AbortToken);
+        timeProvider.Advance(TimeSpan.FromMinutes(1));
+        _ = sut.GetRetryDecision(MessageLane.Queue, _Group);
+        await staleResumeEntered.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // when
+        await sut.ForceOpenAsync(laneGroup, AbortToken);
+        releaseStaleResume.TrySetResult();
+        await staleResumeFinished.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // then
+        sut.GetState(laneGroup).Should().Be(CircuitBreakerState.Open);
+        pauseCount.Should().Be(2);
     }
 
     [Fact]
@@ -783,8 +1289,8 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         const string circuitGroup = "1:test.group";
         sut.RegisterGroupCallbacks(
             circuitGroup,
-            onPause: () => ValueTask.CompletedTask,
-            onResume: () => ValueTask.CompletedTask
+            onPause: epoch => ValueTask.CompletedTask,
+            onResume: epoch => ValueTask.CompletedTask
         );
 
         // when
@@ -816,12 +1322,12 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         var pauseCount = 0;
         sut.RegisterGroupCallbacks(
             _Group,
-            onPause: () =>
+            onPause: epoch =>
             {
                 pauseCount++;
                 return ValueTask.CompletedTask;
             },
-            onResume: () => ValueTask.CompletedTask
+            onResume: epoch => ValueTask.CompletedTask
         );
 
         await _ReportTransientFailuresAsync(sut, _Group, 2); // Opens circuit, pauseCount=1
@@ -844,7 +1350,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         await using var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromMilliseconds(100));
         sut.RegisterGroupCallbacks(
             _Group,
-            onPause: () =>
+            onPause: epoch =>
             {
                 if (Interlocked.Increment(ref pauseCount) == 2)
                 {
@@ -853,11 +1359,12 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
 
                 return ValueTask.CompletedTask;
             },
-            onResume: () => throw new InvalidOperationException("resume failed!")
+            onResume: epoch => throw new InvalidOperationException("resume failed!")
         );
 
         // when — trip then wait for the re-open (resume throws → _ReopenAfterResumeFailureAsync → pause)
         await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(100));
         await reopenedTcs.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         // then — resume failure re-opens the circuit instead of wedging HalfOpen
@@ -873,8 +1380,8 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         await using var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromMilliseconds(30));
         sut.RegisterGroupCallbacks(
             _Group,
-            onPause: () => ValueTask.CompletedTask,
-            onResume: () =>
+            onPause: epoch => ValueTask.CompletedTask,
+            onResume: epoch =>
             {
                 halfOpenTcs.TrySetResult();
                 return ValueTask.CompletedTask;
@@ -882,12 +1389,13 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         );
 
         await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(30));
         await halfOpenTcs.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         // when — launch N parallel tasks all racing to acquire the probe. Each runs on a dedicated thread: N
         // participants blocked in the barrier on pool threads starve the pool (~1 thread injected per second).
         using var barrier = new Barrier(parallelTasks);
-        var results = new bool[parallelTasks];
+        var results = new long?[parallelTasks];
         var tasks = Enumerable
             .Range(0, parallelTasks)
             .Select(i =>
@@ -907,7 +1415,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         await Task.WhenAll(tasks);
 
         // then — exactly one task acquired the probe
-        results.Count(r => r).Should().Be(1);
+        results.Count(r => r is not null).Should().Be(1);
     }
 
     [Fact]
@@ -921,8 +1429,8 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         );
         sut.RegisterGroupCallbacks(
             _Group,
-            onPause: () => ValueTask.CompletedTask,
-            onResume: () => ValueTask.CompletedTask
+            onPause: epoch => ValueTask.CompletedTask,
+            onResume: epoch => ValueTask.CompletedTask
         );
 
         // when — escalate 10 times without waiting for timers
@@ -934,33 +1442,6 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         // then — if escalation overflowed MaxOpenDuration, the timer duration would be
         // impossibly long; the fact we got here without hanging means the cap worked
         sut.IsOpen(_Group).Should().BeTrue();
-    }
-
-    [Fact]
-    public async Task dispose_while_open_cancels_timer_and_prevents_resume_callback()
-    {
-        // given — trip circuit to Open with a short timer
-        var resumeCalled = false;
-        await using var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromMilliseconds(50));
-        sut.RegisterGroupCallbacks(
-            _Group,
-            onPause: () => ValueTask.CompletedTask,
-            onResume: () =>
-            {
-                resumeCalled = true;
-                return ValueTask.CompletedTask;
-            }
-        );
-
-        await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
-        sut.IsOpen(_Group).Should().BeTrue();
-
-        // when — dispose before the timer fires
-        await sut.DisposeAsync();
-
-        // then — wait well past the open duration; resume must NOT fire
-        await Task.Delay(200, AbortToken);
-        resumeCalled.Should().BeFalse();
     }
 
     [Fact]
@@ -989,8 +1470,8 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
             await using var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromMilliseconds(1));
             sut.RegisterGroupCallbacks(
                 _Group,
-                onPause: () => ValueTask.CompletedTask,
-                onResume: () => ValueTask.CompletedTask
+                onPause: epoch => ValueTask.CompletedTask,
+                onResume: epoch => ValueTask.CompletedTask
             );
 
             await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
@@ -1024,8 +1505,8 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         await using var sut = _Create(failureThreshold: 5);
         sut.RegisterGroupCallbacks(
             _Group,
-            onPause: () => ValueTask.CompletedTask,
-            onResume: () => ValueTask.CompletedTask
+            onPause: epoch => ValueTask.CompletedTask,
+            onResume: epoch => ValueTask.CompletedTask
         );
 
         sut.GetState(_Group).Should().Be(CircuitBreakerState.Closed);
@@ -1044,8 +1525,8 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         await using var sut = _Create(failureThreshold: 1);
         sut.RegisterGroupCallbacks(
             _Group,
-            onPause: () => ValueTask.CompletedTask,
-            onResume: () => ValueTask.CompletedTask
+            onPause: epoch => ValueTask.CompletedTask,
+            onResume: epoch => ValueTask.CompletedTask
         );
 
         await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
@@ -1073,8 +1554,8 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         );
         sut.RegisterGroupCallbacks(
             _Group,
-            onPause: () => ValueTask.CompletedTask,
-            onResume: () =>
+            onPause: epoch => ValueTask.CompletedTask,
+            onResume: epoch =>
             {
                 halfOpenTcs.TrySetResult();
                 return ValueTask.CompletedTask;
@@ -1083,6 +1564,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
 
         // first open → escalation level 1
         await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(30));
         await halfOpenTcs.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         halfOpenTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -1108,8 +1590,8 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         await using var sut = _Create(failureThreshold: 1);
         sut.RegisterGroupCallbacks(
             _Group,
-            onPause: () => ValueTask.CompletedTask,
-            onResume: () =>
+            onPause: epoch => ValueTask.CompletedTask,
+            onResume: epoch =>
             {
                 resumeCalledOnReset = true;
                 return ValueTask.CompletedTask;
@@ -1192,8 +1674,8 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         using var sut = _Create();
         sut.RegisterGroupCallbacks(
             _Group,
-            onPause: () => ValueTask.CompletedTask,
-            onResume: () => ValueTask.CompletedTask
+            onPause: epoch => ValueTask.CompletedTask,
+            onResume: epoch => ValueTask.CompletedTask
         );
 
         // when
@@ -1217,8 +1699,8 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         await using var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromSeconds(30));
         sut.RegisterGroupCallbacks(
             _Group,
-            onPause: () => ValueTask.CompletedTask,
-            onResume: () => ValueTask.CompletedTask
+            onPause: epoch => ValueTask.CompletedTask,
+            onResume: epoch => ValueTask.CompletedTask
         );
 
         await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
@@ -1243,8 +1725,8 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         await using var sut = _Create(failureThreshold: 1, openDuration: openDuration);
         sut.RegisterGroupCallbacks(
             _Group,
-            onPause: () => ValueTask.CompletedTask,
-            onResume: () => ValueTask.CompletedTask
+            onPause: epoch => ValueTask.CompletedTask,
+            onResume: epoch => ValueTask.CompletedTask
         );
 
         await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
@@ -1304,8 +1786,8 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         {
             sut.RegisterGroupCallbacks(
                 $"group.{i}",
-                onPause: () => ValueTask.CompletedTask,
-                onResume: () => ValueTask.CompletedTask
+                onPause: epoch => ValueTask.CompletedTask,
+                onResume: epoch => ValueTask.CompletedTask
             );
         }
 
@@ -1384,8 +1866,8 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         await using var sut = _Create(failureThreshold: 5);
         sut.RegisterGroupCallbacks(
             _Group,
-            onPause: () => ValueTask.CompletedTask,
-            onResume: () => ValueTask.CompletedTask
+            onPause: epoch => ValueTask.CompletedTask,
+            onResume: epoch => ValueTask.CompletedTask
         );
 
         await _ReportTransientFailuresAsync(sut, _Group, 3);
@@ -1406,8 +1888,8 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         await using var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromSeconds(10));
         sut.RegisterGroupCallbacks(
             _Group,
-            onPause: () => ValueTask.CompletedTask,
-            onResume: () => ValueTask.CompletedTask
+            onPause: epoch => ValueTask.CompletedTask,
+            onResume: epoch => ValueTask.CompletedTask
         );
 
         await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
@@ -1432,12 +1914,12 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         await using var sut = _Create(failureThreshold: 5);
         sut.RegisterGroupCallbacks(
             _Group,
-            onPause: () =>
+            onPause: epoch =>
             {
                 pauseInvoked = true;
                 return ValueTask.CompletedTask;
             },
-            onResume: () => ValueTask.CompletedTask
+            onResume: epoch => ValueTask.CompletedTask
         );
 
         sut.GetState(_Group).Should().Be(CircuitBreakerState.Closed);
@@ -1460,8 +1942,8 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         await using var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromMilliseconds(30));
         sut.RegisterGroupCallbacks(
             _Group,
-            onPause: () => ValueTask.CompletedTask,
-            onResume: () =>
+            onPause: epoch => ValueTask.CompletedTask,
+            onResume: epoch =>
             {
                 halfOpenTcs.TrySetResult();
                 return ValueTask.CompletedTask;
@@ -1469,6 +1951,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         );
 
         await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(30));
         await halfOpenTcs.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         sut.GetState(_Group).Should().Be(CircuitBreakerState.HalfOpen);
 
@@ -1487,8 +1970,8 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         await using var sut = _Create(failureThreshold: 1);
         sut.RegisterGroupCallbacks(
             _Group,
-            onPause: () => ValueTask.CompletedTask,
-            onResume: () => ValueTask.CompletedTask
+            onPause: epoch => ValueTask.CompletedTask,
+            onResume: epoch => ValueTask.CompletedTask
         );
 
         await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
@@ -1508,8 +1991,8 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         await using var sut = _Create(failureThreshold: 5);
         sut.RegisterGroupCallbacks(
             _Group,
-            onPause: () => ValueTask.CompletedTask,
-            onResume: () => ValueTask.CompletedTask
+            onPause: epoch => ValueTask.CompletedTask,
+            onResume: epoch => ValueTask.CompletedTask
         );
 
         var snapshotBefore = sut.GetSnapshot(_Group);
@@ -1566,8 +2049,8 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         await using var sut = _Create();
         sut.RegisterGroupCallbacks(
             _Group,
-            onPause: () => ValueTask.CompletedTask,
-            onResume: () => ValueTask.CompletedTask
+            onPause: epoch => ValueTask.CompletedTask,
+            onResume: epoch => ValueTask.CompletedTask
         );
         sut.GetState(_Group).Should().Be(CircuitBreakerState.Closed);
 
@@ -1622,8 +2105,8 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         await using var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromMilliseconds(30));
         sut.RegisterGroupCallbacks(
             _Group,
-            onPause: () => ValueTask.CompletedTask,
-            onResume: () =>
+            onPause: epoch => ValueTask.CompletedTask,
+            onResume: epoch =>
             {
                 halfOpenTcs.TrySetResult();
                 return ValueTask.CompletedTask;
@@ -1631,6 +2114,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         );
 
         await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(30));
         await halfOpenTcs.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         sut.GetState(_Group).Should().Be(CircuitBreakerState.HalfOpen);
 
@@ -1653,8 +2137,8 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         await using var sut = _Create(failureThreshold: 1);
         sut.RegisterGroupCallbacks(
             _Group,
-            onPause: () => ValueTask.CompletedTask,
-            onResume: () => ValueTask.CompletedTask
+            onPause: epoch => ValueTask.CompletedTask,
+            onResume: epoch => ValueTask.CompletedTask
         );
 
         // circuit is Closed → abort should be a no-op
@@ -1678,8 +2162,8 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         await using var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromMilliseconds(20));
         sut.RegisterGroupCallbacks(
             _Group,
-            onPause: () => ValueTask.CompletedTask,
-            onResume: async () =>
+            onPause: epoch => ValueTask.CompletedTask,
+            onResume: async epoch =>
             {
                 resumeStarted.TrySetResult();
                 halfOpenTcs.TrySetResult();
@@ -1689,6 +2173,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
 
         // trip circuit so the timer fires and the resume task is in-flight
         await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(20));
         await halfOpenTcs.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         // wait until resume has actually started running

@@ -463,6 +463,7 @@ Wires messaging into dependency injection: registration, publishing, dispatch, m
 - Strict publish tenancy via `RequireTenantOnPublish()`.
 - Storage-backed retry/outbox and cleanup processors.
 - Singleton `IMessageRevoker` delegates to optional `IMessageRevocationStorage`. Unsupported providers throw `NotSupportedException` naming the provider.
+- `IDataStorage.GetScheduledDeliveryOperationsApi()` (`IScheduledDeliveryOperationsApi`) is the audited, provider-neutral operator surface for pending scheduled deliveries: `QueryAsync` lists them (system-scoped, no tenant filter, up to 200 rows a page), `RevokeAsync` deletes one using the same eligibility predicate and fence as `IMessageRevoker`, and `DispatchNowAsync` advances a pending row's due instant to the provider clock unless a dispatch lease is live. Every mutation carries a client-minted operation id, the storage id, and the caller's expected due instant; a request whose due instant no longer matches the row is rejected as `StateConflict`, and a repeated operation id with a different request is `OperationConflict`. `Applied`, `NotFound`, `StateConflict`, `Active` (an attempt was reserved or the row is leased), and `OperationConflict` reuse the inbox outcome vocabulary. Providers without the capability throw a provider-naming `NotSupportedException`, matching `IMessageRevoker`.
 - Optional `IDelayedMessageClaimStorage` SPI for providers that can atomically claim, lease, and transition a bounded delayed-message batch before Core enqueues committed winners.
 - Optional `IGracefulLeaseReleaseStorage` SPI for providers that can exact-release completed or pre-execution-abandoned retry leases during bounded shutdown.
 - Internal `ICircuitRetryDeferralStorage` capability lets built-in storage atomically move circuit-open received retries to the circuit's next eligible probe time while releasing only the exact claimed lease generation; providers without it retain the claim until normal expiry.
@@ -518,6 +519,8 @@ services.AddHeadlessMessaging(setup =>
 
 ### Configuration
 
+Configure tenant propagation and strict publishing through `AddHeadlessTenancy(tenancy => tenancy.Messaging(...))`. `MessagingOptions.TenantContextRequired` reports the configured requirement and has no public setter.
+
 `RequireRoutingAffinity()` on a Bus or Queue message registration requires a locally supported native mapping at startup; it does not require every publication to supply a key. Set `PublishOptions.RoutingAffinityKey` or `QueueOptions.RoutingAffinityKey` per publication. The frozen capability model snapshots registered destinations from inert options before clients or processors start. Keyed unknown destination overrides, invalid keys, and typed/raw conflicts fail before outbox insertion or transport effects. `MediumMessage.RoutingAffinityKey` reads the authoritative serialized envelope; InMemory, PostgreSQL, and SQL Server preserve it without a new storage column.
 
 A missing registration defers an inbox generation as an orphan without consuming the handler failure retry budget. Recovery requires the exact consumer identity, logical contract name, contract version, and lane. The probe claims a fresh attempt in the same generation and incarnation, then clears the orphan flag under the complete execution fence before dispatch. Registration absence on one host does not establish absence on every deployment.
@@ -526,7 +529,11 @@ Known orphans are excluded from ordinary retry pickup. Each lane has an independ
 
 Orphans have no automatic expiry or terminalization. An orphan with no live execution claim permits `Hold`, `ReleaseHold`, and, when unheld, `Purge`, subject to the normal expected-status and incarnation checks. A live claim blocks these operator exceptions. `ForceReprocess` remains terminal-only. Holds block purge and terminal retention cleanup but do not pause execution: a held orphan can recover and keeps its hold after completion. Recovery claims and purge serialize against the same generation; only the winner can proceed.
 
-Operation history has separate retention from inbox generations. Configure these positive minimum residence durations through `setup.Options`:
+One generalized ledger backs both inbox and scheduled-delivery operator actions: the receipt and audit tables carry a `TargetKind` discriminator (`Inbox`, default; `ScheduledDelivery`), a nullable incarnation/expected-status pair, and nullable published-row snapshot columns (message name, message id, lane, expected due instant). The schema ships fresh with the generalized ledger shape (greenfield — no prior schema versions exist). The `MessagingOperationType` enum gained `Revoke` and `DispatchNow`, enrolling scheduled-delivery operations under the same retention cutoffs below without a new collector category.
+
+Revoking a scheduled row is the same fenced delete `IMessageRevoker.RevokeAsync` performs, plus a receipt and audit written in the same transaction; the row stays deleted either way, and revocation is never a visible status -- the ledger is the only trace once the row is gone. Dispatch-now moves a pending row's due instant to the provider clock; some node's delayed processor claims it on its next pass, typically within about a minute, so a dashboard-only host with no dispatcher cannot promise that latency. Neither action creates, reschedules, or replays a delivery -- see `IScheduledDeliveryOperationsApi` in Core's Key Features for the request/outcome contract, and use Jobs for a keyed, replaceable, or transactional deadline instead.
+
+Operation history has separate retention from inbox generations, now covering both target kinds under the same four windows. Configure these positive minimum residence durations through `setup.Options`:
 
 | Option | Default |
 |---|---|
@@ -778,7 +785,7 @@ The always-on `DeadOwnerRecoveryBridge` logs failures under its own category, `H
 
 ## Strict Publish Tenancy
 
-`MessagingOptions.TenantContextRequired` is the messaging sibling of the EF write guard (#234) and the HTTP authorization requirement. Defaults to `false` to preserve today's behavior. When set to `true`, every publish must resolve a tenant identifier:
+`MessagingOptions.TenantContextRequired` is the messaging sibling of the EF write guard (#234) and the HTTP authorization requirement. Defaults to `false` to preserve today's behavior. Enable it with `.Messaging(messaging => messaging.RequireTenantOnPublish())`; the property has no public setter. Every guarded publish must resolve a tenant identifier:
 
 1. `PublishOptions.TenantId` if set (the source of truth — see `Headers.TenantId` integrity rules in [Multi-Tenancy / Message Consumers](multi-tenancy.md#message-consumers)).
 2. Otherwise, the ambient `ICurrentTenant.Id`, unless `SuppressAmbientBusinessContext` is enabled.
@@ -794,18 +801,7 @@ builder.AddHeadlessTenancy(tenancy =>
 );
 ```
 
-Messaging-only setup must still go through the root tenancy seam — `AddTenantPropagation()` has been removed. Combine `AddHeadlessMessaging` with the root tenancy registration:
-
-```csharp
-builder.Services.AddHeadlessMessaging(options =>
-{
-    options.TenantContextRequired = true;
-});
-
-builder.AddHeadlessTenancy(tenancy =>
-    tenancy.Messaging(messaging => messaging.PropagateTenant().RequireTenantOnPublish())
-);
-```
+Configure messaging transport and storage with `AddHeadlessMessaging(...)`. Configure tenant propagation and enforcement only through `AddHeadlessTenancy(...)`.
 
 **Remediation for background workers / `IHostedService` callers (no ambient HTTP scope):**
 
@@ -928,6 +924,11 @@ Per-consumer-group circuit breaker that pauses transport consumption when a depe
 Open duration escalates exponentially on repeated trips and resets after consecutive successful close cycles.
 
 Persisted received retries share the same lane-qualified probe generation as transport delivery. Open rows are durably deferred to the current circuit generation's next-probe boundary; in HalfOpen, one row or transport delivery owns the probe, while sibling claims retain their exact leases for normal store-authoritative expiry without blocking healthy pickup. Healthy groups in the same claimed batch dispatch before circuit dispositions, so an open group cannot monopolize retry pickup.
+
+Pause and resume work carries a monotonic circuit epoch, and a consumer-group handle applies intents
+in epoch order. A resume launched before `ForceOpenAsync`, another Open transition, or a restart
+pre-pause cannot reopen a newer Open generation. Force-open therefore leaves the transport paused
+even when recovery was already in flight.
 
 ### Global Configuration
 
@@ -1063,6 +1064,7 @@ Provides real-time visibility into message processing, failures, retries, and sy
 - **Provider Capabilities**: The protected metadata endpoint and responsive footer dialog show every registered provider role. Transport cards report delivery lanes and topology, storage cards report delivery lanes and delayed scheduling, and coordination cards report cluster coordination without exposing physical resource names or credentials
 - **Performance Metrics**: Consumer processing stats and bottlenecks
 - **Five authentication modes** (shared with the Jobs Dashboard via `Headless.Dashboard.Authentication`): none, Basic, API key, host-app auth, custom.
+- **Scheduled-delivery operator actions**: `GET /api/scheduled` lists pending scheduled deliveries (published rows in `Delayed`/`Queued` with no inline attempt, retry, or persisted retry time, presented as one `Pending` state); `POST /api/scheduled/revoke` and `POST /api/scheduled/dispatch-now` are audited, fenced mutations sharing the inbox operator ledger. These are operator actions on an existing schedule, not a way to create, reschedule, or replay one — see Core's Key Features for the storage-side contract.
 
 ### Design Notes
 
@@ -1070,7 +1072,9 @@ The dashboard exposes operational endpoints for inspecting, retrying, re-executi
 
 Inbox query and operation JSON uses camelCase properties and named string enum values, such as `"Failed"`, `"Succeeded"`, and `"Queue"`, independently of the host's JSON configuration. Operation requests must send `expectedStatus` as a string; responses use the same format for status, lane, operation type, and outcome, including conflict and not-found results.
 
-Inbox operations require an authenticated principal and a stable audit actor. The primary identity's name is used first, then its `NameIdentifier` or `sub` claim, then the authenticated dashboard username. The shared `host-user` placeholder cannot identify an operator. Authorization retains the host's claims and role mappings. Operation bodies require a JSON content type; unsupported media types return HTTP 415 and malformed JSON returns HTTP 422.
+Inbox and scheduled-delivery operations share one actor resolver and require an authenticated principal with a stable audit actor. The primary identity's name is used first, then its `NameIdentifier` or `sub` claim, then the authenticated dashboard username. An unauthenticated request returns HTTP 401 and ends the dashboard session. An authenticated principal with no usable name -- the no-auth mode's `anonymous` identity or the Host mode's shared `host-user` placeholder -- returns HTTP 403 with error code `g:operator_actor_required` and a body naming the remedy (configure Basic or Host authentication with a name or `sub` claim); the dashboard stays signed in. **Behavior change:** the inbox `host-user` case previously returned 401; it now returns 403, and `WithNoAuth()` deployments can no longer perform any operator action (inbox or scheduled-delivery), read-only monitoring is unaffected. ApiKey and Custom identities (`api-user`, `custom-user`) are accepted as before and attribute actions to the deployment's shared secret identity. Authorization retains the host's claims and role mappings. Operation bodies require a JSON content type; unsupported media types return HTTP 415 and malformed JSON returns HTTP 422.
+
+The legacy `POST /api/published/requeue` and `POST /api/published/delete` bulk endpoints reject any id that matches the pending-scheduled-delivery predicate: each rejected id is reported in the response's `rejected` array alongside a message pointing at the audited `/api/scheduled/revoke` and `/api/scheduled/dispatch-now` actions, and the remaining ids are processed exactly as before. This fencing runs under the host principal, not the operator actor requirement, so it still functions under `WithNoAuth()` for non-pending rows.
 
 ### Installation
 
@@ -1426,7 +1430,7 @@ No provider-specific configuration is required.
 
 Known orphans use a separate bounded probe batch and recover only when the exact consumer identity, logical contract name/version, and lane return. They do not expire automatically. Unclaimed orphans permit Hold/ReleaseHold and unheld Purge; live claims block those actions, and ForceReprocess remains terminal-only. A hold protects retention and purge but does not stop recovery.
 
-History retention uses the shared `MessagingOptions` defaults: cleanup receipts/audits 7 days each, operator receipts 30 days, and operator audits 90 days. All four are positive configurable minimum residence durations. Audit references can extend receipt lifetime; deleting history does not release holds. The injected `TimeProvider` controls history age. State is process-local and is lost on restart. See [Core configuration](#configuration-3) for probe settings, replay limits, rollout effects, and collector pacing.
+History retention uses the shared `MessagingOptions` defaults: cleanup receipts/audits 7 days each, operator receipts 30 days, and operator audits 90 days. All four are positive configurable minimum residence durations. Audit references can extend receipt lifetime; deleting history does not release holds. The injected `TimeProvider` controls history age. State is process-local and is lost on restart. This history also covers scheduled-delivery operator actions (revoke, dispatch-now) under the shared `TargetKind` ledger; record shapes changed accordingly. See [Core configuration](#configuration-3) for probe settings, replay limits, rollout effects, and collector pacing.
 
 ### Dependencies
 
@@ -1736,7 +1740,7 @@ Configure connection string, schema, table names, and provider-specific storage 
 
 Known orphans use a separate bounded probe batch and recover only when the exact consumer identity, logical contract name/version, and lane return. They do not expire automatically. Unclaimed orphans permit Hold/ReleaseHold and unheld Purge; live claims block those actions, and ForceReprocess remains terminal-only. A hold protects retention and purge but does not stop recovery.
 
-History retention uses the shared `MessagingOptions` defaults: cleanup receipts/audits 7 days each, operator receipts 30 days, and operator audits 90 days. All four are positive configurable minimum residence durations. Audit references can extend receipt lifetime; deleting history does not release holds. PostgreSQL database time controls history age. Initialization adds the history-selection and audit-reference indexes idempotently. See [Core configuration](#configuration-3) for probe settings, replay limits, rollout effects, and collector pacing.
+History retention uses the shared `MessagingOptions` defaults: cleanup receipts/audits 7 days each, operator receipts 30 days, and operator audits 90 days. All four are positive configurable minimum residence durations. Audit references can extend receipt lifetime; deleting history does not release holds. PostgreSQL database time controls history age. Initialization adds the history-selection and audit-reference indexes idempotently. This history also covers scheduled-delivery operator actions (revoke, dispatch-now) under the shared `TargetKind` ledger; the schema is created fresh with the generalized ledger columns (greenfield — no prior schema versions exist), and the `inbox` schema-state version pins the readiness contract. See [Core configuration](#configuration-3) for probe settings, replay limits, rollout effects, and collector pacing.
 
 - **`DdlCommandTimeout`** (`TimeSpan?`, default `null`): timeout budget for schema-init DDL — the `CREATE INDEX CONCURRENTLY` / `DROP INDEX CONCURRENTLY` builds, the `CREATE EXTENSION` probe, and the advisory-lock waits that gate them. Decoupled from the OLTP `MessagingOptions.CommandTimeout` (~30s) because these can run for minutes-to-hours on a large table; a premature kill leaves a `CONCURRENTLY` index `INVALID` for the next boot to repair. Default `null` (and `TimeSpan.Zero`) mean **no timeout** (wait indefinitely). A negative value is rejected at validation time.
 - **`pg_trgm` on managed PostgreSQL**: dashboard content (ILIKE) search uses GIN trigram indexes that need the `pg_trgm` extension. The initializer runs `CREATE EXTENSION IF NOT EXISTS pg_trgm` best-effort **outside** the schema transaction. On managed PostgreSQL (AWS RDS, Azure, Neon, Supabase) the app role usually lacks `CREATE EXTENSION`; it logs a warning, **skips the trigram content indexes**, and continues — write/retry paths are unaffected, only dashboard content search is disabled until a DBA pre-installs `pg_trgm`. (Previously `CREATE EXTENSION` ran as the first statement of the schema transaction, so a permission error rolled back the entire schema batch and left messaging dead at startup.)
@@ -1793,7 +1797,7 @@ Configure connection string, schema, table names, and provider-specific storage 
 
 Known orphans use a separate bounded probe batch and recover only when the exact consumer identity, logical contract name/version, and lane return. They do not expire automatically. Unclaimed orphans permit Hold/ReleaseHold and unheld Purge; live claims block those actions, and ForceReprocess remains terminal-only. A hold protects retention and purge but does not stop recovery.
 
-History retention uses the shared `MessagingOptions` defaults: cleanup receipts/audits 7 days each, operator receipts 30 days, and operator audits 90 days. All four are positive configurable minimum residence durations. Audit references can extend receipt lifetime; deleting history does not release holds. SQL Server database time controls history age. Initialization adds the history-selection and audit-reference indexes idempotently. See [Core configuration](#configuration-3) for probe settings, replay limits, rollout effects, and collector pacing.
+History retention uses the shared `MessagingOptions` defaults: cleanup receipts/audits 7 days each, operator receipts 30 days, and operator audits 90 days. All four are positive configurable minimum residence durations. Audit references can extend receipt lifetime; deleting history does not release holds. SQL Server database time controls history age. Initialization adds the history-selection and audit-reference indexes idempotently. This history also covers scheduled-delivery operator actions (revoke, dispatch-now) under the shared `TargetKind` ledger; the schema is created fresh with the generalized ledger columns (greenfield — no prior schema versions exist), and the `inbox` schema-state version pins the readiness contract. See [Core configuration](#configuration-3) for probe settings, replay limits, rollout effects, and collector pacing.
 
 Fresh schemas directly create `([StatusName],[Added])` indexes for dashboard timelines/statistics. The initializer creates the final schema shape and does not carry legacy migration DDL.
 

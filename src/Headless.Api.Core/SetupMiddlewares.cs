@@ -135,7 +135,7 @@ public static class SetupMiddlewares
     /// </summary>
     /// <param name="services">The service collection to register into.</param>
     /// <returns>The same service collection.</returns>
-    public static IServiceCollection AddTenantResolution(this IServiceCollection services)
+    internal static IServiceCollection AddTenantResolution(this IServiceCollection services)
     {
         services.TryAddSingleton<TenantResolutionMiddleware>();
         return services;
@@ -156,7 +156,7 @@ public static class SetupMiddlewares
     /// Prefer <see cref="SetupApiTenancy.UseHeadlessTenancy"/> when HTTP tenancy was configured
     /// through the tenancy builder — it guards against double-registration and validates the setup.
     /// </remarks>
-    public static IApplicationBuilder UseTenantResolution(this IApplicationBuilder application)
+    internal static IApplicationBuilder UseTenantResolution(this IApplicationBuilder application)
     {
         return application.UseMiddleware<TenantResolutionMiddleware>();
     }
@@ -179,7 +179,7 @@ public static class SetupMiddlewares
     /// silently absent. <see cref="IProblemDetailsCreator"/> and its dependencies are registered for the
     /// same reason: every rejection path resolves it from request services.
     /// </remarks>
-    public static IServiceCollection AddTenantCatalogResolution(this IServiceCollection services)
+    internal static IServiceCollection AddTenantCatalogResolution(this IServiceCollection services)
     {
         // Every rejection path of this middleware (unknown/disabled/invalid outcomes, the R19 claim
         // mismatch, and TenantResolutionMiddleware's claim-vs-feature fast path) resolves
@@ -207,7 +207,7 @@ public static class SetupMiddlewares
 
     /// <summary>
     /// Adds <c>TenantCatalogResolutionMiddleware</c> to the pipeline. It consults registered
-    /// <c>ITenantIdentifierSource</c>s in registration order and resolves the first non-null
+    /// <c>ITenantIdentifierSource</c>s in registration order and resolves the first found
     /// identifier through the tenant catalog, setting <see cref="Headless.MultiTenancy.ICurrentTenant"/>
     /// on a match or short-circuiting with a fail-closed ProblemDetails response. Endpoints decorated
     /// with <see cref="MultiTenancy.SkipTenantResolutionAttribute"/> are bypassed entirely.
@@ -223,7 +223,7 @@ public static class SetupMiddlewares
     /// configured through the tenancy builder — it guards against double-registration, no-ops for
     /// accessor-only hosts, and records the posture runtime marker validated at startup.
     /// </remarks>
-    public static IApplicationBuilder UseTenantCatalogResolution(this IApplicationBuilder application)
+    internal static IApplicationBuilder UseTenantCatalogResolution(this IApplicationBuilder application)
     {
         return application.UseMiddleware<TenantCatalogResolutionMiddleware>();
     }

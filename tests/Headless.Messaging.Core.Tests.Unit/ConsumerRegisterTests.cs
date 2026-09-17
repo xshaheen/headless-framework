@@ -67,7 +67,7 @@ public sealed class ConsumerRegisterTests : TestBase
             BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         )!;
 
-        var act = async () => await (ValueTask)resumeGroup.Invoke(register, [handle])!;
+        var act = async () => await (ValueTask)resumeGroup.Invoke(register, [handle, 1L])!;
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("resume failed");
     }
@@ -101,7 +101,7 @@ public sealed class ConsumerRegisterTests : TestBase
             BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         )!;
 
-        await (ValueTask)resumeGroup.Invoke(register, [handle])!;
+        await (ValueTask)resumeGroup.Invoke(register, [handle, 1L])!;
 
         ((bool)handleType.GetProperty("IsPaused")!.GetValue(handle)!)
             .Should()
@@ -250,7 +250,13 @@ public sealed class ConsumerRegisterTests : TestBase
         const string groupName = "fake-group";
         const string handleName = "0:fake-group";
 
-        mockCb.IsOpen(handleName).Returns(true);
+        mockCb
+            .TryGetOpenEpoch(handleName, out Arg.Any<long>())
+            .Returns(callInfo =>
+            {
+                callInfo[1] = 7L;
+                return true;
+            });
         mockCb.AbortHalfOpenProbeAsync(handleName).Returns(ValueTask.CompletedTask);
         mockCb.RemoveGroupAsync(Arg.Any<string>()).Returns(ValueTask.CompletedTask);
         mockCb.RegisterKnownGroups(Arg.Any<IEnumerable<string>>());
@@ -329,7 +335,7 @@ public sealed class ConsumerRegisterTests : TestBase
         // then — AbortHalfOpenProbeAsync was called for the group
         await mockCb.Received(1).AbortHalfOpenProbeAsync(handleName);
 
-        // then — the handle for the group has IsPaused = true because IsOpen returned true
+        // then — the handle for the group has IsPaused = true because TryGetOpenEpoch returned true
         var groupHandlesField = typeof(ConsumerRegister).GetField(
             "_groupHandles",
             BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
@@ -346,7 +352,16 @@ public sealed class ConsumerRegisterTests : TestBase
         var handleObj = handleArgs[1]!;
         var isPausedProp = handleType.GetProperty("IsPaused", BindingFlags.Public | BindingFlags.Instance)!;
         var isPaused = (bool)isPausedProp.GetValue(handleObj)!;
-        isPaused.Should().BeTrue("handle should be pre-paused when circuit IsOpen returns true");
+        isPaused.Should().BeTrue("handle should be pre-paused when the circuit reports an open epoch");
+
+        // A recovery callback launched before the restart bump arrives after the replacement
+        // handle applied epoch 7 and must not reopen transport.
+        var resumeGroup = typeof(ConsumerRegister).GetMethod(
+            "_ResumeGroupAsync",
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+        )!;
+        await (ValueTask)resumeGroup.Invoke(register, [handleObj, 6L])!;
+        readyClient.ResumeCount.Should().Be(0);
 
         await register.DisposeAsync();
     }
@@ -445,7 +460,7 @@ public sealed class ConsumerRegisterTests : TestBase
             },
             configureServices: services =>
             {
-                services.AddSingleton<IDispatcher>(dispatcher);
+                services.AddSingleton(dispatcher);
                 services.AddSingleton<BootstrapReadyConsumer>();
             }
         );
@@ -512,7 +527,7 @@ public sealed class ConsumerRegisterTests : TestBase
             },
             configureServices: services =>
             {
-                services.AddSingleton<IDispatcher>(dispatcher);
+                services.AddSingleton(dispatcher);
                 services.AddSingleton<BootstrapReadyConsumer>();
             }
         );
@@ -672,6 +687,298 @@ public sealed class ConsumerRegisterTests : TestBase
 
         receivedShutdownTimeout.Should().Be(TimeSpan.FromSeconds(10));
         await client.Received(1).ShutdownAsync(Arg.Is(TimeSpan.FromSeconds(10)), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task stale_resume_is_skipped_after_newer_pause_has_been_applied()
+    {
+        var register = _CreateRegister();
+        var client = Substitute.For<IConsumerClient>();
+        var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
+        var handle = _CreateHandle(handleType);
+
+        await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, [client])!;
+        await _InvokePauseAsync(register, handle, 7);
+        await _InvokeResumeAsync(register, handle, 6);
+
+        _GetIsPaused(handleType, handle).Should().BeTrue();
+        await client.DidNotReceive().ResumeAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task newer_pause_waits_for_in_flight_resume_before_pausing_clients()
+    {
+        var register = _CreateRegister();
+        var client = Substitute.For<IConsumerClient>();
+        var resumeEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseResume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        client
+            .ResumeAsync(Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                resumeEntered.TrySetResult();
+                return new ValueTask(releaseResume.Task);
+            });
+
+        var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
+        var handle = _CreateHandle(handleType);
+        await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, [client])!;
+
+        var resume = _InvokeResumeAsync(register, handle, 2).AsTask();
+        await resumeEntered.Task.WaitAsync(AbortToken);
+        var pause = _InvokePauseAsync(register, handle, 3).AsTask();
+        pause.IsCompleted.Should().BeFalse();
+
+        releaseResume.TrySetResult();
+        await resume.WaitAsync(AbortToken);
+        await pause.WaitAsync(AbortToken);
+
+        await client.Received(1).ResumeAsync(Arg.Any<CancellationToken>());
+        await client.Received(1).PauseAsync(Arg.Any<CancellationToken>());
+        _GetIsPaused(handleType, handle).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task equal_epoch_pause_is_reapplied()
+    {
+        var register = _CreateRegister();
+        var client = Substitute.For<IConsumerClient>();
+        var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
+        var handle = _CreateHandle(handleType);
+        await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, [client])!;
+
+        await _InvokePauseAsync(register, handle, 4);
+        await _InvokePauseAsync(register, handle, 4);
+
+        await client.Received(2).PauseAsync(Arg.Any<CancellationToken>());
+        _GetIsPaused(handleType, handle).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task resume_failure_rethrows_after_the_gate_is_released()
+    {
+        var register = _CreateRegister();
+        var failingClient = Substitute.For<IConsumerClient>();
+        var healthyClient = Substitute.For<IConsumerClient>();
+        var expected = new InvalidOperationException("resume failed");
+        failingClient.ResumeAsync(Arg.Any<CancellationToken>()).Returns(_ => ValueTask.FromException(expected));
+
+        var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
+        var handle = _CreateHandle(handleType);
+        await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, [failingClient])!;
+        await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, [healthyClient])!;
+
+        var act = async () => await _InvokeResumeAsync(register, handle, 2);
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("resume failed");
+
+        failingClient.ClearReceivedCalls();
+        healthyClient.ClearReceivedCalls();
+        await _InvokePauseAsync(register, handle, 3);
+        await failingClient.DidNotReceive().ResumeAsync(Arg.Any<CancellationToken>());
+        await healthyClient.Received(1).PauseAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task queued_resume_is_a_noop_when_handle_disposes_while_pause_holds_gate()
+    {
+        var register = _CreateRegister();
+        var client = Substitute.For<IConsumerClient>();
+        var pauseEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releasePause = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        client
+            .PauseAsync(Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                pauseEntered.TrySetResult();
+                return new ValueTask(releasePause.Task);
+            });
+
+        var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
+        var handle = _CreateHandle(handleType);
+        await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, [client])!;
+
+        var pause = _InvokePauseAsync(register, handle, 3).AsTask();
+        await pauseEntered.Task.WaitAsync(AbortToken);
+
+        var resumeTask = _InvokeResumeAsync(register, handle, 3).AsTask();
+        await (ValueTask)handleType.GetMethod("DisposeAsync")!.Invoke(handle, [TimeSpan.FromSeconds(1)])!;
+        releasePause.TrySetResult();
+
+        await pause.WaitAsync(AbortToken);
+        await resumeTask.WaitAsync(AbortToken);
+
+        _GetIsPaused(handleType, handle).Should().BeTrue();
+        await client.DidNotReceive().ResumeAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task open_admission_during_pause_latency_logs_debug_without_warning()
+    {
+        var logs = new List<(LogLevel Level, EventId EventId)>();
+        var mockCircuitBreaker = Substitute.For<ICircuitBreakerStateManager>();
+        mockCircuitBreaker.TryAcquireHalfOpenProbe("0:ready-group").Returns(4L);
+        mockCircuitBreaker
+            .TryGetOpenEpoch("0:ready-group", out Arg.Any<long>())
+            .Returns(callInfo =>
+            {
+                callInfo[1] = 7L;
+                return true;
+            });
+
+        await using var provider = _CreateProvider(
+            mockCircuitBreaker,
+            configureMessaging: setup =>
+                setup.Bus.ForMessage<BootstrapReadyMessage>(message =>
+                    message
+                        .Contract("ready-messageName")
+                        .Consumer<BootstrapReadyConsumer>(consumer =>
+                            consumer.StableContract("tests.consumer-register.open-admission").Group("ready-group")
+                        )
+                ),
+            configureServices: services => services.AddSingleton<ILoggerProvider>(new CapturingLoggerProvider(logs))
+        );
+        var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
+        typeof(ConsumerRegister)
+            .GetField(
+                "_circuitBreakerStateManager",
+                BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+            )!
+            .SetValue(register, mockCircuitBreaker);
+        await using var client = new InboxConsumerClient();
+        var serializer = provider.GetRequiredService<Headless.Messaging.Serialization.ISerializer>();
+        var dispatcher = provider.GetRequiredService<IDispatcher>();
+        _AttachInboxProcessor(provider, register, client, dispatcher, serializer);
+
+        var origin = new Message(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [Headers.MessageId] = "open-admission-latency",
+                [Headers.MessageName] = "ready-messageName",
+                [Headers.Group] = "ready-group",
+            },
+            new BootstrapReadyMessage()
+        );
+        var transport = await serializer.SerializeToTransportMessageAsync(origin, AbortToken);
+
+        await client.OnMessageCallback!(transport, null);
+
+        logs.Where(entry => entry.EventId.Id is 4114 or 4115)
+            .Should()
+            .ContainSingle()
+            .Which.Level.Should()
+            .Be(LogLevel.Debug);
+        logs.Single(entry => entry.EventId.Id is 4114 or 4115).EventId.Id.Should().Be(4114);
+    }
+
+    [Fact]
+    public async Task open_admission_after_pause_completed_logs_one_warning()
+    {
+        var logs = new List<(LogLevel Level, EventId EventId)>();
+        var mockCircuitBreaker = Substitute.For<ICircuitBreakerStateManager>();
+        mockCircuitBreaker.TryAcquireHalfOpenProbe("0:ready-group").Returns(4L);
+        mockCircuitBreaker
+            .TryGetOpenEpoch("0:ready-group", out Arg.Any<long>())
+            .Returns(callInfo =>
+            {
+                callInfo[1] = 7L;
+                return true;
+            });
+
+        await using var provider = _CreateProvider(
+            mockCircuitBreaker,
+            configureMessaging: setup =>
+                setup.Bus.ForMessage<BootstrapReadyMessage>(message =>
+                    message
+                        .Contract("ready-messageName")
+                        .Consumer<BootstrapReadyConsumer>(consumer =>
+                            consumer.StableContract("tests.consumer-register.open-admission").Group("ready-group")
+                        )
+                ),
+            configureServices: services => services.AddSingleton<ILoggerProvider>(new CapturingLoggerProvider(logs))
+        );
+        var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
+        var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
+        typeof(ConsumerRegister)
+            .GetField(
+                "_circuitBreakerStateManager",
+                BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+            )!
+            .SetValue(register, mockCircuitBreaker);
+        var handle = _CreateHandle(handleType);
+        handleType.GetProperty("GroupName")!.SetValue(handle, "ready-group");
+        await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, [Substitute.For<IConsumerClient>()])!;
+        await _InvokePauseAsync(register, handle, 7);
+
+        var groupHandles = (IDictionary)
+            typeof(ConsumerRegister)
+                .GetField("_groupHandles", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly)!
+                .GetValue(register)!;
+        groupHandles["0:ready-group"] = handle;
+        await using var client = new InboxConsumerClient();
+        var serializer = provider.GetRequiredService<Headless.Messaging.Serialization.ISerializer>();
+        var dispatcher = provider.GetRequiredService<IDispatcher>();
+        _AttachInboxProcessor(provider, register, client, dispatcher, serializer);
+
+        var origin = new Message(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [Headers.MessageId] = "open-admission-after-pause",
+                [Headers.MessageName] = "ready-messageName",
+                [Headers.Group] = "ready-group",
+            },
+            new BootstrapReadyMessage()
+        );
+        var transport = await serializer.SerializeToTransportMessageAsync(origin, AbortToken);
+
+        await client.OnMessageCallback!(transport, null);
+
+        logs.Where(entry => entry.EventId.Id is 4114 or 4115)
+            .Should()
+            .ContainSingle()
+            .Which.Level.Should()
+            .Be(LogLevel.Warning);
+        logs.Single(entry => entry.EventId.Id is 4114 or 4115).EventId.Id.Should().Be(4115);
+    }
+
+    private ConsumerRegister _CreateRegister()
+    {
+        // The register is used after the helper returns; its short-lived provider owns no
+        // transport resources in these gate-only scenarios.
+        var provider = _CreateProvider();
+        return (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
+    }
+
+    private static object _CreateHandle(Type handleType)
+    {
+        var handle = Activator.CreateInstance(handleType, nonPublic: true)!;
+        handleType.GetProperty("Logger")!.SetValue(handle, NullLogger<ConsumerRegister>.Instance);
+        handleType.GetProperty("Cts")!.SetValue(handle, new CancellationTokenSource());
+        handleType.GetProperty("GroupName")!.SetValue(handle, "payments");
+        handleType.GetProperty("ConsumerTasks")!.SetValue(handle, new ConcurrentBag<Task>());
+        return handle;
+    }
+
+    private static bool _GetIsPaused(Type handleType, object handle)
+    {
+        return (bool)handleType.GetProperty("IsPaused")!.GetValue(handle)!;
+    }
+
+    private static async ValueTask _InvokePauseAsync(ConsumerRegister register, object handle, long epoch)
+    {
+        var method = typeof(ConsumerRegister).GetMethod(
+            "_PauseGroupAsync",
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+        )!;
+        await (ValueTask)method.Invoke(register, [handle, epoch])!;
+    }
+
+    private static async ValueTask _InvokeResumeAsync(ConsumerRegister register, object handle, long epoch)
+    {
+        var method = typeof(ConsumerRegister).GetMethod(
+            "_ResumeGroupAsync",
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+        )!;
+        await (ValueTask)method.Invoke(register, [handle, epoch])!;
     }
 
     private ServiceProvider _CreateProvider(
@@ -1170,6 +1477,10 @@ public sealed class ConsumerRegisterTests : TestBase
 
     private sealed class ReadyListeningConsumerClient : IConsumerClient
     {
+        public int ResumeCount => Volatile.Read(ref _resumeCount);
+
+        private int _resumeCount;
+
         public BrokerAddress BrokerAddress => new("test", "ready");
 
         public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
@@ -1225,6 +1536,7 @@ public sealed class ConsumerRegisterTests : TestBase
 
         public ValueTask ResumeAsync(CancellationToken cancellationToken = default)
         {
+            Interlocked.Increment(ref _resumeCount);
             return ValueTask.CompletedTask;
         }
 

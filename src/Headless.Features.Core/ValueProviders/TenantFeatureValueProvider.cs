@@ -44,10 +44,9 @@ public sealed class TenantFeatureValueProvider(IFeatureValueStore store, ICurren
             return base.HandleContextAsync(providerName, providerKey, cancellationToken);
         }
 
-        var disposable = currentTenant.Change(providerKey);
-
         var asyncDisposable = DisposableFactory.Create(
-            disposable,
+            // ReSharper disable once NotDisposedResource -- the returned IAsyncDisposable is disposed by the caller, which restores the original tenant context.
+            currentTenant.Change(providerKey),
             static tenantScope =>
             {
                 tenantScope.Dispose();

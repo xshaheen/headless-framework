@@ -324,14 +324,14 @@ public sealed class TransportConformanceManifestTests : TestBase
 
         public void not_a_test() { }
 
-        [EvidenceTarget.FactAttribute]
+        [Fact]
         public async Task executable_test()
         {
             await Task.Yield();
             Executed = true;
         }
 
-        [EvidenceTarget.FactAttribute(Skip = "not executable")]
+        [Fact(Skip = "not executable")]
         public void skipped_test() { }
 
         [AttributeUsage(AttributeTargets.Method)]

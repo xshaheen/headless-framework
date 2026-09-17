@@ -30,7 +30,7 @@ public abstract class AggregateRoot : Entity, IAggregateRoot, IIntegrationEventE
     /// <param name="integrationEvent">The integration event to enqueue.</param>
     protected void AddIntegrationEvent(object integrationEvent)
     {
-        AddIntegrationEvent(EventContext.Capture<object>(integrationEvent));
+        AddIntegrationEvent(EventContext.Capture(integrationEvent));
     }
 
     /// <summary>Discards all pending integration events without dispatching them.</summary>
@@ -51,7 +51,7 @@ public abstract class AggregateRoot : Entity, IAggregateRoot, IIntegrationEventE
     /// <param name="domainEvent">The domain event to enqueue.</param>
     protected void AddDomainEvent(object domainEvent)
     {
-        AddDomainEvent(EventContext.Capture<object>(domainEvent));
+        AddDomainEvent(EventContext.Capture(domainEvent));
     }
 
     /// <summary>Returns the current list of pending domain events.</summary>

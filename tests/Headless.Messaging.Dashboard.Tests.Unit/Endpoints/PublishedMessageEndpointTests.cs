@@ -10,6 +10,7 @@ using Headless.Messaging.Dashboard.NodeDiscovery;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
+using Headless.Messaging.Transport;
 using Headless.Primitives;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
@@ -22,6 +23,22 @@ public sealed class PublishedMessageEndpointTests : TestBase
 {
     private readonly IMonitoringApi _monitoringApi = Substitute.For<IMonitoringApi>();
     private readonly IDataStorage _dataStorage = Substitute.For<IDataStorage>();
+    private readonly IScheduledDeliveryOperationsApi _scheduledOperationsApi =
+        Substitute.For<IScheduledDeliveryOperationsApi>();
+
+    public PublishedMessageEndpointTests()
+    {
+        // Legacy bulk requeue/delete fence pending scheduled ids (KTD10); default to no pending rows so
+        // existing published-message behavior is unaffected unless a test configures otherwise.
+        _scheduledOperationsApi
+            .QueryAsync(
+                Arg.Any<ScheduledDeliveryQuery>(),
+                Arg.Any<OperatorAuthorizationContext>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(new IndexPage<ScheduledDeliveryView>([], 0, 200, 0)));
+        _dataStorage.GetScheduledDeliveryOperationsApi().Returns(_scheduledOperationsApi);
+    }
 
     [Fact]
     public async Task should_return_message_content_when_published_message_details()
@@ -255,6 +272,152 @@ public sealed class PublishedMessageEndpointTests : TestBase
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);
     }
 
+    [Fact]
+    public async Task should_reject_pending_scheduled_id_and_delete_others_when_published_delete()
+    {
+        // given: one pending scheduled id (rejected, KTD10) and one Succeeded id (deleted, unaffected).
+        var pendingId = Guid.Parse("11111111-1111-1111-1111-111111111991");
+        var succeededId = Guid.Parse("11111111-1111-1111-1111-111111111992");
+        _scheduledOperationsApi
+            .QueryAsync(
+                Arg.Any<ScheduledDeliveryQuery>(),
+                Arg.Any<OperatorAuthorizationContext>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(
+                ValueTask.FromResult(
+                    new IndexPage<ScheduledDeliveryView>(
+                        [
+                            new ScheduledDeliveryView(
+                                pendingId,
+                                "msg-991",
+                                "orders.created",
+                                MessageLane.Bus,
+                                DateTimeOffset.UtcNow.AddMinutes(5),
+                                "Pending",
+                                false,
+                                null,
+                                null,
+                                0
+                            ),
+                        ],
+                        0,
+                        200,
+                        1
+                    )
+                )
+            );
+        _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
+        _dataStorage
+            .DeletePublishedMessagesAsync(
+                Arg.Is<IReadOnlyList<Guid>>(ids => ids.Count == 1 && ids[0] == succeededId),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(1));
+
+        await using var app = _CreateTestApp(_dataStorage);
+        await app.StartAsync(AbortToken);
+        using var client = app.GetTestClient();
+
+        // when
+        var response = await client.PostAsJsonAsync(
+            "/api/published/delete",
+            new[] { pendingId, succeededId },
+            AbortToken
+        );
+
+        // then
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(AbortToken));
+        document.RootElement.GetProperty("rejected")[0].GetString().Should().Be(pendingId.ToString());
+        document.RootElement.GetProperty("deleted").GetInt32().Should().Be(1);
+        await _dataStorage
+            .Received(1)
+            .DeletePublishedMessagesAsync(
+                Arg.Is<IReadOnlyList<Guid>>(ids => ids.Count == 1 && ids[0] == succeededId),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_reject_pending_scheduled_id_and_requeue_others_when_published_requeue()
+    {
+        // given: one pending scheduled id (rejected, KTD10) and one Succeeded id (requeued, unaffected).
+        var pendingId = Guid.Parse("11111111-1111-1111-1111-111111111991");
+        var succeededId = Guid.Parse("11111111-1111-1111-1111-111111111992");
+        _scheduledOperationsApi
+            .QueryAsync(
+                Arg.Any<ScheduledDeliveryQuery>(),
+                Arg.Any<OperatorAuthorizationContext>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(
+                ValueTask.FromResult(
+                    new IndexPage<ScheduledDeliveryView>(
+                        [
+                            new ScheduledDeliveryView(
+                                pendingId,
+                                "msg-991",
+                                "orders.created",
+                                MessageLane.Bus,
+                                DateTimeOffset.UtcNow.AddMinutes(5),
+                                "Pending",
+                                false,
+                                null,
+                                null,
+                                0
+                            ),
+                        ],
+                        0,
+                        200,
+                        1
+                    )
+                )
+            );
+        _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
+        _monitoringApi
+            .GetPublishedMessagesAsync(
+                Arg.Is<IReadOnlyList<Guid>>(ids => ids.Count == 1 && ids[0] == succeededId),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(
+                ValueTask.FromResult<IReadOnlyList<MediumMessage>>([
+                    new MediumMessage
+                    {
+                        StorageId = succeededId,
+                        Lane = MessageLane.Bus,
+                        Content = "{}",
+                        Origin = new Message(
+                            new Dictionary<string, string?>(StringComparer.Ordinal)
+                            {
+                                [Headers.MessageId] = "msg-992",
+                                [Headers.MessageName] = "orders.created",
+                            },
+                            new { }
+                        ),
+                    },
+                ])
+            );
+
+        await using var app = _CreateTestApp(_dataStorage);
+        await app.StartAsync(AbortToken);
+        using var client = app.GetTestClient();
+
+        // when
+        var response = await client.PostAsJsonAsync(
+            "/api/published/requeue",
+            new[] { pendingId, succeededId },
+            AbortToken
+        );
+
+        // then
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(AbortToken));
+        document.RootElement.GetProperty("rejected")[0].GetString().Should().Be(pendingId.ToString());
+        document.RootElement.GetProperty("requeued")[0].GetString().Should().Be(succeededId.ToString());
+        document.RootElement.GetProperty("message").GetString().Should().Contain("scheduled-delivery");
+    }
+
     private static WebApplication _CreateTestApp(IDataStorage dataStorage)
     {
         var config = new MessagingDashboardOptionsBuilder().WithNoAuth();
@@ -275,6 +438,10 @@ public sealed class PublishedMessageEndpointTests : TestBase
         appBuilder.Services.AddSingleton(Substitute.For<INodeDiscoveryProvider>());
         appBuilder.Services.AddSingleton(new ConsulDiscoveryOptions { NodeName = "test-node" });
         appBuilder.Services.AddSingleton<GatewayProxyAgent>();
+
+        // Legacy requeue's transport-availability check (KTD10 fencing tests exercise the happy path).
+        appBuilder.Services.AddSingleton(Substitute.For<IDispatcher>());
+        appBuilder.Services.AddSingleton(Substitute.For<IBusTransport>());
 
         appBuilder.Services.AddRouting();
         appBuilder.Services.AddAuthorization();

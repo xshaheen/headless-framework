@@ -5,6 +5,7 @@ using Headless.Testing.Helpers;
 using Headless.Testing.Testcontainers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 using Testcontainers.PostgreSql;
@@ -41,7 +42,8 @@ public abstract class TenantWriteGuardDbContextTestFixtureBase : IAsyncLifetime
         _postgreSqlContainer = _CreatePostgreSqlContainer(ContainerLabel);
         await _postgreSqlContainer.StartAsync();
 
-        var services = new ServiceCollection();
+        var builder = Host.CreateApplicationBuilder();
+        var services = builder.Services;
 
         services.AddLogging(x => x.AddProvider(TestHelpers.CreateXUnitLoggerFactory().Provider));
         services.AddSingleton<TimeProvider>(Clock);
@@ -50,7 +52,7 @@ public abstract class TenantWriteGuardDbContextTestFixtureBase : IAsyncLifetime
 
         if (GuardEnabled)
         {
-            services.AddHeadlessTenantWriteGuard();
+            builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites()));
         }
         else
         {

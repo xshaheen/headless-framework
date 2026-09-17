@@ -96,7 +96,7 @@ public sealed class DisposableFactoryTests
     public void should_throw_when_async_state_dispose_callback_is_null()
     {
         // when
-        var action = () => DisposableFactory.Create(state: 42, dispose: (Func<int, ValueTask>)null!);
+        var action = () => DisposableFactory.Create(state: 42, dispose: null!);
 
         // then
         action.Should().Throw<ArgumentNullException>();

@@ -31,7 +31,7 @@ public static class JobContract
         {
             throw new ArgumentException(
                 string.Create(
-                    System.Globalization.CultureInfo.InvariantCulture,
+                    CultureInfo.InvariantCulture,
                     $"Job contract identities must contain 1 to {maximumLength} characters without surrounding whitespace."
                 ),
                 parameterName

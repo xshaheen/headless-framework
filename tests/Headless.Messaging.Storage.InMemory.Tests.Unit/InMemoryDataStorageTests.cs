@@ -1773,7 +1773,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
         var principal = new ClaimsPrincipal(
             new ClaimsIdentity([new Claim(ClaimTypes.Name, "operator-a")], authenticationType: "test")
         );
-        var authorization = new InboxAuthorizationContext(principal);
+        var authorization = new OperatorAuthorizationContext(principal);
         var incarnation = admitted.Message.InboxGeneration!.IncarnationId;
         var operationId = Guid.NewGuid();
         var request = new InboxOperationRequest(
@@ -1788,7 +1788,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
         var deniedRequest = request with
         {
             OperationId = Guid.NewGuid(),
-            Authorization = new InboxAuthorizationContext(new ClaimsPrincipal(new ClaimsIdentity())),
+            Authorization = new OperatorAuthorizationContext(new ClaimsPrincipal(new ClaimsIdentity())),
         };
         Func<Task> denied = async () => await operations.HoldAsync(deniedRequest, AbortToken);
         await denied.Should().ThrowAsync<UnauthorizedAccessException>();

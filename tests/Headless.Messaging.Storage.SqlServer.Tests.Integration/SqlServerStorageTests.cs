@@ -389,22 +389,22 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
                 SELECT COUNT_BIG(*) FROM sys.indexes
                 WHERE object_id=OBJECT_ID(N'messaging.Received') AND name IN (N'UX_messaging_Received_InboxRootKey',N'UX_messaging_Received_InboxLifecycleGeneration')
             ) AS IndexCount, (
-                SELECT COUNT_BIG(*) FROM sys.check_constraints WHERE name IN (N'CK_messaging_Received_InboxRetentionV3',N'CK_messaging_Received_InboxLifecycleV4')
+                SELECT COUNT_BIG(*) FROM sys.check_constraints WHERE name IN (N'CK_messaging_Received_InboxIdentity',N'CK_messaging_Received_InboxLifecycle')
                   AND parent_object_id=OBJECT_ID(N'messaging.Received')
             ) AS ConstraintCount, (
                 SELECT COUNT_BIG(*) FROM sys.columns
                 WHERE object_id=OBJECT_ID(N'messaging.InboxOperationReceipts')
-                  AND name IN(N'ExpectedStatus',N'Outcome',N'ChildIncarnationId')
+                  AND name IN(N'ExpectedStatus',N'Outcome',N'ChildIncarnationId',N'TargetKind',N'ExpectedDueAt',N'MessageName',N'MessageId',N'Lane')
             ) AS ReceiptColumnCount
             FROM messaging.SchemaState AS state
             WHERE state.Component=N'inbox';
             """
         );
 
-        schemaVersion.Should().Be(4);
+        schemaVersion.Should().Be(1);
         indexCount.Should().Be(2);
         constraintCount.Should().Be(2);
-        receiptColumnCount.Should().Be(3);
+        receiptColumnCount.Should().Be(8);
     }
 
     [Fact]
@@ -459,24 +459,24 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
     public async Task should_fail_closed_when_inbox_schema_is_newer_than_supported()
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.ExecuteAsync("UPDATE messaging.SchemaState SET SchemaVersion=5 WHERE Component=N'inbox';");
+        await connection.ExecuteAsync("UPDATE messaging.SchemaState SET SchemaVersion=2 WHERE Component=N'inbox';");
 
         try
         {
             var act = async () => await GetInitializer().InitializeAsync(AbortToken);
 
-            await act.Should().ThrowAsync<SqlException>().WithMessage("*newer than supported version 4*");
+            await act.Should().ThrowAsync<SqlException>().WithMessage("*newer than supported version 1*");
             (
                 await connection.ExecuteScalarAsync<int>(
                     "SELECT SchemaVersion FROM messaging.SchemaState WHERE Component=N'inbox';"
                 )
             )
                 .Should()
-                .Be(5, "a rejected older binary must not rewrite the newer readiness marker");
+                .Be(2, "a rejected older binary must not rewrite the newer readiness marker");
         }
         finally
         {
-            await connection.ExecuteAsync("UPDATE messaging.SchemaState SET SchemaVersion=4 WHERE Component=N'inbox';");
+            await connection.ExecuteAsync("UPDATE messaging.SchemaState SET SchemaVersion=1 WHERE Component=N'inbox';");
         }
     }
 
@@ -2048,6 +2048,15 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
             ? await storage.GetPublishedMessagesOfNeedRetryAsync(lane, AbortToken)
             : await storage.GetReceivedMessagesOfNeedRetryAsync(lane, AbortToken);
         return messages.ToList();
+    }
+
+    private static SqlServerStorageInitializer _CreateInitializer(string connectionString, string schema = "messaging")
+    {
+        return new SqlServerStorageInitializer(
+            NullLogger<SqlServerStorageInitializer>.Instance,
+            Options.Create(new SqlServerOptions { ConnectionString = connectionString, Schema = schema }),
+            Options.Create(new MessagingOptions())
+        );
     }
 
     #endregion

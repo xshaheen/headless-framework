@@ -34,6 +34,7 @@ Additional packages:
 - Use `AddHeadless()` on `WebApplicationBuilder` for bootstrapping; do not manually register compression, security headers, JSON defaults, OpenTelemetry, OpenAPI, or problem details. `AddHeadless(configureServices: options => ...)` accepts a `HeadlessServiceDefaultsOptions` callback for Aspire-style toggles (OTel, OpenAPI, service discovery, validation, antiforgery). Antiforgery is opt-in — set `options.Antiforgery.Enabled = true` for cookie-auth apps and wire `app.UseAntiforgery()` yourself after `UseAuthentication()`/`UseAuthorization()`; bearer-token APIs leave it disabled.
 - Use `UseHeadless()` for the default middleware order (`UseStatusCodePages()` before `UseExceptionHandler()`), then add auth/tenant middleware, then map endpoints. `UseHeadless` and `MapHeadlessEndpoints` are idempotent.
 - For tenant-aware HTTP apps, configure `builder.AddHeadlessTenancy(tenancy => tenancy.Http(http => http.ResolveFromClaims()))` and place `app.UseHeadlessTenancy()` after app-owned `UseAuthentication()` and before app-owned `UseAuthorization()`.
+- For identifier-based (pre-auth) tenant resolution, add a `.Catalog(...)` store and `.Http(http => http.ResolveFromCatalog(sources => sources.AddHostSource("{tenant}.example.com")))` — or `AddRouteSource()`, `AddHeaderSource()`, `AddSource(context => ...)` — and place `app.UseHeadlessTenantCatalogResolution()` after `UseRouting()` and before `UseAuthentication()`, with `UseForwardedHeaders()` (behind a proxy), host filtering, and `UseCors()` ahead of it. Sources run in registration order; register the host source before a header source where hostnames carry perimeter controls. See [multi-tenancy.md](multi-tenancy.md#tenant-catalog).
 - For idempotent-replay middleware, register `services.AddIdempotency(o => { ... })` and place `app.UseIdempotency()` AFTER `UseAuthorization()` and AFTER `UseHeadlessTenancy()`. Idempotency reads `ICurrentTenant.Id` for cache-key composition; tenant and auth must be resolved first so unauthenticated/unauthorized requests do not allocate cache slots. `InFlightStrategy = WaitAndReplay` requires `IDistributedLock`; the DI startup validator fails fast if it is missing.
 - Basic and API-key handlers authenticate only credentials supplied for their own scheme. Do not rely on an existing cookie/bearer principal to satisfy an endpoint that explicitly requires `Basic` or `ApiKey`.
 - API-key query-string authentication is opt-in (`AllowApiKeyInQueryString = true`); the dynamic scheme provider ignores `?api_key=` unless the API-key handler would accept it.
@@ -51,7 +52,8 @@ Additional packages:
 - Place `UseResponseCompression()` **before** `UseIdempotency()` in the pipeline. Compression middleware registered inside idempotency records compressed bytes in the cache; replaying those bytes without re-encoding them produces garbled or double-encoded responses.
 - `HeaderName` per-endpoint overrides via `.WithIdempotency()` are silently ignored — the middleware reads the request header before resolving endpoint metadata. Change the header name globally via `AddIdempotency(o => o.HeaderName = ...)` only.
 - `TenantRequirement` must be in `DefaultPolicy` or `FallbackPolicy` for framework-level enforcement; placing it in a named policy is not detected by the startup validator.
-- `UseHeadlessTenancy()` / `UseTenantResolution()` must run after `UseRouting()` so `HttpContext.GetEndpoint()` returns metadata when `[SkipTenantResolution]` is checked.
+- `UseHeadlessTenancy()` must run after `UseRouting()` so `HttpContext.GetEndpoint()` returns metadata when `[SkipTenantResolution]` is checked.
+- `UseHeadlessTenantCatalogResolution()` must also run after `UseRouting()`: placed earlier it still resolves host, header, and delegate sources and only loses the `[SkipTenantResolution]` opt-out, but a route source then finds nothing and every request runs as host context (logged once per process at Error level as `HEADLESS_TENANT_CATALOG_ROUTE_SOURCE_MISORDERED`).
 
 ## Core Concepts
 
@@ -194,6 +196,7 @@ Exposes each API primitive individually so teams that need à-la-carte compositi
 - `UseNoCacheWhenMissingCacheHeaders()` — injects `Cache-Control: no-cache,no-store,must-revalidate` when response omits the header
 - Basic/API-key authentication helpers — `AddBasicSchema()` and `AddApiKey()` register the canonical `Basic` and `ApiKey` schemes; handlers only authenticate credentials supplied for their own scheme
 - HTTP tenant resolution: `ResolveFromClaims()`, `UseHeadlessTenancy()`, `[SkipTenantResolution]`, `.SkipTenantResolution()`
+- HTTP tenant catalog resolution (pre-authentication): `ResolveFromCatalog(...)`, `UseHeadlessTenantCatalogResolution()`, `ITenantIdentifierSource` returning `TenantIdentifierSourceResult` (`None` / `Found` / `Invalid`), and the `HeadlessTenantCatalogResolutionBuilder` members `AddHostSource(...)`, `AddRouteSource(...)`, `AddHeaderSource(...)`, `AddSource<T>()`, `AddSource(instance)`, `AddSource(Func<HttpContext, string?>)` with options `HostTenantIdentifierSourceOptions` (`Templates`), `RouteTenantIdentifierSourceOptions` (`RouteValueName`, `PromoteAmbientRouteValue`), and `HeaderTenantIdentifierSourceOptions` (`HeaderNames`, `DefaultHeaderName` = `X-Tenant`)
 - HTTP tenant authorization: `TenantRequirement`, `[AllowMissingTenant]`, `.AllowMissingTenant()`, `[RequireTenant]`, `.RequireTenant()`
 - Diagnostic listeners: `AddHeadlessApiDiagnosticListeners()`, `BadRequestDiagnosticAdapter`, `MiddlewareAnalysisDiagnosticAdapter`
 
@@ -204,6 +207,10 @@ Exposes each API primitive individually so teams that need à-la-carte compositi
 - Basic authentication delegates password validation to `SignInManager.CheckPasswordSignInAsync(..., lockoutOnFailure: true)`, so configured ASP.NET Core Identity lockout policies apply to failed Basic credentials.
 - Batch `IFormFile.SaveAsync(...)` preserves result ordering while bounding concurrent file stream copies to `Environment.ProcessorCount` to avoid unbounded file-handle and disk pressure on large multipart requests.
 - `IFormFile.GetAllBytesAsync(CancellationToken cancellationToken = default)` propagates optional cancellation through asynchronous upload buffering; callers can omit the token.
+- Tenant identifier sources run in first-registration order and the first `Found` result wins; `AddSource<T>()` and the built-in `AddHostSource` / `AddRouteSource` / `AddHeaderSource` registrations deduplicate by type (the first call fixes the position, every call's options contribution still applies), while `AddSource(instance)` and the delegate overload always append. A source result of `Invalid` (present but ambiguous input, such as two `X-Tenant` values) rejects with 400 `g:tenant_identifier_invalid` before any catalog call; `Found` with a blank value normalizes to `None`. Sources never trim, lowercase, or shape-validate — the catalog does.
+- The header source (default `X-Tenant`) can only select an existing enabled tenant and R19 still rejects an authenticated caller whose tenant claim disagrees, but it bypasses any WAF rule, mTLS policy, IP allowlist, or CDN configuration bound to a tenant's hostname — register the host source first where hostnames carry such controls, or strip/overwrite the header at the edge. A requested header name replaces the untouched default and appends afterwards (`AddHeaderSource("X-Legacy")` reads only `X-Legacy`); any second value across the configured names is `Invalid`, a single line `a,b` is one value, and every consult appends the configured names to `Vary`.
+- `AddRouteSource` (every overload) wraps the routing `LinkGenerator` once so `Url.Action`, `GetPathByAction`, and `GetPathByName` keep the current request's `{tenant}` segment, which ASP.NET Core would otherwise drop (required-value invalidation; the endpoint-name scheme passes no ambient values — only `GetPathByRouteValues` kept it). An explicit `tenant` value always wins; `RouteTenantIdentifierSourceOptions.PromoteAmbientRouteValue = false` opts out per call. A link from a tenant request to an endpoint without a `{tenant}` segment carries the value as a query string (`/plain?tenant=acme`); a link from a request with no tenant segment to a tenant endpoint returns `null` without an explicit value.
+- Every catalog rejection carries `Cache-Control: no-store`, and no tenancy log event carries a raw host, route value, header value, or identifier. The host source reads the post-forwarding `Request.Host`, never `X-Forwarded-Host`; a host template match timeout (practically unreachable with the non-backtracking compiled templates) maps to `Invalid` plus a once-per-process warning naming the template only.
 
 ### Installation
 
@@ -257,6 +264,43 @@ app.UseAuthorization();
 app.MapGet("/webhook", handler).SkipTenantResolution().AllowMissingTenant();
 ```
 
+Identifier-based (pre-authentication) tenant resolution through the tenant catalog — host, route, header, and delegate sources, consulted in registration order:
+
+```csharp
+builder.Services.AddHeadlessCaching(caching => caching.UseInMemory()); // catalog prerequisite
+
+builder.AddHeadlessTenancy(tenancy =>
+    tenancy
+        .Catalog(catalog =>
+            catalog
+                .Configure(options => options.IgnoredIdentifiers.Add("www")) // www.example.com -> host context
+                .UseInMemory(options => options.Tenants.Add(new TenantInfo(id: "ten_123", identifier: "acme", name: "Acme", isEnabled: true)))
+        )
+        .Http(http =>
+            http.ResolveFromCatalog(sources =>
+                sources
+                    .AddHostSource("{tenant}.example.com") // acme.example.com -> "acme"
+                    .AddRouteSource()                      // /{tenant}/orders  -> route value "tenant"
+                    .AddHeaderSource()                     // X-Tenant: acme
+                    .AddSource(context => context.Request.Query["tenant"].ToString()) // null/blank -> not mine
+            )
+        )
+);
+
+app.UseForwardedHeaders();                // behind a proxy only, with KnownProxies/KnownNetworks configured
+app.UseStatusCodesRewriter();             // must wrap UseAuthorization()
+app.UseRouting();
+app.UseCors();                            // before resolution so preflights short-circuit
+app.UseHeadlessTenantCatalogResolution(); // after UseRouting, before UseAuthentication
+app.UseAuthentication();
+app.UseHeadlessTenancy();
+app.UseAuthorization();
+
+// [SkipTenantResolution] also bypasses catalog resolution and rejection for the endpoint.
+```
+
+A custom source implements `ITenantIdentifierSource` and returns `TenantIdentifierSourceResult.None`, `.Found(value)`, or `.Invalid`; a source written against the earlier `string?` contract migrates by returning `Found(value)` / `None` instead of the string / `null`. The delegate overload cannot express `Invalid`.
+
 JWT validation uses a request object instead of positional token, key, issuer, audience, and validation arguments:
 
 ```csharp
@@ -288,6 +332,21 @@ public sealed class TokenValidator(IJwtTokenFactory tokens)
 ```
 
 ### Configuration
+
+#### Tenant identifier sources
+
+Each built-in source has a validated options type (startup fails on an invalid value):
+
+| Options | Property | Default | Notes |
+|---|---|---|---|
+| `HostTenantIdentifierSourceOptions` | `Templates` | `[]` (at least one required) | Matched in order against the post-forwarding `Request.Host`; `{tenant}` captures one label, `?` one label, `*` zero or more labels, a bare `{tenant}` the whole host. Case-insensitive, port excluded, one trailing dot stripped; IP literals and hosts over 253 characters yield `None`. Compiled once as non-backtracking regexes with the shared 100 ms `RegexPatterns.MatchTimeout`. The string overload appends to the list. |
+| `RouteTenantIdentifierSourceOptions` | `RouteValueName` | `tenant` (`DefaultRouteValueName`) | Read from `Request.RouteValues`; a non-string value is `None`. Requires `UseHeadlessTenantCatalogResolution()` after `UseRouting()`. Last contribution wins. |
+| `RouteTenantIdentifierSourceOptions` | `PromoteAmbientRouteValue` | `true` | Keeps the current request's tenant segment in generated links; read per call. |
+| `HeaderTenantIdentifierSourceOptions` | `HeaderNames` | `["X-Tenant"]` (`DefaultHeaderName`) | Names must be HTTP tokens. A requested name replaces the untouched default and appends afterwards (an already-listed name is not appended again); one duplicate-detection scope across all names, blank lines count as absent; every consult appends the names to `Vary`. |
+
+Each source also accepts an `IConfiguration` section (`AddHostSource(section)` with a `Templates` array, `AddRouteSource(section)` with `RouteValueName`, `AddHeaderSource(section)` with a `HeaderNames` array — a listed array replaces the untouched default, a section without it keeps the default).
+
+Ignored identifiers (for example `www`) stay on `TenantCatalogOptions.IgnoredIdentifiers` in `Headless.MultiTenancy`; there is no per-source list. An ignored identifier, an apex host, and an unmatched host all fall through to host context with no store call, so endpoints that need a tenant must sit under `TenantRequirement`. A whole-host (bare `{tenant}`) template needs `TenantCatalogOptions.MaxIdentifierLength = 253` and an `IdentifierPattern` shaped for hostnames that carries a match timeout; both are catalog-wide, so mixing a subdomain source with a custom-domain source relaxes the subdomain shape too, and hostile identifier cardinality is bounded by negative caching plus the consumer's rate limiting.
 
 #### API surfaces
 
@@ -335,7 +394,7 @@ Exception mapping from `AddHeadlessProblemDetails()`:
 
 All other exceptions return `false`; the host default or a downstream handler renders them.
 
-`StatusCodesRewriterMiddleware` is required for the `g:tenant_required` discriminator on 403 authorization rejections. It is wired by ServiceDefaults; apps that skip ServiceDefaults must call `UseStatusCodesRewriter()` themselves. `TenantRequirement` must live in `DefaultPolicy` or `FallbackPolicy` — the startup validator does not inspect named policies. `UseHeadlessTenancy()` / `UseTenantResolution()` must run after `UseRouting()` so endpoint metadata is available when `[SkipTenantResolution]` is evaluated.
+`StatusCodesRewriterMiddleware` is required for the `g:tenant_required` discriminator on 403 authorization rejections. It is wired by ServiceDefaults; apps that skip ServiceDefaults must call `UseStatusCodesRewriter()` themselves. `TenantRequirement` must live in `DefaultPolicy` or `FallbackPolicy` — the startup validator does not inspect named policies. `UseHeadlessTenancy()` must run after `UseRouting()` so endpoint metadata is available when `[SkipTenantResolution]` is evaluated. `UseHeadlessTenantCatalogResolution()` runs after `UseRouting()` and before `UseAuthentication()`; placed before `UseRouting()` it still resolves host, header, and delegate sources and only loses the `[SkipTenantResolution]` opt-out (a once-per-process warning), but a registered route source then finds nothing and every request runs as host context, logged once per process at Error level as `HEADLESS_TENANT_CATALOG_ROUTE_SOURCE_MISORDERED` — best-effort, since a host whose requests all 404 or all reject never logs. Behind a proxy, `UseForwardedHeaders()` with `KnownProxies`/`KnownNetworks` and host filtering (`AllowedHosts` scoped to the tenant suffix) must precede it, and `UseCors()` must precede it so preflights short-circuit. CDN caveats: a cache key that omits the host breaks host tenancy, and many CDNs refuse to cache on unknown `Vary` values. R19 limits: a principal with no tenant claim, or an endpoint where authorization never runs (`[AllowAnonymous]`, policy-less without a fallback policy), passes a source-selected tenant unchecked — map such credentials to a tenant claim so R19 applies, and never derive authorization on such endpoints from the ambient tenant.
 
 `AddBasicSchema()` defaults to the canonical `Basic` authentication scheme and `AddApiKey()` defaults to `ApiKey`. `DynamicAuthenticationSchemeProvider` selects those same canonical names. API keys are read from the configured header by default; query-string keys are routed and accepted only when `ApiKeyAuthenticationSchemeOptions.AllowApiKeyInQueryString` is `true`.
 
@@ -358,6 +417,8 @@ All other exceptions return `false`; the host default or a downstream handler re
 
 - Opt-in surface registration validates options at startup and registers the immutable singleton registry; middleware sets the request feature and activity tag.
 - Registers `HttpContextAccessor` (via `AddHeadlessProblemDetails`)
+- `ResolveFromCatalog(...)` registers `TenantCatalogResolutionMiddleware`, `TenantIdentifierIntegrityHandler` (`IAuthorizationHandler`, `TryAddEnumerable`), `IHttpContextAccessor`, and `TryAdd` fallbacks for `IProblemDetailsCreator`, `TimeProvider`, and `IBuildInformationAccessor`; `AddHostSource` / `AddRouteSource` / `AddHeaderSource` each register their singleton `ITenantIdentifierSource` (`TryAddEnumerable`, deduplicated by type) and validated options (`ValidateOnStart`); `AddSource(instance)` and the delegate overload append a singleton; `AddRouteSource` also calls `AddRouting()` and decorates the routing `LinkGenerator` once with `TenantAmbientRouteValueLinkGenerator`
+- Every catalog rejection response sets `Cache-Control: no-store`; the header source appends its configured names to the response `Vary` header on every consult
 - Configures response compression providers (Brotli, Gzip)
 - Configures Kestrel limits and disables `Server` response header (via `ConfigureHeadlessDefaultApi`)
 - Configures route options (lowercase URLs, no trailing slash)

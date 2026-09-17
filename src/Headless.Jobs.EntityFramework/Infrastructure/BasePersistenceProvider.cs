@@ -1707,8 +1707,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ConfigureAwait(false);
 
         var definitions = dbContext.Set<TCronJob>();
-        var recoveredThroughUtc = request.RecoveredThroughUtc;
-        var nextDueUtc = request.NextDueUtc;
+        var initialRecoveredThroughUtc = request.RecoveredThroughUtc;
+        var initialNextDueUtc = request.NextDueUtc;
 
         var advanced = await definitions
             .WhereScheduleAdvanceFenceHolds(
@@ -1719,8 +1719,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ExecuteUpdateAsync(
                 setter =>
                     setter
-                        .SetProperty(x => x.ReconciledThroughUtc, recoveredThroughUtc)
-                        .SetProperty(x => x.NextDueUtc, nextDueUtc),
+                        .SetProperty(x => x.ReconciledThroughUtc, initialRecoveredThroughUtc)
+                        .SetProperty(x => x.NextDueUtc, initialNextDueUtc),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -1871,20 +1871,20 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 .ConfigureAwait(false);
         }
 
+        var finalRecoveredThroughUtc = resolution.ReconciledThroughUtc;
+        var finalNextDueUtc = resolution.NextDueUtc;
+
         // The fence above already wrote the full-recovery position, which is what WhenRunEstablished asks for. Only a
         // resolution that differs from it — a saturated page confined to its examined prefix — needs a second write.
-        if (resolution.ReconciledThroughUtc != recoveredThroughUtc || resolution.NextDueUtc != nextDueUtc)
+        if (finalRecoveredThroughUtc != initialRecoveredThroughUtc || finalNextDueUtc != initialNextDueUtc)
         {
-            recoveredThroughUtc = resolution.ReconciledThroughUtc;
-            nextDueUtc = resolution.NextDueUtc;
-
             await definitions
                 .Where(x => x.Id == cronJobId)
                 .ExecuteUpdateAsync(
                     setter =>
                         setter
-                            .SetProperty(x => x.ReconciledThroughUtc, recoveredThroughUtc)
-                            .SetProperty(x => x.NextDueUtc, nextDueUtc),
+                            .SetProperty(x => x.ReconciledThroughUtc, finalRecoveredThroughUtc)
+                            .SetProperty(x => x.NextDueUtc, finalNextDueUtc),
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -1896,8 +1896,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         {
             CoalescedRun = coalescedRun,
             SkippedOccurrenceCount = skippedCount,
-            ReconciledThroughUtc = recoveredThroughUtc,
-            NextDueUtc = nextDueUtc,
+            ReconciledThroughUtc = finalRecoveredThroughUtc,
+            NextDueUtc = finalNextDueUtc,
         };
     }
 

@@ -200,6 +200,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
     private void _RejectKeyedParent(Guid? parentId)
     {
+        // ReSharper disable once InconsistentlySynchronizedField -- _timeJobs is a ConcurrentDictionary; lock (_keyedOperations) coordinates compound index updates, not dictionary thread-safety.
         if (parentId is { } id && _timeJobs.TryGetValue(id, out var parent) && parent.BusinessKey is not null)
         {
             throw new InvalidOperationException(
@@ -220,6 +221,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             }
             JobIntentFingerprint.RejectOrdinaryMetadata(candidate);
             _RejectKeyedParent(candidate.ParentId);
+            // ReSharper disable once InconsistentlySynchronizedField -- _timeJobs is a ConcurrentDictionary; lock (_keyedOperations) coordinates compound index updates, not dictionary thread-safety.
             if (_timeJobs.TryGetValue(candidate.Id, out var stored))
             {
                 pending.Push(stored);

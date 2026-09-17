@@ -15,10 +15,10 @@ Headless multi-tenancy is built from these pieces:
 - `Headless.Core` supplies the default tenant-context implementations (`CurrentTenant`, `AsyncLocalCurrentTenantAccessor`, `NullCurrentTenant`, `TenantWriteGuardBypass`) that hold the current tenant in an `AsyncLocal` scope.
 - `Headless.MultiTenancy` provides the root `AddHeadlessTenancy(...)` composition surface, a shared, non-PII tenant posture manifest, and — opt-in via `.Catalog(...)` — the tenant catalog service, caching, error codes, and the in-memory and configuration-backed stores. See [Tenant Catalog](#tenant-catalog).
 - `Headless.MultiTenancy.Storage.EntityFramework` ships an EF Core-backed tenant store as a separate package so apps that only need in-memory or configuration stores take no EF dependency.
-- `Headless.Api.Core` resolves tenant context for HTTP requests via `UseHeadlessTenancy()` (claim-based, post-authentication) and, when a catalog is configured, via `UseHeadlessTenantCatalogResolution()` (identifier-based, pre-authentication). It can enforce tenant presence before endpoint execution through `.Authorization(auth => auth.RequireTenant())`.
+- `Headless.Api.Core` resolves tenant context for HTTP requests via `UseHeadlessTenancy()` (claim-based, post-authentication) and, when a catalog is configured, via `UseHeadlessTenantCatalogResolution()` (identifier-based, pre-authentication) with built-in host, route, and header identifier sources (`AddHostSource`, `AddRouteSource`, `AddHeaderSource`) plus a delegate shortcut. It can enforce tenant presence before endpoint execution through `.Authorization(auth => auth.RequireTenant())`.
 - `Headless.Messaging.Core` propagates tenant context across message publish/consume and can require tenant context on publish.
 - `Headless.Jobs.Core` persists a tenant on time jobs — capturing the ambient tenant at schedule time and restoring it around every execution attempt — and can require a tenant on enqueue. Cron stays system-scope.
-- `Headless.EntityFramework` reads `ICurrentTenant.Id` in global query filters for `IMultiTenant` entities and can opt in to a save-time tenant write guard.
+- `Headless.EntityFramework` reads `ICurrentTenant.Id` in global query filters for finalized tenant-owned metadata and can opt in to tenant validation and Added-transition stamping.
 - `Headless.Permissions.Core` scopes permission grant cache keys by tenant via `ScopedCache<PermissionGrantCacheItem>`.
 
 For tenant-aware hosts, the recommended setup is:
@@ -58,10 +58,11 @@ app.UseAuthorization();
 - The default claim type is `tenant_id`. Override it with `ResolveFromClaims(options => options.ClaimType = "...")` only when your identity system uses a different claim name.
 - Mint the tenant claim only on principals that are actually scoped to a tenant. Host-level, admin, service-account, or cross-tenant principal types should not carry the claim — `ICurrentTenant.IsAvailable` stays false for them by design.
 - When no tenant claim is present, the middleware intentionally skips `Change(null)`. This preserves the distinction between "never set" and "explicitly null".
-- For EF Core, inherit from `HeadlessDbContext` and let the built-in model processor apply tenant filters to `IMultiTenant` entities.
-- Declare `IMultiTenant` on aggregates owned by exactly one tenant. Keep platform-level entities (cross-tenant infrastructure, audit/outbox rows, shared catalogs, materialized cross-tenant projections) outside the filter. See [Entity Ownership](#entity-ownership).
+- For EF Core, declare `IsTenantOwned()` after the base model call or use default `IMultiTenant` ownership. Keep platform-level entities outside tenant ownership. See [Entity Ownership](#entity-ownership).
+- Use fresh context and Identity store/manager scopes across tenant changes; `FindAsync` can return tracked entities without executing filters. Register the guard for metadata-only Added stamping, or supply tenant values before tracking.
+- Raw SQL requires explicit tenant predicates and authorization. `BeginBypass()` has no effect on raw SQL and never removes SQL predicates or database constraints from tracked writes.
 - When using `IgnoreMultiTenancyFilter()`, add an inline `// MULTI-TENANCY-BYPASS: <reason>` comment naming the approved scenario (cross-tenant snapshot, admin lookup, system maintenance, etc.) so reviewers and post-incident readers can distinguish legitimate bypasses from drift.
-- Enable strict EF tenant writes with `.EntityFramework(ef => ef.GuardTenantWrites())` or the lower-level `services.AddHeadlessTenantWriteGuard()` when tenant-owned saves must fail without a matching tenant context.
+- Enable strict EF tenant writes with `.EntityFramework(ef => ef.GuardTenantWrites())` when tenant-owned saves must fail without a matching tenant context.
 - Use `ITenantWriteGuardBypass.BeginBypass()` only around intentional admin or host-level writes. `IgnoreMultiTenancyFilter()` affects reads only; it does not bypass guarded writes.
 - Permission cache scoping depends on `ICurrentTenant.Id`. Host-level operations with no tenant use the shared `t:` scope by design.
 - For background jobs, adopt the Jobs tenancy seam (`.Jobs(jobs => jobs.PropagateTenant().RequireTenantOnEnqueue())`) so time jobs capture the ambient tenant at schedule time and restore it around every execution attempt. Cron is always system-scope: fan out one explicit-tenant time job per tenant from application code — see [Background Jobs](#background-jobs).
@@ -76,7 +77,11 @@ app.UseAuthorization();
 - Do not add per-tenant application configuration to `TenantInfo.ExtraProperties` or a queryable column just because it is convenient. If a value needs to be queried or indexed, it belongs in Settings/Features/Permissions keyed by the canonical tenant id, or in a typed column of your own `ITenantStore` implementation — never in the catalog's read-along bag.
 - Register a caching provider in any host that configures `.Catalog(...)`. `Headless.MultiTenancy` references only `Headless.Caching.Abstractions`, and the open-generic `ICache<>` implementation ships with a provider package, so `AddHeadlessCaching(caching => caching.UseInMemory())` (or `UseRedis` / `UseHybrid`) is a hard prerequisite rather than an optimization. The requirement is declared with `RequireRegisteredService` and fails host startup when unmet, in every environment. It applies to accessor-only hosts too, because `ICurrentTenantInfo` reads go through the same caches as identifier resolution.
 - Rate-limit the pre-authentication identifier path in the application or at the edge. Every unauthenticated request can reach `ITenantCatalogService.ResolveAsync`, and negative caching only blunts repeated probes of the *same* unknown identifier: rotating through distinct identifiers costs one store read each. The framework enforces no bound on that traffic class by design. See [DoS and rate limiting](#dos-and-rate-limiting).
-- Return `null` from `ITenantIdentifierSource.GetIdentifier` when a source has no identifier for the request, and keep the implementation synchronous and side-effect free. Empty and whitespace-only returns are treated the same as `null` so later registered sources still run, which matters because `Request.Headers["X-Tenant-Id"].ToString()` yields `""` rather than `null` when the header is absent. Do not normalize, trim, or shape-validate inside a source; the catalog service owns all of that, and duplicating it there produces a value the catalog will normalize again.
+- Prefer the built-in identifier sources (`AddHostSource`, `AddRouteSource`, `AddHeaderSource`) or the `AddSource(Func<HttpContext, string?>)` delegate over a custom `ITenantIdentifierSource`; write a class only when a source must report an ambiguous input. A custom source returns `TenantIdentifierSourceResult`: `None` when it has no identifier for the request (later sources still run), `Found(value)` when it has one (`Found` normalizes `null`, empty, and whitespace-only values to `None`, which matters because `Request.Headers["X-Tenant"].ToString()` yields `""` rather than `null` when the header is absent), and `Invalid` when the input is present but ambiguous — `Invalid` rejects the request with 400 `g:tenant_identifier_invalid` before any catalog call, and later sources never run. Keep the implementation synchronous and side-effect free. Do not normalize, trim, or shape-validate inside a source; the catalog service owns all of that, and duplicating it there produces a value the catalog will normalize again. See [Source contract](#source-contract).
+- Register identifier sources in the order they should win: sources run in first-registration order and the first `Found` result ends the search. Register the host source before a header source wherever hostnames carry perimeter controls (WAF rules, mTLS policies, IP allowlists, CDN configuration) — a header source lets a caller select any enabled tenant while presenting another tenant's hostname. See [Header source and perimeter controls](#header-source-and-perimeter-controls).
+- Ahead of `UseHeadlessTenantCatalogResolution()`, place `UseForwardedHeaders()` with `KnownProxies` or `KnownNetworks` configured when the app sits behind a proxy, host filtering with `AllowedHosts` scoped to the tenant suffix, and `UseCors()` so preflights short-circuit before resolution runs. The host source reads the post-forwarding `Request.Host` and never `X-Forwarded-Host`. See [Hardening the pre-auth path](#hardening-the-pre-auth-path).
+- Keep ignored identifiers (for example `www`) on `TenantCatalogOptions.IgnoredIdentifiers`; there is no per-source list. An ignored identifier, an apex host, and an unmatched host all fall through to host context with no store call, so endpoints that need a tenant must sit under `TenantRequirement` in `DefaultPolicy` or `FallbackPolicy`.
+- A whole-host template (a bare `{tenant}`, for custom domains) needs `MaxIdentifierLength = 253` and an `IdentifierPattern` shaped for hostnames that carries a match timeout. Both settings are catalog-wide, so mixing a subdomain source with a custom-domain source relaxes the subdomain shape too. See [Whole-host identifiers](#whole-host-custom-domain-identifiers).
 
 ## Core Concepts
 
@@ -149,7 +154,7 @@ app.UseAuthorization();
 
 `UseHeadlessTenancy()` reads the shared tenant posture manifest and applies HTTP tenant resolution only when HTTP tenancy was configured. It marks the middleware slot as applied so startup validation can fail fast when HTTP tenancy was configured but the middleware was omitted.
 
-`UseTenantResolution()` remains as a lower-level compatibility API. It reads the authenticated principal and:
+The middleware applied by `UseHeadlessTenancy()` reads the authenticated principal and:
 
 - Uses `tenant_id` by default
 - Uses `MultiTenancyOptions.ClaimType` when configured
@@ -159,6 +164,8 @@ app.UseAuthorization();
 ## Skipping Tenant Resolution
 
 Apply `[SkipTenantResolution]` or `.SkipTenantResolution()` to opt an endpoint, route group, or MVC controller/action out of HTTP claim extraction. `TenantResolutionMiddleware` still marks the request as processed (`HeadlessTenancyResolutionApplied`) but returns immediately without calling `ICurrentTenant.Change(...)` — if no other resolver runs, `ICurrentTenant.Id` stays unset and `IsAvailable` stays false for the entire request.
+
+The same metadata opts the endpoint out of catalog identifier resolution: `TenantCatalogResolutionMiddleware` skips both resolution and rejection for a skip-marked endpoint, so it never answers with a tenant rejection even when the request carries an unknown or ambiguous identifier.
 
 This marker is HTTP-layer only — Mediator tenant guards, EF write guards, and messaging publish guards still enforce `ICurrentTenant.Id`. A handler running under this marker that calls a tenant-required downstream service will still throw `MissingTenantContextException`.
 
@@ -200,7 +207,7 @@ app.MapGet("/webhook", (ICurrentTenant t) => Results.Ok()).SkipTenantResolution(
 
 For endpoints that may or may not carry a tenant claim depending on the caller, `[AllowMissingTenant]` is the right choice — it runs extraction and simply permits the authorization requirement to pass when no claim is found.
 
-**Ordering requirement** — `UseHeadlessTenancy()` (or the lower-level `UseTenantResolution()`) must run after `UseRouting()` so endpoint metadata is available when the middleware checks for `[SkipTenantResolution]`. Without that ordering, `HttpContext.GetEndpoint()` returns `null` and the skip marker silently has no effect — claim extraction runs as if the marker were absent. The recommended `UseAuthentication() -> UseHeadlessTenancy() -> UseAuthorization()` pipeline already satisfies this when `WebApplication` auto-injects routing for you, but consumers calling `UseRouting()` explicitly must place it before `UseHeadlessTenancy()`.
+**Ordering requirement** — `UseHeadlessTenancy()` must run after `UseRouting()` so endpoint metadata is available when the middleware checks for `[SkipTenantResolution]`. Without that ordering, `HttpContext.GetEndpoint()` returns `null` and the skip marker silently has no effect — claim extraction runs as if the marker were absent. The recommended `UseAuthentication() -> UseHeadlessTenancy() -> UseAuthorization()` pipeline already satisfies this when `WebApplication` auto-injects routing for you, but consumers calling `UseRouting()` explicitly must place it before `UseHeadlessTenancy()`.
 
 ## HTTP Failure Mapping
 
@@ -316,7 +323,7 @@ The HTTP middleware preserves state `1` when there is no tenant claim. It does n
 The tenant catalog is opt-in (R5): a host that never calls `.Catalog(...)` behaves exactly as it did before the catalog existed. Configuring a catalog is two independent decisions:
 
 1. **Metadata access** — `.Catalog(...)` alone makes `ICurrentTenantInfo` resolve `TenantInfo` for whatever tenant is already ambient (typically via claim resolution). This is a valid, non-failing posture (`catalog-accessor`).
-2. **Identifier-based resolution** — `Headless.Api.Core`'s `.Http(http => http.ResolveFromCatalog(...))` plus `app.UseHeadlessTenantCatalogResolution()` additionally resolves the ambient tenant from a public identifier before authentication runs (`catalog-resolution`). This requires a store to be configured, an identifier source registered, and `app.UseStatusCodesRewriter()` in the pipeline; enabling it without any of the three fails startup (R18) — the last with `CATALOG_RESOLUTION_WITHOUT_REWRITER`, because the rewriter is what writes the R19 mismatch rejection.
+2. **Identifier-based resolution** — `Headless.Api.Core`'s `.Http(http => http.ResolveFromCatalog(...))` plus `app.UseHeadlessTenantCatalogResolution()` additionally resolves the ambient tenant from a public identifier before authentication runs (`catalog-resolution`). This requires a store to be configured, at least one identifier source registered (a built-in `AddHostSource` / `AddRouteSource` / `AddHeaderSource`, a delegate, or a custom `ITenantIdentifierSource`), and `app.UseStatusCodesRewriter()` in the pipeline; enabling it without any of the three fails startup (R18) — the last with `CATALOG_RESOLUTION_WITHOUT_REWRITER`, because the rewriter is what writes the R19 mismatch rejection.
 
 Both decisions share one prerequisite: **a caching provider must be registered**. `TenantCatalogService` resolves the identifier→id and id→`TenantInfo` caches as `ICache<T>` constructor dependencies, and `Headless.MultiTenancy` references only `Headless.Caching.Abstractions` — the open-generic `ICache<>` implementation comes from `Headless.Caching.InMemory`, `.Redis`, or `.Hybrid`. Configuring a store without calling `AddHeadlessCaching(...)` fails startup with a `MissingRequiredServiceException` from `Headless.Hosting`'s shared required-service check; this applies to accessor-only hosts too, because `ICurrentTenantInfo` reads go through the same service and the same caches.
 
@@ -352,34 +359,40 @@ No HTTP pipeline change is required for this — `TenantResolutionMiddleware` (t
 
 ```csharp
 using Headless.MultiTenancy; // TenantInfo, Catalog(...)
-using Headless.Api;          // ResolveFromCatalog(...), UseHeadlessTenantCatalogResolution()
-
-// v1 ships no built-in ITenantIdentifierSource — implement one for your resolution strategy
-// (host label, route segment, header, ...). Synchronous, side-effect free; return null when this
-// request carries no identifier for this source.
-public sealed class HostLabelTenantIdentifierSource : ITenantIdentifierSource
-{
-    public string? GetIdentifier(HttpContext context) => context.Request.Host.Host.Split('.')[0];
-}
+using Headless.Api;          // ResolveFromCatalog(...), AddHostSource(...), UseHeadlessTenantCatalogResolution()
 
 builder.AddHeadlessTenancy(tenancy =>
 {
     tenancy
-        .Catalog(catalog => catalog.UseInMemory(options => options.Tenants.Add(/* ... */)))
-        .Http(http => http.ResolveFromCatalog(resolution => resolution.AddSource<HostLabelTenantIdentifierSource>()));
+        .Catalog(catalog =>
+            catalog
+                .Configure(options => options.IgnoredIdentifiers.Add("www")) // www.example.com -> host context
+                .UseInMemory(options => options.Tenants.Add(/* ... */))
+        )
+        .Http(http =>
+            http.ResolveFromCatalog(sources =>
+                sources
+                    .AddHostSource("{tenant}.example.com") // acme.example.com -> "acme"
+                    .AddRouteSource()                      // /{tenant}/orders  -> route value "tenant"
+                    .AddHeaderSource()                     // X-Tenant: acme
+                    .AddSource(context => context.Request.Query["tenant"].ToString()) // null/blank -> not mine
+            )
+        );
 });
 
 var app = builder.Build();
 
+app.UseForwardedHeaders();                // behind a proxy only, with KnownProxies/KnownNetworks configured
 app.UseStatusCodesRewriter();             // must wrap UseAuthorization() — writes the R19 mismatch rejection
 app.UseRouting();
+app.UseCors();                            // before resolution so preflights short-circuit
 app.UseHeadlessTenantCatalogResolution(); // after UseRouting, before UseAuthentication
 app.UseAuthentication();
 app.UseHeadlessTenancy();                 // unchanged: after UseAuthentication, before UseAuthorization
 app.UseAuthorization();
 ```
 
-`Headless.Api.ServiceDefaults`' `app.UseHeadless()` already registers the rewriter in the right slot, so call `UseStatusCodesRewriter()` explicitly only on hosts that do not use ServiceDefaults — or that turned `HeadlessServiceDefaultsOptions.UseStatusCodePages` off, which also suppresses the rewriter.
+`Headless.Api.ServiceDefaults`' `app.UseHeadless()` already registers `UseForwardedHeaders()` and the rewriter in the right slots, so call them explicitly only on hosts that do not use ServiceDefaults — or that turned `HeadlessServiceDefaultsOptions.UseStatusCodePages` off, which also suppresses the rewriter.
 
 **Middleware ordering contract** — `UseHeadlessTenantCatalogResolution()` and `UseHeadlessTenancy()` occupy different, non-interchangeable pipeline slots:
 
@@ -388,7 +401,92 @@ app.UseAuthorization();
 | `UseHeadlessTenantCatalogResolution()` | After `UseRouting()`, before `UseAuthentication()` | Public identifier (`ITenantIdentifierSource`), via the catalog |
 | `UseHeadlessTenancy()` (`TenantResolutionMiddleware`) | After `UseAuthentication()`, before `UseAuthorization()` | Authenticated JWT tenant claim |
 
-The identifier middleware must run before authentication because the identifier itself often determines *which* tenant's authentication configuration applies. Placing it before `UseRouting()` means `[SkipTenantResolution]` endpoint metadata is not yet resolvable — the middleware logs a once-per-process warning and no-ops rather than guessing. Both middlewares can be active in the same pipeline: when they are, a request carrying both a resolved identifier and an authenticated tenant claim must canonicalize to the same tenant (R19) — see below.
+The identifier middleware must run before authentication because the identifier itself often determines *which* tenant's authentication configuration applies. Placing it before `UseRouting()` does not disable resolution: sources that read the raw request (host, header, delegate) still resolve, unknown and disabled identifiers are still rejected, and R19 still applies — what is lost is the `[SkipTenantResolution]` opt-out, which the middleware reports through a once-per-process `HEADLESS_TENANT_CATALOG_MIDDLEWARE_ORDERING` warning. A registered route source finds nothing when misordered, because route values only exist after routing has matched, so every request runs as host context and the event escalates to the Error-level `HEADLESS_TENANT_CATALOG_ROUTE_SOURCE_MISORDERED` instead. Both events are best-effort diagnostics, not gates: they fire only after routing downstream assigns an endpoint, so a misordered host whose requests all 404 or all reject never logs. Both middlewares can be active in the same pipeline: when they are, a request carrying both a resolved identifier and an authenticated tenant claim must canonicalize to the same tenant (R19) — see below.
+
+#### Source contract
+
+`ITenantIdentifierSource.GetIdentifier(HttpContext)` returns a `TenantIdentifierSourceResult` (a readonly record struct whose `default` is `None`):
+
+| Result | Meaning | Middleware behavior |
+|---|---|---|
+| `TenantIdentifierSourceResult.None` | This source has no identifier for the request | Continue with the next registered source; if every source returns `None`, the request runs as host context with no store call |
+| `TenantIdentifierSourceResult.Found(identifier)` | A raw identifier was read | Stop; the catalog normalizes, shape-validates, and resolves it. A `null`, empty, or whitespace-only value normalizes to `None` at construction |
+| `TenantIdentifierSourceResult.Invalid` | The input is present but ambiguous (for example two `X-Tenant` values) | Reject immediately with 400 `g:tenant_identifier_invalid` before any catalog call; later sources never run |
+
+Sources never trim, lowercase, or shape-validate — `ITenantCatalogService` owns all of that. A custom source written against the earlier `string?` contract migrates in one line: return `TenantIdentifierSourceResult.Found(value)` instead of the string and `TenantIdentifierSourceResult.None` instead of `null`.
+
+`AddSource(Func<HttpContext, string?>)` wraps a delegate in `DelegateTenantIdentifierSource`: a `null` or blank return is `None`, exceptions propagate unchanged (like a store fault, never mapped to a tenant outcome), and a delegate cannot express `Invalid` — implement the interface for that.
+
+`[SkipTenantResolution]` / `.SkipTenantResolution()` bypasses both resolution and rejection for the marked endpoint.
+
+#### Built-in sources
+
+**Host** — `AddHostSource("{tenant}.example.com")`, `AddHostSource(options => options.Templates.Add("{tenant}.*.example.com"))`, or `AddHostSource(configuration.GetSection("Tenant:Host"))` (a section with a `Templates` array). `HostTenantIdentifierSourceOptions.Templates` are matched in order against the request host and the first match yields its `{tenant}` capture. Template grammar: dot-separated labels where `{tenant}` captures exactly one label, `?` matches exactly one label, `*` matches zero or more labels, every other label is a literal, and a bare `{tenant}` matches the whole host (see [Whole-host identifiers](#whole-host-custom-domain-identifiers)). Matching is case-insensitive, excludes the port, and strips one trailing dot; IP literals and hosts longer than 253 characters yield `None`. Templates are validated at startup — an empty list or an unparsable template fails the host. Each template compiles once to a non-backtracking regex carrying the shared 100 ms `RegexPatterns.MatchTimeout`; a timeout, which the non-backtracking engine makes practically unreachable, maps to `Invalid` plus a once-per-process `HEADLESS_TENANT_HOST_TEMPLATE_TIMEOUT` warning that names the template only, never the host. The source reads the post-forwarding `Request.Host`, never `X-Forwarded-Host`.
+
+**Route** — `AddRouteSource()`, `AddRouteSource("org")`, `AddRouteSource(options => ...)`, or `AddRouteSource(configuration.GetSection("Tenant:Route"))` (a section with a `RouteValueName` key). Reads the string route value named by `RouteTenantIdentifierSourceOptions.RouteValueName` (default `tenant`, `RouteTenantIdentifierSourceOptions.DefaultRouteValueName`) from `Request.RouteValues`; a missing or non-string value is `None` — a typed route default is never coerced. A blank name fails startup. The middleware must run after `UseRouting()` for this source to see anything: misordered, it finds nothing and the middleware logs the Error-level `HEADLESS_TENANT_CATALOG_ROUTE_SOURCE_MISORDERED` event once per process (best-effort — see the ordering contract above). Every `AddRouteSource` overload also wraps the routing `LinkGenerator` once so generated links keep the tenant segment — see [Link generation with the route source](#link-generation-with-the-route-source).
+
+**Header** — `AddHeaderSource()`, `AddHeaderSource("X-Legacy")`, `AddHeaderSource(options => ...)`, or `AddHeaderSource(configuration.GetSection("Tenant:Header"))` (a section with a `HeaderNames` array). Reads `HeaderTenantIdentifierSourceOptions.HeaderNames`, default `X-Tenant` (`HeaderTenantIdentifierSourceOptions.DefaultHeaderName` — deliberately not `X-Tenant-Id`, because the value is a public identifier, never a tenant id). A requested name replaces the untouched default and appends afterwards: `AddHeaderSource("X-Legacy")` reads only `X-Legacy`, while `AddHeaderSource("X-Tenant").AddHeaderSource("X-Legacy")` reads both; a configuration bind that lists names follows the same rule, and a section without `HeaderNames` keeps the default. All configured names share one duplicate-detection scope: exactly one non-blank value across them is the identifier, and any second non-blank value (a repeated line, or two names both present) is `Invalid`; a blank line counts as absent, and a name listed more than once (case-insensitively) is read once. A single header line `a,b` is one value that reaches the catalog unchanged. Every consult — whatever its outcome — appends each configured name to the response `Vary` header. Names are validated at startup as HTTP tokens.
+
+#### Ordering and composition
+
+Sources run in first-registration (service-collection insertion) order and the first `Found` wins. `AddSource<T>()` and the built-in registrations deduplicate by type: a second registration of the same type keeps the first position and adds no second source, while every call's options contribution still applies (`AddHostSource("{tenant}.a.com").AddHostSource("{tenant}.b.com")` yields one host source matching both). `AddSource(instance)` and `AddSource(Func<HttpContext, string?>)` always append — two instances of one type both run.
+
+In a composed host the library that registers first wins the slot:
+
+```csharp
+// Shared library, called first: registers the header source.
+sources.AddHeaderSource();
+
+// Application code, called afterwards.
+sources.AddHostSource("{tenant}.example.com");
+
+// Result: header first, host second. To make the host source win, register it before the library's
+// registration runs — the position is fixed by the first call for that source type.
+```
+
+#### Ignored identifiers and apex hosts
+
+Ignored identifiers live on `TenantCatalogOptions.IgnoredIdentifiers` and apply to every source — there is no per-source list. With `{tenant}.example.com` and `IgnoredIdentifiers = ["www"]`, a request to `www.example.com` ends resolution as host context with no store call. An apex host (`example.com`) and any host no template matches yield `None` from the host source and likewise fall through to host context. Endpoints that need a tenant must therefore sit under `TenantRequirement` (`DefaultPolicy` or `FallbackPolicy`); resolution alone never requires one.
+
+#### Whole-host (custom domain) identifiers
+
+A bare `{tenant}` template captures the entire host, dots included (`shop.acme-corp.com`). The catalog's default identifier shape rejects that by design — `MaxIdentifierLength` is 63 and `IdentifierPattern` is the DNS-label slug — so whole-host templates require overriding both on the catalog options: raise `MaxIdentifierLength` to 253 and replace `IdentifierPattern` with a hostname-shaped regex that carries a match timeout (startup rejects `Regex.InfiniteMatchTimeout`):
+
+```csharp
+tenancy.Catalog(catalog =>
+    catalog.Configure(options =>
+    {
+        options.MaxIdentifierLength = 253;
+        options.IdentifierPattern = new Regex(
+            @"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$", // consumer-owned shape
+            RegexOptions.None,
+            TimeSpan.FromMilliseconds(100)
+        );
+    })
+);
+```
+
+These settings are catalog-wide: mixing a subdomain source with a custom-domain source relaxes the subdomain shape too, because the same pattern validates every identifier whatever source produced it. Hostile identifier cardinality on this wider shape is bounded by negative caching (`UnknownIdentifierCacheExpiration`) plus the consumer's rate limiting — see [DoS and rate limiting](#dos-and-rate-limiting).
+
+#### Hardening the pre-auth path
+
+- Every rejection written by the catalog path (unknown, disabled, invalid, R19 mismatch) carries `Cache-Control: no-store`, so a shared cache never serves a 404 rejection to the next caller.
+- Behind a proxy, `UseForwardedHeaders()` with `KnownProxies` or `KnownNetworks` configured must run before the catalog middleware, and host filtering (`AllowedHosts`) should be scoped to the tenant suffix. The host source reads the post-forwarding `Request.Host` and never `X-Forwarded-Host` directly, so an unconfigured proxy cannot smuggle a host and a forged `X-Forwarded-Host` is ignored.
+- `UseCors()` must run before the catalog middleware so preflight requests short-circuit instead of being tenant-resolved or rejected.
+- No tenancy log event carries a raw host, route value, header value, or identifier; the misorder and timeout events name the source type and, for timeouts, the operator-supplied template only, and each fires once per process so it cannot be used to flood logs.
+- CDN caveats: host and route tenancy rely on the URL — including the host — being the cache key, so a CDN cache key that omits the host serves one tenant's response to another; and many CDNs refuse to cache responses that vary on unknown headers, so a header source's `Vary: X-Tenant` may disable caching at the edge.
+
+#### Header source and perimeter controls
+
+Under the catalog model a header can only select an existing enabled tenant, and R19 rejects an authenticated caller whose tenant claim disagrees with the header-selected tenant. What a header does bypass is any control bound to a tenant's hostname — a WAF rule, an mTLS policy, an IP allowlist, or a CDN configuration attached to `acme.example.com` — because the caller can present one tenant's hostname while selecting another with the header. Where hostnames carry such controls, register the host source first so the hostname decides, or strip or overwrite the tenant header at the edge.
+
+R19 has limits: a principal with no tenant claim passes a source-selected tenant unchecked, as does any endpoint where authorization never runs (`[AllowAnonymous]`, or a policy-less endpoint without a fallback policy). The remedy is to map such credentials (service accounts, API keys) to a tenant claim so R19 applies; such endpoints must not derive authorization from the ambient tenant.
+
+#### Link generation with the route source
+
+ASP.NET Core drops a leading `{tenant}` segment on most link-generation surfaces: it discards every ambient route value once a required value (controller, action, page) differs from the current request, so `Url.Action` and `LinkGenerator.GetPathByAction` lose the tenant when linking to another action, and the endpoint-name scheme (`GetPathByName`) passes no ambient values at all — only `GetPathByRouteValues` kept it. Registering the route source therefore wraps the routing `LinkGenerator` once (`TenantAmbientRouteValueLinkGenerator`) so those surfaces keep the current request's tenant segment: the value named by `RouteValueName` is promoted from the request into the explicit values. An explicit `tenant` value always wins, so a link to a different tenant is unaffected. Opt out with `RouteTenantIdentifierSourceOptions.PromoteAmbientRouteValue = false`; the switch is read per call, so it works through any `AddRouteSource` overload including an `IConfiguration` bind.
+
+Two consequences to know: a link generated from a tenant request to an endpoint that has no `{tenant}` segment carries the promoted value as a query string (`/plain?tenant=acme`), because ASP.NET Core appends explicit values the target template cannot bind; and a link generated from a request with no tenant segment to a tenant endpoint returns `null` unless an explicit value is supplied — there is nothing ambient to promote.
 
 ### Mismatch enforcement (R19)
 
@@ -413,9 +511,11 @@ Identifier resolution outcomes map to ProblemDetails per this table (`TenantCata
 | Disabled tenant | 404, `g:tenant_resolution_failed` (byte-identical to Unknown) | 403, `g:tenant_disabled` |
 | Identifier/claim mismatch (R19) | 404, `g:tenant_resolution_failed` (byte-identical to Unknown/Disabled) | 403, `g:tenant_identifier_mismatch` |
 | Invalid identifier shape | 400, `g:tenant_identifier_invalid` (always, regardless of the option) | same |
-| Ignored identifier (`IgnoredIdentifiers`) | not a rejection — resolution continues with no tenant, store never called | same |
+| Ambiguous source input (`TenantIdentifierSourceResult.Invalid`, for example two `X-Tenant` values) | 400, `g:tenant_identifier_invalid`, written before any store call | same |
+| Ignored identifier (`IgnoredIdentifiers`) | not a rejection — resolution continues as host context, store never called | same |
+| No source found an identifier (apex host, unmatched host, absent header) | not a rejection — host context, store never called | same |
 
-Store faults during resolution (an `ITenantStore` implementation throwing) are never mapped to a tenant code — they propagate as ordinary unhandled exceptions (typically a 500). A cache read or write fault degrades to a miss/no-op so the store-derived outcome is unaffected.
+Every rejection in this table carries `Cache-Control: no-store`. Store faults during resolution (an `ITenantStore` implementation throwing) are never mapped to a tenant code — they propagate as ordinary unhandled exceptions (typically a 500). A cache read or write fault degrades to a miss/no-op so the store-derived outcome is unaffected.
 
 ### Migration Guidance
 
@@ -423,7 +523,7 @@ Apps that start with claim-direct resolution (`.Http(http => http.ResolveFromCla
 
 1. **Nothing breaks by not migrating.** The catalog is opt-in end to end (R5) — skip this section until you actually need identifier-based resolution or centralized tenant metadata.
 2. **Add metadata access first, independently of resolution.** Call `.Catalog(catalog => catalog.UseInMemory(...) / .UseConfiguration(...) / .UseEntityFramework<TContext>())` with no `.ResolveFromCatalog(...)`. `ICurrentTenantInfo` starts resolving real data for claim-resolved tenants immediately; nothing else in the pipeline changes.
-3. **Add identifier-based resolution when you need it** (custom domains, subdomain-per-tenant routing, an unauthenticated pre-login tenant lookup): implement `ITenantIdentifierSource` for your strategy, call `.Http(http => http.ResolveFromCatalog(resolution => resolution.AddSource<TSource>()))`, add `app.UseHeadlessTenantCatalogResolution()` after `UseRouting()` and before `UseAuthentication()`, and make sure `app.UseStatusCodesRewriter()` wraps `UseAuthorization()` (ServiceDefaults' `UseHeadless()` already does).
+3. **Add identifier-based resolution when you need it** (custom domains, subdomain-per-tenant routing, an unauthenticated pre-login tenant lookup): register a built-in source (`AddHostSource("{tenant}.example.com")`, `AddRouteSource()`, `AddHeaderSource()`), a delegate (`AddSource(context => ...)`), or a custom `ITenantIdentifierSource` through `.Http(http => http.ResolveFromCatalog(sources => sources.AddSource<TSource>()))`; add `app.UseHeadlessTenantCatalogResolution()` after `UseRouting()` and before `UseAuthentication()`, put `UseForwardedHeaders()`, host filtering, and `UseCors()` ahead of it, and make sure `app.UseStatusCodesRewriter()` wraps `UseAuthorization()` (ServiceDefaults' `UseHeadless()` already does). A custom source written against the earlier `string?` contract migrates in one line — return `TenantIdentifierSourceResult.Found(value)` / `TenantIdentifierSourceResult.None` instead of the string / `null`.
 4. **R19 mismatch enforcement activates automatically** with `ResolveFromCatalog(...)` — it also registers `IHttpContextAccessor` — and applies to any request that carries both a resolved identifier and a tenant claim, including on catalog-only hosts that never call `ResolveFromClaims()`. No extra wiring is needed, and there is no behavior change for hosts that resolve tenants only from claims.
 5. **Choose a store per [Choosing a Tenant Catalog Store](#choosing-a-tenant-catalog-store)** — starting with in-memory or configuration and moving to EF Core later is a same-shape swap (`UseInMemory` → `UseEntityFramework<TContext>()`); the catalog service, caching, and HTTP wiring do not change.
 
@@ -433,29 +533,38 @@ The pre-auth identifier-resolution path is reachable by unauthenticated callers 
 
 ## EF Core Integration
 
-`Headless.EntityFramework` applies tenant-aware global filters for `IMultiTenant` entities through its model conventions. To participate:
+`Headless.EntityFramework` finalizes tenant ownership after application model configuration. To participate:
 
 - Inherit from `HeadlessDbContext`
 - Call `base.OnModelCreating(modelBuilder)`
-- Ensure your entity implements `IMultiTenant`
+- Declare `IsTenantOwned()` on the entity builder, or use the default ownership inferred from `IMultiTenant`
 
-With tenant resolution active, queries automatically filter on `TenantId == ICurrentTenant.Id`. The filter is wired by `HeadlessDbContextRuntime._ConfigureQueryFilters` and registered under the constant `HeadlessQueryFilters.MultiTenancyFilter` (whose literal string value is `"MultiTenantFilter"`). Because `IQueryable<T>.ExecuteUpdate(...)` and `IQueryable<T>.ExecuteDelete(...)` consume the same `IQueryable<T>`, bulk update and bulk delete inherit the tenant predicate and are scoped to the current tenant by default. Per-query opt-out is `IgnoreMultiTenancyFilter()`, which audit-logs the bypass via `HeadlessQueryFilters._LogFilterBypassed`.
+Queries compare the mapped or shadow tenant property with the active `ICurrentTenant.Id`. The named filter is `HeadlessQueryFilters.MultiTenancyFilter` (literal `"MultiTenantFilter"`); existing application filters remain. `ExecuteUpdate` and `ExecuteDelete` inherit the query predicate, but bypass the `SaveChanges` guard and generated concurrency predicates. `IgnoreMultiTenancyFilter()` bypasses the filter for that query.
 
 ### Entity Ownership
 
-The decision of whether an entity declares `IMultiTenant` is per-aggregate and load-bearing — it controls whether the global query filter and (if enabled) the write guard cover it.
+Ownership is a root-level model policy that controls query filters, optional write validation, and tenant SQL concurrency predicates.
 
-- **Tenant-owned aggregates** (rows whose lifetime and visibility belong to exactly one tenant) declare `: IMultiTenant`. Headless then scopes reads, `ExecuteUpdate`, `ExecuteDelete`, and guarded saves automatically.
+- Tenant-owned aggregates use `IsTenantOwned(propertyName = "TenantId")` or implement `IMultiTenant`. Explicit `IsNotTenantOwned()` excludes a root even when it implements the interface. New metadata-only roots require a tenant; existing interface nullability is preserved outside Identity opt-in.
 - **Platform-level entities** do not declare `IMultiTenant`. These cover cross-tenant infrastructure (outbox rows, audit log events, system schedules), shared catalogs (vendor / product / lookup tables that span tenants), and materialized cross-tenant read models or crosswalks. Filtering them per-tenant would either hide rows from legitimate readers or force every consumer to bypass the filter.
 - **The entity that defines the tenant boundary itself** — the row whose `Id` is the `TenantId` — is a deliberate special case. Marking it `IMultiTenant` forces every lookup through `ICurrentTenant`, which usually breaks admin and bootstrap paths (tenant onboarding, support tooling, cross-tenant administration). Treat this as a deferred design decision; protect those rows with admin-policy authorization rather than the query filter unless you have an explicit reason to do otherwise.
 
-When retrofitting `IMultiTenant` onto an existing entity, ship the type change and the schema change in the same PR. The EF migration must:
+Declare ownership after `base.OnModelCreating(modelBuilder)`. Shared-row and JSON owned graphs inherit root policy. Keyless/shared CLR types, TPT/TPC, table fragments, separate roots sharing a table, and separately stored owned graphs are rejected. Select unique indexes with `IsTenantScoped()` to append the tenant once in ascending order; ordinary primary keys and unselected indexes stay unchanged. See [ORM tenant ownership](orm.md#tenant-ownership) for APIs and examples.
 
-1. Add a `TenantId` column as `NOT NULL` using the same width as the rest of your tenancy schema (e.g., `text` for free-form IDs, `varchar(N)` when fixed-length parity matters for joins or indexes).
-2. Backfill `TenantId` in the same migration from the existing owning-tenant relationship, so the `NOT NULL` constraint can be enforced atomically.
-3. Add a covering index shaped like `(TenantId, ...existing-key-columns)` so the new filter predicate does not regress existing query plans.
+Consumers configure tenant column types, conversions, collations, and database validation in their own EF model and migrations. Headless does not choose a collation, add tenant-ID check constraints, or reject trailing spaces. It preserves supplied IDs without trimming or normalization. The write guard compares IDs ordinally in memory; queries, concurrency predicates, unique indexes, and foreign keys use database equality. Consumers must ensure that distinct canonical IDs remain distinct under that equality and that storage conversions preserve identity.
 
-Splitting these across PRs leaves the entity in a state where the query filter is active but the column is missing or unindexed, which manifests as runtime exceptions or sequential scans rather than a clean failure.
+Consumers own schema rollout for both new metadata ownership and affected existing `IMultiTenant` columns:
+
+1. Add new tenant columns as nullable.
+2. Backfill from verified ownership relationships. Do not assign a silent default tenant.
+3. Validate tenant identity, equality, lengths, the application's ID format, duplicate names within a tenant, and parent-child tenant consistency.
+4. Apply required columns, consumer-configured storage rules, alternate keys, composite foreign keys, and selected unique indexes as applicable before enabling the new model.
+
+Existing interface columns gain tenant concurrency-token metadata without forced changes to their types, collations, or check constraints. Review generated migrations for every affected provider. No backfill or migration runs automatically.
+
+Identity has a separate explicit opt-in: call `ConfigureTenantOwnedIdentity(modelBuilder)` after the base model call. It scopes normalized user/role names and enforces same-tenant dependent relationships with composite foreign keys. IDs and existing login, membership, token, and passkey primary-key shapes remain unchanged; external-login pairs and passkey credential IDs remain global. See [Identity tenant configuration](identity.md#tenant-owned-identity) for required values, key limits, and rollout.
+
+Use fresh contexts and fresh Identity store/manager DI scopes across tenant changes. The context's `TenantId` reads active ambient state, but a query filter cannot sanitize an already tracked `FindAsync` match. Existing Identity tenant ownership is immutable through alternate keys, even under write-guard bypass.
 
 ### EF Tenant Write Guard
 
@@ -467,20 +576,20 @@ builder.Services.AddHeadlessDbContext<AppDbContext>(options => options.UseNpgsql
 builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites()));
 ```
 
-For package-level wiring without the root tenancy surface, the lower-level registration remains available:
+`GuardTenantWrites()` is the only registration API. `TenantWriteGuardOptions.IsEnabled` reports the configured state and has no public setter.
 
-```csharp
-builder.Services.AddHeadlessTenantWriteGuard();
-```
+When enabled, the guard reads finalized ownership metadata and rejects in-memory mismatches before local handler dispatch and persistence:
 
-When enabled, `SaveChanges()` and `SaveChangesAsync()` reject unsafe `IMultiTenant` writes before persistence, audit capture, and domain-message publishing:
-
-- Added tenant-owned entities require a non-blank `ICurrentTenant.Id`. If `TenantId` is empty, the processor stamps the current tenant before saving.
+- A missing tenant is stamped before the entry becomes Added, including state transitions. Supplied values are preserved; adding under A and saving under B fails.
 - Added tenant-owned entities with a different explicit `TenantId` fail with `CrossTenantWriteException`.
 - Modified, soft-deleted, and physically deleted tenant-owned entities must belong to the current tenant or fail with `CrossTenantWriteException`.
 - Non-tenant entities are not blocked by the guard.
 
-Missing tenant context uses the shared `Headless.MultiTenancy.MissingTenantContextException`, so HTTP hosts using `UseExceptionHandler()` get the existing normalized 403 mapping. Cross-tenant mutation uses `Headless.MultiTenancy.CrossTenantWriteException` (defined in `Headless.MultiTenancy.Abstractions` to keep the failure shared across packages without forcing an Api → EF project reference).
+Metadata-only stamping requires the guard. Without it, assign mapped or shadow tenant values before tracking. Legacy unguarded save-time stamping remains limited to `IMultiTenant`. Required Identity keys can cause a missing-tenant failure during tracking, before `SaveChanges`.
+
+Tenant SQL concurrency tokens remain enabled independently of the guard and preserve other concurrency tokens. A detached update or delete with a forged original tenant cannot affect a different persisted tenant. A zero-row result remains `DbUpdateConcurrencyException`, which can occur after local handlers have run. Failed database persistence prevents durable outbox persistence; it cannot undo local or external handler effects.
+
+Missing ambient context or a missing required tenant on an Added entry uses `Headless.MultiTenancy.MissingTenantContextException`, with the existing normalized HTTP 403 mapping. Cross-tenant mutation and existing-row original/current tenant mismatches use `Headless.MultiTenancy.CrossTenantWriteException`.
 
 `HeadlessApiExceptionHandler` (registered by `AddHeadlessProblemDetails()`) maps `CrossTenantWriteException` to HTTP 409 Conflict with the `g:cross_tenant_write` error descriptor and emits a structured warning log (event name `CrossTenantWriteException`). No exception data is leaked into the response body — only the descriptor code and title.
 
@@ -499,21 +608,25 @@ using (bypass.BeginBypass())
 
 `IgnoreMultiTenancyFilter()` is only a read-side query-filter bypass. Loading a row through `IgnoreMultiTenancyFilter()` does not permit cross-tenant updates or deletes when the write guard is enabled; wrap only the intended write in `ITenantWriteGuardBypass.BeginBypass()`.
 
+Write-guard bypass does not remove SQL tenant predicates, required columns, or database constraints, and does not supply a valid original tenant. It has no effect on raw SQL.
+
 ## Messaging Exhausted Callbacks
 
 When messaging tenant propagation is enabled, exhausted callbacks restore `ICurrentTenant` from the message envelope before invoking `RetryPolicy.OnExhausted`. This applies to publish failures, consume failures, and poisoned-on-arrival messages that bypass normal consumer execution. Missing, whitespace, or oversized tenant headers resolve to no tenant, matching consume-side lenient header handling.
 
 ### Defense Layers and Known Gaps
 
-`IMultiTenant` writes are protected by two complementary layers, plus paths that remain out of scope:
+Tenant-owned entities use several enforcement mechanisms with different boundaries:
 
-1. **Global query filter** — always on for `IMultiTenant` entities. Registered as `HeadlessQueryFilters.MultiTenancyFilter` (string value `"MultiTenantFilter"`). Scopes reads, `IQueryable<T>.ExecuteUpdate(...)`, and `IQueryable<T>.ExecuteDelete(...)` to the current tenant. Opt-out is `IgnoreMultiTenancyFilter()` (audit-logged).
-2. **`SaveChanges` write guard** — opt-in via `.EntityFramework(ef => ef.GuardTenantWrites())`. Operates on EF's `ChangeTracker`. Catches `Add` / `Update` / `Remove` / tracked-property-mutation paths and rejects unsafe writes with `CrossTenantWriteException` before persistence.
+| Path | Protection and limit |
+|---|---|
+| LINQ reads | Tenant query filter; tracked `FindAsync` matches can bypass query execution |
+| `ExecuteUpdate` / `ExecuteDelete` | Query filter only; no `SaveChanges` guard or generated tenant concurrency predicate |
+| Tracked and detached `SaveChanges` writes | Optional in-memory guard plus tenant concurrency predicates on generated updates/deletes |
+| Tenant-owned Identity relationships | Composite foreign keys enforce same-tenant links, including direct SQL writes |
+| Raw SQL commands, stored procedures, Dapper, and direct commands | No query-filter or write-guard enforcement; existing database constraints still apply |
 
-Known gaps:
-
-- **Attach-then-modify.** An attacker-controlled `Attach` populates `OriginalValue` from caller-supplied state, so the in-memory guard's `OriginalValue == currentTenantId` check passes for a row that actually belongs to another tenant. The global query filter does not cover this path because the attacker never queries the row. A SQL-level concurrency-style `WHERE TenantId = @currentTenantId` predicate on the SaveChanges-generated UPDATE/DELETE is the planned follow-up, tracked in the security follow-up issue on the project tracker.
-- **Raw SQL and out-of-band data access** are out of scope for both layers. This covers EF's own raw paths (`DbContext.Database.ExecuteSql(...)`, `ExecuteSqlInterpolated(...)`, `ExecuteSqlRaw(...)`, `FromSqlRaw(...)`, `SqlQueryRaw(...)`), stored procedures, triggers, and any code that opens its own command or connection — Dapper, other micro-ORMs, and direct `DbContext.Database.GetDbConnection()` usage all bypass the query filter and write guard entirely, including `MultiTenantFilter`. Consumers issuing raw SQL against `IMultiTenant` tables must scope manually with a `WHERE "TenantId" = @currentTenantId` predicate sourced from `ICurrentTenant.Id`, or wrap the call in `ITenantWriteGuardBypass.BeginBypass()` under an authenticated, audited host context.
+Raw SQL requires explicit tenant predicates sourced from trusted context and authorization for the operation. `ITenantWriteGuardBypass.BeginBypass()` provides no protection for raw SQL. Do not treat filter bypass as authorization, or SQL constraints as a complete authorization policy.
 
 ## Permissions and Caching
 
@@ -688,7 +801,7 @@ using (currentTenant.Change(tenantId))
 
 Use `.RequireTenantOnPublish()` to require every publish to resolve a tenant identifier. When enabled, the publish wrapper checks `PublishOptions.TenantId` first, then falls back to the ambient `ICurrentTenant.Id`. If neither resolves a value, the publish fails with `Headless.MultiTenancy.MissingTenantContextException`. This is the messaging sibling of the EF write guard (#234) and the HTTP authorization requirement.
 
-The lower-level equivalent is `MessagingOptions.TenantContextRequired = true`. Defaults to `false` to preserve today's behavior. The U2 raw-header integrity rules above (`ReservedTenantHeader`, `TenantIdMismatch`) always apply and run before the strict-tenancy fallback, so injection attempts cannot bypass the guard by enabling the flag.
+`MessagingOptions.TenantContextRequired` reports the configured state and has no public setter. It defaults to `false`. The raw-header integrity rules above (`ReservedTenantHeader`, `TenantIdMismatch`) always apply before the strict-tenancy fallback.
 
 To remediate a `MissingTenantContextException` from a background worker or `IHostedService`:
 
@@ -813,7 +926,7 @@ Provides one composition surface for tenant posture across Headless packages whi
     - `InMemoryTenantStore` / `UseInMemory(...)` — seeded, immutable snapshot store for tests and small apps; rejects duplicate normalized identifiers or ids at startup. Three overloads: `Action<InMemoryTenantStoreOptions>`, `Action<InMemoryTenantStoreOptions, IServiceProvider>`, and a raw `InMemoryTenantStoreOptions` instance — deliberately no `UseInMemory(IConfiguration)` overload, because `TenantInfo` has no parameterless constructor for the options binder to construct from. Bind an operator-managed tenant list from configuration with `UseConfiguration(...)` instead.
     - `ConfigurationTenantStore` / `UseConfiguration(...)` — options-bound, read-only snapshot store (three overloads: `IConfiguration`, `Action<T>`, `Action<T, IServiceProvider>`); reload requires a process restart. The Entity Framework Core store ships separately in `Headless.MultiTenancy.Storage.EntityFramework`.
     - `ITenantCatalogService` (default `TenantCatalogService`) — HTTP-agnostic resolution: normalize → shape-validate → ignored-check → cache/store lookup, returning a `TenantResolutionOutcome`; also serves `TenantInfo` lookups by canonical id for the accessor. Store exceptions propagate unwrapped; a cache read or write fault degrades to a miss/no-op rather than failing the resolution.
-    - `TenantCatalogOptions` — `CacheExpiration` (default 5 min), `UnknownIdentifierCacheExpiration` (negative-cache window, default 30 s, `TimeSpan.Zero` disables it — and with it the identifier namespace's read-through single-flight), `IgnoredIdentifiers`, `MaxIdentifierLength` (default 63), `IdentifierPattern` (default DNS-label slug), `DetailedResolutionErrors` (default `false`).
+    - `TenantCatalogOptions` — `CacheExpiration` (default 5 min), `UnknownIdentifierCacheExpiration` (negative-cache window, default 30 s, `TimeSpan.Zero` disables it — and with it the identifier namespace's read-through single-flight), `IgnoredIdentifiers` (the only ignore list — `Headless.Api.Core`'s identifier sources have none), `MaxIdentifierLength` (default 63), `IdentifierPattern` (default DNS-label slug), `DetailedResolutionErrors` (default `false`). `MaxIdentifierLength` and `IdentifierPattern` are catalog-wide: a whole-host (custom-domain) host template needs `MaxIdentifierLength = 253` and a hostname-shaped pattern with a match timeout, and that relaxes the accepted shape for every other source too.
     - `ICurrentTenantInfo` — registered by default as a no-op (`GetAsync()` always returns `null`) until `Catalog(...)` replaces it with the catalog-backed implementation. `AddTypedCurrentTenantInfo<T>(projection)` registers the opt-in `ICurrentTenantInfo<T>` typed leaf accessor.
     - `TenancyErrorCodes` / `TenancyMessageDescriber` — the `g:tenant_resolution_failed` / `g:tenant_unknown` / `g:tenant_disabled` / `g:tenant_identifier_mismatch` / `g:tenant_identifier_invalid` ProblemDetails codes consumed by `Headless.Api.Core`'s rejection mapping.
     - `TenantCatalogPosture` — shared, non-PII seam/capability constants (`Catalog` seam, `catalog-accessor`/`catalog-resolution` capabilities) that this package and `Headless.Api.Core` both write to and that `TenantCatalogPostureValidator` cross-checks at startup.

@@ -95,13 +95,33 @@ throw new AggregateException(..., failureList);
 
 ### 3. Cross-option invariants belong in the FluentValidation validator
 
-The retry processor should not silently redefine invalid configuration as the primary behavior. The validator rejects `MaxPollingInterval` values lower than `BaseInterval` during options validation.
+The retry processor should not silently redefine invalid configuration as the primary behavior. The
+validator rejects `MaxPollingInterval` values lower than `BaseInterval` during options validation.
 
 ```csharp
 RuleFor(x => x.MaxPollingInterval)
     .GreaterThan(TimeSpan.Zero)
     .LessThanOrEqualTo(TimeSpan.FromHours(24))
     .GreaterThanOrEqualTo(x => x.BaseInterval);
+```
+
+### 4. Fence concurrent intents with a circuit epoch
+
+Every pause/resume intent change carries a monotonic circuit epoch. The open timer, retry decisions,
+manual reset/removal, force-open, abort, and reopen capture that epoch with the work they schedule.
+The group handle serializes applies through a gate and ignores an epoch older than its last completed
+apply; equal epochs reapply idempotently. Probe ownership carries the admission epoch so a release
+can clear only that probe generation. This turns "resume raced with force-open" from a timing
+assumption into an explicit ordering decision.
+
+```csharp
+apply(intent, epoch):
+  await gate;
+  if (disposed || epoch < lastAppliedEpoch) return;
+  lastAppliedEpoch = epoch;
+  apply pause or resume;
+finally:
+  release gate; // gate is never disposed; disposal is checked under the apply gate
 ```
 
 ## Verification
@@ -113,7 +133,7 @@ RuleFor(x => x.MaxPollingInterval)
 
 ## Prevention
 
-- Any transport pause/resume contract should be reviewed at three boundaries: startup, steady-state, and recovery from `Open -> HalfOpen`.
+- Any transport pause/resume contract should be reviewed at four boundaries: startup, steady-state, recovery from `Open -> HalfOpen`, and a stale epoch applied while an older intent is still in flight.
 - If a callback controls breaker state, logging is not enough; failures must remain observable to the state machine.
 - When one option is semantically bounded by another option, validate that invariant in the options validator instead of compensating later in runtime code.
 - Add transport-specific lifecycle tests whenever a new transport introduces its own subscription or processor startup path.

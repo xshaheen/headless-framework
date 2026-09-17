@@ -113,8 +113,32 @@ transaction is a separate axis, `TransactionEnlistment` (see [Unit of Work](#uni
 Telemetry reports the requested and resolved mode as `durable` / `direct` only.
 Both verbs return `PublishReceipt`; durable delivery includes a `StorageId`, while direct delivery does not.
 `IMessageRevoker` deletes a scheduled row by that handle until its first dispatch reservation.
-Only `Revoked` proves prevention. `AttemptReserved` is not proof of delivery. Revocation retains no audit record.
+Only `Revoked` proves prevention. `AttemptReserved` is not proof of delivery. Application-level
+revocation through `IMessageRevoker` retains no audit record. The dashboard's audited operator
+revoke performs the identical fenced delete but also writes a receipt and audit in the same
+transaction — the two paths delete the same row the same way; only the evidence differs.
 Use Jobs for keyed, replaceable, tenant-scoped, or transactional business deadlines.
+
+### Operator ledger
+One generalized receipt-and-audit ledger, shared by the inbox operator surface and the
+scheduled-delivery operator surface, discriminated by `TargetKind` (`Inbox`, `ScheduledDelivery`).
+Every audited action — hold, release, force-reprocess, purge, revoke, dispatch-now — writes a
+receipt (replay/conflict detection by operation id) and an audit (append-only history) in the
+mutation's own transaction. Four retention windows (cleanup/operator × receipt/audit) govern the
+whole ledger regardless of target kind; a receipt outlives its row, an audit can outlive its
+receipt, and deleting history never releases a generation's hold.
+
+### Pending scheduled delivery
+A published row eligible for operator revoke or dispatch-now: it matches the configured messaging
+version, sits in `Delayed` or `Queued`, and has no inline attempt, no retry, and no persisted retry
+time. The dashboard presents both statuses as one `Pending` state. A row with a live dispatch lease
+is still pending but ineligible for dispatch-now (`Active`); revoke has no lease precondition.
+
+### Circuit epoch
+A monotonic per-lane-qualified-circuit counter assigned to each pause/resume intent change. Callbacks,
+timers, retry decisions, and probe releases carry the epoch captured when their work was scheduled.
+The consumer-group apply gate rejects epochs older than its last completed apply, so an in-flight
+recovery cannot undo a newer Open state.
 
 ## Flagged ambiguities
 
@@ -350,6 +374,15 @@ routing, and lifecycle (`IsEnabled`) only — per-tenant configuration stays in
 Settings/Features/Permissions keyed by the canonical id. See
 [docs/llms/multi-tenancy.md](docs/llms/multi-tenancy.md#tenant-catalog) for setup, the extension
 tiers, and staleness bounds.
+
+### Tenant identifier source
+
+The pre-authentication seam (`ITenantIdentifierSource` in `Headless.Api.Core`) that reads a raw
+tenant identifier from an HTTP request — a host label, a route value, or a header value — and hands
+it to the tenant catalog. Sources are consulted in registration order and the first non-blank
+identifier wins; a source may also report an ambiguous request (for example a duplicated header),
+which is rejected before any catalog lookup. Sources never normalize or validate identifiers; the
+catalog owns that. Built-in sources: host template, route value, header, delegate (issue #252).
 
 ## Jobs (tenancy)
 

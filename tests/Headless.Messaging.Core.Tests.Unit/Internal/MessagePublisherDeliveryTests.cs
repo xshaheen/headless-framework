@@ -1344,7 +1344,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
             return new TransportMessage(message.Headers, body: null);
         }
 
-        public Message? Deserialize(string json)
+        public Message Deserialize(string json)
         {
             throw new NotSupportedException();
         }
@@ -1358,7 +1358,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
             throw new NotSupportedException();
         }
 
-        public object? Deserialize(object value, Type valueType)
+        public object Deserialize(object value, Type valueType)
         {
             throw new NotSupportedException();
         }
