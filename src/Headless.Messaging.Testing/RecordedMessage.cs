@@ -63,11 +63,12 @@ public sealed record RecordedMessage
     public DeliveryMode? RequestedDeliveryMode { get; init; }
 
     /// <summary>
-    /// The mode the framework actually executed. <c>DeliveryMode.Coordinated</c> is a request-side
-    /// strictness rather than a third executed mode, so it resolves to <see cref="DeliveryMode.Durable"/> once its
-    /// scope check passes. The harness keeps the production default, so a plain publish records <c>Durable</c> here
-    /// (store-first, dispatched from storage) and only an explicit <see cref="DeliveryMode.Direct"/> publish records
-    /// <c>Direct</c>. <see langword="null"/> when the headers carry no delivery metadata.
+    /// The mode the framework actually executed. <see cref="Headless.UnitOfWork.TransactionEnlistment"/> is a
+    /// separate axis from <see cref="DeliveryMode"/> — enlisting in an active unit of work does not change the
+    /// recorded delivery mode. The harness keeps the production default, so a plain publish records
+    /// <c>Durable</c> here (store-first, dispatched from storage) and only an explicit
+    /// <see cref="DeliveryMode.Direct"/> publish records <c>Direct</c>. <see langword="null"/> when the headers
+    /// carry no delivery metadata.
     /// </summary>
     public DeliveryMode? ResolvedDeliveryMode { get; init; }
 

@@ -196,7 +196,7 @@ public sealed class NatsPostgreSqlMessagingIntegrationTests(NatsPostgreSqlFixtur
             Payload = "direct-path",
         };
 
-        var directPublisher = ServiceProvider.GetRequiredService<IBus>();
+        var directPublisher = Publisher;
 
         await directPublisher.PublishAsync(message, new PublishOptions { MessageName = "test-message" }, AbortToken);
 
@@ -216,7 +216,7 @@ public sealed class NatsPostgreSqlMessagingIntegrationTests(NatsPostgreSqlFixtur
     public async Task should_attach_runtime_subscriber_after_bootstrap_and_receive_real_nats_message()
     {
         var runtimeSubscriber = ServiceProvider.GetRequiredService<IRuntimeSubscriber>();
-        var publisher = ServiceProvider.GetRequiredService<IBus>();
+        var publisher = Publisher;
 
         await using var handle = await runtimeSubscriber.SubscribeAsync<Fixtures.TestMessage>(
             static (context, services, _) =>

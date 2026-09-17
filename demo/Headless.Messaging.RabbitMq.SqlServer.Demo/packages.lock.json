@@ -269,32 +269,6 @@
       "headless.checks": {
         "type": "Project"
       },
-      "headless.commitcoordination.abstractions": {
-        "type": "Project"
-      },
-      "headless.commitcoordination.core": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.CommitCoordination.Abstractions": "[1.0.0, )"
-        }
-      },
-      "headless.commitcoordination.entityframework": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.CommitCoordination.Core": "[1.0.0, )",
-          "Microsoft.EntityFrameworkCore.Relational": "[10.0.12, )"
-        }
-      },
-      "headless.commitcoordination.sqlserver": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.CommitCoordination.Core": "[1.0.0, )",
-          "Microsoft.Data.SqlClient": "[7.0.2, )"
-        }
-      },
       "headless.coordination.abstractions": {
         "type": "Project",
         "dependencies": {
@@ -494,6 +468,14 @@
           "Headless.Checks": "[1.0.0, )",
           "Headless.UnitOfWork": "[1.0.0, )",
           "Microsoft.EntityFrameworkCore.Relational": "[10.0.12, )"
+        }
+      },
+      "headless.unitofwork.sqlserver": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.UnitOfWork": "[1.0.0, )",
+          "Microsoft.Data.SqlClient": "[7.0.2, )"
         }
       },
       "headless.urls": {

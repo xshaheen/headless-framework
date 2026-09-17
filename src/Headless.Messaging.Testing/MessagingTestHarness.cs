@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.CommitCoordination;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.InMemory;
 using Headless.Messaging.Internal;
@@ -9,6 +8,7 @@ using Headless.Messaging.Monitoring;
 using Headless.Messaging.Serialization;
 using Headless.Messaging.Storage.InMemory;
 using Headless.Messaging.Testing.Internal;
+using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -42,8 +42,8 @@ namespace Headless.Messaging.Testing;
 /// <see cref="Published"/> observation is recorded before its <see cref="Consumed"/> or <see cref="Faulted"/> one,
 /// so the collections are safe to read once the matching wait returns. When a harness is shared across tests call
 /// <see cref="ResetAsync"/> between them — it waits for that in-flight tail before clearing.
-/// <see cref="RunCoordinatedAsync(Func{Task})"/> opens a commit-coordination scope so a test can exercise
-/// <c>DeliveryMode.Coordinated</c>.
+/// <see cref="RunInUnitOfWorkAsync(Func{IServiceProvider, Task})"/> opens a scoped unit of work so a test can
+/// exercise <see cref="Headless.UnitOfWork.TransactionEnlistment.Required"/> and enlistment against a live commit.
 /// </para>
 /// </remarks>
 [PublicAPI]
@@ -55,11 +55,18 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     private readonly MessageObservationStore _store;
     private readonly bool _ownsSp;
 
+    // Owned by the harness, not by ServiceProvider: Publisher/Queue resolve scoped services (IBus/IQueue carry
+    // the scope's IUnitOfWorkManager) from this dedicated scope so they never enlist in a unit of work, and so a
+    // ValidateScopes host does not reject the harness's own convenience accessors as a captive-dependency error.
+    // Disposed with the harness regardless of who owns ServiceProvider.
+    private readonly AsyncServiceScope _harnessScope;
+
     private MessagingTestHarness(IServiceProvider sp, MessageObservationStore store, bool ownsSp)
     {
         ServiceProvider = sp;
         _store = store;
         _ownsSp = ownsSp;
+        _harnessScope = sp.CreateAsyncScope();
     }
 
     // -------------------------------------------------------------------------
@@ -91,7 +98,10 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         // Shared setup: observation store, decorators, options
         ConfigureServices(services);
 
-        var sp = services.BuildServiceProvider();
+        // ValidateScopes: IBus/IQueue are scoped (they read the scope's IUnitOfWorkManager.Current at publish
+        // time), so an accidental root resolution — in the harness or in caller code — fails fast instead of
+        // silently sharing a captive singleton instance across scopes.
+        var sp = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 
         // Bootstrap without hosted-service infrastructure
         var bootstrapper = sp.GetRequiredService<IBootstrapper>();
@@ -122,12 +132,6 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         services.AddSingleton<TestHarnessMarkerService>();
 
         _EnsureInMemoryInfrastructure(services);
-
-        // A real coordinator lets RunCoordinatedAsync open a scope and lets a type registered
-        // WithDeliveryMode(DeliveryMode.Coordinated) pass the bootstrap gate. The call is idempotent and its
-        // unconditional ICurrentCommitCoordinator registration wins over Messaging's null-coordinator fallback
-        // regardless of which setup call the host invoked first.
-        services.AddCommitCoordination();
 
         // Disable parallelism for deterministic single-threaded test execution
         services.Configure<MessagingOptions>(opt =>
@@ -483,73 +487,78 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     }
 
     // -------------------------------------------------------------------------
-    // Coordinated delivery
+    // Scoped unit of work
     // -------------------------------------------------------------------------
 
     /// <summary>
-    /// Runs <paramref name="action"/> inside a commit-coordination scope — the harness stand-in for an application
-    /// transaction — signalling commit when it completes and rollback when it throws.
+    /// Runs <paramref name="action"/> inside a fresh service scope with a resource-less unit of work active —
+    /// the harness stand-in for an application transaction — completing the unit when the delegate returns and
+    /// rolling it back when it throws.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The scope is non-relational: in-memory storage captures every publish made inside the delegate on it, so a
-    /// type registered <c>WithDeliveryMode(DeliveryMode.Coordinated)</c> can be published here (outside a scope the
-    /// publish throws <see cref="InvalidOperationException"/>), and a default <see cref="DeliveryMode.Durable"/>
-    /// publish enlists in the same scope. Commit stores the captured rows and hands them to the dispatcher, so they
-    /// surface through <see cref="WaitForPublished{T}(TimeSpan?, CancellationToken)"/> and
+    /// The scope and the unit of work are created here, in the frame that owns them, so
+    /// <paramref name="action"/> receives that scope's <see cref="IServiceProvider"/>: resolve <see cref="IBus"/>
+    /// or <see cref="IQueue"/> from it (not from <see cref="Publisher"/> or <see cref="Queue"/>, which carry no
+    /// unit of work) to enlist a publish. In-memory storage captures every enlisted publish on the unit, so a
+    /// type registered <c>WithEnlistment(TransactionEnlistment.Required)</c> can be published here — outside any
+    /// unit of work the publish throws <see cref="InvalidOperationException"/> — and a default
+    /// <c>TransactionEnlistment.WhenAvailable</c> publish enlists the same way. Completion stores the captured
+    /// rows and hands them to the dispatcher, so they surface through
+    /// <see cref="WaitForPublished{T}(TimeSpan?, CancellationToken)"/> and
     /// <see cref="WaitForConsumed{T}(TimeSpan?, CancellationToken)"/>; rollback discards them and nothing is
-    /// recorded. A coordinated message records <c>RequestedDeliveryMode = Coordinated</c> and
-    /// <c>ResolvedDeliveryMode = Durable</c>.
+    /// recorded.
     /// </para>
     /// <para>
-    /// Every call opens an independent root scope: a nested call does not join the outer one, its rows commit or
-    /// roll back on their own, and the outer coordinator becomes ambient again once the inner call returns.
+    /// Every call opens an independent scope and root unit of work: a nested call does not join the outer one,
+    /// its rows commit or roll back on their own, and the outer unit is unaffected once the inner call returns.
     /// </para>
     /// </remarks>
-    /// <param name="action">The work to run inside the scope.</param>
+    /// <param name="action">The work to run with the scope's <see cref="IServiceProvider"/>.</param>
     /// <exception cref="ArgumentNullException"><paramref name="action"/> is <see langword="null"/>.</exception>
-    public async Task RunCoordinatedAsync(Func<Task> action)
+    public async Task RunInUnitOfWorkAsync(Func<IServiceProvider, Task> action)
     {
         Argument.IsNotNull(action);
 
-        await RunCoordinatedAsync(async () =>
+        await RunInUnitOfWorkAsync(async sp =>
             {
-                await action().ConfigureAwait(false);
+                await action(sp).ConfigureAwait(false);
                 return true;
             })
             .ConfigureAwait(false);
     }
 
     /// <summary>
-    /// Runs <paramref name="action"/> inside a commit-coordination scope and returns its result; see
-    /// <see cref="RunCoordinatedAsync(Func{Task})"/> for the commit and rollback semantics.
+    /// Runs <paramref name="action"/> inside a fresh service scope with a resource-less unit of work active and
+    /// returns its result; see <see cref="RunInUnitOfWorkAsync(Func{IServiceProvider, Task})"/> for the
+    /// completion and rollback semantics.
     /// </summary>
     /// <typeparam name="TResult">The delegate's result type.</typeparam>
-    /// <param name="action">The work to run inside the scope.</param>
-    /// <returns>The delegate's result, after the scope has committed.</returns>
+    /// <param name="action">The work to run with the scope's <see cref="IServiceProvider"/>.</param>
+    /// <returns>The delegate's result, after the unit of work has completed.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="action"/> is <see langword="null"/>.</exception>
-    public async Task<TResult> RunCoordinatedAsync<TResult>(Func<Task<TResult>> action)
+    public async Task<TResult> RunInUnitOfWorkAsync<TResult>(Func<IServiceProvider, Task<TResult>> action)
     {
         Argument.IsNotNull(action);
 
-        // Opened here, in the frame that owns the unit of work, so the ambient coordinator flows into the action.
-        var scopeFactory = ServiceProvider.GetRequiredService<ICommitScopeFactory>();
-        await using var scope = scopeFactory.Open(relational: null);
+        await using var scope = ServiceProvider.CreateAsyncScope();
+        var unitOfWorkManager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+        var unitOfWork = await unitOfWorkManager.BeginAsync().ConfigureAwait(false);
 
         TResult result;
         try
         {
-            result = await action().ConfigureAwait(false);
+            result = await action(scope.ServiceProvider).ConfigureAwait(false);
         }
         catch
         {
-            // Disposal alone would roll back, but signalling here disposes the scope-local buffers before the caller
-            // observes the exception, so the captured rows are already discarded when the test asserts.
-            await scope.SignalAsync(CommitOutcome.RolledBack).ConfigureAwait(false);
+            // Disposal alone would roll back, but rolling back here disposes the scope-local buffers before the
+            // caller observes the exception, so the captured rows are already discarded when the test asserts.
+            await unitOfWork.RollbackAsync().ConfigureAwait(false);
             throw;
         }
 
-        await scope.SignalAsync(CommitOutcome.Committed).ConfigureAwait(false);
+        await unitOfWork.CompleteAsync().ConfigureAwait(false);
 
         return result;
     }
@@ -558,17 +567,29 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     // Service access
     // -------------------------------------------------------------------------
 
-    /// <summary>Returns a bus publisher backed by the in-memory transport.</summary>
-    public IBus Publisher => ServiceProvider.GetRequiredService<IBus>();
+    /// <summary>
+    /// Returns a bus publisher backed by the in-memory transport, resolved from a harness-owned scope that
+    /// carries no unit of work — a publish through this property always writes standalone.
+    /// </summary>
+    /// <remarks>Use the scope's <see cref="IServiceProvider"/> passed to <see cref="RunInUnitOfWorkAsync(Func{IServiceProvider, Task})"/> to enlist a publish in a unit of work instead.</remarks>
+    public IBus Publisher => _harnessScope.ServiceProvider.GetRequiredService<IBus>();
 
-    /// <summary>Returns a queue publisher backed by the in-memory transport.</summary>
-    public IQueue Queue => ServiceProvider.GetRequiredService<IQueue>();
+    /// <summary>
+    /// Returns a queue publisher backed by the in-memory transport, resolved from a harness-owned scope that
+    /// carries no unit of work — a publish through this property always writes standalone.
+    /// </summary>
+    /// <remarks>Use the scope's <see cref="IServiceProvider"/> passed to <see cref="RunInUnitOfWorkAsync(Func{IServiceProvider, Task})"/> to enlist a publish in a unit of work instead.</remarks>
+    public IQueue Queue => _harnessScope.ServiceProvider.GetRequiredService<IQueue>();
 
-    /// <summary>Resolves an arbitrary service from the harness container.</summary>
+    /// <summary>
+    /// Resolves an arbitrary service from the harness-owned scope (see <see cref="Publisher"/>), so a scoped
+    /// service such as <see cref="IBus"/> or <see cref="IQueue"/> resolves without a
+    /// <c>ValidateScopes</c> captive-dependency error and carries no unit of work.
+    /// </summary>
     public T GetRequiredService<T>()
         where T : notnull
     {
-        return ServiceProvider.GetRequiredService<T>();
+        return _harnessScope.ServiceProvider.GetRequiredService<T>();
     }
 
     /// <summary>Provides direct access to the harness <see cref="IServiceProvider"/>.</summary>
@@ -581,9 +602,13 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
+        // Owned by the harness regardless of who owns ServiceProvider — the DI container never created it, so
+        // its disposal would not otherwise reach it.
+        await _harnessScope.DisposeAsync().ConfigureAwait(false);
+
         if (!_ownsSp)
         {
-            // The host owns the ServiceProvider — nothing to dispose here.
+            // The host owns the ServiceProvider — nothing else to dispose here.
             // The host's disposal will clean up the bootstrapper and DI container.
             return;
         }

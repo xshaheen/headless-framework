@@ -1,8 +1,8 @@
 using Dapper;
 using Demo;
-using Headless.CommitCoordination;
 using Headless.Messaging;
 using Headless.Messaging.Dashboard;
+using Headless.UnitOfWork;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
@@ -71,11 +71,13 @@ builder.Services.AddHeadlessMessaging(setup =>
     //setup.Options.JsonSerializerOptions.Encoder = JavaScriptEncoder.Create(UnicodeRanges.All);
 });
 
-// The EF-storage path already enabled the transactional outbox (commit coordination + EF interceptor) by default,
-// so the /coordinated/ef, /coordinated/rollback, and /coordinated/delay endpoints need no extra wiring. This single
-// call is only for the raw-ADO /coordinated/adonet endpoint, which enlists a raw SqlConnection via the SqlServer
-// out-of-band diagnostic signal source.
-builder.Services.AddSqlServerCommitCoordination();
+// The EF-storage path (setup.UseEntityFramework<AppDbContext>() above) already enlists the transactional outbox
+// through the scoped IUnitOfWorkManager that AddHeadlessMessaging registers, so the /coordinated/ef,
+// /coordinated/rollback, and /coordinated/delay endpoints need no extra wiring. These two calls declare the
+// providers this demo enlists through: the EF Core helpers (RunAsync(db, …)) and the SqlServer ADO helpers
+// (BeginAsync(connection), Enlist(connection, transaction), RunAsync(connection, …)) used by /coordinated/adonet.
+builder.Services.AddEntityFrameworkUnitOfWork();
+builder.Services.AddSqlServerUnitOfWork();
 
 builder.Services.AddControllers();
 

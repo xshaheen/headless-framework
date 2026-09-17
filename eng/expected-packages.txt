@@ -34,11 +34,6 @@ Headless.Captcha.Core
 Headless.Captcha.ReCaptcha
 Headless.Captcha.Turnstile
 Headless.Checks
-Headless.CommitCoordination.Abstractions
-Headless.CommitCoordination.Core
-Headless.CommitCoordination.EntityFramework
-Headless.CommitCoordination.PostgreSql
-Headless.CommitCoordination.SqlServer
 Headless.Coordination.Abstractions
 Headless.Coordination.Core
 Headless.Coordination.Core.Database

@@ -831,18 +831,6 @@
       "headless.checks": {
         "type": "Project"
       },
-      "headless.commitcoordination.abstractions": {
-        "type": "Project"
-      },
-      "headless.commitcoordination.core": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.CommitCoordination.Abstractions": "[1.0.0, )",
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
-          "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )"
-        }
-      },
       "headless.coordination.abstractions": {
         "type": "Project",
         "dependencies": {
@@ -1072,7 +1060,6 @@
       "headless.messaging.testing": {
         "type": "Project",
         "dependencies": {
-          "Headless.CommitCoordination.Core": "[1.0.0, )",
           "Headless.Messaging.Core": "[1.0.0, )",
           "Headless.Messaging.InMemory": "[1.0.0, )",
           "Headless.Messaging.Storage.InMemory": "[1.0.0, )",

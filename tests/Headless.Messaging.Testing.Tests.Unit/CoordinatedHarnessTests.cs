@@ -7,6 +7,7 @@ using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Testing;
 using Headless.Testing.Tests;
+using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
@@ -36,12 +37,13 @@ public sealed class StandaloneOrderPlacedConsumer : IConsume<StandaloneOrderPlac
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 /// <summary>
-/// <see cref="MessagingTestHarness.RunCoordinatedAsync(Func{Task})"/> opens a non-relational commit scope so a test
-/// can exercise <c>DeliveryMode.Durable</c>: a commit stores and dispatches the captured rows, a rollback
-/// discards them, and a coordinated type published outside any scope is rejected before storage or transport.
-/// In-memory storage offers only the ProcessLocal inbox tier, and the startup gate refuses a Coordinated registration
-/// beside durable consumers below Transactional, so the Coordinated type lives in a publish-only host and consumers
-/// are exercised through the scope with a default (Durable) type, which enlists in the same scope.
+/// <see cref="MessagingTestHarness.RunInUnitOfWorkAsync(Func{IServiceProvider, Task})"/> opens a service scope with
+/// a resource-less unit of work active so a test can exercise <see cref="TransactionEnlistment.Required"/>: a
+/// completion stores and dispatches the captured rows, a rollback discards them, and a
+/// <see cref="TransactionEnlistment.Required"/> type published outside any unit of work is rejected before storage
+/// or transport. <see cref="TransactionEnlistment"/> is independent of the consumer inbox tier, so a
+/// <see cref="TransactionEnlistment.Required"/> type can sit beside a durable consumer even on in-memory storage's
+/// ProcessLocal inbox — unlike the old durability request that conflated the two.
 /// </summary>
 public sealed class CoordinatedHarnessTests : TestBase
 {
@@ -54,7 +56,7 @@ public sealed class CoordinatedHarnessTests : TestBase
                 setup.UseInMemory();
                 setup.UseInMemoryStorage();
                 setup.Bus.ForMessage<CoordinatedOrderPlaced>(message =>
-                    message.Contract("coordinated-order-placed").WithDeliveryMode(DeliveryMode.Durable)
+                    message.Contract("coordinated-order-placed").WithEnlistment(TransactionEnlistment.Required)
                 );
             });
         });
@@ -85,8 +87,8 @@ public sealed class CoordinatedHarnessTests : TestBase
     {
         await using var harness = await _CreatePublishOnlyHarnessAsync();
 
-        await harness.RunCoordinatedAsync(() =>
-            harness.Publisher.PublishAsync(new CoordinatedOrderPlaced("C1"), cancellationToken: AbortToken)
+        await harness.RunInUnitOfWorkAsync(sp =>
+            sp.GetRequiredService<IBus>().PublishAsync(new CoordinatedOrderPlaced("C1"), cancellationToken: AbortToken)
         );
 
         var published = await harness.WaitForPublished<CoordinatedOrderPlaced>(TimeSpan.FromSeconds(5), AbortToken);
@@ -103,18 +105,19 @@ public sealed class CoordinatedHarnessTests : TestBase
         await using var harness = await _CreatePublishOnlyHarnessAsync();
 
         var act = () =>
-            harness.RunCoordinatedAsync(async () =>
+            harness.RunInUnitOfWorkAsync(async sp =>
             {
-                await harness.Publisher.PublishAsync(new CoordinatedOrderPlaced("C2"), cancellationToken: AbortToken);
+                await sp.GetRequiredService<IBus>()
+                    .PublishAsync(new CoordinatedOrderPlaced("C2"), cancellationToken: AbortToken);
                 throw new InvalidOperationException("boom");
             });
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("boom");
 
-        // A later committed publish flows through the same single-threaded sender: had the rolled-back row been
+        // A later completed publish flows through the same single-threaded sender: had the rolled-back row been
         // handed to the dispatcher it would have been recorded before this one.
-        await harness.RunCoordinatedAsync(() =>
-            harness.Publisher.PublishAsync(new CoordinatedOrderPlaced("C3"), cancellationToken: AbortToken)
+        await harness.RunInUnitOfWorkAsync(sp =>
+            sp.GetRequiredService<IBus>().PublishAsync(new CoordinatedOrderPlaced("C3"), cancellationToken: AbortToken)
         );
         await harness.WaitForPublished<CoordinatedOrderPlaced>(
             m => string.Equals(m.Id, "C3", StringComparison.Ordinal),
@@ -148,9 +151,10 @@ public sealed class CoordinatedHarnessTests : TestBase
     {
         await using var harness = await _CreatePublishOnlyHarnessAsync();
 
-        var result = await harness.RunCoordinatedAsync(async () =>
+        var result = await harness.RunInUnitOfWorkAsync(async sp =>
         {
-            await harness.Publisher.PublishAsync(new CoordinatedOrderPlaced("C4"), cancellationToken: AbortToken);
+            await sp.GetRequiredService<IBus>()
+                .PublishAsync(new CoordinatedOrderPlaced("C4"), cancellationToken: AbortToken);
             return 42;
         });
 
@@ -163,43 +167,49 @@ public sealed class CoordinatedHarnessTests : TestBase
     {
         await using var harness = await _CreatePublishOnlyHarnessAsync();
 
+        // harness.Publisher carries no unit of work, so a TransactionEnlistment.Required type is rejected here
+        // exactly as it would be on the caller's own unit-of-work-less scope.
         var act = () => harness.Publisher.PublishAsync(new CoordinatedOrderPlaced("C5"), cancellationToken: AbortToken);
 
         await act.Should()
             .ThrowAsync<InvalidOperationException>()
-            .WithMessage("*Coordinated delivery requires a compatible live commit-coordination scope*");
+            .WithMessage(
+                "*requires an active unit of work (TransactionEnlistment.Required) but none is active in this scope*"
+            );
         harness.Published.Should().BeEmpty();
     }
 
     [Fact]
-    public async Task should_refuse_coordinated_type_beside_consumers_on_process_local_inbox()
+    public async Task should_allow_required_enlistment_type_beside_consumers_on_process_local_inbox()
     {
-        // Pins the topology constraint the harness documents: in-memory storage cannot offer the Transactional inbox
-        // tier, so a Coordinated registration next to a durable consumer fails at bootstrap, not on every publish.
-        var act = () =>
-            MessagingTestHarness.CreateAsync(services =>
+        // TransactionEnlistment is a durability/enlistment policy, independent of the consumer inbox tier that the
+        // old conflated durability-and-enlistment request tied it to: a TransactionEnlistment.Required registration
+        // boots fine next to a durable consumer even though in-memory storage only offers the ProcessLocal inbox
+        // tier, and the message consumes normally once published inside a unit of work.
+        await using var harness = await MessagingTestHarness.CreateAsync(services =>
+        {
+            services.AddHeadlessMessaging(setup =>
             {
-                services.AddHeadlessMessaging(setup =>
-                {
-                    setup.UseInMemory();
-                    setup.UseInMemoryStorage();
-                    setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
-                    setup.Bus.ForMessage<CoordinatedOrderPlaced>(message =>
-                        message
-                            .Contract("coordinated-order-placed")
-                            .WithDeliveryMode(DeliveryMode.Durable)
-                            .Consumer<CoordinatedOrderPlacedConsumer>(consumer =>
-                                consumer.ConsumerIdentity("tests.messaging-testing.coordinated-order-placed")
-                            )
-                    );
-                });
+                setup.UseInMemory();
+                setup.UseInMemoryStorage();
+                setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
+                setup.Bus.ForMessage<CoordinatedOrderPlaced>(message =>
+                    message
+                        .Contract("coordinated-order-placed")
+                        .WithEnlistment(TransactionEnlistment.Required)
+                        .Consumer<CoordinatedOrderPlacedConsumer>(consumer =>
+                            consumer.ConsumerIdentity("tests.messaging-testing.coordinated-order-placed")
+                        )
+                );
             });
+        });
 
-        await act.Should()
-            .ThrowAsync<MessagingConfigurationException>()
-            .WithMessage(
-                "*Coordinated delivery with durable consumers requires RequiredInboxCapability = Transactional*"
-            );
+        await harness.RunInUnitOfWorkAsync(sp =>
+            sp.GetRequiredService<IBus>().PublishAsync(new CoordinatedOrderPlaced("C6"), cancellationToken: AbortToken)
+        );
+
+        var consumed = await harness.WaitForConsumed<CoordinatedOrderPlaced>(TimeSpan.FromSeconds(5), AbortToken);
+        consumed.Message.Should().BeOfType<CoordinatedOrderPlaced>().Which.Id.Should().Be("C6");
     }
 
     [Fact]
@@ -207,18 +217,19 @@ public sealed class CoordinatedHarnessTests : TestBase
     {
         await using var harness = await _CreateConsumerHarnessAsync();
 
-        // A Durable (default) publish inside a compatible live scope is captured on that scope too, so a rollback
-        // discards it exactly like a Coordinated one.
+        // A Durable (default TransactionEnlistment.WhenAvailable) publish inside an active unit of work is
+        // captured on it too, so a rollback discards it exactly like a Required one.
         var act = () =>
-            harness.RunCoordinatedAsync(async () =>
+            harness.RunInUnitOfWorkAsync(async sp =>
             {
-                await harness.Publisher.PublishAsync(new StandaloneOrderPlaced("S1"), cancellationToken: AbortToken);
+                await sp.GetRequiredService<IBus>()
+                    .PublishAsync(new StandaloneOrderPlaced("S1"), cancellationToken: AbortToken);
                 throw new InvalidOperationException("boom");
             });
         await act.Should().ThrowAsync<InvalidOperationException>();
 
-        await harness.RunCoordinatedAsync(() =>
-            harness.Publisher.PublishAsync(new StandaloneOrderPlaced("S2"), cancellationToken: AbortToken)
+        await harness.RunInUnitOfWorkAsync(sp =>
+            sp.GetRequiredService<IBus>().PublishAsync(new StandaloneOrderPlaced("S2"), cancellationToken: AbortToken)
         );
         var consumed = await harness.WaitForConsumed<StandaloneOrderPlaced>(TimeSpan.FromSeconds(5), AbortToken);
 
