@@ -131,8 +131,10 @@
     <Folder Name="/UnitOfWork/">
         <Project Path="src/Headless.UnitOfWork.Abstractions/Headless.UnitOfWork.Abstractions.csproj" />
         <Project Path="src/Headless.UnitOfWork/Headless.UnitOfWork.csproj" />
+        <Project Path="src/Headless.UnitOfWork.EntityFramework/Headless.UnitOfWork.EntityFramework.csproj" />
         <Project Path="tests/Headless.UnitOfWork.Tests.Harness/Headless.UnitOfWork.Tests.Harness.csproj" />
         <Project Path="tests/Headless.UnitOfWork.Tests.Unit/Headless.UnitOfWork.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.UnitOfWork.EntityFramework.Tests.Unit/Headless.UnitOfWork.EntityFramework.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Captcha/">
         <Project Path="src/Headless.Captcha.Abstractions/Headless.Captcha.Abstractions.csproj" />

@@ -170,3 +170,4 @@ Headless.Tus.DistributedLocks
 Headless.Urls
 Headless.UnitOfWork
 Headless.UnitOfWork.Abstractions
+Headless.UnitOfWork.EntityFramework
