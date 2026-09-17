@@ -128,6 +128,12 @@
         <Project Path="tests/Headless.CommitCoordination.SqlServer.Tests.Unit/Headless.CommitCoordination.SqlServer.Tests.Unit.csproj" />
         <Project Path="tests/Headless.CommitCoordination.Tests.Harness/Headless.CommitCoordination.Tests.Harness.csproj" />
     </Folder>
+    <Folder Name="/UnitOfWork/">
+        <Project Path="src/Headless.UnitOfWork.Abstractions/Headless.UnitOfWork.Abstractions.csproj" />
+        <Project Path="src/Headless.UnitOfWork/Headless.UnitOfWork.csproj" />
+        <Project Path="tests/Headless.UnitOfWork.Tests.Harness/Headless.UnitOfWork.Tests.Harness.csproj" />
+        <Project Path="tests/Headless.UnitOfWork.Tests.Unit/Headless.UnitOfWork.Tests.Unit.csproj" />
+    </Folder>
     <Folder Name="/Captcha/">
         <Project Path="src/Headless.Captcha.Abstractions/Headless.Captcha.Abstractions.csproj" />
         <Project Path="src/Headless.Captcha.Core/Headless.Captcha.Core.csproj" />

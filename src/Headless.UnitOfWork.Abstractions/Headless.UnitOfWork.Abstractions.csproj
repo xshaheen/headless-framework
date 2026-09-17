@@ -1,0 +1,12 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>Contracts and shared abstractions for Headless unit-of-work packages.</Description>
+    <PackageTags>headless;unit-of-work;transactions;dotnet</PackageTags>
+    <RootNamespace>Headless.UnitOfWork</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Headless.UnitOfWork" />
+    <InternalsVisibleTo Include="Headless.UnitOfWork.Tests.Harness" />
+  </ItemGroup>
+</Project>

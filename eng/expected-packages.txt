@@ -168,3 +168,5 @@ Headless.Tus
 Headless.Tus.Azure
 Headless.Tus.DistributedLocks
 Headless.Urls
+Headless.UnitOfWork
+Headless.UnitOfWork.Abstractions
