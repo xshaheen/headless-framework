@@ -31,7 +31,6 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
     private const string _NestedAbandonedMessage =
         "A nested unit of work was disposed without completing, so the root cannot complete; the transaction is rolled back.";
 
-    private readonly ILogger _logger = logger ?? NullLogger<UnitOfWorkManager>.Instance;
     private readonly Lock _gate = new();
     private readonly List<Frame> _frames = []; // bottom .. top; the top frame is the innermost unit.
     private bool _beginning;
@@ -39,6 +38,9 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
 
     /// <inheritdoc />
     public IUnitOfWork? Current { get; private set; }
+
+    /// <summary>The manager's logger, shared with the provider runners so post-commit drain faults land in one category.</summary>
+    internal ILogger Logger { get; } = logger ?? NullLogger<UnitOfWorkManager>.Instance;
 
     /// <inheritdoc />
     public ValueTask<IUnitOfWork> BeginAsync(
@@ -64,7 +66,7 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
             }
 
             // A resource-less root needs no factory: the slot is claimed and published synchronously.
-            var root = new Internal.UnitOfWork(resource: null, _logger);
+            var root = new Internal.UnitOfWork(resource: null, Logger);
             var handle = new UnitOfWorkHandle(root, this);
 
             _frames.Add(new Frame(root, handle));
@@ -139,7 +141,7 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
                 // own commit and drain; registrations are not transferred.
             }
 
-            var unit = new Internal.UnitOfWork(resource, _logger);
+            var unit = new Internal.UnitOfWork(resource, Logger);
             var handle = new UnitOfWorkHandle(unit, this);
 
             _frames.Add(new Frame(unit, handle));
@@ -183,7 +185,7 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
                 // A resource-bearing enlist under a resource-less root is an independent nested unit.
             }
 
-            var unit = new Internal.UnitOfWork(resource, _logger);
+            var unit = new Internal.UnitOfWork(resource, Logger);
             var handle = new UnitOfWorkHandle(unit, this);
 
             _frames.Add(new Frame(unit, handle));
@@ -459,7 +461,7 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
                     }
                     catch (Exception ex)
                     {
-                        LogScopeDisposedRollbackFaulted(_logger, ex);
+                        LogScopeDisposedRollbackFaulted(Logger, ex);
                     }
                 }
 
@@ -483,7 +485,7 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
                 }
                 catch (Exception ex)
                 {
-                    LogScopeDisposedRollbackFaulted(_logger, ex);
+                    LogScopeDisposedRollbackFaulted(Logger, ex);
                 }
             }
 
@@ -523,7 +525,7 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
                 if (unit.TryClaimFailed(failure, out var claim))
                 {
                     drained.Add((unit, claim, failure));
-                    LogScopeDisposedLeak(_logger);
+                    LogScopeDisposedLeak(Logger);
                 }
             }
 
@@ -613,7 +615,7 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
     {
         BackgroundFault.Observe(
             Task.Run(work),
-            _logger,
+            Logger,
             static (logger, exception) => LogBackgroundDrainFaulted(logger, exception.InnerException)
         );
     }
@@ -638,7 +640,7 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
         catch (Exception ex)
         {
             // A failure-drain fault (a scope-state disposal fault) must not mask the caller's own exception.
-            LogBackgroundDrainFaulted(_logger, ex);
+            LogBackgroundDrainFaulted(Logger, ex);
         }
     }
 
@@ -648,7 +650,7 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
         // the caller's transaction already finished, so the after-commit work was silently discarded.
         if (resource is { IsOwned: false, IsTransactionCompleted: true })
         {
-            LogForgottenCompletion(_logger);
+            LogForgottenCompletion(Logger);
         }
     }
 

@@ -171,3 +171,5 @@ Headless.Urls
 Headless.UnitOfWork
 Headless.UnitOfWork.Abstractions
 Headless.UnitOfWork.EntityFramework
+Headless.UnitOfWork.PostgreSql
+Headless.UnitOfWork.SqlServer
