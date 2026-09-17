@@ -23,6 +23,7 @@ internal sealed class ChildUnitOfWork(Internal.UnitOfWork root, UnitOfWorkManage
     private List<Internal.UnitOfWork.CompletedRegistration> _completed = [];
     private List<Internal.UnitOfWork.FailedRegistration> _failed = [];
     private int _disposed;
+    private int _completedView;
 
     /// <summary>The root engine this view registers on; lets another scope's manager adopt it as a joinable frame.</summary>
     internal Internal.UnitOfWork Engine => root;
@@ -86,8 +87,17 @@ internal sealed class ChildUnitOfWork(Internal.UnitOfWork root, UnitOfWorkManage
     {
         _ThrowIfDisposed();
 
-        // Transfer: the registrations already sit on the root engine; keep them and pop the child.
+        // Transfer: the registrations already sit on the root engine; keep them and pop the child. Once
+        // completed, the view is terminal — a later rollback or dispose is the documented no-op and must not
+        // be mistaken for an abandon that would abort the root.
         _ = cancellationToken; // reserved: a child completion currently performs no resource work
+
+        if (Interlocked.CompareExchange(ref _completedView, 1, 0) != 0)
+        {
+            throw new InvalidOperationException(
+                "The unit of work has already completed. Begin a new unit of work for further work."
+            );
+        }
 
         await manager.CompleteChildAsync(root).ConfigureAwait(false);
     }
@@ -96,6 +106,11 @@ internal sealed class ChildUnitOfWork(Internal.UnitOfWork root, UnitOfWorkManage
     {
         _ThrowIfDisposed();
 
+        if (Volatile.Read(ref _completedView) == 1)
+        {
+            return ValueTask.CompletedTask; // A terminal view ignores the conflicting verb.
+        }
+
         // A child rollback aborts the root (never a silent poison): the root's registrations fail with
         // ChildAbandoned and the child's own registrations drop.
         return manager.AbandonChildAsync(root, this);
@@ -103,7 +118,7 @@ internal sealed class ChildUnitOfWork(Internal.UnitOfWork root, UnitOfWorkManage
 
     public void Dispose()
     {
-        if (Interlocked.CompareExchange(ref _disposed, 1, 0) != 0)
+        if (Interlocked.CompareExchange(ref _disposed, 1, 0) != 0 || Volatile.Read(ref _completedView) == 1)
         {
             return;
         }
@@ -115,7 +130,7 @@ internal sealed class ChildUnitOfWork(Internal.UnitOfWork root, UnitOfWorkManage
 
     private async ValueTask _DisposeAsyncCore()
     {
-        if (Interlocked.CompareExchange(ref _disposed, 1, 0) != 0)
+        if (Interlocked.CompareExchange(ref _disposed, 1, 0) != 0 || Volatile.Read(ref _completedView) == 1)
         {
             return;
         }

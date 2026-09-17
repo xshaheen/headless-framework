@@ -18,6 +18,7 @@ public abstract class UnitOfWorkRunConformanceTests<TFixture>(TFixture fixture) 
 {
     private static readonly TimeSpan _DrainTimeout = TimeSpan.FromSeconds(15);
 
+    [Fact]
     public virtual async Task should_drain_completion_work_and_persist_rows_when_operation_completes()
     {
         await fixture.ResetAsync(AbortToken);
@@ -45,6 +46,7 @@ public abstract class UnitOfWorkRunConformanceTests<TFixture>(TFixture fixture) 
         (await fixture.CountProbeRowsAsync(AbortToken)).Should().Be(1, "the committed probe row must be durable");
     }
 
+    [Fact]
     public virtual async Task should_discard_completion_work_and_roll_back_rows_when_operation_throws()
     {
         await fixture.ResetAsync(AbortToken);

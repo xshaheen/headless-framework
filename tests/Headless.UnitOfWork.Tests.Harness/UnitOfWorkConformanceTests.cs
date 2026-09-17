@@ -17,6 +17,7 @@ namespace Tests;
 public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : TestBase
     where TFixture : IUnitOfWorkFixture
 {
+    [Fact]
     public virtual async Task should_run_completed_work_once_after_complete()
     {
         var session = fixture.CreateSession();
@@ -36,6 +37,7 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
         unitOfWork.State.Should().Be(UnitOfWorkState.Completed);
     }
 
+    [Fact]
     public virtual async Task should_throw_already_completed_when_complete_is_called_twice()
     {
         var session = fixture.CreateSession();
@@ -49,6 +51,7 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
             .WithMessage("*Begin a new unit of work for further work.*");
     }
 
+    [Fact]
     public virtual async Task should_discard_completed_work_after_rollback()
     {
         var session = fixture.CreateSession();
@@ -70,6 +73,7 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
         unitOfWork.Failure!.Reason.Should().Be(UnitOfWorkFailureReason.RolledBack);
     }
 
+    [Fact]
     public virtual async Task should_reject_registration_after_terminal_state()
     {
         var session = fixture.CreateSession();
@@ -94,6 +98,7 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
             .WithMessage("*registrations are accepted only while it is Active.*");
     }
 
+    [Fact]
     public virtual async Task should_run_remaining_callbacks_in_order_and_surface_fault_after_drain()
     {
         var session = fixture.CreateSession();
@@ -128,6 +133,7 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
             .Be(UnitOfWorkState.Completed, "an OnCompleted fault after a successful drain is not a rollback");
     }
 
+    [Fact]
     public virtual async Task should_run_failed_work_and_dispose_state_when_disposed_without_complete()
     {
         var session = fixture.CreateSession();
@@ -156,6 +162,7 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
         failure!.Reason.Should().Be(UnitOfWorkFailureReason.Abandoned);
     }
 
+    [Fact]
     public virtual async Task should_dispose_scope_local_state_on_complete()
     {
         var session = fixture.CreateSession();
@@ -169,6 +176,7 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
         state.IsDisposed.Should().BeTrue();
     }
 
+    [Fact]
     public virtual async Task should_dispose_scope_local_state_on_rollback()
     {
         var session = fixture.CreateSession();
@@ -181,6 +189,7 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
         state.IsDisposed.Should().BeTrue();
     }
 
+    [Fact]
     public virtual async Task should_treat_rollback_after_complete_as_no_op()
     {
         var session = fixture.CreateSession();
@@ -201,6 +210,7 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
         unitOfWork.State.Should().Be(UnitOfWorkState.Completed);
     }
 
+    [Fact]
     public virtual async Task should_be_idempotent_when_rollback_is_called_twice()
     {
         var session = fixture.CreateSession();
@@ -221,13 +231,13 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
         unitOfWork.State.Should().Be(UnitOfWorkState.Failed);
     }
 
+    [Fact]
     public virtual async Task should_ignore_conflicting_terminal_verb_and_stay_completed()
     {
         var session = fixture.CreateSession();
         await using var unitOfWork = await session.BeginAsync(AbortToken);
         var failedCalls = 0;
 
-        await unitOfWork.CompleteAsync(AbortToken);
         unitOfWork.OnFailed(_ =>
         {
             failedCalls++;
@@ -235,14 +245,17 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
             return ValueTask.CompletedTask;
         });
 
-        // RollbackAsync after CompleteAsync is the conflicting verb: ignored, no OnFailed ran (it could not be
-        // registered after terminal anyway), and the unit stays Completed.
+        await unitOfWork.CompleteAsync(AbortToken);
+
+        // RollbackAsync after CompleteAsync is the conflicting verb: ignored, the OnFailed registered while the
+        // unit was active never runs, and the unit stays Completed.
         await unitOfWork.RollbackAsync();
 
         failedCalls.Should().Be(0);
         unitOfWork.State.Should().Be(UnitOfWorkState.Completed);
     }
 
+    [Fact]
     public virtual async Task should_throw_object_disposed_when_any_member_runs_after_dispose()
     {
         var session = fixture.CreateSession();
@@ -259,6 +272,7 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
         await unitOfWork.Invoking(x => x.RollbackAsync().AsTask()).Should().ThrowAsync<ObjectDisposedException>();
     }
 
+    [Fact]
     public virtual async Task should_not_roll_back_committed_work_when_dispose_races_the_completion_drain()
     {
         var session = fixture.CreateSession();
@@ -291,6 +305,7 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
         state.IsDisposed.Should().BeTrue();
     }
 
+    [Fact]
     public virtual async Task should_expose_null_resource_for_resource_less_unit()
     {
         var session = fixture.CreateSession();
@@ -299,6 +314,7 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
         unitOfWork.Resource.Should().BeNull();
     }
 
+    [Fact]
     public virtual async Task should_expose_the_relational_handle_for_a_resource_bearing_unit()
     {
         var session = fixture.CreateSession();
@@ -316,6 +332,7 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
 
     // Manager-scope scenarios (replacing the ambient-specific ones).
 
+    [Fact]
     public virtual async Task should_set_current_after_begin_and_clear_it_after_dispose()
     {
         var session = fixture.CreateSession();
@@ -330,6 +347,7 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
         session.Manager.Current.Should().BeNull();
     }
 
+    [Fact]
     public virtual async Task should_restore_current_after_inner_independent_unit_disposes()
     {
         var session = fixture.CreateSession();
@@ -352,6 +370,7 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
         outer.State.Should().Be(UnitOfWorkState.Active, "the inner unit's outcome is its own");
     }
 
+    [Fact]
     public virtual async Task should_not_promote_independent_nested_unit_work_to_the_root()
     {
         var session = fixture.CreateSession();
@@ -393,6 +412,7 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
         innerCalls.Should().Be(1);
     }
 
+    [Fact]
     public virtual async Task should_return_a_child_handle_for_begin_on_the_same_resource()
     {
         var session = fixture.CreateSession();
@@ -415,6 +435,7 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
         root.State.Should().Be(UnitOfWorkState.Active);
     }
 
+    [Fact]
     public virtual async Task should_transfer_child_registrations_to_the_root_on_child_complete()
     {
         var session = fixture.CreateSession();
@@ -460,6 +481,7 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
         resource.CommitCalls.Should().Be(1, "the child did not commit; the root owns the transaction");
     }
 
+    [Fact]
     public virtual async Task should_abort_the_root_when_a_child_is_abandoned()
     {
         var session = fixture.CreateSession();
@@ -497,6 +519,7 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
             .WithMessage("*A nested unit of work was disposed without completing, so the root cannot complete*");
     }
 
+    [Fact]
     public virtual async Task should_refuse_root_complete_while_a_child_is_active()
     {
         var session = fixture.CreateSession();
@@ -527,6 +550,7 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
         root.State.Should().Be(UnitOfWorkState.Completed);
     }
 
+    [Fact]
     public virtual async Task should_treat_disposing_a_child_after_the_root_completed_as_a_no_op()
     {
         var session = fixture.CreateSession();
@@ -554,6 +578,7 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
         session.Manager.Current.Should().BeNull();
     }
 
+    [Fact]
     public virtual async Task should_throw_when_a_second_resource_is_begun_under_a_resource_bearing_unit()
     {
         var session = fixture.CreateSession();
@@ -579,6 +604,7 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
             .WithMessage("*already active on another resource*IServiceScopeFactory.CreateScope()*");
     }
 
+    [Fact]
     public virtual async Task should_release_the_slot_when_the_resource_begin_faults()
     {
         var session = fixture.CreateSession();
@@ -606,6 +632,7 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
         second.State.Should().Be(UnitOfWorkState.Active, "the slot is reusable after a faulted begin");
     }
 
+    [Fact]
     public virtual async Task should_roll_back_and_warn_when_the_scope_disposes_with_an_active_unit()
     {
         var session = fixture.CreateSession();
@@ -629,6 +656,7 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
         warning.Message.Should().Contain("Complete or dispose every unit of work before the scope ends.");
     }
 
+    [Fact]
     public virtual async Task should_commit_the_owned_resource_on_complete_and_not_on_child_complete()
     {
         var session = fixture.CreateSession();
@@ -646,6 +674,7 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
         resource.RollbackCalls.Should().Be(0);
     }
 
+    [Fact]
     public virtual async Task should_roll_back_the_owned_resource_on_rollback_and_abandon()
     {
         var session = fixture.CreateSession();
@@ -672,6 +701,7 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
         second.RollbackCalls.Should().Be(1, "dispose without complete rolls the owned resource back");
     }
 
+    [Fact]
     public virtual async Task should_not_commit_an_observed_resource()
     {
         var session = fixture.CreateSession();
@@ -688,6 +718,7 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
         resource.CommitCalls.Should().Be(0, "observed mode never commits the resource");
     }
 
+    [Fact]
     public virtual async Task should_log_the_forgotten_completion_warning_for_an_observed_unit_disposed_after_a_finished_transaction()
     {
         var session = fixture.CreateSession();
@@ -706,6 +737,7 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
         warning.Message.Should().Contain("durable rows will be recovered by the relay");
     }
 
+    [Fact]
     public virtual async Task should_not_log_the_forgotten_completion_warning_after_an_explicit_rollback()
     {
         var session = fixture.CreateSession();
@@ -723,6 +755,7 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
         session.Logs.Should().BeEmpty("RollbackAsync suppresses the forgotten-completion warning");
     }
 
+    [Fact]
     public virtual async Task should_run_on_failed_with_faulted_reason_when_the_commit_faults()
     {
         var session = fixture.CreateSession();
@@ -749,6 +782,10 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
             .Be(UnitOfWorkState.Failed, "a commit fault transitions to Failed before the exception propagates");
         failure!.Reason.Should().Be(UnitOfWorkFailureReason.Faulted);
         failure.Exception.Should().BeOfType<InvalidOperationException>();
+        resource
+            .RollbackCalls.Should()
+            .Be(1, "a commit that never reached the database leaves the transaction open; the unit rolls it back");
+        session.Logs.Should().BeEmpty("a successful rollback after the commit fault is not an incident");
 
         var second = () => unitOfWork.CompleteAsync(AbortToken).AsTask();
 
@@ -758,6 +795,34 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
             .WithMessage("*already failed (Faulted)*Begin a new unit of work.*");
     }
 
+    [Fact]
+    public virtual async Task should_log_and_still_surface_the_commit_fault_when_the_rollback_after_it_faults_too()
+    {
+        var session = fixture.CreateSession();
+        var resource = new FakeUnitOfWorkResource
+        {
+            CommitFault = new InvalidOperationException("commit fault"),
+            RollbackFault = new InvalidOperationException("rollback fault"),
+        };
+
+        await using var unitOfWork = await session.Manager.BeginAsync(
+            _ => ValueTask.FromResult<IUnitOfWorkResource>(resource),
+            options: null,
+            cancellationToken: AbortToken
+        );
+
+        var act = () => unitOfWork.CompleteAsync(AbortToken).AsTask();
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("commit fault");
+        unitOfWork.State.Should().Be(UnitOfWorkState.Failed);
+        resource.RollbackCalls.Should().Be(1);
+
+        var entry = session.Logs.Should().ContainSingle().Subject;
+        entry.Level.Should().Be(LogLevel.Error);
+        entry.Message.Should().Contain("whose commit faulted failed as well");
+    }
+
+    [Fact]
     public virtual async Task should_leave_state_completed_when_an_on_completed_callback_faults()
     {
         var session = fixture.CreateSession();
@@ -771,6 +836,7 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
         unitOfWork.State.Should().Be(UnitOfWorkState.Completed);
     }
 
+    [Fact]
     public virtual async Task should_support_prevent_retry_and_report_it()
     {
         var session = fixture.CreateSession();

@@ -260,6 +260,9 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
 
             if (!unit.TryClaimCompleted(out claim))
             {
+                // A root aborted by a child abandon still holds its slot; the owner's complete releases it.
+                _frames.RemoveAt(frameIndex);
+                Current = _frames.Count > 0 ? _frames[^1].Handle : null;
                 _ThrowForTerminalUnit(unit);
             }
 
@@ -281,12 +284,30 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
                 var failure = new UnitOfWorkFailure(UnitOfWorkFailureReason.Faulted, ex);
 
                 unit.TransitionCompletedToFailed(failure);
+                // The owned transaction is still open when the commit never reached the database (an interceptor
+                // or a network fault before the commit) and would otherwise hold its locks until the connection
+                // dies; roll it back best-effort. A resource whose commit did land reports the transaction as
+                // finished and treats this as a dispose.
+                await _RollbackAfterCommitFaultAsync(resource).ConfigureAwait(false);
                 await _DrainFailedQuietlyAsync(claim, failure).ConfigureAwait(false);
                 ExceptionDispatchInfo.Capture(ex).Throw();
             }
         }
 
         await Internal.UnitOfWork.DrainCompletedAsync(claim).ConfigureAwait(false);
+    }
+
+    private async ValueTask _RollbackAfterCommitFaultAsync(IUnitOfWorkResource resource)
+    {
+        try
+        {
+            await resource.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // The commit fault is the caller's outcome; a rollback fault on top of it is logged, never masks it.
+            LogCommitFaultRollbackFaulted(Logger, ex);
+        }
     }
 
     /// <summary>
@@ -324,7 +345,9 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
 
         if (!unit.TryClaimFailed(failure, out var claim))
         {
-            return; // Idempotent: a terminal unit ignores the conflicting verb.
+            _PopFrame(unit); // Idempotent: a terminal unit ignores the conflicting verb but releases its slot.
+
+            return;
         }
 
         _PopFrame(unit);
@@ -395,7 +418,9 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
 
         if (!unit.TryClaimFailed(failure, out var claim))
         {
-            return; // A dispose after CompleteAsync or RollbackAsync is a no-op.
+            _PopFrame(unit); // A dispose after CompleteAsync or RollbackAsync is a no-op; a child-aborted root frees its slot.
+
+            return;
         }
 
         _PopFrame(unit);
@@ -432,6 +457,8 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
 
         if (!unit.TryClaimFailed(failure, out var claim))
         {
+            _PopFrame(unit); // A dispose after a terminal verb is a no-op; a child-aborted root frees its slot.
+
             return;
         }
 
@@ -580,8 +607,9 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
             return null; // The root already reached its terminal state; the child's dispose is a no-op.
         }
 
-        _PopFrame(root);
-
+        // The aborted root keeps its slot: Current still answers with the handle the owner holds, and the
+        // owner's own CompleteAsync / RollbackAsync / dispose is what unwinds the frame — with the nested-abandon
+        // message on the complete path, so the abort is never silent.
         return (claim, failure);
     }
 
@@ -733,4 +761,11 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
 
     [LoggerMessage(EventId = 4, Level = LogLevel.Error, Message = "A unit-of-work background drain faulted.")]
     private static partial void LogBackgroundDrainFaulted(ILogger logger, Exception? exception);
+
+    [LoggerMessage(
+        EventId = 5,
+        Level = LogLevel.Error,
+        Message = "Rolling back a unit of work whose commit faulted failed as well; its transaction may still be open."
+    )]
+    private static partial void LogCommitFaultRollbackFaulted(ILogger logger, Exception exception);
 }
