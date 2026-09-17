@@ -50,7 +50,7 @@ public sealed class TenantCatalogRegistrationTests : TestBase
 
             tenancy.Http(http =>
                 http.ResolveFromCatalog(catalogHttp =>
-                    catalogHttp.AddSource(new HeaderTenantIdentifierSource(_IdentifierHeader))
+                    catalogHttp.AddSource(new StubHeaderIdentifierSource(_IdentifierHeader))
                 )
             );
         });

@@ -24,6 +24,7 @@
         <Project Path="tests\Headless.Api.FluentValidation.Tests.Unit\Headless.Api.FluentValidation.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Api.Logging.Serilog.Tests.Unit\Headless.Api.Logging.Serilog.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Api.Tests.Integration\Headless.Api.Tests.Integration.csproj" />
+        <Project Path="tests\Headless.Api.Tests.Unit\Headless.Api.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Api.Composition.Tests.Unit\Headless.Api.Composition.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Api.Idempotency.Tests.Integration\Headless.Api.Idempotency.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Api.Idempotency.Tests.Unit\Headless.Api.Idempotency.Tests.Unit.csproj" />

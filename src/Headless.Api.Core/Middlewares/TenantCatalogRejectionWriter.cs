@@ -30,7 +30,7 @@ internal static class TenantCatalogRejectionWriter
     {
         var (statusCode, problemDetails) = BuildOutcome(kind, problemDetailsCreator, detailed);
 
-        return WriteAsync(context, statusCode, problemDetails);
+        return _WriteRejectionAsync(context, statusCode, problemDetails);
     }
 
     /// <summary>Builds and writes the ProblemDetails response for an R19 identifier/claim mismatch.</summary>
@@ -42,7 +42,19 @@ internal static class TenantCatalogRejectionWriter
     {
         var (statusCode, problemDetails) = BuildMismatch(problemDetailsCreator, detailed);
 
-        return WriteAsync(context, statusCode, problemDetails);
+        return _WriteRejectionAsync(context, statusCode, problemDetails);
+    }
+
+    /// <summary>
+    /// Writes a tenant rejection. Every tenant-catalog rejection is non-cacheable (R17/KTD9): 404 is
+    /// heuristically cacheable, and the opt-in no-cache middleware may sit downstream of the short-circuit,
+    /// so <c>Cache-Control: no-store</c> is stamped here rather than left to pipeline placement.
+    /// </summary>
+    private static async Task _WriteRejectionAsync(HttpContext context, int statusCode, ProblemDetails problemDetails)
+    {
+        context.Response.Headers.CacheControl = "no-store";
+
+        await WriteAsync(context, statusCode, problemDetails).ConfigureAwait(false);
     }
 
     /// <summary>Maps <see cref="TenantResolutionKind.Unknown"/>, <see cref="TenantResolutionKind.Disabled"/>, and <see cref="TenantResolutionKind.Invalid"/> per R11/KTD9.</summary>
