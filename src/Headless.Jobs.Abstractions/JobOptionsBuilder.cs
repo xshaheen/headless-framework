@@ -2,6 +2,7 @@
 
 using Headless.Jobs.Enums;
 using Headless.Jobs.Models;
+using Headless.UnitOfWork;
 
 namespace Headless.Jobs;
 
@@ -16,7 +17,7 @@ public sealed class JobOptionsBuilder
     private int? _retries;
     private int[]? _retryIntervals;
     private NodeDeathPolicy? _onNodeDeath;
-    private bool _requireAtomicEnlistment;
+    private TransactionEnlistment _enlistment;
     private string? _correlationId;
     private string? _causationId;
     private string? _description;
@@ -47,10 +48,10 @@ public sealed class JobOptionsBuilder
         return this;
     }
 
-    /// <summary>Requires compatible relational enlistment; this assertion remains set across builder reuse.</summary>
-    public JobOptionsBuilder RequireAtomicEnlistment()
+    /// <summary>Sets how eagerly this job enlists in the active unit of work; this assertion remains set across builder reuse.</summary>
+    public JobOptionsBuilder WithEnlistment(TransactionEnlistment enlistment)
     {
-        _requireAtomicEnlistment = true;
+        _enlistment = enlistment;
         return this;
     }
 
@@ -98,7 +99,7 @@ public sealed class JobOptionsBuilder
             Retries = _retries,
             RetryIntervals = _retryIntervals?.ToArray(),
             OnNodeDeath = _onNodeDeath,
-            RequireAtomicEnlistment = _requireAtomicEnlistment,
+            Enlistment = _enlistment,
             CorrelationId = _correlationId,
             CausationId = _causationId,
             Description = _description,

@@ -92,7 +92,7 @@ public class CronJobConfigurations<TCronJob>(
 
         // Transient per-call atomic-enlistment requirement: call intent, not definition payload, so never a column
         // (mirrors TimeJobConfigurations).
-        builder.Ignore(e => e.RequireAtomicEnlistment);
+        builder.Ignore(e => e.Enlistment);
 
         builder.HasIndex("Expression").HasDatabaseName("IX_CronJobs_Expression");
 

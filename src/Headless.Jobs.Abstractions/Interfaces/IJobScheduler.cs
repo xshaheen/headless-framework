@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Jobs.Models;
+using Headless.UnitOfWork;
 
 namespace Headless.Jobs.Interfaces;
 
@@ -267,12 +268,12 @@ public interface IJobScheduler
         CancellationToken cancellationToken = default
     );
 
-    /// <summary>Requests cancellation with an explicit required-atomic assertion.</summary>
+    /// <summary>Requests cancellation with an explicit transaction-enlistment override.</summary>
     Task<JobScheduleResult> CancelKeyedAsync(
         JobKeyScope scope,
         JobKey key,
         long expectedGeneration,
-        bool requireAtomicEnlistment,
+        TransactionEnlistment enlistment,
         CancellationToken cancellationToken = default
     );
 

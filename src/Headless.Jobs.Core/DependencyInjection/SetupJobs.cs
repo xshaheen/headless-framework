@@ -2,7 +2,6 @@
 
 using Headless.Abstractions;
 using Headless.Checks;
-using Headless.CommitCoordination;
 using Headless.Coordination;
 using Headless.DistributedLocks;
 using Headless.Jobs.BackgroundServices;
@@ -19,8 +18,8 @@ using Headless.Jobs.Managers;
 using Headless.Jobs.MultiTenancy;
 using Headless.Jobs.Provider;
 using Headless.Jobs.Temps;
-using Headless.Jobs.Transactions;
 using Headless.MultiTenancy;
+using Headless.UnitOfWork;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -180,9 +179,14 @@ public static class SetupJobs
         // Guid.NewGuid() so they stay index-friendly. Idempotent: TryAdd-based, so a host that already registered it wins.
         services.AddHeadlessGuidGenerator();
 
-        services.AddSingleton<ITimeJobManager<TTimeJob>, JobsManager<TTimeJob, TCronJob>>();
-        services.AddSingleton<ICronJobManager<TCronJob>, JobsManager<TTimeJob, TCronJob>>();
-        services.AddSingleton<IJobScheduler, JobScheduler<TTimeJob, TCronJob>>();
+        // KD5: the singleton core plus scoped facades. The facade resolves IUnitOfWorkManager.Current at each call
+        // and passes it into the core's Add/keyed-schedule methods; the core itself never resolves ambient state.
+        // AddUnitOfWork() is idempotent (KTD9) — composition with other AddUnitOfWork() callers is safe.
+        services.AddUnitOfWork();
+        services.AddSingleton<JobsManager<TTimeJob, TCronJob>>();
+        services.AddScoped<ITimeJobManager<TTimeJob>, JobsManagerFacade<TTimeJob, TCronJob>>();
+        services.AddScoped<ICronJobManager<TCronJob>, JobsManagerFacade<TTimeJob, TCronJob>>();
+        services.AddScoped<IJobScheduler, JobScheduler<TTimeJob, TCronJob>>();
         services.AddSingleton<IInternalJobManager, InternalJobsManager<TTimeJob, TCronJob>>();
         // Default owner identity for the in-memory path + always-on instrumentation; the durable path overrides it.
         services.TryAddSingleton<IJobsOwnerIdentity, DefaultJobsOwnerIdentity>();
@@ -192,9 +196,6 @@ public static class SetupJobs
             JobsInMemoryPersistenceProvider<TTimeJob, TCronJob>
         >();
         services.AddSingleton<IJobsNotificationHubSender, NoOpJobsNotificationHubSender>();
-        // Null-coordinator fallback so the JobsManager resolves and takes the direct path in standalone Jobs hosts
-        // (no CommitCoordination, no Messaging). AddCommitCoordination's unconditional registration wins when present.
-        services.TryAddSingleton<ICurrentCommitCoordinator, JobsNullCommitCoordinator>();
         services.TryAddSingleton(TimeProvider.System);
 
         // Per-host tenancy DI (see _AddTenancyServices): runs on EVERY call so a second host built after the process-

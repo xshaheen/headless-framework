@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Jobs.Enums;
+using Headless.UnitOfWork;
 
 namespace Headless.Jobs.Models;
 
@@ -12,11 +13,10 @@ namespace Headless.Jobs.Models;
 public sealed record RecurringJobOptions
 {
     /// <summary>
-    /// Fails before scheduling effects unless a compatible live relational transaction can enlist the definition
-    /// write. Either this call flag or the function policy can require it; the host default is never applied to
-    /// recurring definitions.
+    /// How eagerly this definition write enlists in the active unit of work. Either this call value or the
+    /// function policy can require it; the host default is never applied to recurring definitions.
     /// </summary>
-    public bool RequireAtomicEnlistment { get; init; }
+    public TransactionEnlistment Enlistment { get; init; }
 
     /// <summary>Optional root business correlation captured by each materialized occurrence.</summary>
     public string? CorrelationId { get; init; }

@@ -2,117 +2,109 @@
 
 using System.Data;
 using System.Data.Common;
-using Headless.CommitCoordination;
 using Headless.Jobs.BackgroundServices;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Interfaces;
+using Headless.UnitOfWork;
 using Microsoft.Extensions.Logging;
 
 namespace Headless.Jobs.Managers;
 
-// Commit-coordination routing for atomic enqueue: synchronous capture of the ambient coordinator, the fail-loud
-// mis-wire/dead-transaction checks, the synchronous commit callback that hands post-commit work to the hosted worker,
-// and the signal kinds it hands over. The main JobsManager partial holds the add-job flow that routes through this
-// seam.
+// Unit-of-work routing for atomic enqueue: capture of the caller-supplied IUnitOfWork?, the guarantee-matrix
+// (KD7) fail-loud checks, the synchronous OnCompleted callback that hands post-commit work to the hosted worker, and
+// the signal kinds it hands over. The main JobsManager partial holds the add-job flow that routes through this seam.
+// The core takes IUnitOfWork? as an explicit argument (KD5) — it never resolves an ambient coordinator itself.
 internal sealed partial class JobsManager<TTimeJob, TCronJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {
-    // Captured ambient coordinator + live relational transaction for one coordinated enqueue. Captured SYNCHRONOUSLY
-    // in the caller's frame before the first await — re-reading ICurrentCommitCoordinator.Current after an await could
-    // observe a torn-down AsyncLocal scope and silently take the direct path, breaking atomicity.
+    // Captured unit of work + live relational resource for one coordinated enqueue.
     private readonly record struct CoordinatedJobContext(
-        ICommitCoordinator Coordinator,
-        CapturedRelationalContext Relational,
+        IUnitOfWork UnitOfWork,
+        CapturedRelationalResource Relational,
         ICoordinatedJobWriter<TTimeJob, TCronJob> Writer,
         bool RequireSavepoints
     );
 
-    // Routing decision read once, synchronously, before any await (KTD-1):
-    //  - null  → no relational handle and atomicity was not required → today's direct path.
-    //  - value → a live relational transaction is present → write rows inside it and defer side effects to commit.
-    // Throws when a relational handle is present but its transaction is dead/completed: the caller opened a
-    // transaction expecting atomicity, so silent fallback would reintroduce the divergence this feature prevents (KTD-2).
-    // Jobs propagate write faults so callers cannot mistake a failed enqueue for a successfully enlisted deadline.
+    // Routing decision (KD7 guarantee matrix):
+    //  - TransactionEnlistment.Never             → always the direct path; the resource is never inspected, even
+    //    when it exists or is incompatible (Never "succeeds against an incompatible resource").
+    //  - no unit of work (or no joinable relational resource) → "no unit of work" behavior: WhenAvailable falls
+    //    back to the direct path, Required throws the "requires an active unit of work" message.
+    //  - a joinable relational resource → validated for compatibility; incompatible/dead resources throw for both
+    //    WhenAvailable and Required (KD7: "A joinable resource that is incompatible ... throws in both").
     private CoordinatedJobContext? _TryCaptureCoordinatedContext(
-        bool requireAtomicEnlistment = false,
-        bool requireSavepoints = false
+        IUnitOfWork? unitOfWork,
+        TransactionEnlistment enlistment,
+        string function,
+        bool requireSavepoints
     )
     {
-        var coordinator = _currentCommitCoordinator.Current;
-
-        if (coordinator is null)
+        if (enlistment == TransactionEnlistment.Never)
         {
-            _RejectMissingAtomicCapability(requireAtomicEnlistment);
             return null;
         }
 
-        if (coordinator.Relational is not { } relational)
+        if (unitOfWork is not { State: UnitOfWorkState.Active, Resource: IRelationalUnitOfWorkResource relational })
         {
-            _RejectMissingAtomicCapability(requireAtomicEnlistment);
-            // A coordinated scope without a relational handle (e.g. a messaging-only scope): the coordinator is an
-            // ambient scope any subsystem may open, so jobs must not make it infectious — fall back to direct insert.
+            _RejectMissingUnitOfWork(enlistment, function);
             return null;
         }
 
-        // A scope that already reached its outcome can still be ambient until it is disposed; its transaction is
-        // finished even when the driver keeps the handle populated, so the write must not pretend to enlist.
-        if (coordinator.State != CommitCoordinatorState.Active || relational.Transaction is null)
-        {
-            throw new InvalidOperationException(
-                "A relational commit coordinator is active but its transaction is no longer live, so the job row "
-                    + "cannot be enlisted atomically. Enqueue inside a live coordinated transaction, or call AddAsync "
-                    + "outside the coordinated scope."
-            );
-        }
-
-        // Resolve the writer here — still synchronous, before the caller's first await — so a relational coordinator
-        // wired to a non-coordinated provider fails loud at capture (KTD-2) rather than mid-write.
+        // Resolve the writer here — still synchronous, before the caller's first await — so a relational unit of
+        // work wired to a non-coordinated provider fails loud at capture rather than mid-write.
         var writer = _RequireCoordinatedWriter();
-        var captured = new CapturedRelationalContext(relational);
+        var captured = new CapturedRelationalResource(relational);
         writer.ValidateContext(captured, requireSavepoints);
-        return new CoordinatedJobContext(coordinator, captured, writer, requireSavepoints);
+        return new CoordinatedJobContext(unitOfWork, captured, writer, requireSavepoints);
     }
 
-    private static void _RejectMissingAtomicCapability(bool required)
+    private static void _RejectMissingUnitOfWork(TransactionEnlistment enlistment, string function)
     {
-        if (required)
+        if (enlistment == TransactionEnlistment.Required)
         {
             throw new InvalidOperationException(
-                "Required atomic Jobs scheduling needs an active commit coordinator with a compatible live relational transaction."
+                $"Scheduling '{function}' requires an active unit of work (TransactionEnlistment.Required) but none "
+                    + "is active in this scope. Begin one with IUnitOfWorkManager.BeginAsync, or register the "
+                    + "function with TransactionEnlistment.WhenAvailable."
             );
         }
     }
 
-    private void _PrepareCoordinatedWrite(CoordinatedJobContext context)
+    // KTD7: the drift re-read that used to compare captured-vs-ambient coordinator identity becomes a plain
+    // State == Active re-validation — a scoped IUnitOfWorkManager can only ever hold the one unit it began, so there
+    // is no second coordinator identity to drift to; the only failure mode left is the unit having completed under
+    // the caller (a nested completion, or the caller racing CompleteAsync from elsewhere in the same scope).
+    private static void _PrepareCoordinatedWrite(CoordinatedJobContext context)
     {
-        if (!ReferenceEquals(_currentCommitCoordinator.Current, context.Coordinator))
+        if (context.UnitOfWork.State != UnitOfWorkState.Active)
         {
             throw new InvalidOperationException(
-                "The captured Jobs commit coordinator changed during scheduling; atomic enlistment cannot continue."
+                "The active unit of work is no longer active; the job row cannot be enlisted atomically."
             );
         }
         context.Relational.Validate();
         context.Writer.ValidateContext(context.Relational, context.RequireSavepoints);
         // Jobs writes use a separate context; an owned business save cannot recreate them after rollback.
-        context.Coordinator.GetOrAdd(static _ => new CommitRetryGuard()).PreventRetry();
+        context.UnitOfWork.PreventRetry();
     }
 
-    private sealed class CapturedRelationalContext : IRelationalCommitContext
+    // Defensive snapshot mirroring the pre-existing capture: re-validates connection/transaction identity and
+    // liveness before every write, and throws the shared "incompatible resource" remedy when the caller's resource
+    // no longer matches what was captured (closed connection, replaced transaction).
+    private sealed class CapturedRelationalResource : IRelationalUnitOfWorkResource
     {
-        private readonly IRelationalCommitContext _original;
+        private readonly IRelationalUnitOfWorkResource _original;
         public DbConnection Connection { get; }
         public DbTransaction Transaction { get; }
+        public bool IsOwned => _original.IsOwned;
+        public bool IsTransactionCompleted => _original.IsTransactionCompleted;
 
-        public CapturedRelationalContext(IRelationalCommitContext original)
+        public CapturedRelationalResource(IRelationalUnitOfWorkResource original)
         {
             _original = original;
-            Connection =
-                original.Connection
-                ?? throw new InvalidOperationException("The relational Jobs transaction has no live connection.");
-            Transaction =
-                original.Transaction
-                ?? throw new InvalidOperationException("The relational Jobs transaction is no longer live.");
+            Connection = original.Connection;
+            Transaction = original.Transaction;
             Validate();
         }
 
@@ -126,10 +118,17 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
             )
             {
                 throw new InvalidOperationException(
-                    "The captured Jobs connection/transaction is closed, completed, or changed; atomic enlistment cannot continue."
+                    "The active unit of work's transaction belongs to another database or is no longer live "
+                        + "(closed, completed, or changed), so the Jobs write cannot enlist. Use the same database, "
+                        + "or TransactionEnlistment.Never for this call."
                 );
             }
         }
+
+        public ValueTask CommitAsync(CancellationToken cancellationToken) => _original.CommitAsync(cancellationToken);
+
+        public ValueTask RollbackAsync(CancellationToken cancellationToken) =>
+            _original.RollbackAsync(cancellationToken);
     }
 
     private ICoordinatedJobWriter<TTimeJob, TCronJob> _RequireCoordinatedWriter()
@@ -139,30 +138,29 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
             return writer;
         }
 
-        // Relational coordinator active, but the configured provider cannot write inside the ambient transaction
-        // (e.g. the in-memory provider). This is a mis-wire, not a fallback — fail loud rather than insert
-        // non-atomically.
+        // A joinable relational unit of work is active, but the configured provider cannot write inside it (e.g.
+        // the in-memory provider). This is a mis-wire, not a fallback — fail loud rather than insert non-atomically.
         throw new InvalidOperationException(
-            "A relational commit coordinator is active but the configured job persistence provider does not support "
-                + "coordinated writes. The coordinated-enqueue path requires the EF Core operational store "
-                + "(UseEntityFramework)."
+            "An active unit of work has a joinable relational resource but the configured job persistence provider "
+                + "does not support coordinated writes. The coordinated-enqueue path requires the EF Core "
+                + "operational store (UseEntityFramework)."
         );
     }
 
     // Bound for the one side effect that stays on the commit path (the cron-expressions cache invalidation). The
-    // coordinator drains OnCommit callbacks without a cancellation token, so nothing external carries a deadline;
-    // without an independent one a stalled cache would hold the commit thread, DI scope, and connection.
+    // unit of work drains OnCompleted callbacks without a cancellation token, so nothing external carries a
+    // deadline; without an independent one a stalled cache would hold the commit thread, DI scope, and connection.
     private static readonly TimeSpan _CronCacheInvalidationDeadline = JobsPostCommitSignalService.SignalDeadline;
 
     // Registers a coordinated write's post-commit signal. The callback is synchronous: it hands the worker a signal
     // and returns, so dispatch, scheduler restart, and dashboard notification never run on the caller's commit. The
     // row is already durable when the worker runs them, so a dropped or failed signal cannot roll the commit back —
     // the scheduler's polling sweep is the recovery path (KTD-4).
-    private void _SignalOnCommit(ICommitCoordinator coordinator, JobsPostCommitSignal signal)
+    private void _SignalOnCommit(IUnitOfWork unitOfWork, JobsPostCommitSignal signal)
     {
         // The IDisposable unsubscribe handle is intentionally discarded (as in MessageOutboxBuffer): once the row is
         // written the signal must fire unconditionally on commit, so there is nothing to cancel.
-        coordinator.OnCommit(() =>
+        unitOfWork.OnCompleted(() =>
         {
             _postCommitSignals.TrySignal(signal);
 
@@ -175,12 +173,12 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
     // because the poll sweep reads THROUGH that distributed cache and would not recover a dropped invalidation (R10).
     // It is bounded so a stalled cache releases the commit; the durable store stays authoritative either way.
     private void _SignalCronOnCommit(
-        ICommitCoordinator coordinator,
+        IUnitOfWork unitOfWork,
         ICoordinatedJobWriter<TTimeJob, TCronJob> writer,
         JobsPostCommitSignal signal
     )
     {
-        coordinator.OnCommit(async () =>
+        unitOfWork.OnCompleted(async () =>
         {
             await _InvalidateCronExpressionsCacheBoundedAsync(writer, signal.JobScope).ConfigureAwait(false);
             _postCommitSignals.TrySignal(signal);

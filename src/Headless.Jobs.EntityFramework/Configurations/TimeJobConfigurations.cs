@@ -50,7 +50,7 @@ public class TimeJobConfigurations<TTimeJob>(
 
         // Transient schedule-time authorization flag (KTD2): never a column.
         builder.Ignore(x => x.IsSystemJob);
-        builder.Ignore(x => x.RequireAtomicEnlistment);
+        builder.Ignore(x => x.Enlistment);
 
         builder.Property(x => x.CancelRequested).IsRequired().HasDefaultValue(value: false);
 

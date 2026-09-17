@@ -9,9 +9,10 @@ using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Managers;
 using Headless.Jobs.Models;
-using Headless.Jobs.Transactions;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;
+using Headless.UnitOfWork;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -360,7 +361,6 @@ public sealed class JobsTenancyChainPropagationTests : TestBase
             Substitute.For<IJobsNotificationHubSender>(),
             new JobsExecutionContext(),
             dispatcher,
-            new JobsNullCommitCoordinator(),
             new CronScheduleCache(TimeZoneInfo.Utc),
             signals,
             JobFunctionProvider.CreateHostRegistry(configuration: null),
@@ -369,7 +369,15 @@ public sealed class JobsTenancyChainPropagationTests : TestBase
             tenancyOptions: Options.Create(new JobsTenancyOptions { RejectCrossTenantEnqueue = rejectCrossTenant })
         );
 
-        return (manager, persistence);
+        // These scenarios exercise ambient-tenant validation on the Add path with no active unit of work, so the
+        // facade's IUnitOfWorkManager reports no Current — the "no unit of work" branch of the guarantee matrix.
+        var unitOfWorkManager = new ServiceCollection().AddUnitOfWork().BuildServiceProvider();
+        var facade = new JobsManagerFacade<TimeJobEntity, CronJobEntity>(
+            manager,
+            unitOfWorkManager.GetRequiredService<IUnitOfWorkManager>()
+        );
+
+        return (facade, persistence);
     }
 
     private static void _RegisterFunction()

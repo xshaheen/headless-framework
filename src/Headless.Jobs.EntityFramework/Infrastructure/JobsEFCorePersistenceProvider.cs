@@ -4,11 +4,11 @@ using System.Linq.Expressions;
 using Headless.Abstractions;
 using Headless.Caching;
 using Headless.Checks;
-using Headless.CommitCoordination;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Models;
+using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Polly;
@@ -95,7 +95,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
 
     async Task ICoordinatedJobWriter<TTimeJob, TCronJob>.WriteTimeJobsAsync(
         TTimeJob[] jobs,
-        IRelationalCommitContext relationalContext,
+        IRelationalUnitOfWorkResource relationalContext,
         CancellationToken cancellationToken
     )
     {
@@ -118,7 +118,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
     async Task<CronSchedulePositionSeedResult> ICoordinatedJobWriter<TTimeJob, TCronJob>.WriteCronJobsAsync(
         TCronJob[] jobs,
         CronSchedulePositionSeeder seeder,
-        IRelationalCommitContext relationalContext,
+        IRelationalUnitOfWorkResource relationalContext,
         CancellationToken cancellationToken
     )
     {

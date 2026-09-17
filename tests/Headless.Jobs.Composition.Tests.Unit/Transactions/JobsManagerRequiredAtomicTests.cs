@@ -2,7 +2,6 @@
 
 using System.Data;
 using System.Text.Json;
-using Headless.CommitCoordination;
 using Headless.Jobs;
 using Headless.Jobs.DbContextFactory;
 using Headless.Jobs.Entities;
@@ -10,6 +9,7 @@ using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Models;
+using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -33,24 +33,27 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
         var sut = _CreateSut(nonRelational ? CoordinatorMode.NonRelational : CoordinatorMode.None, withWriter: true);
         var key = new JobKey("atomic-required");
         var candidate = _FutureTimeJob();
-        candidate.RequireAtomicEnlistment = true;
+        candidate.Enlistment = TransactionEnlistment.Required;
         var schedule = () => sut.Time.ScheduleKeyedAsync(key, candidate, cancellationToken: AbortToken);
-        await schedule.Should().ThrowAsync<InvalidOperationException>().WithMessage("*atomic*");
+        await schedule
+            .Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*requires an active unit of work*");
         var cancel = () =>
             sut.Time.CancelKeyedAsync(
                 new JobKeyScope(_FunctionName),
                 key,
                 1,
-                requireAtomicEnlistment: true,
+                enlistment: TransactionEnlistment.Required,
                 AbortToken
             );
-        await cancel.Should().ThrowAsync<InvalidOperationException>().WithMessage("*atomic*");
+        await cancel.Should().ThrowAsync<InvalidOperationException>().WithMessage("*requires an active unit of work*");
         var root = _FutureTimeJob();
         root.Children.Add(candidate);
         var batch = () => sut.Time.AddBatchAsync([root], AbortToken);
-        await batch.Should().ThrowAsync<InvalidOperationException>().WithMessage("*atomic*");
+        await batch.Should().ThrowAsync<InvalidOperationException>().WithMessage("*requires an active unit of work*");
         middlewareCalls.Should().Be(0);
-        sut.Writer.DidNotReceive().ValidateContext(Arg.Any<IRelationalCommitContext>(), Arg.Any<bool>());
+        sut.Writer.DidNotReceive().ValidateContext(Arg.Any<IRelationalUnitOfWorkResource>(), Arg.Any<bool>());
         await sut
             .Persistence.DidNotReceive()
             .AddTimeJobsAsync(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
@@ -70,10 +73,10 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
             }
         );
         var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: true);
-        sut.Writer.When(writer => writer.ValidateContext(Arg.Any<IRelationalCommitContext>(), keyed))
+        sut.Writer.When(writer => writer.ValidateContext(Arg.Any<IRelationalUnitOfWorkResource>(), keyed))
             .Do(_ => throw new NotSupportedException("configured capability rejected"));
         var candidate = _FutureTimeJob();
-        candidate.RequireAtomicEnlistment = true;
+        candidate.Enlistment = TransactionEnlistment.Required;
         Func<Task> write = keyed
             ? async () =>
                 await sut.Time.ScheduleKeyedAsync(new JobKey("preflight"), candidate, cancellationToken: AbortToken)
@@ -97,14 +100,14 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
         var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: true);
         var relational = sut.Coordinator!.Relational;
         relational.Should().NotBeNull();
-        close = () => relational.Connection!.State.Returns(ConnectionState.Closed);
+        close = () => relational!.Connection.State.Returns(ConnectionState.Closed);
         var write = () => sut.Time.AddAsync(_FutureTimeJob(), AbortToken);
         await write.Should().ThrowAsync<InvalidOperationException>().WithMessage("*closed*");
         await sut
             .Writer.DidNotReceive()
             .WriteTimeJobsAsync(
                 Arg.Any<TimeJobEntity[]>(),
-                Arg.Any<IRelationalCommitContext>(),
+                Arg.Any<IRelationalUnitOfWorkResource>(),
                 Arg.Any<CancellationToken>()
             );
         sut.Coordinator.OnCommitCount.Should().Be(0);
@@ -116,18 +119,18 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
         using var dispatch = _ReplaceScheduleDispatch(
             (context, next, ct) =>
             {
-                ((TimeJobEntity)context.Job).RequireAtomicEnlistment = false;
+                ((TimeJobEntity)context.Job).Enlistment = TransactionEnlistment.WhenAvailable;
                 return next(ct);
             }
         );
         var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: true);
         var candidate = _FutureTimeJob();
-        candidate.RequireAtomicEnlistment = true;
+        candidate.Enlistment = TransactionEnlistment.Required;
         sut.Writer.WriteKeyedTimeJobAsync(
                 Arg.Any<JobKey>(),
                 Arg.Any<TimeJobEntity>(),
                 Arg.Any<long?>(),
-                Arg.Any<IRelationalCommitContext>(),
+                Arg.Any<IRelationalUnitOfWorkResource>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(call => new JobScheduleResult(
@@ -172,11 +175,17 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
                 scope,
                 key,
                 1,
-                Arg.Any<IRelationalCommitContext>(),
+                Arg.Any<IRelationalUnitOfWorkResource>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(new JobScheduleResult(JobScheduleDisposition.Cancelled, Guid.NewGuid(), 1, JobStatus.Cancelled));
-        var result = await sut.Time.CancelKeyedAsync(scope, key, 1, requireAtomicEnlistment: true, AbortToken);
+        var result = await sut.Time.CancelKeyedAsync(
+            scope,
+            key,
+            1,
+            enlistment: TransactionEnlistment.Required,
+            AbortToken
+        );
         result.IsProvisional.Should().BeTrue();
         sut.Scheduler.DidNotReceive().Restart();
         var restarted = _Restarted(sut);
@@ -197,17 +206,17 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
         await using var host = services.BuildServiceProvider();
         var provider = host.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
         var candidate = _FutureTimeJob();
-        candidate.RequireAtomicEnlistment = true;
-        JsonSerializer.Serialize(candidate).Should().NotContain(nameof(TimeJobEntity.RequireAtomicEnlistment));
+        candidate.Enlistment = TransactionEnlistment.Required;
+        JsonSerializer.Serialize(candidate).Should().NotContain(nameof(TimeJobEntity.Enlistment));
         var add = () => provider.AddTimeJobsAsync([candidate], AbortToken);
-        await add.Should().ThrowAsync<InvalidOperationException>().WithMessage("*atomic*");
+        await add.Should().ThrowAsync<InvalidOperationException>().WithMessage("*direct persistence cannot satisfy*");
         var keyed = () =>
             provider.ScheduleKeyedTimeJobAsync(
                 new JobKey("no-direct-fallback"),
                 candidate,
                 cancellationToken: AbortToken
             );
-        await keyed.Should().ThrowAsync<InvalidOperationException>().WithMessage("*atomic*");
+        await keyed.Should().ThrowAsync<InvalidOperationException>().WithMessage("*direct persistence cannot satisfy*");
         (await provider.GetTimeJobByIdAsync(candidate.Id, AbortToken)).Should().BeNull();
     }
 
@@ -228,14 +237,14 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
         );
         var sut = _CreateSut(nonRelational ? CoordinatorMode.NonRelational : CoordinatorMode.None, withWriter: true);
         var required = _CronJob();
-        required.RequireAtomicEnlistment = true;
+        required.Enlistment = TransactionEnlistment.Required;
         var add = () => sut.Cron.AddAsync(required, AbortToken);
-        await add.Should().ThrowAsync<InvalidOperationException>().WithMessage("*atomic*");
+        await add.Should().ThrowAsync<InvalidOperationException>().WithMessage("*requires an active unit of work*");
         // One required definition makes the whole batch atomic-or-nothing.
         var batch = () => sut.Cron.AddBatchAsync([_CronJob(), required], AbortToken);
-        await batch.Should().ThrowAsync<InvalidOperationException>().WithMessage("*atomic*");
+        await batch.Should().ThrowAsync<InvalidOperationException>().WithMessage("*requires an active unit of work*");
         middlewareCalls.Should().Be(0);
-        sut.Writer.DidNotReceive().ValidateContext(Arg.Any<IRelationalCommitContext>(), Arg.Any<bool>());
+        sut.Writer.DidNotReceive().ValidateContext(Arg.Any<IRelationalUnitOfWorkResource>(), Arg.Any<bool>());
         await sut
             .Persistence.DidNotReceive()
             .InsertCronJobsAsync(
@@ -250,7 +259,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
     {
         var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: true);
         var required = _CronJob();
-        required.RequireAtomicEnlistment = true;
+        required.Enlistment = TransactionEnlistment.Required;
         var result = await sut.Cron.AddBatchAsync([_CronJob(), required], AbortToken);
         result.Should().HaveCount(2);
         await sut
@@ -258,7 +267,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
             .WriteCronJobsAsync(
                 Arg.Is<CronJobEntity[]>(jobs => jobs.Length == 2),
                 Arg.Any<CronSchedulePositionSeeder>(),
-                Arg.Any<IRelationalCommitContext>(),
+                Arg.Any<IRelationalUnitOfWorkResource>(),
                 Arg.Any<CancellationToken>()
             );
         await sut
@@ -279,13 +288,13 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
         await using var host = services.BuildServiceProvider();
         var manager = host.GetRequiredService<ICronJobManager<CronJobEntity>>();
         var required = _CronJob();
-        required.RequireAtomicEnlistment = true;
-        JsonSerializer.Serialize(required).Should().NotContain(nameof(CronJobEntity.RequireAtomicEnlistment));
+        required.Enlistment = TransactionEnlistment.Required;
+        JsonSerializer.Serialize(required).Should().NotContain(nameof(CronJobEntity.Enlistment));
         // Capture runs before function validation, so the unregistered function never gets to fail first.
         var add = () => manager.AddAsync(required, AbortToken);
-        await add.Should().ThrowAsync<InvalidOperationException>().WithMessage("*atomic*");
+        await add.Should().ThrowAsync<InvalidOperationException>().WithMessage("*requires an active unit of work*");
         var batch = () => manager.AddBatchAsync([_CronJob(), required], AbortToken);
-        await batch.Should().ThrowAsync<InvalidOperationException>().WithMessage("*atomic*");
+        await batch.Should().ThrowAsync<InvalidOperationException>().WithMessage("*requires an active unit of work*");
         var provider = host.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
         (await provider.GetAllCronJobExpressionsAsync(AbortToken)).Should().BeEmpty();
     }
@@ -306,12 +315,12 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
         using var context = new JobsDbContext(options);
         context
             .Model.FindEntityType(typeof(CronJobEntity))!
-            .FindProperty(nameof(CronJobEntity.RequireAtomicEnlistment))
+            .FindProperty(nameof(CronJobEntity.Enlistment))
             .Should()
             .BeNull();
         context
             .Model.FindEntityType(typeof(TimeJobEntity))!
-            .FindProperty(nameof(TimeJobEntity.RequireAtomicEnlistment))
+            .FindProperty(nameof(TimeJobEntity.Enlistment))
             .Should()
             .BeNull();
     }

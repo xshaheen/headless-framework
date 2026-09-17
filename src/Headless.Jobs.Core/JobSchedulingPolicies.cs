@@ -2,6 +2,7 @@
 
 using Headless.Checks;
 using Headless.Jobs.Models;
+using Headless.UnitOfWork;
 
 namespace Headless.Jobs;
 
@@ -61,7 +62,7 @@ internal sealed class JobSchedulingPolicies
     }
 
     internal JobOptions Resolve(JobFunctionDescriptor descriptor, JobOptions? call) =>
-        _Resolve(descriptor, call, includeHostAtomicRequirement: true);
+        _Resolve(descriptor, call, includeHostEnlistment: true);
 
     internal JobOptions ResolveRecurring(JobFunctionDescriptor descriptor, RecurringJobOptions? call) =>
         _Resolve(
@@ -71,14 +72,14 @@ internal sealed class JobSchedulingPolicies
                 Retries = call?.Retries,
                 RetryIntervals = call?.RetryIntervals,
                 OnNodeDeath = call?.OnNodeDeath,
-                RequireAtomicEnlistment = call?.RequireAtomicEnlistment ?? false,
+                Enlistment = call?.Enlistment ?? TransactionEnlistment.WhenAvailable,
             },
-            // Recurring definitions take the requirement from the call or the function policy only: the host default
+            // Recurring definitions take the enlistment from the call or the function policy only: the host default
             // describes one-shot deadlines, and a definition is usually created at bootstrap, outside any transaction.
-            includeHostAtomicRequirement: false
+            includeHostEnlistment: false
         );
 
-    private JobOptions _Resolve(JobFunctionDescriptor descriptor, JobOptions? call, bool includeHostAtomicRequirement)
+    private JobOptions _Resolve(JobFunctionDescriptor descriptor, JobOptions? call, bool includeHostEnlistment)
     {
         var function =
             _byFunction.GetValueOrDefault(descriptor.FunctionName)
@@ -89,13 +90,44 @@ internal sealed class JobSchedulingPolicies
             RetryIntervals = (call?.RetryIntervals ?? function?.RetryIntervals ?? _defaults.RetryIntervals)?.ToArray(),
             OnNodeDeath =
                 call?.OnNodeDeath ?? function?.OnNodeDeath ?? _defaults.OnNodeDeath ?? Enums.NodeDeathPolicy.Retry,
-            RequireAtomicEnlistment =
-                (call?.RequireAtomicEnlistment ?? false)
-                || (function?.RequireAtomicEnlistment ?? false)
-                || (includeHostAtomicRequirement && _defaults.RequireAtomicEnlistment),
+            Enlistment = _ComposeEnlistment(
+                call?.Enlistment,
+                function?.Enlistment,
+                includeHostEnlistment ? _defaults.Enlistment : null
+            ),
         };
         _ValidateOptions(result);
         return result;
+    }
+
+    // Strictest-wins composition across call > function policy > host default: TransactionEnlistment.Required from
+    // ANY tier wins outright (an explicit Never elsewhere never downgrades it); otherwise an explicit Never from any
+    // tier wins over the WhenAvailable default; otherwise WhenAvailable. A null tier (call/function not configured,
+    // or the host default excluded for recurring definitions) contributes nothing.
+    internal static TransactionEnlistment ComposeEnlistment(params ReadOnlySpan<TransactionEnlistment?> tiers) =>
+        _ComposeEnlistmentCore(tiers);
+
+    private static TransactionEnlistment _ComposeEnlistment(
+        TransactionEnlistment? call,
+        TransactionEnlistment? function,
+        TransactionEnlistment? hostDefault
+    ) => _ComposeEnlistmentCore([call, function, hostDefault]);
+
+    private static TransactionEnlistment _ComposeEnlistmentCore(ReadOnlySpan<TransactionEnlistment?> tiers)
+    {
+        var sawNever = false;
+        foreach (var tier in tiers)
+        {
+            if (tier == TransactionEnlistment.Required)
+            {
+                return TransactionEnlistment.Required;
+            }
+            if (tier == TransactionEnlistment.Never)
+            {
+                sawNever = true;
+            }
+        }
+        return sawNever ? TransactionEnlistment.Never : TransactionEnlistment.WhenAvailable;
     }
 
     internal static JobOptions Snapshot(JobOptions options)
@@ -111,7 +143,7 @@ internal sealed class JobSchedulingPolicies
         )
         {
             throw new ArgumentException(
-                "Startup job policies accept only retry, node-death, and atomic-enlistment settings. Supply invocation metadata on each call.",
+                "Startup job policies accept only retry, node-death, and enlistment settings. Supply invocation metadata on each call.",
                 nameof(options)
             );
         }
@@ -127,6 +159,10 @@ internal sealed class JobSchedulingPolicies
         if (options.OnNodeDeath is { } policy && !Enum.IsDefined(policy))
         {
             throw new ArgumentException("The node-death policy must be a defined value.", nameof(options));
+        }
+        if (!Enum.IsDefined(options.Enlistment))
+        {
+            throw new ArgumentException("The transaction-enlistment value must be a defined value.", nameof(options));
         }
     }
 }

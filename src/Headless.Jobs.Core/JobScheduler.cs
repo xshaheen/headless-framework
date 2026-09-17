@@ -6,6 +6,7 @@ using Headless.Jobs.Exceptions;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Models;
+using Headless.UnitOfWork;
 
 namespace Headless.Jobs;
 
@@ -318,7 +319,7 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
             OnNodeDeath = options?.OnNodeDeath ?? Enums.NodeDeathPolicy.Retry,
             TenantId = options?.TenantId,
             IsSystemJob = options?.IsSystemJob ?? false,
-            RequireAtomicEnlistment = options?.RequireAtomicEnlistment ?? false,
+            Enlistment = options?.Enlistment ?? TransactionEnlistment.WhenAvailable,
         };
 
         var persisted = await _timeJobManager.AddAsync(entity, cancellationToken).ConfigureAwait(false);
@@ -348,7 +349,7 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
             Retries = policy.Retries ?? 0,
             RetryIntervals = policy.RetryIntervals,
             OnNodeDeath = policy.OnNodeDeath ?? Enums.NodeDeathPolicy.Retry,
-            RequireAtomicEnlistment = policy.RequireAtomicEnlistment,
+            Enlistment = policy.Enlistment,
         };
 
         var persisted = await _cronJobManager.AddAsync(entity, cancellationToken).ConfigureAwait(false);
@@ -374,7 +375,7 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
             Retries = options.Retries ?? 0,
             RetryIntervals = options.RetryIntervals,
             OnNodeDeath = options.OnNodeDeath ?? Enums.NodeDeathPolicy.Retry,
-            RequireAtomicEnlistment = options.RequireAtomicEnlistment,
+            Enlistment = options.Enlistment,
             TenantId = options.TenantId,
             IsSystemJob = options.IsSystemJob,
             RunCondition = runCondition,

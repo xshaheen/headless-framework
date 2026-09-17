@@ -2,10 +2,10 @@
 
 using Headless.Abstractions;
 using Headless.Checks;
-using Headless.CommitCoordination;
 using Headless.Coordination;
 using Headless.Jobs.Customizer;
 using Headless.Jobs.Entities;
+using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -27,7 +27,7 @@ public static class SetupPostgreSqlJobsEntityFramework
     {
         /// <summary>
         /// Stores jobs in the registered application context and configures PostgreSQL claims,
-        /// cluster membership, and EF commit coordination against the same database.
+        /// cluster membership, and the EF Core unit of work against the same database.
         /// </summary>
         /// <remarks>
         /// Register the application context first. The context must expose a public constructor accepting
@@ -49,7 +49,7 @@ public static class SetupPostgreSqlJobsEntityFramework
                 ef.UsePostgreSqlClaims();
                 ef.ConfigureServices += services =>
                 {
-                    services.AddEntityFrameworkCommitCoordination<TContext>();
+                    services.AddEntityFrameworkUnitOfWork();
                     services.AddHeadlessCoordination(coordination =>
                     {
                         coordination.Configure(configureCoordination);

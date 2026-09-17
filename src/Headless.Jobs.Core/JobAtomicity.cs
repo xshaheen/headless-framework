@@ -1,11 +1,14 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Jobs.Entities;
+using Headless.UnitOfWork;
 
 namespace Headless.Jobs;
 
 internal static class JobAtomicity
 {
+    // Strictest-wins tree walk: TransactionEnlistment.Required anywhere in the tree forces the whole tree atomic
+    // (mirrors the pre-existing "any child forces the whole tree" rule), regardless of what siblings request.
     internal static bool IsRequired<TJob>(IEnumerable<TJob> jobs)
         where TJob : TimeJobEntity<TJob>
     {
@@ -17,7 +20,7 @@ internal static class JobAtomicity
             {
                 continue;
             }
-            if (job.RequireAtomicEnlistment)
+            if (job.Enlistment == TransactionEnlistment.Required)
             {
                 return true;
             }
@@ -40,7 +43,7 @@ internal static class JobAtomicity
         if (anyRequiresAtomicEnlistment)
         {
             throw new InvalidOperationException(
-                "Required atomic Jobs scheduling needs a compatible live relational transaction and the coordinated manager/writer path; direct persistence cannot satisfy it."
+                "TransactionEnlistment.Required Jobs scheduling needs a compatible live relational unit of work and the coordinated manager/writer path; direct persistence cannot satisfy it."
             );
         }
     }

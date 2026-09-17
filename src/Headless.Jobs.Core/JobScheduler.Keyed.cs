@@ -4,6 +4,7 @@ using Headless.Checks;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Models;
+using Headless.UnitOfWork;
 
 namespace Headless.Jobs;
 
@@ -116,13 +117,13 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob>
         JobKey key,
         long expectedGeneration,
         CancellationToken cancellationToken = default
-    ) => CancelKeyedAsync(scope, key, expectedGeneration, requireAtomicEnlistment: false, cancellationToken);
+    ) => CancelKeyedAsync(scope, key, expectedGeneration, TransactionEnlistment.WhenAvailable, cancellationToken);
 
     public Task<JobScheduleResult> CancelKeyedAsync(
         JobKeyScope scope,
         JobKey key,
         long expectedGeneration,
-        bool requireAtomicEnlistment,
+        TransactionEnlistment enlistment,
         CancellationToken cancellationToken = default
     )
     {
@@ -134,7 +135,7 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob>
             scope,
             key,
             expectedGeneration,
-            requireAtomicEnlistment || policy.RequireAtomicEnlistment,
+            JobSchedulingPolicies.ComposeEnlistment(enlistment, policy.Enlistment),
             cancellationToken
         );
     }
@@ -178,7 +179,7 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob>
             OnNodeDeath = options?.OnNodeDeath ?? NodeDeathPolicy.Retry,
             TenantId = options?.TenantId,
             IsSystemJob = options?.IsSystemJob ?? false,
-            RequireAtomicEnlistment = options?.RequireAtomicEnlistment ?? false,
+            Enlistment = options?.Enlistment ?? TransactionEnlistment.WhenAvailable,
         };
         return _timeJobManager.ScheduleKeyedAsync(key, entity, expectedGeneration, cancellationToken);
     }

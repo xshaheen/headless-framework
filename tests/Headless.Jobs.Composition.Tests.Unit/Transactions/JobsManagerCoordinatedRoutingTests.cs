@@ -4,7 +4,6 @@ using System.Data;
 using System.Data.Common;
 using System.Linq.Expressions;
 using Headless.Abstractions;
-using Headless.CommitCoordination;
 using Headless.Jobs;
 using Headless.Jobs.BackgroundServices;
 using Headless.Jobs.Entities;
@@ -15,6 +14,7 @@ using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Managers;
 using Headless.Jobs.Models;
 using Headless.Testing.Tests;
+using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -36,7 +36,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
     // Every wait on worker progress is bounded so a regression fails the test instead of hanging the run.
     private static readonly TimeSpan _WaitTimeout = TimeSpan.FromSeconds(30);
     private readonly List<JobsPostCommitSignalService> _workers = [];
-    private readonly List<CommitScopeProbe> _scopes = [];
+    private readonly List<UnitOfWorkProbe> _scopes = [];
 
     public JobsManagerCoordinatedRoutingTests()
     {
@@ -87,11 +87,14 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         );
         var sut = _CreateSut(CoordinatorMode.None, withWriter: false);
         var candidate = _FutureTimeJob();
-        candidate.RequireAtomicEnlistment = true;
+        candidate.Enlistment = TransactionEnlistment.Required;
 
         var schedule = () => sut.Time.AddAsync(candidate, AbortToken);
 
-        await schedule.Should().ThrowAsync<InvalidOperationException>().WithMessage("*atomic*");
+        await schedule
+            .Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*requires an active unit of work*");
         middlewareCalls.Should().Be(0);
         await sut
             .Persistence.DidNotReceive()
@@ -219,7 +222,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
                 .Writer.DidNotReceive()
                 .WriteTimeJobsAsync(
                     Arg.Any<TimeJobEntity[]>(),
-                    Arg.Any<IRelationalCommitContext>(),
+                    Arg.Any<IRelationalUnitOfWorkResource>(),
                     Arg.Any<CancellationToken>()
                 );
             sut.Coordinator!.OnCommitCount.Should().Be(0);
@@ -307,7 +310,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
             .Writer.DidNotReceive()
             .WriteTimeJobsAsync(
                 Arg.Any<TimeJobEntity[]>(),
-                Arg.Any<IRelationalCommitContext>(),
+                Arg.Any<IRelationalUnitOfWorkResource>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -327,22 +330,31 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
             .Writer.DidNotReceive()
             .WriteTimeJobsAsync(
                 Arg.Any<TimeJobEntity[]>(),
-                Arg.Any<IRelationalCommitContext>(),
+                Arg.Any<IRelationalUnitOfWorkResource>(),
                 Arg.Any<CancellationToken>()
             );
     }
 
     [Fact]
-    public async Task time_job_committed_coordinator_throws_and_persists_nothing()
+    public async Task time_job_unit_of_work_completed_during_schedule_pipeline_throws_and_persists_nothing()
     {
-        // A settled scope stays ambient until it is disposed, and the driver may keep the transaction handle
-        // populated; the write must refuse to enlist in a transaction that already reached its outcome.
-        var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: true);
-        await sut.Coordinator!.CommitAsync();
+        // KTD7: the drift re-validation. The capture happens synchronously before the schedule middleware runs; if
+        // the SAME unit of work completes underneath the in-flight schedule (racing completion elsewhere in the
+        // scope), the write must refuse to enlist in a unit that already reached its outcome rather than silently
+        // falling back to the direct path.
+        Sut? sut = null;
+        using var dispatch = _ReplaceScheduleDispatch(
+            async (_, next, ct) =>
+            {
+                await sut!.Coordinator!.CommitAsync();
+                await next(ct);
+            }
+        );
+        sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: true);
 
         var act = () => sut.Time.AddAsync(_FutureTimeJob(), AbortToken);
 
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*transaction is no longer live*");
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*no longer active*");
         await sut
             .Persistence.DidNotReceive()
             .AddTimeJobsAsync(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
@@ -350,7 +362,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
             .Writer.DidNotReceive()
             .WriteTimeJobsAsync(
                 Arg.Any<TimeJobEntity[]>(),
-                Arg.Any<IRelationalCommitContext>(),
+                Arg.Any<IRelationalUnitOfWorkResource>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -389,7 +401,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
             .WriteCronJobsAsync(
                 Arg.Any<CronJobEntity[]>(),
                 Arg.Any<CronSchedulePositionSeeder>(),
-                Arg.Any<IRelationalCommitContext>(),
+                Arg.Any<IRelationalUnitOfWorkResource>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -454,7 +466,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
             .Writer.DidNotReceive()
             .WriteTimeJobsAsync(
                 Arg.Any<TimeJobEntity[]>(),
-                Arg.Any<IRelationalCommitContext>(),
+                Arg.Any<IRelationalUnitOfWorkResource>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -494,7 +506,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
             .WriteCronJobsAsync(
                 Arg.Any<CronJobEntity[]>(),
                 Arg.Any<CronSchedulePositionSeeder>(),
-                Arg.Any<IRelationalCommitContext>(),
+                Arg.Any<IRelationalUnitOfWorkResource>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -531,7 +543,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
             .Writer.Received(1)
             .WriteTimeJobsAsync(
                 Arg.Is<TimeJobEntity[]>(a => a.Length == 1 && a[0].Id == job.Id),
-                Arg.Any<IRelationalCommitContext>(),
+                Arg.Any<IRelationalUnitOfWorkResource>(),
                 Arg.Any<CancellationToken>()
             );
         sut.Coordinator!.OnCommitCount.Should().Be(1);
@@ -756,7 +768,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
             .WriteCronJobsAsync(
                 Arg.Is<CronJobEntity[]>(a => a.Single().Id == cron.Id),
                 Arg.Any<CronSchedulePositionSeeder>(),
-                Arg.Any<IRelationalCommitContext>(),
+                Arg.Any<IRelationalUnitOfWorkResource>(),
                 Arg.Any<CancellationToken>()
             );
         await sut.Writer.DidNotReceive().InvalidateCronExpressionsCacheAsync();
@@ -774,7 +786,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
                 Arg.Any<JobKey>(),
                 Arg.Any<TimeJobEntity>(),
                 Arg.Any<long?>(),
-                Arg.Any<IRelationalCommitContext>(),
+                Arg.Any<IRelationalUnitOfWorkResource>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(new JobScheduleResult(JobScheduleDisposition.Replaced, runId, 2, JobStatus.Idle));
@@ -782,7 +794,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
                 Arg.Any<JobKeyScope>(),
                 Arg.Any<JobKey>(),
                 Arg.Any<long>(),
-                Arg.Any<IRelationalCommitContext>(),
+                Arg.Any<IRelationalUnitOfWorkResource>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(new JobScheduleResult(JobScheduleDisposition.Cancelled, runId, 2, JobStatus.Cancelled));
@@ -954,7 +966,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
             .Writer.Received(1)
             .WriteTimeJobsAsync(
                 Arg.Is<TimeJobEntity[]>(a => a.Length == 2 && a[0].Id == jobs[0].Id && a[1].Id == jobs[1].Id),
-                Arg.Any<IRelationalCommitContext>(),
+                Arg.Any<IRelationalUnitOfWorkResource>(),
                 Arg.Any<CancellationToken>()
             );
         sut.Coordinator!.OnCommitCount.Should().Be(1);
@@ -1044,7 +1056,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
             .WriteCronJobsAsync(
                 Arg.Is<CronJobEntity[]>(a => a.Length == 1 && a[0].Id == cron.Id),
                 Arg.Any<CronSchedulePositionSeeder>(),
-                Arg.Any<IRelationalCommitContext>(),
+                Arg.Any<IRelationalUnitOfWorkResource>(),
                 Arg.Any<CancellationToken>()
             );
         sut.Coordinator!.OnCommitCount.Should().Be(1);
@@ -1091,7 +1103,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
             .WriteCronJobsAsync(
                 Arg.Is<CronJobEntity[]>(a => a.Length == 2 && a[0].Id == crons[0].Id && a[1].Id == crons[1].Id),
                 Arg.Any<CronSchedulePositionSeeder>(),
-                Arg.Any<IRelationalCommitContext>(),
+                Arg.Any<IRelationalUnitOfWorkResource>(),
                 Arg.Any<CancellationToken>()
             );
         sut.Coordinator!.OnCommitCount.Should().Be(1);
@@ -1199,15 +1211,18 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
     }
 
     [Fact]
-    public void jobs_only_host_resolves_manager_with_null_coordinator_fallback()
+    public void jobs_only_host_resolves_scoped_manager_with_no_active_unit_of_work()
     {
+        // KD5: the facade is scoped, resolved from a scope, with the scope's IUnitOfWorkManager reporting no active
+        // unit — the direct-path condition — when the host never begins one.
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddHeadlessJobs(options => options.DisableBackgroundServices());
-        using var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        using var scope = provider.CreateScope();
 
-        provider.GetService<ITimeJobManager<TimeJobEntity>>().Should().NotBeNull();
-        provider.GetRequiredService<ICurrentCommitCoordinator>().Current.Should().BeNull();
+        scope.ServiceProvider.GetService<ITimeJobManager<TimeJobEntity>>().Should().NotBeNull();
+        scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>().Current.Should().BeNull();
     }
 
     private static TimeJobEntity _FutureTimeJob()
@@ -1308,9 +1323,19 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
 
     private enum CoordinatorMode
     {
+        // No unit of work is begun in the scope: JobsManagerFacade resolves IUnitOfWorkManager.Current as null.
         None,
+
+        // A resource-less unit of work (IUnitOfWorkManager.BeginAsync() with no db): Resource is null, so it is
+        // treated exactly like "no unit of work" for the guarantee matrix (KD7) — coordination must not be
+        // infectious to a scope that never opened a relational transaction.
         NonRelational,
+
+        // An owned unit of work enlisting a live, open fake connection/transaction.
         LiveRelational,
+
+        // An owned unit of work whose resource's connection reports Closed — the "incompatible/dead resource"
+        // case, which the guarantee matrix (KD7) says throws regardless of TransactionEnlistment (except Never).
         DeadRelational,
     }
 
@@ -1350,7 +1375,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
                 .WriteCronJobsAsync(
                     Arg.Any<CronJobEntity[]>(),
                     Arg.Any<CronSchedulePositionSeeder>(),
-                    Arg.Any<IRelationalCommitContext>(),
+                    Arg.Any<IRelationalUnitOfWorkResource>(),
                     Arg.Any<CancellationToken>()
                 )
                 .Returns(call =>
@@ -1363,18 +1388,50 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         var dispatcher = Substitute.For<IJobsDispatcher>();
         dispatcher.IsEnabled.Returns(dispatcherEnabled);
 
-        var coordinator = mode switch
+        // A real IUnitOfWorkManager opened through the production factory (AddUnitOfWork), wrapped only so a test
+        // can observe how many OnCompleted callbacks the manager registered and whether each completed
+        // synchronously — mirrors the pre-existing CommitScopeProbe shape one-for-one.
+        var unitOfWorkServices = new ServiceCollection().AddUnitOfWork().BuildServiceProvider();
+        var unitOfWorkManager = unitOfWorkServices.GetRequiredService<IUnitOfWorkManager>();
+
+        UnitOfWorkProbe? coordinator = mode switch
         {
             CoordinatorMode.None => null,
-            CoordinatorMode.NonRelational => new CommitScopeProbe(relational: null),
-            CoordinatorMode.LiveRelational => new CommitScopeProbe(new FakeRelationalCommitContext(_LiveTransaction())),
-            CoordinatorMode.DeadRelational => new CommitScopeProbe(new FakeRelationalCommitContext(transaction: null)),
+            CoordinatorMode.NonRelational => new UnitOfWorkProbe(
+                unitOfWorkServices,
+                _AwaitSync(unitOfWorkManager.BeginAsync())
+            ),
+            CoordinatorMode.LiveRelational => new UnitOfWorkProbe(
+                unitOfWorkServices,
+                _AwaitSync(
+                    unitOfWorkManager.BeginAsync(
+                        _ => ValueTask.FromResult<IUnitOfWorkResource>(new FakeRelationalResource(_LiveTransaction())),
+                        options: null,
+                        cancellationToken: default
+                    )
+                )
+            ),
+            CoordinatorMode.DeadRelational => new UnitOfWorkProbe(
+                unitOfWorkServices,
+                _AwaitSync(
+                    unitOfWorkManager.BeginAsync(
+                        _ =>
+                            ValueTask.FromResult<IUnitOfWorkResource>(new FakeRelationalResource(_ClosedTransaction())),
+                        options: null,
+                        cancellationToken: default
+                    )
+                )
+            ),
             _ => throw new ArgumentOutOfRangeException(nameof(mode)),
         };
 
         if (coordinator is not null)
         {
             _scopes.Add(coordinator);
+        }
+        else
+        {
+            unitOfWorkServices.Dispose();
         }
 
         var logger = new CapturingLogger<JobsManager<TimeJobEntity, CronJobEntity>>();
@@ -1396,7 +1453,6 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
             notification,
             new JobsExecutionContext(),
             dispatcher,
-            new FakeCurrentCommitCoordinator(coordinator),
             new CronScheduleCache(TimeZoneInfo.Utc),
             signals,
             JobFunctionProvider.CreateHostRegistry(configuration: null),
@@ -1416,6 +1472,12 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
             SignalsLogger = signalsLogger,
         };
     }
+
+    // Every fake resource factory completes synchronously (no real I/O), so the manager's ValueTask<IUnitOfWork>
+    // is already complete by the time this returns — this is not a blocking wait on async work.
+#pragma warning disable MA0045
+    private static IUnitOfWork _AwaitSync(ValueTask<IUnitOfWork> pending) => pending.GetAwaiter().GetResult();
+#pragma warning restore MA0045
 
     private static Task _StartWorkerAsync(Sut sut)
     {
@@ -1543,29 +1605,62 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         public required IJobsHostScheduler Scheduler { get; init; }
         public required IJobsNotificationHubSender Notification { get; init; }
         public required IJobsDispatcher Dispatcher { get; init; }
-        public required CommitScopeProbe? Coordinator { get; init; }
+        public required UnitOfWorkProbe? Coordinator { get; init; }
         public required JobsManager<TimeJobEntity, CronJobEntity> Manager { get; init; }
         public required CapturingLogger<JobsManager<TimeJobEntity, CronJobEntity>> Logger { get; init; }
         public required JobsPostCommitSignalService Signals { get; init; }
         public required CapturingLogger<JobsPostCommitSignalService> SignalsLogger { get; init; }
 
-        public ITimeJobManager<TimeJobEntity> Time => Manager;
+        // KD5: the facade over the singleton core, wired with a fixed IUnitOfWorkManager stub reporting THIS
+        // test's coordinator as Current — the same shape JobsManagerFacade consumes in production, just without
+        // re-resolving per call (the tests below never change Current mid-flight, so a fixed value is equivalent).
+        public ITimeJobManager<TimeJobEntity> Time =>
+            new JobsManagerFacade<TimeJobEntity, CronJobEntity>(Manager, new FixedUnitOfWorkManager(Coordinator));
 
-        public ICronJobManager<CronJobEntity> Cron => Manager;
+        public ICronJobManager<CronJobEntity> Cron =>
+            new JobsManagerFacade<TimeJobEntity, CronJobEntity>(Manager, new FixedUnitOfWorkManager(Coordinator));
 
         public ICoordinatedJobWriter<TimeJobEntity, CronJobEntity> Writer =>
             (ICoordinatedJobWriter<TimeJobEntity, CronJobEntity>)Persistence;
     }
 
-    private sealed class FakeCurrentCommitCoordinator(ICommitCoordinator? current) : ICurrentCommitCoordinator
+    // A minimal IUnitOfWorkManager reporting a fixed Current — every other member is unused by JobsManagerFacade's
+    // Add/keyed-schedule paths, which only ever read .Current.
+    private sealed class FixedUnitOfWorkManager(IUnitOfWork? current) : IUnitOfWorkManager
     {
-        public ICommitCoordinator? Current { get; } = current;
+        public IUnitOfWork? Current { get; } = current;
+
+        public ValueTask<IUnitOfWork> BeginAsync(
+            UnitOfWorkOptions? options = null,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException("Not used by JobsManagerFacade.");
+
+        public ValueTask<IUnitOfWork> BeginAsync(
+            Func<CancellationToken, ValueTask<IUnitOfWorkResource>> beginResource,
+            UnitOfWorkOptions? options,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException("Not used by JobsManagerFacade.");
+
+        public IUnitOfWork Enlist(IUnitOfWorkResource resource, UnitOfWorkOptions? options = null) =>
+            throw new NotSupportedException("Not used by JobsManagerFacade.");
+
+        public IDisposable Adopt(IUnitOfWork unitOfWork) =>
+            throw new NotSupportedException("Not used by JobsManagerFacade.");
     }
 
     private static DbTransaction _LiveTransaction()
     {
         var connection = Substitute.For<DbConnection>();
         connection.State.Returns(ConnectionState.Open);
+        return new LiveTransaction(connection);
+    }
+
+    // The "incompatible/dead resource" case (KD7): a connection that reports Closed, which
+    // CapturedRelationalResource.Validate() rejects regardless of TransactionEnlistment (except Never).
+    private static DbTransaction _ClosedTransaction()
+    {
+        var connection = Substitute.For<DbConnection>();
+        connection.State.Returns(ConnectionState.Closed);
         return new LiveTransaction(connection);
     }
 
@@ -1580,43 +1675,47 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         public override void Rollback() => throw new NotSupportedException();
     }
 
-    private sealed class FakeRelationalCommitContext(DbTransaction? transaction) : IRelationalCommitContext
+    private sealed class FakeRelationalResource(DbTransaction transaction) : IRelationalUnitOfWorkResource
     {
-        public DbConnection? Connection => Transaction?.Connection;
+        public DbConnection Connection => Transaction.Connection!;
 
-        public DbTransaction? Transaction { get; } = transaction;
+        public DbTransaction Transaction { get; } = transaction;
+
+        public bool IsOwned => true;
+
+        public bool IsTransactionCompleted => false;
+
+        public ValueTask CommitAsync(CancellationToken cancellationToken) => ValueTask.CompletedTask;
+
+        public ValueTask RollbackAsync(CancellationToken cancellationToken) => ValueTask.CompletedTask;
     }
 
-    // A real scope opened through the production factory, wrapped only so a test can observe how many commit
-    // callbacks the manager registered and whether each completed synchronously. The wrapper never runs anything
-    // itself: commit and rollback go through the scope's own signal, exactly as a provider would drive them.
-    private sealed class CommitScopeProbe : ICommitCoordinator, IAsyncDisposable
+    // A real IUnitOfWork opened through the production UnitOfWorkManager (AddUnitOfWork), wrapped only so a test can
+    // observe how many OnCompleted callbacks the manager registered and whether each completed synchronously — the
+    // wrapper never drives anything itself: CommitAsync/RollbackAsync forward to the real unit's own
+    // CompleteAsync/RollbackAsync, exactly as a provider extension (BeginAsync/RunAsync) would drive them.
+    private sealed class UnitOfWorkProbe(ServiceProvider services, IUnitOfWork inner) : IUnitOfWork, IAsyncDisposable
     {
-        private readonly ServiceProvider _services;
-        private readonly ICommitScope _scope;
-        private readonly ICommitCoordinator _coordinator;
-
-        public CommitScopeProbe(IRelationalCommitContext? relational)
-        {
-            _services = new ServiceCollection().AddCommitCoordination().BuildServiceProvider();
-            _scope = _services.GetRequiredService<ICommitScopeFactory>().Open(relational);
-            _coordinator = _scope.Coordinator;
-        }
-
         public int OnCommitCount { get; private set; }
 
         /// <summary>Commit callbacks whose returned <see cref="ValueTask" /> was already complete when it was returned.</summary>
         public int SynchronousCommitCallbacks { get; private set; }
 
-        public CommitCoordinatorState State => _coordinator.State;
+        public UnitOfWorkState State => inner.State;
 
-        public IRelationalCommitContext? Relational => _coordinator.Relational;
+        public UnitOfWorkFailure? Failure => inner.Failure;
 
-        public IDisposable OnCommit(Func<ValueTask> work)
+        public IUnitOfWorkResource? Resource => inner.Resource;
+
+        public IRelationalUnitOfWorkResource? Relational => inner.Resource as IRelationalUnitOfWorkResource;
+
+        public bool IsRetryPrevented => inner.IsRetryPrevented;
+
+        public IDisposable OnCompleted(Func<ValueTask> work)
         {
             OnCommitCount++;
 
-            return _coordinator.OnCommit(() =>
+            return inner.OnCompleted(() =>
             {
                 var pending = work();
 
@@ -1629,32 +1728,30 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
             });
         }
 
-        public TState GetOrAdd<TState>(Func<ICommitCoordinator, TState> factory)
-            where TState : class
-        {
-            return _coordinator.GetOrAdd(factory);
-        }
+        public IDisposable OnFailed(Func<UnitOfWorkFailure, ValueTask> work) => inner.OnFailed(work);
 
-        public TState GetOrAdd<TState, TArg>(TArg arg, Func<ICommitCoordinator, TArg, TState> factory)
-            where TState : class
-        {
-            return _coordinator.GetOrAdd(arg, factory);
-        }
+        public TState GetOrAdd<TState>(Func<IUnitOfWork, TState> factory)
+            where TState : class => inner.GetOrAdd(factory);
 
-        public Task CommitAsync()
-        {
-            return _scope.SignalAsync(CommitOutcome.Committed).AsTask();
-        }
+        public TState GetOrAdd<TState, TArg>(TArg arg, Func<IUnitOfWork, TArg, TState> factory)
+            where TState : class => inner.GetOrAdd(arg, factory);
 
-        public Task RollbackAsync()
-        {
-            return _scope.SignalAsync(CommitOutcome.RolledBack).AsTask();
-        }
+        public void PreventRetry() => inner.PreventRetry();
+
+        public ValueTask CompleteAsync(CancellationToken cancellationToken = default) =>
+            inner.CompleteAsync(cancellationToken);
+
+        public ValueTask RollbackAsync() => inner.RollbackAsync();
+
+        // Compat names matching the pre-existing probe surface used throughout this test file.
+        public Task CommitAsync() => CompleteAsync().AsTask();
+
+        public void Dispose() => inner.Dispose();
 
         public async ValueTask DisposeAsync()
         {
-            await _scope.DisposeAsync();
-            await _services.DisposeAsync();
+            await inner.DisposeAsync();
+            await services.DisposeAsync();
         }
     }
 }

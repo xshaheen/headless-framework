@@ -3,6 +3,7 @@
 using System.Text.Json.Serialization;
 using Headless.Jobs.Entities.BaseEntity;
 using Headless.Jobs.Enums;
+using Headless.UnitOfWork;
 
 namespace Headless.Jobs.Entities;
 
@@ -22,11 +23,11 @@ public class CronJobEntity : BaseJobEntity
     }
 
     /// <summary>
-    /// Requires this scheduling call to enlist in a compatible live application transaction. Never persisted: the
-    /// requirement is transient call intent rather than definition payload, so it is excluded from JSON and columns.
+    /// How eagerly this scheduling call enlists in the active unit of work. Never persisted: the requirement is
+    /// transient call intent rather than definition payload, so it is excluded from JSON and columns.
     /// </summary>
     [JsonIgnore]
-    public bool RequireAtomicEnlistment { get; set; }
+    public TransactionEnlistment Enlistment { get; set; }
 
     /// <summary>
     /// Six-field (seconds-inclusive) NCrontab expression that drives occurrence generation.

@@ -1,11 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
-using Headless.CommitCoordination;
 using Headless.Jobs.Configurations;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Models;
+using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 
 namespace Headless.Jobs.Infrastructure;
@@ -16,14 +16,17 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
     where TCronJob : CronJobEntity, new()
 {
     void ICoordinatedJobWriter<TTimeJob, TCronJob>.ValidateContext(
-        IRelationalCommitContext relationalContext,
+        IRelationalUnitOfWorkResource relationalResource,
         bool requireSavepoints
-    ) => _ValidateRelationalContext(relationalContext, requireSavepoints);
+    ) => _ValidateRelationalResource(relationalResource, requireSavepoints);
 
 #pragma warning disable MA0045 // Validation and borrowing an existing connection/transaction are synchronous; no connection is opened.
-    private void _ValidateRelationalContext(IRelationalCommitContext relationalContext, bool requireSavepoints = false)
+    private void _ValidateRelationalResource(
+        IRelationalUnitOfWorkResource relationalResource,
+        bool requireSavepoints = false
+    )
     {
-        using var context = _CreateCoordinatedContext(relationalContext);
+        using var context = _CreateCoordinatedContext(relationalResource);
         if (requireSavepoints)
         {
             _RequireKeyedSavepoints(context);
@@ -31,16 +34,11 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         }
     }
 
-    private TDbContext _CreateCoordinatedContext(IRelationalCommitContext relationalContext)
+    private TDbContext _CreateCoordinatedContext(IRelationalUnitOfWorkResource relationalResource)
     {
-        var connection = relationalContext.Connection;
-        var transaction = relationalContext.Transaction;
-        if (
-            connection is null
-            || transaction is null
-            || connection.State != ConnectionState.Open
-            || !ReferenceEquals(transaction.Connection, connection)
-        )
+        var connection = relationalResource.Connection;
+        var transaction = relationalResource.Transaction;
+        if (connection.State != ConnectionState.Open || !ReferenceEquals(transaction.Connection, connection))
         {
             throw new InvalidOperationException(
                 "Atomic Jobs enlistment requires the exact live, open caller connection and its active transaction."
@@ -61,7 +59,8 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             )
             {
                 throw new InvalidOperationException(
-                    "The actual configured Jobs provider, endpoint, or database differs from the caller transaction. Atomic enlistment requires an exact configured database match."
+                    "The active unit of work's transaction belongs to another database, so this Jobs write cannot "
+                        + "enlist. Use the same database, or TransactionEnlistment.Never for this call."
                 );
             }
             context.Database.SetDbConnection(connection, contextOwnsConnection: false);
@@ -97,11 +96,11 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         JobKey key,
         TTimeJob job,
         long? expectedGeneration,
-        IRelationalCommitContext relationalContext,
+        IRelationalUnitOfWorkResource relationalResource,
         CancellationToken cancellationToken
     )
     {
-        await using var context = _CreateCoordinatedContext(relationalContext);
+        await using var context = _CreateCoordinatedContext(relationalResource);
         return await _WithKeyedSavepointAsync(
                 context,
                 () => _ScheduleKeyedAsync(context, key, job, expectedGeneration, cancellationToken),
@@ -114,11 +113,11 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         JobKeyScope scope,
         JobKey key,
         long expectedGeneration,
-        IRelationalCommitContext relationalContext,
+        IRelationalUnitOfWorkResource relationalResource,
         CancellationToken cancellationToken
     )
     {
-        await using var context = _CreateCoordinatedContext(relationalContext);
+        await using var context = _CreateCoordinatedContext(relationalResource);
         return await _WithKeyedSavepointAsync(
                 context,
                 () => _CancelKeyedAsync(context, scope, key, expectedGeneration, cancellationToken),

@@ -9,6 +9,7 @@ using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Internal;
 using Headless.Jobs.Models;
 using Headless.Testing.Tests;
+using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
@@ -113,7 +114,7 @@ public sealed class JobSchedulingDefaultsTests : TestBase
             {
                 Retries = 5,
                 RetryIntervals = intervals,
-                RequireAtomicEnlistment = true,
+                Enlistment = TransactionEnlistment.Required,
             },
             new() { [typeof(Request)] = new JobOptions { OnNodeDeath = NodeDeathPolicy.MarkFailed } },
             []
@@ -124,7 +125,7 @@ public sealed class JobSchedulingDefaultsTests : TestBase
         {
             Retries = 0,
             Description = "invocation",
-            RequireAtomicEnlistment = false,
+            Enlistment = TransactionEnlistment.WhenAvailable,
         };
         TimeJobEntity? ordinary = null;
         time.AddAsync(Arg.Any<TimeJobEntity>(), AbortToken).Returns(info => ordinary = info.Arg<TimeJobEntity>());
@@ -141,7 +142,7 @@ public sealed class JobSchedulingDefaultsTests : TestBase
         ordinary.Retries.Should().Be(0);
         ordinary.RetryIntervals.Should().Equal(2, 5);
         ordinary.OnNodeDeath.Should().Be(NodeDeathPolicy.MarkFailed);
-        ordinary.RequireAtomicEnlistment.Should().BeTrue();
+        ordinary.Enlistment.Should().Be(TransactionEnlistment.Required);
         ordinary.Description.Should().Be("invocation");
         ordinary.RetryIntervals![0] = 123;
 
@@ -150,7 +151,7 @@ public sealed class JobSchedulingDefaultsTests : TestBase
             .ScheduleKeyedAsync(
                 Arg.Any<JobKey>(),
                 Arg.Is<TimeJobEntity>(job =>
-                    job.Retries == 5 && job.RequireAtomicEnlistment && job.RetryIntervals![0] == 2
+                    job.Retries == 5 && job.Enlistment == TransactionEnlistment.Required && job.RetryIntervals![0] == 2
                 ),
                 null,
                 AbortToken
@@ -158,8 +159,8 @@ public sealed class JobSchedulingDefaultsTests : TestBase
         var chain = JobChain.Start(new Request());
         chain.Root.Then(_Requestless);
         await scheduler.EnqueueAsync(chain.Build(), AbortToken);
-        ordinary!.RequireAtomicEnlistment.Should().BeTrue();
-        ordinary.Children.Single().RequireAtomicEnlistment.Should().BeTrue();
+        ordinary!.Enlistment.Should().Be(TransactionEnlistment.Required);
+        ordinary.Children.Single().Enlistment.Should().Be(TransactionEnlistment.Required);
     }
 
     [Fact]
@@ -187,14 +188,14 @@ public sealed class JobSchedulingDefaultsTests : TestBase
     {
         var policies = new JobSchedulingPolicies(
             new JobOptions(),
-            new() { [typeof(Request)] = new JobOptions { RequireAtomicEnlistment = true } },
+            new() { [typeof(Request)] = new JobOptions { Enlistment = TransactionEnlistment.Required } },
             []
         );
         var (scheduler, time, _) = _CreateScheduler(new FakeTimeProvider(), policies);
         var scope = new JobKeyScope(_Typed.FunctionName, "tenant");
         var key = new JobKey("invoice");
-        await scheduler.CancelKeyedAsync(scope, key, 7, false, AbortToken);
-        await time.Received(1).CancelKeyedAsync(scope, key, 7, true, AbortToken);
+        await scheduler.CancelKeyedAsync(scope, key, 7, TransactionEnlistment.WhenAvailable, AbortToken);
+        await time.Received(1).CancelKeyedAsync(scope, key, 7, TransactionEnlistment.Required, AbortToken);
     }
 
     [Fact]
@@ -206,7 +207,7 @@ public sealed class JobSchedulingDefaultsTests : TestBase
                 Retries = 4,
                 RetryIntervals = [2, 5],
                 OnNodeDeath = NodeDeathPolicy.Skip,
-                RequireAtomicEnlistment = true,
+                Enlistment = TransactionEnlistment.Required,
             },
             new() { [typeof(Request)] = new JobOptions { Retries = 6 } },
             new() { [_Requestless] = new JobOptions { Retries = 8 } }
@@ -219,7 +220,7 @@ public sealed class JobSchedulingDefaultsTests : TestBase
                     job.Retries == 6
                     && job.OnNodeDeath == NodeDeathPolicy.Skip
                     && job.RetryIntervals!.SequenceEqual(new[] { 2, 5 })
-                    && !job.RequireAtomicEnlistment
+                    && job.Enlistment == TransactionEnlistment.WhenAvailable
                 ),
                 AbortToken
             );
@@ -243,8 +244,13 @@ public sealed class JobSchedulingDefaultsTests : TestBase
                 ),
                 AbortToken
             );
-        await scheduler.EnqueueAsync(new Request(), new JobOptions { RequireAtomicEnlistment = false }, AbortToken);
-        await time.Received(1).AddAsync(Arg.Is<TimeJobEntity>(job => job.RequireAtomicEnlistment), AbortToken);
+        await scheduler.EnqueueAsync(
+            new Request(),
+            new JobOptions { Enlistment = TransactionEnlistment.WhenAvailable },
+            AbortToken
+        );
+        await time.Received(1)
+            .AddAsync(Arg.Is<TimeJobEntity>(job => job.Enlistment == TransactionEnlistment.Required), AbortToken);
     }
 
     [Theory]
@@ -259,9 +265,12 @@ public sealed class JobSchedulingDefaultsTests : TestBase
         string identity
     )
     {
-        var required = new JobOptions { RequireAtomicEnlistment = true };
+        var required = new JobOptions { Enlistment = TransactionEnlistment.Required };
         var policies = new JobSchedulingPolicies(
-            new JobOptions { RequireAtomicEnlistment = hostAtomic },
+            new JobOptions
+            {
+                Enlistment = hostAtomic ? TransactionEnlistment.Required : TransactionEnlistment.WhenAvailable,
+            },
             identity == "request" ? new() { [typeof(Request)] = required } : [],
             identity == "request" ? [] : new() { [identity == "typed-descriptor" ? _Typed : _Requestless] = required }
         );
@@ -271,7 +280,9 @@ public sealed class JobSchedulingDefaultsTests : TestBase
                 ? atomicScheduler.ScheduleRecurringAsync(_Requestless, "0 * * * * *", AbortToken)
                 : atomicScheduler.ScheduleRecurringAsync(new Request(), "0 * * * * *", AbortToken)
         );
-        await atomicCron.Received(1).AddAsync(Arg.Is<CronJobEntity>(job => job.RequireAtomicEnlistment), AbortToken);
+        await atomicCron
+            .Received(1)
+            .AddAsync(Arg.Is<CronJobEntity>(job => job.Enlistment == TransactionEnlistment.Required), AbortToken);
     }
 
     [Theory]
@@ -283,7 +294,13 @@ public sealed class JobSchedulingDefaultsTests : TestBase
     {
         var policies = new JobSchedulingPolicies(
             new JobOptions(),
-            new() { [typeof(Request)] = new JobOptions { RequireAtomicEnlistment = functionAtomic } },
+            new()
+            {
+                [typeof(Request)] = new JobOptions
+                {
+                    Enlistment = functionAtomic ? TransactionEnlistment.Required : TransactionEnlistment.WhenAvailable,
+                },
+            },
             []
         );
         var (scheduler, _, cron) = _CreateScheduler(new FakeTimeProvider(), policies);
@@ -291,10 +308,14 @@ public sealed class JobSchedulingDefaultsTests : TestBase
         await scheduler.ScheduleRecurringAsync(
             new Request(),
             "0 * * * * *",
-            new RecurringJobOptions { RequireAtomicEnlistment = !functionAtomic },
+            new RecurringJobOptions
+            {
+                Enlistment = functionAtomic ? TransactionEnlistment.WhenAvailable : TransactionEnlistment.Required,
+            },
             AbortToken
         );
-        await cron.Received(1).AddAsync(Arg.Is<CronJobEntity>(job => job.RequireAtomicEnlistment), AbortToken);
+        await cron.Received(1)
+            .AddAsync(Arg.Is<CronJobEntity>(job => job.Enlistment == TransactionEnlistment.Required), AbortToken);
     }
 
     [Fact]
@@ -302,7 +323,7 @@ public sealed class JobSchedulingDefaultsTests : TestBase
     {
         const string cronExpression = "0 */5 * * * *";
         await using var host = _CreateHost(
-            options => options.ConfigureJob(_Requestless, job => job.RequireAtomicEnlistment()),
+            options => options.ConfigureJob(_Requestless, job => job.WithEnlistment(TransactionEnlistment.Required)),
             requestlessCronExpression: cronExpression
         );
         var seeder = new JobsInitializationHostedService(
@@ -402,7 +423,7 @@ public sealed class JobSchedulingDefaultsTests : TestBase
                 job.WithRetries(3);
                 if (!functionAtomic)
                 {
-                    job.RequireAtomicEnlistment();
+                    job.WithEnlistment(TransactionEnlistment.Required);
                 }
             });
             options.ConfigureJob<Request>(job =>
@@ -410,7 +431,7 @@ public sealed class JobSchedulingDefaultsTests : TestBase
                 job.WithRetries(5);
                 if (functionAtomic)
                 {
-                    job.RequireAtomicEnlistment();
+                    job.WithEnlistment(TransactionEnlistment.Required);
                 }
             });
         });
@@ -420,7 +441,10 @@ public sealed class JobSchedulingDefaultsTests : TestBase
         );
         await scheduler.EnqueueAsync(new Request(), job => job.WithRetries(0), AbortToken);
         await time.Received(1)
-            .AddAsync(Arg.Is<TimeJobEntity>(job => job.Retries == 0 && job.RequireAtomicEnlistment), AbortToken);
+            .AddAsync(
+                Arg.Is<TimeJobEntity>(job => job.Retries == 0 && job.Enlistment == TransactionEnlistment.Required),
+                AbortToken
+            );
     }
 
     [Theory]

@@ -1,23 +1,23 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.CommitCoordination;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Models;
+using Headless.UnitOfWork;
 
 namespace Headless.Jobs.Interfaces;
 
 /// <summary>
-/// Narrow seam for writing job rows inside a caller-supplied relational transaction (commit coordination). It is
-/// deliberately separate from <see cref="IJobPersistenceProvider{TTimeJob,TCronJob}" />: only the relational
-/// (EF Core) provider implements it, so the in-memory provider needs no throwing stub and the public persistence
-/// contract is unchanged. The manager discovers it by pattern-match
-/// (<c>persistenceProvider is ICoordinatedJobWriter</c>); a relational coordinator that is active while the provider
-/// is <em>not</em> an <see cref="ICoordinatedJobWriter{TTimeJob,TCronJob}" /> is a mis-wire and fails loud.
+/// Narrow seam for writing job rows inside the caller's active unit of work. It is deliberately separate from
+/// <see cref="IJobPersistenceProvider{TTimeJob,TCronJob}" />: only the relational (EF Core) provider implements
+/// it, so the in-memory provider needs no throwing stub and the public persistence contract is unchanged. The
+/// manager discovers it by pattern-match (<c>persistenceProvider is ICoordinatedJobWriter</c>); a joinable
+/// relational unit of work active while the provider is <em>not</em> an
+/// <see cref="ICoordinatedJobWriter{TTimeJob,TCronJob}" /> is a mis-wire and fails loud.
 /// </summary>
 /// <remarks>
 /// Implementations write rows <b>only</b> — no immediate dispatch, scheduler restart, notification, or cache
 /// invalidation. Those side effects are the manager's responsibility and are registered on
-/// <c>ICommitCoordinator.OnCommit</c> so they fire only after the caller's transaction commits (and never on
+/// <c>IUnitOfWork.OnCompleted</c> so they fire only after the caller's transaction commits (and never on
 /// rollback). <see cref="InvalidateCronExpressionsCacheAsync" /> is exposed here because the cron-expressions cache
 /// is owned by the provider; the manager registers it on commit rather than letting it fire on a pre-commit snapshot.
 /// </remarks>
@@ -26,14 +26,14 @@ internal interface ICoordinatedJobWriter<in TTimeJob, in TCronJob>
     where TCronJob : CronJobEntity, new()
 {
     /// <summary>Validates actual configured database compatibility and exact live caller handles before middleware.</summary>
-    void ValidateContext(IRelationalCommitContext relationalContext, bool requireSavepoints = false);
+    void ValidateContext(IRelationalUnitOfWorkResource relationalContext, bool requireSavepoints = false);
 
     /// <summary>Executes keyed scheduling inside the caller transaction. The result remains provisional until outer commit.</summary>
     Task<JobScheduleResult> WriteKeyedTimeJobAsync(
         JobKey key,
         TTimeJob job,
         long? expectedGeneration,
-        IRelationalCommitContext relationalContext,
+        IRelationalUnitOfWorkResource relationalContext,
         CancellationToken cancellationToken = default
     );
 
@@ -42,7 +42,7 @@ internal interface ICoordinatedJobWriter<in TTimeJob, in TCronJob>
         JobKeyScope scope,
         JobKey key,
         long expectedGeneration,
-        IRelationalCommitContext relationalContext,
+        IRelationalUnitOfWorkResource relationalContext,
         CancellationToken cancellationToken = default
     );
 
@@ -52,7 +52,7 @@ internal interface ICoordinatedJobWriter<in TTimeJob, in TCronJob>
     /// </summary>
     Task WriteTimeJobsAsync(
         TTimeJob[] jobs,
-        IRelationalCommitContext relationalContext,
+        IRelationalUnitOfWorkResource relationalContext,
         CancellationToken cancellationToken = default
     );
 
@@ -70,7 +70,7 @@ internal interface ICoordinatedJobWriter<in TTimeJob, in TCronJob>
     Task<CronSchedulePositionSeedResult> WriteCronJobsAsync(
         TCronJob[] jobs,
         CronSchedulePositionSeeder seeder,
-        IRelationalCommitContext relationalContext,
+        IRelationalUnitOfWorkResource relationalContext,
         CancellationToken cancellationToken = default
     );
 

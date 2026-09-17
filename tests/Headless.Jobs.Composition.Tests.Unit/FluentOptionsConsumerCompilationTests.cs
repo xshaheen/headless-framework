@@ -5,6 +5,7 @@ using Headless.Jobs.Entities;
 using Headless.Jobs.Interfaces;
 using Headless.Messaging;
 using Headless.Testing.Tests;
+using Headless.UnitOfWork;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -21,6 +22,7 @@ public sealed class FluentOptionsConsumerCompilationTests : TestBase
         using Headless.Jobs.Interfaces;
         using Headless.Jobs.Models;
         using Headless.Messaging;
+        using Headless.UnitOfWork;
         """;
 
     // Explicit references prevent the test host's Core dependencies from hiding a runtime packaging mistake.
@@ -40,6 +42,7 @@ public sealed class FluentOptionsConsumerCompilationTests : TestBase
             MetadataReference.CreateFromFile(typeof(MessageOptions).Assembly.Location),
             MetadataReference.CreateFromFile(typeof(IBus).Assembly.Location),
             MetadataReference.CreateFromFile(typeof(IQueue).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(TransactionEnlistment).Assembly.Location),
         ]
     );
 
@@ -275,7 +278,7 @@ public sealed class FluentOptionsConsumerCompilationTests : TestBase
             _ConfigurationSource(
                 """
                 JobsOptionsBuilder<TimeJobEntity, CronJobEntity> result = jobs
-                    .ConfigureDefaults(p => p.WithRetries(3).RequireAtomicEnlistment())
+                    .ConfigureDefaults(p => p.WithRetries(3).WithEnlistment(TransactionEnlistment.Required))
                     .ConfigureJob<Request>(p => p.WithNodeDeathPolicy(Headless.Jobs.Enums.NodeDeathPolicy.MarkFailed))
                     .ConfigureJob(descriptor, p => p.WithRetryIntervals(2, 5))
                     .ConfigureDefaults(new JobOptions { Retries = 3 })

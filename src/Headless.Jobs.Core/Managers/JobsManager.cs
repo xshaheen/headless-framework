@@ -3,23 +3,26 @@
 using System.Runtime.InteropServices;
 using Headless.Abstractions;
 using Headless.Checks;
-using Headless.CommitCoordination;
 using Headless.Jobs.BackgroundServices;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Entities.BaseEntity;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Exceptions;
 using Headless.Jobs.Interfaces;
-using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Models;
 using Headless.Jobs.MultiTenancy;
 using Headless.MultiTenancy;
+using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Jobs.Managers;
 
+// Singleton core (KD5): stateless with respect to unit-of-work coordination. It takes IUnitOfWork? as an explicit
+// argument on every Add/keyed-schedule path instead of resolving an ambient coordinator itself. The scoped
+// JobsManagerFacade resolves IUnitOfWorkManager.Current and passes it down; Update/Delete never touched coordination
+// and keep their original signatures.
 internal partial class JobsManager<TTimeJob, TCronJob>(
     IJobPersistenceProvider<TTimeJob, TCronJob> persistenceProvider,
     IJobsHostScheduler jobsHostScheduler,
@@ -28,7 +31,6 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     IJobsNotificationHubSender notificationHubSender,
     JobsExecutionContext executionContext,
     IJobsDispatcher dispatcher,
-    ICurrentCommitCoordinator currentCommitCoordinator,
     CronScheduleCache cronScheduleCache,
     JobsPostCommitSignalService postCommitSignals,
     JobFunctionRegistry functionRegistry,
@@ -36,14 +38,13 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     IServiceScopeFactory? serviceScopeFactory = null,
     ICurrentTenant? currentTenant = null,
     IOptions<JobsTenancyOptions>? tenancyOptions = null
-) : ICronJobManager<TCronJob>, ITimeJobManager<TTimeJob>
+)
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {
     private readonly IJobsHostScheduler _jobsHostScheduler = Argument.IsNotNull(jobsHostScheduler);
     private readonly IJobsDispatcher _dispatcher = Argument.IsNotNull(dispatcher);
     private readonly JobsExecutionContext _executionContext = Argument.IsNotNull(executionContext);
-    private readonly ICurrentCommitCoordinator _currentCommitCoordinator = Argument.IsNotNull(currentCommitCoordinator);
     private readonly CronScheduleCache _cronScheduleCache = Argument.IsNotNull(cronScheduleCache);
     private readonly JobFunctionRegistry _functionRegistry = Argument.IsNotNull(functionRegistry);
     private readonly JobsPostCommitSignalService _postCommitSignals = Argument.IsNotNull(postCommitSignals);
@@ -55,50 +56,53 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     private readonly bool _rejectCrossTenant = tenancyOptions?.Value.RejectCrossTenantEnqueue ?? false;
 
     // Add is the transaction-enlisting op: it returns the persisted entity and THROWS on any failure — validation
-    // (JobValidatorException), a dead/completed coordinated transaction or a mis-wired provider (InvalidOperationException),
-    // and persistence faults all propagate. On the coordinated path a propagated failure is the point: it lets the
-    // caller's ambient transaction roll back rather than commit without the job row. Update/Delete are plain CRUD and
-    // keep returning JobResult.
-    Task<TCronJob> ICronJobManager<TCronJob>.AddAsync(TCronJob entity, CancellationToken cancellationToken)
-    {
-        return _AddCronJobAsync(entity, cancellationToken);
-    }
-
-    // See the throw-on-failure note on ICronJobManager.AddAsync above — the same applies to the time-job Add path.
-    Task<TTimeJob> ITimeJobManager<TTimeJob>.AddAsync(TTimeJob entity, CancellationToken cancellationToken)
-    {
-        JobIntentFingerprint.RejectOrdinaryMutation(entity);
-        return _AddTimeJobAsync(entity, cancellationToken);
-    }
-
-    Task<JobResult<TCronJob>> ICronJobManager<TCronJob>.UpdateAsync(
-        TCronJob cronJob,
+    // (JobValidatorException), a dead/completed enlisted unit of work or a mis-wired provider (InvalidOperationException),
+    // and persistence faults all propagate. On the enlisted path a propagated failure is the point: it lets the
+    // caller's unit of work roll back rather than complete without the job row. Update/Delete are plain CRUD, never
+    // touch coordination, and keep returning JobResult. Called only by JobsManagerFacade (KD5).
+    internal Task<TCronJob> AddCronJobAsync(
+        TCronJob entity,
+        IUnitOfWork? unitOfWork,
         CancellationToken cancellationToken
     )
+    {
+        return _AddCronJobAsync(entity, unitOfWork, cancellationToken);
+    }
+
+    // See the throw-on-failure note on AddCronJobAsync above — the same applies to the time-job Add path.
+    internal Task<TTimeJob> AddTimeJobAsync(
+        TTimeJob entity,
+        IUnitOfWork? unitOfWork,
+        CancellationToken cancellationToken
+    )
+    {
+        JobIntentFingerprint.RejectOrdinaryMutation(entity);
+        return _AddTimeJobAsync(entity, unitOfWork, cancellationToken);
+    }
+
+    internal Task<JobResult<TCronJob>> UpdateCronJobAsync(TCronJob cronJob, CancellationToken cancellationToken)
     {
         return _UpdateCronJobAsync(cronJob, cancellationToken);
     }
 
-    Task<JobResult<TTimeJob>> ITimeJobManager<TTimeJob>.UpdateAsync(
-        TTimeJob timeJob,
-        CancellationToken cancellationToken
-    )
+    internal Task<JobResult<TTimeJob>> UpdateTimeJobAsync(TTimeJob timeJob, CancellationToken cancellationToken)
     {
         return _UpdateTimeJobAsync(timeJob, cancellationToken);
     }
 
-    Task<JobResult<TCronJob>> ICronJobManager<TCronJob>.DeleteAsync(Guid id, CancellationToken cancellationToken)
+    internal Task<JobResult<TCronJob>> DeleteCronJobAsync(Guid id, CancellationToken cancellationToken)
     {
         return _DeleteCronJobAsync(id, cancellationToken);
     }
 
-    Task<JobResult<TTimeJob>> ITimeJobManager<TTimeJob>.DeleteAsync(Guid id, CancellationToken cancellationToken)
+    internal Task<JobResult<TTimeJob>> DeleteTimeJobAsync(Guid id, CancellationToken cancellationToken)
     {
         return _DeleteTimeJobAsync(id, cancellationToken);
     }
 
-    Task<List<TTimeJob>> ITimeJobManager<TTimeJob>.AddBatchAsync(
+    internal Task<List<TTimeJob>> AddTimeJobsBatchAsync(
         List<TTimeJob> entities,
+        IUnitOfWork? unitOfWork,
         CancellationToken cancellationToken
     )
     {
@@ -107,10 +111,10 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             JobIntentFingerprint.RejectOrdinaryMutation(entity);
         }
 
-        return _AddTimeJobsBatchAsync(entities, cancellationToken);
+        return _AddTimeJobsBatchAsync(entities, unitOfWork, cancellationToken);
     }
 
-    Task<JobResult<List<TTimeJob>>> ITimeJobManager<TTimeJob>.UpdateBatchAsync(
+    internal Task<JobResult<List<TTimeJob>>> UpdateTimeJobsBatchAsync(
         List<TTimeJob> timeJobs,
         CancellationToken cancellationToken
     )
@@ -118,23 +122,21 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         return _UpdateTimeJobsBatchAsync(timeJobs, cancellationToken);
     }
 
-    Task<JobResult<TTimeJob>> ITimeJobManager<TTimeJob>.DeleteBatchAsync(
-        List<Guid> ids,
-        CancellationToken cancellationToken
-    )
+    internal Task<JobResult<TTimeJob>> DeleteTimeJobsBatchAsync(List<Guid> ids, CancellationToken cancellationToken)
     {
         return _DeleteTimeJobsBatchAsync(ids, cancellationToken);
     }
 
-    Task<List<TCronJob>> ICronJobManager<TCronJob>.AddBatchAsync(
+    internal Task<List<TCronJob>> AddCronJobsBatchAsync(
         List<TCronJob> entities,
+        IUnitOfWork? unitOfWork,
         CancellationToken cancellationToken
     )
     {
-        return _AddCronJobsBatchAsync(entities, cancellationToken);
+        return _AddCronJobsBatchAsync(entities, unitOfWork, cancellationToken);
     }
 
-    Task<JobResult<List<TCronJob>>> ICronJobManager<TCronJob>.UpdateBatchAsync(
+    internal Task<JobResult<List<TCronJob>>> UpdateCronJobsBatchAsync(
         List<TCronJob> cronJobs,
         CancellationToken cancellationToken
     )
@@ -142,17 +144,23 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         return _UpdateCronJobsBatchAsync(cronJobs, cancellationToken);
     }
 
-    Task<JobResult<TCronJob>> ICronJobManager<TCronJob>.DeleteBatchAsync(
-        List<Guid> ids,
-        CancellationToken cancellationToken
-    )
+    internal Task<JobResult<TCronJob>> DeleteCronJobsBatchAsync(List<Guid> ids, CancellationToken cancellationToken)
     {
         return _DeleteCronJobsBatchAsync(ids, cancellationToken);
     }
 
-    private async Task<TTimeJob> _AddTimeJobAsync(TTimeJob entity, CancellationToken cancellationToken)
+    private async Task<TTimeJob> _AddTimeJobAsync(
+        TTimeJob entity,
+        IUnitOfWork? unitOfWork,
+        CancellationToken cancellationToken
+    )
     {
-        var coordinated = _TryCaptureCoordinatedContext(JobAtomicity.IsRequired([entity]));
+        var coordinated = _TryCaptureCoordinatedContext(
+            unitOfWork,
+            JobAtomicity.IsRequired([entity]) ? TransactionEnlistment.Required : entity.Enlistment,
+            entity.Function,
+            requireSavepoints: false
+        );
         var now = timeProvider.GetUtcNow();
         _StampTimeJobTree(entity, now, assignIds: true);
 
@@ -198,7 +206,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 // enqueue, and using the enqueue-time `now` could push a job that was within the immediate-dispatch
                 // window into the scheduler/poll-sweep path. (Direct path below stays in-band, so its `now` is
                 // already current.)
-                _SignalOnCommit(context.Coordinator, new TimeJobCommittedSignal(this, entity, executionTime));
+                _SignalOnCommit(context.UnitOfWork, new TimeJobCommittedSignal(this, entity, executionTime));
 
                 return entity;
             }
@@ -256,9 +264,18 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         await notificationHubSender.AddTimeJobNotifyAsync(entity.Id).ConfigureAwait(false);
     }
 
-    private async Task<TCronJob> _AddCronJobAsync(TCronJob entity, CancellationToken cancellationToken)
+    private async Task<TCronJob> _AddCronJobAsync(
+        TCronJob entity,
+        IUnitOfWork? unitOfWork,
+        CancellationToken cancellationToken
+    )
     {
-        var coordinated = _TryCaptureCoordinatedContext(entity.RequireAtomicEnlistment);
+        var coordinated = _TryCaptureCoordinatedContext(
+            unitOfWork,
+            entity.Enlistment,
+            entity.Function,
+            requireSavepoints: false
+        );
         var now = timeProvider.GetUtcNow();
         _StampJob(entity, now, assignId: true);
 
@@ -292,7 +309,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             // Cron has no immediate-dispatch branch: cache invalidation runs on commit, scheduler-restart + notify go
             // to the worker (KTD-4). The signal carries the PERSISTED projection, not a pre-persistence guess.
             _SignalCronOnCommit(
-                context.Coordinator,
+                context.UnitOfWork,
                 context.Writer,
                 new CronJobsCommittedSignal(this, [entity], coordinatedSeed.EarliestNextDueUtc, entity.Id.ToString())
             );
@@ -317,7 +334,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     // change must not let a required recurring definition fall back to a non-coordinated insert silently.
     private static void _RejectDirectCronPersistence(IEnumerable<TCronJob> entities)
     {
-        JobAtomicity.RejectDirect(entities.Any(entity => entity.RequireAtomicEnlistment));
+        JobAtomicity.RejectDirect(entities.Any(entity => entity.Enlistment == TransactionEnlistment.Required));
     }
 
     /// <summary>
@@ -799,6 +816,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
     private async Task<List<TTimeJob>> _AddTimeJobsBatchAsync(
         List<TTimeJob>? entities,
+        IUnitOfWork? unitOfWork,
         CancellationToken cancellationToken = default
     )
     {
@@ -807,7 +825,12 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             return entities ?? [];
         }
 
-        var coordinated = _TryCaptureCoordinatedContext(JobAtomicity.IsRequired(entities));
+        var coordinated = _TryCaptureCoordinatedContext(
+            unitOfWork,
+            JobAtomicity.IsRequired(entities) ? TransactionEnlistment.Required : TransactionEnlistment.WhenAvailable,
+            $"time-job batch ({entities.Count})",
+            requireSavepoints: false
+        );
         var jobFunctionsHashSet = new HashSet<string>(_functionRegistry.Functions.Keys, StringComparer.Ordinal);
         var immediateTickers = new List<Guid>();
         var now = timeProvider.GetUtcNow();
@@ -902,7 +925,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 // The worker re-splits immediate vs. later against its own clock, so the signal carries every id
                 // with its due time rather than the enqueue-time split computed above for the direct path.
                 _SignalOnCommit(
-                    context.Coordinator,
+                    context.UnitOfWork,
                     new TimeJobsBatchCommittedSignal(
                         this,
                         [.. entities.Select(static x => new CommittedTimeJob(x.Id, x.ExecutionTime!.Value))]
@@ -964,11 +987,19 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
     private async Task<List<TCronJob>> _AddCronJobsBatchAsync(
         List<TCronJob> entities,
+        IUnitOfWork? unitOfWork,
         CancellationToken cancellationToken = default
     )
     {
         // One required definition makes the whole batch atomic-or-nothing, mirroring JobAtomicity.IsRequired.
-        var coordinated = _TryCaptureCoordinatedContext(entities.Exists(entity => entity.RequireAtomicEnlistment));
+        var coordinated = _TryCaptureCoordinatedContext(
+            unitOfWork,
+            entities.Exists(entity => entity.Enlistment == TransactionEnlistment.Required)
+                ? TransactionEnlistment.Required
+                : TransactionEnlistment.WhenAvailable,
+            $"cron-job batch ({entities.Count})",
+            requireSavepoints: false
+        );
         var validEntities = new List<TCronJob>();
         List<string>? errors = null;
         var now = timeProvider.GetUtcNow();
@@ -1048,7 +1079,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 .ConfigureAwait(false);
 
             _SignalCronOnCommit(
-                context.Coordinator,
+                context.UnitOfWork,
                 context.Writer,
                 new CronJobsCommittedSignal(
                     this,

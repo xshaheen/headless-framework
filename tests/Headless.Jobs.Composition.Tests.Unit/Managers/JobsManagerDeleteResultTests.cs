@@ -10,8 +10,9 @@ using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Managers;
 using Headless.Jobs.Models;
-using Headless.Jobs.Transactions;
 using Headless.Testing.Tests;
+using Headless.UnitOfWork;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Tests.Managers;
@@ -145,14 +146,21 @@ public sealed class JobsManagerDeleteResultTests : TestBase
             Substitute.For<IJobsNotificationHubSender>(),
             executionContext,
             Substitute.For<IJobsDispatcher>(),
-            new JobsNullCommitCoordinator(),
             new CronScheduleCache(TimeZoneInfo.Utc),
             signals,
             functionRegistry,
             NullLogger<JobsManager<TimeJobEntity, CronJobEntity>>.Instance
         );
 
-        return (manager, provider, scheduler);
+        // Delete/Update never touch unit-of-work coordination (KD5), so the facade's IUnitOfWorkManager is never
+        // read here; a real (unused) manager keeps the facade's constructor contract without a bespoke stub.
+        var unitOfWorkManager = new ServiceCollection().AddUnitOfWork().BuildServiceProvider();
+        var facade = new JobsManagerFacade<TimeJobEntity, CronJobEntity>(
+            manager,
+            unitOfWorkManager.GetRequiredService<IUnitOfWorkManager>()
+        );
+
+        return (facade, provider, scheduler);
     }
 
     private sealed class ProviderDbException : DbException;

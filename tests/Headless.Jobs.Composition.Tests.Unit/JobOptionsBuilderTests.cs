@@ -4,6 +4,7 @@ using Headless.Jobs;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Models;
 using Headless.Testing.Tests;
+using Headless.UnitOfWork;
 
 namespace Tests;
 
@@ -58,7 +59,7 @@ public sealed class JobOptionsBuilderTests : TestBase
             .WithCausationId("cause")
             .WithDescription("description")
             .WithTenantId("tenant")
-            .RequireAtomicEnlistment()
+            .WithEnlistment(TransactionEnlistment.Required)
             .AsSystemJob();
         var explicitOptions = builder.Build();
         explicitOptions.Retries.Should().Be(0);
@@ -71,7 +72,7 @@ public sealed class JobOptionsBuilderTests : TestBase
             .WithCausationId(null)
             .WithDescription(null)
             .WithTenantId(null);
-        builder.Build().Should().Be(new JobOptions { RequireAtomicEnlistment = true, IsSystemJob = true });
+        builder.Build().Should().Be(new JobOptions { Enlistment = TransactionEnlistment.Required, IsSystemJob = true });
         explicitOptions.OnNodeDeath.Should().Be(NodeDeathPolicy.MarkFailed);
         explicitOptions.TenantId.Should().Be("tenant");
     }

@@ -14,6 +14,7 @@ using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Serialization;
+using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -68,10 +69,13 @@ public sealed partial class OutboxBridgeIntegrationTests
                     new JobKey(marker),
                     DeadlineRegistration.Descriptor,
                     provider.GetRequiredService<DeadlineEvidence>().Due,
-                    new Headless.Jobs.Models.JobOptions { RequireAtomicEnlistment = true },
+                    new Headless.Jobs.Models.JobOptions { Enlistment = TransactionEnlistment.Required },
                     AbortToken
                 );
-        await schedule.Should().ThrowAsync<InvalidOperationException>().WithMessage("*active commit coordinator*");
+        await schedule
+            .Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*requires an active unit of work*");
         (await _ReadDeadlineRowsAsync(provider, marker)).Should().BeEmpty();
         (await _ReadPublishedAsync(provider, marker)).Should().ContainSingle();
     }
@@ -286,7 +290,7 @@ public sealed partial class OutboxBridgeIntegrationTests
                             evidence.Due,
                             new Headless.Jobs.Models.JobOptions
                             {
-                                RequireAtomicEnlistment = true,
+                                Enlistment = TransactionEnlistment.Required,
                                 CorrelationId = context.CorrelationId,
                                 CausationId = context.MessageId,
                                 TenantId = context.TenantId,

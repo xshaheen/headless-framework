@@ -1,11 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.CommitCoordination;
 using Headless.Jobs;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Models;
+using Headless.UnitOfWork;
 
 namespace Tests.Transactions;
 
@@ -35,7 +35,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
         var (facade, chain) = _ChainFacade(sut, requiredNode);
 
         var enqueue = () => facade.EnqueueAsync(chain, AbortToken);
-        await enqueue.Should().ThrowAsync<InvalidOperationException>().WithMessage("*atomic*");
+        await enqueue.Should().ThrowAsync<InvalidOperationException>().WithMessage("*requires an active unit of work*");
 
         middlewareCalls.Should().Be(0);
         await sut
@@ -45,7 +45,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
             .Writer.DidNotReceive()
             .WriteTimeJobsAsync(
                 Arg.Any<TimeJobEntity[]>(),
-                Arg.Any<IRelationalCommitContext>(),
+                Arg.Any<IRelationalUnitOfWorkResource>(),
                 Arg.Any<CancellationToken>()
             );
         sut.Scheduler.DidNotReceiveWithAnyArgs().RestartIfNeeded(default);
@@ -78,7 +78,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
                 .Writer.Received(1)
                 .WriteTimeJobsAsync(
                     Arg.Any<TimeJobEntity[]>(),
-                    Arg.Any<IRelationalCommitContext>(),
+                    Arg.Any<IRelationalUnitOfWorkResource>(),
                     Arg.Any<CancellationToken>()
                 );
             await sut
@@ -94,7 +94,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
                 .Writer.DidNotReceive()
                 .WriteTimeJobsAsync(
                     Arg.Any<TimeJobEntity[]>(),
-                    Arg.Any<IRelationalCommitContext>(),
+                    Arg.Any<IRelationalUnitOfWorkResource>(),
                     Arg.Any<CancellationToken>()
                 );
         }
@@ -106,11 +106,11 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
         var descriptor = registry.Descriptors[_FunctionName];
         var builder = JobChain.Start(
             descriptor,
-            options: new JobOptions { RequireAtomicEnlistment = requiredNode == "root" },
-            executionTime: DateTimeOffset.UtcNow.AddHours(1)
+            DateTimeOffset.UtcNow.AddHours(1),
+            new JobOptions { Enlistment = _Enlistment(requiredNode, "root") }
         );
-        builder.Root.Then(descriptor, new JobOptions { RequireAtomicEnlistment = requiredNode == "success" });
-        builder.Root.Catch(descriptor, new JobOptions { RequireAtomicEnlistment = requiredNode == "failure" });
+        builder.Root.Then(descriptor, new JobOptions { Enlistment = _Enlistment(requiredNode, "success") });
+        builder.Root.Catch(descriptor, new JobOptions { Enlistment = _Enlistment(requiredNode, "failure") });
         var facade = new JobScheduler<TimeJobEntity, CronJobEntity>(
             sut.Time,
             sut.Cron,
@@ -123,4 +123,9 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
         );
         return (facade, builder.Build());
     }
+
+    private static TransactionEnlistment _Enlistment(string? requiredNode, string candidate) =>
+        string.Equals(requiredNode, candidate, StringComparison.Ordinal)
+            ? TransactionEnlistment.Required
+            : TransactionEnlistment.WhenAvailable;
 }
