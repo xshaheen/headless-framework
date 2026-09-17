@@ -207,7 +207,7 @@ public static class SetupMiddlewares
 
     /// <summary>
     /// Adds <c>TenantCatalogResolutionMiddleware</c> to the pipeline. It consults registered
-    /// <c>ITenantIdentifierSource</c>s in registration order and resolves the first non-null
+    /// <c>ITenantIdentifierSource</c>s in registration order and resolves the first found
     /// identifier through the tenant catalog, setting <see cref="Headless.MultiTenancy.ICurrentTenant"/>
     /// on a match or short-circuiting with a fail-closed ProblemDetails response. Endpoints decorated
     /// with <see cref="MultiTenancy.SkipTenantResolutionAttribute"/> are bypassed entirely.

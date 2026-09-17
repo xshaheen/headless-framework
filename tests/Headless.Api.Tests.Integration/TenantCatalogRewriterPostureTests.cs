@@ -250,9 +250,11 @@ public sealed class TenantCatalogRewriterPostureTests : TestBase
 
 internal sealed class PostureHeaderTenantIdentifierSource(string headerName) : ITenantIdentifierSource
 {
-    public string? GetIdentifier(HttpContext context)
+    public TenantIdentifierSourceResult GetIdentifier(HttpContext context)
     {
-        return context.Request.Headers.TryGetValue(headerName, out var values) ? values.ToString() : null;
+        return context.Request.Headers.TryGetValue(headerName, out var values)
+            ? TenantIdentifierSourceResult.Found(values.ToString())
+            : TenantIdentifierSourceResult.None;
     }
 }
 

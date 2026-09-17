@@ -127,6 +127,10 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
         using var response = await _SendAsync(client, identifier: "ghost");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // R17: every rejection the catalog path writes is non-cacheable — 404 is heuristically
+        // cacheable and the opt-in NoCacheHeadersMiddleware may sit downstream of the short-circuit.
+        response.Headers.CacheControl.Should().NotBeNull();
+        response.Headers.CacheControl!.NoStore.Should().BeTrue();
         var body = await response.Content.ReadAsStringAsync(AbortToken);
         using var doc = JsonDocument.Parse(body);
         doc.RootElement.GetProperty("error")
@@ -193,6 +197,9 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
         using var response = await _SendAsync(client, identifier: new string('a', 200));
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // R17: rejections are non-cacheable at the writer, independent of NoCacheHeadersMiddleware.
+        response.Headers.CacheControl.Should().NotBeNull();
+        response.Headers.CacheControl!.NoStore.Should().BeTrue();
         var body = await response.Content.ReadAsStringAsync(AbortToken);
         using var doc = JsonDocument.Parse(body);
         doc.RootElement.GetProperty("error")
@@ -746,11 +753,11 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
 
                 http.ResolveFromCatalog(catalogHttp =>
                 {
-                    catalogHttp.AddSource(new HeaderTenantIdentifierSource(IdentifierHeader));
+                    catalogHttp.AddSource(new StubHeaderIdentifierSource(IdentifierHeader));
 
                     if (registerSecondIdentifierSource)
                     {
-                        catalogHttp.AddSource(new HeaderTenantIdentifierSource(SecondaryIdentifierHeader));
+                        catalogHttp.AddSource(new StubHeaderIdentifierSource(SecondaryIdentifierHeader));
                     }
                 });
             });
@@ -998,11 +1005,13 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
 
 internal sealed record TenantCatalogResponse(string? Id, bool IsAvailable, string? Name = null);
 
-internal sealed class HeaderTenantIdentifierSource(string headerName) : ITenantIdentifierSource
+internal sealed class StubHeaderIdentifierSource(string headerName) : ITenantIdentifierSource
 {
-    public string? GetIdentifier(HttpContext context)
+    public TenantIdentifierSourceResult GetIdentifier(HttpContext context)
     {
-        return context.Request.Headers.TryGetValue(headerName, out var values) ? values.ToString() : null;
+        return context.Request.Headers.TryGetValue(headerName, out var values)
+            ? TenantIdentifierSourceResult.Found(values.ToString())
+            : TenantIdentifierSourceResult.None;
     }
 }
 

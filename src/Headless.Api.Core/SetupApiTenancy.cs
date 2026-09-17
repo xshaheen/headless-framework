@@ -8,6 +8,7 @@ using Headless.Constants;
 using Headless.MultiTenancy;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -276,8 +277,8 @@ public sealed class HeadlessHttpTenancyBuilder
     /// configured separately via <c>HeadlessTenancyBuilder.Catalog(...)</c>; otherwise startup
     /// validation fails (R18). Call <see cref="SetupApiTenancy.UseHeadlessTenantCatalogResolution"/>
     /// after <c>UseRouting()</c> and before <c>UseAuthentication()</c> to wire the middleware into the
-    /// pipeline. v1 ships no built-in <see cref="ITenantIdentifierSource"/> — register one through
-    /// <paramref name="configure"/>, or resolution silently never activates for any request (R5).
+    /// pipeline. With zero registered sources resolution silently never activates for any request
+    /// (R5) — register one through <paramref name="configure"/>.
     /// </remarks>
     public HeadlessHttpTenancyBuilder ResolveFromCatalog(
         Action<HeadlessTenantCatalogResolutionBuilder>? configure = null
@@ -310,10 +311,17 @@ public sealed class HeadlessHttpTenancyBuilder
 
 /// <summary>Registers <see cref="ITenantIdentifierSource"/>s consulted by pre-auth tenant catalog resolution.</summary>
 /// <remarks>
-/// Sources are resolved in registration order; <c>TenantCatalogResolutionMiddleware</c> uses the first
-/// non-<see langword="null"/> identifier returned. v1 ships no built-in source — the deferred
-/// host/route/header identifier strategies (a separate unit of work) implement this interface and call
-/// <see cref="AddSource{TSource}"/> from their own setup extensions.
+/// <para>
+/// Ordering contract (R6): sources are consulted in first-registration order and the first
+/// <see cref="TenantIdentifierSourceResultKind.Found"/> result wins. Registering the same source
+/// <strong>type</strong> through <see cref="AddSource{TSource}"/> twice keeps the first registration's
+/// position and adds nothing; instance and delegate registrations always append.
+/// </para>
+/// <para>
+/// The built-in host, route, and header sources register through this builder's
+/// <c>AddHostSource</c> / <c>AddRouteSource</c> / <c>AddHeaderSource</c> members, each of which follows
+/// the same type-deduplication rule while its options contributions accumulate.
+/// </para>
 /// </remarks>
 [PublicAPI]
 public sealed class HeadlessTenantCatalogResolutionBuilder
@@ -328,10 +336,15 @@ public sealed class HeadlessTenantCatalogResolutionBuilder
     /// <summary>Registers an <see cref="ITenantIdentifierSource"/> implementation resolved from DI.</summary>
     /// <typeparam name="TSource">The identifier source implementation type.</typeparam>
     /// <returns>The same builder, to allow chaining.</returns>
+    /// <remarks>
+    /// Uses <c>TryAddEnumerable</c> semantics: a second registration of the same
+    /// <typeparamref name="TSource"/> type keeps the first registration's position and is otherwise
+    /// ignored — options contributions from every call still apply in call order.
+    /// </remarks>
     public HeadlessTenantCatalogResolutionBuilder AddSource<TSource>()
         where TSource : class, ITenantIdentifierSource
     {
-        _services.AddSingleton<ITenantIdentifierSource, TSource>();
+        _services.TryAddEnumerable(ServiceDescriptor.Singleton<ITenantIdentifierSource, TSource>());
         return this;
     }
 
@@ -339,10 +352,35 @@ public sealed class HeadlessTenantCatalogResolutionBuilder
     /// <param name="source">The identifier source instance.</param>
     /// <returns>The same builder, to allow chaining.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="source"/> is <see langword="null"/>.</exception>
+    /// <remarks>Instance registrations always append — two instances of one type both run.</remarks>
     public HeadlessTenantCatalogResolutionBuilder AddSource(ITenantIdentifierSource source)
     {
         Argument.IsNotNull(source);
         _services.AddSingleton(source);
+        return this;
+    }
+
+    /// <summary>Registers a delegate that reads a raw tenant identifier from the current request (R4).</summary>
+    /// <param name="resolver">
+    /// Delegate invoked once per request, in registration order. Returning <see langword="null"/> or a
+    /// whitespace-only string means "no identifier from this source" and resolution continues with the next
+    /// registered source; the return value is otherwise raw caller input and is never trimmed, lowercased, or
+    /// shape-validated here. Exceptions propagate unchanged, like a store fault — they are never mapped to a
+    /// tenant outcome.
+    /// </param>
+    /// <returns>The same builder, to allow chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="resolver"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// <para>
+    /// A convenience over implementing <see cref="ITenantIdentifierSource"/>: the delegate cannot express
+    /// an ambiguous (<see cref="TenantIdentifierSourceResultKind.Invalid"/>) input — for that, implement
+    /// the interface. Delegate registrations always append, in call order, after any earlier entries.
+    /// </para>
+    /// </remarks>
+    public HeadlessTenantCatalogResolutionBuilder AddSource(Func<HttpContext, string?> resolver)
+    {
+        Argument.IsNotNull(resolver);
+        _services.AddSingleton<ITenantIdentifierSource>(new DelegateTenantIdentifierSource(resolver));
         return this;
     }
 }
