@@ -28,9 +28,9 @@ tags:
 
 > **Historical note (2026-09-13).** The SQL Server commit diagnostic gate this document lifted its shape from (a hosted
 > service, its `Disabled | Warn | Strict` probe mode, probe options, and probe state) was removed when
-> `Headless.CommitCoordination.SqlServer` became an explicit-signal raw-ADO helper package with no hosted service.
+> the former SQL Server commit-coordination package (removed with the scoped unit of work, 2026-09-17) became an explicit-signal raw-ADO helper package with no hosted service.
 > References to it below describe the code as it was when the pattern was extracted. The 3-state shape now ships as
-> `CommitProbeMode` (`Headless.CommitCoordination.Abstractions`) and its only consumer is the EF
+> the former `CommitProbeMode` (commit-coordination abstractions, since removed) and its only consumer is the EF
 > `CommitInterceptorStartupGate<TContext>` (Tier-2 exception at the end of this document).
 
 ## Context
@@ -42,7 +42,7 @@ The framework already validates a lot at host startup, but each package invented
 | Always-throw, no knob | `FeaturesEntityValidationStartupGate<TContext>` (`Headless.Features.Storage.EntityFramework/Internal/`) | Throws `InvalidOperationException` if a required EF entity type is absent from the model. No opt-out. |
 | Per-gate `bool`, throw-when-on | `HeadlessServiceDefaultsValidationStartupFilter` (`Headless.Api.ServiceDefaults/`) | Reads `RequireUseHeadless` / `RequireMapHeadlessEndpoints` / `RequireStatusCodesRewriter` (all default `true`); throws if wiring was skipped. Two-state per gate. |
 | Collect-then-throw + warn-log | `HeadlessTenancyStartupValidator` (`Headless.MultiTenancy/`) | Aggregates `IHeadlessTenancyValidator` diagnostics, throws if any `Error`, logs `Warning`/`Information`. Warn-vs-strict is baked into each diagnostic's severity, not operator-configurable. |
-| **Real 3-state mode — but only one package has it** | The former SQL Server commit diagnostic hosted service (`Headless.CommitCoordination.SqlServer/`, since removed) | Its probe mode was `Disabled \| Warn \| Strict`. The only gate with an explicit graduated knob at the time; today that knob is `CommitProbeMode` on the EF interceptor gate. |
+| **Real 3-state mode — but only one package has it** | The former SQL Server commit diagnostic hosted service (the former SQL Server commit-coordination package, since removed) | Its probe mode was `Disabled \| Warn \| Strict`. The only gate with an explicit graduated knob at the time; that knob later became `CommitProbeMode` on the EF interceptor gate; both were removed with the scoped unit of work (2026-09-17). |
 
 This scatter creates three frictions:
 
@@ -67,7 +67,7 @@ The test for tier is **I/O at runtime, not object allocation.** `FeaturesEntityV
 
 ### Shared 3-state mode enum
 
-Generalize the existing probe-mode enum (then the SQL Server one; now `CommitProbeMode` in `Headless.CommitCoordination.Abstractions`) into a shared enum in `Headless.Hosting`, renaming `Disabled` → `Off` for a consistent vocabulary:
+Generalize the existing probe-mode enum (then the SQL Server one; later `CommitProbeMode` in the commit-coordination abstractions, both since removed) into a shared enum in `Headless.Hosting`, renaming `Disabled` → `Off` for a consistent vocabulary:
 
 ```csharp
 // proposed: Headless.Hosting (shared)
@@ -85,7 +85,7 @@ public enum HeadlessValidationMode
 
 > The rename `Disabled` → `Off` touches a `[PublicAPI]` enum — a breaking change, acceptable under this greenfield repo's "prefer clean APIs over compatibility layers" stance, but call it out in the PR.
 
-> **Open decision — where the shared enum lives.** Putting `HeadlessValidationMode` in `Headless.Hosting` forces any Tier-2 provider that adopts it (e.g. `Headless.CommitCoordination.SqlServer`) to reference `Headless.Hosting` — which the rejected validator finding (see below) deliberately avoided: *"a Tier-2 package isn't obligated to take a Hosting dependency."* Resolve this before implementing: either place the enum in a low-level neutral package (e.g. `Headless.Abstractions`) so no provider gains a Hosting dependency, or accept the dependency. Only the enum needs the neutral home — the `ResolveValidationMode` helper below (which needs `IHostEnvironment`) can still live in `Headless.Hosting`.
+> **Open decision — where the shared enum lives.** Putting `HeadlessValidationMode` in `Headless.Hosting` forces any Tier-2 provider that adopts it (e.g. the former SQL Server commit-coordination package (removed with the scoped unit of work, 2026-09-17)) to reference `Headless.Hosting` — which the rejected validator finding (see below) deliberately avoided: *"a Tier-2 package isn't obligated to take a Hosting dependency."* Resolve this before implementing: either place the enum in a low-level neutral package (e.g. `Headless.Abstractions`) so no provider gains a Hosting dependency, or accept the dependency. Only the enum needs the neutral home — the `ResolveValidationMode` helper below (which needs `IHostEnvironment`) can still live in `Headless.Hosting`.
 
 ### Canonical gate shape: resolve → short-circuit → check → branch
 

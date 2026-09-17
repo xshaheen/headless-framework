@@ -30,7 +30,7 @@ Infrastructure backends omit it.
 | Shape | Meaning | Examples |
 |---|---|---|
 | `Headless.<Feature>.Storage.<Provider>` | Persists the feature's **domain entities** | `AuditLog.Storage.PostgreSql`, `Features.Storage.SqlServer`, `Permissions.Storage.EntityFramework`, `Settings.Storage.*`, `Messaging.Storage.*` |
-| `Headless.<Feature>.<Provider>` | An **infrastructure backend**, not a domain-data store | `DistributedLocks.PostgreSql` (advisory-lock backend), `Coordination.SqlServer` (membership state), `CommitCoordination.PostgreSql`, `Sql.PostgreSql` (raw SQL access) |
+| `Headless.<Feature>.<Provider>` | An **infrastructure backend**, not a domain-data store | `DistributedLocks.PostgreSql` (advisory-lock backend), `Coordination.SqlServer` (membership state), `UnitOfWork.PostgreSql` (transaction resource), `Sql.PostgreSql` (raw SQL access) |
 
 **Why the difference is intentional:** `DistributedLocks.PostgreSql` does not store *distributed-lock domain
 records* the way `AuditLog.Storage.PostgreSql` stores *audit entries* — it uses PostgreSQL advisory locks as a
