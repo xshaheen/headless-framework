@@ -445,22 +445,22 @@ public sealed class HeadlessTenantCatalogResolutionBuilder
     {
         Argument.IsNotNull(configuration);
 
-        _services
-            .AddOptions<HostTenantIdentifierSourceOptions, HostTenantIdentifierSourceOptionsValidator>()
-            .Bind(configuration);
-
-        _services.TryAddEnumerable(ServiceDescriptor.Singleton<ITenantIdentifierSource, HostTenantIdentifierSource>());
+        _AddSourceCore<
+            HostTenantIdentifierSourceOptions,
+            HostTenantIdentifierSourceOptionsValidator,
+            HostTenantIdentifierSource
+        >(options => options.Bind(configuration));
 
         return this;
     }
 
     private void _AddHostSourceCore(Action<HostTenantIdentifierSourceOptions> configure)
     {
-        _services
-            .AddOptions<HostTenantIdentifierSourceOptions, HostTenantIdentifierSourceOptionsValidator>()
-            .Configure(configure);
-
-        _services.TryAddEnumerable(ServiceDescriptor.Singleton<ITenantIdentifierSource, HostTenantIdentifierSource>());
+        _AddSourceCore<
+            HostTenantIdentifierSourceOptions,
+            HostTenantIdentifierSourceOptionsValidator,
+            HostTenantIdentifierSource
+        >(options => options.Configure(configure));
     }
 
     /// <summary>Registers the built-in route tenant identifier source with the default route value name (R2).</summary>
@@ -496,7 +496,7 @@ public sealed class HeadlessTenantCatalogResolutionBuilder
     {
         Argument.IsNotNullOrWhiteSpace(routeValueName);
 
-        _AddRouteSourceCore(options => options.RouteValueName = routeValueName);
+        _AddRouteSourceCore(options => options.Configure(o => o.RouteValueName = routeValueName));
 
         return this;
     }
@@ -514,7 +514,7 @@ public sealed class HeadlessTenantCatalogResolutionBuilder
     {
         Argument.IsNotNull(configure);
 
-        _AddRouteSourceCore(configure);
+        _AddRouteSourceCore(options => options.Configure(configure));
 
         return this;
     }
@@ -537,12 +537,7 @@ public sealed class HeadlessTenantCatalogResolutionBuilder
     {
         Argument.IsNotNull(configuration);
 
-        _services
-            .AddOptions<RouteTenantIdentifierSourceOptions, RouteTenantIdentifierSourceOptionsValidator>()
-            .Bind(configuration);
-
-        _services.TryAddEnumerable(ServiceDescriptor.Singleton<ITenantIdentifierSource, RouteTenantIdentifierSource>());
-        _DecorateLinkGeneratorOnce();
+        _AddRouteSourceCore(options => options.Bind(configuration));
 
         return this;
     }
@@ -551,19 +546,14 @@ public sealed class HeadlessTenantCatalogResolutionBuilder
     /// Shared core of the <c>AddRouteSource</c> overloads: registers the validated options type
     /// plus (optionally) one <c>Configure</c> contribution, and the deduplicating source descriptor.
     /// </summary>
-    private void _AddRouteSourceCore(Action<RouteTenantIdentifierSourceOptions>? configure = null)
+    private void _AddRouteSourceCore(Action<OptionsBuilder<RouteTenantIdentifierSourceOptions>>? configure = null)
     {
-        var optionsBuilder = _services.AddOptions<
+        _AddSourceCore<
             RouteTenantIdentifierSourceOptions,
-            RouteTenantIdentifierSourceOptionsValidator
-        >();
+            RouteTenantIdentifierSourceOptionsValidator,
+            RouteTenantIdentifierSource
+        >(configure);
 
-        if (configure is not null)
-        {
-            optionsBuilder.Configure(configure);
-        }
-
-        _services.TryAddEnumerable(ServiceDescriptor.Singleton<ITenantIdentifierSource, RouteTenantIdentifierSource>());
         _DecorateLinkGeneratorOnce();
     }
 
@@ -646,7 +636,7 @@ public sealed class HeadlessTenantCatalogResolutionBuilder
     {
         Argument.IsNotNullOrWhiteSpace(headerName);
 
-        _AddHeaderSourceCore(options => options.ContributeHeaderName(headerName));
+        _AddHeaderSourceCore(options => options.Configure(o => o.ContributeHeaderName(headerName)));
 
         return this;
     }
@@ -664,7 +654,7 @@ public sealed class HeadlessTenantCatalogResolutionBuilder
     {
         Argument.IsNotNull(configure);
 
-        _AddHeaderSourceCore(configure);
+        _AddHeaderSourceCore(options => options.Configure(configure));
 
         return this;
     }
@@ -688,25 +678,22 @@ public sealed class HeadlessTenantCatalogResolutionBuilder
     {
         Argument.IsNotNull(configuration);
 
-        _services
-            .AddOptions<HeaderTenantIdentifierSourceOptions, HeaderTenantIdentifierSourceOptionsValidator>()
-            // The binder adds into the existing list, so a bound list would otherwise be appended to
-            // the default rather than replace it — clear the untouched default first, only when the
-            // section actually lists names, so an empty section keeps the default.
-            .Configure(options =>
-            {
-                if (
-                    options.HasUntouchedDefaultHeaderNames
-                    && configuration.GetSection(nameof(HeaderTenantIdentifierSourceOptions.HeaderNames)).Exists()
-                )
+        _AddHeaderSourceCore(options =>
+            options
+                // The binder adds into the existing list, so a bound list would otherwise be appended to
+                // the default rather than replace it — clear the untouched default first, only when the
+                // section actually lists names, so an empty section keeps the default.
+                .Configure(o =>
                 {
-                    options.HeaderNames = [];
-                }
-            })
-            .Bind(configuration);
-
-        _services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<ITenantIdentifierSource, HeaderTenantIdentifierSource>()
+                    if (
+                        o.HasUntouchedDefaultHeaderNames
+                        && configuration.GetSection(nameof(HeaderTenantIdentifierSourceOptions.HeaderNames)).Exists()
+                    )
+                    {
+                        o.HeaderNames = [];
+                    }
+                })
+                .Bind(configuration)
         );
 
         return this;
@@ -716,21 +703,31 @@ public sealed class HeadlessTenantCatalogResolutionBuilder
     /// Shared core of the <c>AddHeaderSource</c> overloads: registers the validated options type
     /// plus (optionally) one <c>Configure</c> contribution, and the deduplicating source descriptor.
     /// </summary>
-    private void _AddHeaderSourceCore(Action<HeaderTenantIdentifierSourceOptions>? configure = null)
+    private void _AddHeaderSourceCore(Action<OptionsBuilder<HeaderTenantIdentifierSourceOptions>>? configure = null)
     {
-        var optionsBuilder = _services.AddOptions<
+        _AddSourceCore<
             HeaderTenantIdentifierSourceOptions,
-            HeaderTenantIdentifierSourceOptionsValidator
-        >();
+            HeaderTenantIdentifierSourceOptionsValidator,
+            HeaderTenantIdentifierSource
+        >(configure);
+    }
 
-        if (configure is not null)
-        {
-            optionsBuilder.Configure(configure);
-        }
+    /// <summary>
+    /// Shared registration core of every built-in source: the validated options type plus one optional
+    /// options contribution (a <c>Configure</c> callback or a configuration bind, applied in call order so
+    /// contributions accumulate), and the source descriptor with <c>TryAddEnumerable</c> semantics so a
+    /// repeated registration of the same source type keeps its first position (KTD3).
+    /// </summary>
+    private void _AddSourceCore<TOptions, TValidator, TSource>(Action<OptionsBuilder<TOptions>>? configure)
+        where TOptions : class
+        where TValidator : class, IValidator<TOptions>
+        where TSource : class, ITenantIdentifierSource
+    {
+        var optionsBuilder = _services.AddOptions<TOptions, TValidator>();
 
-        _services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<ITenantIdentifierSource, HeaderTenantIdentifierSource>()
-        );
+        configure?.Invoke(optionsBuilder);
+
+        _services.TryAddEnumerable(ServiceDescriptor.Singleton<ITenantIdentifierSource, TSource>());
     }
 }
 
