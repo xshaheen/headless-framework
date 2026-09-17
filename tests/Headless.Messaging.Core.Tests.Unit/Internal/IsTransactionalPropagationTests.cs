@@ -4,16 +4,15 @@ using System.Collections.Concurrent;
 using System.Data;
 using System.Data.Common;
 using Headless.Abstractions;
-using Headless.CommitCoordination;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Serialization;
-using Headless.Messaging.Transactions;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
+using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -21,8 +20,8 @@ namespace Tests.Internal;
 
 /// <summary>
 /// Tests for F9 — <see cref="PublishContext.IsTransactional"/>: surfaces the transactional
-/// boundary as a typed contract so post-success middleware can detect when a publish is enlisted on an
-/// ambient commit coordinator whose relational commit drives outbox dispatch post-commit.
+/// boundary as a typed contract so post-success middleware can detect when a publish is enlisted on the
+/// caller's active unit of work whose relational commit drives outbox dispatch post-commit.
 /// </summary>
 public sealed class IsTransactionalPropagationTests : TestBase
 {
@@ -61,7 +60,7 @@ public sealed class IsTransactionalPropagationTests : TestBase
             cancellationToken: AbortToken
         );
 
-        // then — explicit direct delivery bypasses durable commit coordination
+        // then — explicit direct delivery bypasses durable enlistment
         observed.Captured.Should().BeFalse();
     }
 
@@ -100,11 +99,11 @@ public sealed class IsTransactionalPropagationTests : TestBase
     }
 
     [Fact]
-    public async Task should_set_is_transactional_true_when_coordinator_has_relational_transaction()
+    public async Task should_set_is_transactional_true_when_unit_of_work_has_relational_transaction()
     {
-        // given — an ambient commit coordinator exposes a relational transaction: the publish is buffered
-        // into the outbox and waits for the coordinator's commit. Post-success middleware should see
-        // IsTransactional = true so it can defer durable side-effects until after commit.
+        // given — the active unit of work exposes a relational transaction: the publish is buffered into the
+        // outbox and waits for the unit to complete. Post-success middleware should see IsTransactional = true
+        // so it can defer durable side-effects until after commit.
         var observed = new TransactionalCapture();
         var services = new ServiceCollection();
         services.AddSingleton(observed);
@@ -114,31 +113,30 @@ public sealed class IsTransactionalPropagationTests : TestBase
         var pipeline = _BuildPublishPipeline(services);
 
         await using var transaction = new TestDbTransaction();
-        var stack = new CommitScopeStack();
-        var scope = new CommitScopeFactory(stack).Open(new RelationalCommitContext(() => null, () => transaction));
+        var resource = Substitute.For<IRelationalUnitOfWorkResource>();
+        resource.Transaction.Returns(transaction);
+        var unitOfWork = new FakeUnitOfWork { Resource = resource };
 
-        await using (scope)
-        {
-            var publisher = _BuildMessagePublisher(pipeline, stack);
+        var publisher = _BuildMessagePublisher(pipeline);
 
-            // when
-            await publisher.PublishAsync(
-                MessageLane.Bus,
-                new TestMessage("hi"),
-                options: null,
-                cancellationToken: AbortToken
-            );
+        // when
+        await publisher.PublishAsync(
+            MessageLane.Bus,
+            new TestMessage("hi"),
+            options: null,
+            unitOfWork,
+            cancellationToken: AbortToken
+        );
 
-            // then — post-success middleware saw the transactional flag
-            observed.Captured.Should().BeTrue();
-        }
+        // then — post-success middleware saw the transactional flag
+        observed.Captured.Should().BeTrue();
     }
 
     [Fact]
-    public async Task should_set_is_transactional_false_when_no_ambient_coordinator()
+    public async Task should_set_is_transactional_false_when_no_active_unit_of_work()
     {
-        // given — no ambient coordinator: the default durable publish is stored standalone and handed to the
-        // dispatcher immediately, so there is no commit-driven rollback semantic.
+        // given — no active unit of work: the default durable publish is stored standalone and handed to the
+        // dispatcher immediately, so there is no completion-driven rollback semantic.
         var observed = new TransactionalCapture();
         var services = new ServiceCollection();
         services.AddSingleton(observed);
@@ -147,13 +145,14 @@ public sealed class IsTransactionalPropagationTests : TestBase
         );
         var pipeline = _BuildPublishPipeline(services);
 
-        var publisher = _BuildMessagePublisher(pipeline, new MessagingNullCommitCoordinator());
+        var publisher = _BuildMessagePublisher(pipeline);
 
         // when
         await publisher.PublishAsync(
             MessageLane.Bus,
             new TestMessage("hi"),
             options: null,
+            unitOfWork: null,
             cancellationToken: AbortToken
         );
 
@@ -161,10 +160,7 @@ public sealed class IsTransactionalPropagationTests : TestBase
         observed.Captured.Should().BeFalse();
     }
 
-    private static MessagePublisher _BuildMessagePublisher(
-        IPublishMiddlewarePipeline pipeline,
-        ICurrentCommitCoordinator currentCommitCoordinator
-    )
+    private static MessagePublisher _BuildMessagePublisher(IPublishMiddlewarePipeline pipeline)
     {
         var options = new MessagingOptions();
         var registry = _CreateRegistry();
@@ -238,7 +234,6 @@ public sealed class IsTransactionalPropagationTests : TestBase
             pipeline,
             TimeProvider.System,
             capabilities,
-            currentCommitCoordinator,
             static () => new TestDeliveryCoordinationResolver(),
             () => writer
         );
@@ -270,10 +265,10 @@ public sealed class IsTransactionalPropagationTests : TestBase
 
     private sealed class TestDeliveryCoordinationResolver : IDeliveryCoordinationResolver
     {
-        public DeliveryCoordination Resolve(ICommitCoordinator coordinator)
+        public DeliveryCoordination Resolve(IUnitOfWork unitOfWork)
         {
-            return coordinator.Relational?.Transaction is { } transaction
-                ? DeliveryCoordination.Compatible(coordinator, transaction)
+            return unitOfWork.Resource is IRelationalUnitOfWorkResource { Transaction: { } transaction }
+                ? DeliveryCoordination.Compatible(unitOfWork, transaction)
                 : DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.MissingRelationalCapability);
         }
     }

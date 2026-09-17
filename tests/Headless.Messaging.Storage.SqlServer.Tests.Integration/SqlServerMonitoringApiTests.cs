@@ -426,7 +426,7 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
         var explicitHeaders = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             [Headers.MessageId] = Guid.NewGuid().ToString("D"),
-            [Headers.RequestedDeliveryMode] = nameof(DeliveryMode.Coordinated),
+            [Headers.RequestedDeliveryMode] = nameof(DeliveryMode.Direct),
             [Headers.ResolvedDeliveryMode] = nameof(DeliveryMode.Durable),
         };
         var explicitPublished = await _storage.StoreMessageAsync(
@@ -486,7 +486,7 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
         );
 
         var explicitView = publishedPage.Items.Single(x => x.StorageId == explicitPublished.StorageId);
-        explicitView.RequestedDeliveryMode.Should().Be(DeliveryMode.Coordinated);
+        explicitView.RequestedDeliveryMode.Should().Be(DeliveryMode.Direct);
         explicitView.ResolvedDeliveryMode.Should().Be(DeliveryMode.Durable);
 
         var malformedView = publishedPage.Items.Single(x => x.StorageId == malformedPublished.StorageId);

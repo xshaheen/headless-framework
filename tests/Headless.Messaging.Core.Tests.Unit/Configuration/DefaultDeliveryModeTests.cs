@@ -7,6 +7,7 @@ using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Registration;
 using Headless.Testing.Tests;
+using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -26,7 +27,7 @@ public sealed class DefaultDeliveryModeTests : TestBase
         var message = new TestMessage("inherit");
         if (lane == MessageLane.Bus)
         {
-            var bus = provider.GetRequiredService<IBus>();
+            var bus = provider.CreateScope().ServiceProvider.GetRequiredService<IBus>();
             await bus.PublishAsync(message, AbortToken);
             await bus.PublishAsync(message, options: null, AbortToken);
             await bus.PublishAsync(message, new PublishOptions { CorrelationId = "record" }, AbortToken);
@@ -34,7 +35,7 @@ public sealed class DefaultDeliveryModeTests : TestBase
         }
         else
         {
-            var queue = provider.GetRequiredService<IQueue>();
+            var queue = provider.CreateScope().ServiceProvider.GetRequiredService<IQueue>();
             await queue.EnqueueAsync(message, AbortToken);
             await queue.EnqueueAsync(message, options: null, AbortToken);
             await queue.EnqueueAsync(message, new QueueOptions { CorrelationId = "record" }, AbortToken);
@@ -60,13 +61,15 @@ public sealed class DefaultDeliveryModeTests : TestBase
         if (lane == MessageLane.Bus)
         {
             await provider
-                .GetRequiredService<IBus>()
+                .CreateScope()
+                .ServiceProvider.GetRequiredService<IBus>()
                 .PublishAsync(message, new PublishOptions { DeliveryMode = explicitMode }, AbortToken);
         }
         else
         {
             await provider
-                .GetRequiredService<IQueue>()
+                .CreateScope()
+                .ServiceProvider.GetRequiredService<IQueue>()
                 .EnqueueAsync(message, new QueueOptions { DeliveryMode = explicitMode }, AbortToken);
         }
 
@@ -78,25 +81,42 @@ public sealed class DefaultDeliveryModeTests : TestBase
     [InlineData(MessageLane.Bus, false)]
     [InlineData(MessageLane.Queue, true)]
     [InlineData(MessageLane.Queue, false)]
-    public async Task should_reject_coordinated_mode_outside_a_coordinated_scope_before_any_effect(
+    public async Task should_reject_required_enlistment_outside_a_unit_of_work_before_any_effect(
         MessageLane lane,
         bool viaHostDefault
     )
     {
-        await using var provider = _CreateProvider(viaHostDefault ? DeliveryMode.Coordinated : DeliveryMode.Durable);
-        var message = new TestMessage("coordinated");
-        DeliveryMode? explicitMode = viaHostDefault ? null : DeliveryMode.Coordinated;
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessMessaging(setup =>
+        {
+            setup.UseInMemory();
+            setup.UseInMemoryStorage();
+            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
+            setup.Options.DefaultEnlistment = viaHostDefault
+                ? TransactionEnlistment.Required
+                : TransactionEnlistment.WhenAvailable;
+            setup.Bus.ForMessage<TestMessage>(message => message.Contract("test.default-mode"));
+            setup.Queue.ForMessage<TestMessage>(message => message.Contract("test.default-mode"));
+        });
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        var message = new TestMessage("required");
+        TransactionEnlistment? explicitEnlistment = viaHostDefault ? null : TransactionEnlistment.Required;
 
         var act = () =>
             lane == MessageLane.Bus
                 ? provider
-                    .GetRequiredService<IBus>()
-                    .PublishAsync(message, new PublishOptions { DeliveryMode = explicitMode }, AbortToken)
+                    .CreateScope()
+                    .ServiceProvider.GetRequiredService<IBus>()
+                    .PublishAsync(message, new PublishOptions { Enlistment = explicitEnlistment }, AbortToken)
                 : provider
-                    .GetRequiredService<IQueue>()
-                    .EnqueueAsync(message, new QueueOptions { DeliveryMode = explicitMode }, AbortToken);
+                    .CreateScope()
+                    .ServiceProvider.GetRequiredService<IQueue>()
+                    .EnqueueAsync(message, new QueueOptions { Enlistment = explicitEnlistment }, AbortToken);
 
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Coordinated*no scope is active*");
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*requires an active unit of work*TransactionEnlistment.Required*");
         await _AssertStoredCountAsync(provider, lane, 0);
     }
 
@@ -215,10 +235,12 @@ public sealed class DefaultDeliveryModeTests : TestBase
         var act = () =>
             lane == MessageLane.Bus
                 ? provider
-                    .GetRequiredService<IBus>()
+                    .CreateScope()
+                    .ServiceProvider.GetRequiredService<IBus>()
                     .PublishAsync(message, new PublishOptions { Delay = delay }, AbortToken)
                 : provider
-                    .GetRequiredService<IQueue>()
+                    .CreateScope()
+                    .ServiceProvider.GetRequiredService<IQueue>()
                     .EnqueueAsync(message, new QueueOptions { Delay = delay }, AbortToken);
 
         await act.Should()
@@ -230,24 +252,28 @@ public sealed class DefaultDeliveryModeTests : TestBase
     [Theory]
     [InlineData(MessageLane.Bus)]
     [InlineData(MessageLane.Queue)]
-    public async Task should_reject_a_type_registered_coordinated_outside_a_scope_before_any_effect(MessageLane lane)
+    public async Task should_reject_a_type_registered_required_enlistment_outside_a_unit_of_work_before_any_effect(
+        MessageLane lane
+    )
     {
         await using var provider = _CreateProvider(
             DeliveryMode.Durable,
             setup =>
             {
                 setup.Bus.ForMessage<TestMessage>(message =>
-                    message.Contract("test.default-mode").WithDeliveryMode(DeliveryMode.Coordinated)
+                    message.Contract("test.default-mode").WithEnlistment(TransactionEnlistment.Required)
                 );
                 setup.Queue.ForMessage<TestMessage>(message =>
-                    message.Contract("test.default-mode").WithDeliveryMode(DeliveryMode.Coordinated)
+                    message.Contract("test.default-mode").WithEnlistment(TransactionEnlistment.Required)
                 );
             }
         );
 
         var act = () => _PublishAsync(provider, lane, new TestMessage("coordinated"), explicitMode: null);
 
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Coordinated*no scope is active*");
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*requires an active unit of work*TransactionEnlistment.Required*");
         await _AssertStoredCountAsync(provider, lane, 0);
     }
 
@@ -259,7 +285,10 @@ public sealed class DefaultDeliveryModeTests : TestBase
             setup => setup.Bus.ForConsumersFromAssemblyContaining<DefaultDeliveryModeTests>(_ConfigureScannedConsumer)
         );
 
-        await provider.GetRequiredService<IBus>().PublishAsync(new ScannedMessage("scan"), AbortToken);
+        await provider
+            .CreateScope()
+            .ServiceProvider.GetRequiredService<IBus>()
+            .PublishAsync(new ScannedMessage("scan"), AbortToken);
 
         await _AssertStoredCountAsync(provider, MessageLane.Bus, 0);
     }
@@ -278,7 +307,10 @@ public sealed class DefaultDeliveryModeTests : TestBase
             }
         );
 
-        await provider.GetRequiredService<IBus>().PublishAsync(new ScannedMessage("scan"), AbortToken);
+        await provider
+            .CreateScope()
+            .ServiceProvider.GetRequiredService<IBus>()
+            .PublishAsync(new ScannedMessage("scan"), AbortToken);
 
         await _AssertStoredCountAsync(provider, MessageLane.Bus, 0);
     }
@@ -316,10 +348,12 @@ public sealed class DefaultDeliveryModeTests : TestBase
     {
         return lane == MessageLane.Bus
             ? provider
-                .GetRequiredService<IBus>()
+                .CreateScope()
+                .ServiceProvider.GetRequiredService<IBus>()
                 .PublishAsync(message, new PublishOptions { DeliveryMode = explicitMode }, AbortToken)
             : provider
-                .GetRequiredService<IQueue>()
+                .CreateScope()
+                .ServiceProvider.GetRequiredService<IQueue>()
                 .EnqueueAsync(message, new QueueOptions { DeliveryMode = explicitMode }, AbortToken);
     }
 
@@ -346,7 +380,7 @@ public sealed class DefaultDeliveryModeTests : TestBase
                 registrations(setup);
             }
         });
-        return services.BuildServiceProvider();
+        return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
     }
 
     private static async Task _AssertStoredCountAsync(IServiceProvider provider, MessageLane lane, int expected)

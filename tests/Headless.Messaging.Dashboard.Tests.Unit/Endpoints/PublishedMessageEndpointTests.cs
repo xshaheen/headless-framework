@@ -100,7 +100,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
                     Version = "v1",
                     Name = "orders.created",
                     Lane = MessageLane.Queue,
-                    RequestedDeliveryMode = DeliveryMode.Coordinated,
+                    RequestedDeliveryMode = DeliveryMode.Direct,
                     ResolvedDeliveryMode = DeliveryMode.Durable,
                     Content = "{\"key\":\"value\"}",
                     Added = new DateTimeOffset(2026, 03, 24, 10, 00, 00, TimeSpan.Zero),
@@ -148,7 +148,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
         item.GetProperty("storageId").GetString().Should().Be("11111111-1111-1111-1111-111111111123");
         item.GetProperty("messageId").GetString().Should().Be("logical-pub-123");
         item.GetProperty("lane").GetString().Should().Be(nameof(MessageLane.Queue));
-        item.GetProperty("requestedDeliveryMode").GetString().Should().Be(nameof(DeliveryMode.Coordinated));
+        item.GetProperty("requestedDeliveryMode").GetString().Should().Be(nameof(DeliveryMode.Direct));
         item.GetProperty("resolvedDeliveryMode").GetString().Should().Be(nameof(DeliveryMode.Durable));
         await _monitoringApi
             .Received(1)

@@ -2,6 +2,7 @@
 
 using Headless.Messaging;
 using Headless.Testing.Tests;
+using Headless.UnitOfWork;
 
 namespace Tests;
 
@@ -14,8 +15,28 @@ public sealed class PublishOptionsTests : TestBase
         ((int)DeliveryMode.Durable)
             .Should()
             .Be(0);
-        ((int)DeliveryMode.Coordinated).Should().Be(1);
-        ((int)DeliveryMode.Direct).Should().Be(2);
+        ((int)DeliveryMode.Direct).Should().Be(1);
+    }
+
+    [Fact]
+    public void should_expose_stable_transaction_enlistment_values()
+    {
+        // then
+        ((int)TransactionEnlistment.WhenAvailable)
+            .Should()
+            .Be(0);
+        ((int)TransactionEnlistment.Required).Should().Be(1);
+        ((int)TransactionEnlistment.Never).Should().Be(2);
+    }
+
+    [Fact]
+    public void should_default_enlistment_to_null()
+    {
+        // when
+        var options = new PublishOptions();
+
+        // then
+        options.Enlistment.Should().BeNull();
     }
 
     [Fact]

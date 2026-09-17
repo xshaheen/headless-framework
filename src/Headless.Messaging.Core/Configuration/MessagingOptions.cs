@@ -7,6 +7,7 @@ using Headless.Checks;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Registration;
 using Headless.MultiTenancy;
+using Headless.UnitOfWork;
 
 namespace Headless.Messaging.Configuration;
 
@@ -277,12 +278,20 @@ public sealed class MessagingOptions
 
     /// <summary>
     /// Gets or sets the delivery mode inherited by publications without a per-call override. Defaults to
-    /// <see cref="DeliveryMode.Durable"/>: every default publish is stored before dispatch, inside the caller's
-    /// transaction when a compatible coordination scope is active and standalone otherwise. Select
-    /// <see cref="DeliveryMode.Direct"/> to make fire-and-forget the host default, or
-    /// <see cref="DeliveryMode.Coordinated"/> to reject any publish that is not atomic with a caller transaction.
+    /// <see cref="DeliveryMode.Durable"/>: every default publish is stored before dispatch, inside the active
+    /// unit of work's transaction when one is available and <see cref="DefaultEnlistment"/> allows it, and
+    /// standalone otherwise. Select <see cref="DeliveryMode.Direct"/> to make fire-and-forget the host default.
     /// </summary>
     public DeliveryMode DefaultDeliveryMode { get; set; } = DeliveryMode.Durable;
+
+    /// <summary>
+    /// Gets or sets the transaction-enlistment requirement inherited by publications without a per-call or
+    /// per-type override. Defaults to <see cref="TransactionEnlistment.WhenAvailable"/>: durable delivery
+    /// enlists in the active unit of work when one is available and writes standalone otherwise. Select
+    /// <see cref="TransactionEnlistment.Required"/> to reject any durable publish made without an active unit
+    /// of work.
+    /// </summary>
+    public TransactionEnlistment DefaultEnlistment { get; set; } = TransactionEnlistment.WhenAvailable;
 
     /// <summary>
     /// Gets the global circuit breaker configuration that applies to all consumer groups.
@@ -349,6 +358,7 @@ public sealed class MessagingOptions
         target.DeadNodeReconcileInterval = DeadNodeReconcileInterval;
         target.RequiredInboxCapability = RequiredInboxCapability;
         target.DefaultDeliveryMode = DefaultDeliveryMode;
+        target.DefaultEnlistment = DefaultEnlistment;
         _CopyJsonSerializerOptions(JsonSerializerOptions, target.JsonSerializerOptions);
         RetryPolicy.CopyTo(target.RetryPolicy);
         CircuitBreaker.CopyTo(target.CircuitBreaker);
@@ -599,6 +609,7 @@ internal sealed class MessagingOptionsValidator : AbstractValidator<MessagingOpt
             .GreaterThan(TimeSpan.Zero)
             .WithMessage("DeadNodeReconcileInterval must be greater than zero.");
         RuleFor(x => x.DefaultDeliveryMode).IsInEnum();
+        RuleFor(x => x.DefaultEnlistment).IsInEnum();
         RuleFor(x => x.RequiredInboxCapability)
             .IsInEnum()
             .WithMessage("RequiredInboxCapability must be a defined inbox capability tier.");

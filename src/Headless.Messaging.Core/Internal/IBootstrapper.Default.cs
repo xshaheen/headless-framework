@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.CommitCoordination;
 using Headless.Coordination;
 using Headless.DistributedLocks;
 using Headless.Messaging.Configuration;
@@ -349,23 +348,9 @@ internal sealed class Bootstrapper(
             .GetRequiredService<MessagingCapabilityModel>()
             .ValidateRoutingAffinityStartup(serviceProvider.GetRequiredService<IMessageMetadataRegistry>().GetAll());
         var hasDurableConsumers = serviceProvider.GetRequiredService<ConsumerRegistry>().GetAll().Count > 0;
-        var coordinatedDeliveryConfigured =
-            options.Value.DefaultDeliveryMode is DeliveryMode.Coordinated
-            || serviceProvider
-                .GetServices<MessageRegistration>()
-                .Any(static registration => registration.DeliveryMode is DeliveryMode.Coordinated);
-        // ICommitScopeFactory is the one service only AddCommitCoordination registers; ICurrentCommitCoordinator is
-        // not evidence because Messaging and Jobs both TryAdd a null-coordinator sentinel for it.
-        var commitCoordinatorRegistered = serviceProvider.GetService<ICommitScopeFactory>() is not null;
         serviceProvider
             .GetRequiredService<IMessageCapabilityGate>()
-            .ValidateStartup(
-                _GetRegisteredRoutes(),
-                hasDurableConsumers,
-                options.Value.RequiredInboxCapability,
-                coordinatedDeliveryConfigured,
-                commitCoordinatorRegistered
-            );
+            .ValidateStartup(_GetRegisteredRoutes(), hasDurableConsumers, options.Value.RequiredInboxCapability);
     }
 
     private HashSet<MessageRouteKey> _GetRegisteredRoutes()

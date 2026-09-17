@@ -20,7 +20,7 @@ public sealed class SetupTests : TestBase
 
         // when
         services.AddHeadlessDistributedLocks(setup => setup.UseInMemory());
-        using var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 
         // then
         provider.GetRequiredService<IDistributedLock>().Should().NotBeNull();
@@ -44,7 +44,7 @@ public sealed class SetupTests : TestBase
         services.AddHeadlessDistributedLocks(setup => setup.UseInMemory());
         _AssertInternalBusContribution(services);
         services.AddHeadlessMessaging(_ => { });
-        using var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         provider.GetRequiredService<IConsumerServiceSelector>().SelectCandidates();
 
         // then — the shared lock-release consumer is present in the consumer registry with the
@@ -69,7 +69,7 @@ public sealed class SetupTests : TestBase
         // ICanReceiveLockReleased fan-out, so only a single registry entry must exist.
         services.AddHeadlessDistributedLocks(setup => setup.UseInMemory());
         services.AddHeadlessMessaging(_ => { });
-        using var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         provider.GetRequiredService<IConsumerServiceSelector>().SelectCandidates();
 
         // then
@@ -93,7 +93,7 @@ public sealed class SetupTests : TestBase
         var act = () => services.AddHeadlessDistributedLocks(setup => setup.UseInMemory());
         act.Should().NotThrow();
         _AssertInternalBusContribution(services);
-        using var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         provider.GetRequiredService<IConsumerServiceSelector>().SelectCandidates();
 
         // then

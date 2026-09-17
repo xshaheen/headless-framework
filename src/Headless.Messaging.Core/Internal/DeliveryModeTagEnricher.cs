@@ -23,13 +23,10 @@ internal sealed class DeliveryModeTagEnricher : IActivityTagEnricher
         mode switch
         {
             DeliveryMode.Durable => "durable",
-            DeliveryMode.Coordinated => "coordinated",
             DeliveryMode.Direct => "direct",
             _ => null,
         };
 
-    // Coordinated is a requested-side strictness that resolves to durable capture; a stored or transported
-    // envelope never carries it as the resolved mode, so the resolved tag has only the two finite outcomes.
     internal static string? ToResolvedTagValue(DeliveryMode? mode) =>
         mode switch
         {

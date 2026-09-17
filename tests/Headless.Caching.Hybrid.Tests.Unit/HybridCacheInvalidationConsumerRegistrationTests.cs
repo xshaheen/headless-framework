@@ -95,7 +95,7 @@ public sealed class HybridCacheInvalidationConsumerRegistrationTests : TestBase
         services.AddHeadlessMessaging(_ => { });
 
         // when - the captured registration is drained into the consumer registry at bootstrap
-        using var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         provider.GetRequiredService<IConsumerServiceSelector>().SelectCandidates();
 
         // then - exactly one hybrid invalidation consumer is wired despite the reversed registration order
@@ -121,7 +121,7 @@ public sealed class HybridCacheInvalidationConsumerRegistrationTests : TestBase
         // when
         _AddDefaultHybrid(services, new InMemoryRemoteCacheAdapter(l2));
         _AssertInternalBusContribution(services, typeof(CacheInvalidationMessage));
-        using var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         provider.GetRequiredService<IConsumerServiceSelector>().SelectCandidates();
 
         // then
@@ -173,7 +173,7 @@ public sealed class HybridCacheInvalidationConsumerRegistrationTests : TestBase
         services.AddHeadlessMessaging(_ => { });
 
         // when - the captured registration is drained into the consumer registry at bootstrap
-        using var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         provider.GetRequiredService<IConsumerServiceSelector>().SelectCandidates();
 
         // then - exactly one hybrid invalidation consumer is wired, as a broadcast (bus) consumer
@@ -207,7 +207,7 @@ public sealed class HybridCacheInvalidationConsumerRegistrationTests : TestBase
         );
 
         // when
-        using var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         provider.GetRequiredService<IConsumerServiceSelector>().SelectCandidates();
 
         // then - exactly one consumer in the registry (identical shapes merge idempotently at drain)
@@ -234,7 +234,7 @@ public sealed class HybridCacheInvalidationConsumerRegistrationTests : TestBase
                 )
             )
         );
-        using var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         provider.GetRequiredService<IConsumerServiceSelector>().SelectCandidates();
 
         // then - still exactly one consumer, no duplicate

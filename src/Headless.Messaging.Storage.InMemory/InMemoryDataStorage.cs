@@ -3,7 +3,6 @@
 using System.Collections.Concurrent;
 using System.Data.Common;
 using Headless.Abstractions;
-using Headless.CommitCoordination;
 using Headless.Coordination;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
@@ -12,6 +11,7 @@ using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Serialization;
 using Headless.Messaging.Transactions;
+using Headless.UnitOfWork;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Storage.InMemory;
@@ -58,37 +58,30 @@ internal sealed partial class InMemoryDataStorage(
     // when the consume path adopted the same check-then-insert pattern in R3.
     private readonly Lock _receivedUpsertLock = new();
 
-    DeliveryCoordination IDeliveryCoordinationResolver.Resolve(ICommitCoordinator coordinator)
+    DeliveryCoordination IDeliveryCoordinationResolver.Resolve(IUnitOfWork unitOfWork)
     {
-        if (coordinator.State is not CommitCoordinatorState.Active)
-        {
-            return DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.InactiveTransaction);
-        }
-
-        // A relational handle means the caller's work commits in a database; in-memory rows cannot be atomic with
-        // it, so refusing is the only honest answer. Without one, the coordinator itself is the commit boundary and
-        // rows are captured on it through ICoordinatedMessageStore.
-        return coordinator.Relational is not null
+        // A relational resource means the caller's work commits in a database; in-memory rows cannot be atomic
+        // with it, so refusing is the only honest answer. Without one — including a resource-less unit of
+        // work — the unit itself is the commit boundary and rows are captured on it through
+        // ICoordinatedMessageStore.
+        return unitOfWork.Resource is IRelationalUnitOfWorkResource
             ? DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.StorageProvider)
-            : DeliveryCoordination.Compatible(coordinator, transaction: null);
+            : DeliveryCoordination.Compatible(unitOfWork, transaction: null);
     }
 
     ValueTask<MediumMessage> ICoordinatedMessageStore.StoreCoordinatedMessageAsync(
         string name,
         MediumMessage message,
         DateTimeOffset? publishAt,
-        ICommitCoordinator coordinator,
+        IUnitOfWork unitOfWork,
         CancellationToken cancellationToken
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        // GetOrAdd runs before the row is built so the buffer's commit callback is registered before the outbox
-        // buffer's dispatcher hand-off, which OutboxMessageWriter enlists only after this call returns.
-        var buffer = coordinator.GetOrAdd(
-            this,
-            static (coordinator, storage) => new CoordinatedPublishBuffer(coordinator, storage)
-        );
+        // GetOrAdd runs before the row is built so the buffer's completion callback is registered before the
+        // outbox buffer's dispatcher hand-off, which OutboxMessageWriter enlists only after this call returns.
+        var buffer = unitOfWork.GetOrAdd(this, static (unit, storage) => new CoordinatedPublishBuffer(unit, storage));
         var (stored, row) = _CreateRow(name, message, publishAt);
         buffer.Add(row);
 
@@ -96,19 +89,19 @@ internal sealed partial class InMemoryDataStorage(
     }
 
     /// <summary>
-    /// Scope-local rows captured inside a non-relational coordinated scope. They join <see cref="PublishedMessages" />
-    /// only when the coordinator commits; a rollback disposes the buffer and the rows with it.
+    /// Scope-local rows captured inside a non-relational unit of work. They join <see cref="PublishedMessages" />
+    /// only when the unit completes; a failure disposes the buffer and the rows with it.
     /// </summary>
-    // Same shape as MessageOutboxBuffer: rows wait in the scope-local buffer and are promoted on commit; a rollback
-    // never drains, so the buffered rows are simply dropped with the coordinator.
+    // Same shape as MessageOutboxBuffer: rows wait in the scope-local buffer and are promoted on completion; a
+    // failure never drains, so the buffered rows are simply dropped with the unit.
     private sealed class CoordinatedPublishBuffer : InMemoryWorkBuffer<MemoryMessage>
     {
         private readonly InMemoryDataStorage _storage;
 
-        public CoordinatedPublishBuffer(ICommitCoordinator coordinator, InMemoryDataStorage storage)
+        public CoordinatedPublishBuffer(IUnitOfWork unitOfWork, InMemoryDataStorage storage)
         {
             _storage = storage;
-            coordinator.OnCommit(_PromoteAsync);
+            unitOfWork.OnCompleted(_PromoteAsync);
         }
 
         private ValueTask _PromoteAsync()

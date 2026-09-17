@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.CommitCoordination;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Transport;
+using Headless.UnitOfWork;
 
 namespace Headless.Messaging.Transactions;
 
@@ -10,10 +10,10 @@ internal sealed class MessageOutboxBuffer : InMemoryWorkBuffer<MediumMessage>
 {
     private readonly IDispatcher _dispatcher;
 
-    public MessageOutboxBuffer(ICommitCoordinator coordinator, IDispatcher dispatcher)
+    public MessageOutboxBuffer(IUnitOfWork unitOfWork, IDispatcher dispatcher)
     {
         _dispatcher = dispatcher;
-        coordinator.OnCommit(_FlushAsync);
+        unitOfWork.OnCompleted(_FlushAsync);
     }
 
     private ValueTask _FlushAsync()

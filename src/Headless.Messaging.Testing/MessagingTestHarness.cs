@@ -43,7 +43,7 @@ namespace Headless.Messaging.Testing;
 /// so the collections are safe to read once the matching wait returns. When a harness is shared across tests call
 /// <see cref="ResetAsync"/> between them — it waits for that in-flight tail before clearing.
 /// <see cref="RunCoordinatedAsync(Func{Task})"/> opens a commit-coordination scope so a test can exercise
-/// <see cref="DeliveryMode.Coordinated"/>.
+/// <c>DeliveryMode.Coordinated</c>.
 /// </para>
 /// </remarks>
 [PublicAPI]

@@ -37,7 +37,7 @@ public sealed class StandaloneOrderPlacedConsumer : IConsume<StandaloneOrderPlac
 
 /// <summary>
 /// <see cref="MessagingTestHarness.RunCoordinatedAsync(Func{Task})"/> opens a non-relational commit scope so a test
-/// can exercise <see cref="DeliveryMode.Coordinated"/>: a commit stores and dispatches the captured rows, a rollback
+/// can exercise <c>DeliveryMode.Durable</c>: a commit stores and dispatches the captured rows, a rollback
 /// discards them, and a coordinated type published outside any scope is rejected before storage or transport.
 /// In-memory storage offers only the ProcessLocal inbox tier, and the startup gate refuses a Coordinated registration
 /// beside durable consumers below Transactional, so the Coordinated type lives in a publish-only host and consumers
@@ -54,7 +54,7 @@ public sealed class CoordinatedHarnessTests : TestBase
                 setup.UseInMemory();
                 setup.UseInMemoryStorage();
                 setup.Bus.ForMessage<CoordinatedOrderPlaced>(message =>
-                    message.Contract("coordinated-order-placed").WithDeliveryMode(DeliveryMode.Coordinated)
+                    message.Contract("coordinated-order-placed").WithDeliveryMode(DeliveryMode.Durable)
                 );
             });
         });
@@ -92,7 +92,7 @@ public sealed class CoordinatedHarnessTests : TestBase
         var published = await harness.WaitForPublished<CoordinatedOrderPlaced>(TimeSpan.FromSeconds(5), AbortToken);
 
         published.Message.Should().BeOfType<CoordinatedOrderPlaced>().Which.Id.Should().Be("C1");
-        published.RequestedDeliveryMode.Should().Be(DeliveryMode.Coordinated);
+        published.RequestedDeliveryMode.Should().Be(DeliveryMode.Durable);
         published.ResolvedDeliveryMode.Should().Be(DeliveryMode.Durable);
         harness.Published.Should().ContainSingle();
     }
@@ -187,7 +187,7 @@ public sealed class CoordinatedHarnessTests : TestBase
                     setup.Bus.ForMessage<CoordinatedOrderPlaced>(message =>
                         message
                             .Contract("coordinated-order-placed")
-                            .WithDeliveryMode(DeliveryMode.Coordinated)
+                            .WithDeliveryMode(DeliveryMode.Durable)
                             .Consumer<CoordinatedOrderPlacedConsumer>(consumer =>
                                 consumer.ConsumerIdentity("tests.messaging-testing.coordinated-order-placed")
                             )

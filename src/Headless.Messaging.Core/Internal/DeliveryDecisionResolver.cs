@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
-using Headless.CommitCoordination;
+using Headless.UnitOfWork;
 
 namespace Headless.Messaging.Internal;
 
@@ -15,6 +15,7 @@ internal enum DeliveryPath
 internal readonly record struct DeliveryDecision(
     DeliveryMode RequestedMode,
     DeliveryMode ResolvedMode,
+    TransactionEnlistment Enlistment,
     DeliveryPath Path,
     TimeSpan? Delay,
     DateTimeOffset? PublishAt,
@@ -28,30 +29,48 @@ internal readonly record struct DeliveryDecision(
 }
 
 /// <summary>
-/// Decides the delivery path before any storage or transport effect. The matrix:
+/// Decides the delivery path before any storage or transport effect. The matrix (KD6/KD7):
 /// <list type="bullet">
-/// <item><c>Durable</c> (default): coordinated capture inside a compatible live scope, standalone store-first
-/// with no scope, rejected inside an incompatible scope.</item>
-/// <item><c>Coordinated</c>: coordinated capture inside a compatible live scope, rejected otherwise.</item>
-/// <item><c>Direct</c>: transport now, bypassing storage and coordination checks; rejects any schedule.</item>
+/// <item><c>Durable</c> (default): enlists in a compatible active unit of work when
+/// <see cref="TransactionEnlistment"/> allows it; otherwise a standalone durable row. A unit with no joinable
+/// resource behaves like no unit at all.</item>
+/// <item><c>Direct</c>: transport now, bypassing storage and coordination checks entirely; rejects any
+/// schedule and <see cref="TransactionEnlistment.Required"/>.</item>
 /// </list>
+/// <see cref="TransactionEnlistment.Required"/> with no compatible unit of work throws before any effect;
+/// <see cref="TransactionEnlistment.Never"/> always writes standalone, even against an incompatible resource;
+/// an incompatible resource otherwise throws regardless of <see cref="TransactionEnlistment.WhenAvailable"/> or
+/// <see cref="TransactionEnlistment.Required"/>.
 /// </summary>
 internal static class DeliveryDecisionResolver
 {
     internal static DeliveryDecision Resolve(
         MessageLane lane,
         DeliveryMode requestedMode,
+        TransactionEnlistment enlistment,
         TimeSpan? delay,
         DeliveryCoordination coordination,
         DateTimeOffset now,
         DateTimeOffset? scheduledAt = null,
         bool storageSupported = true
-    ) => Resolve(lane, requestedMode, delay, coordination.Status, now, coordination, scheduledAt, storageSupported);
+    ) =>
+        Resolve(
+            lane,
+            requestedMode,
+            enlistment,
+            delay,
+            coordination.Status,
+            now,
+            coordination,
+            scheduledAt,
+            storageSupported
+        );
 
     // Manually constructed middleware contexts need delivery semantics without live transaction resources.
     internal static DeliveryDecision Resolve(
         MessageLane lane,
         DeliveryMode requestedMode,
+        TransactionEnlistment enlistment,
         TimeSpan? delay,
         DeliveryCoordinationStatus coordinationStatus,
         DateTimeOffset now,
@@ -67,12 +86,28 @@ internal static class DeliveryDecisionResolver
             throw new ArgumentOutOfRangeException(nameof(lane), lane, "A defined messaging lane is required.");
         }
 
-        if (requestedMode is not (DeliveryMode.Durable or DeliveryMode.Coordinated or DeliveryMode.Direct))
+        if (requestedMode is not (DeliveryMode.Durable or DeliveryMode.Direct))
         {
             throw new ArgumentOutOfRangeException(
                 nameof(requestedMode),
                 requestedMode,
                 "A defined delivery mode is required."
+            );
+        }
+
+        if (
+            enlistment
+            is not (
+                TransactionEnlistment.WhenAvailable
+                or TransactionEnlistment.Required
+                or TransactionEnlistment.Never
+            )
+        )
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(enlistment),
+                enlistment,
+                "A defined transaction enlistment is required."
             );
         }
 
@@ -92,8 +127,16 @@ internal static class DeliveryDecisionResolver
             );
         }
 
+        if (requestedMode is DeliveryMode.Direct && enlistment is TransactionEnlistment.Required)
+        {
+            throw new InvalidOperationException(
+                "Direct delivery cannot require an active unit of work (TransactionEnlistment.Required); durable delivery is required to enlist."
+            );
+        }
+
         // Direct bypasses storage and coordination compatibility entirely; every durable request is fenced here,
         // before the capability gate, storage, or transport can run.
+        var effectiveStatus = coordinationStatus;
         if (requestedMode is not DeliveryMode.Direct)
         {
             if (!storageSupported)
@@ -103,30 +146,23 @@ internal static class DeliveryDecisionResolver
                 );
             }
 
-            if (coordinationStatus is DeliveryCoordinationStatus.Incompatible)
+            if (enlistment is TransactionEnlistment.Never)
+            {
+                // Never enlists, regardless of what is active — including an incompatible resource.
+                effectiveStatus = DeliveryCoordinationStatus.None;
+            }
+            else if (effectiveStatus is DeliveryCoordinationStatus.Incompatible)
             {
                 throw new InvalidOperationException(
-                    $"The active coordination boundary is incompatible with messaging storage ({coordination.Mismatch})."
+                    $"The active unit of work's transaction belongs to another database ({coordination.Mismatch}), "
+                        + "so publishing cannot enlist. Use the same database, or TransactionEnlistment.Never for this call."
                 );
             }
-
-            // Storage resolvers report a finished coordinator as InactiveTransaction, so this only fires for a
-            // compatible coordination built by hand; it keeps "live" a resolver guarantee rather than a provider one.
-            if (
-                coordinationStatus is DeliveryCoordinationStatus.Compatible
-                && coordination.Coordinator is { State: not CommitCoordinatorState.Active } coordinator
-            )
+            else if (effectiveStatus is DeliveryCoordinationStatus.None && enlistment is TransactionEnlistment.Required)
             {
                 throw new InvalidOperationException(
-                    $"The active coordination boundary is no longer live ({coordinator.State}); durable capture cannot enlist in it."
-                );
-            }
-
-            if (requestedMode is DeliveryMode.Coordinated && coordinationStatus is DeliveryCoordinationStatus.None)
-            {
-                throw new InvalidOperationException(
-                    "Coordinated delivery requires a compatible live commit-coordination scope, but no scope is active. "
-                        + "Open a coordinated transaction before publishing, or request Durable delivery to store the message standalone."
+                    "Publishing requires an active unit of work (TransactionEnlistment.Required) but none is active in this scope. "
+                        + "Begin one with IUnitOfWorkManager.BeginAsync before publishing, or register the message with TransactionEnlistment.WhenAvailable."
                 );
             }
         }
@@ -175,19 +211,10 @@ internal static class DeliveryDecisionResolver
             throw new InvalidOperationException("Direct delivery cannot specify a schedule.");
         }
 
-        // Coordinated is a requested-side strictness, not a third resolved mode: once its guards pass it is
-        // durable capture on the caller's transaction, and the headers and telemetry report it that way.
-        var resolvedMode = requestedMode switch
-        {
-            DeliveryMode.Direct => DeliveryMode.Direct,
-            DeliveryMode.Durable or DeliveryMode.Coordinated => DeliveryMode.Durable,
-            _ => throw new UnreachableException(),
-        };
-
-        var path = resolvedMode switch
+        var path = requestedMode switch
         {
             DeliveryMode.Direct => DeliveryPath.Direct,
-            DeliveryMode.Durable when coordinationStatus is DeliveryCoordinationStatus.Compatible =>
+            DeliveryMode.Durable when effectiveStatus is DeliveryCoordinationStatus.Compatible =>
                 DeliveryPath.DurableCoordinated,
             DeliveryMode.Durable => DeliveryPath.DurableStandalone,
             _ => throw new UnreachableException(),
@@ -195,7 +222,8 @@ internal static class DeliveryDecisionResolver
 
         return new DeliveryDecision(
             requestedMode,
-            resolvedMode,
+            requestedMode,
+            enlistment,
             path,
             delay,
             publishAt,

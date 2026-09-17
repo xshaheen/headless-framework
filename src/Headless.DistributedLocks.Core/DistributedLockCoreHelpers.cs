@@ -2,6 +2,8 @@
 
 using Headless.Checks;
 using Headless.Messaging;
+using Headless.Messaging.Internal;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Polly;
 using Polly.Retry;
@@ -18,6 +20,16 @@ namespace Headless.DistributedLocks;
 internal static class DistributedLockCoreHelpers
 {
     public static PublishOptions ReleaseSignalPublishOptions { get; } = new() { DeliveryMode = DeliveryMode.Direct };
+
+    /// <summary>
+    /// Builds a unit-less <see cref="IBus"/> over the singleton <see cref="MessagePublisher"/> core, or
+    /// <see langword="null"/> when Messaging is not configured. These lock primitives are singletons that
+    /// always publish <see cref="DeliveryMode.Direct"/> release signals, so they must not resolve the scoped
+    /// <c>IBus</c> (a captive-dependency error under <c>ValidateScopes</c>); a unit-less bus never sees an
+    /// active unit of work, which is correct for a Direct-only publisher.
+    /// </summary>
+    public static IBus? ResolveUnitLessBus(IServiceProvider provider) =>
+        provider.GetService<MessagePublisher>() is { } publisher ? new Bus(publisher) : null;
 
     private static readonly TimeSpan _MinRetryDelay = TimeSpan.FromMilliseconds(50);
     private static readonly TimeSpan _MaxRetryDelay = TimeSpan.FromSeconds(3);

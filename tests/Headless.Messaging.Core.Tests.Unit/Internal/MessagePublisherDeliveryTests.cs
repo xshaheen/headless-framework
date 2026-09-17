@@ -1,16 +1,15 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
-using Headless.CommitCoordination;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Serialization;
-using Headless.Messaging.Transactions;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
+using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
@@ -28,10 +27,6 @@ public sealed class MessagePublisherDeliveryTests : TestBase
     [InlineData(MessageLane.Queue, DeliveryMode.Durable, true, false, null)]
     [InlineData(MessageLane.Bus, DeliveryMode.Durable, false, true, null)]
     [InlineData(MessageLane.Queue, DeliveryMode.Durable, false, true, "caller-id")]
-    [InlineData(MessageLane.Bus, DeliveryMode.Coordinated, true, false, "caller-id")]
-    [InlineData(MessageLane.Queue, DeliveryMode.Coordinated, true, false, null)]
-    [InlineData(MessageLane.Bus, DeliveryMode.Coordinated, true, true, null)]
-    [InlineData(MessageLane.Queue, DeliveryMode.Coordinated, true, true, "caller-id")]
     public async Task should_return_the_accepted_message_identity_and_actual_storage_handle(
         MessageLane lane,
         DeliveryMode mode,
@@ -40,17 +35,12 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         string? messageId
     )
     {
-        var stack = new CommitScopeStack();
-        await using var scope = new CommitScopeFactory(stack).Open(relational: null);
+        var fakeUnitOfWork = FakeUnitOfWorks.CreateActive();
         await using var transaction = Substitute.For<System.Data.Common.DbTransaction>();
         var resolver = Substitute.For<IDeliveryCoordinationResolver>();
-        resolver.Resolve(scope.Coordinator).Returns(DeliveryCoordination.Compatible(scope.Coordinator, transaction));
+        resolver.Resolve(fakeUnitOfWork).Returns(DeliveryCoordination.Compatible(fakeUnitOfWork, transaction));
         var now = new DateTimeOffset(2026, 9, 12, 12, 0, 0, TimeSpan.Zero);
-        await using var harness = _CreateHarness(
-            new FakeTimeProvider(now),
-            currentCommitCoordinator: coordinated ? stack : null,
-            coordinationResolver: () => resolver
-        );
+        await using var harness = _CreateHarness(new FakeTimeProvider(now), coordinationResolver: () => resolver);
         MediumMessage? stored = null;
         var storageId = Guid.NewGuid();
 #pragma warning disable AsyncFixer04 // Substitute configuration completes before the awaited publish.
@@ -83,8 +73,9 @@ public sealed class MessagePublisherDeliveryTests : TestBase
             });
 #pragma warning restore AsyncFixer04
         DateTimeOffset? scheduledAt = scheduled ? now.AddMinutes(5) : null;
-        IBus bus = new Bus(harness.Publisher);
-        IQueue queue = new Queue(harness.Publisher);
+        var unitOfWorkManager = _ManagerFor(coordinated ? fakeUnitOfWork : null);
+        IBus bus = new Bus(harness.Publisher, unitOfWorkManager);
+        IQueue queue = new Queue(harness.Publisher, unitOfWorkManager);
 
         var receipt =
             lane == MessageLane.Bus
@@ -165,6 +156,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
             lane,
             new DeliveryMessage("middleware"),
             new PublishOptions { DeliveryMode = mode, MessageId = "caller-id" },
+            unitOfWork: null,
             AbortToken
         );
 
@@ -224,19 +216,24 @@ public sealed class MessagePublisherDeliveryTests : TestBase
     [Theory]
     [InlineData(MessageLane.Bus)]
     [InlineData(MessageLane.Queue)]
-    public async Task should_store_a_default_publish_inside_a_compatible_scope_on_the_captured_transaction(
+    public async Task should_store_a_default_publish_inside_a_compatible_unit_of_work_on_the_captured_transaction(
         MessageLane lane
     )
     {
-        var stack = new CommitScopeStack();
-        await using var scope = new CommitScopeFactory(stack).Open(relational: null);
+        var fakeUnitOfWork = FakeUnitOfWorks.CreateActive();
         await using var transaction = Substitute.For<System.Data.Common.DbTransaction>();
         var resolver = Substitute.For<IDeliveryCoordinationResolver>();
-        resolver.Resolve(scope.Coordinator).Returns(DeliveryCoordination.Compatible(scope.Coordinator, transaction));
-        await using var harness = _CreateHarness(currentCommitCoordinator: stack, coordinationResolver: () => resolver);
+        resolver.Resolve(fakeUnitOfWork).Returns(DeliveryCoordination.Compatible(fakeUnitOfWork, transaction));
+        await using var harness = _CreateHarness(coordinationResolver: () => resolver);
         var stored = _CaptureStoredMessage(harness.Storage);
 
-        await harness.Publisher.PublishAsync(lane, new DeliveryMessage("coordinated-default"), null, AbortToken);
+        await harness.Publisher.PublishAsync(
+            lane,
+            new DeliveryMessage("coordinated-default"),
+            null,
+            fakeUnitOfWork,
+            AbortToken
+        );
 
         harness.TransportMessages.Should().BeEmpty();
         stored.Value.Should().NotBeNull();
@@ -252,17 +249,26 @@ public sealed class MessagePublisherDeliveryTests : TestBase
     [Theory]
     [InlineData(MessageLane.Bus)]
     [InlineData(MessageLane.Queue)]
-    public async Task should_reject_coordinated_without_coordination_before_any_side_effect(MessageLane lane)
+    public async Task should_reject_required_enlistment_without_a_unit_of_work_before_any_side_effect(MessageLane lane)
     {
         await using var harness = _CreateHarness();
         MessageOptions options =
             lane == MessageLane.Bus
-                ? new PublishOptions { DeliveryMode = DeliveryMode.Coordinated }
-                : new QueueOptions { DeliveryMode = DeliveryMode.Coordinated };
+                ? new PublishOptions { Enlistment = TransactionEnlistment.Required }
+                : new QueueOptions { Enlistment = TransactionEnlistment.Required };
 
-        var act = () => harness.Publisher.PublishAsync(lane, new DeliveryMessage("coordinated"), options, AbortToken);
+        var act = () =>
+            harness.Publisher.PublishAsync(
+                lane,
+                new DeliveryMessage("required"),
+                options,
+                unitOfWork: null,
+                AbortToken
+            );
 
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Coordinated*");
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*requires an active unit of work*TransactionEnlistment.Required*");
         harness.TransportMessages.Should().BeEmpty();
         harness.Storage.ReceivedCalls().Should().BeEmpty();
         harness.Dispatcher.CommittedMessages.Should().BeEmpty();
@@ -271,28 +277,32 @@ public sealed class MessagePublisherDeliveryTests : TestBase
     [Theory]
     [InlineData(MessageLane.Bus)]
     [InlineData(MessageLane.Queue)]
-    public async Task should_resolve_a_type_registered_coordinated_inside_a_compatible_scope_without_a_per_call_mode(
+    public async Task should_resolve_a_type_registered_required_enlistment_inside_a_compatible_unit_without_a_per_call_mode(
         MessageLane lane
     )
     {
-        var stack = new CommitScopeStack();
-        await using var scope = new CommitScopeFactory(stack).Open(relational: null);
+        var fakeUnitOfWork = FakeUnitOfWorks.CreateActive();
         await using var transaction = Substitute.For<System.Data.Common.DbTransaction>();
         var resolver = Substitute.For<IDeliveryCoordinationResolver>();
-        resolver.Resolve(scope.Coordinator).Returns(DeliveryCoordination.Compatible(scope.Coordinator, transaction));
+        resolver.Resolve(fakeUnitOfWork).Returns(DeliveryCoordination.Compatible(fakeUnitOfWork, transaction));
         await using var harness = _CreateHarness(
-            currentCommitCoordinator: stack,
             coordinationResolver: () => resolver,
-            registrations: [_Registration(lane, DeliveryMode.Coordinated)]
+            registrations: [_Registration(lane, DeliveryMode.Durable, TransactionEnlistment.Required)]
         );
         var stored = _CaptureStoredMessage(harness.Storage);
 
-        await harness.Publisher.PublishAsync(lane, new DeliveryMessage("type-coordinated"), null, AbortToken);
+        await harness.Publisher.PublishAsync(
+            lane,
+            new DeliveryMessage("type-coordinated"),
+            null,
+            fakeUnitOfWork,
+            AbortToken
+        );
 
         harness.TransportMessages.Should().BeEmpty();
         stored.Value.Should().NotBeNull();
         stored.Value!.Lane.Should().Be(lane);
-        stored.Value.Origin.Headers[Headers.RequestedDeliveryMode].Should().Be(nameof(DeliveryMode.Coordinated));
+        stored.Value.Origin.Headers[Headers.RequestedDeliveryMode].Should().Be(nameof(DeliveryMode.Durable));
         await harness
             .Storage.Received(1)
             .StoreMessageAsync(Arg.Any<string>(), Arg.Any<MediumMessage>(), transaction, Arg.Any<CancellationToken>());
@@ -302,15 +312,26 @@ public sealed class MessagePublisherDeliveryTests : TestBase
     [Theory]
     [InlineData(MessageLane.Bus)]
     [InlineData(MessageLane.Queue)]
-    public async Task should_reject_a_type_registered_coordinated_outside_a_scope_before_any_side_effect(
+    public async Task should_reject_a_type_registered_required_enlistment_outside_a_unit_before_any_side_effect(
         MessageLane lane
     )
     {
-        await using var harness = _CreateHarness(registrations: [_Registration(lane, DeliveryMode.Coordinated)]);
+        await using var harness = _CreateHarness(
+            registrations: [_Registration(lane, DeliveryMode.Durable, TransactionEnlistment.Required)]
+        );
 
-        var act = () => harness.Publisher.PublishAsync(lane, new DeliveryMessage("type-coordinated"), null, AbortToken);
+        var act = () =>
+            harness.Publisher.PublishAsync(
+                lane,
+                new DeliveryMessage("type-coordinated"),
+                null,
+                unitOfWork: null,
+                AbortToken
+            );
 
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Coordinated*no scope is active*");
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*requires an active unit of work*TransactionEnlistment.Required*");
         harness.TransportMessages.Should().BeEmpty();
         harness.Storage.ReceivedCalls().Should().BeEmpty();
         harness.Dispatcher.CommittedMessages.Should().BeEmpty();
@@ -325,6 +346,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
             MessageLane.Bus,
             new DeliveryMessage("per-call-direct"),
             new PublishOptions { DeliveryMode = DeliveryMode.Direct },
+            unitOfWork: null,
             AbortToken
         );
 
@@ -342,6 +364,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
                 MessageLane.Bus,
                 new DeliveryMessage("delayed-direct"),
                 new PublishOptions { Delay = TimeSpan.FromSeconds(30) },
+                unitOfWork: null,
                 AbortToken
             );
 
@@ -363,6 +386,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
             MessageLane.Bus,
             content,
             new PublishOptions { MessageType = typeof(DeliveryMessage), MessageName = "delivery.message" },
+            unitOfWork: null,
             AbortToken
         );
 
@@ -382,9 +406,16 @@ public sealed class MessagePublisherDeliveryTests : TestBase
             MessageLane.Bus,
             content,
             new PublishOptions { MessageName = "delivery.message" },
+            unitOfWork: null,
             AbortToken
         );
-        await harness.Publisher.PublishAsync(MessageLane.Queue, new DeliveryMessage("queue"), null, AbortToken);
+        await harness.Publisher.PublishAsync(
+            MessageLane.Queue,
+            new DeliveryMessage("queue"),
+            null,
+            unitOfWork: null,
+            AbortToken
+        );
 
         harness.TransportMessages.Should().BeEmpty();
         stored.Value.Should().NotBeNull();
@@ -400,7 +431,8 @@ public sealed class MessagePublisherDeliveryTests : TestBase
 
     private static Headless.Messaging.Registration.MessageRegistration _Registration(
         MessageLane lane,
-        DeliveryMode deliveryMode
+        DeliveryMode deliveryMode,
+        TransactionEnlistment? enlistment = null
     ) =>
         new(
             typeof(DeliveryMessage),
@@ -409,59 +441,38 @@ public sealed class MessagePublisherDeliveryTests : TestBase
             CorrelationSelector: null,
             ProviderConfigs: new Dictionary<Type, object>(),
             Consumers: [],
-            DeliveryMode: deliveryMode
+            DeliveryMode: deliveryMode,
+            Enlistment: enlistment
         );
 
-    [Theory]
-    [InlineData(DeliveryMode.Coordinated)]
-    [InlineData(DeliveryMode.Durable)]
-    public async Task should_reject_durable_delivery_through_incompatible_coordination_before_any_side_effect(
-        DeliveryMode mode
-    )
+    private static IUnitOfWorkManager _ManagerFor(IUnitOfWork? unitOfWork)
     {
-        var stack = new CommitScopeStack();
-        await using var scope = new CommitScopeFactory(stack).Open(relational: null);
-        await using var harness = _CreateHarness(
-            currentCommitCoordinator: stack,
-            coordinationResolver: static () => new IncompatibleCoordinationResolver()
+        var manager = Substitute.For<IUnitOfWorkManager>();
+        manager.Current.Returns(unitOfWork);
+
+        return manager;
+    }
+
+    [Fact]
+    public async Task should_reject_durable_delivery_through_incompatible_unit_of_work_before_any_side_effect()
+    {
+        var fakeUnitOfWork = FakeUnitOfWorks.CreateActive();
+        await using var harness = _CreateHarness(coordinationResolver: static () =>
+            new IncompatibleCoordinationResolver()
         );
 
+#pragma warning disable CA2025 // The NSubstitute IUnitOfWork fake carries no real resource; disposal is a no-op.
         var act = () =>
             harness.Publisher.PublishAsync(
                 MessageLane.Bus,
                 new DeliveryMessage("coordinated"),
-                new PublishOptions { DeliveryMode = mode },
+                new PublishOptions { DeliveryMode = DeliveryMode.Durable },
+                fakeUnitOfWork,
                 AbortToken
             );
+#pragma warning restore CA2025
 
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*incompatible*");
-        harness.TransportMessages.Should().BeEmpty();
-        harness.Storage.ReceivedCalls().Should().BeEmpty();
-    }
-
-    [Theory]
-    [InlineData(DeliveryMode.Coordinated)]
-    [InlineData(DeliveryMode.Durable)]
-    public async Task should_reject_durable_delivery_when_the_scope_is_no_longer_live_before_any_side_effect(
-        DeliveryMode mode
-    )
-    {
-        var stack = new CommitScopeStack();
-        await using var scope = new CommitScopeFactory(stack).Open(relational: null);
-        await using var harness = _CreateHarness(
-            currentCommitCoordinator: stack,
-            coordinationResolver: static () => new InactiveCoordinationResolver()
-        );
-
-        var act = () =>
-            harness.Publisher.PublishAsync(
-                MessageLane.Queue,
-                new DeliveryMessage("stale"),
-                new QueueOptions { DeliveryMode = mode },
-                AbortToken
-            );
-
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*InactiveTransaction*");
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*belongs to another database*");
         harness.TransportMessages.Should().BeEmpty();
         harness.Storage.ReceivedCalls().Should().BeEmpty();
     }
@@ -742,7 +753,13 @@ public sealed class MessagePublisherDeliveryTests : TestBase
                     DeliveryMode = DeliveryMode.Direct,
                 };
 
-        await harness.Publisher.PublishAsync(lane, new DeliveryMessage("payload"), direct, AbortToken);
+        await harness.Publisher.PublishAsync(
+            lane,
+            new DeliveryMessage("payload"),
+            direct,
+            unitOfWork: null,
+            AbortToken
+        );
         await harness.Publisher.PublishAsync(
             lane,
             new DeliveryMessage("payload"),
@@ -750,6 +767,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
             {
                 DeliveryMode = DeliveryMode.Durable,
             },
+            unitOfWork: null,
             AbortToken
         );
 
@@ -771,6 +789,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
             MessageLane.Bus,
             new DeliveryMessage("direct"),
             new PublishOptions { DeliveryMode = DeliveryMode.Direct },
+            unitOfWork: null,
             AbortToken
         );
 
@@ -789,19 +808,18 @@ public sealed class MessagePublisherDeliveryTests : TestBase
     }
 
     [Fact]
-    public async Task should_send_transport_direct_through_incompatible_coordination_without_storage_side_effects()
+    public async Task should_send_transport_direct_through_incompatible_unit_of_work_without_storage_side_effects()
     {
-        var stack = new CommitScopeStack();
-        await using var scope = new CommitScopeFactory(stack).Open(relational: null);
-        await using var harness = _CreateHarness(
-            currentCommitCoordinator: stack,
-            coordinationResolver: static () => new IncompatibleCoordinationResolver()
+        var fakeUnitOfWork = FakeUnitOfWorks.CreateActive();
+        await using var harness = _CreateHarness(coordinationResolver: static () =>
+            new IncompatibleCoordinationResolver()
         );
 
         await harness.Publisher.PublishAsync(
             MessageLane.Bus,
             new DeliveryMessage("direct"),
             new PublishOptions { DeliveryMode = DeliveryMode.Direct },
+            fakeUnitOfWork,
             AbortToken
         );
 
@@ -843,6 +861,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
             MessageLane.Queue,
             new DeliveryMessage("durable"),
             new QueueOptions { DeliveryMode = DeliveryMode.Durable },
+            unitOfWork: null,
             AbortToken
         );
 
@@ -959,6 +978,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
                 MessageLane.Bus,
                 new DeliveryMessage("invalid"),
                 new PublishOptions { DeliveryMode = DeliveryMode.Direct, Delay = TimeSpan.FromMinutes(1) },
+                unitOfWork: null,
                 AbortToken
             );
 
@@ -1003,6 +1023,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
             MessageLane.Bus,
             new DeliveryMessage("delayed"),
             new PublishOptions { Delay = TimeSpan.FromMinutes(5) },
+            unitOfWork: null,
             AbortToken
         );
 
@@ -1027,6 +1048,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
             MessageLane.Bus,
             new DeliveryMessage("timeout"),
             new PublishOptions { DeliveryMode = DeliveryMode.Direct },
+            unitOfWork: null,
             AbortToken
         );
         await transport.Started.Task.WaitAsync(AbortToken);
@@ -1053,6 +1075,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
             MessageLane.Bus,
             new DeliveryMessage("caller-canceled"),
             new PublishOptions { DeliveryMode = DeliveryMode.Direct },
+            unitOfWork: null,
             callerCts.Token
         );
         await transport.Started.Task.WaitAsync(AbortToken);
@@ -1081,6 +1104,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
             MessageLane.Bus,
             new DeliveryMessage("slow-serialization"),
             new PublishOptions { DeliveryMode = DeliveryMode.Direct },
+            unitOfWork: null,
             AbortToken
         );
         await serializer.Started.Task.WaitAsync(AbortToken);
@@ -1103,9 +1127,9 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         TimeSpan? transportPublishTimeout = null,
         ITransport? busTransport = null,
         ISerializer? serializer = null,
-        ICurrentCommitCoordinator? currentCommitCoordinator = null,
         Func<IDeliveryCoordinationResolver?>? coordinationResolver = null,
         DeliveryMode defaultDeliveryMode = DeliveryMode.Durable,
+        TransactionEnlistment defaultEnlistment = TransactionEnlistment.WhenAvailable,
         IPublishMiddleware<PublishContext>? middleware = null,
         IEnumerable<Headless.Messaging.Registration.MessageRegistration>? registrations = null
     )
@@ -1187,12 +1211,12 @@ public sealed class MessagePublisherDeliveryTests : TestBase
             pipeline,
             timeProvider,
             capabilities,
-            currentCommitCoordinator ?? new MessagingNullCommitCoordinator(),
             coordinationResolver ?? (static () => null),
             () => writer,
             telemetry: null,
             transportPublishTimeout,
             defaultDeliveryMode,
+            defaultEnlistment,
             registrations
         );
 
@@ -1226,18 +1250,9 @@ public sealed class MessagePublisherDeliveryTests : TestBase
 
     private sealed class IncompatibleCoordinationResolver : IDeliveryCoordinationResolver
     {
-        public DeliveryCoordination Resolve(ICommitCoordinator coordinator)
+        public DeliveryCoordination Resolve(IUnitOfWork unitOfWork)
         {
             return DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.MissingRelationalCapability);
-        }
-    }
-
-    // Mirrors what every storage resolver returns once the coordinator has left the Active state.
-    private sealed class InactiveCoordinationResolver : IDeliveryCoordinationResolver
-    {
-        public DeliveryCoordination Resolve(ICommitCoordinator coordinator)
-        {
-            return DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.InactiveTransaction);
         }
     }
 

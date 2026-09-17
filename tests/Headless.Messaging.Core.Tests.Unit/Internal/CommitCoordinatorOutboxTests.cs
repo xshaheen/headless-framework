@@ -3,7 +3,6 @@
 using System.Data;
 using System.Data.Common;
 using Headless.Abstractions;
-using Headless.CommitCoordination;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
@@ -12,6 +11,7 @@ using Headless.Messaging.Persistence;
 using Headless.Messaging.Transactions;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
+using Headless.UnitOfWork;
 using Microsoft.Extensions.Options;
 
 namespace Tests.Internal;
@@ -22,211 +22,180 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
     public async Task should_buffer_message_and_only_signal_committed_dispatch_after_commit()
     {
         await using var transaction = new TestDbTransaction();
-        var stack = new CommitScopeStack();
-        var scope = new CommitScopeFactory(stack).Open(new RelationalCommitContext(() => null, () => transaction));
+        var unitOfWork = new FakeUnitOfWork();
 
-        await using (scope)
-        {
-            var storage = Substitute.For<IDataStorage>();
-            MediumMessage? stored = null;
-            storage
-                .StoreMessageAsync(
-                    Arg.Any<string>(),
-                    Arg.Any<MediumMessage>(),
-                    Arg.Any<System.Data.Common.DbTransaction?>(),
-                    Arg.Any<CancellationToken>()
-                )
-                .Returns(call =>
+        var storage = Substitute.For<IDataStorage>();
+        MediumMessage? stored = null;
+        storage
+            .StoreMessageAsync(
+                Arg.Any<string>(),
+                Arg.Any<MediumMessage>(),
+                Arg.Any<System.Data.Common.DbTransaction?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(call =>
+            {
+                call[2].Should().BeSameAs(transaction);
+                var mediumMessage = new MediumMessage
                 {
-                    call[2].Should().BeSameAs(transaction);
-                    var mediumMessage = new MediumMessage
-                    {
-                        StorageId = Guid.NewGuid(),
-                        Origin = ((MediumMessage)call[1]).Origin,
-                        Content = "{}",
-                        Lane = MessageLane.Bus,
-                        Added = DateTimeOffset.UtcNow,
-                    };
-                    stored = mediumMessage;
+                    StorageId = Guid.NewGuid(),
+                    Origin = ((MediumMessage)call[1]).Origin,
+                    Content = "{}",
+                    Lane = MessageLane.Bus,
+                    Added = DateTimeOffset.UtcNow,
+                };
+                stored = mediumMessage;
 
-                    return ValueTask.FromResult(mediumMessage);
-                });
+                return ValueTask.FromResult(mediumMessage);
+            });
 
-            await using var dispatcher = new RecordingCommittedDispatcher();
-            var writer = new OutboxMessageWriter(storage, dispatcher, TimeProvider.System);
-            var request = _CreatePublishRequestFactory().Create(new CoordinatorMessage("value"), lane: MessageLane.Bus);
-            var decision = DeliveryDecisionResolver.Resolve(
-                MessageLane.Bus,
-                DeliveryMode.Durable,
-                delay: null,
-                DeliveryCoordination.Compatible(stack.Current!, transaction),
-                TimeProvider.System.GetUtcNow()
-            );
+        await using var dispatcher = new RecordingCommittedDispatcher();
+        var writer = new OutboxMessageWriter(storage, dispatcher, TimeProvider.System);
+        var request = _CreatePublishRequestFactory().Create(new CoordinatorMessage("value"), lane: MessageLane.Bus);
+        var decision = DeliveryDecisionResolver.Resolve(
+            MessageLane.Bus,
+            DeliveryMode.Durable,
+            TransactionEnlistment.WhenAvailable,
+            delay: null,
+            DeliveryCoordination.Compatible(unitOfWork, transaction),
+            TimeProvider.System.GetUtcNow()
+        );
 
-            await writer.WriteAsync(request, decision, AbortToken);
+        await writer.WriteAsync(request, decision, AbortToken);
 
-            dispatcher.CommittedMessages.Should().BeEmpty();
+        dispatcher.CommittedMessages.Should().BeEmpty();
 
-            await scope.SignalAsync(CommitOutcome.Committed);
+        await unitOfWork.CompleteAsync();
 
-            dispatcher.CommittedMessages.Should().ContainSingle().Which.Should().BeSameAs(stored);
-            dispatcher.PublishCalls.Should().Be(0, "post-commit acceleration must not wait on transport dispatch");
-        }
+        dispatcher.CommittedMessages.Should().ContainSingle().Which.Should().BeSameAs(stored);
+        dispatcher.PublishCalls.Should().Be(0, "post-commit acceleration must not wait on transport dispatch");
     }
 
     [Fact]
     public async Task should_capture_bus_and_queue_work_in_the_same_transaction_and_release_together()
     {
         await using var transaction = new TestDbTransaction();
-        var stack = new CommitScopeStack();
-        var scope = new CommitScopeFactory(stack).Open(new RelationalCommitContext(() => null, () => transaction));
+        var unitOfWork = new FakeUnitOfWork();
 
-        await using (scope)
-        {
-            var storage = Substitute.For<IDataStorage>();
-            var stored = new List<MediumMessage>();
-            storage
-                .StoreMessageAsync(
-                    Arg.Any<string>(),
-                    Arg.Any<MediumMessage>(),
-                    Arg.Any<DbTransaction?>(),
-                    Arg.Any<CancellationToken>()
-                )
-                .Returns(call =>
-                {
-                    call.ArgAt<DbTransaction?>(2).Should().BeSameAs(transaction);
-                    var message = call.ArgAt<MediumMessage>(1);
-                    stored.Add(message);
-                    return ValueTask.FromResult(message);
-                });
-
-            await using var dispatcher = new RecordingCommittedDispatcher();
-            var writer = new OutboxMessageWriter(storage, dispatcher, TimeProvider.System);
-            var factory = _CreatePublishRequestFactory();
-
-            foreach (var lane in new[] { MessageLane.Bus, MessageLane.Queue })
+        var storage = Substitute.For<IDataStorage>();
+        var stored = new List<MediumMessage>();
+        storage
+            .StoreMessageAsync(
+                Arg.Any<string>(),
+                Arg.Any<MediumMessage>(),
+                Arg.Any<DbTransaction?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(call =>
             {
-                var request = factory.Create(new CoordinatorMessage(lane.ToString()), lane: lane);
-                var decision = DeliveryDecisionResolver.Resolve(
-                    lane,
-                    DeliveryMode.Durable,
-                    delay: null,
-                    DeliveryCoordination.Compatible(stack.Current!, transaction),
-                    TimeProvider.System.GetUtcNow()
-                );
-                await writer.WriteAsync(request, decision, AbortToken);
-            }
+                call.ArgAt<DbTransaction?>(2).Should().BeSameAs(transaction);
+                var message = call.ArgAt<MediumMessage>(1);
+                stored.Add(message);
+                return ValueTask.FromResult(message);
+            });
 
-            stored.Select(message => message.Lane).Should().Equal(MessageLane.Bus, MessageLane.Queue);
-            dispatcher.CommittedMessages.Should().BeEmpty();
+        await using var dispatcher = new RecordingCommittedDispatcher();
+        var writer = new OutboxMessageWriter(storage, dispatcher, TimeProvider.System);
+        var factory = _CreatePublishRequestFactory();
 
-            await scope.SignalAsync(CommitOutcome.Committed);
-
-            dispatcher.CommittedMessages.Should().Equal(stored);
-        }
-    }
-
-    [Fact]
-    public async Task should_reject_active_coordination_with_null_transaction_before_side_effects()
-    {
-        // Ambient coordination is authoritative. A torn-down relational capability must reject instead of silently
-        // falling back to a non-transactional durable write.
-        var stack = new CommitScopeStack();
-        var scope = new CommitScopeFactory(stack).Open(new RelationalCommitContext(() => null, () => null));
-
-        await using (scope)
+        foreach (var lane in new[] { MessageLane.Bus, MessageLane.Queue })
         {
-            var storage = Substitute.For<IDataStorage>();
-            var dispatcher = Substitute.For<IDispatcher>();
-
-            var coordination = DeliveryCoordination.Incompatible(
-                DeliveryCoordinationMismatch.MissingRelationalCapability
-            );
-            var act = () =>
-                DeliveryDecisionResolver.Resolve(
-                    MessageLane.Bus,
-                    DeliveryMode.Durable,
-                    delay: null,
-                    coordination,
-                    TimeProvider.System.GetUtcNow()
-                );
-
-            act.Should().Throw<InvalidOperationException>().WithMessage("*coordination*MissingRelationalCapability*");
-            _ = storage
-                .DidNotReceive()
-                .StoreMessageAsync(
-                    Arg.Any<string>(),
-                    Arg.Any<MediumMessage>(),
-                    Arg.Any<DbTransaction?>(),
-                    Arg.Any<CancellationToken>()
-                );
-#pragma warning disable xUnit1051 // The default token is part of the verified call shape; substituting the test token would change the assertion.
-            _ = dispatcher.DidNotReceiveWithAnyArgs().EnqueueToPublish(default!, default);
-#pragma warning restore xUnit1051
-        }
-    }
-
-    [Fact]
-    public async Task should_reject_non_relational_coordination_when_storage_cannot_capture_on_coordinator()
-    {
-        // A compatible scope without a relational handle is only valid for a storage that implements the
-        // coordinated seam; a plain IDataStorage must fail before any durable write or dispatcher hand-off,
-        // otherwise a standalone row would survive the caller's rollback.
-        var stack = new CommitScopeStack();
-        var scope = new CommitScopeFactory(stack).Open(relational: null);
-
-        await using (scope)
-        {
-            var storage = Substitute.For<IDataStorage>();
-            await using var dispatcher = new RecordingCommittedDispatcher();
-            var writer = new OutboxMessageWriter(storage, dispatcher, TimeProvider.System);
-            var request = _CreatePublishRequestFactory().Create(new CoordinatorMessage("value"), lane: MessageLane.Bus);
+            var request = factory.Create(new CoordinatorMessage(lane.ToString()), lane: lane);
             var decision = DeliveryDecisionResolver.Resolve(
-                MessageLane.Bus,
-                DeliveryMode.Coordinated,
+                lane,
+                DeliveryMode.Durable,
+                TransactionEnlistment.WhenAvailable,
                 delay: null,
-                DeliveryCoordination.Compatible(stack.Current!, transaction: null),
+                DeliveryCoordination.Compatible(unitOfWork, transaction),
+                TimeProvider.System.GetUtcNow()
+            );
+            await writer.WriteAsync(request, decision, AbortToken);
+        }
+
+        stored.Select(message => message.Lane).Should().Equal(MessageLane.Bus, MessageLane.Queue);
+        dispatcher.CommittedMessages.Should().BeEmpty();
+
+        await unitOfWork.CompleteAsync();
+
+        dispatcher.CommittedMessages.Should().Equal(stored);
+    }
+
+    [Fact]
+    public void should_reject_active_coordination_with_null_transaction_before_side_effects()
+    {
+        // A torn-down relational capability must reject instead of silently falling back to a non-transactional
+        // durable write.
+        var coordination = DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.MissingRelationalCapability);
+        var act = () =>
+            DeliveryDecisionResolver.Resolve(
+                MessageLane.Bus,
+                DeliveryMode.Durable,
+                TransactionEnlistment.WhenAvailable,
+                delay: null,
+                coordination,
                 TimeProvider.System.GetUtcNow()
             );
 
-            var act = () => writer.WriteAsync(request, decision, AbortToken);
+        act.Should().Throw<InvalidOperationException>().WithMessage("*MissingRelationalCapability*");
+    }
 
-            await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*relational transaction*");
-            _ = storage
-                .DidNotReceive()
-                .StoreMessageAsync(
-                    Arg.Any<string>(),
-                    Arg.Any<MediumMessage>(),
-                    Arg.Any<DbTransaction?>(),
-                    Arg.Any<CancellationToken>()
-                );
-            _ = storage
-                .DidNotReceive()
-                .StoreScheduledMessageAsync(
-                    Arg.Any<string>(),
-                    Arg.Any<MediumMessage>(),
-                    Arg.Any<DateTimeOffset>(),
-                    Arg.Any<DbTransaction?>(),
-                    Arg.Any<CancellationToken>()
-                );
+    [Fact]
+    public async Task should_reject_non_relational_coordination_when_storage_cannot_capture_on_unit_of_work()
+    {
+        // A compatible unit without a relational handle is only valid for a storage that implements the
+        // coordinated seam; a plain IDataStorage must fail before any durable write or dispatcher hand-off,
+        // otherwise a standalone row would survive the caller's rollback.
+        var unitOfWork = new FakeUnitOfWork();
+        var storage = Substitute.For<IDataStorage>();
+        await using var dispatcher = new RecordingCommittedDispatcher();
+        var writer = new OutboxMessageWriter(storage, dispatcher, TimeProvider.System);
+        var request = _CreatePublishRequestFactory().Create(new CoordinatorMessage("value"), lane: MessageLane.Bus);
+        var decision = DeliveryDecisionResolver.Resolve(
+            MessageLane.Bus,
+            DeliveryMode.Durable,
+            TransactionEnlistment.Required,
+            delay: null,
+            DeliveryCoordination.Compatible(unitOfWork, transaction: null),
+            TimeProvider.System.GetUtcNow()
+        );
 
-            await scope.SignalAsync(CommitOutcome.Committed);
+        var act = () => writer.WriteAsync(request, decision, AbortToken);
 
-            dispatcher.CommittedMessages.Should().BeEmpty();
-        }
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*relational transaction*");
+        _ = storage
+            .DidNotReceive()
+            .StoreMessageAsync(
+                Arg.Any<string>(),
+                Arg.Any<MediumMessage>(),
+                Arg.Any<DbTransaction?>(),
+                Arg.Any<CancellationToken>()
+            );
+        _ = storage
+            .DidNotReceive()
+            .StoreScheduledMessageAsync(
+                Arg.Any<string>(),
+                Arg.Any<MediumMessage>(),
+                Arg.Any<DateTimeOffset>(),
+                Arg.Any<DbTransaction?>(),
+                Arg.Any<CancellationToken>()
+            );
+
+        await unitOfWork.CompleteAsync();
+
+        dispatcher.CommittedMessages.Should().BeEmpty();
     }
 
     [Fact]
     public async Task should_signal_delayed_message_after_commit_without_scheduler_io()
     {
-        var coordinator = new CommitCoordinator();
+        var unitOfWork = new FakeUnitOfWork();
         await using var dispatcher = new RecordingCommittedDispatcher();
-        var buffer = new MessageOutboxBuffer(coordinator, dispatcher);
+        var buffer = new MessageOutboxBuffer(unitOfWork, dispatcher);
         var message = _BuildMessage();
         message.ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(30);
         buffer.Add(message);
 
-        await coordinator.SignalAsync(CommitOutcome.Committed);
+        await unitOfWork.CompleteAsync();
 
         dispatcher.CommittedDelayedMessages.Should().ContainSingle().Which.Should().BeSameAs(message);
         dispatcher.SchedulerCalls.Should().Be(0, "the schedule state was already committed with the durable row");
@@ -251,6 +220,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
         var decision = DeliveryDecisionResolver.Resolve(
             MessageLane.Bus,
             DeliveryMode.Durable,
+            TransactionEnlistment.WhenAvailable,
             delay: null,
             DeliveryCoordination.None,
             TimeProvider.System.GetUtcNow()
@@ -266,46 +236,43 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
     public async Task coordinated_delay_should_store_schedule_state_atomically_and_signal_after_commit()
     {
         await using var transaction = new TestDbTransaction();
-        var stack = new CommitScopeStack();
-        var scope = new CommitScopeFactory(stack).Open(new RelationalCommitContext(() => null, () => transaction));
+        var unitOfWork = new FakeUnitOfWork();
 
-        await using (scope)
-        {
-            var now = TimeProvider.System.GetUtcNow();
-            var publishAt = now.AddMinutes(30);
-            var storage = Substitute.For<IDataStorage>();
-            var stored = _BuildMessage();
-            stored.ExpiresAt = publishAt;
-            var commitTransaction = transaction;
-            storage
-                .StoreScheduledMessageAsync(
-                    Arg.Any<string>(),
-                    Arg.Any<MediumMessage>(),
-                    publishAt,
-                    commitTransaction,
-                    Arg.Any<CancellationToken>()
-                )
-                .Returns(stored);
-            await using var dispatcher = new RecordingCommittedDispatcher();
-            var writer = new OutboxMessageWriter(storage, dispatcher, TimeProvider.System);
-            var request = _CreatePublishRequestFactory().Create(new CoordinatorMessage("value"), lane: MessageLane.Bus);
-            var decision = DeliveryDecisionResolver.Resolve(
-                MessageLane.Bus,
-                DeliveryMode.Durable,
-                TimeSpan.FromMinutes(30),
-                DeliveryCoordination.Compatible(stack.Current!, transaction),
-                now
-            );
+        var now = TimeProvider.System.GetUtcNow();
+        var publishAt = now.AddMinutes(30);
+        var storage = Substitute.For<IDataStorage>();
+        var stored = _BuildMessage();
+        stored.ExpiresAt = publishAt;
+        var commitTransaction = transaction;
+        storage
+            .StoreScheduledMessageAsync(
+                Arg.Any<string>(),
+                Arg.Any<MediumMessage>(),
+                publishAt,
+                commitTransaction,
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(stored);
+        await using var dispatcher = new RecordingCommittedDispatcher();
+        var writer = new OutboxMessageWriter(storage, dispatcher, TimeProvider.System);
+        var request = _CreatePublishRequestFactory().Create(new CoordinatorMessage("value"), lane: MessageLane.Bus);
+        var decision = DeliveryDecisionResolver.Resolve(
+            MessageLane.Bus,
+            DeliveryMode.Durable,
+            TransactionEnlistment.WhenAvailable,
+            TimeSpan.FromMinutes(30),
+            DeliveryCoordination.Compatible(unitOfWork, transaction),
+            now
+        );
 
-            await writer.WriteAsync(request, decision, AbortToken);
+        await writer.WriteAsync(request, decision, AbortToken);
 
-            dispatcher.CommittedDelayedMessages.Should().BeEmpty();
+        dispatcher.CommittedDelayedMessages.Should().BeEmpty();
 
-            await scope.SignalAsync(CommitOutcome.Committed);
+        await unitOfWork.CompleteAsync();
 
-            dispatcher.CommittedDelayedMessages.Should().ContainSingle().Which.Should().BeSameAs(stored);
-            dispatcher.SchedulerCalls.Should().Be(0);
-        }
+        dispatcher.CommittedDelayedMessages.Should().ContainSingle().Which.Should().BeSameAs(stored);
+        dispatcher.SchedulerCalls.Should().Be(0);
     }
 
     private static MediumMessage _BuildMessage()
@@ -393,38 +360,6 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
         public ValueTask DisposeAsync()
         {
             return ValueTask.CompletedTask;
-        }
-    }
-
-    private sealed class NoopPublishMiddlewarePipeline(bool expectTransactional = true) : IPublishMiddlewarePipeline
-    {
-        public Task ExecuteAsync(
-            object? contentObj,
-            Type declaredMessageType,
-            MessageLane lane,
-            MessageOptions? messageOptions,
-            DeliveryDecision decision,
-            Func<MessageOptions?, CancellationToken, Task> innerPublish,
-            CancellationToken cancellationToken = default
-        )
-        {
-            decision.IsTransactional.Should().Be(expectTransactional);
-
-            return innerPublish(messageOptions, cancellationToken);
-        }
-
-        public Task ExecuteAsync<T>(
-            T? contentObj,
-            MessageLane lane,
-            MessageOptions? messageOptions,
-            DeliveryDecision decision,
-            Func<MessageOptions?, CancellationToken, Task> innerPublish,
-            CancellationToken cancellationToken = default
-        )
-        {
-            decision.IsTransactional.Should().Be(expectTransactional);
-
-            return innerPublish(messageOptions, cancellationToken);
         }
     }
 

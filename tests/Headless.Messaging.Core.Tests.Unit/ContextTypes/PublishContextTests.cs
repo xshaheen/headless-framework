@@ -3,6 +3,7 @@
 using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.Testing.Tests;
+using Headless.UnitOfWork;
 
 namespace Tests.ContextTypes;
 
@@ -298,15 +299,13 @@ public sealed class PublishContextTests : TestBase
     }
 
     [Theory]
-    [InlineData(DeliveryMode.Durable, false, DeliveryMode.Durable, false)]
-    [InlineData(DeliveryMode.Durable, true, DeliveryMode.Durable, true)]
-    [InlineData(DeliveryMode.Coordinated, true, DeliveryMode.Durable, true)]
-    [InlineData(DeliveryMode.Direct, false, DeliveryMode.Direct, false)]
-    [InlineData(DeliveryMode.Direct, true, DeliveryMode.Direct, false)]
-    public void should_resolve_explicit_mode_against_compatible_coordination(
+    [InlineData(DeliveryMode.Durable, false, false)]
+    [InlineData(DeliveryMode.Durable, true, true)]
+    [InlineData(DeliveryMode.Direct, false, false)]
+    [InlineData(DeliveryMode.Direct, true, false)]
+    public void should_resolve_explicit_mode_against_compatible_unit_of_work(
         DeliveryMode requestedMode,
         bool isTransactional,
-        DeliveryMode expectedMode,
         bool expectedTransactional
     )
     {
@@ -321,14 +320,14 @@ public sealed class PublishContextTests : TestBase
         );
 
         context.RequestedDeliveryMode.Should().Be(requestedMode);
-        context.ResolvedDeliveryMode.Should().Be(expectedMode);
+        context.ResolvedDeliveryMode.Should().Be(requestedMode);
         context.IsTransactional.Should().Be(expectedTransactional);
     }
 
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public void should_reject_coordinated_without_a_transactional_boundary_during_public_construction(
+    public void should_reject_required_enlistment_without_an_active_unit_of_work_during_public_construction(
         bool viaHostDefault
     )
     {
@@ -336,14 +335,19 @@ public sealed class PublishContextTests : TestBase
             new PublishContext<OrderPlaced>(
                 new OrderPlaced("order-1"),
                 MessageLane.Bus,
-                viaHostDefault ? null : new PublishOptions { DeliveryMode = DeliveryMode.Coordinated },
-                defaultDeliveryMode: viaHostDefault ? DeliveryMode.Coordinated : DeliveryMode.Durable,
+                viaHostDefault ? null : new PublishOptions { Enlistment = TransactionEnlistment.Required },
+                defaultDeliveryMode: DeliveryMode.Durable,
                 now: DateTimeOffset.UnixEpoch,
                 isTransactional: false,
+                defaultEnlistment: viaHostDefault
+                    ? TransactionEnlistment.Required
+                    : TransactionEnlistment.WhenAvailable,
                 cancellationToken: AbortToken
             );
 
-        act.Should().Throw<InvalidOperationException>().WithMessage("*Coordinated*no scope is active*");
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*requires an active unit of work*TransactionEnlistment.Required*");
     }
 
     [Fact]
@@ -366,7 +370,6 @@ public sealed class PublishContextTests : TestBase
     [Theory]
     [InlineData(DeliveryMode.Durable, false)]
     [InlineData(DeliveryMode.Durable, true)]
-    [InlineData(DeliveryMode.Coordinated, true)]
     public void should_reject_durable_delivery_when_storage_is_explicitly_unsupported(
         DeliveryMode requestedMode,
         bool isTransactional
@@ -510,6 +513,7 @@ public sealed class PublishContextTests : TestBase
         var decision = DeliveryDecisionResolver.Resolve(
             MessageLane.Bus,
             options.DeliveryMode ?? DeliveryMode.Durable,
+            options.Enlistment ?? TransactionEnlistment.WhenAvailable,
             options.Delay,
             DeliveryCoordination.None,
             DateTimeOffset.UnixEpoch

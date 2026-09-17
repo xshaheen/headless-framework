@@ -2,8 +2,8 @@
 
 using System.Data.Common;
 using Headless.Checks;
-using Headless.CommitCoordination;
 using Headless.Messaging.Messages;
+using Headless.UnitOfWork;
 
 namespace Headless.Messaging.Internal;
 
@@ -20,7 +20,6 @@ internal enum DeliveryCoordinationMismatch
     MissingRelationalCapability = 1,
     StorageProvider = 2,
     Database = 3,
-    InactiveTransaction = 4,
 }
 
 internal enum InboxCommitProbe
@@ -76,13 +75,13 @@ internal readonly record struct DeliveryCoordination
     private DeliveryCoordination(
         DeliveryCoordinationStatus status,
         DeliveryCoordinationMismatch mismatch,
-        ICommitCoordinator? coordinator,
+        IUnitOfWork? unitOfWork,
         DbTransaction? transaction
     )
     {
         Status = status;
         Mismatch = mismatch;
-        Coordinator = coordinator;
+        UnitOfWork = unitOfWork;
         Transaction = transaction;
     }
 
@@ -92,20 +91,20 @@ internal readonly record struct DeliveryCoordination
 
     internal DeliveryCoordinationMismatch Mismatch { get; }
 
-    internal ICommitCoordinator? Coordinator { get; }
+    internal IUnitOfWork? UnitOfWork { get; }
 
     /// <summary>
     /// The live relational transaction the durable row must join, or <see langword="null" /> for a non-relational
-    /// scope whose storage captures rows on the coordinator itself (see <see cref="ICoordinatedMessageStore" />).
+    /// scope whose storage captures rows on the unit of work itself (see <see cref="ICoordinatedMessageStore" />).
     /// </summary>
     internal DbTransaction? Transaction { get; }
 
-    internal static DeliveryCoordination Compatible(ICommitCoordinator coordinator, DbTransaction? transaction)
+    internal static DeliveryCoordination Compatible(IUnitOfWork unitOfWork, DbTransaction? transaction)
     {
         return new DeliveryCoordination(
             DeliveryCoordinationStatus.Compatible,
             DeliveryCoordinationMismatch.None,
-            Argument.IsNotNull(coordinator),
+            Argument.IsNotNull(unitOfWork),
             transaction
         );
     }
@@ -120,7 +119,7 @@ internal readonly record struct DeliveryCoordination
         return new DeliveryCoordination(
             DeliveryCoordinationStatus.Incompatible,
             mismatch,
-            coordinator: null,
+            unitOfWork: null,
             transaction: null
         );
     }

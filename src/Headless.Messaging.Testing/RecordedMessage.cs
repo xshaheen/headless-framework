@@ -63,7 +63,7 @@ public sealed record RecordedMessage
     public DeliveryMode? RequestedDeliveryMode { get; init; }
 
     /// <summary>
-    /// The mode the framework actually executed. <see cref="DeliveryMode.Coordinated"/> is a request-side
+    /// The mode the framework actually executed. <c>DeliveryMode.Coordinated</c> is a request-side
     /// strictness rather than a third executed mode, so it resolves to <see cref="DeliveryMode.Durable"/> once its
     /// scope check passes. The harness keeps the production default, so a plain publish records <c>Durable</c> here
     /// (store-first, dispatched from storage) and only an explicit <see cref="DeliveryMode.Direct"/> publish records

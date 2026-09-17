@@ -20,9 +20,47 @@ public sealed class NamedHybridCacheTests : TestBase
     {
         var services = new ServiceCollection();
         services.AddSingleton<TimeProvider>(_timeProvider);
-        services.AddSingleton(Substitute.For<IBus>());
+        services.AddLogging();
+        // HybridCache's DI factory builds its own unit-less IBus over the singleton MessagePublisher
+        // core (KD5); a real in-memory transport is the lightest way to make that resolvable. Direct
+        // delivery (the only mode HybridCache uses) needs a transport but no storage provider, so
+        // startup validation — which runs on host start, never triggered here — would not gate this anyway.
+        services.AddHeadlessMessaging(setup => setup.UseInMemory());
 
         return services;
+    }
+
+    /// <summary>
+    /// Captures every <see cref="CacheInvalidationMessage"/> published on the bus lane via publish
+    /// middleware — the public seam for observing an outbound publish now that HybridCache no longer
+    /// accepts an injected <see cref="IBus"/> substitute.
+    /// </summary>
+    private List<CacheInvalidationMessage> _CreateServicesCapturingInvalidations(out ServiceCollection services)
+    {
+        services = new ServiceCollection();
+        services.AddSingleton<TimeProvider>(_timeProvider);
+        services.AddLogging();
+        var captured = new List<CacheInvalidationMessage>();
+        services.AddSingleton(captured);
+        services
+            .AddHeadlessMessaging(setup => setup.UseInMemory())
+            .AddBusPublishMiddleware<CapturingPublishMiddleware>();
+
+        return captured;
+    }
+
+    private sealed class CapturingPublishMiddleware(List<CacheInvalidationMessage> sink)
+        : IPublishMiddleware<PublishContext>
+    {
+        public ValueTask InvokeAsync(PublishContext context, Func<ValueTask> next)
+        {
+            if (context.Content is CacheInvalidationMessage message)
+            {
+                sink.Add(message);
+            }
+
+            return next();
+        }
     }
 
     [Fact]
@@ -49,7 +87,7 @@ public sealed class NamedHybridCacheTests : TestBase
             );
         });
 
-        await using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 
         // when
         var cache = provider.GetRequiredKeyedService<ICache>("tenant");
@@ -67,12 +105,7 @@ public sealed class NamedHybridCacheTests : TestBase
     public async Task should_publish_invalidation_with_cache_name_when_named_hybrid()
     {
         // given
-        var services = _CreateBaseServices();
-        var bus = services
-            .Single(x => x.ServiceType == typeof(IBus))
-            .ImplementationInstance.Should()
-            .BeAssignableTo<IBus>()
-            .Subject;
+        var captured = _CreateServicesCapturingInvalidations(out var services);
         using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
         using var l2Inner = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
         services.AddKeyedSingleton<ICache>("tenant-l1", l1);
@@ -92,19 +125,14 @@ public sealed class NamedHybridCacheTests : TestBase
             );
         });
 
-        await using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         var cache = provider.GetRequiredKeyedService<ICache>("tenant");
 
         // when
         await cache.UpsertAsync("key", "value", TimeSpan.FromMinutes(5), AbortToken);
 
         // then
-        await bus.Received(1)
-            .PublishAsync(
-                Arg.Is<CacheInvalidationMessage>(message => message.CacheName == "tenant" && message.Key == "key"),
-                Arg.Any<PublishOptions?>(),
-                Arg.Any<CancellationToken>()
-            );
+        captured.Should().ContainSingle(message => message.CacheName == "tenant" && message.Key == "key");
     }
 
     // Issue #693: a setupAction that tries to override the public CacheName must not change invalidation
@@ -115,12 +143,7 @@ public sealed class NamedHybridCacheTests : TestBase
     public async Task should_route_by_registration_name_when_named_hybrid_setup_action_overrides_cache_name()
     {
         // given — the setupAction attempts to override the public CacheName
-        var services = _CreateBaseServices();
-        var bus = services
-            .Single(x => x.ServiceType == typeof(IBus))
-            .ImplementationInstance.Should()
-            .BeAssignableTo<IBus>()
-            .Subject;
+        var captured = _CreateServicesCapturingInvalidations(out var services);
         using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
         using var l2Inner = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
         services.AddKeyedSingleton<ICache>("tenant-l1", l1);
@@ -141,19 +164,14 @@ public sealed class NamedHybridCacheTests : TestBase
             );
         });
 
-        await using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         var cache = provider.GetRequiredKeyedService<ICache>("tenant");
 
         // when
         await cache.UpsertAsync("key", "value", TimeSpan.FromMinutes(5), AbortToken);
 
         // then — the wire message routes by the registration name, ignoring the setupAction's override
-        await bus.Received(1)
-            .PublishAsync(
-                Arg.Is<CacheInvalidationMessage>(message => message.CacheName == "tenant" && message.Key == "key"),
-                Arg.Any<PublishOptions?>(),
-                Arg.Any<CancellationToken>()
-            );
+        captured.Should().ContainSingle(message => message.CacheName == "tenant" && message.Key == "key");
     }
 
     [Fact]
@@ -181,7 +199,7 @@ public sealed class NamedHybridCacheTests : TestBase
             );
         });
 
-        await using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         await l1.UpsertAsync("key", "value", TimeSpan.FromMinutes(5), AbortToken);
         var consumer = new HybridCacheInvalidationConsumer(
             provider.GetRequiredService<ICacheProvider>(),
@@ -231,7 +249,7 @@ public sealed class NamedHybridCacheTests : TestBase
             })
         );
 
-        await using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 
         // when
         var hybrid = provider.GetRequiredService<HybridCache>();
@@ -253,7 +271,7 @@ public sealed class NamedHybridCacheTests : TestBase
                 instance => instance.UseHybrid(options => options.LocalCacheName = "missing-tier")
             );
         });
-        await using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 
         // when
         var act = () => provider.GetRequiredKeyedService<ICache>("broken");
@@ -279,7 +297,7 @@ public sealed class NamedHybridCacheTests : TestBase
                 instance => instance.UseHybrid(options => options.LocalCacheName = "remote-only")
             );
         });
-        await using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 
         // when
         var act = () => provider.GetRequiredKeyedService<ICache>("bad-shape");
@@ -331,7 +349,7 @@ public sealed class NamedHybridCacheTests : TestBase
             );
         });
 
-        await using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         var cache = provider.GetRequiredKeyedService<ICache>("tenant");
         var key = Faker.Random.AlphaNumeric(10);
         var factoryCalls = 0;
@@ -400,7 +418,7 @@ public sealed class NamedHybridCacheTests : TestBase
             );
         });
 
-        await using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         var cache = provider.GetRequiredKeyedService<ICache>("tenant");
         var key = Faker.Random.AlphaNumeric(10);
         var perCallOptions = new CacheEntryOptions { Duration = TimeSpan.FromSeconds(30) };
@@ -449,7 +467,7 @@ public sealed class NamedHybridCacheTests : TestBase
             );
         });
 
-        await using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         var cache = provider.GetRequiredKeyedService<ICache>("tenant");
         await cache.UpsertAsync("key", "value", TimeSpan.FromMinutes(5), AbortToken);
 
@@ -484,7 +502,7 @@ public sealed class NamedHybridCacheTests : TestBase
             setup.AddNamed("tenant", instance => instance.UseHybrid(configuration));
         });
 
-        await using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         var cache = provider.GetRequiredKeyedService<ICache>("tenant");
         await cache.UpsertAsync("key", "value", TimeSpan.FromMinutes(5), AbortToken);
 

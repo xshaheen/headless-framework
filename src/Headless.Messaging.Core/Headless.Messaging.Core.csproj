@@ -55,7 +55,6 @@
     <PackageReference Include="Polly.Core" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Headless.CommitCoordination.Abstractions\Headless.CommitCoordination.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Core\Headless.Core.csproj" />
     <ProjectReference Include="..\Headless.Coordination.Abstractions\Headless.Coordination.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Coordination.Core\Headless.Coordination.Core.csproj" />
@@ -66,5 +65,6 @@
     <ProjectReference Include="..\Headless.Messaging.Bus.Abstractions\Headless.Messaging.Bus.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Messaging.Queue.Abstractions\Headless.Messaging.Queue.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.MultiTenancy\Headless.MultiTenancy.csproj" />
+    <ProjectReference Include="..\Headless.UnitOfWork\Headless.UnitOfWork.csproj" />
   </ItemGroup>
 </Project>

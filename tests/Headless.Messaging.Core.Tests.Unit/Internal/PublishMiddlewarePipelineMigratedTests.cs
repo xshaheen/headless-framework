@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.Testing.Tests;
+using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests.Internal;
@@ -299,6 +300,7 @@ public sealed class PublishMiddlewarePipelineMigratedTests : TestBase
         return DeliveryDecisionResolver.Resolve(
             MessageLane.Bus,
             options?.DeliveryMode ?? DeliveryMode.Durable,
+            options?.Enlistment ?? TransactionEnlistment.WhenAvailable,
             options?.Delay,
             DeliveryCoordination.None,
             DateTimeOffset.UnixEpoch

@@ -965,7 +965,8 @@
       "headless.messaging.abstractions": {
         "type": "Project",
         "dependencies": {
-          "Headless.Checks": "[1.0.0, )"
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.UnitOfWork.Abstractions": "[1.0.0, )"
         }
       },
       "headless.messaging.bus.abstractions": {
@@ -978,7 +979,6 @@
         "type": "Project",
         "dependencies": {
           "FastExpressionCompiler": "[5.4.1, )",
-          "Headless.CommitCoordination.Abstractions": "[1.0.0, )",
           "Headless.Coordination.Abstractions": "[1.0.0, )",
           "Headless.Coordination.Core": "[1.0.0, )",
           "Headless.Core": "[1.0.0, )",
@@ -989,6 +989,7 @@
           "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
           "Headless.Messaging.Queue.Abstractions": "[1.0.0, )",
           "Headless.MultiTenancy": "[1.0.0, )",
+          "Headless.UnitOfWork": "[1.0.0, )",
           "Microsoft.Extensions.Options": "[10.0.12, )",
           "OpenTelemetry.Api": "[1.18.0, )",
           "Polly.Core": "[8.7.0, )"

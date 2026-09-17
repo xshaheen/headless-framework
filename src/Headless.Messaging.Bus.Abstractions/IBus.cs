@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.UnitOfWork;
+
 namespace Headless.Messaging;
 
 /// <summary>
@@ -8,9 +10,10 @@ namespace Headless.Messaging;
 /// <remarks>
 /// <para>
 /// The <see cref="IBus"/> contract is broadcast intent: every subscriber receives its own copy of
-/// each published message. The <c>DeliveryMode</c> on <see cref="PublishOptions"/> selects durable,
-/// coordinated, or direct delivery without changing the Bus lane; an unset value inherits the per-type
-/// policy, then the host default (<c>Durable</c>).
+/// each published message. The <c>DeliveryMode</c> on <see cref="PublishOptions"/> selects durable or
+/// direct delivery without changing the Bus lane; an unset value inherits the per-type policy, then the
+/// host default (<c>Durable</c>). The <c>Enlistment</c> on <see cref="PublishOptions"/> separately controls
+/// whether a durable publish enlists in the caller's active unit of work.
 /// </para>
 /// <para>
 /// Delayed delivery is durable and cannot be combined with <c>Direct</c> delivery.
@@ -46,15 +49,14 @@ public interface IBus
     /// header is supplied without setting <see cref="MessageOptions.TenantId"/>, or when both are
     /// supplied with disagreeing values, when any outbound header name/value contains control
     /// characters, or when <see cref="DeliveryMode.Direct"/> delivery specifies
-    /// <see cref="MessageOptions.Delay"/> or <see cref="MessageOptions.ScheduledAt"/>. Also thrown when the
-    /// selected delivery mode is <see cref="DeliveryMode.Durable"/> or <see cref="DeliveryMode.Coordinated"/> and
-    /// the active commit-coordination boundary is incompatible with messaging storage or is no longer live, or when
-    /// <see cref="DeliveryMode.Coordinated"/> was requested with no live coordinated transaction.
+    /// <see cref="MessageOptions.Delay"/>, <see cref="MessageOptions.ScheduledAt"/>, or
+    /// <see cref="TransactionEnlistment.Required"/>. Also thrown when the active unit of work is
+    /// incompatible with messaging storage, or when <see cref="TransactionEnlistment.Required"/> is
+    /// selected with no active unit of work.
     /// </exception>
     /// <exception cref="Exception">
     /// Thrown as <c>MessagingConfigurationException</c> (declared in <c>Headless.Messaging.Core</c>) when the
-    /// selected delivery mode is <see cref="DeliveryMode.Durable"/> or <see cref="DeliveryMode.Coordinated"/> and
-    /// the target lane has no storage contribution.
+    /// target lane has no storage contribution for durable delivery.
     /// </exception>
     Task<PublishReceipt> PublishAsync<T>(
         T? contentObj,
@@ -68,15 +70,12 @@ public interface IBus
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A receipt for transport acceptance or durable capture, or an empty receipt when middleware suppresses publication. This does not imply consumer completion.</returns>
     /// <exception cref="InvalidOperationException">
-    /// Thrown when the selected delivery mode is <see cref="DeliveryMode.Durable"/> or
-    /// <see cref="DeliveryMode.Coordinated"/> and the active commit-coordination boundary is incompatible with
-    /// messaging storage or is no longer live, or when <see cref="DeliveryMode.Coordinated"/> was requested with no
-    /// live coordinated transaction.
+    /// Thrown when the active unit of work is incompatible with messaging storage, or when
+    /// <see cref="TransactionEnlistment.Required"/> is selected with no active unit of work.
     /// </exception>
     /// <exception cref="Exception">
     /// Thrown as <c>MessagingConfigurationException</c> (declared in <c>Headless.Messaging.Core</c>) when the
-    /// selected delivery mode is <see cref="DeliveryMode.Durable"/> or <see cref="DeliveryMode.Coordinated"/> and
-    /// the target lane has no storage contribution.
+    /// target lane has no storage contribution for durable delivery.
     /// </exception>
     Task<PublishReceipt> PublishAsync<T>(T? contentObj, CancellationToken cancellationToken = default);
 }

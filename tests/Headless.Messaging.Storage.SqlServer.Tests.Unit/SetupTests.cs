@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.CommitCoordination;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
+using Headless.Messaging.Internal;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -24,10 +24,8 @@ public sealed class SetupTests : TestBase
 
         await using var provider = services.BuildServiceProvider();
 
-        provider
-            .GetRequiredService<ICurrentCommitCoordinator>()
-            .GetType()
-            .Name.Should()
-            .Be("MessagingNullCommitCoordinator");
+        // The raw (non-EF) path never enables the transactional inbox runner — that only exists when
+        // UseEntityFramework<TContext>() wires an EF-backed transaction boundary.
+        provider.GetService<IInboxTransactionRunner>().Should().BeNull();
     }
 }

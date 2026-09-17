@@ -3,13 +3,13 @@
 using System.Data;
 using System.Runtime.ExceptionServices;
 using Headless.Checks;
-using Headless.CommitCoordination;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Runtime;
 using Headless.Messaging.Storage.PostgreSql;
 using Headless.Messaging.Storage.PostgreSql.EntityFramework;
+using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -73,13 +73,12 @@ public static class SetupPostgreSqlEntityFrameworkMessaging
 
             if (options.EnableTransactionalOutbox)
             {
-                services.AddEntityFrameworkCommitCoordination<TContext>();
+                services.AddEntityFrameworkUnitOfWork();
                 _PromoteStorageCapability(services, "PostgreSql");
                 services.AddScoped<IInboxTransactionRunner>(
                     serviceProvider => new PostgreSqlInboxTransactionRunner<TContext>(
                         serviceProvider.GetRequiredService<TContext>(),
-                        serviceProvider,
-                        serviceProvider.GetRequiredService<ICurrentCommitCoordinator>(),
+                        serviceProvider.GetRequiredService<IUnitOfWorkManager>(),
                         serviceProvider.GetRequiredService<IDeliveryCoordinationResolver>(),
                         serviceProvider.GetRequiredService<PostgreSqlDataStorage>()
                     )
@@ -119,8 +118,7 @@ public static class SetupPostgreSqlEntityFrameworkMessaging
 
     private sealed class PostgreSqlInboxTransactionRunner<TContext>(
         TContext context,
-        IServiceProvider services,
-        ICurrentCommitCoordinator currentCoordinator,
+        IUnitOfWorkManager unitOfWorkManager,
         IDeliveryCoordinationResolver coordinationResolver,
         PostgreSqlDataStorage storage
     ) : IInboxTransactionRunner
@@ -132,7 +130,7 @@ public static class SetupPostgreSqlEntityFrameworkMessaging
             CancellationToken cancellationToken
         )
         {
-            if (currentCoordinator.Current is not null || context.Database.CurrentTransaction is not null)
+            if (unitOfWorkManager.Current is not null || context.Database.CurrentTransaction is not null)
             {
                 throw new InvalidOperationException(
                     "Transactional inbox execution cannot enter an already-active or nested transaction boundary."
@@ -151,17 +149,11 @@ public static class SetupPostgreSqlEntityFrameworkMessaging
                                 .Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct)
                                 .ConfigureAwait(false);
                             var dbTransaction = transaction.GetDbTransaction();
-                            await using var coordinationScope = context.Database.EnlistCommitCoordination(
-                                transaction,
-                                services,
-                                ct
-                            );
-                            var coordinator =
-                                currentCoordinator.Current
-                                ?? throw new InvalidOperationException(
-                                    "The EF inbox transaction did not establish commit coordination before handler entry."
-                                );
-                            var coordination = coordinationResolver.Resolve(coordinator);
+                            // Observed mode: the runner commits, the unit only makes the transaction visible to
+                            // everything invoked inside the handler (a consumer callback publish) through the
+                            // scope's Current.
+                            await using var unitOfWork = unitOfWorkManager.Enlist(context, transaction);
+                            var coordination = coordinationResolver.Resolve(unitOfWork);
                             if (coordination.Status is not DeliveryCoordinationStatus.Compatible)
                             {
                                 throw new InvalidOperationException(
@@ -180,13 +172,10 @@ public static class SetupPostgreSqlEntityFrameworkMessaging
                                 throw new StaleInboxAttemptException(message.StorageId);
                             }
 
-                            // The runner signals through the scope it owns: the interceptor may also claim the same
-                            // commit on its own path, and a repeated same-outcome signal is a silent no-op, so the
-                            // explicit signal stays authoritative on the probe-confirmed paths the interceptor cannot see.
                             try
                             {
                                 await transaction.CommitAsync(ct).ConfigureAwait(false);
-                                await coordinationScope.SignalAsync(CommitOutcome.Committed).ConfigureAwait(false);
+                                await unitOfWork.CompleteAsync(ct).ConfigureAwait(false);
                                 return null;
                             }
                             catch (Exception commitException)
@@ -197,14 +186,14 @@ public static class SetupPostgreSqlEntityFrameworkMessaging
                                         .ConfigureAwait(false) is InboxCommitProbe.Committed
                                 )
                                 {
-                                    await coordinationScope.SignalAsync(CommitOutcome.Committed).ConfigureAwait(false);
+                                    await unitOfWork.CompleteAsync(CancellationToken.None).ConfigureAwait(false);
                                     return null;
                                 }
 
                                 try
                                 {
                                     await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
-                                    await coordinationScope.SignalAsync(CommitOutcome.RolledBack).ConfigureAwait(false);
+                                    await unitOfWork.RollbackAsync().ConfigureAwait(false);
                                 }
                                 catch (Exception rollbackException)
                                 {
@@ -214,9 +203,7 @@ public static class SetupPostgreSqlEntityFrameworkMessaging
                                             .ConfigureAwait(false) is InboxCommitProbe.Committed
                                     )
                                     {
-                                        await coordinationScope
-                                            .SignalAsync(CommitOutcome.Committed)
-                                            .ConfigureAwait(false);
+                                        await unitOfWork.CompleteAsync(CancellationToken.None).ConfigureAwait(false);
                                         return null;
                                     }
 
@@ -237,7 +224,7 @@ public static class SetupPostgreSqlEntityFrameworkMessaging
                         catch (Exception exception) when (handlerEntered)
                         {
                             // Persisted inbox recovery owns every retry after entry, including failures
-                            // raised while disposing the coordination scope or transaction.
+                            // raised while disposing the unit of work or transaction.
                             return ExceptionDispatchInfo.Capture(exception);
                         }
                     },
