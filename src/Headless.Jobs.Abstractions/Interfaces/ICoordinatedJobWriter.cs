@@ -26,14 +26,14 @@ internal interface ICoordinatedJobWriter<in TTimeJob, in TCronJob>
     where TCronJob : CronJobEntity, new()
 {
     /// <summary>Validates actual configured database compatibility and exact live caller handles before middleware.</summary>
-    void ValidateContext(IRelationalUnitOfWorkResource relationalContext, bool requireSavepoints = false);
+    void ValidateContext(IRelationalUnitOfWorkResource relationalResource, bool requireSavepoints = false);
 
     /// <summary>Executes keyed scheduling inside the caller transaction. The result remains provisional until outer commit.</summary>
     Task<JobScheduleResult> WriteKeyedTimeJobAsync(
         JobKey key,
         TTimeJob job,
         long? expectedGeneration,
-        IRelationalUnitOfWorkResource relationalContext,
+        IRelationalUnitOfWorkResource relationalResource,
         CancellationToken cancellationToken = default
     );
 
@@ -42,22 +42,22 @@ internal interface ICoordinatedJobWriter<in TTimeJob, in TCronJob>
         JobKeyScope scope,
         JobKey key,
         long expectedGeneration,
-        IRelationalUnitOfWorkResource relationalContext,
+        IRelationalUnitOfWorkResource relationalResource,
         CancellationToken cancellationToken = default
     );
 
     /// <summary>
-    /// Writes the time-job rows inside the transaction surfaced by <paramref name="relationalContext" />, preserving
+    /// Writes the time-job rows inside the transaction surfaced by <paramref name="relationalResource" />, preserving
     /// insertion order. Does not dispatch, restart the scheduler, or notify — the manager defers those to commit.
     /// </summary>
     Task WriteTimeJobsAsync(
         TTimeJob[] jobs,
-        IRelationalUnitOfWorkResource relationalContext,
+        IRelationalUnitOfWorkResource relationalResource,
         CancellationToken cancellationToken = default
     );
 
     /// <summary>
-    /// Writes the cron-job rows inside the transaction surfaced by <paramref name="relationalContext" />, preserving
+    /// Writes the cron-job rows inside the transaction surfaced by <paramref name="relationalResource" />, preserving
     /// insertion order, seeding each definition's schedule position from the store's instant read inside that same
     /// transaction. Does not invalidate the cron-expressions cache or notify — the manager defers those to commit.
     /// </summary>
@@ -70,7 +70,7 @@ internal interface ICoordinatedJobWriter<in TTimeJob, in TCronJob>
     Task<CronSchedulePositionSeedResult> WriteCronJobsAsync(
         TCronJob[] jobs,
         CronSchedulePositionSeeder seeder,
-        IRelationalUnitOfWorkResource relationalContext,
+        IRelationalUnitOfWorkResource relationalResource,
         CancellationToken cancellationToken = default
     );
 

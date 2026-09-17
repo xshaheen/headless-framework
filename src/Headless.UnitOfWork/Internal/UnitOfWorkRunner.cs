@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Headless.UnitOfWork.Internal;
 
@@ -19,6 +20,15 @@ namespace Headless.UnitOfWork.Internal;
 /// </remarks>
 internal static partial class UnitOfWorkRunner
 {
+    /// <summary>
+    /// The manager's logger keeps runner faults in the unit-of-work category; a foreign manager implementation
+    /// has no logger to share, so the runner stays silent rather than guessing a category.
+    /// </summary>
+    public static ILogger LoggerFor(IUnitOfWorkManager manager)
+    {
+        return manager is UnitOfWorkManager owned ? owned.Logger : NullLogger.Instance;
+    }
+
     public static async Task<TResult> RunAsync<TResult>(
         IUnitOfWorkManager manager,
         Func<CancellationToken, ValueTask<IUnitOfWorkResource>> beginResource,

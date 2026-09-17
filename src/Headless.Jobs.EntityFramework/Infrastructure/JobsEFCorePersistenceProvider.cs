@@ -95,7 +95,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
 
     async Task ICoordinatedJobWriter<TTimeJob, TCronJob>.WriteTimeJobsAsync(
         TTimeJob[] jobs,
-        IRelationalUnitOfWorkResource relationalContext,
+        IRelationalUnitOfWorkResource relationalResource,
         CancellationToken cancellationToken
     )
     {
@@ -104,7 +104,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             JobIntentFingerprint.RejectOrdinaryMutation(job);
         }
 
-        await using var dbContext = _CreateCoordinatedContext(relationalContext);
+        await using var dbContext = _CreateCoordinatedContext(relationalResource);
         await dbContext.Set<TTimeJob>().AddRangeAsync(jobs, cancellationToken).ConfigureAwait(false);
         await _GuardTimeJobParentReferencesAsync(
                 dbContext,
@@ -118,11 +118,11 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
     async Task<CronSchedulePositionSeedResult> ICoordinatedJobWriter<TTimeJob, TCronJob>.WriteCronJobsAsync(
         TCronJob[] jobs,
         CronSchedulePositionSeeder seeder,
-        IRelationalUnitOfWorkResource relationalContext,
+        IRelationalUnitOfWorkResource relationalResource,
         CancellationToken cancellationToken
     )
     {
-        await using var dbContext = _CreateCoordinatedContext(relationalContext);
+        await using var dbContext = _CreateCoordinatedContext(relationalResource);
 
         // The caller's transaction may have opened long before this call, which is exactly why the anchor is the
         // STATEMENT clock: PostgreSQL's now() would report that transaction's start and position the definition

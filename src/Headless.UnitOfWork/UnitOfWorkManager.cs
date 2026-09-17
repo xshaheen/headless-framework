@@ -245,7 +245,7 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
 
         lock (_gate)
         {
-            var frameIndex = _frames.FindIndex(f => ReferenceEquals(f.Engine, unit));
+            var frameIndex = _IndexOfFrame(unit);
 
             if (frameIndex < 0)
             {
@@ -320,10 +320,12 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
 
         lock (_gate)
         {
-            var frame = _frames.FirstOrDefault(f => ReferenceEquals(f.Engine, root));
+            var frameIndex = _IndexOfFrame(root);
 
-            if (frame is not null)
+            if (frameIndex >= 0)
             {
+                var frame = _frames[frameIndex];
+
                 if (frame.ActiveChildren > 0)
                 {
                     frame.ActiveChildren--;
@@ -351,13 +353,7 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
         }
 
         _PopFrame(unit);
-
-        if (unit.Resource is { IsOwned: true } resource)
-        {
-            await resource.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
-        }
-
-        await _DrainFailedAsync(claim, failure).ConfigureAwait(false);
+        await _RollBackAndDrainAsync(unit, claim, failure).ConfigureAwait(false);
     }
 
     /// <summary>Abandons a child view: drops its registrations and aborts the root (async path).</summary>
@@ -372,12 +368,7 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
 
         var (claim, failure) = aborted.Value;
 
-        if (root.Resource is { IsOwned: true } resource)
-        {
-            await resource.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
-        }
-
-        await _DrainFailedAsync(claim, failure).ConfigureAwait(false);
+        await _RollBackAndDrainAsync(root, claim, failure).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -395,19 +386,15 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
 
         var (claim, failure) = aborted.Value;
 
-        _RunBackground(async () =>
-        {
-            if (root.Resource is { IsOwned: true } resource)
-            {
-                await resource.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
-            }
-
-            await _DrainFailedAsync(claim, failure).ConfigureAwait(false);
-        });
+        _RunBackground(() => _RollBackAndDrainAsync(root, claim, failure).AsTask());
     }
 
-    /// <summary>Disposes a root/nested handle synchronously: the claim pops the frame, the drain is offloaded.</summary>
-    internal void DisposeUnit(Internal.UnitOfWork unit, bool synchronous)
+    /// <summary>
+    /// Disposes a root/nested handle without a completion verb: the claim pops the frame synchronously; the rollback
+    /// and the drain run observed in the background so neither a synchronous disposer nor an async one blocks on
+    /// the drain's scope-state disposal (a captured SynchronizationContext could otherwise deadlock).
+    /// </summary>
+    internal void DisposeUnit(Internal.UnitOfWork unit)
     {
         if (_disposed)
         {
@@ -425,25 +412,7 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
 
         _PopFrame(unit);
         _WarnForgottenCompletion(unit.Resource);
-
-        if (synchronous)
-        {
-            _RunBackground(async () =>
-            {
-                if (unit.Resource is { IsOwned: true } resource)
-                {
-                    await resource.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
-                }
-
-                await _DrainFailedAsync(claim, failure).ConfigureAwait(false);
-            });
-
-            return;
-        }
-
-        // The async dispose path still must not block its caller on the drain's scope-state disposal:
-        // run it observed in the background, exactly like the synchronous path.
-        _RunBackground(() => _DisposeUnitAsync(unit, claim, failure).AsTask());
+        _RunBackground(() => _RollBackAndDrainAsync(unit, claim, failure).AsTask());
     }
 
     internal async ValueTask DisposeUnitAsync(Internal.UnitOfWork unit)
@@ -464,7 +433,7 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
 
         _PopFrame(unit);
         _WarnForgottenCompletion(unit.Resource);
-        await _DisposeUnitAsync(unit, claim, failure).ConfigureAwait(false);
+        await _RollBackAndDrainAsync(unit, claim, failure).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -563,7 +532,8 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
         return drained;
     }
 
-    private static async ValueTask _DisposeUnitAsync(
+    /// <summary>The failure path shared by rollback, abandon, and dispose: roll the owned resource back, then drain.</summary>
+    private static async ValueTask _RollBackAndDrainAsync(
         Internal.UnitOfWork unit,
         Internal.UnitOfWork.UnitOfWorkTerminalClaim claim,
         UnitOfWorkFailure failure
@@ -587,10 +557,12 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
 
         lock (_gate)
         {
-            var frame = _frames.FirstOrDefault(f => ReferenceEquals(f.Engine, root));
+            var frameIndex = _IndexOfFrame(root);
 
-            if (frame is not null)
+            if (frameIndex >= 0)
             {
+                var frame = _frames[frameIndex];
+
                 if (frame.ActiveChildren > 0)
                 {
                     frame.ActiveChildren--;
@@ -627,7 +599,7 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
     {
         lock (_gate)
         {
-            var index = _frames.FindIndex(f => ReferenceEquals(f.Engine, unit));
+            var index = _IndexOfFrame(unit);
 
             if (index < 0)
             {
@@ -637,6 +609,21 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
             _frames.RemoveAt(index);
             Current = _frames.Count > 0 ? _frames[^1].Handle : null;
         }
+    }
+
+    // A plain loop: this runs on every complete/rollback/dispose, the list holds a handful of frames at most, and a
+    // FindIndex lambda would allocate a closure over the engine each time. Callers hold _gate.
+    private int _IndexOfFrame(Internal.UnitOfWork engine)
+    {
+        for (var i = 0; i < _frames.Count; i++)
+        {
+            if (ReferenceEquals(_frames[i].Engine, engine))
+            {
+                return i;
+            }
+        }
+
+        return -1;
     }
 
     private void _RunBackground(Func<Task> work)
@@ -681,8 +668,6 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
             LogForgottenCompletion(Logger);
         }
     }
-
-    private void _ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
 
     private static void _ThrowForTerminalUnit(Internal.UnitOfWork unit)
     {

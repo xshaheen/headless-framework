@@ -4,8 +4,6 @@ using System.Data;
 using Headless.Checks;
 using Headless.UnitOfWork.Internal;
 using Microsoft.Data.SqlClient;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.UnitOfWork;
@@ -98,7 +96,7 @@ public static class UnitOfWorkManagerSqlServerExtensions
 
                     return true;
                 },
-                _LoggerFor(manager),
+                UnitOfWorkRunner.LoggerFor(manager),
                 cancellationToken
             );
         }
@@ -128,7 +126,7 @@ public static class UnitOfWorkManagerSqlServerExtensions
                 manager,
                 ct => _BeginOwnedAsync(connection, isolation, ct),
                 operation,
-                _LoggerFor(manager),
+                UnitOfWorkRunner.LoggerFor(manager),
                 cancellationToken
             );
         }
@@ -163,12 +161,5 @@ public static class UnitOfWorkManagerSqlServerExtensions
 
             throw;
         }
-    }
-
-    // The manager's logger keeps runner faults in the unit-of-work category; a foreign manager implementation has
-    // no logger to share, so the runner stays silent rather than guessing a category.
-    private static ILogger _LoggerFor(IUnitOfWorkManager manager)
-    {
-        return manager is UnitOfWorkManager owned ? owned.Logger : NullLogger.Instance;
     }
 }

@@ -44,7 +44,4 @@ internal static class DbContextUnitOfWorkBinding
 
         return false;
     }
-
-    /// <summary>Removes the binding for <paramref name="db" /> (the unit reached a terminal state).</summary>
-    public static void Unbind(DbContext db) => _Bindings.Remove(db);
 }

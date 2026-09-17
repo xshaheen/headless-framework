@@ -3,8 +3,6 @@
 using System.Data;
 using Headless.Checks;
 using Headless.UnitOfWork.Internal;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
@@ -98,7 +96,7 @@ public static class UnitOfWorkManagerPostgreSqlExtensions
 
                     return true;
                 },
-                _LoggerFor(manager),
+                UnitOfWorkRunner.LoggerFor(manager),
                 cancellationToken
             );
         }
@@ -128,7 +126,7 @@ public static class UnitOfWorkManagerPostgreSqlExtensions
                 manager,
                 ct => _BeginOwnedAsync(connection, isolation, ct),
                 operation,
-                _LoggerFor(manager),
+                UnitOfWorkRunner.LoggerFor(manager),
                 cancellationToken
             );
         }
@@ -164,12 +162,5 @@ public static class UnitOfWorkManagerPostgreSqlExtensions
 
             throw;
         }
-    }
-
-    // The manager's logger keeps runner faults in the unit-of-work category; a foreign manager implementation has
-    // no logger to share, so the runner stays silent rather than guessing a category.
-    private static ILogger _LoggerFor(IUnitOfWorkManager manager)
-    {
-        return manager is UnitOfWorkManager owned ? owned.Logger : NullLogger.Instance;
     }
 }

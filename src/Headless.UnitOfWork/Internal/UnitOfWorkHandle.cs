@@ -73,19 +73,17 @@ internal sealed class UnitOfWorkHandle(Internal.UnitOfWork unit, UnitOfWorkManag
         return manager.RollbackUnitAsync(unit);
     }
 
-    public void Dispose() => _Dispose(sync: true);
-
-    public ValueTask DisposeAsync() => _DisposeAsyncCore();
-
-    private void _Dispose(bool sync)
+    public void Dispose()
     {
         if (Interlocked.CompareExchange(ref _disposed, 1, 0) != 0)
         {
             return;
         }
 
-        manager.DisposeUnit(unit, sync);
+        manager.DisposeUnit(unit);
     }
+
+    public ValueTask DisposeAsync() => _DisposeAsyncCore();
 
     private async ValueTask _DisposeAsyncCore()
     {

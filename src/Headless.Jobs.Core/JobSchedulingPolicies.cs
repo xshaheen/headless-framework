@@ -90,7 +90,7 @@ internal sealed class JobSchedulingPolicies
             RetryIntervals = (call?.RetryIntervals ?? function?.RetryIntervals ?? _defaults.RetryIntervals)?.ToArray(),
             OnNodeDeath =
                 call?.OnNodeDeath ?? function?.OnNodeDeath ?? _defaults.OnNodeDeath ?? Enums.NodeDeathPolicy.Retry,
-            Enlistment = _ComposeEnlistment(
+            Enlistment = ComposeEnlistment(
                 call?.Enlistment,
                 function?.Enlistment,
                 includeHostEnlistment ? _defaults.Enlistment : null
@@ -106,12 +106,6 @@ internal sealed class JobSchedulingPolicies
     // or the host default excluded for recurring definitions) contributes nothing.
     internal static TransactionEnlistment ComposeEnlistment(params ReadOnlySpan<TransactionEnlistment?> tiers) =>
         _ComposeEnlistmentCore(tiers);
-
-    private static TransactionEnlistment _ComposeEnlistment(
-        TransactionEnlistment? call,
-        TransactionEnlistment? function,
-        TransactionEnlistment? hostDefault
-    ) => _ComposeEnlistmentCore([call, function, hostDefault]);
 
     private static TransactionEnlistment _ComposeEnlistmentCore(ReadOnlySpan<TransactionEnlistment?> tiers)
     {

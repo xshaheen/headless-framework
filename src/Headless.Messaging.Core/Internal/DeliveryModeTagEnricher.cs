@@ -19,15 +19,11 @@ internal sealed class DeliveryModeTagEnricher : IActivityTagEnricher
         }
     }
 
-    internal static string? ToRequestedTagValue(DeliveryMode? mode) =>
-        mode switch
-        {
-            DeliveryMode.Durable => "durable",
-            DeliveryMode.Direct => "direct",
-            _ => null,
-        };
+    internal static string? ToRequestedTagValue(DeliveryMode? mode) => _ToTagValue(mode);
 
-    internal static string? ToResolvedTagValue(DeliveryMode? mode) =>
+    internal static string? ToResolvedTagValue(DeliveryMode? mode) => _ToTagValue(mode);
+
+    private static string? _ToTagValue(DeliveryMode? mode) =>
         mode switch
         {
             DeliveryMode.Durable => "durable",

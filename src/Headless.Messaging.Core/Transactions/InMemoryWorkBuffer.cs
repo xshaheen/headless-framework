@@ -37,7 +37,7 @@ internal class InMemoryWorkBuffer<TWork>
     /// <returns>A snapshot of the drained items, in enqueue order.</returns>
     public IReadOnlyList<TWork> Drain()
     {
-        var items = new List<TWork>();
+        var items = new List<TWork>(_items.Count);
 
         while (_items.TryDequeue(out var item))
         {

@@ -38,9 +38,9 @@ internal static class JobAtomicity
         RejectDirect(IsRequired(jobs));
     }
 
-    internal static void RejectDirect(bool anyRequiresAtomicEnlistment)
+    internal static void RejectDirect(bool anyRequiresEnlistment)
     {
-        if (anyRequiresAtomicEnlistment)
+        if (anyRequiresEnlistment)
         {
             throw new InvalidOperationException(
                 "TransactionEnlistment.Required Jobs scheduling needs a compatible live relational unit of work and the coordinated manager/writer path; direct persistence cannot satisfy it."

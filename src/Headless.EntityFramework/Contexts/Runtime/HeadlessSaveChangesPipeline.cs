@@ -119,6 +119,12 @@ internal sealed class HeadlessSaveChangesPipeline(
         serviceProvider
     );
 
+    // Looked up on every domain-event recollection pass of every save; the chain is fixed for the pipeline's
+    // lifetime, so it is resolved once from the same instances the chain runs and cached (a null result is
+    // cached too, hence the separate flag).
+    private HeadlessMessageCollectorSaveEntryProcessor? _messageCollector;
+    private bool _messageCollectorResolved;
+
     private readonly ILogger<HeadlessSaveChangesPipeline> _logger =
         logger ?? NullLogger<HeadlessSaveChangesPipeline>.Instance;
 
@@ -152,7 +158,7 @@ internal sealed class HeadlessSaveChangesPipeline(
 
         if (context.Database.CurrentTransaction is not null)
         {
-            _EnsureCallerOwnedTransactionIsCoordinated(context, saveContext);
+            _EnsureUnitOfWorkOwnsCallerTransaction(context, saveContext);
 
             return await _ExecuteWithinCurrentTransactionAsync(state).ConfigureAwait(false);
         }
@@ -193,7 +199,7 @@ internal sealed class HeadlessSaveChangesPipeline(
 
         if (context.Database.CurrentTransaction is not null)
         {
-            _EnsureCallerOwnedTransactionIsCoordinated(context, saveContext);
+            _EnsureUnitOfWorkOwnsCallerTransaction(context, saveContext);
 
             return _ExecuteWithinCurrentTransaction(state);
         }
@@ -210,6 +216,17 @@ internal sealed class HeadlessSaveChangesPipeline(
         saveContext.NonRetryableFailure?.Throw();
         return saved;
 #pragma warning restore MA0045
+    }
+
+    private HeadlessMessageCollectorSaveEntryProcessor? _ResolveMessageCollector()
+    {
+        if (!_messageCollectorResolved)
+        {
+            _messageCollector = _entryProcessors.OfType<HeadlessMessageCollectorSaveEntryProcessor>().SingleOrDefault();
+            _messageCollectorResolved = true;
+        }
+
+        return _messageCollector;
     }
 
     private static EntityEntry[] _SnapshotEntries(DbContext context)
@@ -229,7 +246,7 @@ internal sealed class HeadlessSaveChangesPipeline(
     // Integration events are the writes that must land inside the caller's transaction (outbox rows); a save
     // without them under a caller-owned transaction is ordinary EF usage and needs no unit of work. Handlers can
     // still add integration events during the drain — the outbox dispatcher repeats this check at dispatch time.
-    private void _EnsureCallerOwnedTransactionIsCoordinated(DbContext context, HeadlessSaveEntryContext saveContext)
+    private void _EnsureUnitOfWorkOwnsCallerTransaction(DbContext context, HeadlessSaveEntryContext saveContext)
     {
         if (saveContext.IntegrationEventEmitters.Count == 0)
         {
@@ -552,7 +569,7 @@ internal sealed class HeadlessSaveChangesPipeline(
         // Recollect after each completed pass, without synthesizing lifecycle events again for existing entries.
         if (saveContext.DomainEventCursor == saveContext.PendingDomainEvents.Count)
         {
-            var collector = _entryProcessors.OfType<HeadlessMessageCollectorSaveEntryProcessor>().SingleOrDefault();
+            var collector = _ResolveMessageCollector();
             foreach (var entry in _SnapshotEntries(context))
             {
                 if (saveContext.ProcessedEntities.Add(entry.Entity))

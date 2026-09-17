@@ -220,6 +220,9 @@ internal static class DeliveryDecisionResolver
             _ => throw new UnreachableException(),
         };
 
+        // Requested and resolved modes are equal today (no mode is ever rewritten by the matrix), but they are
+        // two public headers and two dashboard columns: keep both so a future enlistment-driven resolution can
+        // diverge them without changing the wire shape.
         return new DeliveryDecision(
             requestedMode,
             requestedMode,
