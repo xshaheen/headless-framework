@@ -24,8 +24,10 @@ namespace Tests;
 [Collection<HeadlessDbContextTestFixture>]
 public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContextTestFixture fixture) : TestBase
 {
-    [Fact]
-    public async Task should_enlist_the_pipeline_owned_transaction_and_drain_after_the_commit()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task should_enlist_the_pipeline_owned_transaction_and_drain_after_the_commit(bool sync)
     {
         // given — no transaction on the context: the pipeline opens one and enlists it in the scope's unit of work.
         await using var provider = await _BuildProviderAsync();
@@ -36,7 +38,7 @@ public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContext
         db.Probes.Add(_ProbeWithEvents("owned"));
 
         // when
-        await db.SaveChangesAsync(AbortToken);
+        await _SaveAsync(db, sync, AbortToken);
 
         // then — the handler and the outbox dispatcher saw the same observed unit over the pipeline's transaction,
         // the after-commit registration drained once, and the unit ended with the save.
@@ -54,8 +56,10 @@ public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContext
         (await _CountProbesAsync(provider)).Should().Be(1);
     }
 
-    [Fact]
-    public async Task should_roll_the_pipeline_owned_unit_back_when_the_outbox_dispatch_faults()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task should_roll_the_pipeline_owned_unit_back_when_the_outbox_dispatch_faults(bool sync)
     {
         // given — the outbox dispatcher faults after the handler registered its callbacks.
         await using var provider = await _BuildProviderAsync();
@@ -67,7 +71,7 @@ public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContext
         db.Probes.Add(_ProbeWithEvents("faulted"));
 
         // when
-        var act = async () => await db.SaveChangesAsync(AbortToken);
+        var act = async () => await _SaveAsync(db, sync, AbortToken);
 
         // then — the original fault surfaces, the unit rolled back (not abandoned), nothing drained, no row.
         (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("outbox down");
@@ -78,9 +82,11 @@ public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContext
     }
 
     [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task should_save_inside_the_caller_owned_unit_and_register_nothing(bool complete)
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    public async Task should_save_inside_the_caller_owned_unit_and_register_nothing(bool sync, bool complete)
     {
         // given — the developer began the unit on the context; its transaction is the caller-owned one.
         await using var provider = await _BuildProviderAsync();
@@ -94,7 +100,7 @@ public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContext
             db.Probes.Add(_ProbeWithEvents("caller-owned"));
 
             // when — the save runs inside the developer's unit.
-            await db.SaveChangesAsync(AbortToken);
+            await _SaveAsync(db, sync, AbortToken);
 
             // then — handler and outbox dispatcher saw that unit; nothing drained before the developer decides.
             evidence.HandlerCurrent.Should().BeSameAs(unitOfWork);
@@ -124,8 +130,10 @@ public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContext
         manager.Current.Should().BeNull();
     }
 
-    [Fact]
-    public async Task should_throw_before_any_dispatch_when_a_caller_owned_transaction_has_no_unit_of_work()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task should_throw_before_any_dispatch_when_a_caller_owned_transaction_has_no_unit_of_work(bool sync)
     {
         // given — a plain caller-owned transaction, no unit of work, and an integration event on the entity.
         await using var provider = await _BuildProviderAsync();
@@ -136,7 +144,7 @@ public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContext
         db.Probes.Add(_ProbeWithEvents("un-enlisted"));
 
         // when
-        var act = async () => await db.SaveChangesAsync(AbortToken);
+        var act = async () => await _SaveAsync(db, sync, AbortToken);
 
         // then — fails with the remedy before the domain-event drain and before the outbox dispatch.
         (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*IUnitOfWorkManager.BeginAsync(db)*");
@@ -146,8 +154,10 @@ public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContext
         (await _CountProbesAsync(provider)).Should().Be(0);
     }
 
-    [Fact]
-    public async Task should_throw_when_the_scope_holds_only_a_resource_less_unit_of_work()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task should_throw_when_the_scope_holds_only_a_resource_less_unit_of_work(bool sync)
     {
         // given — a resource-less root coordinates nothing transactional: a caller-owned transaction with
         // integration events under it would write the outbox autonomously, so it is refused the same way.
@@ -161,7 +171,7 @@ public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContext
         db.Probes.Add(_ProbeWithEvents("resource-less"));
 
         // when
-        var act = async () => await db.SaveChangesAsync(AbortToken);
+        var act = async () => await _SaveAsync(db, sync, AbortToken);
 
         // then — refused without side effects; the root itself is untouched and still completes.
         (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*IUnitOfWorkManager.BeginAsync(db)*");
@@ -173,8 +183,10 @@ public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContext
         (await _CountProbesAsync(provider)).Should().Be(0);
     }
 
-    [Fact]
-    public async Task should_save_plainly_under_a_caller_owned_transaction_without_integration_events()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task should_save_plainly_under_a_caller_owned_transaction_without_integration_events(bool sync)
     {
         // given — ordinary EF usage: a caller-owned transaction and a save that only raises domain events needs
         // no unit of work; the guard is keyed on integration events.
@@ -188,7 +200,7 @@ public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContext
         db.Probes.Add(probe);
 
         // when
-        await db.SaveChangesAsync(AbortToken);
+        await _SaveAsync(db, sync, AbortToken);
         await transaction.CommitAsync(AbortToken);
 
         // then
@@ -199,9 +211,11 @@ public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContext
     }
 
     [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task should_surface_the_fault_without_replay_when_a_participant_prevents_retry(bool prevent)
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    public async Task should_surface_the_fault_without_replay_when_a_participant_prevents_retry(bool sync, bool prevent)
     {
         // given — a retrying strategy that replays the marker exception once, and a handler that throws it on
         // its first call after (optionally) marking the unit non-replayable.
@@ -223,7 +237,7 @@ public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContext
         db.Probes.Add(_ProbeWithEvents("retry"));
 
         // when
-        var act = async () => await db.SaveChangesAsync(AbortToken);
+        var act = async () => await _SaveAsync(db, sync, AbortToken);
 
         // then
         if (prevent)
@@ -244,9 +258,11 @@ public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContext
     }
 
     [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task should_adopt_the_unit_bound_to_a_factory_created_context_for_the_save(bool complete)
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    public async Task should_adopt_the_unit_bound_to_a_factory_created_context_for_the_save(bool sync, bool complete)
     {
         // given — the request scope's manager begins the unit on a context that owns its own (factory) scope; the
         // handler resolved in the factory scope must still see that unit as Current.
@@ -264,7 +280,7 @@ public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContext
         db.Probes.Add(_ProbeWithEvents("factory"));
 
         // when
-        await db.SaveChangesAsync(AbortToken);
+        await _SaveAsync(db, sync, AbortToken);
 
         // then — adopted for the save only; the request scope still owns the unit.
         evidence.HandlerCurrent.Should().BeSameAs(unitOfWork, "the factory scope's manager adopted the unit");
@@ -288,11 +304,15 @@ public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContext
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task should_reenter_the_pipeline_when_a_handler_saves_the_same_context(bool viaFactory)
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    public async Task should_reenter_the_pipeline_when_a_handler_saves_the_same_context(bool sync, bool viaFactory)
     {
-        // given — the handler adds a second row and saves the same context from inside the drain.
+        // given — the handler adds a second row and saves the same context from inside the drain. The nested save
+        // uses the same sync/async mode as the outer one: the handler shape (a Task-returning hook) allows either —
+        // a sync inner SaveChanges is just a non-async lambda returning an already-completed Task<int>.
         await using var provider = await _BuildProviderAsync();
         var evidence = provider.GetRequiredService<PipelineEvidence>();
         evidence.OnHandled = async (_, db, ct) =>
@@ -300,7 +320,7 @@ public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContext
             if (evidence.HandlerCalls == 1)
             {
                 db.Probes.Add(new PipelineProbe { Name = "nested" });
-                await db.SaveChangesAsync(ct);
+                await _SaveAsync(db, sync, ct);
             }
         };
         await using var scope = provider.CreateAsyncScope();
@@ -314,7 +334,7 @@ public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContext
         db.Probes.Add(_ProbeWithEvents("outer"));
 
         // when
-        await db.SaveChangesAsync(AbortToken);
+        await _SaveAsync(db, sync, AbortToken);
 
         if (unitOfWork is not null)
         {
@@ -364,6 +384,20 @@ public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContext
         await db.GetService<IRelationalDatabaseCreator>().CreateTablesAsync(AbortToken);
 
         return provider;
+    }
+
+    // Dispatches through either DbContext.SaveChanges() or SaveChangesAsync() so every scenario can prove the sync
+    // and async pipeline twins behave identically without duplicating assertions.
+    private static Task<int> _SaveAsync(DbContext db, bool sync, CancellationToken ct)
+    {
+        if (sync)
+        {
+#pragma warning disable MA0045 // Test intentionally exercises the synchronous SaveChanges path.
+            return Task.FromResult(db.SaveChanges());
+#pragma warning restore MA0045
+        }
+
+        return db.SaveChangesAsync(ct);
     }
 
     private static PipelineProbe _ProbeWithEvents(string name)
