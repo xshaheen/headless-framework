@@ -24,8 +24,8 @@ public sealed class TenantRecord : AggregateRoot<string>, IHasExtraProperties
     [SetsRequiredMembers]
     [UsedImplicitly]
     private TenantRecord()
+        : base(null!)
     {
-        Id = null!;
         Identifier = null!;
         NormalizedIdentifier = null!;
     }
@@ -39,8 +39,8 @@ public sealed class TenantRecord : AggregateRoot<string>, IHasExtraProperties
     /// <exception cref="ArgumentException"><paramref name="id"/> or <paramref name="identifier"/> is empty or white space.</exception>
     [SetsRequiredMembers]
     public TenantRecord(string id, string identifier, string? name = null, bool isEnabled = true)
+        : base(Argument.IsNotNullOrWhiteSpace(id))
     {
-        Id = Argument.IsNotNullOrWhiteSpace(id);
         Name = name;
         IsEnabled = isEnabled;
         SetIdentifier(identifier);

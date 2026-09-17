@@ -22,8 +22,8 @@ public sealed class EventEmissionScopeTests : TestBase
         Action nullIdentity = () => _ = new EventContext<Fact>(new Fact("payload"), null!, "root");
         Action blankIdentity = () => _ = new EventContext<Fact>(new Fact("payload"), " ", "root");
         Action blankCorrelation = () => _ = new EventEmissionContext(" ");
-        Action nullScope = () => EventEmissionScope.Begin((EventEmissionContext)null!);
-        Action nullParent = () => EventEmissionScope.Begin((EventContext<Fact>)null!);
+        Action nullScope = () => EventEmissionScope.Begin(null!);
+        Action nullParent = () => EventEmissionScope.Begin<Fact>(null!);
         nullPayload.Should().Throw<ArgumentNullException>();
         nullIdentity.Should().Throw<ArgumentNullException>();
         blankIdentity.Should().Throw<ArgumentException>();
@@ -109,7 +109,8 @@ public sealed class EventEmissionScopeTests : TestBase
         using var outer = EventEmissionScope.Begin(new EventEmissionContext("outer"));
         var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var arrived = 0;
-        async Task<EventContext<object>> CaptureAsync(string tenant)
+
+        async Task<EventContext<object>> captureAsync(string tenant)
         {
             using var scope = EventEmissionScope.Begin(new EventEmissionContext(tenant, "cause", tenant));
             if (Interlocked.Increment(ref arrived) == 2)
@@ -121,7 +122,7 @@ public sealed class EventEmissionScopeTests : TestBase
             return EventContext.Capture<object>(new Fact(tenant));
         }
 
-        var occurrences = await Task.WhenAll(CaptureAsync("one"), CaptureAsync("two"));
+        var occurrences = await Task.WhenAll(captureAsync("one"), captureAsync("two"));
         occurrences.Select(occurrence => occurrence.TenantId).Should().Equal("one", "two");
         occurrences.Select(occurrence => occurrence.CorrelationId).Should().Equal("one", "two");
         EventEmissionScope.Current!.CorrelationId.Should().Be("outer");

@@ -227,10 +227,7 @@ public sealed class FluentValidationSchemaProcessorTests : TestBase
 
     private static ServiceProvider _CreateServices<T>(IValidator<T> validator)
     {
-        return new ServiceCollection()
-            .AddSingleton(validator)
-            .AddSingleton<IValidator<T>>(validator)
-            .BuildServiceProvider();
+        return new ServiceCollection().AddSingleton(validator).AddSingleton(validator).BuildServiceProvider();
     }
 
     private static JsonSchema _CreateObjectSchema(params (string Name, JsonObjectType Type)[] properties)

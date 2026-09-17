@@ -264,12 +264,12 @@ public sealed class TenantIdentifierSourceContractTests : TestBase
         )
         {
             IdentifierLookups++;
-            return Task.FromResult<TenantInfo?>(normalizedIdentifier == "acme" ? _acme : null);
+            return Task.FromResult(normalizedIdentifier == "acme" ? _acme : null);
         }
 
         public Task<TenantInfo?> FindByIdAsync(string id, CancellationToken cancellationToken = default)
         {
-            return Task.FromResult<TenantInfo?>(id == _acme.Id ? _acme : null);
+            return Task.FromResult(string.Equals(id, _acme.Id, StringComparison.Ordinal) ? _acme : null);
         }
     }
 }

@@ -379,14 +379,14 @@ public static class SetupApi
                         instrumentation.Filter = otel.Filter ?? (context => !otel.SkipOperationalEndpointFunc(context));
 
                         // Request scopes are disposed before response enrichment. Capture the host snapshot.
-                        var registry = serviceProvider.GetService<Surfaces.ApiSurfaceRegistry>();
+                        var registry = serviceProvider.GetService<ApiSurfaceRegistry>();
                         if (registry is not null)
                         {
                             instrumentation.EnrichWithHttpResponse = (activity, response) =>
                             {
                                 var context = response.HttpContext;
                                 var endpoint = context.GetEndpoint();
-                                var metadata = endpoint?.Metadata.GetMetadata<Surfaces.IApiSurfaceMetadata>();
+                                var metadata = endpoint?.Metadata.GetMetadata<IApiSurfaceMetadata>();
                                 activity.SetTag(
                                     "headless.api.surface.name",
                                     metadata is not null ? registry.GetRequiredSurface(metadata.SurfaceName).SurfaceName

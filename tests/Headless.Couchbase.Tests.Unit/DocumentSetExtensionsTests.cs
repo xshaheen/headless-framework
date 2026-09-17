@@ -20,7 +20,7 @@ public sealed class DocumentSetExtensionsTests : TestBase
         result.ContentAs<TestDocument>().Returns(document);
         collection.GetAsync("42", Arg.Any<GetOptions>()).Returns(result);
 
-        var actual = await set.GetAsync<TestDocument, int>(42, AbortToken);
+        var actual = await set.GetAsync(42, AbortToken);
 
         actual.Should().BeSameAs(document);
         await collection.Received(1).GetAsync("42", Arg.Any<GetOptions>());
@@ -45,7 +45,7 @@ public sealed class DocumentSetExtensionsTests : TestBase
         var (set, collection) = _CreateSet();
         var options = new ExistsOptions();
 
-        await set.ExistsAsync<TestDocument, int>(42, options);
+        await set.ExistsAsync(42, options);
 
         await collection.Received(1).ExistsAsync("42", options);
     }
@@ -92,7 +92,7 @@ public sealed class DocumentSetExtensionsTests : TestBase
         var (set, collection) = _CreateSet();
         var options = new RemoveOptions();
 
-        await set.RemoveAsync<TestDocument, int>(42, options);
+        await set.RemoveAsync(42, options);
 
         await collection.Received(1).RemoveAsync("42", options);
     }
@@ -103,7 +103,7 @@ public sealed class DocumentSetExtensionsTests : TestBase
         var (set, collection) = _CreateSet();
         var options = new UnlockOptions();
 
-        await set.UnlockAsync<TestDocument, int>(42, 123UL, options);
+        await set.UnlockAsync(42, 123UL, options);
 
         await collection.Received(1).UnlockAsync("42", 123UL, options);
     }
@@ -116,9 +116,9 @@ public sealed class DocumentSetExtensionsTests : TestBase
         var touchOptions = new TouchOptions();
         var getAndTouchOptions = new GetAndTouchOptions();
 
-        await set.TouchAsync<TestDocument, int>(42, expiry, touchOptions);
-        await set.TouchWithCasAsync<TestDocument, int>(42, expiry, touchOptions);
-        await set.GetAndTouchAsync<TestDocument, int>(42, expiry, getAndTouchOptions);
+        await set.TouchAsync(42, expiry, touchOptions);
+        await set.TouchWithCasAsync(42, expiry, touchOptions);
+        await set.GetAndTouchAsync(42, expiry, getAndTouchOptions);
 
         await collection.Received(1).TouchAsync("42", expiry, touchOptions);
         await collection.Received(1).TouchWithCasAsync("42", expiry, touchOptions);
@@ -134,9 +134,9 @@ public sealed class DocumentSetExtensionsTests : TestBase
         var anyReplicaOptions = new GetAnyReplicaOptions();
         var allReplicaOptions = new GetAllReplicasOptions();
 
-        await set.GetAndLockAsync<TestDocument, int>(42, expiry, lockOptions);
-        await set.GetAnyReplicaAsync<TestDocument, int>(42, anyReplicaOptions);
-        _ = set.GetAllReplicas<TestDocument, int>(42, allReplicaOptions).ToList();
+        await set.GetAndLockAsync(42, expiry, lockOptions);
+        await set.GetAnyReplicaAsync(42, anyReplicaOptions);
+        _ = set.GetAllReplicas(42, allReplicaOptions).ToList();
 
         await collection.Received(1).GetAndLockAsync("42", expiry, lockOptions);
         await collection.Received(1).GetAnyReplicaAsync("42", anyReplicaOptions);
@@ -154,10 +154,10 @@ public sealed class DocumentSetExtensionsTests : TestBase
         var lookupAllOptions = new LookupInAllReplicasOptions();
         var mutationOptions = new MutateInOptions();
 
-        await set.LookupInAsync<TestDocument, int>(42, lookupSpecs, lookupOptions);
-        await set.LookupInAnyReplicaAsync<TestDocument, int>(42, lookupSpecs, lookupAnyOptions);
-        _ = set.LookupInAllReplicasAsync<TestDocument, int>(42, lookupSpecs, lookupAllOptions);
-        await set.MutateInAsync<TestDocument, int>(42, mutationSpecs, mutationOptions);
+        await set.LookupInAsync(42, lookupSpecs, lookupOptions);
+        await set.LookupInAnyReplicaAsync(42, lookupSpecs, lookupAnyOptions);
+        _ = set.LookupInAllReplicasAsync(42, lookupSpecs, lookupAllOptions);
+        await set.MutateInAsync(42, mutationSpecs, mutationOptions);
 
         await collection.Received(1).LookupInAsync("42", lookupSpecs, lookupOptions);
         await collection.Received(1).LookupInAnyReplicaAsync("42", lookupSpecs, lookupAnyOptions);

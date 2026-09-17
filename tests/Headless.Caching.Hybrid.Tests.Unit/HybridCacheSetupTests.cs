@@ -104,7 +104,7 @@ public sealed class HybridCacheSetupTests : TestBase
                 CacheConstants.RemoteCacheProvider,
                 svc =>
                 {
-                    svc.AddSingleton<IRemoteCache>(remote);
+                    svc.AddSingleton(remote);
                     svc.AddKeyedSingleton<ICache>(CacheConstants.RemoteCacheProvider, remote);
                 }
             );

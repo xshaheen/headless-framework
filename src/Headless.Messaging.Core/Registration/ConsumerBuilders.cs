@@ -182,7 +182,7 @@ internal sealed class MessageConsumerRegistrationBuilder(
             "Inbox retention must be a positive whole-second duration no greater than Int32.MaxValue seconds.";
         Argument.IsPositive(retention, message);
         Argument.IsZero(retention.Ticks % TimeSpan.TicksPerSecond, message, nameof(retention));
-        Argument.IsLessThanOrEqualTo(retention.TotalSeconds, (double)int.MaxValue, message, nameof(retention));
+        Argument.IsLessThanOrEqualTo(retention.TotalSeconds, int.MaxValue, message, nameof(retention));
 
         InboxRetention = retention;
     }

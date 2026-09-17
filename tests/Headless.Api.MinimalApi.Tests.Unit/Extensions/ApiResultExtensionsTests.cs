@@ -164,8 +164,7 @@ public sealed class ApiResultExtensionsTests : TestBase
 
         // then
         httpResult.Should().BeOfType<ProblemHttpResult>();
-        var problemResult = (ProblemHttpResult)httpResult;
-        problemResult.StatusCode.Should().Be(StatusCodes.Status404NotFound);
+        httpResult.StatusCode.Should().Be(StatusCodes.Status404NotFound);
     }
 
     [Fact]
@@ -180,8 +179,7 @@ public sealed class ApiResultExtensionsTests : TestBase
 
         // then
         httpResult.Should().BeOfType<ProblemHttpResult>();
-        var problemResult = (ProblemHttpResult)httpResult;
-        problemResult.StatusCode.Should().Be(StatusCodes.Status422UnprocessableEntity);
+        httpResult.StatusCode.Should().Be(StatusCodes.Status422UnprocessableEntity);
     }
 
     [Fact]
@@ -196,8 +194,7 @@ public sealed class ApiResultExtensionsTests : TestBase
 
         // then
         httpResult.Should().BeOfType<ProblemHttpResult>();
-        var problemResult = (ProblemHttpResult)httpResult;
-        problemResult.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        httpResult.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
     }
 
     [Fact]
@@ -226,8 +223,7 @@ public sealed class ApiResultExtensionsTests : TestBase
 
         // then
         httpResult.Should().BeOfType<ProblemHttpResult>();
-        var problemResult = (ProblemHttpResult)httpResult;
-        problemResult.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+        httpResult.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
     }
 
     [Fact]
@@ -259,8 +255,7 @@ public sealed class ApiResultExtensionsTests : TestBase
 
         // then
         httpResult.Should().BeOfType<ProblemHttpResult>();
-        var problemResult = (ProblemHttpResult)httpResult;
-        problemResult.StatusCode.Should().Be(StatusCodes.Status409Conflict);
+        httpResult.StatusCode.Should().Be(StatusCodes.Status409Conflict);
     }
 
     [Fact]
@@ -275,8 +270,7 @@ public sealed class ApiResultExtensionsTests : TestBase
 
         // then
         httpResult.Should().BeOfType<ProblemHttpResult>();
-        var problemResult = (ProblemHttpResult)httpResult;
-        problemResult.StatusCode.Should().Be(StatusCodes.Status409Conflict);
+        httpResult.StatusCode.Should().Be(StatusCodes.Status409Conflict);
     }
 
     [Fact]
@@ -419,8 +413,7 @@ public sealed class ApiResultExtensionsTests : TestBase
 
         // then
         httpResult.Should().BeOfType<ProblemHttpResult>();
-        var problemResult = (ProblemHttpResult)httpResult;
-        problemResult.StatusCode.Should().Be(StatusCodes.Status409Conflict);
+        httpResult.StatusCode.Should().Be(StatusCodes.Status409Conflict);
     }
 
     #endregion

@@ -600,9 +600,9 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
         var id = $"msg-{Interlocked.Increment(ref _messageIdCounter)}";
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
-            { Headless.Messaging.Headers.MessageId, id },
-            { Headless.Messaging.Headers.MessageName, "TestMessage" },
-            { Headless.Messaging.Headers.SentTime, DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture) },
+            { Headers.MessageId, id },
+            { Headers.MessageName, "TestMessage" },
+            { Headers.SentTime, DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture) },
         };
         return new Message(headers, new { Data = "test" });
     }

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics.Metrics;
+using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Exceptions;
@@ -47,7 +48,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
             registry ?? new ConsumerCircuitBreakerRegistry(),
             new NullLogger<CircuitBreakerStateManager>(),
             new CircuitBreakerMetrics(meterFactory),
-            timeProvider ??= _timeProvider = new FakeTimeProvider()
+            timeProvider ?? (_timeProvider = new FakeTimeProvider())
         );
     }
 
@@ -862,8 +863,9 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         // There is no production path that leaves an armed timer alive after ForceOpen; move the
         // state's epoch directly to exercise the timer callback's last defense against a race.
         var groupsValue = typeof(CircuitBreakerStateManager)
-            .GetField("_groups", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+            .GetField("_groups", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly)!
             .GetValue(sut)!;
+
         var groupsType = groupsValue.GetType();
         var state = groupsType.GetProperty("Item")!.GetValue(groupsValue, [_Group]);
         state!.GetType().GetProperty("CurrentEpoch")!.SetValue(state, 999L);

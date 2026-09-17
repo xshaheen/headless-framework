@@ -408,7 +408,7 @@ public sealed class JobSchedulingDefaultsTests : TestBase
                     throw failure;
                 });
             throwing.Should().Throw<InvalidOperationException>().Which.Should().BeSameAs(failure);
-            var nullCallback = () => configure((Action<JobOptionsBuilder>)null!);
+            var nullCallback = () => configure(null!);
             nullCallback.Should().Throw<ArgumentNullException>();
             Action nullOptions = target switch
             {

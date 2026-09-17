@@ -20,7 +20,7 @@ public sealed class ServiceProviderDomainEventDispatcherTests : TestBase
         EventContext<object> occurrence;
         using (EventEmissionScope.Begin(new EventEmissionContext("root", "parent", "tenant")))
         {
-            occurrence = EventContext.Capture<object>(payload);
+            occurrence = EventContext.Capture(payload);
         }
 
         await bus.DispatchAsync(occurrence, AbortToken);

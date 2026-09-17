@@ -882,7 +882,7 @@ public static class JobsCoordinationFixtureExtensions
         var result =
             await command.ExecuteScalarAsync(cancellationToken)
             ?? throw new InvalidOperationException($"TimeJob {id} not found.");
-        return Convert.ToInt32(result, System.Globalization.CultureInfo.InvariantCulture);
+        return Convert.ToInt32(result, CultureInfo.InvariantCulture);
     }
 
     /// <summary>Reads a TimeJob's database-stamped lease timestamps.</summary>

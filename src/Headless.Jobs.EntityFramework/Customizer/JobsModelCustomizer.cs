@@ -18,7 +18,7 @@ internal sealed class JobsModelCustomizer<TTimeJob, TCronJob>(ModelCustomizerDep
         {
             "Microsoft.EntityFrameworkCore.SqlServer" => "Latin1_General_100_BIN2",
             "Npgsql.EntityFrameworkCore.PostgreSQL" => "C",
-            _ => (string?)null,
+            _ => null,
         };
 
         builder.ApplyConfiguration(new TimeJobConfigurations<TTimeJob>(contractCollation: contractCollation));

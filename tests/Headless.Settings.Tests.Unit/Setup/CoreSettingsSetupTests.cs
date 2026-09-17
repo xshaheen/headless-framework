@@ -34,7 +34,7 @@ public sealed class CoreSettingsSetupTests
         builder.Services.AddStringEncryptionService(options =>
         {
             options.DefaultPassPhrase = "ExplicitPassPhrase123";
-            options.DefaultSalt = "ExplicitSalt"u8.ToArray();
+            options.DefaultSalt = [.. "ExplicitSalt"u8];
         });
 
         // when

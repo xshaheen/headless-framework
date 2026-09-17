@@ -152,7 +152,7 @@ public sealed class TenantModelPolicyTests : TestBase
     [Fact]
     public void should_reject_tpt_inheritance() => _AssertInvalid<TptPolicy>("*requires a keyed*");
 
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+    [SuppressMessage(
         "Usage",
         "MA0045",
         Justification = "This helper asserts synchronous model-construction failures; its services perform no database I/O."

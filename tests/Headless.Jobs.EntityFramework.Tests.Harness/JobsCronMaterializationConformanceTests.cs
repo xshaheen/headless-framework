@@ -142,9 +142,7 @@ public abstract class JobsCronMaterializationConformanceTests(Action<DbContextOp
             .Where(x => x.Id == definitions[0].Id)
             .ExecuteUpdateAsync(
                 setters =>
-                    setters
-                        .SetProperty(x => x.Function, "edited-after-snapshot")
-                        .SetProperty(x => x.Request, new byte[] { 99 }),
+                    setters.SetProperty(x => x.Function, "edited-after-snapshot").SetProperty(x => x.Request, [99]),
                 AbortToken
             );
         try
@@ -198,25 +196,26 @@ public abstract class JobsCronMaterializationConformanceTests(Action<DbContextOp
     private static async Task _SeedAsync(MaterializationFactory factory, CronJobEntity[] definitions)
     {
         await using var context = factory.CreateDbContext();
-        context.AddRange(definitions);
+        await context.Set<CronJobEntity>().AddRangeAsync(definitions);
         await context.SaveChangesAsync(AbortToken);
     }
 
     private static CronJobEntity[] _Definitions() =>
-        Enumerable
-            .Range(1, 3)
-            .Select(i => new CronJobEntity
-            {
-                // The trailing bytes reverse SQL Server's native uniqueidentifier order relative to .NET Guid order.
-                Id = Guid.Parse(FormattableString.Invariant($"0000000{i}-0000-0000-0000-00000000000{4 - i}")),
-                Function = "materialization-" + i,
-                ContractVersion = "1",
-                Expression = "0 * * * * *",
-                Request = [(byte)i],
-                CorrelationId = "correlation-" + i,
-                CausationId = "cause-" + i,
-            })
-            .ToArray();
+        [
+            .. Enumerable
+                .Range(1, 3)
+                .Select(i => new CronJobEntity
+                {
+                    // The trailing bytes reverse SQL Server's native uniqueidentifier order relative to .NET Guid order.
+                    Id = Guid.Parse(FormattableString.Invariant($"0000000{i}-0000-0000-0000-00000000000{4 - i}")),
+                    Function = "materialization-" + i,
+                    ContractVersion = "1",
+                    Expression = "0 * * * * *",
+                    Request = [(byte)i],
+                    CorrelationId = "correlation-" + i,
+                    CausationId = "cause-" + i,
+                }),
+        ];
 
     private static CronJobOccurrenceEntity<CronJobEntity> _Occurrence(Guid definitionId, int minute = 0) =>
         new()

@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
+
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Domain;
 
@@ -18,6 +20,17 @@ public interface IEntity<out TId> : IEntity
 public abstract class Entity<TId> : Entity, IEntity<TId>
     where TId : IEquatable<TId> // The 'notnull' constraint is redundant because type parameter 'TId' is constrained by non-nullable type 'IEquatable<TId>'
 {
+    /// <summary>Initializes a new instance of the <see cref="Entity{TId}"/> class.</summary>
+    protected Entity() { }
+
+    /// <summary>Initializes a new instance of the <see cref="Entity{TId}"/> class with the specified identifier.</summary>
+    /// <param name="id">The unique identifier for this entity.</param>
+    [SetsRequiredMembers]
+    protected Entity(TId id)
+    {
+        Id = id;
+    }
+
     /// <summary>Unique identifier for this entity.</summary>
     public required TId Id { get; init; }
 

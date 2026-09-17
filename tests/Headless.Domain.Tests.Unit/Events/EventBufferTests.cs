@@ -86,7 +86,7 @@ public sealed class EventBufferTests : TestBase
         var buffer = new EventBuffer();
         buffer.Add(new Message("pending"));
         var snapshot = buffer.Snapshot();
-        Action nullPayload = () => buffer.Add((object)null!);
+        Action nullPayload = () => buffer.Add(null!);
         Action nullContext = () => buffer.Add((EventContext<Message>)null!);
         Action nullBatch = () => buffer.Clear(null!);
 

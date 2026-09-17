@@ -96,7 +96,7 @@ public sealed class EmailToMimeMessageConverterTests : TestBase
         await using var decoded = new MemoryStream();
         await attachment.Content!.DecodeToAsync(decoded, AbortToken);
 
-        decoded.ToArray().Should().Equal((byte)1, (byte)2, (byte)3, (byte)4);
+        decoded.ToArray().Should().Equal(1, 2, 3, 4);
     }
 
     [Fact]

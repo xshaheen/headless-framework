@@ -25,7 +25,7 @@ public sealed class IdentityTenantModelTests : TestBase
     [Fact]
     public void should_preserve_original_v3_identity_schema_without_opt_in() => _AssertOriginalSchema<UnscopedV3>(true);
 
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+    [SuppressMessage(
         "Usage",
         "MA0045",
         Justification = "Model-only assertions exercise synchronous model construction and disposal without database I/O."
@@ -82,7 +82,7 @@ public sealed class IdentityTenantModelTests : TestBase
     [Fact]
     public void should_scope_custom_generic_v3_entities_and_passkeys() => _AssertScoped<ScopedV3>(true);
 
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+    [SuppressMessage(
         "Usage",
         "MA0045",
         Justification = "Model-only assertions exercise synchronous model construction and disposal without database I/O."
@@ -324,7 +324,7 @@ public sealed class IdentityTenantModelTests : TestBase
     public void should_reject_ambiguous_identity_relationships() =>
         _AssertInvalid<AmbiguousRelationship>("*ambiguous*");
 
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+    [SuppressMessage(
         "Usage",
         "MA0045",
         Justification = "This helper asserts synchronous model-construction failures; its services perform no database I/O."

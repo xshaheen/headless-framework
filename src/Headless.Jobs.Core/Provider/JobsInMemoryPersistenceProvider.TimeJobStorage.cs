@@ -45,6 +45,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         if (previousKey == key)
         {
             // Lifecycle writes retain the indexed ID. Keep claims concurrent and preserve the exact-instance CAS.
+            // ReSharper disable once InconsistentlySynchronizedField -- _timeJobs is a ConcurrentDictionary; lock (_keyedOperations) coordinates compound index updates, not dictionary thread-safety.
             return _timeJobs.TryUpdate(id, job, expected);
         }
 

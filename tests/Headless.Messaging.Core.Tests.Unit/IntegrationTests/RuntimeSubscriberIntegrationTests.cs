@@ -276,7 +276,7 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
 
         if (timeProvider is not null)
         {
-            services.AddSingleton<TimeProvider>(timeProvider);
+            services.AddSingleton(timeProvider);
         }
 
         return services.BuildServiceProvider();

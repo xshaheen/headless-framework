@@ -469,7 +469,7 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
         var skippedCircuitOpen = 0;
         var healthy = new List<MediumMessage>(messages.Count);
         var circuitWork = new List<CircuitRetryWork>();
-        var orphanPickupSucceeded = false;
+        bool orphanPickupSucceeded;
 
         try
         {

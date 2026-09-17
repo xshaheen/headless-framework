@@ -124,19 +124,22 @@ public sealed class JobFunctionProviderTests : TestBase
         );
         firstEntered.Wait(cancellationToken);
 
-        var secondHost = Task.Run(() =>
-            new ServiceCollection().AddHeadlessJobs(options =>
-            {
-                JobFunctionProvider.RegisterFunctions(
-                    new Dictionary<string, JobFunctionRegistration>(StringComparer.Ordinal)
-                    {
-                        ["second-host"] = _Function("second-host").Value,
-                    }
-                );
-                secondEntered.Set();
-                secondCanReturn.Wait(cancellationToken);
-            })
+        var secondHost = Task.Run(
+            () =>
+                new ServiceCollection().AddHeadlessJobs(_ =>
+                {
+                    JobFunctionProvider.RegisterFunctions(
+                        new Dictionary<string, JobFunctionRegistration>(StringComparer.Ordinal)
+                        {
+                            ["second-host"] = _Function("second-host").Value,
+                        }
+                    );
+                    secondEntered.Set();
+                    secondCanReturn.Wait(cancellationToken);
+                }),
+            AbortToken
         );
+
         secondEntered.Wait(cancellationToken);
 
         firstCanReturn.Set();

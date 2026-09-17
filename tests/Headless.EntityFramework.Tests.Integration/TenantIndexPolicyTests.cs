@@ -88,7 +88,7 @@ public sealed class TenantIndexPolicyTests : TestBase
     public void should_reject_fulltext_expression_indexes() =>
         _AssertInvalid<FulltextIndex>("*cannot preserve annotation 'Npgsql:TsVectorConfig'*");
 
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+    [SuppressMessage(
         "Usage",
         "MA0045",
         Justification = "This helper asserts synchronous model-construction failures; its services perform no database I/O."

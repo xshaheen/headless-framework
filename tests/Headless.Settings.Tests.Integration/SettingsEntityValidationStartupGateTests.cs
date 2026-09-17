@@ -24,7 +24,7 @@ public sealed class SettingsEntityValidationStartupGateTests(SettingsTestFixture
         builder.Services.AddStringEncryptionService(options =>
         {
             options.DefaultPassPhrase = "TestPassPhrase123456";
-            options.DefaultSalt = "TestSalt"u8.ToArray();
+            options.DefaultSalt = [.. "TestSalt"u8];
         });
         builder.Services.AddDbContextFactory<MissingSettingsEntityDbContext>(options =>
             options.UseNpgsql(Fixture.SqlConnectionString)

@@ -330,9 +330,7 @@ internal sealed partial class SqlServerDataStorage
         command.Parameters.Add(
             new SqlParameter("@IntentType", SqlDbType.SmallInt)
             {
-                Value = query.Lane is null
-                    ? (object)DBNull.Value
-                    : MessageLaneCompatibility.ToPersistedValue(query.Lane.Value),
+                Value = query.Lane is null ? DBNull.Value : MessageLaneCompatibility.ToPersistedValue(query.Lane.Value),
             }
         );
         command.Parameters.Add(

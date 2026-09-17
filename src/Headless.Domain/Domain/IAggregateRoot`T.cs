@@ -17,6 +17,17 @@ public interface IAggregateRoot<out TId> : IEntity<TId>, IAggregateRoot
 public abstract class AggregateRoot<TId> : AggregateRoot, IAggregateRoot<TId>
     where TId : IEquatable<TId>
 {
+    /// <summary>Initializes a new instance of the <see cref="AggregateRoot{TId}"/> class.</summary>
+    protected AggregateRoot() { }
+
+    /// <summary>Initializes a new instance of the <see cref="AggregateRoot{TId}"/> class with the specified identifier.</summary>
+    /// <param name="id">The unique identifier for this entity.</param>
+    [SetsRequiredMembers]
+    protected AggregateRoot(TId id)
+    {
+        Id = id;
+    }
+
     /// <summary>Unique identifier for this entity.</summary>
     public required TId Id { get; init; }
 

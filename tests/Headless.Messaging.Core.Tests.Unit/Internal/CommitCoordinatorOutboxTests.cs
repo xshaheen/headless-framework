@@ -36,7 +36,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
                 .StoreMessageAsync(
                     Arg.Any<string>(),
                     Arg.Any<MediumMessage>(),
-                    Arg.Any<System.Data.Common.DbTransaction?>(),
+                    Arg.Any<DbTransaction?>(),
                     Arg.Any<CancellationToken>()
                 )
                 .Returns(call =>

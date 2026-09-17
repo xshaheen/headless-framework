@@ -701,7 +701,7 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
 
         private void _FailAfterWrite(IReadOnlyList<EventContext<object>> occurrences)
         {
-            fault.Attempts.Add(occurrences.Select(occurrence => occurrence.EventId).ToArray());
+            fault.Attempts.Add([.. occurrences.Select(occurrence => occurrence.EventId)]);
             if (fault.FailuresRemaining-- > 0)
             {
                 throw new TransientOutboxException();

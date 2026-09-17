@@ -198,7 +198,7 @@ public sealed class HostTenantIdentifierSourceTests : TestBase
 
         if (configureCatalog is not null)
         {
-            builder.Services.PostConfigure<TenantCatalogOptions>(configureCatalog);
+            builder.Services.PostConfigure(configureCatalog);
         }
 
         if (store is not null)

@@ -382,9 +382,7 @@ internal sealed partial class PostgreSqlDataStorage(
             ),
             new NpgsqlParameter("@InboxIntentType", NpgsqlDbType.Smallint)
             {
-                Value = inboxFence is null
-                    ? (object)DBNull.Value
-                    : MessageLaneCompatibility.ToPersistedValue(inboxFence.Lane),
+                Value = inboxFence is null ? DBNull.Value : MessageLaneCompatibility.ToPersistedValue(inboxFence.Lane),
             },
             new NpgsqlParameter("@InboxGeneration", NpgsqlDbType.Bigint)
             {
@@ -1062,9 +1060,7 @@ internal sealed partial class PostgreSqlDataStorage(
             },
             new NpgsqlParameter("@InboxIntentType", NpgsqlDbType.Smallint)
             {
-                Value = inboxFence is null
-                    ? (object)DBNull.Value
-                    : MessageLaneCompatibility.ToPersistedValue(inboxFence.Lane),
+                Value = inboxFence is null ? DBNull.Value : MessageLaneCompatibility.ToPersistedValue(inboxFence.Lane),
             },
             new NpgsqlParameter("@InboxGeneration", NpgsqlDbType.Bigint)
             {
@@ -1151,9 +1147,7 @@ internal sealed partial class PostgreSqlDataStorage(
             },
             new NpgsqlParameter("@InboxIntentType", NpgsqlDbType.Smallint)
             {
-                Value = inboxFence is null
-                    ? (object)DBNull.Value
-                    : MessageLaneCompatibility.ToPersistedValue(inboxFence.Lane),
+                Value = inboxFence is null ? DBNull.Value : MessageLaneCompatibility.ToPersistedValue(inboxFence.Lane),
             },
             new NpgsqlParameter("@InboxGeneration", NpgsqlDbType.Bigint)
             {
@@ -1261,7 +1255,7 @@ internal sealed partial class PostgreSqlDataStorage(
                         new NpgsqlParameter($"@InboxIntentType{parameterSuffix}", NpgsqlDbType.Smallint)
                         {
                             Value = inboxFence is null
-                                ? (object)DBNull.Value
+                                ? DBNull.Value
                                 : MessageLaneCompatibility.ToPersistedValue(inboxFence.Lane),
                         }
                     );
@@ -1433,9 +1427,7 @@ internal sealed partial class PostgreSqlDataStorage(
             },
             new NpgsqlParameter("@InboxIntentType", NpgsqlDbType.Smallint)
             {
-                Value = inboxFence is null
-                    ? (object)DBNull.Value
-                    : MessageLaneCompatibility.ToPersistedValue(inboxFence.Lane),
+                Value = inboxFence is null ? DBNull.Value : MessageLaneCompatibility.ToPersistedValue(inboxFence.Lane),
             },
             new NpgsqlParameter("@InboxGeneration", NpgsqlDbType.Bigint)
             {

@@ -343,12 +343,7 @@ public sealed class SqlServerInboxOperationPolicyTests(SqlServerTestFixture fixt
             var blocked = false;
             for (var attempt = 0; attempt < 100; attempt++)
             {
-                if (
-                    Convert.ToInt32(
-                        await waiting.ExecuteScalarAsync(AbortToken),
-                        System.Globalization.CultureInfo.InvariantCulture
-                    ) >= 2
-                )
+                if (Convert.ToInt32(await waiting.ExecuteScalarAsync(AbortToken), CultureInfo.InvariantCulture) >= 2)
                 {
                     blocked = true;
                     break;

@@ -354,9 +354,7 @@ internal sealed partial class SqlServerDataStorage(
             },
             new SqlParameter("@InboxIntentType", SqlDbType.SmallInt)
             {
-                Value = inboxFence is null
-                    ? (object)DBNull.Value
-                    : MessageLaneCompatibility.ToPersistedValue(inboxFence.Lane),
+                Value = inboxFence is null ? DBNull.Value : MessageLaneCompatibility.ToPersistedValue(inboxFence.Lane),
             },
             new SqlParameter("@InboxGeneration", SqlDbType.BigInt)
             {
@@ -1075,9 +1073,7 @@ internal sealed partial class SqlServerDataStorage(
             },
             new SqlParameter("@InboxIntentType", SqlDbType.SmallInt)
             {
-                Value = inboxFence is null
-                    ? (object)DBNull.Value
-                    : MessageLaneCompatibility.ToPersistedValue(inboxFence.Lane),
+                Value = inboxFence is null ? DBNull.Value : MessageLaneCompatibility.ToPersistedValue(inboxFence.Lane),
             },
             new SqlParameter("@InboxGeneration", SqlDbType.BigInt)
             {
@@ -1167,9 +1163,7 @@ internal sealed partial class SqlServerDataStorage(
             },
             new SqlParameter("@InboxIntentType", SqlDbType.SmallInt)
             {
-                Value = inboxFence is null
-                    ? (object)DBNull.Value
-                    : MessageLaneCompatibility.ToPersistedValue(inboxFence.Lane),
+                Value = inboxFence is null ? DBNull.Value : MessageLaneCompatibility.ToPersistedValue(inboxFence.Lane),
             },
             new SqlParameter("@InboxGeneration", SqlDbType.BigInt)
             {
@@ -1284,7 +1278,7 @@ internal sealed partial class SqlServerDataStorage(
                         new SqlParameter($"@InboxIntentType{parameterSuffix}", SqlDbType.SmallInt)
                         {
                             Value = inboxFence is null
-                                ? (object)DBNull.Value
+                                ? DBNull.Value
                                 : MessageLaneCompatibility.ToPersistedValue(inboxFence.Lane),
                         }
                     );
@@ -1505,9 +1499,7 @@ internal sealed partial class SqlServerDataStorage(
             },
             new SqlParameter("@InboxIntentType", SqlDbType.SmallInt)
             {
-                Value = inboxFence is null
-                    ? (object)DBNull.Value
-                    : MessageLaneCompatibility.ToPersistedValue(inboxFence.Lane),
+                Value = inboxFence is null ? DBNull.Value : MessageLaneCompatibility.ToPersistedValue(inboxFence.Lane),
             },
             new SqlParameter("@InboxGeneration", SqlDbType.BigInt)
             {

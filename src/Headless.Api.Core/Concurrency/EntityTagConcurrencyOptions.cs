@@ -2,7 +2,7 @@
 
 using Headless.Abstractions;
 
-namespace Headless.Api;
+namespace Headless.Api.Concurrency;
 
 /// <summary>Configures entity-tag concurrency validation shared by MVC and Minimal APIs.</summary>
 [PublicAPI]

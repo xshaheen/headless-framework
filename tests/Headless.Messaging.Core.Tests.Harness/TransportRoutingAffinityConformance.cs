@@ -148,7 +148,7 @@ public static class TransportRoutingAffinityConformance
         var message = new TransportMessage(headers, "affinity"u8.ToArray());
         if (!driver.SupportsRoutingAffinity)
         {
-            var rejected = false;
+            bool rejected;
             try
             {
                 var result = await session.PublishAsync(message, cancellationToken);

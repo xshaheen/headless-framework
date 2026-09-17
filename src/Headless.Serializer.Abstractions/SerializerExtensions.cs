@@ -99,7 +99,7 @@ public static class SerializerExtensions
             using var writer = new PooledByteBufferWriter();
             serializer.Serialize(value, writer);
 
-            return writer.WrittenSpan.ToArray();
+            return [.. writer.WrittenSpan];
         }
 
         /// <summary>Serializes <paramref name="value"/> into <paramref name="output"/>.</summary>
@@ -187,6 +187,6 @@ public static class SerializerExtensions
             writer.Advance(read);
         } while (read > 0);
 
-        return new ReadOnlySequence<byte>(writer.WrittenSpan.ToArray());
+        return new ReadOnlySequence<byte>([.. writer.WrittenSpan]);
     }
 }

@@ -460,7 +460,7 @@ public sealed class ConsumerRegisterTests : TestBase
             },
             configureServices: services =>
             {
-                services.AddSingleton<IDispatcher>(dispatcher);
+                services.AddSingleton(dispatcher);
                 services.AddSingleton<BootstrapReadyConsumer>();
             }
         );
@@ -527,7 +527,7 @@ public sealed class ConsumerRegisterTests : TestBase
             },
             configureServices: services =>
             {
-                services.AddSingleton<IDispatcher>(dispatcher);
+                services.AddSingleton(dispatcher);
                 services.AddSingleton<BootstrapReadyConsumer>();
             }
         );
@@ -664,7 +664,7 @@ public sealed class ConsumerRegisterTests : TestBase
                 return ValueTask.CompletedTask;
             });
         client.DisposeAsync().Returns(ValueTask.CompletedTask);
-        await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, new object[] { client })!;
+        await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, [client])!;
 
         var groupHandlesField = typeof(ConsumerRegister).GetField(
             "_groupHandles",
@@ -697,11 +697,11 @@ public sealed class ConsumerRegisterTests : TestBase
         var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
         var handle = _CreateHandle(handleType);
 
-        await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, new object[] { client })!;
-        await _InvokePauseAsync(register, (object)handle, 7);
-        await _InvokeResumeAsync(register, (object)handle, 6);
+        await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, [client])!;
+        await _InvokePauseAsync(register, handle, 7);
+        await _InvokeResumeAsync(register, handle, 6);
 
-        ((bool)_GetIsPaused(handleType, handle)).Should().BeTrue();
+        _GetIsPaused(handleType, handle).Should().BeTrue();
         await client.DidNotReceive().ResumeAsync(Arg.Any<CancellationToken>());
     }
 
@@ -722,11 +722,11 @@ public sealed class ConsumerRegisterTests : TestBase
 
         var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
         var handle = _CreateHandle(handleType);
-        await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, new object[] { client })!;
+        await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, [client])!;
 
-        var resume = _InvokeResumeAsync(register, (object)handle, 2).AsTask();
+        var resume = _InvokeResumeAsync(register, handle, 2).AsTask();
         await resumeEntered.Task.WaitAsync(AbortToken);
-        var pause = _InvokePauseAsync(register, (object)handle, 3).AsTask();
+        var pause = _InvokePauseAsync(register, handle, 3).AsTask();
         pause.IsCompleted.Should().BeFalse();
 
         releaseResume.TrySetResult();
@@ -735,7 +735,7 @@ public sealed class ConsumerRegisterTests : TestBase
 
         await client.Received(1).ResumeAsync(Arg.Any<CancellationToken>());
         await client.Received(1).PauseAsync(Arg.Any<CancellationToken>());
-        ((bool)_GetIsPaused(handleType, handle)).Should().BeTrue();
+        _GetIsPaused(handleType, handle).Should().BeTrue();
     }
 
     [Fact]
@@ -745,13 +745,13 @@ public sealed class ConsumerRegisterTests : TestBase
         var client = Substitute.For<IConsumerClient>();
         var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
         var handle = _CreateHandle(handleType);
-        await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, new object[] { client })!;
+        await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, [client])!;
 
-        await _InvokePauseAsync(register, (object)handle, 4);
-        await _InvokePauseAsync(register, (object)handle, 4);
+        await _InvokePauseAsync(register, handle, 4);
+        await _InvokePauseAsync(register, handle, 4);
 
         await client.Received(2).PauseAsync(Arg.Any<CancellationToken>());
-        ((bool)_GetIsPaused(handleType, handle)).Should().BeTrue();
+        _GetIsPaused(handleType, handle).Should().BeTrue();
     }
 
     [Fact]
@@ -765,15 +765,15 @@ public sealed class ConsumerRegisterTests : TestBase
 
         var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
         var handle = _CreateHandle(handleType);
-        await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, new object[] { failingClient })!;
-        await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, new object[] { healthyClient })!;
+        await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, [failingClient])!;
+        await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, [healthyClient])!;
 
-        var act = async () => await _InvokeResumeAsync(register, (object)handle, 2);
+        var act = async () => await _InvokeResumeAsync(register, handle, 2);
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("resume failed");
 
         failingClient.ClearReceivedCalls();
         healthyClient.ClearReceivedCalls();
-        await _InvokePauseAsync(register, (object)handle, 3);
+        await _InvokePauseAsync(register, handle, 3);
         await failingClient.DidNotReceive().ResumeAsync(Arg.Any<CancellationToken>());
         await healthyClient.Received(1).PauseAsync(Arg.Any<CancellationToken>());
     }
@@ -795,20 +795,19 @@ public sealed class ConsumerRegisterTests : TestBase
 
         var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
         var handle = _CreateHandle(handleType);
-        await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, new object[] { client })!;
+        await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, [client])!;
 
-        var pause = _InvokePauseAsync(register, (object)handle, 3).AsTask();
+        var pause = _InvokePauseAsync(register, handle, 3).AsTask();
         await pauseEntered.Task.WaitAsync(AbortToken);
 
-        var resumeTask = _InvokeResumeAsync(register, (object)handle, 3).AsTask();
-        await (ValueTask)
-            handleType.GetMethod("DisposeAsync")!.Invoke(handle, new object[] { TimeSpan.FromSeconds(1) })!;
+        var resumeTask = _InvokeResumeAsync(register, handle, 3).AsTask();
+        await (ValueTask)handleType.GetMethod("DisposeAsync")!.Invoke(handle, [TimeSpan.FromSeconds(1)])!;
         releasePause.TrySetResult();
 
         await pause.WaitAsync(AbortToken);
         await resumeTask.WaitAsync(AbortToken);
 
-        ((bool)_GetIsPaused(handleType, handle)).Should().BeTrue();
+        _GetIsPaused(handleType, handle).Should().BeTrue();
         await client.DidNotReceive().ResumeAsync(Arg.Any<CancellationToken>());
     }
 
@@ -836,8 +835,7 @@ public sealed class ConsumerRegisterTests : TestBase
                             consumer.StableContract("tests.consumer-register.open-admission").Group("ready-group")
                         )
                 ),
-            configureServices: services =>
-                services.AddSingleton<ILoggerProvider>(new Helpers.CapturingLoggerProvider(logs))
+            configureServices: services => services.AddSingleton<ILoggerProvider>(new CapturingLoggerProvider(logs))
         );
         var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
         typeof(ConsumerRegister)
@@ -896,8 +894,7 @@ public sealed class ConsumerRegisterTests : TestBase
                             consumer.StableContract("tests.consumer-register.open-admission").Group("ready-group")
                         )
                 ),
-            configureServices: services =>
-                services.AddSingleton<ILoggerProvider>(new Helpers.CapturingLoggerProvider(logs))
+            configureServices: services => services.AddSingleton<ILoggerProvider>(new CapturingLoggerProvider(logs))
         );
         var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
         var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
@@ -909,9 +906,8 @@ public sealed class ConsumerRegisterTests : TestBase
             .SetValue(register, mockCircuitBreaker);
         var handle = _CreateHandle(handleType);
         handleType.GetProperty("GroupName")!.SetValue(handle, "ready-group");
-        await (ValueTask)
-            handleType.GetMethod("AddClientAsync")!.Invoke(handle, new object[] { Substitute.For<IConsumerClient>() })!;
-        await _InvokePauseAsync(register, (object)handle, 7);
+        await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, [Substitute.For<IConsumerClient>()])!;
+        await _InvokePauseAsync(register, handle, 7);
 
         var groupHandles = (IDictionary)
             typeof(ConsumerRegister)

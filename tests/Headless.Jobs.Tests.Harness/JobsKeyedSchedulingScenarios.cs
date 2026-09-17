@@ -223,7 +223,7 @@ public static class JobsKeyedSchedulingScenarios
         var scope = new JobKeyScope("deadline");
         for (var index = 0; index < 8; index++)
         {
-            var key = new JobKey("claim-replace-" + index.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            var key = new JobKey("claim-replace-" + index.ToString(CultureInfo.InvariantCulture));
             var scheduled = await store.ScheduleKeyedTimeJobAsync(
                 key,
                 Candidate(),
@@ -253,9 +253,7 @@ public static class JobsKeyedSchedulingScenarios
                 _AssertPolicy(current!, replacementCandidate);
             }
 
-            var cancelKey = new JobKey(
-                "claim-cancel-" + index.ToString(System.Globalization.CultureInfo.InvariantCulture)
-            );
+            var cancelKey = new JobKey("claim-cancel-" + index.ToString(CultureInfo.InvariantCulture));
             var cancelScheduled = await store.ScheduleKeyedTimeJobAsync(
                 cancelKey,
                 Candidate(),
@@ -286,7 +284,7 @@ public static class JobsKeyedSchedulingScenarios
         for (var index = 0; index < 8; index++)
         {
             var candidate = Candidate();
-            var key = new JobKey("delete-race-" + index.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            var key = new JobKey("delete-race-" + index.ToString(CultureInfo.InvariantCulture));
             var insertion = Task.Run(
                 () => store.ScheduleKeyedTimeJobAsync(key, candidate, cancellationToken: cancellationToken),
                 cancellationToken
@@ -308,9 +306,7 @@ public static class JobsKeyedSchedulingScenarios
                 .Be(key.Value);
 
             var updateCandidate = Candidate();
-            var updateKey = new JobKey(
-                "update-race-" + index.ToString(System.Globalization.CultureInfo.InvariantCulture)
-            );
+            var updateKey = new JobKey("update-race-" + index.ToString(CultureInfo.InvariantCulture));
             var dto = Candidate([8]);
             dto.Id = updateCandidate.Id;
             JobScheduleResult? scheduled = null;

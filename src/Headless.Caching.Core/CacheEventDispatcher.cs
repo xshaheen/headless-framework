@@ -77,7 +77,7 @@ internal sealed class CacheEventDispatcher : IDisposable, IAsyncDisposable
 
         Interlocked.Increment(ref _pending);
 
-        if (state.Channel.Writer.TryWrite(CacheEventDispatchEntry.Create<TArgs>(handlerSnapshot, sender, args)))
+        if (state.Channel.Writer.TryWrite(CacheEventDispatchEntry.Create(handlerSnapshot, sender, args)))
         {
             Interlocked.Increment(ref _accepted);
             return;

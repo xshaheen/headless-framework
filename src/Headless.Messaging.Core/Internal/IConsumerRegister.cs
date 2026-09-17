@@ -809,7 +809,15 @@ internal sealed class ConsumerRegister(
             return;
         }
 
-        await handle.ApplyGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            await handle.ApplyGate.WaitAsync(handle.Cts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
         try
         {
             if (handle.IsDisposing || epoch < handle.LastAppliedEpoch)

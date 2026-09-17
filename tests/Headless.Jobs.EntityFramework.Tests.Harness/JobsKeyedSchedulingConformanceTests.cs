@@ -141,7 +141,7 @@ public abstract partial class JobsKeyedSchedulingConformanceTests<TFixture>(TFix
         var parent = JobsKeyedSchedulingScenarios.Candidate();
         await store.AddTimeJobsAsync([parent], AbortToken);
 
-        foreach (var tenant in new string?[] { null, "tenant-a" })
+        foreach (var tenant in new[] { null, "tenant-a" })
         {
             var candidate = JobsKeyedSchedulingScenarios.Candidate();
             candidate.TenantId = tenant;
@@ -487,7 +487,7 @@ public abstract partial class JobsKeyedSchedulingConformanceTests<TFixture>(TFix
     {
         public string DisplayOwner => "keyed-tests@1";
 
-        public bool TryGetStampOwner([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out string? stampOwner)
+        public bool TryGetStampOwner([NotNullWhen(true)] out string? stampOwner)
         {
             stampOwner = DisplayOwner;
             return true;

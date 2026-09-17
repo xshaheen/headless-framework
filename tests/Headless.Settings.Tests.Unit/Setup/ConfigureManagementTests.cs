@@ -18,7 +18,7 @@ public sealed class ConfigureManagementTests
         services.AddStringEncryptionService(options =>
         {
             options.DefaultPassPhrase = "TestPassPhrase123456";
-            options.DefaultSalt = "TestSalt"u8.ToArray();
+            options.DefaultSalt = [.. "TestSalt"u8];
         });
         return services;
     }

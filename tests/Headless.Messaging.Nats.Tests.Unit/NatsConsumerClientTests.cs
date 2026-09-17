@@ -625,8 +625,7 @@ public sealed class NatsConsumerClientTests : TestBase
             new NatsMessagingOptions
             {
                 Servers = "nats://localhost:4222",
-                CustomHeadersBuilder = (_, _, _) =>
-                    [new KeyValuePair<string, string>(Headless.Messaging.Headers.MessageId, string.Empty)],
+                CustomHeadersBuilder = (_, _, _) => [new KeyValuePair<string, string>(Headers.MessageId, string.Empty)],
             }
         );
 
@@ -1466,11 +1465,7 @@ public sealed class NatsConsumerClientTests : TestBase
 
     private static NatsHeaders _CreateHeaders()
     {
-        return new NatsHeaders
-        {
-            { Headless.Messaging.Headers.MessageId, "msg-1" },
-            { Headless.Messaging.Headers.MessageName, "TestEvent" },
-        };
+        return new NatsHeaders { { Headers.MessageId, "msg-1" }, { Headers.MessageName, "TestEvent" } };
     }
 
     private NatsConsumerClient _CreateClient(string groupName, byte groupConcurrent = 1)

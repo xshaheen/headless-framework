@@ -131,7 +131,8 @@ public sealed partial class TusAzureStore : ITusPipelineStore
                     {
                         if (enableSplitting)
                         {
-                            await stageAccumulatedAsync().ConfigureAwait(false);
+                            await stageAccumulatedAsync(accumulationBuffer, accumulatedCount).ConfigureAwait(false);
+                            accumulatedCount = 0;
                         }
                         else
                         {
@@ -140,7 +141,11 @@ public sealed partial class TusAzureStore : ITusPipelineStore
                             // check, and for a deferred length (null) that check is a no-op — so the cap is
                             // the only in-flight memory bound.
                             _AssertNotToMuchData(currentOffset, accumulatedCount, azureFile.Metadata.UploadLength);
-                            growAccumulationBuffer();
+                            accumulationBuffer = growAccumulationBuffer(
+                                accumulationBuffer,
+                                accumulatedCount,
+                                maxNoSplitBuffer
+                            );
                             capacity = Math.Min(accumulationBuffer.Length, maxNoSplitBuffer);
                         }
                     }
@@ -164,7 +169,7 @@ public sealed partial class TusAzureStore : ITusPipelineStore
             // Final partial block (stream end or disconnect).
             if (accumulatedCount > 0)
             {
-                await stageAccumulatedAsync().ConfigureAwait(false);
+                await stageAccumulatedAsync(accumulationBuffer, accumulatedCount).ConfigureAwait(false);
             }
 
             await pipeReader.CompleteAsync().ConfigureAwait(false);
@@ -225,43 +230,43 @@ public sealed partial class TusAzureStore : ITusPipelineStore
         return bytesWrittenThisRequest;
 
         // Stages the accumulated bytes as one block (must-complete: already received).
-        async Task stageAccumulatedAsync()
+        async Task stageAccumulatedAsync(byte[] buffer, int count)
         {
-            _AssertNotToMuchData(currentOffset, accumulatedCount, azureFile.Metadata.UploadLength);
+            _AssertNotToMuchData(currentOffset, count, azureFile.Metadata.UploadLength);
 
-            hasher?.AppendData(accumulationBuffer, 0, accumulatedCount);
+            // ReSharper disable once AccessToDisposedClosure
+            hasher?.AppendData(buffer, 0, count);
 
             var blockId = _GenerateBlockId(blockToken, nextBlockNumber++);
-            await using var chunkStream = new MemoryStream(accumulationBuffer, 0, accumulatedCount, writable: false);
+            await using var chunkStream = new MemoryStream(buffer, 0, count, writable: false);
             await blockBlobClient
                 .StageBlockAsync(blockId, chunkStream, cancellationToken: CancellationToken.None)
                 .ConfigureAwait(false);
 
             chunkBlockIds.Add(blockId);
-            bytesWrittenThisRequest += accumulatedCount;
-            currentOffset += accumulatedCount;
-            accumulatedCount = 0;
+            bytesWrittenThisRequest += count;
+            currentOffset += count;
         }
 
         // Doubles the owned buffer (no-split mode only), clamped to MaxNoSplitBufferSize so a single
         // PATCH body cannot exhaust memory — the only in-flight bound when the upload length is deferred
         // (null), where _AssertNotToMuchData is a no-op.
-        void growAccumulationBuffer()
+        static byte[] growAccumulationBuffer(byte[] buffer, int count, int maxBufferSize)
         {
-            if (accumulationBuffer.Length >= maxNoSplitBuffer)
+            if (buffer.Length >= maxBufferSize)
             {
                 FormattableString message =
-                    $"A single PATCH body exceeds the {maxNoSplitBuffer}-byte no-split buffer cap (MaxNoSplitBufferSize). Enable chunk splitting, raise MaxNoSplitBufferSize, or send the upload in smaller PATCH requests.";
+                    $"A single PATCH body exceeds the {maxBufferSize}-byte no-split buffer cap (MaxNoSplitBufferSize). Enable chunk splitting, raise MaxNoSplitBufferSize, or send the upload in smaller PATCH requests.";
 
                 throw new TusStoreException(message.ToString(CultureInfo.InvariantCulture));
             }
 
-            var newSize = (int)Math.Min((long)accumulationBuffer.Length * 2, maxNoSplitBuffer);
+            var newSize = (int)Math.Min((long)buffer.Length * 2, maxBufferSize);
             var larger = ArrayPool<byte>.Shared.Rent(newSize);
-            accumulationBuffer.AsSpan(0, accumulatedCount).CopyTo(larger);
+            buffer.AsSpan(0, count).CopyTo(larger);
             // clearArray: the discarded buffer held upload data that must not leak to other pool users.
-            ArrayPool<byte>.Shared.Return(accumulationBuffer, clearArray: true);
-            accumulationBuffer = larger;
+            ArrayPool<byte>.Shared.Return(buffer, clearArray: true);
+            return larger;
         }
     }
 

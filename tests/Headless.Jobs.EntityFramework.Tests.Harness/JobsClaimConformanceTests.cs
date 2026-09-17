@@ -820,7 +820,7 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
             }
 
             var claims = await persistence
-                .QueueCronJobOccurrencesAsync((executionTime, contexts.ToArray()), ct)
+                .QueueCronJobOccurrencesAsync((executionTime, [.. contexts]), ct)
                 .ToArrayAsync(ct);
 
             claims.Select(x => x.Id).Should().BeEquivalentTo(expectedIds);

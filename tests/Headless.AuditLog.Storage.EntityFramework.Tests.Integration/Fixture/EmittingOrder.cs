@@ -18,7 +18,7 @@ public sealed class EmittingOrder : IIntegrationEventEmitter
 
     public void AddIntegrationEvent(object integrationEvent)
     {
-        _messages.Add(EventContext.Capture<object>(integrationEvent));
+        _messages.Add(EventContext.Capture(integrationEvent));
     }
 
     public void ClearIntegrationEvents()
