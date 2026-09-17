@@ -9,6 +9,7 @@ using Headless.MultiTenancy;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -382,6 +383,83 @@ public sealed class HeadlessTenantCatalogResolutionBuilder
         Argument.IsNotNull(resolver);
         _services.AddSingleton<ITenantIdentifierSource>(new DelegateTenantIdentifierSource(resolver));
         return this;
+    }
+
+    /// <summary>Registers the built-in host tenant identifier source with one host template (R1).</summary>
+    /// <param name="template">
+    /// The host template to append to <see cref="HostTenantIdentifierSourceOptions.Templates"/> — for
+    /// example <c>{tenant}.example.com</c>, <c>{tenant}.*</c>, or a bare <c>{tenant}</c> for the
+    /// whole-host (custom-domain) form.
+    /// </param>
+    /// <returns>The same builder, to allow chaining.</returns>
+    /// <exception cref="ArgumentException"><paramref name="template"/> is <see langword="null"/> or whitespace.</exception>
+    /// <remarks>
+    /// Appends to the template list rather than replacing it: options contributions accumulate across
+    /// calls while the source descriptor deduplicates (KTD3), so
+    /// <c>AddHostSource("{tenant}.a.com").AddHostSource("{tenant}.b.com")</c> yields one source
+    /// matching both, first registration winning on overlap. Templates are validated at startup (R7).
+    /// </remarks>
+    public HeadlessTenantCatalogResolutionBuilder AddHostSource(string template)
+    {
+        Argument.IsNotNullOrWhiteSpace(template);
+
+        _AddHostSourceCore(options => options.Templates.Add(template));
+
+        return this;
+    }
+
+    /// <summary>Registers the built-in host tenant identifier source, configuring its options (R1).</summary>
+    /// <param name="configure">Callback to configure <see cref="HostTenantIdentifierSourceOptions"/>.</param>
+    /// <returns>The same builder, to allow chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// The callback runs as one additional <c>Configure</c> action per call; repeat registrations of
+    /// the source type keep the first descriptor's position (KTD3). Options are validated at
+    /// startup — an empty template list or an unparsable template fails the host (R7).
+    /// </remarks>
+    public HeadlessTenantCatalogResolutionBuilder AddHostSource(Action<HostTenantIdentifierSourceOptions> configure)
+    {
+        Argument.IsNotNull(configure);
+
+        _AddHostSourceCore(configure);
+
+        return this;
+    }
+
+    /// <summary>
+    /// Registers the built-in host tenant identifier source, binding its options from configuration (R1).
+    /// </summary>
+    /// <param name="configuration">
+    /// The configuration section holding <see cref="HostTenantIdentifierSourceOptions"/> — for example
+    /// <c>Tenant:Host</c> with a <c>Templates</c> array. The bind must yield at least one parseable
+    /// template, or host startup fails (R7).
+    /// </param>
+    /// <returns>The same builder, to allow chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="configuration"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// Binds as an additional options contribution; repeat registrations of the source type keep the
+    /// first descriptor's position (KTD3).
+    /// </remarks>
+    public HeadlessTenantCatalogResolutionBuilder AddHostSource(IConfiguration configuration)
+    {
+        Argument.IsNotNull(configuration);
+
+        _services
+            .AddOptions<HostTenantIdentifierSourceOptions, HostTenantIdentifierSourceOptionsValidator>()
+            .Bind(configuration);
+
+        _services.TryAddEnumerable(ServiceDescriptor.Singleton<ITenantIdentifierSource, HostTenantIdentifierSource>());
+
+        return this;
+    }
+
+    private void _AddHostSourceCore(Action<HostTenantIdentifierSourceOptions> configure)
+    {
+        _services
+            .AddOptions<HostTenantIdentifierSourceOptions, HostTenantIdentifierSourceOptionsValidator>()
+            .Configure(configure);
+
+        _services.TryAddEnumerable(ServiceDescriptor.Singleton<ITenantIdentifierSource, HostTenantIdentifierSource>());
     }
 }
 
