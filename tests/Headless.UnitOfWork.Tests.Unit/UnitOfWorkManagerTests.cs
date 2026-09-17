@@ -329,6 +329,88 @@ public sealed class UnitOfWorkManagerTests : TestBase
     }
 
     [Fact]
+    public async Task should_join_an_adopted_unit_as_a_child_when_beginning_on_the_same_resource()
+    {
+        var (manager, _) = Create();
+        var (foreignManager, _) = Create();
+        var resource = new FakeUnitOfWorkResource();
+        var foreign = await foreignManager.BeginAsync(
+            _ => ValueTask.FromResult<IUnitOfWorkResource>(resource),
+            options: null,
+            AbortToken
+        );
+
+        using (manager.Adopt(foreign))
+        {
+            var child = await manager.BeginAsync(
+                _ => ValueTask.FromResult<IUnitOfWorkResource>(resource),
+                options: null,
+                AbortToken
+            );
+
+            child.Should().NotBeSameAs(foreign, "a same-resource begin under an adopted unit opens a child view");
+            child.Resource.Should().BeSameAs(resource);
+            manager.Current.Should().BeSameAs(child);
+
+            var enlisted = manager.Enlist(resource);
+            enlisted.Should().NotBeSameAs(foreign);
+            await enlisted.CompleteAsync(AbortToken);
+
+            await child.CompleteAsync(AbortToken);
+            manager.Current.Should().BeSameAs(foreign, "completing the child restores the adopted unit");
+        }
+
+        manager.Current.Should().BeNull();
+        foreign.State.Should().Be(UnitOfWorkState.Active, "adoption never completes or fails the foreign unit");
+        await foreign.CompleteAsync(AbortToken);
+        resource.CommitCalls.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_not_claim_an_adopted_unit_as_leaked_when_the_adopting_manager_is_disposed()
+    {
+        var (manager, logger) = Create();
+        var (foreignManager, _) = Create();
+        var foreign = await foreignManager.BeginAsync(cancellationToken: AbortToken);
+
+        _ = manager.Adopt(foreign);
+        await manager.DisposeAsync();
+
+        foreign.State.Should().Be(UnitOfWorkState.Active, "the foreign scope owns the unit's lifecycle");
+        logger.Entries.Should().NotContain(e => e.Message.Contains("still active when its service scope was disposed"));
+        await foreign.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task should_throw_the_concurrent_begin_message_when_adopting_while_a_begin_is_in_flight()
+    {
+        var (manager, _) = Create();
+        var (foreignManager, _) = Create();
+        var foreign = await foreignManager.BeginAsync(cancellationToken: AbortToken);
+        var begun = new TaskCompletionSource<IUnitOfWorkResource>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var inFlight = manager.BeginAsync(
+            async ct =>
+            {
+                await Task.Yield();
+
+                return await begun.Task;
+            },
+            options: null,
+            AbortToken
+        );
+
+        var act = () => manager.Adopt(foreign);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*Await the first BeginAsync before beginning again*");
+
+        begun.SetResult(new FakeUnitOfWorkResource());
+        await (await inFlight).DisposeAsync();
+        await foreign.DisposeAsync();
+    }
+
+    [Fact]
     public async Task should_throw_when_adopting_null()
     {
         var (manager, _) = Create();

@@ -15,6 +15,9 @@ internal sealed class UnitOfWorkHandle(Internal.UnitOfWork unit, UnitOfWorkManag
 {
     private int _disposed;
 
+    /// <summary>The engine behind this handle; lets another scope's manager adopt it as a joinable frame.</summary>
+    internal Internal.UnitOfWork Engine => unit;
+
     public UnitOfWorkState State => unit.State;
 
     public UnitOfWorkFailure? Failure => unit.Failure;

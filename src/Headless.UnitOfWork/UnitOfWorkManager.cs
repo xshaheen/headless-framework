@@ -208,14 +208,29 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
                 return NoOpAdoption.Instance;
             }
 
-            if (Current is not null)
+            if (_beginning || Current is not null)
             {
                 throw new InvalidOperationException(_ConcurrentBeginMessage);
             }
 
+            // An adopted unit becomes a joinable frame: a same-resource begin or enlist in this scope opens a child
+            // view over the foreign engine instead of a second root, exactly as it would in the owning scope. The
+            // frame is marked so scope disposal never claims a unit another scope owns.
+            var engine = unitOfWork switch
+            {
+                UnitOfWorkHandle handle => handle.Engine,
+                ChildUnitOfWork child => child.Engine,
+                _ => null,
+            };
+
+            if (engine is not null)
+            {
+                _frames.Add(new Frame(engine, unitOfWork) { Adopted = true });
+            }
+
             Current = unitOfWork;
 
-            return new Adoption(this, unitOfWork);
+            return new Adoption(this, unitOfWork, engine);
         }
     }
 
@@ -493,9 +508,15 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
 
             _disposed = true;
 
-            // Unwind innermost-first: every still-active unit fails with ScopeDisposed.
+            // Unwind innermost-first: every still-active unit fails with ScopeDisposed. An adopted frame belongs to
+            // another scope's manager, which owns its lifecycle; it is dropped from this slot without a claim.
             for (var i = _frames.Count - 1; i >= 0; i--)
             {
+                if (_frames[i].Adopted)
+                {
+                    continue;
+                }
+
                 var unit = _frames[i].Engine;
                 var failure = new UnitOfWorkFailure(UnitOfWorkFailureReason.ScopeDisposed);
 
@@ -652,13 +673,16 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
         );
     }
 
-    private sealed class Frame(Internal.UnitOfWork engine, UnitOfWorkHandle handle)
+    private sealed class Frame(Internal.UnitOfWork engine, IUnitOfWork handle)
     {
         public Internal.UnitOfWork Engine { get; } = engine;
 
-        public UnitOfWorkHandle Handle { get; } = handle;
+        public IUnitOfWork Handle { get; } = handle;
 
         public int ActiveChildren { get; set; }
+
+        /// <summary>True when the frame mirrors a unit owned by another scope's manager (see <see cref="Adopt" />).</summary>
+        public bool Adopted { get; init; }
     }
 
     private sealed class NoOpAdoption : IDisposable
@@ -668,15 +692,21 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
         public void Dispose() { }
     }
 
-    private sealed class Adoption(UnitOfWorkManager manager, IUnitOfWork adopted) : IDisposable
+    private sealed class Adoption(UnitOfWorkManager manager, IUnitOfWork adopted, Internal.UnitOfWork? engine)
+        : IDisposable
     {
         public void Dispose()
         {
             lock (manager._gate)
             {
-                if (ReferenceEquals(manager.Current, adopted))
+                if (engine is not null)
                 {
-                    manager.Current = null;
+                    manager._frames.RemoveAll(f => f.Adopted && ReferenceEquals(f.Engine, engine));
+                }
+
+                if (ReferenceEquals(manager.Current, adopted) || manager._frames.Count == 0)
+                {
+                    manager.Current = manager._frames.Count > 0 ? manager._frames[^1].Handle : null;
                 }
             }
         }

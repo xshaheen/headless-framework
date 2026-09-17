@@ -24,6 +24,9 @@ internal sealed class ChildUnitOfWork(Internal.UnitOfWork root, UnitOfWorkManage
     private List<Internal.UnitOfWork.FailedRegistration> _failed = [];
     private int _disposed;
 
+    /// <summary>The root engine this view registers on; lets another scope's manager adopt it as a joinable frame.</summary>
+    internal Internal.UnitOfWork Engine => root;
+
     // Views onto the root engine.
     public UnitOfWorkState State => root.State;
 
