@@ -343,8 +343,9 @@ internal sealed partial class TenantCatalogResolutionMiddleware(
         EventName = "HEADLESS_TENANT_CATALOG_ROUTE_SOURCE_MISORDERED",
         Level = LogLevel.Error,
         Message = "A route tenant identifier source is registered, but "
-            + "UseHeadlessTenantCatalogResolution() ran before UseRouting(), so route resolution found "
-            + "nothing and every request ran as host context. Place UseHeadlessTenantCatalogResolution() "
+            + "UseHeadlessTenantCatalogResolution() ran before UseRouting(), so the route source never "
+            + "found a tenant: requests it should have scoped ran as host context unless a later source "
+            + "resolved them. Place UseHeadlessTenantCatalogResolution() "
             + "AFTER UseRouting() and BEFORE UseAuthentication(). This error is emitted once per "
             + "process and never logs the request path or route values."
     )]
