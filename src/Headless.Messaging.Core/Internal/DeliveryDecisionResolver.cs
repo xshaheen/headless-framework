@@ -52,7 +52,8 @@ internal static class DeliveryDecisionResolver
         DeliveryCoordination coordination,
         DateTimeOffset now,
         DateTimeOffset? scheduledAt = null,
-        bool storageSupported = true
+        bool storageSupported = true,
+        string? messageName = null
     ) =>
         Resolve(
             lane,
@@ -63,10 +64,12 @@ internal static class DeliveryDecisionResolver
             now,
             coordination,
             scheduledAt,
-            storageSupported
+            storageSupported,
+            messageName
         );
 
     // Manually constructed middleware contexts need delivery semantics without live transaction resources.
+    // messageName is the declared message type's name; it only sharpens the Required-with-no-unit message.
     internal static DeliveryDecision Resolve(
         MessageLane lane,
         DeliveryMode requestedMode,
@@ -76,7 +79,8 @@ internal static class DeliveryDecisionResolver
         DateTimeOffset now,
         DeliveryCoordination coordination = default,
         DateTimeOffset? scheduledAt = null,
-        bool storageSupported = true
+        bool storageSupported = true,
+        string? messageName = null
     )
     {
         // Explicit range checks rather than Enum.IsDefined: these run on every publish, and IsDefined
@@ -154,14 +158,16 @@ internal static class DeliveryDecisionResolver
             else if (effectiveStatus is DeliveryCoordinationStatus.Incompatible)
             {
                 throw new InvalidOperationException(
-                    $"The active unit of work's transaction belongs to another database ({coordination.Mismatch}), "
-                        + "so publishing cannot enlist. Use the same database, or TransactionEnlistment.Never for this call."
+                    $"The active unit of work's transaction belongs to another database or has already completed ({coordination.Mismatch}), "
+                        + "so publishing cannot enlist. Use the same database with an open transaction, or TransactionEnlistment.Never for this call."
                 );
             }
             else if (effectiveStatus is DeliveryCoordinationStatus.None && enlistment is TransactionEnlistment.Required)
             {
+                var subject = messageName is null ? "Publishing" : $"Publishing '{messageName}'";
+
                 throw new InvalidOperationException(
-                    "Publishing requires an active unit of work (TransactionEnlistment.Required) but none is active in this scope. "
+                    $"{subject} requires an active unit of work (TransactionEnlistment.Required) but none is active in this scope. "
                         + "Begin one with IUnitOfWorkManager.BeginAsync before publishing, or register the message with TransactionEnlistment.WhenAvailable."
                 );
             }

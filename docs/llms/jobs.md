@@ -927,7 +927,7 @@ builder.Services.AddHeadlessJobs(options =>
 
 ### Side Effects
 
-- Registers `ITimeJobManager<TimeJobEntity>` and `ICronJobManager<CronJobEntity>` as singletons.
+- Registers `ITimeJobManager<TimeJobEntity>`, `ICronJobManager<CronJobEntity>`, and `IJobScheduler` as **scoped** facades over stateless singleton cores; each call reads the scope's `IUnitOfWorkManager.Current` (see [Unit of Work](unit-of-work.md)). A singleton or hosted service that needs one creates a scope.
 - Registers one non-generic `IJobScheduler` facade bound to the same configured time/cron entity pair.
 - Registers background hosted services: `JobsInitializationHostedService` and `JobsPostCommitSignalService` (always — the latter drains coordinated post-commit signals and is a harmless no-op on enqueue-only hosts), `JobsSchedulerBackgroundService`, `JobsFallbackBackgroundService`, and `JobsExecutionTaskHandler` (unless `DisableBackgroundServices()` is called).
 - Registers `JobsTaskScheduler` (shared-thread-pool logical workers bounded by active async `MaxConcurrency`; dedicated threads only for `LongRunning`).

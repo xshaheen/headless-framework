@@ -87,7 +87,8 @@ internal sealed class MessagePublisher(
             coordination,
             timeProvider.GetUtcNow(),
             scheduledAt: options?.ScheduledAt,
-            storageSupported: capabilities.Supports(lane, MessagingProviderRole.Storage)
+            storageSupported: capabilities.Supports(lane, MessagingProviderRole.Storage),
+            messageName: declaredMessageType.Name
         );
 
         if (decision.Path is DeliveryPath.Direct)

@@ -93,6 +93,14 @@ internal sealed partial class PostgreSqlDataStorage(
             return DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.StorageProvider);
         }
 
+        // Npgsql keeps Connection populated after commit, so a committed-but-undisposed transaction passes the
+        // check above; the resource knows its transaction finished, and a dead transaction must not be handed to
+        // the outbox writer as joinable.
+        if (relational.IsTransactionCompleted)
+        {
+            return DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.TransactionCompleted);
+        }
+
         using var configuredConnection = postgreSqlOptions.Value.CreateConnection();
         if (
             !string.Equals(configuredConnection.DataSource, connection.DataSource, StringComparison.OrdinalIgnoreCase)

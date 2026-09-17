@@ -81,10 +81,7 @@ public sealed class UnitOfWorkManagerTests : TestBase
                     {
                         inFlight.Set();
 
-                        await Task.Run(
-                            () => gate.Wait(TimeSpan.FromSeconds(10)),
-                            TestContext.Current.CancellationToken
-                        );
+                        await Task.Run(() => gate.Wait(TimeSpan.FromSeconds(10)), AbortToken);
 
                         return new FakeUnitOfWorkResource();
                     },
@@ -94,7 +91,7 @@ public sealed class UnitOfWorkManagerTests : TestBase
 
                 return await begin;
             },
-            TestContext.Current.CancellationToken
+            AbortToken
         );
 
         inFlight.Wait(TimeSpan.FromSeconds(10));
@@ -310,7 +307,7 @@ public sealed class UnitOfWorkManagerTests : TestBase
     }
 
     [Fact]
-    public async Task should_throw_the_concurrent_begin_message_when_adopting_over_a_different_active_unit()
+    public async Task should_throw_the_bound_unit_message_when_adopting_over_a_different_active_unit()
     {
         var (manager, _) = Create();
         var (foreignManager, _) = Create();
@@ -321,11 +318,139 @@ public sealed class UnitOfWorkManagerTests : TestBase
 
         act.Should()
             .Throw<InvalidOperationException>()
-            .WithMessage(
-                "*Await the first BeginAsync before beginning again, or run parallel work in separate service scopes.*"
-            );
+            .WithMessage("*belongs to another scope, and this scope already has a different active unit of work*");
 
         await foreign.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task should_adopt_reentrantly_when_the_slot_holds_a_child_view_over_the_offered_root()
+    {
+        // BeginAsync(db) binds the root handle to the context; a nested resource-less BeginAsync() makes Current
+        // the child view. A save then offers the bound root handle for adoption — the slot already coordinates
+        // on that engine, so it must be a no-op, not the "different active unit" rejection.
+        var (manager, _) = Create();
+        var resource = new FakeUnitOfWorkResource();
+        await using var root = await manager.BeginAsync(
+            _ => ValueTask.FromResult<IUnitOfWorkResource>(resource),
+            options: null,
+            AbortToken
+        );
+        await using var child = await manager.BeginAsync(cancellationToken: AbortToken);
+        manager.Current.Should().BeSameAs(child);
+
+        using (manager.Adopt(root))
+        {
+            manager.Current.Should().BeSameAs(child, "a re-entrant adoption swaps nothing");
+        }
+
+        manager.Current.Should().BeSameAs(child);
+        await child.CompleteAsync(AbortToken);
+
+        // The mirror image: the bound handle is a (completed) child view while Current is back on the root.
+        using (manager.Adopt(child))
+        {
+            manager.Current.Should().BeSameAs(root);
+        }
+
+        await root.CompleteAsync(AbortToken);
+        resource.CommitCalls.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_roll_back_the_rejected_resource_when_a_second_resource_begins_under_a_resource_bearing_unit()
+    {
+        var (manager, _) = Create();
+        var first = new FakeUnitOfWorkResource();
+        var second = new FakeUnitOfWorkResource();
+        await using var unitOfWork = await manager.BeginAsync(
+            _ => ValueTask.FromResult<IUnitOfWorkResource>(first),
+            options: null,
+            AbortToken
+        );
+
+        var act = () =>
+            manager
+                .BeginAsync(_ => ValueTask.FromResult<IUnitOfWorkResource>(second), options: null, AbortToken)
+                .AsTask();
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*already active on another resource*");
+        second.RollbackCalls.Should().Be(1, "the factory began a transaction the manager refused to keep");
+        first.RollbackCalls.Should().Be(0);
+        manager.Current.Should().BeSameAs(unitOfWork, "the rejection leaves the active unit untouched");
+    }
+
+    [Fact]
+    public async Task should_log_a_rollback_fault_from_the_rejected_second_resource_and_still_throw_the_rejection()
+    {
+        var (manager, logger) = Create();
+        var second = new FakeUnitOfWorkResource { RollbackFault = new InvalidOperationException("rollback down") };
+        await using var unitOfWork = await manager.BeginAsync(
+            _ => ValueTask.FromResult<IUnitOfWorkResource>(new FakeUnitOfWorkResource()),
+            options: null,
+            AbortToken
+        );
+
+        var act = () =>
+            manager
+                .BeginAsync(_ => ValueTask.FromResult<IUnitOfWorkResource>(second), options: null, AbortToken)
+                .AsTask();
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*already active on another resource*");
+        logger.Entries.Should().Contain(e => e.Message.Contains("rejected second-resource BeginAsync faulted"));
+    }
+
+    [Fact]
+    public async Task should_not_throw_from_an_implicit_dispose_when_the_rollback_faults_and_still_drain_on_failed()
+    {
+        var (manager, logger) = Create();
+        var resource = new FakeUnitOfWorkResource { RollbackFault = new InvalidOperationException("rollback down") };
+        var unitOfWork = await manager.BeginAsync(
+            _ => ValueTask.FromResult<IUnitOfWorkResource>(resource),
+            options: null,
+            AbortToken
+        );
+        UnitOfWorkFailure? observed = null;
+        unitOfWork.OnFailed(failure =>
+        {
+            observed = failure;
+
+            return ValueTask.CompletedTask;
+        });
+
+        var act = async () => await unitOfWork.DisposeAsync();
+
+        await act.Should().NotThrowAsync("an await using must not replace the exception the caller is unwinding");
+        resource.RollbackCalls.Should().Be(1);
+        observed.Should().NotBeNull("a rollback fault must not skip the OnFailed drain");
+        observed!.Reason.Should().Be(UnitOfWorkFailureReason.Abandoned);
+        logger.Entries.Should().Contain(e => e.Message.Contains("Rolling back an abandoned unit of work faulted"));
+    }
+
+    [Fact]
+    public async Task should_surface_the_rollback_fault_from_an_explicit_rollback_and_still_drain_on_failed()
+    {
+        var (manager, _) = Create();
+        var resource = new FakeUnitOfWorkResource { RollbackFault = new InvalidOperationException("rollback down") };
+        await using var unitOfWork = await manager.BeginAsync(
+            _ => ValueTask.FromResult<IUnitOfWorkResource>(resource),
+            options: null,
+            AbortToken
+        );
+        UnitOfWorkFailure? observed = null;
+        unitOfWork.OnFailed(failure =>
+        {
+            observed = failure;
+
+            return ValueTask.CompletedTask;
+        });
+
+        var act = async () => await unitOfWork.RollbackAsync();
+
+        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("rollback down");
+        observed.Should().NotBeNull("the explicit verb surfaces the fault but the drain still runs first");
+        observed!.Reason.Should().Be(UnitOfWorkFailureReason.RolledBack);
+        unitOfWork.State.Should().Be(UnitOfWorkState.Failed);
     }
 
     [Fact]

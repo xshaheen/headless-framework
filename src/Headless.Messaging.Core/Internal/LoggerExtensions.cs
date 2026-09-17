@@ -744,4 +744,12 @@ internal static partial class LoggerExtensions
         Message = "Messaging processor '{ProcessorType}' failed to stop cleanly. Continuing to drain remaining processors."
     )]
     public static partial void ProcessorStopFailed(this ILogger logger, Exception exception, string processorType);
+
+    [LoggerMessage(
+        EventId = 98,
+        EventName = "InboxPostCommitDrainFaulted",
+        Level = LogLevel.Error,
+        Message = "The transactional inbox attempt for message {MessageId} committed durably but draining its unit of work faulted; the attempt is reported as succeeded and the relay recovers any enlisted rows."
+    )]
+    public static partial void InboxPostCommitDrainFaulted(this ILogger logger, Exception exception, Guid messageId);
 }

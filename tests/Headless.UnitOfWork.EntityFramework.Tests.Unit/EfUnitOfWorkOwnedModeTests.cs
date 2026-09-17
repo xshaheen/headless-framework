@@ -149,4 +149,29 @@ public sealed class EfUnitOfWorkOwnedModeTests : TestBase
             .NotBeNull("the root's transaction stays open while the root unit is active");
         child.Resource.Should().BeSameAs(root.Resource, "the child joined the root's resource — no second transaction");
     }
+
+    [Fact]
+    public async Task should_keep_the_root_bound_to_the_context_across_a_nested_child()
+    {
+        // The save pipeline resolves the unit through the context binding; a joined begin must not rebind the
+        // context to its child view, or the next save after the child completes would adopt a stale handle.
+        await using var host = await EfUnitOfWorkHost.CreateAsync();
+        await using var session = host.CreateSession();
+
+        await using var root = await session.Manager.BeginAsync(session.Db, cancellationToken: AbortToken);
+        var child = await session.Manager.BeginAsync(session.Db, cancellationToken: AbortToken);
+
+        DbContextUnitOfWork.Find(session.Db).Should().BeSameAs(root, "a joined begin never rebinds the context");
+
+        using (session.Manager.Adopt(root))
+        {
+            session.Manager.Current.Should().BeSameAs(child, "adopting the bound root under its child is re-entrant");
+        }
+
+        await child.CompleteAsync(AbortToken);
+        await child.DisposeAsync();
+
+        DbContextUnitOfWork.Find(session.Db).Should().BeSameAs(root);
+        session.Manager.Current.Should().BeSameAs(root);
+    }
 }

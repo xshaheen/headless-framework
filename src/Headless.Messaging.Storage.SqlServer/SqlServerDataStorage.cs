@@ -91,6 +91,13 @@ internal sealed partial class SqlServerDataStorage(
             return DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.StorageProvider);
         }
 
+        // SqlClient clears Connection once the transaction finishes, so the check above already rejects a completed
+        // transaction; the resource's own view is consulted too so both providers answer the same way.
+        if (relational.IsTransactionCompleted)
+        {
+            return DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.TransactionCompleted);
+        }
+
         using var configuredConnection = new SqlConnection(options.Value.ConnectionString);
         if (
             !string.Equals(configuredConnection.DataSource, connection.DataSource, StringComparison.OrdinalIgnoreCase)

@@ -8,6 +8,7 @@ using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Testing.Tests;
+using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -206,6 +207,116 @@ public abstract class TransactionalInboxRetryConformanceTests : TestBase
         )
             .Should()
             .Be(1);
+    }
+
+    [Fact]
+    public async Task should_report_success_when_the_drain_faults_after_a_durable_commit()
+    {
+        // A post-commit drain fault (an OnCompleted callback throwing once the unit is Completed) must not turn a
+        // durably committed attempt into a failed one: the retry machinery would re-invoke the consumer and then
+        // record the message as failed against a row that already succeeded.
+        var fault = new FaultState(FailurePoint.BeforeEntry);
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddDbContext<InboxRetryDbContext>(options =>
+        {
+            ConfigureContext(options);
+            options.AddInterceptors(new TransactionFaultInterceptor(fault));
+        });
+        services.AddHeadlessMessaging(setup =>
+        {
+            setup.UseInMemory();
+            ConfigureStorage(setup);
+            setup.Options.CommandTimeout = TimeSpan.FromSeconds(1);
+        });
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        var storage = provider.GetRequiredService<IDataStorage>();
+        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await using (var setupScope = provider.CreateAsyncScope())
+        {
+            var db = setupScope.ServiceProvider.GetRequiredService<InboxRetryDbContext>();
+            await db.Database.ExecuteSqlRawAsync(CreateEffectsTableSql, AbortToken);
+        }
+
+        var id = Guid.NewGuid();
+        var origin = new Message(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [Headers.MessageId] = id.ToString(),
+                [Headers.MessageName] = "tests.inbox-drain",
+                [Headers.Group] = "tests.inbox-drain",
+            },
+            id
+        );
+        ValueTask<InboxAdmissionResult> admit() =>
+            storage.AdmitReceivedMessageAsync(
+                "tests.inbox-drain",
+                "tests.inbox-drain",
+                "tests.inbox-drain.consumer",
+                "v1",
+                new MediumMessage
+                {
+                    StorageId = Guid.Empty,
+                    Origin = origin,
+                    Content = string.Empty,
+                    Lane = MessageLane.Bus,
+                },
+                cancellationToken: AbortToken
+            );
+        var admission = await admit();
+        admission.Disposition.Should().Be(InboxAdmissionDisposition.Winner);
+        var message = admission.Message;
+        var originalInlineAttempts = message.InlineAttempts++;
+        (
+            await storage.LeaseReceiveAndReserveAttemptAsync(
+                message,
+                TimeSpan.FromMinutes(1),
+                originalInlineAttempts,
+                AbortToken
+            )
+        )
+            .Should()
+            .BeTrue();
+
+        var handlerEntries = 0;
+        var drainAttempts = 0;
+        Exception? error;
+        await using (var attemptScope = provider.CreateAsyncScope())
+        {
+            var db = attemptScope.ServiceProvider.GetRequiredService<InboxRetryDbContext>();
+            var unitOfWorkManager = attemptScope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+            error = await Record.ExceptionAsync(() =>
+                attemptScope
+                    .ServiceProvider.GetRequiredService<IInboxTransactionRunner>()
+                    .ExecuteAsync(
+                        message,
+                        async ct =>
+                        {
+                            handlerEntries++;
+                            unitOfWorkManager
+                                .Current.Should()
+                                .NotBeNull("the runner enlists its transaction for the handler's duration");
+                            unitOfWorkManager.Current!.OnCompleted(() =>
+                            {
+                                drainAttempts++;
+                                throw new InvalidOperationException("drain down");
+                            });
+                            await db.Effects.AddAsync(new InboxRetryEffect { Id = id }, ct);
+                        },
+                        AbortToken
+                    )
+            );
+        }
+
+        error.Should().BeNull("the row is durable; the drain fault is logged, never reported as an attempt failure");
+        handlerEntries.Should().Be(1);
+        drainAttempts.Should().Be(1, "the drain ran exactly once — no second CompleteAsync after the fault");
+        await using (var verificationScope = provider.CreateAsyncScope())
+        {
+            var db = verificationScope.ServiceProvider.GetRequiredService<InboxRetryDbContext>();
+            (await db.Effects.AnyAsync(effect => effect.Id == id, AbortToken)).Should().BeTrue();
+        }
+        (await admit()).Disposition.Should().Be(InboxAdmissionDisposition.SucceededDuplicate);
     }
 
     public enum FailurePoint

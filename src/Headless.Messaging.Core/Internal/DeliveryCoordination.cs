@@ -20,6 +20,9 @@ internal enum DeliveryCoordinationMismatch
     MissingRelationalCapability = 1,
     StorageProvider = 2,
     Database = 3,
+
+    /// <summary>The relational resource's transaction has already committed or rolled back, so nothing can join it.</summary>
+    TransactionCompleted = 4,
 }
 
 internal enum InboxCommitProbe

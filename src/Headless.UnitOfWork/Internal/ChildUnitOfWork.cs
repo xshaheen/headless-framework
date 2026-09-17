@@ -112,8 +112,8 @@ internal sealed class ChildUnitOfWork(Internal.UnitOfWork root, UnitOfWorkManage
         }
 
         // A child rollback aborts the root (never a silent poison): the root's registrations fail with
-        // ChildAbandoned and the child's own registrations drop.
-        return manager.AbandonChildAsync(root, this);
+        // ChildAbandoned and the child's own registrations drop. The explicit verb surfaces a rollback fault.
+        return manager.AbandonChildAsync(root, this, propagateFaults: true);
     }
 
     public void Dispose()
@@ -135,7 +135,8 @@ internal sealed class ChildUnitOfWork(Internal.UnitOfWork root, UnitOfWorkManage
             return;
         }
 
-        await manager.AbandonChildAsync(root, this).ConfigureAwait(false);
+        // An implicit dispose never throws: it usually runs while the caller unwinds its own exception.
+        await manager.AbandonChildAsync(root, this, propagateFaults: false).ConfigureAwait(false);
     }
 
     /// <summary>Drops exactly this child's registrations from the root engine (an abandon never transfers).</summary>

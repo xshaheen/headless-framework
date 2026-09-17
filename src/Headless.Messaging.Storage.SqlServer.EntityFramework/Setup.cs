@@ -13,6 +13,7 @@ using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
@@ -78,7 +79,10 @@ public static class SetupSqlServerEntityFrameworkMessaging
                         serviceProvider.GetRequiredService<TContext>(),
                         serviceProvider.GetRequiredService<IUnitOfWorkManager>(),
                         serviceProvider.GetRequiredService<IDeliveryCoordinationResolver>(),
-                        serviceProvider.GetRequiredService<SqlServerDataStorage>()
+                        serviceProvider.GetRequiredService<SqlServerDataStorage>(),
+                        serviceProvider
+                            .GetRequiredService<ILoggerFactory>()
+                            .CreateLogger<SqlServerInboxTransactionRunner<TContext>>()
                     )
                 );
             }
@@ -118,7 +122,8 @@ public static class SetupSqlServerEntityFrameworkMessaging
         TContext context,
         IUnitOfWorkManager unitOfWorkManager,
         IDeliveryCoordinationResolver coordinationResolver,
-        SqlServerDataStorage storage
+        SqlServerDataStorage storage,
+        ILogger logger
     ) : IInboxTransactionRunner
         where TContext : DbContext
     {
@@ -173,8 +178,6 @@ public static class SetupSqlServerEntityFrameworkMessaging
                             try
                             {
                                 await transaction.CommitAsync(ct).ConfigureAwait(false);
-                                await unitOfWork.CompleteAsync(ct).ConfigureAwait(false);
-                                return null;
                             }
                             catch (Exception commitException)
                             {
@@ -184,7 +187,7 @@ public static class SetupSqlServerEntityFrameworkMessaging
                                         .ConfigureAwait(false) is InboxCommitProbe.Committed
                                 )
                                 {
-                                    await unitOfWork.CompleteAsync(CancellationToken.None).ConfigureAwait(false);
+                                    await _CompleteAfterDurableCommitAsync(unitOfWork, message).ConfigureAwait(false);
                                     return null;
                                 }
 
@@ -201,7 +204,8 @@ public static class SetupSqlServerEntityFrameworkMessaging
                                             .ConfigureAwait(false) is InboxCommitProbe.Committed
                                     )
                                     {
-                                        await unitOfWork.CompleteAsync(CancellationToken.None).ConfigureAwait(false);
+                                        await _CompleteAfterDurableCommitAsync(unitOfWork, message)
+                                            .ConfigureAwait(false);
                                         return null;
                                     }
 
@@ -218,6 +222,11 @@ public static class SetupSqlServerEntityFrameworkMessaging
                                     new UncommittedInboxCommitException(message.StorageId, commitException)
                                 );
                             }
+
+                            // Outside the commit's catch: a drain fault here is not a commit fault and must not
+                            // be probed and "completed" a second time.
+                            await _CompleteAfterDurableCommitAsync(unitOfWork, message).ConfigureAwait(false);
+                            return null;
                         }
                         catch (Exception exception) when (handlerEntered)
                         {
@@ -230,6 +239,22 @@ public static class SetupSqlServerEntityFrameworkMessaging
                 )
                 .ConfigureAwait(false);
             attemptError?.Throw();
+        }
+
+        // The row is durable once the commit (or its probe) says so; the unit's drain only accelerates the
+        // dispatch of the enlisted callbacks. A drain fault must not turn a committed attempt into a retry that
+        // re-invokes the consumer, so it is logged and the attempt reports success — the same policy as the
+        // unit-of-work runners; the relay recovers any enlisted rows.
+        private async Task _CompleteAfterDurableCommitAsync(IUnitOfWork unitOfWork, MediumMessage message)
+        {
+            try
+            {
+                await unitOfWork.CompleteAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (unitOfWork.State == UnitOfWorkState.Completed)
+            {
+                logger.InboxPostCommitDrainFaulted(ex, message.StorageId);
+            }
         }
     }
 

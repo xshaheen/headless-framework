@@ -31,6 +31,9 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
     private const string _NestedAbandonedMessage =
         "A nested unit of work was disposed without completing, so the root cannot complete; the transaction is rolled back.";
 
+    private const string _AdoptOverActiveUnitMessage =
+        "The unit of work bound to this DbContext belongs to another scope, and this scope already has a different active unit of work. Save the context inside the scope that began its unit of work, or complete this scope's unit first.";
+
     private readonly Lock _gate = new();
     private readonly List<Frame> _frames = []; // bottom .. top; the top frame is the innermost unit.
     private bool _beginning;
@@ -116,39 +119,25 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
             throw;
         }
 
+        IUnitOfWork? placed;
+
         lock (_gate)
         {
             _beginning = false;
-
-            if (_frames.Count > 0)
-            {
-                var frame = _frames[^1];
-                var activeResource = frame.Engine.Resource;
-
-                if (activeResource == resource)
-                {
-                    // Same resource: a child view over the root engine. The factory returned the live
-                    // resource, so no second transaction was begun.
-                    return _OpenChild(frame);
-                }
-
-                if (activeResource is not null)
-                {
-                    throw new InvalidOperationException(_AnotherResourceMessage);
-                }
-
-                // A resource-bearing begin under a resource-less root is an independent nested unit with its
-                // own commit and drain; registrations are not transferred.
-            }
-
-            var unit = new Internal.UnitOfWork(resource, Logger);
-            var handle = new UnitOfWorkHandle(unit, this);
-
-            _frames.Add(new Frame(unit, handle));
-            Current = handle;
-
-            return handle;
+            placed = _TryPlace(resource);
         }
+
+        if (placed is not null)
+        {
+            return placed;
+        }
+
+        // Rejected: the factory already began a transaction on the second resource (and may have opened its
+        // connection). Roll it back before throwing, or it would hold its locks and its pooled connection until
+        // the resource's owner is disposed — while the message invites the caller to retry in another scope.
+        await _RollBackRejectedResourceAsync(resource).ConfigureAwait(false);
+
+        throw new InvalidOperationException(_AnotherResourceMessage);
     }
 
     /// <inheritdoc />
@@ -165,33 +154,63 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
                 throw new InvalidOperationException(_ConcurrentBeginMessage);
             }
 
-            if (_frames.Count > 0)
+            // An enlisted resource is observed (caller-owned), so a rejection has nothing to roll back.
+            return _TryPlace(resource) ?? throw new InvalidOperationException(_AnotherResourceMessage);
+        }
+    }
+
+    /// <summary>
+    /// Places a resource-bearing unit in the slot: a child view when the top frame already holds the same resource,
+    /// an independent nested unit under a resource-less root, or a new root. Returns <see langword="null" /> when the
+    /// top frame holds a <i>different</i> resource (the caller rejects). Callers hold <see cref="_gate" />.
+    /// </summary>
+    private IUnitOfWork? _TryPlace(IUnitOfWorkResource resource)
+    {
+        if (_frames.Count > 0)
+        {
+            var frame = _frames[^1];
+            var activeResource = frame.Engine.Resource;
+
+            if (activeResource == resource)
             {
-                var frame = _frames[^1];
-                var activeResource = frame.Engine.Resource;
-
-                if (activeResource == resource)
-                {
-                    var child = _OpenChild(frame);
-
-                    return child;
-                }
-
-                if (activeResource is not null)
-                {
-                    throw new InvalidOperationException(_AnotherResourceMessage);
-                }
-
-                // A resource-bearing enlist under a resource-less root is an independent nested unit.
+                // Same resource: a child view over the root engine. The factory returned the live resource, so
+                // no second transaction was begun.
+                return _OpenChild(frame);
             }
 
-            var unit = new Internal.UnitOfWork(resource, Logger);
-            var handle = new UnitOfWorkHandle(unit, this);
+            if (activeResource is not null)
+            {
+                return null;
+            }
 
-            _frames.Add(new Frame(unit, handle));
-            Current = handle;
+            // A resource-bearing begin under a resource-less root is an independent nested unit with its own
+            // commit and drain; registrations are not transferred.
+        }
 
-            return handle;
+        var unit = new Internal.UnitOfWork(resource, Logger);
+        var handle = new UnitOfWorkHandle(unit, this);
+
+        _frames.Add(new Frame(unit, handle));
+        Current = handle;
+
+        return handle;
+    }
+
+    private async ValueTask _RollBackRejectedResourceAsync(IUnitOfWorkResource resource)
+    {
+        if (!resource.IsOwned)
+        {
+            return;
+        }
+
+        try
+        {
+            await resource.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // The rejection is the caller's outcome; a rollback fault on top of it is logged, never masks it.
+            LogRejectedBeginRollbackFaulted(Logger, ex);
         }
     }
 
@@ -200,31 +219,38 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
     {
         Argument.IsNotNull(unitOfWork);
 
+        var engine = unitOfWork switch
+        {
+            UnitOfWorkHandle handle => handle.Engine,
+            ChildUnitOfWork child => child.Engine,
+            _ => null,
+        };
+
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
 
-            if (ReferenceEquals(Current, unitOfWork))
+            if (ReferenceEquals(Current, unitOfWork) || (engine is not null && _IndexOfFrame(engine) >= 0))
             {
-                // Re-entrant adoption (a handler re-entering the save pipeline on the same context).
+                // Re-entrant adoption: this slot already coordinates on that engine — the same handle (a handler
+                // re-entering the save pipeline on the same context), the bound root handle while Current is a
+                // child view over it, or a bound child view after Current returned to the root. Nothing to swap.
                 return NoOpAdoption.Instance;
             }
 
-            if (_beginning || Current is not null)
+            if (_beginning)
             {
                 throw new InvalidOperationException(_ConcurrentBeginMessage);
+            }
+
+            if (Current is not null)
+            {
+                throw new InvalidOperationException(_AdoptOverActiveUnitMessage);
             }
 
             // An adopted unit becomes a joinable frame: a same-resource begin or enlist in this scope opens a child
             // view over the foreign engine instead of a second root, exactly as it would in the owning scope. The
             // frame is marked so scope disposal never claims a unit another scope owns.
-            var engine = unitOfWork switch
-            {
-                UnitOfWorkHandle handle => handle.Engine,
-                ChildUnitOfWork child => child.Engine,
-                _ => null,
-            };
-
             if (engine is not null)
             {
                 _frames.Add(new Frame(engine, unitOfWork) { Adopted = true });
@@ -353,11 +379,15 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
         }
 
         _PopFrame(unit);
-        await _RollBackAndDrainAsync(unit, claim, failure).ConfigureAwait(false);
+        await _RollBackAndDrainAsync(unit, claim, failure, propagateFaults: true).ConfigureAwait(false);
     }
 
-    /// <summary>Abandons a child view: drops its registrations and aborts the root (async path).</summary>
-    internal async ValueTask AbandonChildAsync(Internal.UnitOfWork root, ChildUnitOfWork child)
+    /// <summary>
+    /// Abandons a child view: drops its registrations and aborts the root (async path). Faults propagate only for
+    /// the child's explicit <c>RollbackAsync</c>; the implicit dispose logs them, as an <c>await using</c> that
+    /// throws would mask the exception the caller is already unwinding.
+    /// </summary>
+    internal async ValueTask AbandonChildAsync(Internal.UnitOfWork root, ChildUnitOfWork child, bool propagateFaults)
     {
         var aborted = _AbandonChildClaim(root, child);
 
@@ -368,7 +398,7 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
 
         var (claim, failure) = aborted.Value;
 
-        await _RollBackAndDrainAsync(root, claim, failure).ConfigureAwait(false);
+        await _RollBackAndDrainAsync(root, claim, failure, propagateFaults).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -386,7 +416,7 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
 
         var (claim, failure) = aborted.Value;
 
-        _RunBackground(() => _RollBackAndDrainAsync(root, claim, failure).AsTask());
+        _RunBackground(() => _RollBackAndDrainAsync(root, claim, failure, propagateFaults: false).AsTask());
     }
 
     /// <summary>
@@ -412,9 +442,14 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
 
         _PopFrame(unit);
         _WarnForgottenCompletion(unit.Resource);
-        _RunBackground(() => _RollBackAndDrainAsync(unit, claim, failure).AsTask());
+        _RunBackground(() => _RollBackAndDrainAsync(unit, claim, failure, propagateFaults: false).AsTask());
     }
 
+    /// <summary>
+    /// Disposes a root/nested handle asynchronously without a completion verb. Faults are logged, never thrown:
+    /// an <c>await using</c> usually disposes while the caller unwinds its own exception, which a dispose fault
+    /// would silently replace.
+    /// </summary>
     internal async ValueTask DisposeUnitAsync(Internal.UnitOfWork unit)
     {
         if (_disposed)
@@ -433,7 +468,7 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
 
         _PopFrame(unit);
         _WarnForgottenCompletion(unit.Resource);
-        await _RollBackAndDrainAsync(unit, claim, failure).ConfigureAwait(false);
+        await _RollBackAndDrainAsync(unit, claim, failure, propagateFaults: false).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -532,19 +567,48 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
         return drained;
     }
 
-    /// <summary>The failure path shared by rollback, abandon, and dispose: roll the owned resource back, then drain.</summary>
-    private static async ValueTask _RollBackAndDrainAsync(
+    /// <summary>
+    /// The failure path shared by rollback, abandon, and dispose: roll the owned resource back, then drain. The
+    /// drain always runs — a rollback fault must not skip the <c>OnFailed</c> callbacks or the scope-state disposal
+    /// the abandon contract promises. <paramref name="propagateFaults" /> is true only for the explicit
+    /// <c>RollbackAsync</c> verb, whose caller asked for the outcome; an implicit dispose logs instead, because it
+    /// usually runs while the caller unwinds its own exception, which a thrown fault would silently replace.
+    /// </summary>
+    private async ValueTask _RollBackAndDrainAsync(
         Internal.UnitOfWork unit,
         Internal.UnitOfWork.UnitOfWorkTerminalClaim claim,
-        UnitOfWorkFailure failure
+        UnitOfWorkFailure failure,
+        bool propagateFaults
     )
     {
+        ExceptionDispatchInfo? rollbackFault = null;
+
         if (unit.Resource is { IsOwned: true } resource)
         {
-            await resource.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            try
+            {
+                await resource.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (propagateFaults)
+            {
+                rollbackFault = ExceptionDispatchInfo.Capture(ex);
+            }
+            catch (Exception ex)
+            {
+                LogAbandonRollbackFaulted(Logger, ex);
+            }
         }
 
-        await _DrainFailedAsync(claim, failure).ConfigureAwait(false);
+        if (propagateFaults && rollbackFault is null)
+        {
+            await _DrainFailedAsync(claim, failure).ConfigureAwait(false);
+
+            return;
+        }
+
+        // The rollback fault (or the implicit dispose) is the outcome; a drain fault must not replace it.
+        await _DrainFailedQuietlyAsync(claim, failure).ConfigureAwait(false);
+        rollbackFault?.Throw();
     }
 
     private (Internal.UnitOfWork.UnitOfWorkTerminalClaim Claim, UnitOfWorkFailure Failure)? _AbandonChildClaim(
@@ -744,7 +808,11 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
     [LoggerMessage(EventId = 3, Level = LogLevel.Error, Message = "Rolling back a leaked unit of work faulted.")]
     private static partial void LogScopeDisposedRollbackFaulted(ILogger logger, Exception exception);
 
-    [LoggerMessage(EventId = 4, Level = LogLevel.Error, Message = "A unit-of-work background drain faulted.")]
+    [LoggerMessage(
+        EventId = 4,
+        Level = LogLevel.Error,
+        Message = "A unit-of-work failure drain faulted (a scope-state disposal threw); logged so it cannot mask the unit's own outcome."
+    )]
     private static partial void LogBackgroundDrainFaulted(ILogger logger, Exception? exception);
 
     [LoggerMessage(
@@ -753,4 +821,18 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
         Message = "Rolling back a unit of work whose commit faulted failed as well; its transaction may still be open."
     )]
     private static partial void LogCommitFaultRollbackFaulted(ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 6,
+        Level = LogLevel.Error,
+        Message = "Rolling back an abandoned unit of work faulted; its OnFailed callbacks and scope state were still drained, and its transaction may still be open."
+    )]
+    private static partial void LogAbandonRollbackFaulted(ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 7,
+        Level = LogLevel.Error,
+        Message = "Rolling back the transaction of a rejected second-resource BeginAsync faulted; that transaction may still be open."
+    )]
+    private static partial void LogRejectedBeginRollbackFaulted(ILogger logger, Exception exception);
 }

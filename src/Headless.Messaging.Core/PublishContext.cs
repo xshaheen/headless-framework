@@ -232,7 +232,8 @@ public sealed class PublishContext<TMessage> : PublishContext, ICompletablePubli
                 isTransactional ? DeliveryCoordinationStatus.Compatible : DeliveryCoordinationStatus.None,
                 now.ToUniversalTime(),
                 scheduledAt: options?.ScheduledAt,
-                storageSupported: isStorageSupported
+                storageSupported: isStorageSupported,
+                messageName: typeof(TMessage).Name
             ),
             deliveryFrozen: false,
             cancellationToken

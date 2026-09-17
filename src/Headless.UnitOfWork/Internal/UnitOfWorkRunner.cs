@@ -88,10 +88,19 @@ internal static partial class UnitOfWorkRunner
     )]
     private static partial void LogRollbackFaulted(ILogger logger, Exception exception);
 
+    /// <summary>Shared with the EF <c>RunAsync</c>, which applies the same post-commit drain policy.</summary>
     [LoggerMessage(
         EventId = 11,
         Level = LogLevel.Error,
         Message = "Post-commit drain faulted after a durable commit; the relay will recover any enlisted work."
     )]
-    private static partial void LogPostCommitDrainFaulted(ILogger logger, Exception exception);
+    internal static partial void LogPostCommitDrainFaulted(ILogger logger, Exception exception);
+
+    /// <summary>Used by the EF <c>RunAsync</c> when unwinding a replayed or non-replayable attempt's unit.</summary>
+    [LoggerMessage(
+        EventId = 12,
+        Level = LogLevel.Error,
+        Message = "Disposing the unit of work of a faulted RunAsync attempt faulted as well; the attempt's own exception is what surfaces."
+    )]
+    internal static partial void LogAttemptDisposeFaulted(ILogger logger, Exception exception);
 }

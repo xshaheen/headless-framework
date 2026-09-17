@@ -163,6 +163,27 @@ public sealed class DeliveryDecisionResolverTests : TestBase
         act.Should().Throw<InvalidOperationException>().WithMessage(messagePattern);
     }
 
+    [Fact]
+    public void should_name_the_message_type_when_required_enlistment_finds_no_unit_of_work()
+    {
+        // Acceptance Example B of the unit-of-work plan: an operator reading the failure must see which message
+        // type asked for enlistment, matching the Jobs sibling that names the function.
+        var act = () =>
+            DeliveryDecisionResolver.Resolve(
+                MessageLane.Bus,
+                DeliveryMode.Durable,
+                TransactionEnlistment.Required,
+                delay: null,
+                _Coordination(_None),
+                _Now,
+                messageName: "OrderPlaced"
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("Publishing 'OrderPlaced' requires an active unit of work (TransactionEnlistment.Required)*");
+    }
+
     [Theory]
     [InlineData(TransactionEnlistment.WhenAvailable, _None, _StandalonePath)]
     [InlineData(TransactionEnlistment.WhenAvailable, _Compatible, _CoordinatedPath)]

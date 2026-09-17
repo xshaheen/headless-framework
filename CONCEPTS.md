@@ -200,10 +200,11 @@ only moves the failure to live traffic.
 ### Diagnostic gate
 
 A startup validation gate that does runtime I/O — opening a connection or probing a live operation —
-and so adds boot latency and can fail on a transient blip. The one shipped instance is the EF commit
-interceptor gate (`CommitInterceptorStartupGate<TContext>`), which commits an empty transaction to
-prove the interceptor fires; it treats an unreachable database as inconclusive and defaults to warn in
-every environment because a mis-wired outbox is a production-relevant signal.
+and so adds boot latency and can fail on a transient blip. No diagnostic gate ships today: the EF
+commit-interceptor gate that used to be the one instance was deleted with the scoped unit of work
+(2026-09-17), because the unit owns its commit edge and nothing needs to prove an interceptor fires.
+A future one should treat an unreachable dependency as inconclusive and default to warn in every
+environment, since a transient blip at boot is not a misconfiguration.
 *Avoid:* diagnostic probe (use Diagnostic gate for the concept; "probe" names the I/O call it makes).
 
 ### Validation mode

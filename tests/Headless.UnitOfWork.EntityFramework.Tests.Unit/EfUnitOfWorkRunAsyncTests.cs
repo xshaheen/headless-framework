@@ -159,6 +159,32 @@ public sealed class EfUnitOfWorkRunAsyncTests : TestBase
         (await host.CountProbeRowsAsync()).Should().Be(1);
     }
 
+    [Fact]
+    public async Task should_log_and_return_the_result_when_the_drain_faults_after_a_durable_commit()
+    {
+        await using var host = await EfUnitOfWorkHost.CreateAsync();
+        await using var session = host.CreateSession();
+
+        var count = await session.Manager.RunAsync(
+            session.Db,
+            async (unitOfWork, ct) =>
+            {
+                unitOfWork.OnCompleted(() => throw new InvalidOperationException("drain down"));
+                await session.Db.Probes.AddAsync(new ProbeRow { Name = "durable" }, ct);
+                await session.Db.SaveChangesAsync(ct);
+
+                return 7;
+            },
+            cancellationToken: AbortToken
+        );
+
+        // The commit landed; surfacing the drain fault would invite a retry that double-applies the block — the
+        // same policy as the Npgsql/SqlClient RunAsync.
+        count.Should().Be(7);
+        (await host.CountProbeRowsAsync()).Should().Be(1);
+        session.Logs.Should().Contain(e => e.Message.Contains("Post-commit drain faulted", StringComparison.Ordinal));
+    }
+
     /// <summary>
     /// Throws a retryable marker after the provider's commit finished, simulating EF's
     /// "commit outcome unknown" fault shape.

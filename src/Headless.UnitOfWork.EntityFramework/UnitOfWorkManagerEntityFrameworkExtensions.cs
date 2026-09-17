@@ -4,8 +4,10 @@ using System.Data;
 using System.Runtime.ExceptionServices;
 using Headless.Checks;
 using Headless.UnitOfWork;
+using Headless.UnitOfWork.Internal;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Logging;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 
@@ -76,7 +78,8 @@ public static class UnitOfWorkManagerEntityFrameworkExtensions
         /// strategy: begin (owned) → operation → <c>CompleteAsync</c>. A retriable failure before the commit
         /// starts replays the whole block with a fresh transaction and a fresh unit; once the commit has
         /// started, or after <see cref="IUnitOfWork.PreventRetry" />, the fault is surfaced outside the
-        /// strategy so EF cannot replay a possibly-committed block.
+        /// strategy so EF cannot replay a possibly-committed block. A drain fault after a durable commit is
+        /// logged, never surfaced (the same policy as the Npgsql and SqlClient <c>RunAsync</c>).
         /// </summary>
         /// <param name="db">The context to operate on.</param>
         /// <param name="operation">The block receiving the unit and the caller's cancellation token.</param>
@@ -141,6 +144,7 @@ public static class UnitOfWorkManagerEntityFrameworkExtensions
         // The manager claims its slot synchronously (the hidden provider primitive), so a concurrent begin
         // in the same scope fails deterministically; the transaction checks and the begin run inside the
         // factory, and a fault there releases the slot and propagates as-is.
+        var joined = false;
         var unit = await manager
             .BeginAsync(
                 async ct =>
@@ -154,6 +158,8 @@ public static class UnitOfWorkManagerEntityFrameworkExtensions
                         && ReferenceEquals(boundUnit.Resource, active)
                     )
                     {
+                        joined = true;
+
                         return active;
                     }
 
@@ -185,7 +191,12 @@ public static class UnitOfWorkManagerEntityFrameworkExtensions
             )
             .ConfigureAwait(false);
 
-        DbContextUnitOfWorkBinding.Bind(db, unit);
+        // A joined begin returns a child view; the context stays bound to the root handle so the save pipeline
+        // keeps resolving the unit that owns the transaction after the child completes.
+        if (!joined)
+        {
+            DbContextUnitOfWorkBinding.Bind(db, unit);
+        }
 
         return unit;
     }
@@ -200,7 +211,8 @@ public static class UnitOfWorkManagerEntityFrameworkExtensions
     {
         Argument.IsNotNull(db);
 
-        var state = (Manager: manager, Operation: operation, Isolation: isolation, Context: db);
+        var logger = UnitOfWorkRunner.LoggerFor(manager);
+        var state = (Manager: manager, Operation: operation, Isolation: isolation, Context: db, Logger: logger);
 
         var (result, error) = await db
             .Database.CreateExecutionStrategy()
@@ -227,7 +239,18 @@ public static class UnitOfWorkManagerEntityFrameworkExtensions
 
                         result = await state.Operation(unitOfWork, ct).ConfigureAwait(false);
                         commitStarted = true;
-                        await unitOfWork.CompleteAsync(ct).ConfigureAwait(false);
+
+                        try
+                        {
+                            await unitOfWork.CompleteAsync(ct).ConfigureAwait(false);
+                        }
+                        catch (Exception ex) when (unitOfWork.State == UnitOfWorkState.Completed)
+                        {
+                            // The transaction is ALREADY durably committed; only the drain faulted. Same policy as
+                            // the Npgsql/SqlClient RunAsync: log and return the committed result, because surfacing
+                            // it would invite a retry that double-applies a committed block.
+                            UnitOfWorkRunner.LogPostCommitDrainFaulted(state.Logger, ex);
+                        }
 
                         return (Result: result, Error: null!);
                     }
@@ -238,7 +261,7 @@ public static class UnitOfWorkManagerEntityFrameworkExtensions
                         // it is captured and rethrown after ExecuteAsync returns, outside the strategy.
                         if (commitStarted || unitOfWork?.IsRetryPrevented == true)
                         {
-                            await _DisposeQuietlyAsync(unitOfWork).ConfigureAwait(false);
+                            await _DisposeQuietlyAsync(unitOfWork, state.Logger).ConfigureAwait(false);
 
                             return (Result: result, Error: ExceptionDispatchInfo.Capture(ex));
                         }
@@ -246,7 +269,7 @@ public static class UnitOfWorkManagerEntityFrameworkExtensions
                         // A pre-commit failure replays: unwind this attempt's unit first — its rollback must
                         // finish before the strategy re-runs, or the replay's BeginAsync meets a still-open
                         // transaction on the same context.
-                        await _DisposeQuietlyAsync(unitOfWork).ConfigureAwait(false);
+                        await _DisposeQuietlyAsync(unitOfWork, state.Logger).ConfigureAwait(false);
 
                         throw;
                     }
@@ -260,7 +283,7 @@ public static class UnitOfWorkManagerEntityFrameworkExtensions
         return result;
     }
 
-    private static async ValueTask _DisposeQuietlyAsync(IUnitOfWork? unitOfWork)
+    private static async ValueTask _DisposeQuietlyAsync(IUnitOfWork? unitOfWork, ILogger logger)
     {
         if (unitOfWork is null)
         {
@@ -275,9 +298,9 @@ public static class UnitOfWorkManagerEntityFrameworkExtensions
         }
         catch (Exception ex)
         {
-            // The captured/rethrown fault is the caller's outcome; a dispose fault must not mask it. The
-            // manager already logs failure-drain faults, so observing here is enough.
-            _ = ex;
+            // The captured/rethrown fault is the caller's outcome; a dispose fault must not mask it, but it is
+            // still a real secondary failure, so it is logged rather than dropped.
+            UnitOfWorkRunner.LogAttemptDisposeFaulted(logger, ex);
         }
     }
 }

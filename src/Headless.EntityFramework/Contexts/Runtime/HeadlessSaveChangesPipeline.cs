@@ -243,6 +243,20 @@ internal sealed class HeadlessSaveChangesPipeline(
         return bound is null ? null : unitOfWorkManager.Adopt(bound);
     }
 
+    // The save's own exception is the caller's outcome; a fault while rolling the unit back (its failure drain
+    // disposing scope-local state) is logged so it can never replace the failure that caused the rollback.
+    private async ValueTask _RollBackQuietlyAsync(IUnitOfWork unitOfWork)
+    {
+        try
+        {
+            await unitOfWork.RollbackAsync().ConfigureAwait(false);
+        }
+        catch (Exception rollbackFault)
+        {
+            _logger.LogUnitOfWorkRollbackFailed(rollbackFault);
+        }
+    }
+
     // Integration events are the writes that must land inside the caller's transaction (outbox rows); a save
     // without them under a caller-owned transaction is ordinary EF usage and needs no unit of work. Handlers can
     // still add integration events during the drain — the outbox dispatcher repeats this check at dispatch time.
@@ -324,7 +338,7 @@ internal sealed class HeadlessSaveChangesPipeline(
                 // The transaction rolls back when it is disposed below; tell the unit so participants observe a
                 // rollback (not an abandon), and read the retry marker before the unit reaches its terminal state.
                 retryPrevented = unitOfWork.IsRetryPrevented;
-                await unitOfWork.RollbackAsync().ConfigureAwait(false);
+                await _RollBackQuietlyAsync(unitOfWork).ConfigureAwait(false);
 
                 throw;
             }
@@ -361,7 +375,7 @@ internal sealed class HeadlessSaveChangesPipeline(
             catch (Exception) when (!state.SaveContext.CommitStarted)
             {
                 retryPrevented = unitOfWork.IsRetryPrevented;
-                _RunBlocking(unitOfWork.RollbackAsync());
+                _RunBlocking(_RollBackQuietlyAsync(unitOfWork));
 
                 throw;
             }
@@ -701,4 +715,12 @@ internal static partial class HeadlessSaveChangesPipelineLog
         Message = "Audit discard failed during exception path; rethrowing the original SaveChanges exception."
     )]
     public static partial void LogAuditDiscardFailed(this ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 2,
+        EventName = "HeadlessUnitOfWorkRollbackFailedDuringExceptionPath",
+        Level = LogLevel.Error,
+        Message = "Rolling the save's unit of work back faulted during the exception path; rethrowing the original SaveChanges exception."
+    )]
+    public static partial void LogUnitOfWorkRollbackFailed(this ILogger logger, Exception exception);
 }
