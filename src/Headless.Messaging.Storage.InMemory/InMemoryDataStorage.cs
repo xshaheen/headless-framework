@@ -3,7 +3,6 @@
 using System.Collections.Concurrent;
 using System.Data.Common;
 using Headless.Abstractions;
-using Headless.CommitCoordination;
 using Headless.Coordination;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
@@ -11,6 +10,8 @@ using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Serialization;
+using Headless.Messaging.Transactions;
+using Headless.UnitOfWork;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Storage.InMemory;
@@ -26,7 +27,8 @@ internal sealed partial class InMemoryDataStorage(
         IDelayedMessageClaimStorage,
         IGracefulLeaseReleaseStorage,
         ICircuitRetryDeferralStorage,
-        IDeliveryCoordinationResolver
+        IDeliveryCoordinationResolver,
+        ICoordinatedMessageStore
 {
     public ConcurrentDictionary<Guid, MemoryMessage> PublishedMessages { get; } = new();
 
@@ -56,16 +58,61 @@ internal sealed partial class InMemoryDataStorage(
     // when the consume path adopted the same check-then-insert pattern in R3.
     private readonly Lock _receivedUpsertLock = new();
 
-    DeliveryCoordination IDeliveryCoordinationResolver.Resolve(ICommitCoordinator coordinator)
+    DeliveryCoordination IDeliveryCoordinationResolver.Resolve(IUnitOfWork unitOfWork)
     {
-        if (coordinator.State is not CommitCoordinatorState.Active)
+        // A relational resource means the caller's work commits in a database; in-memory rows cannot be atomic
+        // with it, so refusing is the only honest answer. Without one — including a resource-less unit of
+        // work — the unit itself is the commit boundary and rows are captured on it through
+        // ICoordinatedMessageStore.
+        return unitOfWork.Resource is IRelationalUnitOfWorkResource
+            ? DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.StorageProvider)
+            : DeliveryCoordination.Compatible(unitOfWork, transaction: null);
+    }
+
+    ValueTask<MediumMessage> ICoordinatedMessageStore.StoreCoordinatedMessageAsync(
+        string name,
+        MediumMessage message,
+        DateTimeOffset? publishAt,
+        IUnitOfWork unitOfWork,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // GetOrAdd runs before the row is built so the buffer's completion callback is registered before the
+        // outbox buffer's dispatcher hand-off, which OutboxMessageWriter enlists only after this call returns.
+        var buffer = unitOfWork.GetOrAdd(this, static (unit, storage) => new CoordinatedPublishBuffer(unit, storage));
+        var (stored, row) = _CreateRow(name, message, publishAt);
+        buffer.Add(row);
+
+        return ValueTask.FromResult(stored);
+    }
+
+    /// <summary>
+    /// Scope-local rows captured inside a non-relational unit of work. They join <see cref="PublishedMessages" />
+    /// only when the unit completes; a failure disposes the buffer and the rows with it.
+    /// </summary>
+    // Same shape as MessageOutboxBuffer: rows wait in the scope-local buffer and are promoted on completion; a
+    // failure never drains, so the buffered rows are simply dropped with the unit.
+    private sealed class CoordinatedPublishBuffer : InMemoryWorkBuffer<MemoryMessage>
+    {
+        private readonly InMemoryDataStorage _storage;
+
+        public CoordinatedPublishBuffer(IUnitOfWork unitOfWork, InMemoryDataStorage storage)
         {
-            return DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.InactiveTransaction);
+            _storage = storage;
+            unitOfWork.OnCompleted(_PromoteAsync);
         }
 
-        return coordinator.TryGetCapability<IRelationalCommitContext>(out _)
-            ? DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.StorageProvider)
-            : DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.MissingRelationalCapability);
+        private ValueTask _PromoteAsync()
+        {
+            foreach (var row in Drain())
+            {
+                _storage.PublishedMessages[row.StorageId] = row;
+            }
+
+            return ValueTask.CompletedTask;
+        }
     }
 
     public void Clear()
@@ -657,6 +704,18 @@ internal sealed partial class InMemoryDataStorage(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        var (stored, row) = _CreateRow(name, message, publishAt);
+        PublishedMessages[stored.StorageId] = row;
+
+        return ValueTask.FromResult(stored);
+    }
+
+    private (MediumMessage Stored, MemoryMessage Row) _CreateRow(
+        string name,
+        MediumMessage message,
+        DateTimeOffset? publishAt
+    )
+    {
         var added = timeProvider.GetUtcNow();
         var statusName =
             publishAt is null ? StatusName.Scheduled
@@ -677,7 +736,7 @@ internal sealed partial class InMemoryDataStorage(
             InlineAttempts = 0,
         };
 
-        PublishedMessages[stored.StorageId] = new MemoryMessage
+        var row = new MemoryMessage
         {
             StorageId = stored.StorageId,
             Name = name,
@@ -695,7 +754,7 @@ internal sealed partial class InMemoryDataStorage(
             Version = messagingOptions.Value.Version,
         };
 
-        return ValueTask.FromResult(stored);
+        return (stored, row);
     }
 
     public ValueTask<MediumMessage> StoreMessageAsync(

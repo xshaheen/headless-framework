@@ -428,7 +428,7 @@ public sealed class TenantPropagationE2ETests : TestBase
                 )
         );
         var currentTenant = harness.ServiceProvider.GetRequiredService<ICurrentTenant>();
-        var bus = harness.ServiceProvider.GetRequiredService<IBus>();
+        var bus = harness.GetRequiredService<IBus>();
 
         // when — publish via outbox under ambient tenant
         using (currentTenant.Change("globex"))

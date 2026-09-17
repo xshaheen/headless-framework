@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Jobs.Enums;
+using Headless.UnitOfWork;
 
 namespace Headless.Jobs.Models;
 
@@ -11,6 +12,12 @@ namespace Headless.Jobs.Models;
 [PublicAPI]
 public sealed record RecurringJobOptions
 {
+    /// <summary>
+    /// How eagerly this definition write enlists in the active unit of work. Either this call value or the
+    /// function policy can require it; the host default is never applied to recurring definitions.
+    /// </summary>
+    public TransactionEnlistment Enlistment { get; init; }
+
     /// <summary>Optional root business correlation captured by each materialized occurrence.</summary>
     public string? CorrelationId { get; init; }
 

@@ -1,157 +1,87 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
+using Headless.Checks;
+using Headless.EntityFramework;
+using Headless.UnitOfWork;
+using Microsoft.Extensions.DependencyInjection;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.EntityFrameworkCore;
 
 /// <summary>
-/// Extension methods for executing operations within a resilient transaction that is
-/// coordinated with the <see cref="DbContext"/>'s execution strategy.
+/// Single-call unit-of-work helpers for any Headless-managed context (<see cref="HeadlessDbContext"/> and the
+/// Identity context — any <see cref="IHeadlessDbContext"/>): begin a unit of work on the context inside its
+/// execution strategy, run the operation, and complete it — so work enlisted inside the operation (outbox rows,
+/// durable jobs, <c>OnCompleted</c> registrations) commits atomically with the entity batch and drains after
+/// the commit. The unit of work cannot be forgotten because it is welded into the helper.
 /// </summary>
+/// <remarks>
+/// <para>
+/// A thin wrapper over <c>IUnitOfWorkManager.RunAsync(db, …)</c> that self-sources the scoped manager from the
+/// context (<see cref="IHeadlessDbContext.ServiceProvider"/>), so the caller passes neither a manager nor a
+/// provider. A plain <see cref="DbContext"/> cannot expose its resolving scope; call
+/// <c>IUnitOfWorkManager.RunAsync(db, …)</c> directly for one.
+/// </para>
+/// <para>
+/// Replay semantics are those of <c>RunAsync</c>: a failure before the commit starts may replay the whole block
+/// with a fresh transaction and unit; once the commit has started, or after <c>IUnitOfWork.PreventRetry</c>,
+/// the fault surfaces without replay because the database outcome may be unknown — use client-generated keys
+/// or another idempotency key to reconcile it.
+/// </para>
+/// </remarks>
+[PublicAPI]
 public static class HeadlessDbContextTransactionExtensions
 {
-    /// <summary>
-    /// Executes <paramref name="operation"/> inside a resilient transaction. The entire block is
-    /// wrapped in the context's execution strategy so it is safe with retrying providers
-    /// (e.g. SQL Server with <c>EnableRetryOnFailure</c>).
-    /// </summary>
-    /// <param name="context">The <see cref="DbContext"/> to operate on.</param>
-    /// <param name="operation">
-    /// An asynchronous delegate that receives the <see cref="DbContext"/> and a
-    /// <see cref="CancellationToken"/>. The caller is responsible for calling
-    /// <see cref="DbContext.SaveChangesAsync(CancellationToken)"/> within the operation.
-    /// </param>
-    /// <param name="isolation">Transaction isolation level. Defaults to <see cref="IsolationLevel.ReadCommitted"/>.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    public static Task ExecuteTransactionAsync(
-        this DbContext context,
-        Func<DbContext, CancellationToken, Task> operation,
-        IsolationLevel isolation = IsolationLevel.ReadCommitted,
-        CancellationToken cancellationToken = default
-    )
+    extension<TContext>(TContext context)
+        where TContext : DbContext, IHeadlessDbContext
     {
-        var state = (Operation: operation, Isolation: isolation, Context: context);
+        /// <summary>
+        /// Runs <paramref name="operation"/> inside a unit of work begun on this context. The caller is
+        /// responsible for calling <see cref="DbContext.SaveChangesAsync(CancellationToken)"/> within the
+        /// operation; publishes and job writes made inside it enlist on the unit and dispatch after the commit.
+        /// </summary>
+        /// <param name="operation">An asynchronous delegate receiving the context and a cancellation token.</param>
+        /// <param name="isolation">Transaction isolation level. Defaults to <see cref="IsolationLevel.ReadCommitted"/>.</param>
+        /// <param name="cancellationToken">Cancellation token forwarded to begin, commit, and the operation.</param>
+        public Task ExecuteTransactionAsync(
+            Func<TContext, CancellationToken, Task> operation,
+            IsolationLevel isolation = IsolationLevel.ReadCommitted,
+            CancellationToken cancellationToken = default
+        )
+        {
+            Argument.IsNotNull(context);
+            Argument.IsNotNull(operation);
 
-        return context
-            .Database.CreateExecutionStrategy()
-            .ExecuteAsync(
-                state,
-                static async (state, ct) =>
-                {
-                    await using var transaction = await state
-                        .Context.Database.BeginTransactionAsync(state.Isolation, ct)
-                        .ConfigureAwait(false);
+            return _Manager(context).RunAsync(context, (_, ct) => operation(context, ct), isolation, cancellationToken);
+        }
 
-                    await state.Operation(state.Context, ct).ConfigureAwait(false);
-                    await transaction.CommitAsync(ct).ConfigureAwait(false);
-                },
-                cancellationToken
-            );
+        /// <summary>
+        /// Runs <paramref name="operation"/> inside a unit of work begun on this context and returns its result,
+        /// with the same replay semantics as the result-less overload.
+        /// </summary>
+        /// <typeparam name="TResult">Type of the value returned by the operation.</typeparam>
+        /// <param name="operation">An asynchronous delegate receiving the context and a cancellation token, returning a result.</param>
+        /// <param name="isolation">Transaction isolation level. Defaults to <see cref="IsolationLevel.ReadCommitted"/>.</param>
+        /// <param name="cancellationToken">Cancellation token forwarded to begin, commit, and the operation.</param>
+        /// <returns>The result produced by <paramref name="operation"/>.</returns>
+        public Task<TResult> ExecuteTransactionAsync<TResult>(
+            Func<TContext, CancellationToken, Task<TResult>> operation,
+            IsolationLevel isolation = IsolationLevel.ReadCommitted,
+            CancellationToken cancellationToken = default
+        )
+        {
+            Argument.IsNotNull(context);
+            Argument.IsNotNull(operation);
+
+            return _Manager(context).RunAsync(context, (_, ct) => operation(context, ct), isolation, cancellationToken);
+        }
     }
 
-    /// <inheritdoc cref="ExecuteTransactionAsync(DbContext, Func{DbContext, CancellationToken, Task}, IsolationLevel, CancellationToken)"/>
-    /// <typeparam name="TArg">Type of the argument passed to <paramref name="operation"/>.</typeparam>
-    /// <param name="arg">Argument forwarded to <paramref name="operation"/>.</param>
-    public static Task ExecuteTransactionAsync<TArg>(
-        this DbContext context,
-        Func<TArg, DbContext, CancellationToken, Task> operation,
-        TArg arg,
-        IsolationLevel isolation = IsolationLevel.ReadCommitted,
-        CancellationToken cancellationToken = default
-    )
+    // The context's own scope: for a factory-created context that is the scope the factory opened, so the unit
+    // lands on the manager the save pipeline in that scope consults first.
+    private static IUnitOfWorkManager _Manager(IHeadlessDbContext context)
     {
-        var state = (Operation: operation, Arg: arg, Isolation: isolation, Context: context);
-
-        return context
-            .Database.CreateExecutionStrategy()
-            .ExecuteAsync(
-                state,
-                static async (state, ct) =>
-                {
-                    await using var transaction = await state
-                        .Context.Database.BeginTransactionAsync(state.Isolation, ct)
-                        .ConfigureAwait(false);
-
-                    await state.Operation(state.Arg, state.Context, ct).ConfigureAwait(false);
-                    await transaction.CommitAsync(ct).ConfigureAwait(false);
-                },
-                cancellationToken
-            );
-    }
-
-    /// <summary>
-    /// Executes <paramref name="operation"/> inside a resilient transaction and returns a result.
-    /// The entire block is wrapped in the context's execution strategy so it is safe with retrying
-    /// providers (e.g. SQL Server with <c>EnableRetryOnFailure</c>).
-    /// </summary>
-    /// <typeparam name="TResult">Type of the value returned by the operation.</typeparam>
-    /// <param name="context">The <see cref="DbContext"/> to operate on.</param>
-    /// <param name="operation">
-    /// An asynchronous delegate that receives the <see cref="DbContext"/> and a
-    /// <see cref="CancellationToken"/>, and returns a result. The caller is responsible for
-    /// calling <see cref="DbContext.SaveChangesAsync(CancellationToken)"/> within the operation.
-    /// </param>
-    /// <param name="isolation">Transaction isolation level. Defaults to <see cref="IsolationLevel.ReadCommitted"/>.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The result produced by <paramref name="operation"/>.</returns>
-    public static Task<TResult> ExecuteTransactionAsync<TResult>(
-        this DbContext context,
-        Func<DbContext, CancellationToken, Task<TResult>> operation,
-        IsolationLevel isolation = IsolationLevel.ReadCommitted,
-        CancellationToken cancellationToken = default
-    )
-    {
-        var state = (Operation: operation, Isolation: isolation, Context: context);
-
-        return context
-            .Database.CreateExecutionStrategy()
-            .ExecuteAsync(
-                state,
-                static async (state, ct) =>
-                {
-                    await using var transaction = await state
-                        .Context.Database.BeginTransactionAsync(state.Isolation, ct)
-                        .ConfigureAwait(false);
-
-                    var result = await state.Operation(state.Context, ct).ConfigureAwait(false);
-                    await transaction.CommitAsync(ct).ConfigureAwait(false);
-
-                    return result;
-                },
-                cancellationToken
-            );
-    }
-
-    /// <inheritdoc cref="ExecuteTransactionAsync{TResult}(DbContext, Func{DbContext, CancellationToken, Task{TResult}}, IsolationLevel, CancellationToken)"/>
-    /// <typeparam name="TArg">Type of the argument passed to <paramref name="operation"/>.</typeparam>
-    /// <param name="arg">Argument forwarded to <paramref name="operation"/>.</param>
-    public static Task<TResult> ExecuteTransactionAsync<TResult, TArg>(
-        this DbContext context,
-        Func<TArg, DbContext, CancellationToken, Task<TResult>> operation,
-        TArg arg,
-        IsolationLevel isolation = IsolationLevel.ReadCommitted,
-        CancellationToken cancellationToken = default
-    )
-    {
-        var state = (Operation: operation, Arg: arg, Isolation: isolation, Context: context);
-
-        return context
-            .Database.CreateExecutionStrategy()
-            .ExecuteAsync(
-                state,
-                static async (state, ct) =>
-                {
-                    await using var transaction = await state
-                        .Context.Database.BeginTransactionAsync(state.Isolation, ct)
-                        .ConfigureAwait(false);
-
-                    var result = await state.Operation(state.Arg, state.Context, ct).ConfigureAwait(false);
-                    await transaction.CommitAsync(ct).ConfigureAwait(false);
-
-                    return result;
-                },
-                cancellationToken
-            );
+        return context.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
     }
 }

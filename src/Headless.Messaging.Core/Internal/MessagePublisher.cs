@@ -1,8 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.CommitCoordination;
 using Headless.Messaging.Configuration;
+using Headless.Messaging.Registration;
 using Headless.Messaging.Serialization;
+using Headless.UnitOfWork;
 
 namespace Headless.Messaging.Internal;
 
@@ -13,16 +14,37 @@ internal sealed class MessagePublisher(
     IPublishMiddlewarePipeline publishPipeline,
     TimeProvider timeProvider,
     IMessageCapabilityGate capabilities,
-    ICurrentCommitCoordinator currentCommitCoordinator,
     Func<IDeliveryCoordinationResolver?> coordinationResolver,
     Func<OutboxMessageWriter?> outboxWriterResolver,
     MessagingTelemetry? telemetry = null,
     TimeSpan? transportPublishTimeout = null,
-    DeliveryMode defaultDeliveryMode = DeliveryMode.Auto
+    DeliveryMode defaultDeliveryMode = DeliveryMode.Durable,
+    TransactionEnlistment defaultEnlistment = TransactionEnlistment.WhenAvailable,
+    IEnumerable<MessageRegistration>? registrations = null
 )
 {
     private readonly MessagingTelemetry _telemetry = telemetry ?? MessagingTelemetry.Default;
     private readonly TimeSpan _transportPublishTimeout = transportPublishTimeout ?? TimeSpan.FromSeconds(10);
+
+    // Frozen at construction from the explicit ForMessage<T> registrations only: assembly-scan and framework
+    // contributions never carry a policy, and several of them can share a (type, lane) key, so indexing every
+    // registration would collide while adding nothing.
+    private readonly FrozenDictionary<(Type MessageType, MessageLane Lane), DeliveryMode> _deliveryPolicies = (
+        registrations ?? []
+    )
+        .Where(static registration => registration.DeliveryMode is not null)
+        .ToFrozenDictionary(
+            static registration => (registration.MessageType, registration.Lane),
+            static registration => registration.DeliveryMode!.Value
+        );
+
+    private readonly FrozenDictionary<(Type MessageType, MessageLane Lane), TransactionEnlistment> _enlistmentPolicies =
+        (registrations ?? [])
+            .Where(static registration => registration.Enlistment is not null)
+            .ToFrozenDictionary(
+                static registration => (registration.MessageType, registration.Lane),
+                static registration => registration.Enlistment!.Value
+            );
 
     // Cached once: passing a method group as Func<long> allocates a fresh delegate on every publish,
     // because the compiler only caches method-group conversions for static methods.
@@ -32,19 +54,41 @@ internal sealed class MessagePublisher(
         MessageLane lane,
         T? content,
         MessageOptions? options,
+        IUnitOfWork? unitOfWork,
         CancellationToken cancellationToken
     )
     {
-        // AsyncLocal state must be captured in the caller's execution context, before any middleware await.
-        var coordinator = currentCommitCoordinator.Current;
-        var coordination = _ResolveCoordination(coordinator);
+        var coordination = _ResolveCoordination(unitOfWork);
+        // Precedence is per call, then the policy registered for the declared type on this lane, then the host
+        // default. The declared type (not the runtime content type) is the key so a callback response that names
+        // its MessageType resolves the same policy the registration declared.
+        var declaredMessageType = options?.MessageType ?? typeof(T);
+        var requestedMode =
+            options?.DeliveryMode
+            ?? (
+                _deliveryPolicies.TryGetValue((declaredMessageType, lane), out var typePolicy)
+                    ? typePolicy
+                    : defaultDeliveryMode
+            );
+        var requestedEnlistment =
+            options?.Enlistment
+            ?? (
+                _enlistmentPolicies.TryGetValue((declaredMessageType, lane), out var enlistmentPolicy)
+                    ? enlistmentPolicy
+                    : defaultEnlistment
+            );
+        // Storage support is a resolver input, not a pipeline probe: the outbox writer is registered unconditionally
+        // and throws when storage is missing, so a durable request on a storage-less host is refused here first.
         var decision = DeliveryDecisionResolver.Resolve(
             lane,
-            options?.DeliveryMode ?? defaultDeliveryMode,
+            requestedMode,
+            requestedEnlistment,
             options?.Delay,
             coordination,
             timeProvider.GetUtcNow(),
-            scheduledAt: options?.ScheduledAt
+            scheduledAt: options?.ScheduledAt,
+            storageSupported: capabilities.Supports(lane, MessagingProviderRole.Storage),
+            messageName: declaredMessageType.Name
         );
 
         if (decision.Path is DeliveryPath.Direct)
@@ -58,7 +102,6 @@ internal sealed class MessagePublisher(
             capabilities.EnsureOutboxSupported(lane, scheduled: decision.PublishAt is not null);
         }
 
-        var declaredMessageType = options?.MessageType ?? typeof(T);
         PublishReceipt receipt = default;
         await publishPipeline
             .ExecuteAsync(
@@ -114,9 +157,7 @@ internal sealed class MessagePublisher(
                     {
                         // A completed domain occurrence is not rerun after rollback. Its direct outbox writes
                         // cannot be recovered from EF's retained state, so mark before attempting storage.
-                        decision
-                            .Coordination.Coordinator!.GetOrAdd(static _ => new CommitRetryGuard())
-                            .PreventRetry();
+                        decision.Coordination.UnitOfWork!.PreventRetry();
                     }
 
                     var storageId = await writer.WriteAsync(request, decision, ct).ConfigureAwait(false);
@@ -129,15 +170,15 @@ internal sealed class MessagePublisher(
         return receipt;
     }
 
-    private DeliveryCoordination _ResolveCoordination(ICommitCoordinator? coordinator)
+    private DeliveryCoordination _ResolveCoordination(IUnitOfWork? unitOfWork)
     {
-        if (coordinator is null)
+        if (unitOfWork is null)
         {
             return DeliveryCoordination.None;
         }
 
         var resolver = coordinationResolver();
-        return resolver?.Resolve(coordinator)
+        return resolver?.Resolve(unitOfWork)
             ?? DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.MissingRelationalCapability);
     }
 }

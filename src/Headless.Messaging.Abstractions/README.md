@@ -46,7 +46,7 @@ public sealed class OrderPlacedHandler(ILogger<OrderPlacedHandler> logger) : ICo
 
 Use `Headless.Messaging.Bus.Abstractions` for broadcast publisher contracts and `Headless.Messaging.Queue.Abstractions` for point-to-point publisher contracts.
 
-`DeliveryMode.Auto` captures inside a compatible coordination boundary and sends directly when no boundary is active; an active incompatible boundary is rejected. The host default is `Auto`; configure `setup.Options.DefaultDeliveryMode` to change it. `Durable` always persists first. `Direct` bypasses storage and any ambient coordination boundary, and cannot be combined with `Delay` or `ScheduledAt`.
+`DeliveryMode` has three values. `Durable` (default) stores first — in the caller's transaction under a compatible coordinated scope, standalone with no scope — and rejects an incompatible scope; `Coordinated` requires a compatible live scope and throws before any effect otherwise; `Direct` bypasses storage and coordination and cannot be combined with `Delay` or `ScheduledAt`. Precedence is per call, then per type (`WithDeliveryMode`), then `MessagingOptions.DefaultDeliveryMode`, which defaults to `Durable`; configure `setup.Options.DefaultDeliveryMode` to change the host default. The full guarantee matrix lives in [Delivery Modes](../../docs/llms/messaging.md#delivery-modes).
 
 ## Callbacks
 

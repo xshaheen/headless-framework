@@ -2,6 +2,7 @@
 
 using Headless.Checks;
 using Headless.Messaging.Internal;
+using Headless.UnitOfWork;
 
 namespace Headless.Messaging;
 
@@ -86,7 +87,7 @@ public abstract class PublishContext
     /// <summary>Gets the resolved UTC not-before timestamp for delayed delivery.</summary>
     public DateTimeOffset? PublishAt { get; }
 
-    /// <summary>Gets whether durable capture is enlisted in the ambient commit boundary.</summary>
+    /// <summary>Gets whether durable capture is enlisted in the active unit of work.</summary>
     public bool IsTransactional { get; }
 
     private bool DeliveryFrozen { get; }
@@ -185,13 +186,27 @@ public sealed class PublishContext<TMessage> : PublishContext, ICompletablePubli
     /// <param name="options">The message options, including the delivery mode override and relative or absolute schedule.</param>
     /// <param name="defaultDeliveryMode">The host delivery mode inherited when the options do not specify one.</param>
     /// <param name="now">The resolution timestamp used to calculate <see cref="PublishContext.PublishAt"/> in UTC.</param>
-    /// <param name="isTransactional">Whether to resolve delivery against a compatible ambient commit boundary.</param>
+    /// <param name="isTransactional">Whether to resolve delivery against a compatible active unit of work.</param>
+    /// <param name="isStorageSupported">
+    /// Whether the host declares messaging storage for <paramref name="lane"/>. Defaults to <see langword="true"/>,
+    /// which mirrors every real host because storage is mandatory at startup; pass <see langword="false"/> to
+    /// exercise the rejection a durable request receives on a misconfigured host.
+    /// </param>
+    /// <param name="defaultEnlistment">The host transaction-enlistment requirement inherited when the options do not specify one.</param>
     /// <param name="cancellationToken">The token forwarded to middleware.</param>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// The lane or effective delivery mode is undefined, or the delay is nonpositive or overflows the timestamp range.
+    /// The lane, effective delivery mode, or effective enlistment is undefined, or the delay is nonpositive or
+    /// overflows the timestamp range.
     /// </exception>
     /// <exception cref="ArgumentException">Both a relative delay and an absolute schedule are specified.</exception>
-    /// <exception cref="InvalidOperationException">Direct delivery specifies a relative or absolute schedule.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// Direct delivery specifies a relative or absolute schedule or <see cref="TransactionEnlistment.Required"/>,
+    /// or <see cref="TransactionEnlistment.Required"/> is requested while <paramref name="isTransactional"/> is
+    /// <see langword="false"/>.
+    /// </exception>
+    /// <exception cref="MessagingConfigurationException">
+    /// Durable delivery is requested while <paramref name="isStorageSupported"/> is <see langword="false"/>.
+    /// </exception>
     public PublishContext(
         TMessage? content,
         MessageLane lane,
@@ -199,6 +214,8 @@ public sealed class PublishContext<TMessage> : PublishContext, ICompletablePubli
         DeliveryMode defaultDeliveryMode,
         DateTimeOffset now,
         bool isTransactional = false,
+        bool isStorageSupported = true,
+        TransactionEnlistment defaultEnlistment = TransactionEnlistment.WhenAvailable,
         CancellationToken cancellationToken = default
     )
         : base(
@@ -210,10 +227,13 @@ public sealed class PublishContext<TMessage> : PublishContext, ICompletablePubli
             DeliveryDecisionResolver.Resolve(
                 lane,
                 options?.DeliveryMode ?? defaultDeliveryMode,
+                options?.Enlistment ?? defaultEnlistment,
                 options?.Delay,
                 isTransactional ? DeliveryCoordinationStatus.Compatible : DeliveryCoordinationStatus.None,
                 now.ToUniversalTime(),
-                scheduledAt: options?.ScheduledAt
+                scheduledAt: options?.ScheduledAt,
+                storageSupported: isStorageSupported,
+                messageName: typeof(TMessage).Name
             ),
             deliveryFrozen: false,
             cancellationToken

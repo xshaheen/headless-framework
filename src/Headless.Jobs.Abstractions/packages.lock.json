@@ -124,7 +124,7 @@
       "headless.checks": {
         "type": "Project"
       },
-      "headless.commitcoordination.abstractions": {
+      "headless.unitofwork.abstractions": {
         "type": "Project"
       }
     }

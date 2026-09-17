@@ -1,6 +1,7 @@
 using Headless.Jobs.Base;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Models;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
 namespace Headless.Jobs.Console.Demo;
@@ -19,11 +20,17 @@ public static class ConsoleSampleJobs
     }
 }
 
-// Hosted service that schedules a single job on startup
-public class SampleScheduler(IJobScheduler scheduler) : IHostedService
+// Hosted service that schedules a single job on startup. IJobScheduler is scoped (it reads the scope's
+// IUnitOfWorkManager.Current), so a hosted service — which lives for the app's lifetime, not one operation —
+// creates its own scope per run rather than injecting the scoped service into its own (effectively singleton)
+// constructor.
+public class SampleScheduler(IServiceScopeFactory scopeFactory) : IHostedService
 {
     public async Task StartAsync(CancellationToken cancellationToken)
     {
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var scheduler = scope.ServiceProvider.GetRequiredService<IJobScheduler>();
+
         Guid jobId;
         try
         {

@@ -6,6 +6,7 @@ using System.Runtime.ExceptionServices;
 using Headless.AuditLog;
 using Headless.Domain;
 using Headless.EntityFramework.Contexts.Processors;
+using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -22,15 +23,17 @@ namespace Headless.EntityFramework.Contexts.Runtime;
 /// </summary>
 /// <remarks>
 /// Implementations own the transaction boundary. When an explicit transaction is already on the context
-/// the pipeline reuses it; otherwise it opens a transaction wrapped by the execution strategy so audit and
-/// message-emitter work commit atomically with the entity batch.
+/// the pipeline reuses it; otherwise it opens a transaction wrapped by the execution strategy, enlists it in a
+/// unit of work for the save's duration, and completes that unit after the commit so audit and message-emitter
+/// work commits atomically with the entity batch and after-commit work drains once the outcome is durable.
 /// <para>
 /// A completed local drain is not repeated by subsequent persistence retries within an owned save.
 /// Handler failures can repeat handler entry; there are no per-handler checkpoints. Local handlers must
 /// remain replay-safe and avoid rollback-unsafe external effects. Once a participant prevents retry
-/// (such as a coordinated Jobs write), any failure propagates and requires a fresh context and graph.
-/// Caller-owned successful saves clear only
-/// their saved batches before physical commit; a known outer rollback requires a fresh context and graph. Outbox storage can enlist atomically; delivery and external effects remain at-least-once.
+/// (such as a job write enlisted in the unit of work), any failure propagates and requires a fresh context and
+/// graph. Caller-owned successful saves clear only their saved batches before physical commit; a known outer
+/// rollback requires a fresh context and graph. Outbox storage can enlist atomically; delivery and external
+/// effects remain at-least-once.
 /// </para>
 /// </remarks>
 [PublicAPI]
@@ -72,6 +75,15 @@ public interface IHeadlessSaveChangesPipeline
 /// entities before message-collection sees the final state.
 /// </para>
 /// <para>
+/// Unit of work (KD13/R11): the unit bound to the context by <c>IUnitOfWorkManager.BeginAsync(db)</c> /
+/// <c>Enlist(db, tx)</c> is consulted first and the scope's manager second. A bound unit owned by another
+/// scope's manager (a context created through <c>IDbContextFactory&lt;T&gt;</c> owns its own scope) is adopted
+/// into this scope for the save's duration, so domain-event handlers and the outbox dispatcher resolved here
+/// see the same <c>Current</c>. A save inside a caller-owned transaction that carries integration events
+/// requires a unit that owns that transaction; otherwise it fails before any dispatch rather than writing
+/// outbox rows non-atomically.
+/// </para>
+/// <para>
 /// Cancellation: <c>transaction.CommitAsync</c> has no implicit timeout beyond the supplied
 /// <see cref="CancellationToken"/>. Callers should pass a deadline-bounded token when needed.
 /// </para>
@@ -88,7 +100,7 @@ internal sealed class HeadlessSaveChangesPipeline(
     IServiceProvider serviceProvider,
     HeadlessDbContextOptions options,
     IHeadlessAuditPersistence auditPersistence,
-    IHeadlessTransactionCoordinator transactionCoordinator,
+    IUnitOfWorkManager unitOfWorkManager,
     IDomainEventDispatcher? domainEventDispatcher = null,
     IHeadlessOutboxDispatcher? outboxDispatcher = null,
     ILogger<HeadlessSaveChangesPipeline>? logger = null
@@ -107,6 +119,12 @@ internal sealed class HeadlessSaveChangesPipeline(
         serviceProvider
     );
 
+    // Looked up on every domain-event recollection pass of every save; the chain is fixed for the pipeline's
+    // lifetime, so it is resolved once from the same instances the chain runs and cached (a null result is
+    // cached too, hence the separate flag).
+    private HeadlessMessageCollectorSaveEntryProcessor? _messageCollector;
+    private bool _messageCollectorResolved;
+
     private readonly ILogger<HeadlessSaveChangesPipeline> _logger =
         logger ?? NullLogger<HeadlessSaveChangesPipeline>.Instance;
 
@@ -117,6 +135,11 @@ internal sealed class HeadlessSaveChangesPipeline(
         CancellationToken cancellationToken = default
     )
     {
+        // A unit bound to this context by another scope's manager becomes this scope's Current for the whole
+        // save, so everything resolved here (handlers, the outbox dispatcher) coordinates on it. Re-entrant
+        // when the slot already holds it; a different active unit in the slot is a programming error.
+        using var adoption = _AdoptBoundUnitOfWork(context);
+
         // Materialize once — the framework processors don't add new ChangeTracker entries during
         // _ProcessEntries, so a single snapshot is correct for the audit capture too.
         var trackedEntries = _SnapshotEntries(context);
@@ -135,6 +158,8 @@ internal sealed class HeadlessSaveChangesPipeline(
 
         if (context.Database.CurrentTransaction is not null)
         {
+            _EnsureUnitOfWorkOwnsCallerTransaction(context, saveContext);
+
             return await _ExecuteWithinCurrentTransactionAsync(state).ConfigureAwait(false);
         }
 
@@ -157,6 +182,8 @@ internal sealed class HeadlessSaveChangesPipeline(
     public int SaveChanges(DbContext context, Func<bool, int> baseSaveChanges, bool acceptAllChangesOnSuccess)
     {
 #pragma warning disable MA0045 // Sync SaveChanges intentionally wraps EF sync APIs.
+        using var adoption = _AdoptBoundUnitOfWork(context);
+
         var trackedEntries = _SnapshotEntries(context);
         var saveContext = _ProcessEntries(context, trackedEntries);
         var auditEntries = auditPersistence.CaptureEntries(trackedEntries);
@@ -172,6 +199,8 @@ internal sealed class HeadlessSaveChangesPipeline(
 
         if (context.Database.CurrentTransaction is not null)
         {
+            _EnsureUnitOfWorkOwnsCallerTransaction(context, saveContext);
+
             return _ExecuteWithinCurrentTransaction(state);
         }
 
@@ -189,11 +218,67 @@ internal sealed class HeadlessSaveChangesPipeline(
 #pragma warning restore MA0045
     }
 
+    private HeadlessMessageCollectorSaveEntryProcessor? _ResolveMessageCollector()
+    {
+        if (!_messageCollectorResolved)
+        {
+            _messageCollector = _entryProcessors.OfType<HeadlessMessageCollectorSaveEntryProcessor>().SingleOrDefault();
+            _messageCollectorResolved = true;
+        }
+
+        return _messageCollector;
+    }
+
     private static EntityEntry[] _SnapshotEntries(DbContext context)
     {
         // Single allocation, single ChangeTracker traversal — feeds both _ProcessEntries and the
         // initial audit capture.
         return [.. context.ChangeTracker.Entries()];
+    }
+
+    private IDisposable? _AdoptBoundUnitOfWork(DbContext context)
+    {
+        var bound = DbContextUnitOfWork.Find(context);
+
+        return bound is null ? null : unitOfWorkManager.Adopt(bound);
+    }
+
+    // The save's own exception is the caller's outcome; a fault while rolling the unit back (its failure drain
+    // disposing scope-local state) is logged so it can never replace the failure that caused the rollback.
+    private async ValueTask _RollBackQuietlyAsync(IUnitOfWork unitOfWork)
+    {
+        try
+        {
+            await unitOfWork.RollbackAsync().ConfigureAwait(false);
+        }
+        catch (Exception rollbackFault)
+        {
+            _logger.LogUnitOfWorkRollbackFailed(rollbackFault);
+        }
+    }
+
+    // Integration events are the writes that must land inside the caller's transaction (outbox rows); a save
+    // without them under a caller-owned transaction is ordinary EF usage and needs no unit of work. Handlers can
+    // still add integration events during the drain — the outbox dispatcher repeats this check at dispatch time.
+    private void _EnsureUnitOfWorkOwnsCallerTransaction(DbContext context, HeadlessSaveEntryContext saveContext)
+    {
+        if (saveContext.IntegrationEventEmitters.Count == 0)
+        {
+            return;
+        }
+
+        // CurrentTransaction was verified non-null by the caller; null-forgiving here documents that.
+        var currentTransaction = context.Database.CurrentTransaction!.GetDbTransaction();
+
+        if (
+            unitOfWorkManager.Current?.Resource is IRelationalUnitOfWorkResource resource
+            && ReferenceEquals(resource.Transaction, currentTransaction)
+        )
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(HeadlessUnitOfWorkMessages.CallerOwnedTransactionWithoutUnitOfWork);
     }
 
     private HeadlessSaveEntryContext _ProcessEntries(DbContext context, IReadOnlyList<EntityEntry> entries)
@@ -229,27 +314,42 @@ internal sealed class HeadlessSaveChangesPipeline(
 
     private async Task<int> _ExecuteWithNewTransactionAsync(AsyncSaveState state)
     {
-        IHeadlessTransactionScope? coordination = null;
+        var retryPrevented = false;
+
         try
         {
             await using var transaction = await state
                 .Context.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, state.CancellationToken)
                 .ConfigureAwait(false);
-            // Give the selected transaction adapter the open transaction synchronously in this frame. The core adapter
-            // is a no-op; the commit-coordination package pushes its ambient coordinator here so it flows to work
-            // invoked inside the save. The push must not live behind an async helper because AsyncLocal state created
-            // there does not propagate back to this caller.
-            await using var enlistedScope = coordination = transactionCoordinator.Enlist(
-                state.Context.Database,
-                transaction,
-                serviceProvider,
-                state.CancellationToken
-            );
-            return await _SaveWithinTransactionAsync(state, transaction, commitTransaction: true).ConfigureAwait(false);
+
+            // Observed mode: the pipeline commits, the unit only makes the transaction visible to everything
+            // invoked inside the save (outbox writer, job writer, handlers) through the scope's Current and
+            // drains their after-commit registrations once the commit is durable.
+            await using var unitOfWork = unitOfWorkManager.Enlist(state.Context, transaction);
+            int saved;
+
+            try
+            {
+                saved = await _SaveWithinTransactionAsync(state, transaction, commitTransaction: true)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception) when (!state.SaveContext.CommitStarted)
+            {
+                // The transaction rolls back when it is disposed below; tell the unit so participants observe a
+                // rollback (not an abandon), and read the retry marker before the unit reaches its terminal state.
+                retryPrevented = unitOfWork.IsRetryPrevented;
+                await _RollBackQuietlyAsync(unitOfWork).ConfigureAwait(false);
+
+                throw;
+            }
+
+            await unitOfWork.CompleteAsync(state.CancellationToken).ConfigureAwait(false);
+
+            return saved;
         }
-        catch (Exception exception) when (state.SaveContext.CommitStarted || coordination?.IsRetryPrevented is true)
+        catch (Exception exception) when (state.SaveContext.CommitStarted || retryPrevented)
         {
-            // Commit outcomes may be unknown, and coordinated writes are absent from the retained tracker.
+            // Commit outcomes may be unknown, and writes enlisted in the unit are absent from the retained tracker.
             // Rethrow outside the execution strategy so it cannot replay an incomplete unit of work.
             state.SaveContext.NonRetryableFailure = ExceptionDispatchInfo.Capture(exception);
             return 0;
@@ -258,24 +358,36 @@ internal sealed class HeadlessSaveChangesPipeline(
 
     private int _ExecuteWithNewTransaction(SaveState state)
     {
-        IHeadlessTransactionScope? coordination = null;
+        var retryPrevented = false;
+
         try
         {
-#pragma warning disable MA0045 // Sync intentionally
-            // Sync twin of _ExecuteWithNewTransactionAsync — same open-then-synchronously-enlist shape.
+#pragma warning disable MA0045, AsyncFixer04 // Sync intentionally; _RunBlocking blocks on each unit-of-work verb before the using block ends.
+            // Sync twin of _ExecuteWithNewTransactionAsync — same open-then-enlist-then-complete shape.
             using var transaction = state.Context.Database.BeginTransaction(IsolationLevel.ReadCommitted);
-            using var enlistedScope = coordination = transactionCoordinator.Enlist(
-                state.Context.Database,
-                transaction,
-                serviceProvider,
-                CancellationToken.None
-            );
-            return _SaveWithinTransaction(state, transaction, commitTransaction: true);
-#pragma warning restore MA0045
+            using var unitOfWork = unitOfWorkManager.Enlist(state.Context, transaction);
+            int saved;
+
+            try
+            {
+                saved = _SaveWithinTransaction(state, transaction, commitTransaction: true);
+            }
+            catch (Exception) when (!state.SaveContext.CommitStarted)
+            {
+                retryPrevented = unitOfWork.IsRetryPrevented;
+                _RunBlocking(_RollBackQuietlyAsync(unitOfWork));
+
+                throw;
+            }
+
+            _RunBlocking(unitOfWork.CompleteAsync(CancellationToken.None));
+
+            return saved;
+#pragma warning restore MA0045, AsyncFixer04
         }
-        catch (Exception exception) when (state.SaveContext.CommitStarted || coordination?.IsRetryPrevented is true)
+        catch (Exception exception) when (state.SaveContext.CommitStarted || retryPrevented)
         {
-            // Commit outcomes may be unknown, and coordinated writes are absent from the retained tracker.
+            // Commit outcomes may be unknown, and writes enlisted in the unit are absent from the retained tracker.
             // Rethrow outside the execution strategy so it cannot replay an incomplete unit of work.
             state.SaveContext.NonRetryableFailure = ExceptionDispatchInfo.Capture(exception);
             return 0;
@@ -471,7 +583,7 @@ internal sealed class HeadlessSaveChangesPipeline(
         // Recollect after each completed pass, without synthesizing lifecycle events again for existing entries.
         if (saveContext.DomainEventCursor == saveContext.PendingDomainEvents.Count)
         {
-            var collector = _entryProcessors.OfType<HeadlessMessageCollectorSaveEntryProcessor>().SingleOrDefault();
+            var collector = _ResolveMessageCollector();
             foreach (var entry in _SnapshotEntries(context))
             {
                 if (saveContext.ProcessedEntities.Add(entry.Entity))
@@ -525,6 +637,21 @@ internal sealed class HeadlessSaveChangesPipeline(
 
         // GetResult() rethrows the original exception (no AggregateException wrapping by Task.Wait),
         // preserving the dispatcher's single-exception / AggregateException contract for the catch below.
+        pending.AsTask().GetAwaiter().GetResult();
+#pragma warning restore MA0045
+    }
+
+    // The unit-of-work verbs are async-only by contract; the synchronous SaveChanges path blocks on them here,
+    // in infrastructure, for the same reason as the domain-event bridge above.
+    private static void _RunBlocking(ValueTask pending)
+    {
+#pragma warning disable MA0045 // Sync SaveChanges path intentionally blocks; see comment above.
+        if (pending.IsCompletedSuccessfully)
+        {
+            pending.GetAwaiter().GetResult();
+            return;
+        }
+
         pending.AsTask().GetAwaiter().GetResult();
 #pragma warning restore MA0045
     }
@@ -588,4 +715,12 @@ internal static partial class HeadlessSaveChangesPipelineLog
         Message = "Audit discard failed during exception path; rethrowing the original SaveChanges exception."
     )]
     public static partial void LogAuditDiscardFailed(this ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 2,
+        EventName = "HeadlessUnitOfWorkRollbackFailedDuringExceptionPath",
+        Level = LogLevel.Error,
+        Message = "Rolling the save's unit of work back faulted during the exception path; rethrowing the original SaveChanges exception."
+    )]
+    public static partial void LogUnitOfWorkRollbackFailed(this ILogger logger, Exception exception);
 }

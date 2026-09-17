@@ -295,9 +295,6 @@
       "headless.checks": {
         "type": "Project"
       },
-      "headless.commitcoordination.abstractions": {
-        "type": "Project"
-      },
       "headless.coordination.abstractions": {
         "type": "Project",
         "dependencies": {
@@ -416,7 +413,7 @@
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
-          "Headless.CommitCoordination.Abstractions": "[1.0.0, )"
+          "Headless.UnitOfWork.Abstractions": "[1.0.0, )"
         }
       },
       "headless.jobs.core": {
@@ -427,6 +424,7 @@
           "Headless.DistributedLocks.Abstractions": "[1.0.0, )",
           "Headless.Jobs.Abstractions": "[1.0.0, )",
           "Headless.MultiTenancy": "[1.0.0, )",
+          "Headless.UnitOfWork": "[1.0.0, )",
           "NCrontab.Signed": "[3.4.0, )",
           "OpenTelemetry.Api": "[1.18.0, )",
           "Polly.Core": "[8.7.0, )"
@@ -487,6 +485,16 @@
         "dependencies": {
           "Headless.Serializer.Abstractions": "[1.0.0, )"
         }
+      },
+      "headless.unitofwork": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.UnitOfWork.Abstractions": "[1.0.0, )"
+        }
+      },
+      "headless.unitofwork.abstractions": {
+        "type": "Project"
       },
       "headless.urls": {
         "type": "Project",

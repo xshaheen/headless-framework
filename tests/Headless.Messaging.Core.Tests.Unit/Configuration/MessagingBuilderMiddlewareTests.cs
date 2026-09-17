@@ -5,6 +5,7 @@ using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Testing.Tests;
+using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests.Configuration;
@@ -14,7 +15,8 @@ public sealed class MessagingBuilderMiddlewareTests : TestBase
     private static DeliveryDecision _DirectDecision =>
         DeliveryDecisionResolver.Resolve(
             MessageLane.Bus,
-            DeliveryMode.Auto,
+            DeliveryMode.Direct,
+            TransactionEnlistment.WhenAvailable,
             delay: null,
             DeliveryCoordination.None,
             DateTimeOffset.UnixEpoch

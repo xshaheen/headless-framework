@@ -726,31 +726,48 @@ internal sealed class SubscribeExecutor(
                     ret.CallbackHeader[Headers.TraceParent] = traceParent;
                 }
 
-                await provider
-                    .GetRequiredService<IBus>()
-                    .PublishAsync(
-                        ret.Result,
-                        new PublishOptions
-                        {
-                            DeliveryMode = DeliveryMode.Durable,
-                            MessageName = ret.CallbackName,
-                            Headers = ret.CallbackHeader,
-                            MessageType = ret.ResultType,
-                            CorrelationId =
-                                message.Origin.Headers.TryGetValue(Headers.CorrelationId, out var correlationId)
-                                && !string.IsNullOrWhiteSpace(correlationId)
-                                    ? correlationId
-                                    : message.Origin.Id,
-                            CausationId = message.Origin.Id,
-                            CorrelationSequence = message.Origin.GetCorrelationSequence() + 1,
-                            // Chain the next hop: the published response carries this callback name so its
-                            // consumer can react and publish a further response.
-                            CallbackName = ret.ResponseCallbackName,
-                        },
-                        // callback response write must not be interrupted by shutdown — mirrors _SetSuccessfulState
-                        CancellationToken.None
-                    )
-                    .ConfigureAwait(false);
+                var callbackOptions = new PublishOptions
+                {
+                    DeliveryMode = DeliveryMode.Durable,
+                    MessageName = ret.CallbackName,
+                    Headers = ret.CallbackHeader,
+                    MessageType = ret.ResultType,
+                    CorrelationId =
+                        message.Origin.Headers.TryGetValue(Headers.CorrelationId, out var correlationId)
+                        && !string.IsNullOrWhiteSpace(correlationId)
+                            ? correlationId
+                            : message.Origin.Id,
+                    CausationId = message.Origin.Id,
+                    CorrelationSequence = message.Origin.GetCorrelationSequence() + 1,
+                    // Chain the next hop: the published response carries this callback name so its
+                    // consumer can react and publish a further response.
+                    CallbackName = ret.ResponseCallbackName,
+                };
+
+                if (services is not null)
+                {
+                    // Transactional tier: publish through the attempt scope's IBus so the callback response
+                    // enlists in the same unit of work as the handler and rolls back with it.
+                    await services
+                        .GetRequiredService<IBus>()
+                        .PublishAsync(
+                            ret.Result,
+                            callbackOptions,
+                            // callback response write must not be interrupted by shutdown — mirrors _SetSuccessfulState
+                            CancellationToken.None
+                        )
+                        .ConfigureAwait(false);
+                }
+                else
+                {
+                    // Non-transactional tier: no unit of work is bound here, so a fresh scope keeps the
+                    // callback response an autonomous durable write, independent of the caller's dispatch scope.
+                    await using var callbackScope = provider.CreateAsyncScope();
+                    await callbackScope
+                        .ServiceProvider.GetRequiredService<IBus>()
+                        .PublishAsync(ret.Result, callbackOptions, CancellationToken.None)
+                        .ConfigureAwait(false);
+                }
             }
 
             // Fire the invoke success span only after the callback response publish completes so the success

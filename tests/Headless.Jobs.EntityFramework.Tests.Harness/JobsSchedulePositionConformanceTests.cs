@@ -967,13 +967,15 @@ public abstract class JobsSchedulePositionConformanceTests<TFixture>(TFixture fi
 
         try
         {
-            var manager = host.Services.GetRequiredService<ICronJobManager<CronJobEntity>>();
             var definition = _Definition("0 0 * * * *");
 
             var beforeInsert = await _StoreUtcNowAsync(ct);
             await fixture.RunCoordinatedTransactionAsync(
                 host.Services,
-                async (_, _, innerCt) => await manager.AddAsync(definition, innerCt),
+                async (scopedServices, _, _, innerCt) =>
+                    await scopedServices
+                        .GetRequiredService<ICronJobManager<CronJobEntity>>()
+                        .AddAsync(definition, innerCt),
                 ct
             );
             var afterInsert = await _StoreUtcNowAsync(ct);
@@ -1010,14 +1012,15 @@ public abstract class JobsSchedulePositionConformanceTests<TFixture>(TFixture fi
 
         try
         {
-            var manager = host.Services.GetRequiredService<ICronJobManager<CronJobEntity>>();
             var definition = _Definition("0 0 * * * *");
             DateTime transactionStartClock = default;
 
             await fixture.RunCoordinatedTransactionAsync(
                 host.Services,
-                async (connection, transaction, innerCt) =>
+                async (scopedServices, connection, transaction, innerCt) =>
                 {
+                    var manager = scopedServices.GetRequiredService<ICronJobManager<CronJobEntity>>();
+
                     // The value an EF-translated DateTime.UtcNow resolves to inside this transaction. On PostgreSQL it
                     // is pinned here for the transaction's whole life; reading it first is what makes the assertion
                     // below a real measurement rather than a race.

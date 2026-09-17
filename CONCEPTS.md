@@ -70,7 +70,7 @@ failover even if it can serve approximate dashboard views.
 A **message contract** is a plain serializable class, record, or interface. The invoked operation and
 lane-scoped registration select its **Message lane**: `IBus.PublishAsync` for broadcast or
 `IQueue.EnqueueAsync` for point-to-point delivery. **Delivery mode** is orthogonal to lane: it decides
-whether the message is captured durably or sent straight to transport.
+whether the message is atomic with the caller's transaction, durable on its own, or sent straight to transport.
 
 ### Message lane
 The semantic channel of a message: bus (broadcast — every subscriber group gets a copy) or queue
@@ -103,17 +103,14 @@ remains the request's origin metadata; the declared callback contract selects ty
 the concrete response type remains payload metadata.
 
 ### Delivery mode
-The delivery choices on publish/enqueue are `Auto`, `Durable`, and `Direct`.
-An unset per-call mode inherits `MessagingOptions.DefaultDeliveryMode`, which defaults to Auto.
-Explicit per-call modes override the host setting. Auto follows the framework transaction accessor (the only source of ambient durability —
-`Transaction.Current` alone does not count): recognized compatible transaction present → outbox
-(row persisted in that transaction, dispatched post-commit); no coordination → direct to transport;
-an active incompatible boundary → reject before side effects. Durable forces
-store-first regardless of transaction state. Direct bypasses storage and coordination
-compatibility checks even inside a transaction — an explicit, diagnostically-logged escape from
-atomicity. The mutually exclusive `Delay` and `ScheduledAt` options require storage:
-under Auto it upgrades the call to durable; with explicit Direct it is an error; dispatch
-timing is best-effort (not-before semantics). `ScheduledAt` accepts an absolute instant, including a past instant.
+The delivery choices on publish/enqueue are `Durable` and `Direct`. Precedence is per call
+(`MessageOptions.DeliveryMode`), then per message type (`WithDeliveryMode(...)` on the lane
+registration), then the host `MessagingOptions.DefaultDeliveryMode`, which defaults to `Durable`.
+No mode sends directly by omission. Whether a durable publish enlists in the caller's active
+transaction is a separate axis, `TransactionEnlistment` (see [Unit of Work](#unit-of-work) below);
+`Direct` bypasses storage and enlistment entirely, even inside an active unit of work.
+
+Telemetry reports the requested and resolved mode as `durable` / `direct` only.
 Both verbs return `PublishReceipt`; durable delivery includes a `StorageId`, while direct delivery does not.
 `IMessageRevoker` deletes a scheduled row by that handle until its first dispatch reservation.
 Only `Revoked` proves prevention. `AttemptReserved` is not proof of delivery. Application-level
@@ -149,28 +146,65 @@ recovery cannot undo a newer Open state.
   issues incarnations — these are distinct: Incarnation is the per-node value, the generation
   table/counter is the authority.
 
-## Commit Coordination
+## Unit of Work
 
-### Commit coordinator
+See [docs/llms/unit-of-work.md](docs/llms/unit-of-work.md) for the full domain doc, agent rules, and package contracts.
 
-The register-only scope object that collects commit and rollback callbacks for one physical unit of
-work. It guarantees exactly-once callback invocation per coordinator instance, not exactly-once
-business effects.
+### Unit of work
 
-### Commit signal source
+The owner-side handle (`IUnitOfWork`) for one physical transaction/coordination window, obtained
+from the **scoped** `IUnitOfWorkManager` (`IUnitOfWorkManager.Current`, a plain field — never an
+`AsyncLocal`, never ambient). Application code opens it explicitly, on the line it chooses
+(`unitOfWork.BeginAsync(...)`); nothing opens one on the developer's behalf. `CompleteAsync` commits
+the resource's transaction (owned mode, from `BeginAsync`) or observes a transaction the caller
+already committed (observed mode, from `Enlist`), then drains `OnCompleted` registrations. Dispose
+without `CompleteAsync` is an implicit rollback that drains `OnFailed` registrations instead.
+Nesting is join-by-default: beginning again on the same resource returns a child view whose
+completions transfer to the parent on complete and whose abandonment aborts the root; a
+resource-bearing begin under a resource-less root opens an independent nested unit.
 
-The provider adapter that turns a native commit or rollback edge into a coordinator terminal signal.
-Examples include owner-driven in-memory signals and SQL Server provider-key correlation.
+### Unit-of-work manager
 
-### Work buffer
+The scoped `IUnitOfWorkManager` is the single entry point application code interacts with — one
+unit-of-work slot per DI scope. Resolving it (or a scoped facade over it, such as `IBus`/`IQueue`)
+from the root provider is a captive-dependency error that scope validation reports; a singleton or
+hosted service that needs one creates its own scope. On the manager's own disposal, any still-active
+unit of work is rolled back, its `OnFailed` callbacks run with `Reason = ScopeDisposed`, and a
+leak warning is logged — a stranded unit of work is never silent.
 
-Scope-local state owned by a coordinator. Buffers hold deferred work until the terminal outcome; they
-must not be used as arbitrary service-locator bags.
+### Transaction enlistment
 
-### Capability
+The axis a participant (a published message, an enqueued job) uses to state how eagerly it requires
+an active unit of work: `TransactionEnlistment { WhenAvailable, Required, Never }`. Precedence is
+per call, then per type/function, then the host default. The guarantee matrix:
 
-A read-only provider escape hatch attached by the scope owner. `IRelationalCommitContext` is the
-current capability for BCL `DbConnection` and `DbTransaction` handles.
+| Enlistment | Active unit of work, joinable compatible resource | No unit of work, or one with no joinable resource | Unit of work with incompatible resource |
+|---|---|---|---|
+| `WhenAvailable` (default) | enlist in the transaction, dispatch/signal after commit | autonomous durable write, relay/poller recovers it | throw |
+| `Required` | same | throw | throw |
+| `Never` | autonomous | autonomous | autonomous |
+
+`Required` is checked at the call itself and throws before any effect when no active unit of work is
+compatible — there is no separate startup gate, because the scoped manager always exists
+(`AddUnitOfWork()` is idempotent and called by every consumer package's setup). Messaging's
+`MessageOptions.Enlistment` and Jobs' `JobOptions.Enlistment` / `RecurringJobOptions.Enlistment` are
+the two consumer mappings of this matrix to an outcome.
+
+### Unit-of-work resource
+
+`IRelationalUnitOfWorkResource`, exposed as `IUnitOfWork.Resource` (cast from the base
+`IUnitOfWorkResource`): the live `DbConnection` and `DbTransaction` the unit was begun or enlisted
+with, or `null` for a resource-less unit. Durable rows (outbox, jobs) are written through it so they
+share the caller's transaction. Owned vs. observed is a flag on the resource instance: an owned
+resource's commit/rollback drive the real transaction, an observed resource's are no-ops because the
+caller commits it.
+
+### Unit-local state
+
+Typed state owned by one unit of work through `GetOrAdd<TState>`: at most one instance per type,
+created atomically, disposed after the terminal outcome on commit and rollback alike. Used for
+per-transaction buffers or the retry-prevention marker (`PreventRetry()` / `IsRetryPrevented`); it
+must not be used as an arbitrary service-locator bag.
 
 ## Startup validation
 
@@ -190,16 +224,19 @@ only moves the failure to live traffic.
 ### Diagnostic gate
 
 A startup validation gate that does runtime I/O — opening a connection or probing a live operation —
-and so adds boot latency and can fail on a transient blip. Verifies an environment- or
-library-compatibility property rather than a per-request correctness property; defaults to off in
-production and active in development.
+and so adds boot latency and can fail on a transient blip. No diagnostic gate ships today: the EF
+commit-interceptor gate that used to be the one instance was deleted with the scoped unit of work
+(2026-09-17), because the unit owns its commit edge and nothing needs to prove an interceptor fires.
+A future one should treat an unreachable dependency as inconclusive and default to warn in every
+environment, since a transient blip at boot is not a misconfiguration.
 *Avoid:* diagnostic probe (use Diagnostic gate for the concept; "probe" names the I/O call it makes).
 
 ### Validation mode
 
-The per-gate strictness setting: off (skip), warn (log and continue, recording degraded state), or
-strict (throw and fail host startup). A gate resolves its mode from an explicit operator value when
-set, otherwise from an environment-aware default keyed to its tier.
+The per-gate strictness setting: off (skip), warn (log and continue), or strict (throw and fail host
+startup). The shipped enum is `CommitProbeMode` (`Disabled` / `Warn` / `Strict`); a gate reads an
+explicit operator value and otherwise its own flat default. No gate derives its default from the host
+environment today.
 
 ## Jobs (misfire recovery)
 
@@ -272,11 +309,14 @@ keyed rows remain indefinitely; ordinary edits, resets, retries, and hard deleti
 
 ### Transactional deadline capability
 
-`RequireAtomicEnlistment` requires a one-shot Jobs write to use the exact live relational transaction
-that owns the application update. The requirement is transient; it is not job payload or persisted
-intent. A keyed result returned inside that transaction is provisional until the caller commits, and
-rollback removes the write. Scheduler wake-up is post-commit acceleration; polling recovers a missed
-wake-up. Messaging delivery delay, distributed locks, and membership do not provide this capability.
+`TransactionEnlistment.Required` requires a Jobs write — a one-shot deadline or a recurring definition — to use
+the exact live relational transaction that owns the application update. The requirement is transient;
+it is not job payload, definition payload, or persisted intent. A keyed result returned inside that
+transaction is provisional until the caller commits, and rollback removes the write. Scheduler wake-up
+is post-commit acceleration; polling recovers a missed wake-up. Recurring definitions take the
+requirement from the call or the function policy, never the host default, and startup seeding of
+attribute-defined definitions is exempt because it runs before any application transaction exists.
+Messaging delivery delay, distributed locks, and membership do not provide this capability.
 
 ### Catch step
 

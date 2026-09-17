@@ -2,8 +2,8 @@
 
 using System.Data.Common;
 using Headless.Abstractions;
-using Headless.CommitCoordination;
 using Headless.Jobs;
+using Headless.Jobs.BackgroundServices;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
@@ -11,12 +11,27 @@ using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Managers;
 using Headless.Jobs.Models;
 using Headless.Testing.Tests;
+using Headless.UnitOfWork;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Tests.Managers;
 
 public sealed class JobsManagerDeleteResultTests : TestBase
 {
+    // Signal workers are never started here, but the service owns a channel and a cancellation source.
+    private readonly List<JobsPostCommitSignalService> _workers = [];
+
+    protected override async ValueTask DisposeAsyncCore()
+    {
+        foreach (var worker in _workers)
+        {
+            worker.Dispose();
+        }
+
+        await base.DisposeAsyncCore();
+    }
+
     [Fact]
     public async Task should_return_failed_delete_result_when_provider_throws_database_exception()
     {
@@ -90,7 +105,7 @@ public sealed class JobsManagerDeleteResultTests : TestBase
         scheduler.DidNotReceive().Restart();
     }
 
-    private static (
+    private (
         ITimeJobManager<TimeJobEntity> Manager,
         IJobPersistenceProvider<TimeJobEntity, CronJobEntity> Provider,
         IJobsHostScheduler Scheduler
@@ -116,6 +131,13 @@ public sealed class JobsManagerDeleteResultTests : TestBase
             );
         }
 
+        var signals = new JobsPostCommitSignalService(
+            TestActivationBarrier.Opened(),
+            TimeProvider.System,
+            NullLogger<JobsPostCommitSignalService>.Instance
+        );
+        _workers.Add(signals);
+
         var manager = new JobsManager<TimeJobEntity, CronJobEntity>(
             provider,
             scheduler,
@@ -124,14 +146,21 @@ public sealed class JobsManagerDeleteResultTests : TestBase
             Substitute.For<IJobsNotificationHubSender>(),
             executionContext,
             Substitute.For<IJobsDispatcher>(),
-            Substitute.For<ICurrentCommitCoordinator>(),
             new CronScheduleCache(TimeZoneInfo.Utc),
-            new SchedulerOptionsBuilder(),
+            signals,
             functionRegistry,
             NullLogger<JobsManager<TimeJobEntity, CronJobEntity>>.Instance
         );
 
-        return (manager, provider, scheduler);
+        // Delete/Update never touch unit-of-work coordination (KD5), so the facade's IUnitOfWorkManager is never
+        // read here; a real (unused) manager keeps the facade's constructor contract without a bespoke stub.
+        var unitOfWorkManager = new ServiceCollection().AddUnitOfWork().BuildServiceProvider();
+        var facade = new JobsManagerFacade<TimeJobEntity, CronJobEntity>(
+            manager,
+            unitOfWorkManager.GetRequiredService<IUnitOfWorkManager>()
+        );
+
+        return (facade, provider, scheduler);
     }
 
     private sealed class ProviderDbException : DbException;

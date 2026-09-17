@@ -4,9 +4,11 @@ using Headless.Checks;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.InMemory;
 using Headless.Messaging.Internal;
+using Headless.Messaging.Monitoring;
 using Headless.Messaging.Serialization;
 using Headless.Messaging.Storage.InMemory;
 using Headless.Messaging.Testing.Internal;
+using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -33,6 +35,16 @@ namespace Headless.Messaging.Testing;
 /// var recorded = await harness.WaitForConsumed&lt;MyMessage&gt;();
 /// </code>
 /// </para>
+/// <para>
+/// The harness keeps the production delivery default, so a plain publish is store-first: the row is durable
+/// when <c>PublishAsync</c> returns and the transport send, the <see cref="Published"/> observation, and
+/// consumption follow on dispatcher threads. Assert through the <c>WaitFor*</c> methods; for any one message the
+/// <see cref="Published"/> observation is recorded before its <see cref="Consumed"/> or <see cref="Faulted"/> one,
+/// so the collections are safe to read once the matching wait returns. When a harness is shared across tests call
+/// <see cref="ResetAsync"/> between them — it waits for that in-flight tail before clearing.
+/// <see cref="RunInUnitOfWorkAsync(Func{IServiceProvider, Task})"/> opens a scoped unit of work so a test can
+/// exercise <see cref="Headless.UnitOfWork.TransactionEnlistment.Required"/> and enlistment against a live commit.
+/// </para>
 /// </remarks>
 [PublicAPI]
 public sealed class MessagingTestHarness : IAsyncDisposable
@@ -43,11 +55,18 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     private readonly MessageObservationStore _store;
     private readonly bool _ownsSp;
 
+    // Owned by the harness, not by ServiceProvider: Publisher/Queue resolve scoped services (IBus/IQueue carry
+    // the scope's IUnitOfWorkManager) from this dedicated scope so they never enlist in a unit of work, and so a
+    // ValidateScopes host does not reject the harness's own convenience accessors as a captive-dependency error.
+    // Disposed with the harness regardless of who owns ServiceProvider.
+    private readonly AsyncServiceScope _harnessScope;
+
     private MessagingTestHarness(IServiceProvider sp, MessageObservationStore store, bool ownsSp)
     {
         ServiceProvider = sp;
         _store = store;
         _ownsSp = ownsSp;
+        _harnessScope = sp.CreateAsyncScope();
     }
 
     // -------------------------------------------------------------------------
@@ -79,7 +98,10 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         // Shared setup: observation store, decorators, options
         ConfigureServices(services);
 
-        var sp = services.BuildServiceProvider();
+        // ValidateScopes: IBus/IQueue are scoped (they read the scope's IUnitOfWorkManager.Current at publish
+        // time), so an accidental root resolution — in the harness or in caller code — fails fast instead of
+        // silently sharing a captive singleton instance across scopes.
+        var sp = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 
         // Bootstrap without hosted-service infrastructure
         var bootstrapper = sp.GetRequiredService<IBootstrapper>();
@@ -121,9 +143,9 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         var store = new MessageObservationStore();
         services.AddSingleton(store);
 
-        _DecorateBusTransport(services, store);
-        _DecorateQueueTransport(services, store);
-        _DecoratePipeline(services, store);
+        var busRecorded = _DecorateBusTransport(services, store);
+        var queueRecorded = _DecorateQueueTransport(services, store);
+        _DecoratePipeline(services, store, awaitPublishedRecord: busRecorded || queueRecorded);
         _DecorateOnExhausted(services, store);
 
         // Register the harness itself — does NOT own the ServiceProvider.
@@ -411,37 +433,163 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     // -------------------------------------------------------------------------
 
     /// <summary>
-    /// Resets all in-memory messaging state: recorded observations, pending queue messages,
-    /// and persisted storage data. Call between tests when using a shared fixture.
+    /// Waits for in-flight messaging work to settle, then resets all in-memory messaging state: recorded
+    /// observations, pending transport messages, and persisted storage rows. Call between tests that share a harness.
     /// </summary>
     /// <remarks>
-    /// Assumes no active message processing is in flight. Call this at test boundaries
-    /// (e.g., between tests) when consumers are idle. If you need to ensure quiescence
-    /// programmatically, pause consumers via <c>PauseAsync</c> before calling this method.
+    /// <para>
+    /// Default publishes are durable: <c>PublishAsync</c> returns once the row is stored, and the transport send,
+    /// the <see cref="Published"/> observation, and consumption all run afterwards on dispatcher threads. A
+    /// synchronous clear would race that tail, so this method first waits until no published row is
+    /// <c>Scheduled</c> or <c>Queued</c> and no received row is <c>Scheduled</c> — those states bracket every
+    /// send and every consumer execution — then drops transport messages no consumer has picked up, waits once
+    /// more for anything picked up in between, and only then clears observations and storage.
+    /// </para>
+    /// <para>
+    /// A publish that is not yet due is clock-parked and is not awaited: the dispatcher stores it as <c>Queued</c>
+    /// when it is due within a minute and as <c>Delayed</c> beyond that, holds it either way, and publishes it when
+    /// its time arrives on the host <see cref="TimeProvider"/>. The wait therefore counts a <c>Queued</c> publish as
+    /// in flight only once it is due on that clock. A shared harness should not carry pending delays across tests,
+    /// or should advance its <c>FakeTimeProvider</c> past them before resetting. Pending <c>WaitFor*</c> calls
+    /// fault when the reset clears the store. A message the transport handed to a consumer just before the reset
+    /// still runs afterwards, but it is not awaited and its Consumed or Faulted observation is not recorded.
+    /// </para>
     /// </remarks>
-    public void Clear()
+    /// <param name="timeout">How long to wait for in-flight work; defaults to <see cref="DefaultTimeout"/>.</param>
+    /// <param name="cancellationToken">Cancels the wait.</param>
+    /// <exception cref="TimeoutException">In-flight work did not settle within <paramref name="timeout"/>.</exception>
+    public async Task ResetAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = default)
     {
-        _store.Clear();
+        var storage = ServiceProvider.GetService<InMemoryDataStorage>();
+        // The dispatcher decides when a parked publish is due on the host clock, which a test host may fake.
+        var hostClock = ServiceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
+        var waitBudget = timeout ?? DefaultTimeout;
+        var startedAt = TimeProvider.System.GetTimestamp();
+
+        if (storage is not null)
+        {
+            await _WaitForStorageIdleAsync(storage, hostClock, startedAt, waitBudget, cancellationToken)
+                .ConfigureAwait(false);
+        }
 
         ServiceProvider.GetService<MemoryQueue>()?.DrainAllPendingMessages();
-        ServiceProvider.GetService<InMemoryDataStorage>()?.Clear();
+
+        if (storage is not null)
+        {
+            // A consumer that dequeued a message just before the drain stores its received row next; the second
+            // wait covers that hand-off instead of clearing underneath it.
+            await _WaitForStorageIdleAsync(storage, hostClock, startedAt, waitBudget, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        _store.Clear();
+        storage?.Clear();
+    }
+
+    // -------------------------------------------------------------------------
+    // Scoped unit of work
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Runs <paramref name="action"/> inside a fresh service scope with a resource-less unit of work active —
+    /// the harness stand-in for an application transaction — completing the unit when the delegate returns and
+    /// rolling it back when it throws.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The scope and the unit of work are created here, in the frame that owns them, so
+    /// <paramref name="action"/> receives that scope's <see cref="IServiceProvider"/>: resolve <see cref="IBus"/>
+    /// or <see cref="IQueue"/> from it (not from <see cref="Publisher"/> or <see cref="Queue"/>, which carry no
+    /// unit of work) to enlist a publish. In-memory storage captures every enlisted publish on the unit, so a
+    /// type registered <c>WithEnlistment(TransactionEnlistment.Required)</c> can be published here — outside any
+    /// unit of work the publish throws <see cref="InvalidOperationException"/> — and a default
+    /// <c>TransactionEnlistment.WhenAvailable</c> publish enlists the same way. Completion stores the captured
+    /// rows and hands them to the dispatcher, so they surface through
+    /// <see cref="WaitForPublished{T}(TimeSpan?, CancellationToken)"/> and
+    /// <see cref="WaitForConsumed{T}(TimeSpan?, CancellationToken)"/>; rollback discards them and nothing is
+    /// recorded.
+    /// </para>
+    /// <para>
+    /// Every call opens an independent scope and root unit of work: a nested call does not join the outer one,
+    /// its rows commit or roll back on their own, and the outer unit is unaffected once the inner call returns.
+    /// </para>
+    /// </remarks>
+    /// <param name="action">The work to run with the scope's <see cref="IServiceProvider"/>.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="action"/> is <see langword="null"/>.</exception>
+    public async Task RunInUnitOfWorkAsync(Func<IServiceProvider, Task> action)
+    {
+        Argument.IsNotNull(action);
+
+        await RunInUnitOfWorkAsync(async sp =>
+            {
+                await action(sp).ConfigureAwait(false);
+                return true;
+            })
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Runs <paramref name="action"/> inside a fresh service scope with a resource-less unit of work active and
+    /// returns its result; see <see cref="RunInUnitOfWorkAsync(Func{IServiceProvider, Task})"/> for the
+    /// completion and rollback semantics.
+    /// </summary>
+    /// <typeparam name="TResult">The delegate's result type.</typeparam>
+    /// <param name="action">The work to run with the scope's <see cref="IServiceProvider"/>.</param>
+    /// <returns>The delegate's result, after the unit of work has completed.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="action"/> is <see langword="null"/>.</exception>
+    public async Task<TResult> RunInUnitOfWorkAsync<TResult>(Func<IServiceProvider, Task<TResult>> action)
+    {
+        Argument.IsNotNull(action);
+
+        await using var scope = ServiceProvider.CreateAsyncScope();
+        var unitOfWorkManager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+        var unitOfWork = await unitOfWorkManager.BeginAsync().ConfigureAwait(false);
+
+        TResult result;
+        try
+        {
+            result = await action(scope.ServiceProvider).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Disposal alone would roll back, but rolling back here disposes the scope-local buffers before the
+            // caller observes the exception, so the captured rows are already discarded when the test asserts.
+            await unitOfWork.RollbackAsync().ConfigureAwait(false);
+            throw;
+        }
+
+        await unitOfWork.CompleteAsync().ConfigureAwait(false);
+
+        return result;
     }
 
     // -------------------------------------------------------------------------
     // Service access
     // -------------------------------------------------------------------------
 
-    /// <summary>Returns a bus publisher backed by the in-memory transport.</summary>
-    public IBus Publisher => ServiceProvider.GetRequiredService<IBus>();
+    /// <summary>
+    /// Returns a bus publisher backed by the in-memory transport, resolved from a harness-owned scope that
+    /// carries no unit of work — a publish through this property always writes standalone.
+    /// </summary>
+    /// <remarks>Use the scope's <see cref="IServiceProvider"/> passed to <see cref="RunInUnitOfWorkAsync(Func{IServiceProvider, Task})"/> to enlist a publish in a unit of work instead.</remarks>
+    public IBus Publisher => _harnessScope.ServiceProvider.GetRequiredService<IBus>();
 
-    /// <summary>Returns a queue publisher backed by the in-memory transport.</summary>
-    public IQueue Queue => ServiceProvider.GetRequiredService<IQueue>();
+    /// <summary>
+    /// Returns a queue publisher backed by the in-memory transport, resolved from a harness-owned scope that
+    /// carries no unit of work — a publish through this property always writes standalone.
+    /// </summary>
+    /// <remarks>Use the scope's <see cref="IServiceProvider"/> passed to <see cref="RunInUnitOfWorkAsync(Func{IServiceProvider, Task})"/> to enlist a publish in a unit of work instead.</remarks>
+    public IQueue Queue => _harnessScope.ServiceProvider.GetRequiredService<IQueue>();
 
-    /// <summary>Resolves an arbitrary service from the harness container.</summary>
+    /// <summary>
+    /// Resolves an arbitrary service from the harness-owned scope (see <see cref="Publisher"/>), so a scoped
+    /// service such as <see cref="IBus"/> or <see cref="IQueue"/> resolves without a
+    /// <c>ValidateScopes</c> captive-dependency error and carries no unit of work.
+    /// </summary>
     public T GetRequiredService<T>()
         where T : notnull
     {
-        return ServiceProvider.GetRequiredService<T>();
+        return _harnessScope.ServiceProvider.GetRequiredService<T>();
     }
 
     /// <summary>Provides direct access to the harness <see cref="IServiceProvider"/>.</summary>
@@ -454,9 +602,13 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
+        // Owned by the harness regardless of who owns ServiceProvider — the DI container never created it, so
+        // its disposal would not otherwise reach it.
+        await _harnessScope.DisposeAsync().ConfigureAwait(false);
+
         if (!_ownsSp)
         {
-            // The host owns the ServiceProvider — nothing to dispose here.
+            // The host owns the ServiceProvider — nothing else to dispose here.
             // The host's disposal will clean up the bootstrapper and DI container.
             return;
         }
@@ -490,6 +642,81 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     /// <summary>Marker service for idempotency guard in <see cref="ConfigureServices"/>.</summary>
     private sealed class TestHarnessMarkerService;
 
+    private static readonly TimeSpan _ResetPollInterval = TimeSpan.FromMilliseconds(5);
+
+    private static async Task _WaitForStorageIdleAsync(
+        InMemoryDataStorage storage,
+        TimeProvider hostClock,
+        long startedAt,
+        TimeSpan timeout,
+        CancellationToken cancellationToken
+    )
+    {
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var inFlight = _DescribeInFlightRows(storage, hostClock.GetUtcNow());
+
+            if (inFlight.Count == 0)
+            {
+                return;
+            }
+
+            if (TimeProvider.System.GetElapsedTime(startedAt) >= timeout)
+            {
+                throw new TimeoutException(
+                    $"MessagingTestHarness.ResetAsync waited {timeout} for {inFlight.Count} in-flight message(s) "
+                        + $"that never settled: {string.Join(", ", inFlight.Take(10))}. "
+                        + "Await the matching WaitFor* first, or raise the timeout."
+                );
+            }
+
+            // The system clock on purpose: this waits for dispatcher threads to make real progress, and a host that
+            // registers a FakeTimeProvider would otherwise never advance the poll.
+            await Task.Delay(_ResetPollInterval, TimeProvider.System, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Rows whose status brackets work still running on a dispatcher thread: a published row is Scheduled from
+    /// store until after the send and its Published observation, and a received row is Scheduled from admission
+    /// until after the consumer and its Consumed/Faulted observation. A Queued published row is a delayed publish
+    /// due within a minute; it counts only once its publish time has arrived on the host clock, because until
+    /// then the dispatcher parks it in its scheduler queue and no thread is working on it.
+    /// </summary>
+    private static List<string> _DescribeInFlightRows(InMemoryDataStorage storage, DateTimeOffset now)
+    {
+        List<string> inFlight = [];
+
+        foreach (var row in storage.PublishedMessages.Values)
+        {
+            // For a published row, ExpiresAt carries the scheduled publish time (see InMemoryDataStorage._CreateRow
+            // and Dispatcher.EnqueueToScheduler); a Queued row with no time is treated as due.
+            var isInFlight = row.StatusName switch
+            {
+                StatusName.Scheduled => true,
+                StatusName.Queued => row.ExpiresAt is not { } publishAt || publishAt <= now,
+                _ => false,
+            };
+
+            if (isInFlight)
+            {
+                inFlight.Add($"published '{row.Name}' ({row.StatusName})");
+            }
+        }
+
+        foreach (var row in storage.ReceivedMessages.Values)
+        {
+            if (row.StatusName is StatusName.Scheduled)
+            {
+                inFlight.Add($"received '{row.Name}' ({row.StatusName})");
+            }
+        }
+
+        return inFlight;
+    }
+
     /// <summary>
     /// Verifies that in-memory queue and storage providers are registered.
     /// Throws <see cref="InvalidOperationException"/> if either marker is missing.
@@ -521,7 +748,9 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         }
     }
 
-    private static void _DecorateLast<TService>(
+    /// <summary>Wraps the last registration of <typeparamref name="TService"/> with a decorator.</summary>
+    /// <returns>Whether a registration existed to decorate.</returns>
+    private static bool _DecorateLast<TService>(
         IServiceCollection services,
         Func<IServiceProvider, Func<TService, TService>> createDecorator
     )
@@ -531,7 +760,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
 
         if (original is null)
         {
-            return;
+            return false;
         }
 
         services.Remove(original);
@@ -547,9 +776,15 @@ public sealed class MessagingTestHarness : IAsyncDisposable
                 original.Lifetime
             )
         );
+
+        return true;
     }
 
-    private static void _DecoratePipeline(IServiceCollection services, MessageObservationStore store)
+    private static void _DecoratePipeline(
+        IServiceCollection services,
+        MessageObservationStore store,
+        bool awaitPublishedRecord
+    )
     {
         var original = services.FirstOrDefault(d => d.ServiceType == typeof(IConsumeMiddlewarePipeline));
 
@@ -563,7 +798,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         services.AddSingleton<IConsumeMiddlewarePipeline>(sp =>
         {
             var inner = _ResolveFromDescriptor<IConsumeMiddlewarePipeline>(sp, original);
-            return new RecordingConsumeMiddlewarePipeline(inner, store);
+            return new RecordingConsumeMiddlewarePipeline(inner, store, awaitPublishedRecord, DefaultTimeout);
         });
     }
 
@@ -602,9 +837,9 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         });
     }
 
-    private static void _DecorateBusTransport(IServiceCollection services, MessageObservationStore store)
+    private static bool _DecorateBusTransport(IServiceCollection services, MessageObservationStore store)
     {
-        _DecorateLast<IBusTransport>(
+        return _DecorateLast<IBusTransport>(
             services,
             sp =>
             {
@@ -615,9 +850,9 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         );
     }
 
-    private static void _DecorateQueueTransport(IServiceCollection services, MessageObservationStore store)
+    private static bool _DecorateQueueTransport(IServiceCollection services, MessageObservationStore store)
     {
-        _DecorateLast<IQueueTransport>(
+        return _DecorateLast<IQueueTransport>(
             services,
             sp =>
             {

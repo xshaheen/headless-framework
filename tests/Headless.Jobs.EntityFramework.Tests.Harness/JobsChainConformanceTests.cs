@@ -474,7 +474,6 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
 
         try
         {
-            var scheduler = host.Services.GetRequiredService<IJobScheduler>();
             var builder = JobChain.Start(_Payload("root"), executionTime: DateTimeOffset.UtcNow.AddHours(1));
             var child = builder.Root.Then(_Payload("child"));
             child.Then(_Payload("grandchild"));
@@ -485,8 +484,9 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
             var act = () =>
                 fixture.RunCoordinatedTransactionAsync(
                     host.Services,
-                    async (_, _, innerCt) =>
+                    async (scopedServices, _, _, innerCt) =>
                     {
+                        var scheduler = scopedServices.GetRequiredService<IJobScheduler>();
                         (await scheduler.EnqueueAsync(chain, innerCt)).Should().NotBeEmpty();
 
                         // Abandon the scope after the whole tree is buffered: the transaction never commits.

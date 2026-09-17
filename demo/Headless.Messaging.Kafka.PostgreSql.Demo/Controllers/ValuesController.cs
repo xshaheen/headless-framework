@@ -1,14 +1,13 @@
 using Dapper;
-using Headless.CommitCoordination;
 using Headless.Messaging;
+using Headless.UnitOfWork;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using Npgsql;
 
 namespace Demo.Controllers;
 
 [Route("api/[controller]")]
-public class ValuesController(IQueue producer, IServiceProvider services) : Controller
+public class ValuesController(IQueue producer, IUnitOfWorkManager unitOfWork) : Controller
 {
     private const string _MessageName = "sample.kafka.postgrsql";
 
@@ -55,11 +54,10 @@ public class ValuesController(IQueue producer, IServiceProvider services) : Cont
         return Ok();
     }
 
-    // CAPABILITY 1 — raw ADO (Dapper) coordinated transaction via the EnlistCommitCoordination advanced seam.
-    // The caller owns the transaction (so it can pass it to Dapper) and enlists it synchronously, which makes the
-    // coordinator ambient. The EnqueueAsync then writes its outbox row in the SAME transaction. PostgreSQL is an
-    // INLINE signal source (no commit diagnostic), so after committing the caller MUST call
-    // scope.SignalAsync(Committed) — otherwise the un-signalled scope dispose discards the enqueued work.
+    // CAPABILITY 1 — raw ADO (Dapper) unit of work via IUnitOfWorkManager.RunAsync(connection, …).
+    // RunAsync owns begin and commit: it opens the connection's transaction, runs the block, then commits. The
+    // Enqueue enlists in that same transaction because it reads the ambient IUnitOfWorkManager.Current from this
+    // scope, and Dapper needs the live transaction object, exposed as an IRelationalUnitOfWorkResource on uow.Resource.
     [Route("~/coordinated/adonet")]
     public async Task<IActionResult> CoordinatedAdoNet()
     {
@@ -72,38 +70,37 @@ public class ValuesController(IQueue producer, IServiceProvider services) : Cont
 
         await using var connection = new NpgsqlConnection(AppConstants.DbConnectionString);
         await connection.OpenAsync(ct);
-        var transaction = await connection.BeginTransactionAsync(ct);
 
-        await using (transaction)
-        // Enlist synchronously in this frame so the ambient coordinator flows to the enqueue below.
-        await using (var scope = connection.EnlistCommitCoordination(transaction, services))
-        {
-            await connection.ExecuteAsync(
-                new CommandDefinition(
-                    """INSERT INTO "Persons"("Name", "Age") VALUES(@Name, @Age)""",
-                    new { person.Name, person.Age },
-                    transaction,
-                    cancellationToken: ct
-                )
-            );
+        await unitOfWork.RunAsync(
+            connection,
+            async (uow, token) =>
+            {
+                var resource = (IRelationalUnitOfWorkResource)uow.Resource!;
 
-            await producer.EnqueueAsync(
-                new KafkaMessage(DateTime.UtcNow),
-                new QueueOptions { MessageName = _MessageName, DeliveryMode = DeliveryMode.Durable },
-                ct
-            );
+                await connection.ExecuteAsync(
+                    new CommandDefinition(
+                        """INSERT INTO "Persons"("Name", "Age") VALUES(@Name, @Age)""",
+                        new { person.Name, person.Age },
+                        resource.Transaction,
+                        cancellationToken: token
+                    )
+                );
 
-            await transaction.CommitAsync(ct);
-            await scope.SignalAsync(CommitOutcome.Committed); // REQUIRED on PostgreSQL (inline signal source)
-        }
+                await producer.EnqueueAsync(
+                    new KafkaMessage(DateTime.UtcNow),
+                    new QueueOptions { MessageName = _MessageName, DeliveryMode = DeliveryMode.Durable },
+                    token
+                );
+            },
+            cancellationToken: ct
+        );
 
-        return Ok($"Inserted {person} and enqueued atomically (raw ADO; inline commit signal).");
+        return Ok($"Inserted {person} and enqueued atomically (raw ADO; unit-of-work-owned commit).");
     }
 
-    // CAPABILITY 2 — EF Core coordinated transaction.
-    // The DbContext helper runs inside EF's execution strategy and signals the commit via the EF interceptor (so no
-    // manual SignalAsync is needed on this path, unlike raw enlistment above). SaveChanges and the enqueue commit
-    // together.
+    // CAPABILITY 2 — EF Core unit of work via IUnitOfWorkManager.RunAsync(db, …).
+    // RunAsync runs inside EF's execution strategy: begin (owned) → operation → CompleteAsync (commits, then
+    // drains). SaveChanges and the enqueue commit together.
     [Route("~/coordinated/ef")]
     public async Task<IActionResult> CoordinatedEntityFramework([FromServices] AppDbContext dbContext)
     {
@@ -113,11 +110,12 @@ public class ValuesController(IQueue producer, IServiceProvider services) : Cont
             Age = Random.Shared.Next(10, 99),
         };
 
-        await dbContext.ExecuteCoordinatedTransactionAsync(
-            async (ctx, ct) =>
+        await unitOfWork.RunAsync(
+            dbContext,
+            async (_, ct) =>
             {
-                ((AppDbContext)ctx).Persons.Add(person);
-                await ctx.SaveChangesAsync(ct);
+                dbContext.Persons.Add(person);
+                await dbContext.SaveChangesAsync(ct);
 
                 await producer.EnqueueAsync(
                     new KafkaMessage(DateTime.UtcNow),
@@ -125,7 +123,6 @@ public class ValuesController(IQueue producer, IServiceProvider services) : Cont
                     ct
                 );
             },
-            services,
             cancellationToken: HttpContext.RequestAborted
         );
 
@@ -146,11 +143,12 @@ public class ValuesController(IQueue producer, IServiceProvider services) : Cont
 
         try
         {
-            await dbContext.ExecuteCoordinatedTransactionAsync(
-                async (ctx, ct) =>
+            await unitOfWork.RunAsync(
+                dbContext,
+                async (_, ct) =>
                 {
-                    ((AppDbContext)ctx).Persons.Add(person);
-                    await ctx.SaveChangesAsync(ct);
+                    dbContext.Persons.Add(person);
+                    await dbContext.SaveChangesAsync(ct);
 
                     await producer.EnqueueAsync(
                         new KafkaMessage(DateTime.UtcNow),
@@ -160,7 +158,6 @@ public class ValuesController(IQueue producer, IServiceProvider services) : Cont
 
                     throw new InvalidOperationException("Simulated failure after the buffered enqueue.");
                 },
-                services,
                 cancellationToken: HttpContext.RequestAborted
             );
         }
@@ -172,7 +169,7 @@ public class ValuesController(IQueue producer, IServiceProvider services) : Cont
         return Ok();
     }
 
-    // CAPABILITY 4 — delayed enqueue inside a coordinated transaction.
+    // CAPABILITY 4 — delayed enqueue inside a unit of work.
     // The delayed message is still bound to the commit: it is only scheduled if the transaction commits.
     [Route("~/coordinated/delay/{delaySeconds:int}")]
     public async Task<IActionResult> CoordinatedDelay(int delaySeconds, [FromServices] AppDbContext dbContext)
@@ -183,11 +180,12 @@ public class ValuesController(IQueue producer, IServiceProvider services) : Cont
             Age = Random.Shared.Next(10, 99),
         };
 
-        await dbContext.ExecuteCoordinatedTransactionAsync(
-            async (ctx, ct) =>
+        await unitOfWork.RunAsync(
+            dbContext,
+            async (_, ct) =>
             {
-                ((AppDbContext)ctx).Persons.Add(person);
-                await ctx.SaveChangesAsync(ct);
+                dbContext.Persons.Add(person);
+                await dbContext.SaveChangesAsync(ct);
 
                 await producer.EnqueueAsync(
                     new KafkaMessage(DateTime.UtcNow),
@@ -200,7 +198,6 @@ public class ValuesController(IQueue producer, IServiceProvider services) : Cont
                     ct
                 );
             },
-            services,
             cancellationToken: HttpContext.RequestAborted
         );
 

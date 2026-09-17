@@ -2,7 +2,6 @@
 
 using System.Data.Common;
 using Headless.Abstractions;
-using Headless.CommitCoordination;
 using Headless.Coordination;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
@@ -10,6 +9,7 @@ using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Serialization;
+using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -76,23 +76,30 @@ internal sealed partial class PostgreSqlDataStorage(
     private readonly string _publishedTable = initializer.GetPublishedTableName();
     private readonly string _receivedTable = initializer.GetReceivedTableName();
 
-    DeliveryCoordination IDeliveryCoordinationResolver.Resolve(ICommitCoordinator coordinator)
+    DeliveryCoordination IDeliveryCoordinationResolver.Resolve(IUnitOfWork unitOfWork)
     {
-        if (coordinator.State is not CommitCoordinatorState.Active)
+        if (unitOfWork.Resource is null)
         {
-            return DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.InactiveTransaction);
+            // No joinable resource behaves like no unit of work: the caller writes a standalone durable row.
+            return DeliveryCoordination.None;
         }
 
-        if (!coordinator.TryGetCapability<IRelationalCommitContext>(out var relational))
+        if (unitOfWork.Resource is not IRelationalUnitOfWorkResource relational)
         {
             return DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.MissingRelationalCapability);
         }
 
         if (relational.Transaction is not NpgsqlTransaction transaction || transaction.Connection is not { } connection)
         {
-            return relational.Transaction is null
-                ? DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.InactiveTransaction)
-                : DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.StorageProvider);
+            return DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.StorageProvider);
+        }
+
+        // Npgsql keeps Connection populated after commit, so a committed-but-undisposed transaction passes the
+        // check above; the resource knows its transaction finished, and a dead transaction must not be handed to
+        // the outbox writer as joinable.
+        if (relational.IsTransactionCompleted)
+        {
+            return DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.TransactionCompleted);
         }
 
         using var configuredConnection = postgreSqlOptions.Value.CreateConnection();
@@ -104,7 +111,7 @@ internal sealed partial class PostgreSqlDataStorage(
             return DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.Database);
         }
 
-        return DeliveryCoordination.Compatible(coordinator, transaction);
+        return DeliveryCoordination.Compatible(unitOfWork, transaction);
     }
 
     /// <summary>

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
+using Headless.UnitOfWork;
 
 namespace Headless.Messaging.Internal;
 
@@ -14,6 +15,7 @@ internal enum DeliveryPath
 internal readonly record struct DeliveryDecision(
     DeliveryMode RequestedMode,
     DeliveryMode ResolvedMode,
+    TransactionEnlistment Enlistment,
     DeliveryPath Path,
     TimeSpan? Delay,
     DateTimeOffset? PublishAt,
@@ -26,26 +28,59 @@ internal readonly record struct DeliveryDecision(
     internal bool IsTransactional => Path is DeliveryPath.DurableCoordinated;
 }
 
+/// <summary>
+/// Decides the delivery path before any storage or transport effect. The matrix (KD6/KD7):
+/// <list type="bullet">
+/// <item><c>Durable</c> (default): enlists in a compatible active unit of work when
+/// <see cref="TransactionEnlistment"/> allows it; otherwise a standalone durable row. A unit with no joinable
+/// resource behaves like no unit at all.</item>
+/// <item><c>Direct</c>: transport now, bypassing storage and coordination checks entirely; rejects any
+/// schedule and <see cref="TransactionEnlistment.Required"/>.</item>
+/// </list>
+/// <see cref="TransactionEnlistment.Required"/> with no compatible unit of work throws before any effect;
+/// <see cref="TransactionEnlistment.Never"/> always writes standalone, even against an incompatible resource;
+/// an incompatible resource otherwise throws regardless of <see cref="TransactionEnlistment.WhenAvailable"/> or
+/// <see cref="TransactionEnlistment.Required"/>.
+/// </summary>
 internal static class DeliveryDecisionResolver
 {
     internal static DeliveryDecision Resolve(
         MessageLane lane,
         DeliveryMode requestedMode,
+        TransactionEnlistment enlistment,
         TimeSpan? delay,
         DeliveryCoordination coordination,
         DateTimeOffset now,
-        DateTimeOffset? scheduledAt = null
-    ) => Resolve(lane, requestedMode, delay, coordination.Status, now, coordination, scheduledAt);
+        DateTimeOffset? scheduledAt = null,
+        bool storageSupported = true,
+        string? messageName = null
+    ) =>
+        Resolve(
+            lane,
+            requestedMode,
+            enlistment,
+            delay,
+            coordination.Status,
+            now,
+            coordination,
+            scheduledAt,
+            storageSupported,
+            messageName
+        );
 
     // Manually constructed middleware contexts need delivery semantics without live transaction resources.
+    // messageName is the declared message type's name; it only sharpens the Required-with-no-unit message.
     internal static DeliveryDecision Resolve(
         MessageLane lane,
         DeliveryMode requestedMode,
+        TransactionEnlistment enlistment,
         TimeSpan? delay,
         DeliveryCoordinationStatus coordinationStatus,
         DateTimeOffset now,
         DeliveryCoordination coordination = default,
-        DateTimeOffset? scheduledAt = null
+        DateTimeOffset? scheduledAt = null,
+        bool storageSupported = true,
+        string? messageName = null
     )
     {
         // Explicit range checks rather than Enum.IsDefined: these run on every publish, and IsDefined
@@ -55,12 +90,28 @@ internal static class DeliveryDecisionResolver
             throw new ArgumentOutOfRangeException(nameof(lane), lane, "A defined messaging lane is required.");
         }
 
-        if (requestedMode is not (DeliveryMode.Auto or DeliveryMode.Durable or DeliveryMode.Direct))
+        if (requestedMode is not (DeliveryMode.Durable or DeliveryMode.Direct))
         {
             throw new ArgumentOutOfRangeException(
                 nameof(requestedMode),
                 requestedMode,
                 "A defined delivery mode is required."
+            );
+        }
+
+        if (
+            enlistment
+            is not (
+                TransactionEnlistment.WhenAvailable
+                or TransactionEnlistment.Required
+                or TransactionEnlistment.Never
+            )
+        )
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(enlistment),
+                enlistment,
+                "A defined transaction enlistment is required."
             );
         }
 
@@ -80,11 +131,46 @@ internal static class DeliveryDecisionResolver
             );
         }
 
-        if (coordinationStatus is DeliveryCoordinationStatus.Incompatible && requestedMode is not DeliveryMode.Direct)
+        if (requestedMode is DeliveryMode.Direct && enlistment is TransactionEnlistment.Required)
         {
             throw new InvalidOperationException(
-                $"The active coordination boundary is incompatible with messaging storage ({coordination.Mismatch})."
+                "Direct delivery cannot require an active unit of work (TransactionEnlistment.Required); durable delivery is required to enlist."
             );
+        }
+
+        // Direct bypasses storage and coordination compatibility entirely; every durable request is fenced here,
+        // before the capability gate, storage, or transport can run.
+        var effectiveStatus = coordinationStatus;
+        if (requestedMode is not DeliveryMode.Direct)
+        {
+            if (!storageSupported)
+            {
+                throw new MessagingConfigurationException(
+                    $"{lane} {requestedMode} delivery requires a matching storage capability contribution."
+                );
+            }
+
+            if (enlistment is TransactionEnlistment.Never)
+            {
+                // Never enlists, regardless of what is active — including an incompatible resource.
+                effectiveStatus = DeliveryCoordinationStatus.None;
+            }
+            else if (effectiveStatus is DeliveryCoordinationStatus.Incompatible)
+            {
+                throw new InvalidOperationException(
+                    $"The active unit of work's transaction belongs to another database or has already completed ({coordination.Mismatch}), "
+                        + "so publishing cannot enlist. Use the same database with an open transaction, or TransactionEnlistment.Never for this call."
+                );
+            }
+            else if (effectiveStatus is DeliveryCoordinationStatus.None && enlistment is TransactionEnlistment.Required)
+            {
+                var subject = messageName is null ? "Publishing" : $"Publishing '{messageName}'";
+
+                throw new InvalidOperationException(
+                    $"{subject} requires an active unit of work (TransactionEnlistment.Required) but none is active in this scope. "
+                        + "Begin one with IUnitOfWorkManager.BeginAsync before publishing, or register the message with TransactionEnlistment.WhenAvailable."
+                );
+            }
         }
 
         if (delay is not null && scheduledAt is not null)
@@ -131,30 +217,22 @@ internal static class DeliveryDecisionResolver
             throw new InvalidOperationException("Direct delivery cannot specify a schedule.");
         }
 
-        var resolvedMode = requestedMode switch
-        {
-            DeliveryMode.Direct => DeliveryMode.Direct,
-            DeliveryMode.Durable => DeliveryMode.Durable,
-            // publishAt, not delay: an absolute schedule must upgrade Auto to durable the same way a relative
-            // delay does, otherwise a scheduled Auto send would resolve to a direct publish with no storage.
-            DeliveryMode.Auto when publishAt is not null => DeliveryMode.Durable,
-            DeliveryMode.Auto when coordinationStatus is DeliveryCoordinationStatus.Compatible => DeliveryMode.Durable,
-            DeliveryMode.Auto => DeliveryMode.Direct,
-            _ => throw new UnreachableException(),
-        };
-
-        var path = resolvedMode switch
+        var path = requestedMode switch
         {
             DeliveryMode.Direct => DeliveryPath.Direct,
-            DeliveryMode.Durable when coordinationStatus is DeliveryCoordinationStatus.Compatible =>
+            DeliveryMode.Durable when effectiveStatus is DeliveryCoordinationStatus.Compatible =>
                 DeliveryPath.DurableCoordinated,
             DeliveryMode.Durable => DeliveryPath.DurableStandalone,
             _ => throw new UnreachableException(),
         };
 
+        // Requested and resolved modes are equal today (no mode is ever rewritten by the matrix), but they are
+        // two public headers and two dashboard columns: keep both so a future enlistment-driven resolution can
+        // diverge them without changing the wire shape.
         return new DeliveryDecision(
             requestedMode,
-            resolvedMode,
+            requestedMode,
+            enlistment,
             path,
             delay,
             publishAt,

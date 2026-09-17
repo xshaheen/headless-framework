@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
-using Headless.CommitCoordination;
 using Headless.Jobs;
+using Headless.Jobs.BackgroundServices;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Exceptions;
 using Headless.Jobs.Interfaces;
@@ -11,6 +11,8 @@ using Headless.Jobs.Managers;
 using Headless.Jobs.Models;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;
+using Headless.UnitOfWork;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -19,12 +21,20 @@ namespace Tests.MultiTenancy;
 [Collection<JobsHelperCollection>]
 public sealed class JobsTenancyChainPropagationTests : TestBase
 {
+    // Signal workers are never started here, but the service owns a channel and a cancellation source.
+    private readonly List<JobsPostCommitSignalService> _workers = [];
+
     private const string _Function = "chain-tenancy-fn";
 
     public JobsTenancyChainPropagationTests() => _RegisterFunction();
 
     protected override ValueTask DisposeAsyncCore()
     {
+        foreach (var worker in _workers)
+        {
+            worker.Dispose();
+        }
+
         JobFunctionProvider.ResetForTests();
         return base.DisposeAsyncCore();
     }
@@ -325,7 +335,7 @@ public sealed class JobsTenancyChainPropagationTests : TestBase
         };
     }
 
-    private static (
+    private (
         ITimeJobManager<TimeJobEntity> Manager,
         IJobPersistenceProvider<TimeJobEntity, CronJobEntity> Persistence
     ) _CreateManager(string? ambient, bool rejectCrossTenant = false)
@@ -336,6 +346,13 @@ public sealed class JobsTenancyChainPropagationTests : TestBase
         var dispatcher = Substitute.For<IJobsDispatcher>();
         dispatcher.IsEnabled.Returns(false);
 
+        var signals = new JobsPostCommitSignalService(
+            TestActivationBarrier.Opened(),
+            TimeProvider.System,
+            Substitute.For<ILogger<JobsPostCommitSignalService>>()
+        );
+        _workers.Add(signals);
+
         var manager = new JobsManager<TimeJobEntity, CronJobEntity>(
             persistence,
             Substitute.For<IJobsHostScheduler>(),
@@ -344,16 +361,23 @@ public sealed class JobsTenancyChainPropagationTests : TestBase
             Substitute.For<IJobsNotificationHubSender>(),
             new JobsExecutionContext(),
             dispatcher,
-            Substitute.For<ICurrentCommitCoordinator>(),
             new CronScheduleCache(TimeZoneInfo.Utc),
-            new SchedulerOptionsBuilder(),
+            signals,
             JobFunctionProvider.CreateHostRegistry(configuration: null),
             Substitute.For<ILogger<JobsManager<TimeJobEntity, CronJobEntity>>>(),
             currentTenant: tenant,
             tenancyOptions: Options.Create(new JobsTenancyOptions { RejectCrossTenantEnqueue = rejectCrossTenant })
         );
 
-        return (manager, persistence);
+        // These scenarios exercise ambient-tenant validation on the Add path with no active unit of work, so the
+        // facade's IUnitOfWorkManager reports no Current — the "no unit of work" branch of the guarantee matrix.
+        var unitOfWorkManager = new ServiceCollection().AddUnitOfWork().BuildServiceProvider();
+        var facade = new JobsManagerFacade<TimeJobEntity, CronJobEntity>(
+            manager,
+            unitOfWorkManager.GetRequiredService<IUnitOfWorkManager>()
+        );
+
+        return (facade, persistence);
     }
 
     private static void _RegisterFunction()

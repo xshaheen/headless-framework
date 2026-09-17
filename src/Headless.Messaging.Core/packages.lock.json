@@ -377,9 +377,6 @@
       "headless.checks": {
         "type": "Project"
       },
-      "headless.commitcoordination.abstractions": {
-        "type": "Project"
-      },
       "headless.coordination.abstractions": {
         "type": "Project",
         "dependencies": {
@@ -465,7 +462,8 @@
       "headless.messaging.abstractions": {
         "type": "Project",
         "dependencies": {
-          "Headless.Checks": "[1.0.0, )"
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.UnitOfWork.Abstractions": "[1.0.0, )"
         }
       },
       "headless.messaging.bus.abstractions": {
@@ -514,6 +512,18 @@
         "dependencies": {
           "Headless.Serializer.Abstractions": "[1.0.0, )"
         }
+      },
+      "headless.unitofwork": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.UnitOfWork.Abstractions": "[1.0.0, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )"
+        }
+      },
+      "headless.unitofwork.abstractions": {
+        "type": "Project"
       },
       "headless.urls": {
         "type": "Project",

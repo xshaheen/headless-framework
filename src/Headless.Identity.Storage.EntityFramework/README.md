@@ -189,8 +189,7 @@ Existing interface-owned tenant columns gain tenant concurrency-token metadata e
 
 ## Side Effects
 
-- Calls `services.AddHeadlessDbContextServices()` — registers `HeadlessDbContextServices` (scoped), `IHeadlessSaveChangesPipeline`, `IHeadlessAuditPersistence`, `IAmbientDbTransactionAccessor`, `IAuditChangeCapture`, `ITenantWriteGuardBypass`, `TimeProvider` (`TimeProvider.System`), `ICurrentTenantAccessor`, `ICurrentTenant`, `ICurrentUser`, `ICorrelationIdProvider`, and related singletons.
-- Uses the core no-op transaction-coordination seam by default; install `Headless.EntityFramework.CommitCoordination` when Identity saves must enlist buffered work in commit coordination.
+- Calls `services.AddHeadlessDbContextServices()` — registers `HeadlessDbContextServices` (scoped), `IHeadlessSaveChangesPipeline`, `IHeadlessAuditPersistence`, `IAmbientDbTransactionAccessor`, `IAuditChangeCapture`, `ITenantWriteGuardBypass`, `TimeProvider` (`TimeProvider.System`), `ICurrentTenantAccessor`, `ICurrentTenant`, `ICurrentUser`, `ICorrelationIdProvider`, and related singletons; this call also registers the scoped `IUnitOfWorkManager` (`AddEntityFrameworkUnitOfWork()`) the save pipeline enlists through, so Identity saves get the same atomic outbox/jobs guarantee as any other `HeadlessDbContext` with no separate package to install.
 - Calls `services.AddDiRegisteredInterceptorsConfiguration<TDbContext>()` — registers `IDbContextOptionsConfiguration<TDbContext>` that attaches DI-registered interceptors to EF Core options.
 - Registers `TDbContext` via `services.AddDbContext<TDbContext>(...)` with the specified lifetimes.
 - Registers `IDbContextFactory<TDbContext>` as `HeadlessDbContextFactory<TDbContext>` (singleton, idempotent via `TryAddSingleton`).

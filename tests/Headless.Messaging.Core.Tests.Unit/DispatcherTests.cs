@@ -1,6 +1,5 @@
 using System.Data.Common;
 using System.Reflection;
-using Headless.CommitCoordination;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
@@ -17,6 +16,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
+using Tests.Internal;
 
 namespace Tests;
 
@@ -1572,14 +1572,13 @@ public sealed class DispatcherTests : TestBase
     {
         var dispatcher = _CreateDispatcher(new TestThreadSafeMessageSender());
         await dispatcher.DisposeAsync();
-        var coordinator = new CommitCoordinator();
-        var buffer = new MessageOutboxBuffer(coordinator, dispatcher);
+        var unitOfWork = new FakeUnitOfWork();
+        var buffer = new MessageOutboxBuffer(unitOfWork, dispatcher);
         var delayed = _CreateTestMessage(_StorageGuid(1));
         delayed.ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(1);
         buffer.Add(delayed);
-        using var commitServices = _scopeFactory.CreateScope();
 
-        var act = async () => await coordinator.SignalAsync(CommitOutcome.Committed, commitServices.ServiceProvider);
+        var act = async () => await unitOfWork.CompleteAsync();
 
         await act.Should().NotThrowAsync();
     }
@@ -1634,15 +1633,11 @@ public sealed class DispatcherTests : TestBase
         await using var dispatcher = _CreateDispatcher(sender);
         using var cts = new CancellationTokenSource();
         await dispatcher.StartAsync(cts.Token);
-        var coordinator = new CommitCoordinator();
-        var buffer = new MessageOutboxBuffer(coordinator, dispatcher);
+        var unitOfWork = new FakeUnitOfWork();
+        var buffer = new MessageOutboxBuffer(unitOfWork, dispatcher);
         buffer.Add(_CreateTestMessage());
-        using var commitServices = _scopeFactory.CreateScope();
 
-        var commitTask = Task.Run(
-            async () => await coordinator.SignalAsync(CommitOutcome.Committed, commitServices.ServiceProvider),
-            AbortToken
-        );
+        var commitTask = Task.Run(async () => await unitOfWork.CompleteAsync(), AbortToken);
 
         await sender.Entered.Task.WaitAsync(AbortToken);
         try

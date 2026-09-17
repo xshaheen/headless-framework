@@ -1,10 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.CommitCoordination;
 using Headless.Domain;
 using Headless.EntityFramework;
 using Headless.Messaging;
 using Headless.Testing.Tests;
+using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
@@ -17,12 +17,27 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
 
     private sealed record PaymentCaptured(string UniqueId);
 
-    // An ambient coordinator (Current != null) models the save pipeline having opened a coordinated transaction.
-    private static ICurrentCommitCoordinator _AmbientCoordinator()
+    // A resource-bearing unit of work current in the scope models the save pipeline having enlisted its
+    // transaction (or the caller's BeginAsync(db) unit being active).
+    private static IUnitOfWorkManager _ManagerWith(IUnitOfWork? current)
     {
-        var current = Substitute.For<ICurrentCommitCoordinator>();
-        current.Current.Returns(Substitute.For<ICommitCoordinator>());
-        return current;
+        var manager = Substitute.For<IUnitOfWorkManager>();
+        manager.Current.Returns(current);
+        return manager;
+    }
+
+    private static IUnitOfWork _ResourceBearingUnitOfWork()
+    {
+        var unitOfWork = Substitute.For<IUnitOfWork>();
+        unitOfWork.Resource.Returns(Substitute.For<IUnitOfWorkResource>());
+        return unitOfWork;
+    }
+
+    private static IUnitOfWork _ResourceLessUnitOfWork()
+    {
+        var unitOfWork = Substitute.For<IUnitOfWork>();
+        unitOfWork.Resource.Returns((IUnitOfWorkResource?)null);
+        return unitOfWork;
     }
 
     private sealed class RecordingBus : IBus
@@ -125,11 +140,12 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
     [Fact]
     public async Task should_be_noop_for_empty_event_list_when_dispatch_async()
     {
-        // given — an empty list must short-circuit without publishing anything.
+        // given — an empty list must short-circuit without publishing anything, and without consulting the
+        // unit of work (no manager set up: Current is null).
         var bus = new RecordingBus();
         var dispatcher = new OutboxIntegrationEventDispatcher(
             bus,
-            _AmbientCoordinator(),
+            _ManagerWith(current: null),
             new IntegrationEventPublishInvokerCache()
         );
         // when
@@ -142,12 +158,13 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
     [Fact]
     public async Task should_publish_all_events_through_outbox_bus_when_dispatch_async()
     {
-        // given — the pipeline opened a coordinated transaction, so the outbox writer enlists on the ambient
-        // coordinator. The dispatcher only fans the events out to the bus; it does not touch the transaction.
+        // given — the pipeline enlisted its transaction, so a resource-bearing unit is current and the outbox
+        // writer places rows inside it. The dispatcher only fans the events out to the bus; it does not touch the
+        // transaction.
         var bus = new RecordingBus();
         var dispatcher = new OutboxIntegrationEventDispatcher(
             bus,
-            _AmbientCoordinator(),
+            _ManagerWith(_ResourceBearingUnitOfWork()),
             new IntegrationEventPublishInvokerCache()
         );
         IReadOnlyList<EventContext<object>> events =
@@ -190,7 +207,7 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
         var bus = new ThrowingBus();
         var dispatcher = new OutboxIntegrationEventDispatcher(
             bus,
-            _AmbientCoordinator(),
+            _ManagerWith(_ResourceBearingUnitOfWork()),
             new IntegrationEventPublishInvokerCache()
         );
         IReadOnlyList<EventContext<object>> events = [EventContext.Capture<object>(new OrderPlaced("order-1"))];
@@ -210,7 +227,7 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
         var bus = new RecordingBus();
         var dispatcher = new OutboxIntegrationEventDispatcher(
             bus,
-            _AmbientCoordinator(),
+            _ManagerWith(_ResourceBearingUnitOfWork()),
             new IntegrationEventPublishInvokerCache()
         );
         IReadOnlyList<EventContext<object>> events = [EventContext.Capture<object>(new OrderPlaced("order-1"))];
@@ -232,7 +249,7 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
         var bus = new RecordingBus();
         var dispatcher = new OutboxIntegrationEventDispatcher(
             bus,
-            _AmbientCoordinator(),
+            _ManagerWith(_ResourceBearingUnitOfWork()),
             new IntegrationEventPublishInvokerCache()
         );
         IReadOnlyList<EventContext<object>> events = [EventContext.Capture<object>(new OrderPlaced("order-1"))];
@@ -246,17 +263,15 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
     }
 
     [Fact]
-    public async Task should_fail_loud_when_dispatch_async_no_ambient_coordinator()
+    public async Task should_fail_loud_when_dispatch_async_without_a_unit_of_work()
     {
-        // given — integration events emitted while saving inside a caller-managed transaction that was never
-        // enlisted in commit coordination: no coordinator is ambient, so dispatching would be non-atomic. The
-        // dispatcher must fail loud instead of shipping a message a caller rollback can no longer recall.
+        // given — integration events emitted while saving inside a caller-managed transaction that no unit of
+        // work owns: dispatching would be non-atomic. The dispatcher must fail loud, naming the remedy, instead
+        // of shipping a message a caller rollback can no longer recall.
         var bus = new RecordingBus();
-        var coordinator = Substitute.For<ICurrentCommitCoordinator>();
-        coordinator.Current.Returns((ICommitCoordinator?)null);
         var dispatcher = new OutboxIntegrationEventDispatcher(
             bus,
-            coordinator,
+            _ManagerWith(current: null),
             new IntegrationEventPublishInvokerCache()
         );
         IReadOnlyList<EventContext<object>> events = [EventContext.Capture<object>(new OrderPlaced("order-1"))];
@@ -265,9 +280,28 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
         var act = async () => await dispatcher.DispatchAsync(events, AbortToken);
 
         // then — fails loud and publishes nothing
-        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage(
-            "*not enlisted in commit coordination*"
+        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*IUnitOfWorkManager.BeginAsync(db)*");
+        bus.Published.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_fail_loud_when_dispatch_async_under_a_resource_less_unit_of_work()
+    {
+        // given — a resource-less unit (BeginAsync() with no db) coordinates nothing transactional, so an outbox
+        // write under it would still be autonomous; the guard is on the resource, not on the unit's presence.
+        var bus = new RecordingBus();
+        var dispatcher = new OutboxIntegrationEventDispatcher(
+            bus,
+            _ManagerWith(_ResourceLessUnitOfWork()),
+            new IntegrationEventPublishInvokerCache()
         );
+        IReadOnlyList<EventContext<object>> events = [EventContext.Capture<object>(new OrderPlaced("order-1"))];
+
+        // when
+        var act = async () => await dispatcher.DispatchAsync(events, AbortToken);
+
+        // then
+        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*IUnitOfWorkManager.BeginAsync(db)*");
         bus.Published.Should().BeEmpty();
     }
 
@@ -309,6 +343,26 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
 
         // then
         services.Count(d => d.ServiceType == typeof(IHeadlessOutboxDispatcher)).Should().Be(1);
+    }
+
+    [Fact]
+    public void should_resolve_the_dispatcher_against_the_scoped_unit_of_work_manager()
+    {
+        // given — the manager the dispatcher consults is the scoped one AddHeadlessDbContextServices registers;
+        // no separate registration is needed, and resolving the dispatcher from a scope works under validation.
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(Substitute.For<IBus>());
+        services.AddHeadlessDbContextServices().AddIntegrationEventOutbox();
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+
+        // when
+        using var scope = provider.CreateScope();
+        var dispatcher = scope.ServiceProvider.GetRequiredService<IHeadlessOutboxDispatcher>();
+
+        // then
+        dispatcher.Should().BeOfType<OutboxIntegrationEventDispatcher>();
+        services.Single(d => d.ServiceType == typeof(IUnitOfWorkManager)).Lifetime.Should().Be(ServiceLifetime.Scoped);
     }
 
     #endregion

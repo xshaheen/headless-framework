@@ -3,17 +3,17 @@
 using System.Data;
 using System.Runtime.ExceptionServices;
 using Headless.Checks;
-using Headless.CommitCoordination;
-using Headless.CommitCoordination.EntityFramework;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Runtime;
 using Headless.Messaging.Storage.SqlServer;
 using Headless.Messaging.Storage.SqlServer.EntityFramework;
+using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
@@ -72,16 +72,17 @@ public static class SetupSqlServerEntityFrameworkMessaging
 
             if (options.EnableTransactionalOutbox)
             {
-                services.AddCommitCoordinationWithStartupGate(typeof(TContext));
+                services.AddEntityFrameworkUnitOfWork();
                 _PromoteStorageCapability(services, "SqlServer");
                 services.AddScoped<IInboxTransactionRunner>(
                     serviceProvider => new SqlServerInboxTransactionRunner<TContext>(
                         serviceProvider.GetRequiredService<TContext>(),
-                        serviceProvider,
-                        serviceProvider.GetRequiredService<ICurrentCommitCoordinator>(),
+                        serviceProvider.GetRequiredService<IUnitOfWorkManager>(),
                         serviceProvider.GetRequiredService<IDeliveryCoordinationResolver>(),
                         serviceProvider.GetRequiredService<SqlServerDataStorage>(),
-                        serviceProvider.GetRequiredService<EntityFrameworkCommitSignalSource>()
+                        serviceProvider
+                            .GetRequiredService<ILoggerFactory>()
+                            .CreateLogger<SqlServerInboxTransactionRunner<TContext>>()
                     )
                 );
             }
@@ -119,11 +120,10 @@ public static class SetupSqlServerEntityFrameworkMessaging
 
     private sealed class SqlServerInboxTransactionRunner<TContext>(
         TContext context,
-        IServiceProvider services,
-        ICurrentCommitCoordinator currentCoordinator,
+        IUnitOfWorkManager unitOfWorkManager,
         IDeliveryCoordinationResolver coordinationResolver,
         SqlServerDataStorage storage,
-        EntityFrameworkCommitSignalSource signalSource
+        ILogger logger
     ) : IInboxTransactionRunner
         where TContext : DbContext
     {
@@ -133,7 +133,7 @@ public static class SetupSqlServerEntityFrameworkMessaging
             CancellationToken cancellationToken
         )
         {
-            if (currentCoordinator.Current is not null || context.Database.CurrentTransaction is not null)
+            if (unitOfWorkManager.Current is not null || context.Database.CurrentTransaction is not null)
             {
                 throw new InvalidOperationException(
                     "Transactional inbox execution cannot enter an already-active or nested transaction boundary."
@@ -152,17 +152,11 @@ public static class SetupSqlServerEntityFrameworkMessaging
                                 .Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct)
                                 .ConfigureAwait(false);
                             var dbTransaction = transaction.GetDbTransaction();
-                            await using var coordinationScope = context.Database.EnlistCommitCoordination(
-                                transaction,
-                                services,
-                                ct
-                            );
-                            var coordinator =
-                                currentCoordinator.Current
-                                ?? throw new InvalidOperationException(
-                                    "The EF inbox transaction did not establish commit coordination before handler entry."
-                                );
-                            var coordination = coordinationResolver.Resolve(coordinator);
+                            // Observed mode: the runner commits, the unit only makes the transaction visible to
+                            // everything invoked inside the handler (a consumer callback publish) through the
+                            // scope's Current.
+                            await using var unitOfWork = unitOfWorkManager.Enlist(context, transaction);
+                            var coordination = coordinationResolver.Resolve(unitOfWork);
                             if (coordination.Status is not DeliveryCoordinationStatus.Compatible)
                             {
                                 throw new InvalidOperationException(
@@ -184,8 +178,6 @@ public static class SetupSqlServerEntityFrameworkMessaging
                             try
                             {
                                 await transaction.CommitAsync(ct).ConfigureAwait(false);
-                                await signalSource.SignalCommittedAsync(dbTransaction).ConfigureAwait(false);
-                                return null;
                             }
                             catch (Exception commitException)
                             {
@@ -195,14 +187,14 @@ public static class SetupSqlServerEntityFrameworkMessaging
                                         .ConfigureAwait(false) is InboxCommitProbe.Committed
                                 )
                                 {
-                                    await signalSource.SignalCommittedAsync(dbTransaction).ConfigureAwait(false);
+                                    await _CompleteAfterDurableCommitAsync(unitOfWork, message).ConfigureAwait(false);
                                     return null;
                                 }
 
                                 try
                                 {
                                     await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
-                                    await signalSource.SignalRolledBackAsync(dbTransaction).ConfigureAwait(false);
+                                    await unitOfWork.RollbackAsync().ConfigureAwait(false);
                                 }
                                 catch (Exception rollbackException)
                                 {
@@ -212,7 +204,8 @@ public static class SetupSqlServerEntityFrameworkMessaging
                                             .ConfigureAwait(false) is InboxCommitProbe.Committed
                                     )
                                     {
-                                        await signalSource.SignalCommittedAsync(dbTransaction).ConfigureAwait(false);
+                                        await _CompleteAfterDurableCommitAsync(unitOfWork, message)
+                                            .ConfigureAwait(false);
                                         return null;
                                     }
 
@@ -229,11 +222,16 @@ public static class SetupSqlServerEntityFrameworkMessaging
                                     new UncommittedInboxCommitException(message.StorageId, commitException)
                                 );
                             }
+
+                            // Outside the commit's catch: a drain fault here is not a commit fault and must not
+                            // be probed and "completed" a second time.
+                            await _CompleteAfterDurableCommitAsync(unitOfWork, message).ConfigureAwait(false);
+                            return null;
                         }
                         catch (Exception exception) when (handlerEntered)
                         {
                             // Persisted inbox recovery owns every retry after entry, including failures
-                            // raised while disposing the coordination scope or transaction.
+                            // raised while disposing the unit of work or transaction.
                             return ExceptionDispatchInfo.Capture(exception);
                         }
                     },
@@ -241,6 +239,22 @@ public static class SetupSqlServerEntityFrameworkMessaging
                 )
                 .ConfigureAwait(false);
             attemptError?.Throw();
+        }
+
+        // The row is durable once the commit (or its probe) says so; the unit's drain only accelerates the
+        // dispatch of the enlisted callbacks. A drain fault must not turn a committed attempt into a retry that
+        // re-invokes the consumer, so it is logged and the attempt reports success — the same policy as the
+        // unit-of-work runners; the relay recovers any enlisted rows.
+        private async Task _CompleteAfterDurableCommitAsync(IUnitOfWork unitOfWork, MediumMessage message)
+        {
+            try
+            {
+                await unitOfWork.CompleteAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (unitOfWork.State == UnitOfWorkState.Completed)
+            {
+                logger.InboxPostCommitDrainFaulted(ex, message.StorageId);
+            }
         }
     }
 

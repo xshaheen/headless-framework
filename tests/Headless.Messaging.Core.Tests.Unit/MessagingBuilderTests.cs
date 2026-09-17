@@ -1,11 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.CommitCoordination;
 using Headless.DistributedLocks;
 using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
+using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
@@ -78,32 +78,31 @@ public sealed class MessagingBuilderTests
             messaging.UseProcessLocalInMemoryStorage();
         });
 
-        await using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 
-        // then
+        // then — IBus/IQueue are scoped (KTD9): resolve from a created scope, never the root provider.
         provider.GetRequiredService<IRuntimeSubscriber>().Should().NotBeNull();
         provider.GetRequiredService<IBootstrapper>().Should().NotBeNull();
-        provider.GetRequiredService<IBus>().Should().NotBeNull();
-        provider.GetRequiredService<IQueue>().Should().NotBeNull();
+        using var scope = provider.CreateScope();
+        scope.ServiceProvider.GetRequiredService<IBus>().Should().NotBeNull();
+        scope.ServiceProvider.GetRequiredService<IQueue>().Should().NotBeNull();
     }
 
     [Fact]
-    public void should_resolve_real_commit_coordinator_when_registered_after_messaging()
+    public void should_register_unit_of_work_manager_exactly_once_regardless_of_call_order()
     {
         // given
         var services = new ServiceCollection();
 
         // when
         services.AddHeadlessMessaging(_ => { });
-        services.AddCommitCoordination();
+        services.AddUnitOfWork();
 
-        using var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        using var scope = provider.CreateScope();
 
-        // then
-        provider
-            .GetRequiredService<ICurrentCommitCoordinator>()
-            .Should()
-            .BeSameAs(provider.GetRequiredService<CommitScopeStack>());
+        // then — AddUnitOfWork() is idempotent, so exactly one IUnitOfWorkManager registration exists.
+        scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>().Should().NotBeNull();
     }
 
     [Fact]

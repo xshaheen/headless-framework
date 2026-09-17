@@ -2,6 +2,7 @@
 
 using Headless.Checks;
 using Headless.Messaging;
+using Headless.Messaging.Internal;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -196,7 +197,10 @@ public static class SetupHybridCache
         return new HybridCache(
             l1Cache,
             l2Cache,
-            provider.GetRequiredService<IBus>(),
+            // Unit-less: HybridCache is a singleton and always publishes Direct invalidation broadcasts, so
+            // it must not resolve the scoped IBus (a captive-dependency error under ValidateScopes). This
+            // bus never sees an active unit of work, which is correct for a Direct-only publisher.
+            new Bus(provider.GetRequiredService<MessagePublisher>()),
             options,
             provider.GetService<ILogger<HybridCache>>(),
             provider.GetRequiredService<TimeProvider>(),

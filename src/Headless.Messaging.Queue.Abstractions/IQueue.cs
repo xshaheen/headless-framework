@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.UnitOfWork;
+
 namespace Headless.Messaging;
 
 /// <summary>
@@ -8,8 +10,10 @@ namespace Headless.Messaging;
 /// <remarks>
 /// <para>
 /// The <see cref="IQueue"/> contract is point-to-point intent: exactly one competing worker
-/// receives each enqueued message. The <c>DeliveryMode</c> on <see cref="QueueOptions"/> selects automatic,
-/// durable, or transport-direct delivery without changing the Queue lane.
+/// receives each enqueued message. The <c>DeliveryMode</c> on <see cref="QueueOptions"/> selects durable or
+/// direct delivery without changing the Queue lane; an unset value inherits the per-type policy, then the
+/// host default (<c>Durable</c>). The <c>Enlistment</c> on <see cref="QueueOptions"/> separately controls
+/// whether a durable enqueue enlists in the caller's active unit of work.
 /// </para>
 /// <para>
 /// Delayed delivery is durable and cannot be combined with <c>Direct</c> delivery.
@@ -45,7 +49,14 @@ public interface IQueue
     /// header is supplied without setting <see cref="MessageOptions.TenantId"/>, or when both are
     /// supplied with disagreeing values, when any outbound header name/value contains control
     /// characters, or when <see cref="DeliveryMode.Direct"/> delivery specifies
-    /// <see cref="MessageOptions.Delay"/> or <see cref="MessageOptions.ScheduledAt"/>.
+    /// <see cref="MessageOptions.Delay"/>, <see cref="MessageOptions.ScheduledAt"/>, or
+    /// <see cref="TransactionEnlistment.Required"/>. Also thrown when the active unit of work is
+    /// incompatible with messaging storage, or when <see cref="TransactionEnlistment.Required"/> is
+    /// selected with no active unit of work.
+    /// </exception>
+    /// <exception cref="Exception">
+    /// Thrown as <c>MessagingConfigurationException</c> (declared in <c>Headless.Messaging.Core</c>) when the
+    /// target lane has no storage contribution for durable delivery.
     /// </exception>
     Task<PublishReceipt> EnqueueAsync<T>(
         T? contentObj,
@@ -53,11 +64,18 @@ public interface IQueue
         CancellationToken cancellationToken = default
     );
 
-    /// <summary>Publishes a message using the configured contract and host delivery mode, which defaults to Auto.</summary>
+    /// <summary>Publishes a message using the configured contract and the inherited delivery mode, which defaults to <see cref="DeliveryMode.Durable"/>.</summary>
     /// <typeparam name="T">The message type.</typeparam>
     /// <param name="contentObj">The message payload. Can be <see langword="null"/>.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A receipt for transport acceptance or durable capture, or an empty receipt when middleware suppresses publication. This does not imply consumer completion.</returns>
-    /// <exception cref="InvalidOperationException">Thrown when the selected delivery mode requires unavailable storage or an active commit boundary is incompatible.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the active unit of work is incompatible with messaging storage, or when
+    /// <see cref="TransactionEnlistment.Required"/> is selected with no active unit of work.
+    /// </exception>
+    /// <exception cref="Exception">
+    /// Thrown as <c>MessagingConfigurationException</c> (declared in <c>Headless.Messaging.Core</c>) when the
+    /// target lane has no storage contribution for durable delivery.
+    /// </exception>
     Task<PublishReceipt> EnqueueAsync<T>(T? contentObj, CancellationToken cancellationToken = default);
 }

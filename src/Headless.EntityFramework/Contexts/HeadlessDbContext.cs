@@ -11,12 +11,12 @@ namespace Headless.EntityFramework;
 
 /// <summary>
 /// Capability seam shared by the Headless DbContext bases (<see cref="HeadlessDbContext"/> and the Identity
-/// context) so the runtime, save pipeline, factory, disposal infrastructure, and coordinated-transaction
+/// context) so the runtime, save pipeline, factory, disposal infrastructure, and unit-of-work
 /// helpers operate against either base without a common class — the Identity context must derive from
 /// <c>IdentityDbContext</c>, so this interface is the only shared seam. Exposes the tenant/schema the runtime
 /// reads and the per-call service scope the factory hands in. Implemented explicitly by both bases, so it does
 /// not widen their public surface; it is public so capability-based extensions (e.g.
-/// <c>ExecuteCoordinatedTransactionAsync</c>) can target any Headless-managed context.
+/// <c>ExecuteTransactionAsync</c>) can target any Headless-managed context.
 /// </summary>
 [PublicAPI]
 public interface IHeadlessDbContext
@@ -34,8 +34,8 @@ public interface IHeadlessDbContext
     string? TenantId { get; }
 
     /// <summary>
-    /// The scoped (request) service provider that resolved this context — used by coordinated-transaction
-    /// helpers to enlist with the correct scope for the post-commit drain.
+    /// The scoped (request) service provider that resolved this context — used by the unit-of-work helpers to
+    /// resolve the <c>IUnitOfWorkManager</c> of the scope that owns this context.
     /// </summary>
     IServiceProvider ServiceProvider { get; }
 }
@@ -129,7 +129,7 @@ public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext, IHeadle
     // The IHeadlessDbContext seam is implemented explicitly (non-overridable) so it stays off this context's
     // public surface and avoids an externally-overridable member bound to the seam (CA2119). CA1033 (explicit
     // member not visible to derived types) is intentional: derived contexts never call these — the framework
-    // runtime/save pipeline and coordinated-transaction helpers reach them through the interface.
+    // runtime/save pipeline and unit-of-work helpers reach them through the interface.
 #pragma warning disable CA1033
     string? IHeadlessDbContext.DefaultSchema => DefaultSchema;
 

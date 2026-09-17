@@ -12,7 +12,7 @@ public static class MessagingTags
     /// <summary>Messaging delivery lane: <c>bus</c> for broadcast, <c>queue</c> for point-to-point.</summary>
     public const string Lane = "headless.messaging.lane";
 
-    /// <summary>Delivery mode requested by the caller: <c>auto</c>, <c>durable</c>, or <c>direct</c>.</summary>
+    /// <summary>Delivery mode requested by the caller: <c>durable</c> or <c>direct</c>.</summary>
     public const string RequestedDeliveryMode = "headless.messaging.delivery.requested";
 
     /// <summary>Delivery mode resolved by the framework: <c>durable</c> or <c>direct</c>.</summary>

@@ -55,10 +55,21 @@ public sealed record RecordedMessage
     /// <summary>The bus/queue lane that produced the observation.</summary>
     public required MessageLane Lane { get; init; }
 
-    /// <summary>The caller-requested delivery mode, or <see langword="null"/> for legacy/unreadable metadata.</summary>
+    /// <summary>
+    /// The delivery mode the publish asked for: the per-type <c>WithDeliveryMode</c> policy, otherwise
+    /// <c>MessagingOptions.DefaultDeliveryMode</c> (<see cref="DeliveryMode.Durable"/> unless the host changed it).
+    /// <see langword="null"/> when the headers carry no delivery metadata.
+    /// </summary>
     public DeliveryMode? RequestedDeliveryMode { get; init; }
 
-    /// <summary>The framework-resolved delivery mode, or <see langword="null"/> for unreadable metadata.</summary>
+    /// <summary>
+    /// The mode the framework actually executed. <see cref="Headless.UnitOfWork.TransactionEnlistment"/> is a
+    /// separate axis from <see cref="DeliveryMode"/> — enlisting in an active unit of work does not change the
+    /// recorded delivery mode. The harness keeps the production default, so a plain publish records
+    /// <c>Durable</c> here (store-first, dispatched from storage) and only an explicit
+    /// <see cref="DeliveryMode.Direct"/> publish records <c>Direct</c>. <see langword="null"/> when the headers
+    /// carry no delivery metadata.
+    /// </summary>
     public DeliveryMode? ResolvedDeliveryMode { get; init; }
 
     /// <summary>

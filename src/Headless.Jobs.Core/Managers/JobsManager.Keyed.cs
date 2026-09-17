@@ -3,9 +3,9 @@
 using Headless.Checks;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
-using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Models;
 using Headless.Jobs.MultiTenancy;
+using Headless.UnitOfWork;
 
 namespace Headless.Jobs.Managers;
 
@@ -13,10 +13,12 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {
-    async Task<JobScheduleResult> ITimeJobManager<TTimeJob>.ScheduleKeyedAsync(
+    // Called only by JobsManagerFacade (KD5), which resolves IUnitOfWorkManager.Current and passes it here.
+    internal async Task<JobScheduleResult> ScheduleKeyedTimeJobAsync(
         JobKey key,
         TTimeJob entity,
         long? expectedGeneration,
+        IUnitOfWork? unitOfWork,
         CancellationToken cancellationToken
     )
     {
@@ -25,7 +27,12 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
         Argument.IsPositive(expectedGeneration);
         JobIntentFingerprint.RejectOrdinaryMutation(entity);
         JobIntentFingerprint.Validate(entity);
-        var coordinated = _TryCaptureCoordinatedContext(entity.RequireAtomicEnlistment, requireSavepoints: true);
+        var coordinated = _TryCaptureCoordinatedContext(
+            unitOfWork,
+            entity.Enlistment,
+            entity.Function,
+            requireSavepoints: true
+        );
         var now = timeProvider.GetUtcNow();
         _StampTimeJobTree(entity, now, assignIds: true);
         await _RunSchedulePipelineAsync(entity, cancellationToken).ConfigureAwait(false);
@@ -53,33 +60,34 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
         return _CompleteKeyedOperation(result, coordinated);
     }
 
-    Task<JobScheduleResult> ITimeJobManager<TTimeJob>.CancelKeyedAsync(
+    // Called only by JobsManagerFacade (KD5), which resolves IUnitOfWorkManager.Current and passes it here.
+    internal Task<JobScheduleResult> CancelKeyedTimeJobAsync(
         JobKeyScope scope,
         JobKey key,
         long expectedGeneration,
+        TransactionEnlistment enlistment,
+        IUnitOfWork? unitOfWork,
         CancellationToken cancellationToken
-    ) => _CancelKeyedAsync(scope, key, expectedGeneration, requireAtomicEnlistment: false, cancellationToken);
-
-    Task<JobScheduleResult> ITimeJobManager<TTimeJob>.CancelKeyedAsync(
-        JobKeyScope scope,
-        JobKey key,
-        long expectedGeneration,
-        bool requireAtomicEnlistment,
-        CancellationToken cancellationToken
-    ) => _CancelKeyedAsync(scope, key, expectedGeneration, requireAtomicEnlistment, cancellationToken);
+    ) => _CancelKeyedAsync(scope, key, expectedGeneration, enlistment, unitOfWork, cancellationToken);
 
     private async Task<JobScheduleResult> _CancelKeyedAsync(
         JobKeyScope scope,
         JobKey key,
         long expectedGeneration,
-        bool requireAtomicEnlistment,
+        TransactionEnlistment enlistment,
+        IUnitOfWork? unitOfWork,
         CancellationToken cancellationToken
     )
     {
         Argument.IsNotNull(scope);
         Argument.IsNotNull(key);
         Argument.IsPositive(expectedGeneration);
-        var coordinated = _TryCaptureCoordinatedContext(requireAtomicEnlistment, requireSavepoints: true);
+        var coordinated = _TryCaptureCoordinatedContext(
+            unitOfWork,
+            enlistment,
+            scope.Function,
+            requireSavepoints: true
+        );
         if (scope.TenantId is null)
         {
             JobTenantValidation.ValidateSystemJob(
@@ -121,16 +129,7 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
         {
             if (coordinated is { } context)
             {
-                _DeferSideEffects(
-                    context.Coordinator,
-                    result.RunId.ToString()!,
-                    cancellationToken =>
-                    {
-                        cancellationToken.ThrowIfCancellationRequested();
-                        _jobsHostScheduler.Restart();
-                        return Task.CompletedTask;
-                    }
-                );
+                _SignalOnCommit(context.UnitOfWork, new ScheduleChangedSignal(this, result.RunId.ToString()!));
             }
             else
             {

@@ -48,18 +48,22 @@ public static async Task<ICommitScope> BeginCoordinatedTransactionAsync(
     this DatabaseFacade database, IServiceProvider services, CancellationToken ct)
 {
     var tx = await database.BeginTransactionAsync(ct);
-    var scope = factory.Create(...);   // sets AsyncLocal<CommitCoordinator>.Value
-    return scope;                       // caller's ExecutionContext is restored on return → Value reverts to null
+    var scope = factory.Open(relational); // pushes the AsyncLocal ambient frame
+    return scope;                         // caller's ExecutionContext is restored on return → Current reverts to null
 }
 
-// AFTER — correct: synchronous enlist runs in the caller's frame, so the set persists and flows down.
+// AFTER — correct: synchronous enlist runs in the caller's frame, so the push persists and flows down.
 public static ICommitScope EnlistCommitCoordination(
     this DatabaseFacade database, IDbContextTransaction transaction, IServiceProvider services)
 {
-    var bindings = new CommitCoordinatorBindings { Connection = ..., Transaction = transaction.GetDbTransaction() };
-    return factory.Create(bindings);    // AsyncLocal set in caller's frame → persists, flows to awaited callees
+    var dbConnection = database.GetDbConnection();
+    var dbTransaction = transaction.GetDbTransaction();
+    var relational = new RelationalCommitContext(() => dbConnection, () => dbTransaction);
+    return interceptor.Enlist(scopeFactory, relational, dbTransaction); // calls ICommitScopeFactory.Open in THIS frame
 }
 ```
+
+The same rule binds the raw-ADO helpers: `SqlConnection.EnlistCommitCoordination` and `NpgsqlConnection.EnlistCommitCoordination` call `ICommitScopeFactory.Open` synchronously and hand back the scope the caller must signal after commit.
 
 Caller (the EF save pipeline) opens the transaction and enlists synchronously before awaiting the save:
 
@@ -95,6 +99,12 @@ The fix also moved the true post-commit signal onto EF's `IDbTransactionIntercep
 - **Distrust happy-path-only green.** A test that asserts a post-condition reachable by *both* the correct and the broken path proves nothing about the path. For atomicity/coordination invariants, add a **negative** test (rollback ⇒ effect absent) — it is the only assertion that distinguishes "buffered and tied to commit" from "written autonomously."
 - **Investigate flagged unexpected results before declaring done.** The cutover was reported green; the buffered-dispatch design implied the coordinator *must* be observed on commit. "Green but the branch can't have run" is a contradiction worth chasing, not waving through.
 - A focused guard test asserting `ICurrentCommitCoordinator.Current is not null` immediately after enlist, in the caller frame, would have caught the stranding directly.
+
+## Resolution
+
+The ambient `AsyncLocal`-based commit-coordination design (`Headless.CommitCoordination.*`, the whole subject of this entry) has since been replaced by `Headless.UnitOfWork.*`, a **scoped** design: `IUnitOfWorkManager` is a scoped DI service and `Current` is a plain field on it, with no `AsyncLocal` anywhere in the new packages. Structurally, a unit of work can no longer be "stranded across an await" the way the `AsyncLocal` push above was — there is no thread-local/async-flow propagation to lose. The manager instance is resolved from, and lives in, the DI scope; `Current` is read directly off that instance wherever it's needed (the save pipeline, the outbox dispatcher, the Messaging/Jobs facades), so the capture-before-await discipline this bug exists to teach is no longer a discipline application code or provider code has to hold.
+
+This mirrors precedent cited when the redesign was decided: MassTransit's `ScopedConsumeContextProvider` and Wolverine's `ScopedMessageContextHolder` (which Wolverine adopted specifically to fix GH-2583/GH-3001 — the same class of ambient-propagation bug) both moved from `AsyncLocal`/ambient flow to a scoped field for the same reason. See `docs/plans/2026-09-16-2330-refactor-unit-of-work-plan.md` (KD1) for the full design rationale, and [Unit of Work](../../llms/unit-of-work.md) for the resulting contract.
 
 ## Related Issues
 

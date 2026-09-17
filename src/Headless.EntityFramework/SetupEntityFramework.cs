@@ -7,6 +7,7 @@ using Headless.Domain;
 using Headless.EntityFramework.CompiledQueryCache;
 using Headless.EntityFramework.Contexts.Runtime;
 using Headless.MultiTenancy;
+using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
@@ -156,8 +157,7 @@ public static class SetupEntityFramework
         /// application-registered <see cref="Microsoft.EntityFrameworkCore.Diagnostics.IInterceptor"/> to
         /// <typeparamref name="TDbContext"/>'s options whenever EF Core builds them — including a consumer's own
         /// plain <c>AddDbContext&lt;TDbContext&gt;</c>. EF Core does not auto-discover DI interceptors; this is the
-        /// seam that makes package-registered interceptors (e.g. the commit-coordination interceptor) fire. Safe to
-        /// call repeatedly (deduped by reference).
+        /// seam that makes package-registered interceptors fire. Safe to call repeatedly (deduped by reference).
         /// </summary>
         /// <returns>The service collection.</returns>
         public IServiceCollection AddDiRegisteredInterceptorsConfiguration<TDbContext>()
@@ -205,7 +205,9 @@ public static class SetupEntityFramework
             services.AddOptions<TenantWriteGuardOptions>();
             services.TryAddScoped<HeadlessDbContextServices>();
             services.TryAddScoped<IHeadlessSaveChangesPipeline, HeadlessSaveChangesPipeline>();
-            services.TryAddSingleton<IHeadlessTransactionCoordinator>(NullHeadlessTransactionCoordinator.Instance);
+            // The save pipeline enlists its transaction in the scoped unit of work and resolves the unit bound
+            // to a context through the EF provider's binding — both live in Headless.UnitOfWork.EntityFramework.
+            services.AddEntityFrameworkUnitOfWork();
             services.TryAddScoped<IHeadlessAuditPersistence, HeadlessAuditPersistence>();
             services.TryAddSingleton<IAmbientDbTransactionAccessor, EfAmbientDbTransactionAccessor>();
             // EF change-capture lives alongside the SaveChanges pipeline so any HeadlessDbContext-based

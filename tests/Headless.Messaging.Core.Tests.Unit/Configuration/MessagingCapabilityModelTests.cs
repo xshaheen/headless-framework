@@ -9,6 +9,7 @@ using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Tests.Helpers;
 
 namespace Tests.Configuration;
 

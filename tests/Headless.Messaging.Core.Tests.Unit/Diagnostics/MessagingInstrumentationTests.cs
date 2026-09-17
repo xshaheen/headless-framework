@@ -68,7 +68,7 @@ public sealed class MessagingInstrumentationTests : TestBase
     }
 
     [Theory]
-    [InlineData(DeliveryMode.Auto, "auto")]
+    [InlineData(DeliveryMode.Durable, "durable")]
     [InlineData(DeliveryMode.Direct, "direct")]
     public void should_tag_only_finite_requested_and_resolved_delivery_modes(
         DeliveryMode requestedMode,

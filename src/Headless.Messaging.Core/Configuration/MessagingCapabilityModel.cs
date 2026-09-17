@@ -125,6 +125,9 @@ public sealed class MessagingCapabilityModel : IMessageCapabilityGate
     }
 
     /// <summary>Validates the frozen model against every registered semantic route.</summary>
+    /// <param name="routes">Every registered semantic route.</param>
+    /// <param name="hasDurableConsumers">Whether any durable consumer is registered.</param>
+    /// <param name="requiredInboxCapability">The inbox tier the host requires from storage.</param>
     internal void ValidateStartup(
         IEnumerable<MessageRouteKey> routes,
         bool hasDurableConsumers = false,

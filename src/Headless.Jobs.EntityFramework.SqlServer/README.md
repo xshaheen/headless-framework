@@ -8,7 +8,7 @@ This package composes `Headless.Jobs.EntityFramework` with SQL Server claims and
 
 ## Key Features
 
-- `UseSqlServer<TContext>(configureCoordination)` reuses the registered application database and wires Jobs models, native claims, cluster membership, and EF commit coordination.
+- `UseSqlServer<TContext>(configureCoordination)` reuses the registered application database and wires Jobs models, native claims, cluster membership, and the EF Core unit-of-work provider.
 
 - **Ordinal contract storage**: Jobs function/version columns use `Latin1_General_100_BIN2` and `nvarchar(200)`/`nvarchar(100)`, matching the shared UTF-16 bounds without case normalization. Runtime validation reject surrounding whitespace so SQL padding does not introduce alternate identities. Native creation snapshots name, version, and request together under the definition lock; existing claims hydrate the stored occurrence tuple.
 - Selects claim candidates with `UPDLOCK`, `READPAST`, and `ROWLOCK`, then returns winners from the same update through `OUTPUT inserted...`.
@@ -36,13 +36,14 @@ dotnet add package Headless.Jobs.EntityFramework.SqlServer
 ```csharp
 using Headless.Jobs;
 using Headless.Jobs.Models;
+using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 
 builder.Services.AddDbContext<AppDbContext>(options => options.UseSqlServer(connectionString));
 builder.Services.AddHeadlessJobs(jobs =>
 {
     jobs.UseSqlServer<AppDbContext>(coordination => coordination.ClusterName = "orders");
-    jobs.ConfigureJob<OrderReminder>(new JobOptions { RequireAtomicEnlistment = true });
+    jobs.ConfigureJob<OrderReminder>(new JobOptions { Enlistment = TransactionEnlistment.Required });
 });
 ```
 
@@ -54,21 +55,32 @@ This convenience API targets the standard `TimeJobEntity` / `CronJobEntity` stor
 
 Cluster identity is explicit. This call selects one SQL Server coordination provider with its default storage options, including coordination-table initialization at startup. Do not also register `AddHeadlessCoordination`: duplicate provider configuration fails. For a separately configured coordination store, custom provider options/data source/authentication callbacks, custom Jobs entities, dedicated Jobs context, schema/pool settings, or a custom model customizer, use the existing `UseEntityFramework(ef => ...)` path and configure those integrations explicitly. The optional `modelConfiguration: ConfigurationType.IgnoreModelCustomizer` argument retains an application-owned model customizer; the application must then add the Jobs mappings itself.
 
-Inside `db.ExecuteCoordinatedTransactionAsync(operation, requestServiceProvider, cancellationToken: ct)`, application writes, same-database durable Messaging publishes, and job schedules share the transaction. Configure Messaging transport/storage separately. `RequireAtomicEnlistment` rejects scheduling outside a compatible transaction; it does not start one. External message delivery and job execution happen after durable acceptance and remain at-least-once.
+Inside `db.ExecuteTransactionAsync(operation, isolation, ct)` (from `Headless.EntityFramework`), application writes, same-database durable Messaging publishes, and job schedules share the transaction:
+
+```csharp
+await db.ExecuteTransactionAsync(async (context, ct) =>
+{
+    // application writes on context
+    await bus.PublishAsync(new SomeEvent(...), ct);          // same-database durable publish, enlists
+    await jobs.AddAsync(SomeJob.For(...), ct);                 // job row, same transaction
+}, cancellationToken: ct);
+```
+
+Configure Messaging transport/storage separately. `TransactionEnlistment.Required` rejects scheduling outside a compatible transaction; it does not start one. External message delivery and job execution happen after durable acceptance and remain at-least-once.
 
 `UseSqlServerClaims()` has no provider-specific options. Configure the `DbContext`, schema, and pool size through the existing Jobs EF builder. Register exactly one native claim provider. Omitting this call keeps the portable EF optimistic-CAS fallback. The strategy detects `READ_COMMITTED_SNAPSHOT` and adjusts its locking hints.
 
 ## Dependencies
 
 - `Headless.Jobs.EntityFramework`
-- `Headless.CommitCoordination.EntityFramework`
+- `Headless.UnitOfWork.EntityFramework`
 - `Headless.Coordination.SqlServer`
 - `Microsoft.EntityFrameworkCore.SqlServer`
 - `Polly.Core`
 
 ## Side Effects
 
-- The application-context convenience method attaches the commit interceptor and its startup empty-transaction probe (Warn by default), registers cluster membership and its initializer, and applies Jobs model configuration.
+- The application-context convenience method registers the EF Core unit-of-work provider, cluster membership and its initializer, and applies Jobs model configuration.
 
 - Replaces the default Jobs EF claim strategy with the SQL Server atomic strategy.
 - Executes provider-native, parameterized SQL against the mapped Jobs tables during pickup.

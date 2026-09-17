@@ -3,7 +3,6 @@
 using System.Data;
 using System.Data.Common;
 using Headless.Abstractions;
-using Headless.CommitCoordination;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
@@ -11,24 +10,25 @@ using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
+using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 namespace Tests.Internal;
 
 /// <summary>
-/// Proves the central commit-coordination invariant: <b>the commit signal is acceleration, not
-/// correctness</b>. The durable outbox row written inside the business transaction plus the relay sweep
+/// Proves the central unit-of-work invariant: <b>the completion signal is acceleration, not correctness</b>.
+/// The durable outbox row written inside the business transaction plus the relay sweep
 /// (<c>GetPublishedMessagesOfNeedRetryAsync</c>) are the source of truth; the in-memory drain only makes
-/// dispatch faster. Here the commit signal is deliberately dropped — the scope is disposed un-signalled,
-/// exactly what happens when a diagnostic is missed, an interceptor is not wired, or an inline provider's
-/// caller forgets to signal — and the test asserts no message is lost: the accelerator never fires, yet the
-/// relay pickup claims the durable row for dispatch.
+/// dispatch faster. Here the completion signal is deliberately dropped — the unit is never completed or
+/// rolled back, exactly what happens when a diagnostic is missed or a caller forgets to signal — and the
+/// test asserts no message is lost: the accelerator never fires, yet the relay pickup claims the durable
+/// row for dispatch.
 /// </summary>
 public sealed class DropSignalRelayRecoveryTests : TestBase
 {
     [Fact]
-    public async Task missed_commit_signal_must_not_lose_work_because_relay_pickup_recovers_the_durable_row()
+    public async Task missed_completion_signal_must_not_lose_work_because_relay_pickup_recovers_the_durable_row()
     {
         // Real in-memory storage from the production registration path. A fake clock lets the test
         // jump past InitialDispatchGrace so the stored row becomes due for the relay sweep without waiting.
@@ -45,31 +45,24 @@ public sealed class DropSignalRelayRecoveryTests : TestBase
         var storage = provider.GetRequiredService<IDataStorage>();
 
         await using var transaction = new TestDbTransaction();
-        var stack = new CommitScopeStack();
+        var unitOfWork = new FakeUnitOfWork();
         var dispatcher = Substitute.For<IDispatcher>();
 
         var writer = new OutboxMessageWriter(storage, dispatcher, TimeProvider.System);
 
-        var scope = new CommitScopeFactory(stack).Begin(
-            new EmptyServiceProvider(),
-            [new RelationalCommitContext(() => null, () => transaction)]
+        // Stores the durable row in-transaction and buffers the accelerator dispatch on the unit of work.
+        var request = _CreatePublishRequestFactory().Create(new RelayMessage("value"), lane: MessageLane.Bus);
+        var decision = DeliveryDecisionResolver.Resolve(
+            MessageLane.Bus,
+            DeliveryMode.Durable,
+            TransactionEnlistment.WhenAvailable,
+            delay: null,
+            DeliveryCoordination.Compatible(unitOfWork, transaction),
+            TimeProvider.System.GetUtcNow()
         );
+        await writer.WriteAsync(request, decision, AbortToken);
 
-        await using (scope)
-        {
-            // Stores the durable row in-transaction and buffers the accelerator dispatch on the coordinator.
-            var request = _CreatePublishRequestFactory().Create(new RelayMessage("value"), lane: MessageLane.Bus);
-            var decision = DeliveryDecisionResolver.Resolve(
-                MessageLane.Bus,
-                DeliveryMode.Durable,
-                delay: null,
-                DeliveryCoordination.Compatible(stack.Current!, transaction),
-                TimeProvider.System.GetUtcNow()
-            );
-            await writer.WriteAsync(request, decision, AbortToken);
-        }
-
-        // The signal was DROPPED (un-signalled dispose drains as rollback): the accelerator must not fire.
+        // The signal was DROPPED (the unit is never completed or rolled back): the accelerator must not fire.
         await dispatcher.DidNotReceive().EnqueueToPublish(Arg.Any<MediumMessage>(), Arg.Any<CancellationToken>());
         await dispatcher
             .DidNotReceive()
@@ -108,14 +101,6 @@ public sealed class DropSignalRelayRecoveryTests : TestBase
     }
 
     private sealed record RelayMessage(string Value);
-
-    private sealed class EmptyServiceProvider : IServiceProvider
-    {
-        public object? GetService(Type serviceType)
-        {
-            return null;
-        }
-    }
 
     private sealed class NoopPublishMiddlewarePipeline : IPublishMiddlewarePipeline
     {
