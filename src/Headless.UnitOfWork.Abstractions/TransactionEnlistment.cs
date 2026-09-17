@@ -4,8 +4,8 @@ namespace Headless.UnitOfWork;
 
 /// <summary>
 /// How eagerly a participant (a published message, an enqueued job) requires an active unit of work.
-/// Replaces the Messaging <c>DeliveryMode.Coordinated</c> value and the Jobs
-/// <c>RequireAtomicEnlistment</c> flag with one shared knob.
+/// One shared knob for Messaging publishes and Jobs writes: whether the durable row must land inside
+/// the active unit of work, may, or never does.
 /// </summary>
 /// <remarks>
 /// Precedence for both Messaging and Jobs: per call &gt; per type/function &gt; host default. The guarantee

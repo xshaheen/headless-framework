@@ -9,7 +9,7 @@ namespace Headless.UnitOfWork.Internal;
 
 /// <summary>
 /// The in-process unit-of-work engine: registration lists, scope-local state, the atomic terminal claim, the
-/// ordered drains, fault aggregation, and deregistration handles. Ported from the CommitCoordination
+/// ordered drains, fault aggregation, and deregistration handles. Ported from the former commit-coordination
 /// coordinator with two additions: the <c>OnFailed</c> drain (log-and-continue) and child views that register
 /// directly on the root engine so their registrations transfer with the root's completion. Internal: created
 /// only by <see cref="UnitOfWorkManager" />; the public contract is the <see cref="Headless.UnitOfWork.IUnitOfWork" />

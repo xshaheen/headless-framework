@@ -36,7 +36,7 @@ namespace Tests;
 /// <para>
 /// AE3's fail-loud modes (dead-transaction throw; non-relational fallback) are intentionally <b>not</b> covered
 /// here: the real EF/Postgres/SqlServer enlist always captures a non-null transaction and always exposes
-/// <c>IRelationalCommitContext</c>, so neither state can arise through the production coordinator. Reproducing them
+/// <c>IRelationalUnitOfWorkResource</c>, so neither state can arise through the production manager. Reproducing them
 /// would require injecting a fake relational context into a real host, which just relocates the unit test with no
 /// added fidelity — so they stay unit-only in <c>JobsManagerCoordinatedRoutingTests</c>
 /// (<c>TimeJob_dead_transaction_throws_and_persists_nothing</c>,

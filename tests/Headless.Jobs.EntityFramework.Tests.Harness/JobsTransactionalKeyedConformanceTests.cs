@@ -141,7 +141,7 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
             await using (var context = await _ContextAsync(host))
             await using (var transaction = await context.Database.BeginTransactionAsync(AbortToken))
             // Observed mode; disposing without CompleteAsync/RollbackAsync is treated as rolled back — mirrors the
-            // pre-existing EnlistCommitCoordination-scope-disposal-without-signal regression net.
+            // pre-existing observed-unit-disposed-without-completion regression net.
             await using (manager.Enlist(context, transaction))
             {
                 await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(
