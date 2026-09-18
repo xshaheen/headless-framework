@@ -573,7 +573,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
     [Fact]
     public async Task post_commit_side_effect_failure_is_logged_by_the_worker_and_never_reaches_the_commit()
     {
-        // KTD-4 crash isolation: once the row is durably committed, a post-commit side-effect failure must NOT
+        // Crash isolation: once the row is durably committed, a post-commit side-effect failure must NOT
         // surface as a caller error after a successful commit — the worker logs it against the job scope and the
         // polling sweep recovers.
         var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: true);

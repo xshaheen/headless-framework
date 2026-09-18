@@ -77,7 +77,7 @@ public sealed class InMemoryCachePerformanceTests : TestBase
             .BeLessThan(50, "overhead increase should be negligible between 100k and 200k items");
     }
 
-    // KTD-9 acceptance gate: sliding re-arm must be throttled, never unconditional. A hot key read many times
+    // Acceptance gate: sliding re-arm must be throttled, never unconditional. A hot key read many times
     // within the first half of its idle window must NOT be re-written on every read (which would hammer the
     // store under load); the logical deadline only advances once at least half the window has elapsed.
     [Fact]

@@ -581,7 +581,7 @@ public sealed class HybridCacheFailSafeTests : TestBase
             .PhysicalExpiresAt!.Value.Should()
             .BeOnOrAfter(l1Entry.LogicalExpiresAt.Value, "physical expiry must be at or after logical expiry");
 
-        // and — fail-safe refreshed L1 with a logically-fresh throttle entry (FusionCache parity, KTD-4):
+        // and — fail-safe refreshed L1 with a logically-fresh throttle entry (FusionCache parity):
         // a subsequent read within the throttle window is a normal L1 hit — fresh, factory not invoked
         var second = await cache.GetOrAddAsync<int>(
             key,
