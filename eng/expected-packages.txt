@@ -161,9 +161,9 @@ Headless.Testing.Testcontainers
 Headless.Tus
 Headless.Tus.Azure
 Headless.Tus.DistributedLocks
-Headless.Urls
 Headless.UnitOfWork
 Headless.UnitOfWork.Abstractions
 Headless.UnitOfWork.EntityFramework
 Headless.UnitOfWork.PostgreSql
 Headless.UnitOfWork.SqlServer
+Headless.Urls
