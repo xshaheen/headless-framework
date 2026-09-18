@@ -81,7 +81,8 @@ public static class SetupJobs
         var schedulerOptionsBuilder = new SchedulerOptionsBuilder();
         var optionInstance = new JobsOptionsBuilder<TTimeJob, TCronJob>(
             tickerExecutionContext,
-            schedulerOptionsBuilder
+            schedulerOptionsBuilder,
+            services
         );
         var discoveryParticipant = JobFunctionProvider.BeginDiscovery();
         try
@@ -265,14 +266,6 @@ public static class SetupJobs
         services.TryAddSingleton<JobFunctionRegistry>(provider =>
             JobFunctionProvider.CreateHostRegistry(provider.GetService<IConfiguration>())
         );
-
-        // Storage naming is owned by the feature, so both ConfigureStorage overloads register here rather than in a
-        // store provider. Replaying them in call order is what makes the pair compose as last call wins: options
-        // configuration runs in registration order, so the final call is the one that decides the value.
-        foreach (var storageConfiguration in optionInstance.StorageConfigurationActions)
-        {
-            storageConfiguration(services);
-        }
 
         optionInstance.ExternalProviderConfigServiceAction?.Invoke(services);
         optionInstance.DashboardServiceAction?.Invoke(services, requestSerializationOptions);

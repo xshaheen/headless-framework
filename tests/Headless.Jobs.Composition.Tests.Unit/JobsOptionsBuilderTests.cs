@@ -60,7 +60,8 @@ public sealed class JobsOptionsBuilderTests
     {
         var builder = new JobsOptionsBuilder<FakeTimeJob, FakeCronJob>(
             new JobsExecutionContext(),
-            new SchedulerOptionsBuilder()
+            new SchedulerOptionsBuilder(),
+            new ServiceCollection()
         );
         var strategy = new RetryStrategyOptions
         {
@@ -80,7 +81,11 @@ public sealed class JobsOptionsBuilderTests
         var executionContext = new JobsExecutionContext();
         var schedulerOptions = new SchedulerOptionsBuilder();
 
-        var builder = new JobsOptionsBuilder<FakeTimeJob, FakeCronJob>(executionContext, schedulerOptions);
+        var builder = new JobsOptionsBuilder<FakeTimeJob, FakeCronJob>(
+            executionContext,
+            schedulerOptions,
+            new ServiceCollection()
+        );
 
         builder.ConfigureRequestJsonOptions(options =>
         {
@@ -107,7 +112,11 @@ public sealed class JobsOptionsBuilderTests
         var executionContext = new JobsExecutionContext();
         var schedulerOptions = new SchedulerOptionsBuilder();
 
-        var builder = new JobsOptionsBuilder<FakeTimeJob, FakeCronJob>(executionContext, schedulerOptions);
+        var builder = new JobsOptionsBuilder<FakeTimeJob, FakeCronJob>(
+            executionContext,
+            schedulerOptions,
+            new ServiceCollection()
+        );
 
         builder.UseGZipCompression();
 
@@ -126,7 +135,8 @@ public sealed class JobsOptionsBuilderTests
     {
         var builder = new JobsOptionsBuilder<FakeTimeJob, FakeCronJob>(
             new JobsExecutionContext(),
-            new SchedulerOptionsBuilder()
+            new SchedulerOptionsBuilder(),
+            new ServiceCollection()
         );
 
         builder.UseGZipCompression(1234);
@@ -149,7 +159,11 @@ public sealed class JobsOptionsBuilderTests
         var executionContext = new JobsExecutionContext();
         var schedulerOptions = new SchedulerOptionsBuilder();
 
-        var builder = new JobsOptionsBuilder<FakeTimeJob, FakeCronJob>(executionContext, schedulerOptions);
+        var builder = new JobsOptionsBuilder<FakeTimeJob, FakeCronJob>(
+            executionContext,
+            schedulerOptions,
+            new ServiceCollection()
+        );
 
         builder.IgnoreSeedDefinedCronJobs();
 
@@ -169,7 +183,11 @@ public sealed class JobsOptionsBuilderTests
         var executionContext = new JobsExecutionContext();
         var schedulerOptions = new SchedulerOptionsBuilder();
 
-        var builder = new JobsOptionsBuilder<FakeTimeJob, FakeCronJob>(executionContext, schedulerOptions);
+        var builder = new JobsOptionsBuilder<FakeTimeJob, FakeCronJob>(
+            executionContext,
+            schedulerOptions,
+            new ServiceCollection()
+        );
 
         builder.SetExceptionHandler<FakeExceptionHandler>();
 
@@ -190,7 +208,11 @@ public sealed class JobsOptionsBuilderTests
         var executionContext = new JobsExecutionContext();
         var schedulerOptions = new SchedulerOptionsBuilder();
 
-        var builder = new JobsOptionsBuilder<FakeTimeJob, FakeCronJob>(executionContext, schedulerOptions);
+        var builder = new JobsOptionsBuilder<FakeTimeJob, FakeCronJob>(
+            executionContext,
+            schedulerOptions,
+            new ServiceCollection()
+        );
 
         builder.UseJobsSeeder(async (ITimeJobManager<FakeTimeJob> _) => await Task.CompletedTask);
 
@@ -210,7 +232,11 @@ public sealed class JobsOptionsBuilderTests
         var executionContext = new JobsExecutionContext();
         var schedulerOptions = new SchedulerOptionsBuilder();
 
-        var builder = new JobsOptionsBuilder<FakeTimeJob, FakeCronJob>(executionContext, schedulerOptions);
+        var builder = new JobsOptionsBuilder<FakeTimeJob, FakeCronJob>(
+            executionContext,
+            schedulerOptions,
+            new ServiceCollection()
+        );
 
         builder.UseJobsSeeder(
             async (ICronJobManager<FakeCronJob> _) =>
@@ -235,7 +261,11 @@ public sealed class JobsOptionsBuilderTests
         var executionContext = new JobsExecutionContext();
         var schedulerOptions = new SchedulerOptionsBuilder();
 
-        var builder = new JobsOptionsBuilder<FakeTimeJob, FakeCronJob>(executionContext, schedulerOptions);
+        var builder = new JobsOptionsBuilder<FakeTimeJob, FakeCronJob>(
+            executionContext,
+            schedulerOptions,
+            new ServiceCollection()
+        );
 
         builder.ConfigureScheduler(options =>
         {
@@ -414,7 +444,11 @@ public sealed class JobsOptionsBuilderTests
         var executionContext = new JobsExecutionContext();
         var schedulerOptions = new SchedulerOptionsBuilder();
 
-        var builder = new JobsOptionsBuilder<FakeTimeJob, FakeCronJob>(executionContext, schedulerOptions);
+        var builder = new JobsOptionsBuilder<FakeTimeJob, FakeCronJob>(
+            executionContext,
+            schedulerOptions,
+            new ServiceCollection()
+        );
 
         // Default should be true
         var defaultFlag = typeof(JobsOptionsBuilder<FakeTimeJob, FakeCronJob>)

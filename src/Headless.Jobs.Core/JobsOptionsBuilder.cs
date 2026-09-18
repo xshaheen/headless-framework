@@ -104,11 +104,11 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     internal SchedulerOptionsBuilder SchedulerOptions { get; }
 
     /// <summary>
-    /// Storage naming authored on this builder, deferred in call order and replayed by <c>AddHeadlessJobs</c>. Held
-    /// here rather than on a provider builder so every Jobs table resolves its schema from one place, and kept as an
-    /// ordered list so the two <c>ConfigureStorage</c> overloads compose as last call wins.
+    /// The collection <c>AddHeadlessJobs</c> is registering into. Storage naming is registered against it the moment
+    /// it is authored, rather than snapshotted on this builder, so the schema lives in one place and the two
+    /// <c>ConfigureStorage</c> overloads order against each other by call order alone.
     /// </summary>
-    internal List<Action<IServiceCollection>> StorageConfigurationActions { get; } = [];
+    internal IServiceCollection Services { get; }
 
     /// <summary>
     /// Applies <paramref name="configure"/> to <see cref="JobsStorageOptions"/>, which names the database schema
@@ -121,7 +121,7 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     public JobsOptionsBuilder<TTimeJob, TCronJob> ConfigureStorage(Action<JobsStorageOptions> configure)
     {
         Argument.IsNotNull(configure);
-        StorageConfigurationActions.Add(services => services.Configure(configure));
+        Services.Configure(configure);
         return this;
     }
 
@@ -137,14 +137,19 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     public JobsOptionsBuilder<TTimeJob, TCronJob> ConfigureStorage(IConfiguration configuration)
     {
         Argument.IsNotNull(configuration);
-        StorageConfigurationActions.Add(services => services.Configure<JobsStorageOptions>(configuration));
+        Services.Configure<JobsStorageOptions>(configuration);
         return this;
     }
 
-    internal JobsOptionsBuilder(JobsExecutionContext tickerExecutionContext, SchedulerOptionsBuilder schedulerOptions)
+    internal JobsOptionsBuilder(
+        JobsExecutionContext tickerExecutionContext,
+        SchedulerOptionsBuilder schedulerOptions,
+        IServiceCollection services
+    )
     {
         _tickerExecutionContext = tickerExecutionContext;
         SchedulerOptions = schedulerOptions;
+        Services = services;
         // Store this instance in the execution context for later retrieval
         tickerExecutionContext.OptionsSeeding = this;
     }
