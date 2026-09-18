@@ -8,7 +8,7 @@ using Headless.UnitOfWork;
 
 namespace Headless.Jobs.Managers;
 
-// Scoped facade over the singleton JobsManager core (KD5). It resolves IUnitOfWorkManager.Current at each call and
+// Scoped facade over the singleton JobsManager core. It resolves IUnitOfWorkManager.Current at each call and
 // passes it down to the core's Add/keyed-schedule methods; Update/Delete never touched coordination and forward
 // straight through. Registered scoped as both ITimeJobManager<TTimeJob> and ICronJobManager<TCronJob> so each
 // resolution reads THIS scope's active unit of work, never a captive singleton reading ambient state.

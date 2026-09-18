@@ -11,9 +11,9 @@ using Microsoft.Extensions.Logging;
 namespace Headless.Jobs.Managers;
 
 // Unit-of-work routing for atomic enqueue: capture of the caller-supplied IUnitOfWork?, the guarantee-matrix
-// (KD7) fail-loud checks, the synchronous OnCompleted callback that hands post-commit work to the hosted worker, and
+// fail-loud checks, the synchronous OnCompleted callback that hands post-commit work to the hosted worker, and
 // the signal kinds it hands over. The main JobsManager partial holds the add-job flow that routes through this seam.
-// The core takes IUnitOfWork? as an explicit argument (KD5) — it never resolves an ambient coordinator itself.
+// The core takes IUnitOfWork? as an explicit argument — it never resolves an ambient coordinator itself.
 internal sealed partial class JobsManager<TTimeJob, TCronJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
@@ -26,13 +26,13 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
         bool RequireSavepoints
     );
 
-    // Routing decision (KD7 guarantee matrix):
+    // Routing decision (the guarantee matrix shared with Messaging):
     //  - TransactionEnlistment.Never             → always the direct path; the resource is never inspected, even
     //    when it exists or is incompatible (Never "succeeds against an incompatible resource").
     //  - no unit of work (or no joinable relational resource) → "no unit of work" behavior: WhenAvailable falls
     //    back to the direct path, Required throws the "requires an active unit of work" message.
     //  - a joinable relational resource → validated for compatibility; incompatible/dead resources throw for both
-    //    WhenAvailable and Required (KD7: "A joinable resource that is incompatible ... throws in both").
+    //    WhenAvailable and Required: a joinable resource that is incompatible throws for both.
     private CoordinatedJobContext? _TryCaptureCoordinatedContext(
         IUnitOfWork? unitOfWork,
         TransactionEnlistment enlistment,
@@ -71,7 +71,7 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
         }
     }
 
-    // KTD7: the drift re-read that used to compare captured-vs-ambient coordinator identity becomes a plain
+    // The drift re-read that used to compare captured-vs-ambient coordinator identity becomes a plain
     // State == Active re-validation — a scoped IUnitOfWorkManager can only ever hold the one unit it began, so there
     // is no second coordinator identity to drift to; the only failure mode left is the unit having completed under
     // the caller (a nested completion, or the caller racing CompleteAsync from elsewhere in the same scope).
@@ -170,7 +170,7 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
 
     // Cron variant: the cron-expressions cache invalidation (which the direct path's InsertCronJobsAsync runs after
     // SaveChanges) fires inline on commit — never on a pre-commit snapshot, and never through the drop-on-full channel,
-    // because the poll sweep reads THROUGH that distributed cache and would not recover a dropped invalidation (R10).
+    // because the poll sweep reads THROUGH that distributed cache and would not recover a dropped invalidation.
     // It is bounded so a stalled cache releases the commit; the durable store stays authoritative either way.
     private void _SignalCronOnCommit(
         IUnitOfWork unitOfWork,

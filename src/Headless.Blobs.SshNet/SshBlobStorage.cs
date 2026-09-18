@@ -141,7 +141,7 @@ internal sealed partial class SshBlobStorage(
             var deleted = await _DeleteFileIfExistsAsync(client, blobPath, cancellationToken).ConfigureAwait(false);
 
             // Remove the metadata sidecar alongside the blob so a later re-upload of the same key without metadata
-            // cannot resurrect stale metadata (AE8). A missing sidecar is a no-op.
+            // cannot resurrect stale metadata. A missing sidecar is a no-op.
             await _DeleteFileIfExistsAsync(client, sidecarPath, cancellationToken).ConfigureAwait(false);
 
             return deleted;

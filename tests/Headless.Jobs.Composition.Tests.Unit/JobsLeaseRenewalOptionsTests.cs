@@ -11,7 +11,7 @@ public sealed class JobsLeaseRenewalOptionsTests
     {
         var options = new SchedulerOptionsBuilder { LeaseDuration = TimeSpan.FromMinutes(6) };
 
-        // ≈ LeaseDuration / 3 so one missed renewal cannot lapse the lease (#316/U1).
+        // ≈ LeaseDuration / 3 so one missed renewal cannot lapse the lease (#316).
         options.ResolveLeaseRenewalInterval().Should().Be(TimeSpan.FromMinutes(2));
     }
 

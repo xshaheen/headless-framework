@@ -9,8 +9,8 @@ using Microsoft.EntityFrameworkCore;
 namespace Headless.UnitOfWork;
 
 /// <summary>
-/// The public-but-hidden accessor over the <see cref="DbContext" /> → <see cref="IUnitOfWork" /> binding
-/// (KD13). The save pipeline (in <c>Headless.EntityFramework</c>, a different package) resolves the unit
+/// The public-but-hidden accessor over the <see cref="DbContext" /> → <see cref="IUnitOfWork" /> binding.
+/// The save pipeline (in <c>Headless.EntityFramework</c>, a different package) resolves the unit
 /// bound to a context through <see cref="Find" /> before consulting the scope manager.
 /// </summary>
 /// <remarks>

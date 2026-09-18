@@ -55,7 +55,7 @@ internal sealed partial class InMemoryDataStorage(
     // and StoreReceivedMessageAsync so two concurrent broker redeliveries (or two concurrent first
     // arrivals via the consume path) cannot both decide "not found" and race to insert duplicate
     // rows for the same (Version, MessageId, Group) tuple. Renamed from _receivedExceptionUpsertLock
-    // when the consume path adopted the same check-then-insert pattern in R3.
+    // when the consume path adopted the same check-then-insert pattern.
     private readonly Lock _receivedUpsertLock = new();
 
     DeliveryCoordination IDeliveryCoordinationResolver.Resolve(IUnitOfWork unitOfWork)
@@ -929,8 +929,8 @@ internal sealed partial class InMemoryDataStorage(
 
         var indexKey = (version, messageId!, (string?)group, message.Lane);
 
-        // R3 — extend the same lock + check-then-insert/update pattern from
-        // StoreReceivedExceptionMessageAsync to the non-exception path. Before R3 two concurrent
+        // Extend the same lock + check-then-insert/update pattern from
+        // StoreReceivedExceptionMessageAsync to the non-exception path. Without it, two concurrent
         // StoreReceivedMessageAsync calls with the same (Version, MessageId, Group) tuple both
         // allocated distinct StorageIds, both wrote into ReceivedMessages, and both overwrote the
         // index slot last-writer-wins. _ClaimMessagesOfNeedRetry then returned BOTH rows, running
@@ -1458,7 +1458,7 @@ internal sealed partial class InMemoryDataStorage(
                     continue;
                 }
 
-                // R7 — terminal-row exclusion is already enforced by the NextRetryAt > now check
+                // Terminal-row exclusion is already enforced by the NextRetryAt > now check
                 // above (terminal Succeeded/Failed rows have NextRetryAt IS NULL and so are
                 // rejected by the `NextRetryAt is null` guard). The redundant terminal-status
                 // block was unreachable and has been removed.

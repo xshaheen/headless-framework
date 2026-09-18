@@ -17,7 +17,7 @@ namespace Headless.Blobs.Aws;
 /// </summary>
 /// <remarks>
 /// This is a dedicated type rather than <see cref="AwsBlobStorage"/> implementing the interface, so the capability
-/// is discoverable only where it is honestly supported (KTD5). It owns its own per-store <see cref="IAmazonS3"/>
+/// is discoverable only where it is honestly supported. It owns its own per-store <see cref="IAmazonS3"/>
 /// client (mirroring the storage's per-instance isolation) and releases it on disposal.
 /// </remarks>
 internal sealed class AwsBlobContainerManager(IAmazonS3 s3, IBlobNamingNormalizer normalizer)

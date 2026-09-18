@@ -177,7 +177,7 @@ public static class SetupMessaging
         services.TryAddSingleton<MessageNeedToRetryProcessor>();
         services.TryAddSingleton<IRetryProcessorMonitor>(sp => sp.GetRequiredService<MessageNeedToRetryProcessor>());
 
-        // Dead-owner recovery bridge: always-on, decoupled from UseStorageLock (KTD3). When no real
+        // Dead-owner recovery bridge: always-on, decoupled from UseStorageLock. When no real
         // INodeMembership is wired the registered NullNodeMembership makes the bridge a benign no-op
         // (empty snapshot, no NodeLeft events). Cross-node safety rests on the owner-scoped conditional
         // reclaim UPDATE being idempotent, not on a held lock.

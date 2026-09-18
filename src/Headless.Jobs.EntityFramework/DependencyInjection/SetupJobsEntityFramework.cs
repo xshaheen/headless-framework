@@ -41,7 +41,7 @@ public static class SetupJobsEntityFramework
 
         // Opt into coordinated membership: the core pipeline requires a coordination provider and wires the
         // node@incarnation owner adapter + dead-node recovery bridge + registration startup gate. The old
-        // ApplicationStarted self-reclaim hook is gone (KTD3) — recovery now flows through NodeLeft.
+        // ApplicationStarted self-reclaim hook is gone — recovery now flows through NodeLeft.
         jobsConfiguration.RequiresCoordinatedMembership = true;
 
         jobsConfiguration.ExternalProviderConfigServiceAction += (services) =>

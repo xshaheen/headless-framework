@@ -15,7 +15,7 @@ using NSubstitute.ExceptionExtensions;
 namespace Tests.Chains;
 
 /// <summary>
-/// Pins the scheduler's chain enqueue contract (issue #311, plan unit U2): per-node descriptor resolution, the
+/// Pins the scheduler's chain enqueue contract (issue #311): per-node descriptor resolution, the
 /// configured <c>MaxChainDepth</c> guard, mapping onto the <see cref="TimeJobEntity"/> tree shape (per-node options,
 /// serialized request, <c>RunCondition</c> edges) and the single atomic add into the existing manager path. Joins the
 /// serialized <see cref="JobsHelperCollection"/> because the depth-guard tests drive <c>AddHeadlessJobs</c>, which

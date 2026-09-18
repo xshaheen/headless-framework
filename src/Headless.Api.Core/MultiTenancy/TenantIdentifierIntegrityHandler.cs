@@ -9,7 +9,7 @@ using Microsoft.Extensions.Options;
 namespace Headless.Api.MultiTenancy;
 
 /// <summary>
-/// Authoritative R19 mapping-integrity check: whenever identifier-based catalog resolution resolved a
+/// Authoritative identifier/claim mapping-integrity check: whenever identifier-based catalog resolution resolved a
 /// canonical tenant id for the request (<see cref="TenantIdentifierResolvedFeature"/>) and the
 /// authenticated principal also carries a tenant claim, the two must canonicalize to the same tenant.
 /// </summary>
@@ -18,7 +18,7 @@ namespace Headless.Api.MultiTenancy;
 /// Implements the raw <see cref="IAuthorizationHandler.HandleAsync(AuthorizationHandlerContext)"/>
 /// overload directly (not <see cref="AuthorizationHandler{TRequirement}"/>) so it runs for every
 /// authorization evaluation regardless of which requirements a policy declares — installing this
-/// handler is independent of <c>ResolveFromClaims</c> / <c>RequireTenant()</c> policy wiring (KTD2).
+/// handler is independent of <c>ResolveFromClaims</c> / <c>RequireTenant()</c> policy wiring.
 /// </para>
 /// <para>
 /// Runs inside <c>AuthorizationMiddleware</c>, strictly after <c>PolicyEvaluator</c> has authenticated
@@ -65,8 +65,8 @@ internal sealed class TenantIdentifierIntegrityHandler(
 
         // AuthorizationMiddleware passes the HttpContext as the authorization resource by default, but
         // the Microsoft.AspNetCore.Authorization.SuppressUseHttpContextAsAuthorizationResource AppContext
-        // switch makes it pass the Endpoint instead. Falling back to the accessor keeps R19 enforced
-        // under either resource shape; only a genuinely context-free evaluation falls through.
+        // switch makes it pass the Endpoint instead. Falling back to the accessor keeps mismatch
+        // enforcement active under either resource shape; only a genuinely context-free evaluation falls through.
         var httpContext = context.Resource as HttpContext ?? httpContextAccessor.HttpContext;
 
         if (httpContext is null)
@@ -79,7 +79,7 @@ internal sealed class TenantIdentifierIntegrityHandler(
         if (resolvedFeature is null)
         {
             // No identifier resolution happened for this request — claim-only requests keep today's
-            // store-free path untouched (R8).
+            // store-free path untouched.
             return Task.CompletedTask;
         }
 

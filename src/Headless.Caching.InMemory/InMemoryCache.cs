@@ -2299,7 +2299,7 @@ public sealed class InMemoryCache
         return result;
     }
 
-    // Strips the instance key prefix so an eviction event carries the caller-facing key (KTD10). Only call this
+    // Strips the instance key prefix so an eviction event carries the caller-facing key. Only call this
     // inside a HasEvictionSubscribers guard: it allocates a substring when _keyPrefix is non-empty (and is a no-op
     // identity when the prefix is empty).
     private string _CallerKey(string storedKey)
@@ -2314,7 +2314,7 @@ public sealed class InMemoryCache
             Interlocked.Add(ref _currentMemorySize, -removedEntry.Size);
 
             // Lazy read-path reap: the eviction metric intentionally omits this, but the per-key event is more
-            // complete (KTD7). Gate on the specific event so the strip substring is built only when observed.
+            // complete. Gate on the specific event so the strip substring is built only when observed.
             if (_events.HasEvictionSubscribers)
             {
                 _events.OnEviction(_CallerKey(key), CacheEvictionReason.Expired);

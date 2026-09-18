@@ -9,7 +9,7 @@ namespace Headless.Blobs.FileSystem;
 /// <summary>
 /// <see cref="IBlobContainerManager"/> implementation for the file-system backend, where a top-level container is a
 /// directory directly under <see cref="FileSystemBlobStorageOptions.BaseDirectoryPath"/>. Registered separately from
-/// the storage (a resolved capability, not a cast) so it is discoverable only where it is honestly supported (KTD5).
+/// the storage (a resolved capability, not a cast) so it is discoverable only where it is honestly supported.
 /// </summary>
 /// <remarks>
 /// Creating intermediate path directories while writing a blob is path creation handled by

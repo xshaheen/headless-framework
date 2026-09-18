@@ -9,8 +9,8 @@ namespace Tests;
 /// <summary>
 /// EF-only scenarios that need direct <see cref="TenantRecord"/>/<see cref="TenantCatalogDbContext"/>
 /// access below the provider-neutral <see cref="ITenantCatalogStoreFixture"/> seam: the collation proof
-/// (KTD6 — case-only variants collide, accent-surviving values stay distinct) and the identifier-update
-/// path (KTD6 — <c>SetIdentifier</c> recomputes the normalized key so only the new identifier resolves,
+/// (case-only variants collide, accent-surviving values stay distinct) and the identifier-update
+/// path (<c>SetIdentifier</c> recomputes the normalized key so only the new identifier resolves,
 /// and an update that collides with an existing normalized identifier fails on the unique index).
 /// </summary>
 /// <typeparam name="TFixture">The leaf fixture that owns this provider's Testcontainers database.</typeparam>
@@ -20,7 +20,7 @@ public abstract class TenantCatalogEfSpecificTests<TFixture>(TFixture fixture) :
     [Fact]
     public async Task should_collide_case_only_variants_as_duplicate_tenants()
     {
-        // given - KTD6: the unique index is pinned to a case-sensitive collation, but two identifiers that
+        // given - the unique index is pinned to a case-sensitive collation, but two identifiers that
         // both normalize (trim, lowercase) to the same value still collide at insert time.
         await fixture.ResetAsync(AbortToken);
         await using (var db = new TenantCatalogDbContext(fixture.DbOptions))

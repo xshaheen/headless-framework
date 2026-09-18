@@ -8,7 +8,7 @@ namespace Tests;
 /// <summary>
 /// Harness fixture over the internal <see cref="ConfigurationTenantStore"/>, exercised through the
 /// <see cref="TenantStoreConformanceTests{TFixture}"/> suite. Each <see cref="SeedAsync"/> call builds a
-/// fresh, independent store instance from a bound options snapshot (KTD7) — there is nothing to reset
+/// fresh, independent store instance from a bound options snapshot — there is nothing to reset
 /// between calls.
 /// </summary>
 public sealed class ConfigurationTenantCatalogStoreFixture : ITenantCatalogStoreFixture
@@ -20,7 +20,7 @@ public sealed class ConfigurationTenantCatalogStoreFixture : ITenantCatalogStore
         var options = new ConfigurationTenantStoreOptions { Tenants = [.. seeds.Select(_ToSeed)] };
 
         // The store's own constructor validates uniqueness and throws InvalidOperationException on
-        // duplicates (R20) — the same check the FluentValidation options validator performs at DI
+        // duplicates — the same check the FluentValidation options validator performs at DI
         // startup, so bypassing DI here still exercises the duplicate-rejection contract.
         return Task.FromResult<ITenantStore>(new ConfigurationTenantStore(Options.Create(options)));
     }

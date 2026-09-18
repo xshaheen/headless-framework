@@ -35,7 +35,7 @@ public sealed class CronPendingEvaluationTests : TestBase
         result.EarliestPendingUtc.Should().BeNull();
     }
 
-    /// <summary>AE3: a single occurrence delayed by less than the grace threshold dispatches normally.</summary>
+    /// <summary>A single occurrence delayed by less than the grace threshold dispatches normally.</summary>
     [Fact]
     public void should_not_treat_a_single_occurrence_inside_the_grace_threshold_as_a_misfire()
     {
@@ -71,7 +71,7 @@ public sealed class CronPendingEvaluationTests : TestBase
         result.IsRecovery.Should().BeTrue("more than one pending instant is a misfire however recent each one is");
     }
 
-    /// <summary>AE7: a sub-grace backlog still routes to recovery.</summary>
+    /// <summary>A sub-grace backlog still routes to recovery.</summary>
     [Fact]
     public void should_enter_recovery_for_a_sub_grace_backlog_on_a_high_frequency_schedule()
     {
@@ -84,7 +84,7 @@ public sealed class CronPendingEvaluationTests : TestBase
         result.IsRecovery.Should().BeTrue("ten pending instants is a backlog even though no single one is late");
     }
 
-    /// <summary>AE12: a backlog past the evaluation ceiling still decides correctly and reports a lower bound.</summary>
+    /// <summary>A backlog past the evaluation ceiling still decides correctly and reports a lower bound.</summary>
     [Fact]
     public void should_report_a_lower_bound_count_without_unbounded_evaluation()
     {
@@ -152,7 +152,7 @@ public sealed class CronPendingEvaluationTests : TestBase
     }
 
     /// <summary>
-    /// AE6: pause needs no special case here. Resume rebases the watermark to the resume instant, so the paused span
+    /// Pause needs no special case here. Resume rebases the watermark to the resume instant, so the paused span
     /// is never between the watermark and now and cannot produce a pending instant.
     /// </summary>
     [Fact]

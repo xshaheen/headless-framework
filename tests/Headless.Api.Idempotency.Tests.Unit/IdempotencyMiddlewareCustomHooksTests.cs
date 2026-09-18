@@ -45,7 +45,7 @@ public sealed class IdempotencyMiddlewareCustomHooksTests : IdempotencyMiddlewar
         return ctx;
     }
 
-    // ── KeyDeriver (R25, AE14) ────────────────────────────────────────────────
+    // ── KeyDeriver ─────────────────────────────────────────────────────────────
 
     [Fact]
     public async Task should_use_custom_key_deriver_when_provided()
@@ -82,7 +82,7 @@ public sealed class IdempotencyMiddlewareCustomHooksTests : IdempotencyMiddlewar
             .GetAsync<IdempotencyRecord>(Arg.Is<string>(k => k == "custom:user42:abc"), Arg.Any<CancellationToken>());
     }
 
-    // ── RequestFingerprint (R24, AE13) ───────────────────────────────────────
+    // ── RequestFingerprint ───────────────────────────────────────────────────
 
     [Fact]
     public async Task should_use_custom_fingerprint_when_provided()
@@ -196,7 +196,7 @@ public sealed class IdempotencyMiddlewareCustomHooksTests : IdempotencyMiddlewar
         innerHandlerStartPosition.Should().Be(0L);
     }
 
-    // ── ShouldApply (R21) ────────────────────────────────────────────────────
+    // ── ShouldApply ────────────────────────────────────────────────────────────
 
     [Fact]
     public async Task should_pass_through_when_should_apply_returns_false()
@@ -259,7 +259,7 @@ public sealed class IdempotencyMiddlewareCustomHooksTests : IdempotencyMiddlewar
         await cache.Received().GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
-    // ── Per-endpoint metadata merge (R23, AE12) ──────────────────────────────
+    // ── Per-endpoint metadata merge ────────────────────────────────────────────
 
     [Fact]
     public async Task should_apply_per_endpoint_metadata_override()

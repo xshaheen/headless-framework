@@ -83,7 +83,7 @@ public static class SetupCachingCore
 
         services.AddSingleton(new CachingProviderRegistration(defaultRoleKey));
 
-        // Caching-wide instrumentation config (R13): resolved by every provider from DI and threaded into the
+        // Caching-wide instrumentation config: resolved by every provider from DI and threaded into the
         // coordinator / hybrid span emission. Registered once here from the setup builder's flag.
         services.TryAddSingleton(new CacheInstrumentationConfig { IncludeKeyInTraces = setup.IncludeKeyInTraces });
 

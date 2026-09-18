@@ -120,7 +120,7 @@ public static class SetupAwsS3
 
         // Container lifecycle is a separately-resolved capability (not a cast from IBlobStorage), so the AWS
         // provider registers a dedicated manager with its own per-store S3 client. Cloudflare R2 reuses
-        // AwsBlobStorage but registers no manager, so its IBlobContainerManager resolves to null (U12 / KTD5).
+        // AwsBlobStorage but registers no manager, so its IBlobContainerManager resolves to null.
         services.AddSingleton<IBlobContainerManager>(_ => new AwsBlobContainerManager(
             S3ClientFactory.Create(awsOptions),
             new AwsBlobNamingNormalizer()

@@ -11,7 +11,7 @@ public sealed class TypedCurrentTenantInfoTests : TestBase
     [Fact]
     public async Task should_downcast_without_calling_projection_when_base_accessor_already_returns_the_subtype()
     {
-        // given — AE13 downcast path: the base accessor's call happened to hit the store directly
+        // given — downcast path: the base accessor's call happened to hit the store directly
         // (a cache miss) and the store returned the subclass instance already.
         var subclassInstance = new AcmeTenantInfo("ten_1", "acme", "Acme", isEnabled: true, region: "eu-west-1");
         var baseAccessor = Substitute.For<ICurrentTenantInfo>();
@@ -40,8 +40,8 @@ public sealed class TypedCurrentTenantInfoTests : TestBase
     [Fact]
     public async Task should_call_projection_and_rehydrate_subclass_fields_when_cache_served_the_base_shape()
     {
-        // given — AE13 projection path: the base accessor returned a plain base-shape TenantInfo (as a
-        // cache hit always does per R13), so the typed accessor's registered projection delegate is
+        // given — projection path: the base accessor returned a plain base-shape TenantInfo (as a
+        // cache hit always does), so the typed accessor's registered projection delegate is
         // responsible for re-hydrating the subclass instance — in this test, from a fake store.
         var baseShape = new TenantInfo("ten_1", "acme", "Acme", isEnabled: true);
         var baseAccessor = Substitute.For<ICurrentTenantInfo>();

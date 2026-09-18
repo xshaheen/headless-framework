@@ -154,7 +154,7 @@ public static class SetupAzureBlob
 
         // Container lifecycle is a separately-resolved capability (not a cast from IBlobStorage), so the Azure
         // provider registers a dedicated manager. It shares the storage's BlobServiceClient (ambient DI or the
-        // supplied client factory) but never disposes it (U12 / KTD5).
+        // supplied client factory) but never disposes it.
         services.AddSingleton<IBlobContainerManager>(sp =>
         {
             var options = sp.GetRequiredService<IOptions<AzureStorageOptions>>().Value;

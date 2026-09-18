@@ -21,10 +21,10 @@ namespace Tests;
 /// <summary>
 /// Cross-provider Jobs+Coordination conformance scenarios that must hold identically on every backend:
 /// <list type="bullet">
-/// <item>R1 — a durable node stamps work with its <c>node@incarnation</c> coordination owner.</item>
-/// <item>R4 — the strict reclaim predicate touches only the dead incarnation's non-terminal rows.</item>
+/// <item>A durable node stamps work with its <c>node@incarnation</c> coordination owner.</item>
+/// <item>The strict reclaim predicate touches only the dead incarnation's non-terminal rows.</item>
 /// <item>reclaim is idempotent (a second pass affects zero rows).</item>
-/// <item>R2/R3 — a surviving node recovers a crashed node's work end-to-end via the coordination
+/// <item>A surviving node recovers a crashed node's work end-to-end via the coordination
 /// <c>NodeLeft</c> event, with no Redis in the wiring.</item>
 /// </list>
 /// Each leaf derives a sealed class with <c>[Collection&lt;TFixture&gt;]</c> and re-declares the methods with
@@ -508,7 +508,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
             var otherIncarnationId = Guid.NewGuid(); // node-a@6, Queued -> untouched (different incarnation)
 
             await fixture.SeedTimeJobAsync(reclaimedId, "Reclaimed", (int)JobStatus.Queued, dead, ct);
-            // #316/U4: a dead node's InProgress row is reclaimed by the sweep only once its lease has lapsed.
+            // #316: a dead node's InProgress row is reclaimed by the sweep only once its lease has lapsed.
             await fixture.SeedTimeJobAsync(
                 retryInFlightId,
                 "RetryInFlight",
@@ -726,7 +726,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
         {
             const string dead = "node-a@5";
             await fixture.SeedTimeJobAsync(Guid.NewGuid(), "A", (int)JobStatus.Queued, dead, ct);
-            // #316/U4: InProgress reclaim defers to the lease — seed a lapsed lease so the row is swept this pass.
+            // #316: InProgress reclaim defers to the lease — seed a lapsed lease so the row is swept this pass.
             await fixture.SeedTimeJobAsync(
                 Guid.NewGuid(),
                 "B",
@@ -753,7 +753,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
         await fixture.ResetDatabaseAsync(ct);
 
         // Two nodes in one cluster. No Redis anywhere in the wiring — recovery flows purely through the
-        // coordination NodeLeft event into the Jobs MembershipRecoveryBridge (R3).
+        // coordination NodeLeft event into the Jobs MembershipRecoveryBridge.
         var hostA = fixture.BuildHost("node-a");
         var hostB = fixture.BuildHost("node-b");
 
@@ -806,7 +806,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
     }
 
     /// <summary>
-    /// #316/U1+U2: a running job slides its own lease forward, fenced on ownership + non-terminal status. A row
+    /// #316: a running job slides its own lease forward, fenced on ownership + non-terminal status. A row
     /// owned by another node renews zero rows (the cancel-on-loss signal).
     /// </summary>
     public virtual async Task running_job_renews_its_own_lease_but_a_lost_lease_renews_zero_rows()
@@ -897,7 +897,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
     }
 
     /// <summary>
-    /// #316/U3: a job stuck InProgress whose lease lapsed is reclaimed per OnNodeDeath, independent of node death.
+    /// #316: a job stuck InProgress whose lease lapsed is reclaimed per OnNodeDeath, independent of node death.
     /// A healthy (future-lease) row is untouched, and a second pass is idempotent.
     /// </summary>
     public virtual async Task stalled_lapsed_lease_inprogress_rows_are_reclaimed_per_policy()
@@ -1297,8 +1297,8 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
     }
 
     /// <summary>
-    /// #316/U4: the dead-node sweep defers a still-leased InProgress row to the lease (recovered later by U3) but
-    /// reclaims Idle/Queued rows immediately.
+    /// #316: the dead-node sweep defers a still-leased InProgress row to the lease (recovered later once the lease
+    /// lapses) but reclaims Idle/Queued rows immediately.
     /// </summary>
     public virtual async Task node_death_sweep_leaves_a_valid_lease_inprogress_row_to_the_lease()
     {
@@ -1321,7 +1321,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
 
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
-            // Only the Idle row is reclaimed now; the valid-lease InProgress row is left to the lease (U3).
+            // Only the Idle row is reclaimed now; the valid-lease InProgress row is left to the lease.
             (await persistence.ReleaseDeadNodeTimeJobResourcesAsync(dead, ct))
                 .Should()
                 .Be(1);
@@ -1436,7 +1436,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
     }
 
     /// <summary>
-    /// #316/U5 (strict Queued→InProgress fence): the unified-context start stamp promotes a Queued row owned by this
+    /// #316 (strict Queued→InProgress fence): the unified-context start stamp promotes a Queued row owned by this
     /// node to InProgress exactly once. A duplicate same-owner scheduler wrapper cannot revalidate the now-running row —
     /// the second call matches zero rows because the row is no longer Queued. Pins the EF LINQ translation of the
     /// <c>rowsToUpdate.Where(x =&gt; x.Status == JobStatus.Queued)</c> guard against a real database.
@@ -1482,7 +1482,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
     }
 
     /// <summary>
-    /// #316/U5 (cron mirror): the cron-occurrence unified-context start stamp promotes a Queued occurrence owned by this
+    /// #316 (cron mirror): the cron-occurrence unified-context start stamp promotes a Queued occurrence owned by this
     /// node to InProgress exactly once; the duplicate same-owner wrapper matches zero rows on the second call. Pins the
     /// EF LINQ translation of the cron mirror's <c>rowsToUpdate.Where(x =&gt; x.Status == JobStatus.Queued)</c> guard.
     /// </summary>

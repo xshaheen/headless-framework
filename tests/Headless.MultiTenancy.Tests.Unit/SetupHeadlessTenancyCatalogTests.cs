@@ -76,8 +76,8 @@ public sealed class SetupHeadlessTenancyCatalogTests : TestBase
         );
         builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
         // A real host wires ambient tenant context through Api.Core/Jobs.Core/Messaging.Core (each of
-        // which references Headless.Core); Headless.MultiTenancy cannot register it itself (U1's
-        // no-cycle constraint), so this test simulates that wiring directly.
+        // which references Headless.Core); Headless.MultiTenancy cannot register it itself (a
+        // no-cycle architecture constraint), so this test simulates that wiring directly.
         builder.Services.AddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
         builder.Services.AddSingleton<ICurrentTenant, CurrentTenant>();
 
@@ -157,7 +157,7 @@ public sealed class SetupHeadlessTenancyCatalogTests : TestBase
     [Fact]
     public void should_throw_at_store_resolution_when_in_memory_seeds_have_duplicate_normalized_identifiers()
     {
-        // given — AE10 in-memory arm, exercised through the full DI wiring. The registered
+        // given — the in-memory arm, exercised through the full DI wiring. The registered
         // InMemoryTenantStoreOptionsValidator (Configure<T,TValidator>, per the Options Pattern
         // convention) fires on first IOptions<T>.Value access — inside the store's own constructor —
         // so the surfaced exception is OptionsValidationException; the plain InvalidOperationException

@@ -9,7 +9,7 @@ namespace Headless.MultiTenancy;
 
 /// <summary>
 /// EF Core persistence entity backing the default <see cref="ITenantStore"/> shipped by this package —
-/// a convenience default schema (KTD6), not a canonical one. Apps with richer requirements may implement
+/// a convenience default schema, not a canonical one. Apps with richer requirements may implement
 /// <see cref="ITenantStore"/> directly over their own aggregate instead of this entity.
 /// </summary>
 /// <remarks>

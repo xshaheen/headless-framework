@@ -220,7 +220,7 @@ public static class JobsCoordinationFixtureExtensions
         builder.Logging.SetMinimumLevel(LogLevel.Warning);
 
         // IMPORTANT: Coordination must be registered before Jobs so the durable store's require-a-provider
-        // check (R5) is satisfied at registration time.
+        // check is satisfied at registration time.
         builder.Services.AddHeadlessCoordination(setup =>
         {
             fixture.ConfigureCoordination(setup);
@@ -396,7 +396,7 @@ public static class JobsCoordinationFixtureExtensions
             });
         }
 
-        // AddUnitOfWork() is idempotent (KTD9): this registers the scoped IUnitOfWorkManager the JobsManagerFacade
+        // AddUnitOfWork() is idempotent: this registers the scoped IUnitOfWorkManager the JobsManagerFacade
         // resolves .Current from, and RunCoordinatedTransactionAsync begins the unit through the same manager type.
         fixture.ConfigureUnitOfWork(builder.Services);
 

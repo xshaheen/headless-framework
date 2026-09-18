@@ -19,13 +19,13 @@ using NSubstitute.ExceptionExtensions;
 namespace Tests;
 
 /// <summary>
-/// U5: behavior of the cron-seed migration guard (<see cref="JobsInitializationHostedService"/>) — skip-on-contention,
+/// Behavior of the cron-seed migration guard (<see cref="JobsInitializationHostedService"/>) — skip-on-contention,
 /// unchanged no-lock default, and lease release on the success and throw paths — plus the dead-node reclaim contract
 /// (<see cref="JobsDeadOwnerReclaimer"/>). The reclaim path is intentionally <em>not</em> lock-guarded (#267 review):
 /// the shared <c>DeadOwnerRecoveryBridge</c> marks owners reclaimed before the call and only retries on a thrown
 /// failure, so the reclaimer must propagate (not swallow) to avoid stranding dead-owner InProgress rows. The seed guard
 /// is provider-agnostic Core logic, so these are unit tests over the real in-memory lock provider shared between two
-/// simulated nodes (KTD8) — no Docker, no DB.
+/// simulated nodes — no Docker, no DB.
 /// </summary>
 public sealed class JobsDistributedLockGuardTests : TestBase
 {
@@ -51,7 +51,7 @@ public sealed class JobsDistributedLockGuardTests : TestBase
     }
 
     // ----------------------------------------------------------------------------------------------------------------
-    // Cron-seed migration guard (U2)
+    // Cron-seed migration guard
     // ----------------------------------------------------------------------------------------------------------------
 
     private static async Task _InvokeSeedAsync(
@@ -415,7 +415,7 @@ public sealed class JobsDistributedLockGuardTests : TestBase
 
         await reclaimer.ReclaimAsync(["node-a@1", "node-b@2"], CancellationToken.None);
 
-        // KTD6: the reclaimer must call the batch release with CancellationToken.None (not the incoming token) so a
+        // The reclaimer must call the batch release with CancellationToken.None (not the incoming token) so a
         // reclaim racing host shutdown still completes. Assert the exact token, not Arg.Any, to enforce that.
         await manager
             .Received(1)

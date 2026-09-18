@@ -9,21 +9,21 @@ using Headless.Constants;
 namespace Headless.Api.MultiTenancy;
 
 /// <summary>
-/// A parsed and compiled host template (KTD2): dot-separated labels where <c>{tenant}</c> names the
+/// A parsed and compiled host template: dot-separated labels where <c>{tenant}</c> names the
 /// capture of exactly one label, <c>?</c> matches exactly one label, <c>*</c> matches zero or more
 /// labels, and any other label is a literal (letters, digits, hyphen). A bare <c>{tenant}</c>
 /// template matches the whole host.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Parsing and compilation happen once: startup options validation proves every template parses
-/// (R7), and <see cref="HostTenantIdentifierSource"/> compiles its options in its constructor — so
+/// Parsing and compilation happen once: startup options validation proves every template parses,
+/// and <see cref="HostTenantIdentifierSource"/> compiles its options in its constructor — so
 /// <see cref="Match"/> never parses per request.
 /// </para>
 /// <para>
 /// The compiled form is an anchored regex carrying <see cref="RegexPatterns.MatchTimeout"/> and
 /// <see cref="RegexOptions.NonBacktracking"/>: the grammar has no backreferences or lookarounds, so
-/// matching is linear in the host length (R11) and the timeout is defense in depth, practically
+/// matching is linear in the host length and the timeout is defense in depth, practically
 /// unreachable — the source still catches <see cref="RegexMatchTimeoutException"/>.
 /// </para>
 /// </remarks>
@@ -32,7 +32,7 @@ internal sealed class HostTemplate
     private const string _TenantToken = "{tenant}";
 
     // NonBacktracking cannot be combined with Compiled; the grammar is backtracking-free, so the
-    // automaton engine is a strict improvement over a compiled backtracking regex here (KTD2).
+    // automaton engine is a strict improvement over a compiled backtracking regex here.
     // CultureInvariant: hostnames are ASCII case-insensitive (RFC 4343), so the process culture must
     // not change which literal labels match — under tr-TR, IgnoreCase alone folds 'I'/'i' through the
     // Turkish dotted/dotless forms and a literal label containing 'i' stops matching its uppercase form.
@@ -51,7 +51,7 @@ internal sealed class HostTemplate
 
     /// <summary>
     /// Parses and compiles a host template, reporting a human-readable message the options validator
-    /// surfaces verbatim (R7) — every message names the offending template and the broken rule.
+    /// surfaces verbatim — every message names the offending template and the broken rule.
     /// </summary>
     /// <param name="template">The template text.</param>
     /// <param name="hostTemplate">The compiled template, or <see langword="null"/> on failure.</param>
@@ -149,7 +149,7 @@ internal sealed class HostTemplate
     /// <summary>
     /// Matches an exact host (case-insensitive) and extracts the <c>{tenant}</c> capture.
     /// A <see cref="RegexMatchTimeoutException"/> propagates to the caller — the host source owns
-    /// mapping it to an invalid result plus the once-per-process warning (R11, R18).
+    /// mapping it to an invalid result plus the once-per-process warning.
     /// </summary>
     /// <param name="host">The host without its port. Trailing-dot stripping is also the caller's job.</param>
     /// <param name="identifier">The captured identifier, or <see langword="null"/> on no match.</param>
@@ -177,7 +177,7 @@ internal sealed class HostTemplate
     // shape so "{tenant}.*" matches the bare "acme" and "*.{tenant}" matches "a.b.acme".
     // A bare "{tenant}" is the whole-host (custom-domain) form: it captures the entire host,
     // dots included — the catalog's IdentifierPattern/MaxIdentifierLength override governs that
-    // shape downstream (R9), not the template grammar.
+    // shape downstream, not the template grammar.
     private static string _CompilePattern(string[] labels)
     {
         if (labels is [_TenantToken])

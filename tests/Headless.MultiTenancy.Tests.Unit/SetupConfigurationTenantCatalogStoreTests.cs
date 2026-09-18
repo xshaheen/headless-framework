@@ -41,7 +41,7 @@ public sealed class SetupConfigurationTenantCatalogStoreTests : TestBase
         // when
         var outcome = await service.ResolveAsync("acme", AbortToken);
 
-        // then — identical resolution behavior to U3's in-memory-backed equivalent
+        // then — resolution behaves the same as the equivalent in-memory-backed store test
         outcome.Kind.Should().Be(TenantResolutionKind.Resolved);
         outcome.Tenant!.Id.Should().Be("ten_1");
     }
@@ -49,7 +49,7 @@ public sealed class SetupConfigurationTenantCatalogStoreTests : TestBase
     [Fact]
     public void should_throw_at_store_resolution_when_configuration_seeds_have_duplicate_normalized_identifiers()
     {
-        // given — AE10 configuration arm, exercised through the full DI wiring. The registered
+        // given — the configuration arm, exercised through the full DI wiring. The registered
         // ConfigurationTenantStoreOptionsValidator (Configure<T,TValidator>, per the Options Pattern
         // convention) fires on first IOptions<T>.Value access — inside the store's own constructor — so
         // the surfaced exception is OptionsValidationException; the plain InvalidOperationException
@@ -77,7 +77,7 @@ public sealed class SetupConfigurationTenantCatalogStoreTests : TestBase
     [Fact]
     public void should_throw_at_startup_when_a_seed_has_an_invalid_identifier_shape()
     {
-        // given — bad chars/length: the seed identifier can never be reached by resolution (R21),
+        // given — bad chars/length: the seed identifier can never be reached by resolution,
         // so the configuration store rejects it eagerly instead of shipping dead configuration.
         var builder = Host.CreateApplicationBuilder();
         builder.AddHeadlessTenancy(tenancy =>
@@ -132,7 +132,7 @@ public sealed class SetupConfigurationTenantCatalogStoreTests : TestBase
     [Fact]
     public async Task should_not_reflect_configuration_changes_made_after_the_startup_snapshot()
     {
-        // given — KTD7: bound once at startup; reload requires a process restart.
+        // given — bound once at startup; reload requires a process restart.
         var settings = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             ["Tenants:0:Id"] = "ten_1",

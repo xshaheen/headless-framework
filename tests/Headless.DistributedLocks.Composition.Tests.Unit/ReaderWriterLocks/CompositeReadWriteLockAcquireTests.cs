@@ -653,7 +653,7 @@ public sealed class CompositeReadWriteLockAcquireTests : TestBase
     [Fact]
     public async Task should_link_read_and_write_child_loss_tokens_into_one_composite_loss_signal()
     {
-        // D4 carries loss linking over from the mutex composite, but nothing exercised it across MIXED modes: a read
+        // Loss linking carries over from the mutex composite, but nothing exercised it across MIXED modes: a read
         // child and a write child must agree on loss-observability and fold into a single signal.
         var provider = _CreateProvider(new FakeTimeProvider());
 #pragma warning disable CA2000 // Ownership transfers to the composite returned by the acquisition.

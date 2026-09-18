@@ -13,7 +13,7 @@ using Microsoft.Extensions.Time.Testing;
 namespace Tests.Managers;
 
 /// <summary>
-/// U3: building a queued time-job execution context must recurse the whole hydrated tree, not stop at the
+/// Building a queued time-job execution context must recurse the whole hydrated tree, not stop at the
 /// grandchild level, carrying each descendant's own <c>RunCondition</c>/<c>RetryCount</c>/<c>ParentId</c> so a
 /// deep chain is not silently truncated (or its retry budget reset) after restart.
 /// </summary>

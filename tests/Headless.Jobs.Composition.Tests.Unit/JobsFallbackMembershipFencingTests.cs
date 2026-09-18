@@ -18,7 +18,7 @@ public sealed class JobsFallbackMembershipFencingTests : TestBase
     [Fact]
     public async Task fallback_service_stops_sweeping_when_local_membership_is_lost()
     {
-        // Fail-stop (R9): the fallback's reclaim sweep applies cluster-wide terminal transitions, so a node that
+        // Fail-stop: the fallback's reclaim sweep applies cluster-wide terminal transitions, so a node that
         // lost coordination membership must stop it. Under StopMembershipOnly nothing else stops this loop —
         // before the fix it kept terminalizing other live nodes' lease-lapsed rows indefinitely.
         var manager = Substitute.For<IInternalJobManager>();

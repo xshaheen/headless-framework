@@ -56,7 +56,7 @@ public static class HeadlessJobsQueryExtensions
         // A non-terminal row is claimable if it is already mine (crash re-pickup), never leased, or its lease
         // deadline has passed (lease-expiry self-heal). DateTime.UtcNow is provider-translated to the database clock,
         // so comparison and stamping share one authority without a separate scalar query.
-        // The lease-expiry arm is gated on OnNodeDeath == Retry (KTD5/#315): only idempotent jobs are speculatively
+        // The lease-expiry arm is gated on OnNodeDeath == Retry (#315): only idempotent jobs are speculatively
         // re-claimed when their lease lapses; MarkFailed/Skip rows are left for the dead-node sweep to transition.
         return q.Where(e =>
             (e.Status == JobStatus.Idle || e.Status == JobStatus.Queued)
@@ -175,7 +175,7 @@ public static class HeadlessJobsQueryExtensions
     }
 
     /// <summary>
-    /// U5/KTD3 timed-descendant claim gate: keeps a timed chain descendant (<c>ParentId != null</c> AND
+    /// Timed-descendant claim gate: keeps a timed chain descendant (<c>ParentId != null</c> AND
     /// <c>ExecutionTime != null</c>) with a parent-terminal-gated <c>RunCondition</c> out of the claim until its parent
     /// reached the MATCHING terminal state. Rows with no parent, no execution time, or a non-gated run condition
     /// (<c>InProgress</c> / <see langword="null"/>) pass untouched. The parent lookup is a correlated subquery over
@@ -227,7 +227,7 @@ public static class HeadlessJobsQueryExtensions
     }
 
     /// <summary>
-    /// U5/KTD3 reconcile helper: keeps only the rows whose parent has reached any terminal state (correlated subquery
+    /// Reconcile helper: keeps only the rows whose parent has reached any terminal state (correlated subquery
     /// over <paramref name="allJobs"/>). Combined with a base filter to idle timed gated children, this yields the
     /// children whose parent has settled and therefore need release-or-skip reconciliation.
     /// </summary>
@@ -252,7 +252,7 @@ public static class HeadlessJobsQueryExtensions
     }
 
     /// <summary>
-    /// R2/KTD3/KTD6 bounded-sweep helper: keeps only the rows the skip-only safety net actually mutates — a gated
+    /// Bounded-sweep helper: keeps only the rows the skip-only safety net actually mutates — a gated
     /// timed child whose parent reached a terminal state that does NOT satisfy the child's <c>RunCondition</c>. This
     /// is the exact negation of <see cref="WhereClaimableUnderParentTerminalGate{TTimeJob}"/>'s match arm intersected
     /// with "parent is terminal", so the poll-time sweep can bound its selection to the mismatched set — a page full
@@ -304,7 +304,7 @@ public static class HeadlessJobsQueryExtensions
 
     /// <summary>
     /// Selects the non-terminal rows owned by <paramref name="owner"/> for dead-node reclaim. Unlike
-    /// <c>WhereCanAcquire</c> this drops the loose unowned/lease-expired arms (KTD5/R4): a survivor reacting
+    /// <c>WhereCanAcquire</c> this drops the loose unowned/lease-expired arms: a survivor reacting
     /// to a dead incarnation reclaims only that incarnation's rows — never unowned-but-idle rows nor a
     /// fast-restart's freshly-stamped rows. The terminal-state guard is preserved (terminal rows excluded).
     /// </summary>

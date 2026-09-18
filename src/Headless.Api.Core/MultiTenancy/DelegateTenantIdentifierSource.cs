@@ -7,7 +7,7 @@ namespace Headless.Api.MultiTenancy;
 
 /// <summary>
 /// Adapts a <c>Func&lt;HttpContext, string?&gt;</c> resolver into an <see cref="ITenantIdentifierSource"/>,
-/// registered by <c>AddSource(Func&lt;HttpContext, string?&gt;)</c> (R4).
+/// registered by <c>AddSource(Func&lt;HttpContext, string?&gt;)</c>.
 /// </summary>
 /// <remarks>
 /// A <see langword="null"/> or blank return maps to <see cref="TenantIdentifierSourceResult.None"/> so

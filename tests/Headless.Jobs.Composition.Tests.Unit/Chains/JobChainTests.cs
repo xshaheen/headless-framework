@@ -8,7 +8,7 @@ using Headless.Jobs.Models;
 namespace Tests.Chains;
 
 /// <summary>
-/// Pins the authoring contract for the typed <see cref="JobChain"/> model (issue #311, plan unit U1): payload/descriptor
+/// Pins the authoring contract for the typed <see cref="JobChain"/> model (issue #311): payload/descriptor
 /// step capture, single-success/single-failure edges, per-step options, structural-depth validation, and immutability
 /// after <see cref="JobChainBuilder.Build"/>. Descriptor resolution and persistence belong to later units — this suite
 /// only proves the pure authoring/validation logic with no registry or DI access.

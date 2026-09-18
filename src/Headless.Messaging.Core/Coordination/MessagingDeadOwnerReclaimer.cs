@@ -27,7 +27,7 @@ internal sealed class MessagingDeadOwnerReclaimer(
     {
         // owners is the dead-owner set the bridge surfaced; pass it straight to the owner-scoped conditional
         // UPDATE so a whole reconcile batch collapses into one write per table instead of one per owner.
-        // KTD6: a reclaim racing host shutdown must complete to avoid a half-reclaim, so the bridge hands us
+        // A reclaim racing host shutdown must complete to avoid a half-reclaim, so the bridge hands us
         // CancellationToken.None and we deliberately do not re-thread the incoming token into the writes.
         // Failures propagate to the bridge, which logs and re-queues the batch for the next reconcile tick.
         var publishedReclaimed = await storage

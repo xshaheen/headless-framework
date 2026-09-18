@@ -631,7 +631,7 @@ public sealed class JobSchedulerTests : TestBase
     [Fact]
     public void should_register_the_facade_for_the_configured_entity_pair()
     {
-        // IJobScheduler (and the ITimeJobManager<>/ICronJobManager<> facades) are scoped (KD5) — resolve them from a
+        // IJobScheduler (and the ITimeJobManager<>/ICronJobManager<> facades) are scoped — resolve them from a
         // scope, on a ValidateScopes host, so a captive-dependency regression fails loud here.
         var defaultServices = new ServiceCollection();
         defaultServices.AddLogging();

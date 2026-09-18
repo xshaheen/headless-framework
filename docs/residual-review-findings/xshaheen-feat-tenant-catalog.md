@@ -12,8 +12,8 @@ No tracker tickets were filed (no sink configured for this run), so this file is
 - **P2 — Identifier rebrand routes anonymous traffic to the previous tenant.**
   `src/Headless.MultiTenancy/TenantCatalogService.cs:136` (correctness). Re-pointing an identifier to a
   different tenant inside the cache-expiration window keeps routing anonymous, claim-free traffic to
-  the old tenant. This is the documented R14 no-reuse trade-off (the SPI is read-only, so there is no
-  framework invalidation hook). Authenticated requests fail closed via R19. Options: keep the
+  the old tenant. This is the documented no-reuse trade-off (the SPI is read-only, so there is no
+  framework invalidation hook). Authenticated requests fail closed via the identifier/claim mismatch check. Options: keep the
   documented no-reuse rule as-is, add an invalidation hook to the SPI, or shorten the documented
   window. Owner: human.
 
@@ -43,8 +43,8 @@ No tracker tickets were filed (no sink configured for this run), so this file is
   resolution. The original rationale ("one store read populates two cache axes, which the single-factory
   model does not support") was wrong: a factory can populate a second axis as a side effect, and the
   conditional overload's adaptive `CacheFactoryContext<T>.Options` covers the differing negative
-  expiration. The real obstacle was fault semantics — `GetOrAddAsync` surfaces cache faults, while KTD4
-  requires a read fault to degrade to a miss and a write fault to be swallowed — and it is solved by
+  expiration. The real obstacle was fault semantics — `GetOrAddAsync` surfaces cache faults, while the
+  fault-handling contract requires a read fault to degrade to a miss and a write fault to be swallowed — and it is solved by
   splitting that single exception surface on whether the factory had already read the store. Two paths
   still read-then-write, because a factory-backed read always persists its result: the id axis (which must
   not cache an id with no catalog row) and identifier resolution on hosts with
@@ -58,7 +58,7 @@ No tracker tickets were filed (no sink configured for this run), so this file is
   byte-identical bodies.
 - `MaxIdentifierLength` is validated only `GreaterThan(0)`; a raised bound plus a custom backtracking
   pattern is a pre-auth ReDoS surface, mitigated only by the generated-regex match timeout.
-- Contract/implementation namespace split is permanent by design (KTD1): the moved contracts live in
+- Contract/implementation namespace split is permanent by design: the moved contracts live in
   `Headless.MultiTenancy`, their default implementations stay in `Headless.Core`.
 
 ## Testing gaps

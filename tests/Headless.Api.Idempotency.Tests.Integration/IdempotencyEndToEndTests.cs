@@ -18,7 +18,7 @@ namespace Tests;
 
 public sealed class IdempotencyEndToEndTests : TestBase
 {
-    // ── AE1: replay on identical retry ────────────────────────────────────────
+    // ── Replay on identical retry ─────────────────────────────────────────────
 
     [Fact]
     public async Task should_replay_cached_response_on_identical_retry()
@@ -58,7 +58,7 @@ public sealed class IdempotencyEndToEndTests : TestBase
         secondBody.Should().Be(firstBody);
     }
 
-    // ── AE2: mismatch (same key, different body) → 422 ────────────────────────
+    // ── Mismatch (same key, different body) → 422 ─────────────────────────────
 
     [Fact]
     public async Task should_return_422_when_same_key_used_with_different_body()
@@ -92,7 +92,7 @@ public sealed class IdempotencyEndToEndTests : TestBase
         replay.Headers.GetValues(HttpHeaderNames.IdempotentReplayed).Should().ContainSingle().Which.Should().Be("true");
     }
 
-    // ── AE5: status predicate (default) ──────────────────────────────────────
+    // ── Status predicate (default) ────────────────────────────────────────────
 
     [Fact]
     public async Task should_not_cache_5xx_response()
@@ -124,7 +124,7 @@ public sealed class IdempotencyEndToEndTests : TestBase
         second.Headers.GetValues(HttpHeaderNames.IdempotentReplayed).Should().ContainSingle().Which.Should().Be("true");
     }
 
-    // ── AE6: oversize body ────────────────────────────────────────────────────
+    // ── Oversize body ──────────────────────────────────────────────────────────
 
     [Fact]
     public async Task should_reject_oversize_body_with_413()
@@ -176,7 +176,7 @@ public sealed class IdempotencyEndToEndTests : TestBase
         secondBody.Should().NotBe(firstBody);
     }
 
-    // ── AE9: header allowlist filters Set-Cookie / traceparent ───────────────
+    // ── Header allowlist filters Set-Cookie / traceparent ─────────────────────
 
     [Fact]
     public async Task should_drop_set_cookie_and_traceparent_by_default_when_replay_response()
@@ -211,7 +211,7 @@ public sealed class IdempotencyEndToEndTests : TestBase
         response.Headers.Contains(HttpHeaderNames.IdempotentReplayed).Should().BeFalse();
     }
 
-    // ── AE7: tenant isolation ────────────────────────────────────────────────
+    // ── Tenant isolation ───────────────────────────────────────────────────────
 
     [Fact]
     public async Task should_not_collide_when_different_tenants_with_same_key()
@@ -246,7 +246,7 @@ public sealed class IdempotencyEndToEndTests : TestBase
         bodyA.Should().NotBe(bodyB);
     }
 
-    // ── AE12: per-endpoint metadata ──────────────────────────────────────────
+    // ── Per-endpoint metadata ──────────────────────────────────────────────────
 
     [Fact]
     public async Task should_apply_overrides_when_per_endpoint_with_idempotency_metadata()
@@ -272,7 +272,7 @@ public sealed class IdempotencyEndToEndTests : TestBase
         mismatch.StatusCode.Should().Be(HttpStatusCode.Conflict, "endpoint override changes mismatch status to 409");
     }
 
-    // ── AE3: concurrent in-flight with Reject strategy ───────────────────────
+    // ── Concurrent in-flight with Reject strategy ──────────────────────────────
 
     [Fact]
     public async Task should_invoke_handler_once_and_409_the_loser_when_concurrent_requests_with_reject_strategy()
@@ -308,7 +308,7 @@ public sealed class IdempotencyEndToEndTests : TestBase
         gate.InvocationCount.Should().Be(1, "Reject strategy short-circuits before invoking the handler");
     }
 
-    // ── AE4: concurrent in-flight with WaitAndReplay strategy ────────────────
+    // ── Concurrent in-flight with WaitAndReplay strategy ───────────────────────
 
     [Fact]
     public async Task should_block_loser_until_winner_completes_then_replay_when_concurrent_requests_with_wait_and_replay()
@@ -356,7 +356,7 @@ public sealed class IdempotencyEndToEndTests : TestBase
     [Fact]
     public async Task wait_and_replay_must_not_let_loser_steal_lock_during_winner_marker_insertion_window()
     {
-        // Pin the WaitAndReplay TryInsert→TryAcquire race surfaced by the re-review (P1).
+        // Pin the WaitAndReplay TryInsert→TryAcquire race.
         //
         // The bug: the winner's path is
         //   1. cache.TryInsertAsync(InFlight marker) → true   (marker is now visible)
@@ -483,7 +483,7 @@ public sealed class IdempotencyEndToEndTests : TestBase
         await winnerTask;
     }
 
-    // ── AE8: null-tenant + anonymous user → pass-through (no shared bucket) ──
+    // ── Null-tenant + anonymous user → pass-through (no shared bucket) ────────
 
     [Fact]
     public async Task should_pass_through_without_replay_when_anonymous_requests_with_no_tenant_and_no_user_identity()

@@ -91,7 +91,7 @@ public static class SetupMiddlewares
     /// <c>HeadlessServiceDefaultsValidationStartupFilter</c>) synchronously before adding the middleware,
     /// and records <see cref="TenantCatalogPosture.StatusCodesRewriterRuntimeMarker"/> on an already-configured
     /// tenant catalog seam so <c>TenantCatalogPostureValidator</c> can fail a catalog-resolution host that
-    /// never wired the rewriter (its R19 mismatch rejection would otherwise stay distinguishable from the
+    /// never wired the rewriter (its mismatch rejection would otherwise stay distinguishable from the
     /// unknown-tenant rejection). The marker records presence only — it cannot observe whether this call
     /// precedes <c>UseAuthorization()</c>, which it must, since a rewriter registered after authorization
     /// never sees the failed evaluation.
@@ -171,17 +171,17 @@ public static class SetupMiddlewares
     /// <param name="services">The service collection to register into.</param>
     /// <returns>The same service collection.</returns>
     /// <remarks>
-    /// Also registers the R19 post-authorization mapping-integrity handler
+    /// Also registers the post-authorization mapping-integrity handler
     /// (<c>TenantIdentifierIntegrityHandler</c>) and
     /// <see cref="Microsoft.AspNetCore.Http.IHttpContextAccessor"/>, so cross-tenant integrity
     /// enforcement is inseparable from the middleware — a host wiring this low-level pair directly would
-    /// otherwise get identifier resolution and ambient tenant assignment with tier-2 R19 enforcement
+    /// otherwise get identifier resolution and ambient tenant assignment with tier-2 enforcement
     /// silently absent. <see cref="IProblemDetailsCreator"/> and its dependencies are registered for the
     /// same reason: every rejection path resolves it from request services.
     /// </remarks>
     internal static IServiceCollection AddTenantCatalogResolution(this IServiceCollection services)
     {
-        // Every rejection path of this middleware (unknown/disabled/invalid outcomes, the R19 claim
+        // Every rejection path of this middleware (unknown/disabled/invalid outcomes, the claim
         // mismatch, and TenantResolutionMiddleware's claim-vs-feature fast path) resolves
         // IProblemDetailsCreator from request services. That must not depend on the host also calling
         // AddHeadlessProblemDetails(), or a catalog host turns every rejection into a runtime 500 while
@@ -216,7 +216,7 @@ public static class SetupMiddlewares
     /// <returns>The same application builder.</returns>
     /// <remarks>
     /// Place this after <c>UseRouting()</c> and before <c>UseAuthentication()</c> — separate from
-    /// <see cref="UseTenantResolution"/>'s post-authentication claim placement (KTD2). A one-time
+    /// <see cref="UseTenantResolution"/>'s post-authentication claim placement. A one-time
     /// process-level warning is emitted when the middleware observes a request with no resolved
     /// endpoint (likely ordering misconfiguration). Prefer
     /// <see cref="SetupApiTenancy.UseHeadlessTenantCatalogResolution"/> when catalog resolution was

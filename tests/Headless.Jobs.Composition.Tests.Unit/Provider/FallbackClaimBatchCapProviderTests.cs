@@ -12,7 +12,7 @@ using Microsoft.Extensions.Time.Testing;
 namespace Tests.Provider;
 
 /// <summary>
-/// AE5: the in-memory fallback-claim sweep caps each pass at 100 rows (mirror of the durable providers'
+/// The in-memory fallback-claim sweep caps each pass at 100 rows (mirror of the durable providers'
 /// <c>Take(100)</c>), claiming the oldest by (ExecutionTime, Id) so a large idle backlog cannot be swept in one
 /// unbounded batch. Covers both the time-job path (<see
 /// cref="JobsInMemoryPersistenceProvider{TTimeJob,TCronJob}.QueueTimedOutTimeJobsAsync"/>) and the

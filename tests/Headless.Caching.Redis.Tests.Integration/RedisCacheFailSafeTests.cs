@@ -6,7 +6,7 @@ using StackExchange.Redis;
 namespace Tests;
 
 /// <summary>
-/// Integration tests for Redis fail-safe behavior (U6 coverage).
+/// Integration tests for Redis fail-safe behavior.
 /// Uses real durations in the 1–3 s range so waits are short but Redis TTLs are observable.
 /// </summary>
 public sealed class RedisCacheFailSafeTests(RedisCacheFixture fixture) : RedisCacheTestBase(fixture)
@@ -39,7 +39,7 @@ public sealed class RedisCacheFailSafeTests(RedisCacheFixture fixture) : RedisCa
     // ---------- tests ----------
 
     /// <summary>
-    /// R1 — within the physical window, a factory exception causes the stale value to be returned with IsStale==true.
+    /// Within the physical window, a factory exception causes the stale value to be returned with IsStale==true.
     /// </summary>
     [Fact]
     public async Task should_serve_stale_value_when_factory_throws_within_physical_window()
@@ -70,7 +70,7 @@ public sealed class RedisCacheFailSafeTests(RedisCacheFixture fixture) : RedisCa
     }
 
     /// <summary>
-    /// R4 — a factory that itself throws a StackExchange.Redis exception (store-unavailable shaped failure)
+    /// A factory that itself throws a StackExchange.Redis exception (store-unavailable shaped failure)
     /// is treated the same as any other factory exception: stale value is served with IsStale==true.
     /// </summary>
     [Fact]
@@ -102,7 +102,7 @@ public sealed class RedisCacheFailSafeTests(RedisCacheFixture fixture) : RedisCa
     }
 
     /// <summary>
-    /// R3/physical-TTL — after a fail-safe GetOrAddAsync the Redis key TTL is set to the PHYSICAL duration
+    /// Physical-TTL: after a fail-safe GetOrAddAsync the Redis key TTL is set to the PHYSICAL duration
     /// (max(Duration, FailSafeMaxDuration)), NOT just Duration.
     /// </summary>
     [Fact]
@@ -133,7 +133,7 @@ public sealed class RedisCacheFailSafeTests(RedisCacheFixture fixture) : RedisCa
     }
 
     /// <summary>
-    /// R7 — when fail-safe is disabled (default), the Redis TTL matches Duration exactly.
+    /// When fail-safe is disabled (default), the Redis TTL matches Duration exactly.
     /// </summary>
     [Fact]
     public async Task should_set_redis_ttl_to_duration_when_failsafe_disabled()
@@ -184,7 +184,7 @@ public sealed class RedisCacheFailSafeTests(RedisCacheFixture fixture) : RedisCa
     }
 
     /// <summary>
-    /// R2 — once the physical window has elapsed (key gone from Redis), a factory exception propagates
+    /// Once the physical window has elapsed (key gone from Redis), a factory exception propagates
     /// without activating fail-safe.
     /// </summary>
     [Fact]

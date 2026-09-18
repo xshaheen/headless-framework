@@ -735,7 +735,7 @@ public abstract class JobsSchedulePositionConformanceTests<TFixture>(TFixture fi
     }
 
     /// <summary>
-    /// R10 on the attribute-driven path: a stored projection derived under the OLD expression must not survive a
+    /// On the attribute-driven path: a stored projection derived under the OLD expression must not survive a
     /// code-defined expression change — a yearly→minutes edit would otherwise stay dormant until the stale
     /// projection came due. Migrate resets the position to the uninitialized sentinel so the next wake re-derives
     /// it by the creation rule under the new expression.
@@ -1059,7 +1059,7 @@ public abstract class JobsSchedulePositionConformanceTests<TFixture>(TFixture fi
     }
 
     /// <summary>
-    /// AE3. A definition whose next tick falls between its creation and the first scheduler poll — a window a process
+    /// A definition whose next tick falls between its creation and the first scheduler poll — a window a process
     /// crash can widen arbitrarily — has that tick RECOVERED under its missed-run policy, not silently dropped.
     /// </summary>
     /// <remarks>
@@ -1121,7 +1121,7 @@ public abstract class JobsSchedulePositionConformanceTests<TFixture>(TFixture fi
 
             // At or past, not exactly at: whether the poll lands inside one tick (ordinary dispatch, watermark = the
             // tick) or after several (coalesce recovery, watermark = the recovery instant) is a latency detail. The
-            // contract AE3 asserts is that the tick was ACCOUNTED FOR — the occurrence above proves it fired, and this
+            // contract this test asserts is that the tick was ACCOUNTED FOR — the occurrence above proves it fired, and this
             // proves nothing will reconsider it.
             var position = await fixture.ReadCronSchedulePositionAsync(definitionId, ct);
             position

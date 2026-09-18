@@ -1336,9 +1336,9 @@ public sealed class DispatcherTests : TestBase
     [Fact]
     public async Task should_signal_host_when_dispatcher_loop_faults()
     {
-        // R2 regression — when a dispatcher loop dies on a non-OCE exception the dispatcher must
+        // Regression guard: when a dispatcher loop dies on a non-OCE exception the dispatcher must
         // signal IHostApplicationLifetime.StopApplication so process supervisors recycle the host.
-        // Before R2 the fault continuation only logged; PublishedChannel would fill indefinitely
+        // Previously the fault continuation only logged; PublishedChannel would fill indefinitely
         // (BoundedChannelFullMode.Wait) while the host stayed "healthy".
         //
         // The three loops (sending / processing / scheduler) all funnel into _SignalLoopTermination.
@@ -1395,7 +1395,7 @@ public sealed class DispatcherTests : TestBase
     [Fact]
     public async Task should_not_request_host_stop_on_clean_dispatcher_shutdown()
     {
-        // R2 negative — normal start/stop must not trip the host-lifetime contract. Pairs with the
+        // Negative case: normal start/stop must not trip the host-lifetime contract. Pairs with the
         // synthesised-fault test above to pin the wiring in both directions.
         using var lifetime = new TestHostApplicationLifetime();
         var sender = new TestThreadSafeMessageSender();
@@ -2172,7 +2172,7 @@ public sealed class DispatcherTests : TestBase
     /// <summary>
     /// Captures <see cref="IHostApplicationLifetime.StopApplication"/> calls so tests can assert
     /// the dispatcher signalled host shutdown after a loop fault. Implements the full lifetime
-    /// surface but only the StopApplication path needs to be observable for R2.
+    /// surface but only the StopApplication path needs to be observable here.
     /// </summary>
     private sealed class TestHostApplicationLifetime : IHostApplicationLifetime, IDisposable
     {

@@ -20,7 +20,7 @@ namespace Headless.UnitOfWork;
 /// that names the remedy.
 /// </summary>
 /// <remarks>
-/// The context binding (KD13) is recorded on begin/enlist so a context whose scope has no manager (a
+/// The context binding is recorded on begin/enlist so a context whose scope has no manager (a
 /// <c>IDbContextFactory&lt;T&gt;</c>-created context) is still resolvable by the save pipeline; the binding
 /// hides terminal units automatically.
 /// </remarks>

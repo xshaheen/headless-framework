@@ -77,7 +77,7 @@ public sealed class TenantCatalogServiceTests : TestBase
         _ArrangeFactoryBackedIdentifierCache(faultAfterFactory: false);
     }
 
-    /// <summary>Runs the factory as a cold cache would, then fails the write (KTD4's write-fault case).</summary>
+    /// <summary>Runs the factory as a cold cache would, then fails the write.</summary>
     private void _ArrangeIdentifierCacheWriteFault()
     {
         _ArrangeFactoryBackedIdentifierCache(faultAfterFactory: true);
@@ -159,12 +159,12 @@ public sealed class TenantCatalogServiceTests : TestBase
 
     #endregion
 
-    #region Resolution outcomes (AE1-AE4, AE7, AE11)
+    #region Resolution outcomes
 
     [Fact]
     public async Task should_resolve_identifier_to_canonical_tenant()
     {
-        // given — AE1
+        // given
         var tenant = new TenantInfo("ten_123", "acme", "Acme", isEnabled: true);
         _store.FindByIdentifierAsync("acme", AbortToken).Returns(tenant);
 
@@ -179,7 +179,7 @@ public sealed class TenantCatalogServiceTests : TestBase
     [Fact]
     public async Task should_return_unknown_when_store_has_no_match()
     {
-        // given — AE2
+        // given
         _store.FindByIdentifierAsync("ghost", AbortToken).Returns((TenantInfo?)null);
 
         // when
@@ -193,7 +193,7 @@ public sealed class TenantCatalogServiceTests : TestBase
     [Fact]
     public async Task should_return_disabled_when_tenant_is_disabled()
     {
-        // given — AE3
+        // given
         var tenant = new TenantInfo("ten_1", "acme", "Acme", isEnabled: false);
         _store.FindByIdentifierAsync("acme", AbortToken).Returns(tenant);
 
@@ -208,7 +208,7 @@ public sealed class TenantCatalogServiceTests : TestBase
     [Fact]
     public async Task should_return_ignored_without_calling_the_store()
     {
-        // given — AE4
+        // given
         _options.IgnoredIdentifiers.Add("www");
         _store
             .FindByIdentifierAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
@@ -274,7 +274,7 @@ public sealed class TenantCatalogServiceTests : TestBase
     [Fact]
     public async Task should_normalize_identifier_before_lookup()
     {
-        // given — AE7
+        // given
         var tenant = new TenantInfo("ten_1", "acme", "Acme", isEnabled: true);
         _store.FindByIdentifierAsync("acme", AbortToken).Returns(tenant);
 
@@ -289,7 +289,7 @@ public sealed class TenantCatalogServiceTests : TestBase
     [Fact]
     public async Task should_return_invalid_when_identifier_exceeds_max_length_without_cache_or_store_calls()
     {
-        // given — AE11
+        // given
         var tooLong = new string('a', _options.MaxIdentifierLength + 1);
 
         // when
@@ -306,7 +306,6 @@ public sealed class TenantCatalogServiceTests : TestBase
     [InlineData("   ")] // empty after trim
     public async Task should_return_invalid_for_bad_shape_without_cache_or_store_calls(string identifier)
     {
-        // given — AE11
         // when
         var outcome = await _sut.ResolveAsync(identifier, AbortToken);
 
@@ -328,12 +327,12 @@ public sealed class TenantCatalogServiceTests : TestBase
 
     #endregion
 
-    #region Staleness bound (AE8)
+    #region Staleness bound
 
     [Fact]
     public async Task should_keep_serving_the_cached_enabled_result_until_the_entry_expires_then_reflect_disable()
     {
-        // given — AE8: model expiration as cache-hit(stale)->miss(expired) transitions, no real sleeps.
+        // given — models expiration as cache-hit(stale)->miss(expired) transitions, no real sleeps.
         var enabledSnapshot = new TenantInfo("ten_1", "acme", "Acme", isEnabled: true);
         var disabledTenant = new TenantInfo("ten_1", "acme", "Acme", isEnabled: false);
 
@@ -446,7 +445,7 @@ public sealed class TenantCatalogServiceTests : TestBase
 
     #endregion
 
-    #region Store fault classification (KTD4)
+    #region Store fault classification
 
     [Fact]
     public async Task should_propagate_store_exception_unwrapped_never_mapping_to_unknown()
@@ -466,7 +465,7 @@ public sealed class TenantCatalogServiceTests : TestBase
 
     #endregion
 
-    #region Cache fault degradation (KTD4)
+    #region Cache fault degradation
 
     [Fact]
     public async Task should_fall_through_to_store_when_identifier_cache_read_faults()
@@ -580,7 +579,7 @@ public sealed class TenantCatalogServiceTests : TestBase
     [Fact]
     public async Task should_propagate_cancellation_from_cache_read_without_falling_through_to_the_store()
     {
-        // given — OperationCanceledException is never a cache fault (KTD4)
+        // given — OperationCanceledException is never a cache fault
         using var cts = new CancellationTokenSource();
         _identifierCache
             .GetOrAddAsync(
@@ -601,7 +600,7 @@ public sealed class TenantCatalogServiceTests : TestBase
 
     #endregion
 
-    #region Negative caching (KTD5)
+    #region Negative caching
 
     [Fact]
     public async Task should_cache_unknown_identifier_negatively_under_the_configured_expiration()
@@ -694,7 +693,7 @@ public sealed class TenantCatalogServiceTests : TestBase
 
     #endregion
 
-    #region Defensive snapshot (KTD5, R9)
+    #region Defensive snapshot
 
     [Fact]
     public async Task should_not_let_mutating_a_returned_tenant_affect_the_next_cached_read()
@@ -718,7 +717,7 @@ public sealed class TenantCatalogServiceTests : TestBase
 
     #endregion
 
-    #region FindByIdAsync (R9)
+    #region FindByIdAsync
 
     [Fact]
     public async Task should_return_null_when_id_has_no_catalog_row()
@@ -736,7 +735,7 @@ public sealed class TenantCatalogServiceTests : TestBase
     [Fact]
     public async Task should_return_disabled_tenant_info_without_rejecting()
     {
-        // given — accessor reads never reject on disablement (R9)
+        // given — accessor reads never reject on disablement
         var tenant = new TenantInfo("ten_1", "acme", "Acme", isEnabled: false);
         _store.FindByIdAsync("ten_1", AbortToken).Returns(tenant);
 

@@ -338,7 +338,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
     [Fact]
     public async Task time_job_unit_of_work_completed_during_schedule_pipeline_throws_and_persists_nothing()
     {
-        // KTD7: the drift re-validation. The capture happens synchronously before the schedule middleware runs; if
+        // The drift re-validation. The capture happens synchronously before the schedule middleware runs; if
         // the SAME unit of work completes underneath the in-flight schedule (racing completion elsewhere in the
         // scope), the write must refuse to enlist in a unit that already reached its outcome rather than silently
         // falling back to the direct path.
@@ -690,7 +690,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
     [Fact]
     public async Task cron_cache_invalidation_runs_on_the_commit_path_even_when_the_signal_channel_is_full()
     {
-        // R10: the poll sweep reads through the cron-expressions cache, so a dropped invalidation would not be
+        // The poll sweep reads through the cron-expressions cache, so a dropped invalidation would not be
         // recovered by the sweep — it stays inline on the commit callback and never enters the drop-on-full channel.
         var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: true);
         _FillSignalChannel(sut);
@@ -961,7 +961,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         var result = await sut.Time.AddBatchAsync(jobs, AbortToken);
 
         result.Should().HaveCount(2);
-        // R3: the batch reaches the seam as one array in insertion order (AddRange preserves it downstream).
+        // The batch reaches the seam as one array in insertion order (AddRange preserves it downstream).
         await sut
             .Writer.Received(1)
             .WriteTimeJobsAsync(
@@ -1074,7 +1074,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
 
         await sut.Coordinator.CommitAsync();
 
-        // The cache invalidation is the one side effect that runs on the commit path (R10); restart + notify are
+        // The cache invalidation is the one side effect that runs on the commit path; restart + notify are
         // handed to the worker.
         await sut.Writer.Received(1).InvalidateCronExpressionsCacheAsync();
         sut.Signals.PendingCount.Should().Be(1);
@@ -1097,7 +1097,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         var result = await sut.Cron.AddBatchAsync(crons, AbortToken);
 
         result.Should().HaveCount(2);
-        // R3: the batch reaches the seam as one array in insertion order (AddRange preserves it downstream).
+        // The batch reaches the seam as one array in insertion order (AddRange preserves it downstream).
         await sut
             .Writer.Received(1)
             .WriteCronJobsAsync(
@@ -1213,7 +1213,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
     [Fact]
     public void jobs_only_host_resolves_scoped_manager_with_no_active_unit_of_work()
     {
-        // KD5: the facade is scoped, resolved from a scope, with the scope's IUnitOfWorkManager reporting no active
+        // The facade is scoped, resolved from a scope, with the scope's IUnitOfWorkManager reporting no active
         // unit — the direct-path condition — when the host never begins one.
         var services = new ServiceCollection();
         services.AddLogging();
@@ -1327,7 +1327,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         None,
 
         // A resource-less unit of work (IUnitOfWorkManager.BeginAsync() with no db): Resource is null, so it is
-        // treated exactly like "no unit of work" for the guarantee matrix (KD7) — coordination must not be
+        // treated exactly like "no unit of work" for the guarantee matrix — coordination must not be
         // infectious to a scope that never opened a relational transaction.
         NonRelational,
 
@@ -1335,7 +1335,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         LiveRelational,
 
         // An owned unit of work whose resource's connection reports Closed — the "incompatible/dead resource"
-        // case, which the guarantee matrix (KD7) says throws regardless of TransactionEnlistment (except Never).
+        // case, which the guarantee matrix says throws regardless of TransactionEnlistment (except Never).
         DeadRelational,
     }
 
@@ -1611,7 +1611,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         public required JobsPostCommitSignalService Signals { get; init; }
         public required CapturingLogger<JobsPostCommitSignalService> SignalsLogger { get; init; }
 
-        // KD5: the facade over the singleton core, wired with a fixed IUnitOfWorkManager stub reporting THIS
+        // The facade over the singleton core, wired with a fixed IUnitOfWorkManager stub reporting THIS
         // test's coordinator as Current — the same shape JobsManagerFacade consumes in production, just without
         // re-resolving per call (the tests below never change Current mid-flight, so a fixed value is equivalent).
         public ITimeJobManager<TimeJobEntity> Time =>
@@ -1655,7 +1655,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         return new LiveTransaction(connection);
     }
 
-    // The "incompatible/dead resource" case (KD7): a connection that reports Closed, which
+    // The "incompatible/dead resource" case: a connection that reports Closed, which
     // CapturedRelationalResource.Validate() rejects regardless of TransactionEnlistment (except Never).
     private static DbTransaction _ClosedTransaction()
     {

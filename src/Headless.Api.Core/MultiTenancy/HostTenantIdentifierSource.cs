@@ -10,8 +10,8 @@ using Microsoft.Extensions.Options;
 namespace Headless.Api.MultiTenancy;
 
 /// <summary>
-/// Tenant identifier source reading the request host (R1): matches <c>Request.Host.Host</c> — the
-/// post-forwarding host, never <c>X-Forwarded-Host</c> directly (R16) — against the configured
+/// Tenant identifier source reading the request host: matches <c>Request.Host.Host</c> — the
+/// post-forwarding host, never <c>X-Forwarded-Host</c> directly — against the configured
 /// templates and yields the <c>{tenant}</c> capture.
 /// </summary>
 /// <remarks>
@@ -23,10 +23,9 @@ namespace Headless.Api.MultiTenancy;
 /// identifiers — <c>ITenantCatalogService</c> owns normalization.
 /// </para>
 /// <para>
-/// The compiled templates are non-backtracking (KTD2), so a match timeout is practically
+/// The compiled templates are non-backtracking, so a match timeout is practically
 /// unreachable; should one still occur it maps to <see cref="TenantIdentifierSourceResult.Invalid"/>
-/// plus a once-per-process warning that names the operator-supplied template only — never the host
-/// (R11, R18).
+/// plus a once-per-process warning that names the operator-supplied template only — never the host.
 /// </para>
 /// <para>
 /// <paramref name="matchTimeout"/> and <paramref name="maxHostLength"/> are test seams for forcing
@@ -41,19 +40,19 @@ internal sealed partial class HostTenantIdentifierSource(
     ILogger<HostTenantIdentifierSource> logger,
     TimeSpan? matchTimeout = null,
     // 253 = the DNS limit on a fully qualified host name; a longer host is not a tenant address,
-    // and refusing it before the matcher keeps the regex input bounded (R1). Parameter default
+    // and refusing it before the matcher keeps the regex input bounded. Parameter default
     // because primary-constructor defaults cannot reference class constants.
     int maxHostLength = 253
 ) : ITenantIdentifierSource
 {
     // Fires exactly once per process for HEADLESS_TENANT_HOST_TEMPLATE_TIMEOUT. 0 = not yet warned,
     // 1 = warned. CompareExchange ensures the warning is emitted by at most one request, so a
-    // hostile workload cannot flood the log (R18).
+    // hostile workload cannot flood the log.
     private static int _templateTimeoutWarningEmitted;
 
     private readonly int _maxHostLength = maxHostLength;
 
-    // Compiled once at construction: startup validation proved every template parses (R7), so a
+    // Compiled once at construction: startup validation proved every template parses, so a
     // failure here is a programming/test error, not operator input — fail loudly.
     private readonly (string Template, HostTemplate Compiled)[] _templates = _CompileTemplates(
         options.Value.Templates,

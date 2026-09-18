@@ -108,7 +108,7 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
     [Fact]
     public async Task should_leave_claim_only_request_untouched_when_catalog_configured_but_no_identifier_resolves()
     {
-        // R5/R8: a configured catalog with no identifier resolved this request must not disturb the
+        // A configured catalog with no identifier resolved this request must not disturb the
         // existing claim-only flow.
         await using var app = await _CreateAppAsync(alsoResolveFromClaims: true);
         using var client = HttpTenancyTestHarness.CreateClient(app);
@@ -128,7 +128,7 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
         using var response = await _SendAsync(client, identifier: "ghost");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        // R17: every rejection the catalog path writes is non-cacheable — 404 is heuristically
+        // Every rejection the catalog path writes is non-cacheable — 404 is heuristically
         // cacheable and the opt-in NoCacheHeadersMiddleware may sit downstream of the short-circuit.
         response.Headers.CacheControl.Should().NotBeNull();
         response.Headers.CacheControl!.NoStore.Should().BeTrue();
@@ -198,7 +198,7 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
         using var response = await _SendAsync(client, identifier: new string('a', 200));
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        // R17: rejections are non-cacheable at the writer, independent of NoCacheHeadersMiddleware.
+        // Rejections are non-cacheable at the writer, independent of NoCacheHeadersMiddleware.
         response.Headers.CacheControl.Should().NotBeNull();
         response.Headers.CacheControl!.NoStore.Should().BeTrue();
         var body = await response.Content.ReadAsStringAsync(AbortToken);
@@ -295,9 +295,9 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
     [Fact]
     public async Task should_still_enforce_claim_integrity_when_placed_before_use_routing()
     {
-        // R19 enforcement is gated on identifier resolution having produced a tenant, so the middleware
-        // tier stayed dead under misordering too. It must now reject a contradicting default-scheme claim
-        // exactly as it does on a correctly ordered pipeline.
+        // Claim-integrity enforcement is gated on identifier resolution having produced a tenant, so the
+        // middleware tier stayed dead under misordering too. It must now reject a contradicting
+        // default-scheme claim exactly as it does on a correctly ordered pipeline.
         await using var app = await _CreateAppAsync(applyBeforeUseRouting: true, requireAuthenticatedUser: true);
         using var client = HttpTenancyTestHarness.CreateClient(app);
 
@@ -401,7 +401,7 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
         using var response = await _SendAsync(client, identifier: "acme", user: "alice", tenantId: "ten_999");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        // R17: the post-authorization mismatch rewrite is a catalog rejection too — non-cacheable at the writer.
+        // The post-authorization mismatch rewrite is a catalog rejection too — non-cacheable at the writer.
         response.Headers.CacheControl.Should().NotBeNull();
         response.Headers.CacheControl!.NoStore.Should().BeTrue();
     }
@@ -454,7 +454,7 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
     public async Task should_reject_mismatching_claim_on_an_allow_anonymous_endpoint()
     {
         // AuthorizationMiddleware never evaluates handlers for [AllowAnonymous] endpoints, so this only
-        // holds because R19 is enforced independently of authorization evaluation.
+        // holds because claim-integrity enforcement runs independently of authorization evaluation.
         await using var app = await _CreateAppAsync(requireAuthenticatedUser: true);
         using var client = HttpTenancyTestHarness.CreateClient(app);
 
@@ -856,8 +856,8 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
             .SkipTenantResolution();
 
         // AuthorizationMiddleware short-circuits before evaluating any handler for [AllowAnonymous]
-        // endpoints, so R19 on this route can only hold if enforcement does not depend on authorization
-        // running at all.
+        // endpoints, so claim-integrity enforcement on this route can only hold if it does not depend
+        // on authorization running at all.
         app.MapGet(
                 "/anonymous-tenant",
                 (ICurrentTenant currentTenant) =>
@@ -1034,7 +1034,7 @@ internal sealed class IsolatedSchemeOptions : AuthenticationSchemeOptions
 /// <summary>
 /// An endpoint-scoped scheme that reads its tenant claim from a header the default scheme ignores, so
 /// the mismatching claim only becomes visible once <c>PolicyEvaluator</c> authenticates it inside
-/// authorization — the one path where <c>TenantIdentifierIntegrityHandler</c> is the sole R19 enforcement.
+/// authorization — the one path where <c>TenantIdentifierIntegrityHandler</c> is the sole claim-integrity enforcement.
 /// </summary>
 internal sealed class IsolatedSecondarySchemeHandler(
     IOptionsMonitor<IsolatedSchemeOptions> options,

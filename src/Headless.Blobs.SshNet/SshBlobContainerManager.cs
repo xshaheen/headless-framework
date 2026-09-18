@@ -11,7 +11,7 @@ namespace Headless.Blobs.SshNet;
 /// <summary>
 /// <see cref="IBlobContainerManager"/> implementation for SFTP root directories. Registered as a separately-resolved
 /// capability (keyed + default), not a cast from <see cref="SshBlobStorage"/>, mirroring the per-instance isolation of
-/// the storage (KTD5).
+/// the storage.
 /// </summary>
 /// <remarks>
 /// Shares the DI-owned <see cref="SftpClientPool"/> with the storage and never disposes it. The container name is

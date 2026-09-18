@@ -5,7 +5,7 @@ namespace Headless.MultiTenancy;
 /// <summary>
 /// Shared, non-PII posture identifiers for the <c>Catalog</c> tenancy seam. <c>Headless.MultiTenancy</c>
 /// records <see cref="AccessorCapability"/> when a store is configured via <c>Catalog(...)</c>.
-/// <c>Headless.Api.Core</c>'s pre-auth resolution middleware (U5) is the intended caller that records
+/// <c>Headless.Api.Core</c>'s pre-auth resolution middleware is the intended caller that records
 /// <see cref="ResolutionCapability"/> and marks <see cref="ResolutionPipelineRuntimeMarker"/> once an
 /// identifier source is registered, and its <c>UseStatusCodesRewriter()</c> marks
 /// <see cref="StatusCodesRewriterRuntimeMarker"/> — <see cref="TenantCatalogPostureValidator"/>
@@ -34,25 +34,25 @@ public static class TenantCatalogPosture
     /// Runtime marker a resolution-capable seam records once at least one identifier source is
     /// registered and the resolution pipeline hook is wired. Its absence alongside
     /// <see cref="ResolutionCapability"/> means resolution was declared active but nothing will ever
-    /// call it — a startup-blocking misconfiguration (R18).
+    /// call it — a startup-blocking misconfiguration.
     /// </summary>
     public const string ResolutionPipelineRuntimeMarker = "IdentifierResolutionPipelineActive";
 
     /// <summary>
     /// Runtime marker recorded when the HTTP seam's status-codes rewriter middleware is added to the
-    /// pipeline. The R19 mapping-integrity check's authorization tier only fails the evaluation and
+    /// pipeline. The mapping-integrity check's authorization tier only fails the evaluation and
     /// marks the request; the generic tenant rejection that keeps a mismatch indistinguishable from an
     /// unknown identifier is written by that middleware. Its absence alongside
-    /// <see cref="ResolutionCapability"/> therefore leaves a tenant-enumeration oracle open (R11).
+    /// <see cref="ResolutionCapability"/> therefore leaves a tenant-enumeration oracle open.
     /// </summary>
     public const string StatusCodesRewriterRuntimeMarker = "StatusCodesRewriterActive";
 }
 
 /// <summary>
-/// Validates that the <see cref="TenantCatalogPosture.Seam"/> posture is internally consistent (R18):
+/// Validates that the <see cref="TenantCatalogPosture.Seam"/> posture is internally consistent:
 /// resolution-capable without a configured store, without a registered pipeline, or without the
-/// status-codes rewriter that writes the R19 rejection are all startup-blocking. Accessor-only posture
-/// (store configured, no resolution) is otherwise valid and never flagged — R18's explicit
+/// status-codes rewriter that writes the mapping-integrity rejection are all startup-blocking. Accessor-only posture
+/// (store configured, no resolution) is otherwise valid and never flagged — this validator's explicit
 /// accessor-only carve-out.
 /// <para>
 /// The catalog's other hard prerequisite — a caching provider behind the read-through caches — is not
@@ -69,7 +69,7 @@ internal sealed class TenantCatalogPostureValidator : IHeadlessTenancyValidator
 
         if (seam is null)
         {
-            // The catalog is opt-in (R5): no seam recorded at all means nothing to validate.
+            // The catalog is opt-in: no seam recorded at all means nothing to validate.
             yield break;
         }
 
@@ -82,7 +82,7 @@ internal sealed class TenantCatalogPostureValidator : IHeadlessTenancyValidator
         if (!hasResolution)
         {
             // Accessor-only (or a seam with neither label, which is not this validator's concern) —
-            // valid posture per R18; never fails.
+            // valid posture; never fails.
             yield break;
         }
 
@@ -109,7 +109,7 @@ internal sealed class TenantCatalogPostureValidator : IHeadlessTenancyValidator
         }
 
         // Gated on resolution rather than on the accessor capability: the rewriter only matters for
-        // identifier-resolved requests, since R19's authorization tier exists only for them. An
+        // identifier-resolved requests, since the mapping-integrity check's authorization tier exists only for them. An
         // accessor-only host has no mismatch path and needs nothing here.
         if (
             !seam.RuntimeMarkers.Contains(TenantCatalogPosture.StatusCodesRewriterRuntimeMarker, StringComparer.Ordinal)
@@ -119,7 +119,7 @@ internal sealed class TenantCatalogPostureValidator : IHeadlessTenancyValidator
                 TenantCatalogPosture.Seam,
                 "CATALOG_RESOLUTION_WITHOUT_REWRITER",
                 "Tenant catalog identifier resolution is enabled but UseStatusCodesRewriter() was never called. "
-                    + "The R19 mapping-integrity check's authorization tier only fails the evaluation and marks "
+                    + "The mapping-integrity check's authorization tier only fails the evaluation and marks "
                     + "the request; StatusCodesRewriterMiddleware is what turns that into the generic tenant "
                     + "rejection. Without it a mismatch surfaces as a bare authorization failure while an unknown "
                     + "identifier surfaces as the 404 rejection, so a caller can tell an existing tenant from an "

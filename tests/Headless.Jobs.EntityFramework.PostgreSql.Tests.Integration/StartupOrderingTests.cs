@@ -9,7 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Tests;
 
 /// <summary>
-/// R5: the durable Jobs store must fail fast at registration when no real Coordination provider is present, and
+/// The durable Jobs store must fail fast at registration when no real Coordination provider is present, and
 /// must accept the actual Postgres provider (not just the unit-test stub). No container needed — registration and
 /// container build never open a database connection.
 /// </summary>

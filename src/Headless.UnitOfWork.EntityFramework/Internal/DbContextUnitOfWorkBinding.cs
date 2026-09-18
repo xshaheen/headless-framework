@@ -9,7 +9,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Headless.UnitOfWork;
 
 /// <summary>
-/// The <see cref="DbContext" /> → <see cref="IUnitOfWork" /> binding (KD13): <c>BeginAsync(db)</c> and
+/// The <see cref="DbContext" /> → <see cref="IUnitOfWork" /> binding: <c>BeginAsync(db)</c> and
 /// <c>Enlist(db, transaction)</c> record the unit so a context whose scope has no manager (a
 /// <c>IDbContextFactory&lt;T&gt;</c>-created context owning its own scope) is still resolvable by the save
 /// pipeline. Internal plumbing; exposed to consumers through the hidden <see cref="DbContextUnitOfWork" />

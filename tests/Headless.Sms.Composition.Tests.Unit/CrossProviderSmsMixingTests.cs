@@ -124,7 +124,7 @@ public sealed class CrossProviderSmsMixingTests : TestBase
             provider.GetRequiredKeyedService<ISmsSender>(name).Should().BeSameAs(senderProvider.GetSender(name));
         }
 
-        // bulk capability per name: bulk-capable providers forward, single-only providers do not (AE4).
+        // bulk capability per name: bulk-capable providers forward, single-only providers do not.
         foreach (var name in (string[])["sink", "cequens", "connekio", "infobip", "victorylink", "vodafone"])
         {
             var sender = senderProvider.GetSender(name);
@@ -142,7 +142,7 @@ public sealed class CrossProviderSmsMixingTests : TestBase
     [Fact]
     public async Task should_send_with_its_own_configuration_when_same_provider_twice()
     {
-        // given - AE1: the same provider registered under two names with different endpoints and sender ids;
+        // given - the same provider registered under two names with different endpoints and sender ids;
         // each named HttpClient's transport is stubbed by its exact name, so a send proves the whole chain:
         // factory -> keyed sender -> named options -> named HttpClient.
         var services = new ServiceCollection();

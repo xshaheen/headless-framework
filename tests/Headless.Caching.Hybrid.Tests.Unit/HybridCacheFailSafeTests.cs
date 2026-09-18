@@ -75,7 +75,7 @@ public sealed class HybridCacheFailSafeTests : TestBase
         };
     }
 
-    #region U7-1: stale from L1 when factory throws
+    #region Stale from L1 when factory throws
 
     [Fact]
     public async Task should_serve_stale_from_l1_when_factory_throws_and_failsafe_enabled()
@@ -121,7 +121,7 @@ public sealed class HybridCacheFailSafeTests : TestBase
 
     #endregion
 
-    #region U7-2: stale from L2 when L1 empty and factory throws
+    #region Stale from L2 when L1 empty and factory throws
 
     [Fact]
     public async Task should_serve_stale_from_l2_when_l1_empty_and_factory_throws()
@@ -167,7 +167,7 @@ public sealed class HybridCacheFailSafeTests : TestBase
 
     #endregion
 
-    #region U7-3: stale from L1 when L2 read throws and factory throws
+    #region Stale from L1 when L2 read throws and factory throws
 
     [Fact]
     public async Task should_serve_stale_from_l1_when_l2_read_throws_and_factory_throws()
@@ -270,7 +270,7 @@ public sealed class HybridCacheFailSafeTests : TestBase
 
     #endregion
 
-    #region U7-4: no behavior change when fail-safe disabled
+    #region No behavior change when fail-safe disabled
 
     [Fact]
     public async Task should_preserve_two_tier_behavior_when_failsafe_disabled()
@@ -341,7 +341,7 @@ public sealed class HybridCacheFailSafeTests : TestBase
 
     #endregion
 
-    #region U7-5: factory success writes L2 physical + bounded L1
+    #region Factory success writes L2 physical + bounded L1
 
     [Fact]
     public async Task should_write_l2_physical_and_l1_local_expiration_on_factory_success()
@@ -428,7 +428,7 @@ public sealed class HybridCacheFailSafeTests : TestBase
 
     #endregion
 
-    #region U7-6: read-path guard — logically-expired L2 entry must NOT be promoted into L1
+    #region Read-path guard — logically-expired L2 entry must NOT be promoted into L1
 
     [Fact]
     public async Task should_not_promote_logically_expired_l2_into_l1_on_read()
@@ -514,7 +514,7 @@ public sealed class HybridCacheFailSafeTests : TestBase
 
     #endregion
 
-    #region U7-7: fail-safe activation refreshes L1 with a throttled, logically-fresh entry (FusionCache parity)
+    #region Fail-safe activation refreshes L1 with a throttled, logically-fresh entry (FusionCache parity)
 
     [Fact]
     public async Task should_refresh_l1_with_throttled_entry_when_failsafe_activates()
@@ -645,7 +645,7 @@ public sealed class HybridCacheFailSafeTests : TestBase
 
     #endregion
 
-    #region U7-8: null-timestamp L2 entry promoted into L1 bounded by DefaultLocalExpiration
+    #region Null-timestamp L2 entry promoted into L1 bounded by DefaultLocalExpiration
 
     [Fact]
     public async Task should_promote_null_timestamp_l2_entry_into_l1_bounded_by_default_local_expiration_when_configured()

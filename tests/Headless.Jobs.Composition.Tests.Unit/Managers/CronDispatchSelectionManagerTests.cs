@@ -324,7 +324,7 @@ public sealed class CronDispatchSelectionManagerTests : TestBase
     }
 
     /// <summary>
-    /// AE5, the fleet half: the definition an unhealthy node excluded must still dispatch on a peer that resolves its
+    /// The fleet half: the definition an unhealthy node excluded must still dispatch on a peer that resolves its
     /// zone, at the SAME schedule revision and with no intervening correction.
     /// </summary>
     /// <remarks>

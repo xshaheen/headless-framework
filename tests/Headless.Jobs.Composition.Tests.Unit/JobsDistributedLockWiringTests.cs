@@ -8,8 +8,8 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Tests;
 
 /// <summary>
-/// U1 wiring: the Jobs-scoped keyed lock registration and the <c>UseStorageLock</c> flag. Provider-agnostic, so these
-/// live in the unit project (KTD8). Uses a <see cref="NullDistributedLock"/> as the supplied provider — wiring tests
+/// Wiring: the Jobs-scoped keyed lock registration and the <c>UseStorageLock</c> flag. Provider-agnostic, so these
+/// live in the unit project. Uses a <see cref="NullDistributedLock"/> as the supplied provider — wiring tests
 /// care only about which instance lands under the keyed slot, not lock behavior.
 /// </summary>
 [Collection<JobsHelperCollection>]

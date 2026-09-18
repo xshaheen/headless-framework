@@ -12,7 +12,7 @@ namespace Headless.Messaging.Dashboard;
 public static partial class MessagingDashboardEndpoints
 {
     /// <summary>
-    /// Resolves which of the given storage ids are pending scheduled deliveries under KTD8's query, using
+    /// Resolves which of the given storage ids are pending scheduled deliveries, using
     /// the host principal (not the operator actor requirement) so legacy fencing works under every auth mode.
     /// A provider without scheduled-delivery operations support (<see cref="NotSupportedException"/>) has no
     /// pending-scheduled rows to fence.

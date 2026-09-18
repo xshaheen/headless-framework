@@ -61,7 +61,7 @@ public sealed class TenantPropagationScheduleMiddleware(
         }
 
         // System-job bypass: a deliberate tenantless job. Reject the escalation and contradiction cases, otherwise keep
-        // TenantId null and record the decision (R7).
+        // TenantId null and record the decision.
         if (job.IsSystemJob)
         {
             // A blank ambient is not a real tenant, so it does not escalate a system job into a tenant scope.

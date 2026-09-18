@@ -10,7 +10,7 @@ public interface IDistributedReadWriteLockStorage
     /// <summary>
     /// Atomically acquires a shared (read) lease on <paramref name="resource"/> for the caller's
     /// <paramref name="leaseId"/> when no writer holds the resource and no writer-waiting marker is
-    /// present (writer preference; see D8). Implementations MUST guarantee atomicity of the
+    /// present (writer preference). Implementations MUST guarantee atomicity of the
     /// inspect-then-acquire update so that concurrent writers observing readers cannot acquire
     /// exclusivity, and so concurrent readers cannot bypass a queued writer.
     /// Returns <see langword="true"/> when the lease is granted, <see langword="false"/> on contention.
@@ -58,7 +58,7 @@ public interface IDistributedReadWriteLockStorage
     /// Atomically acquires an exclusive (write) lease on <paramref name="resource"/> when no
     /// readers and no other writer hold the resource. When readers are present, implementations
     /// MUST plant or refresh the writer-waiting marker derived from <paramref name="waitingId"/>
-    /// (required for writer-preference per D8) so subsequent readers are blocked until the queued
+    /// (required for writer preference) so subsequent readers are blocked until the queued
     /// writer promotes. The marker is planted with
     /// <paramref name="markerTtl"/> rather than the lease TTL so an abandoned/cancelled writer
     /// does not keep readers blocked for the full lease window. Returns <see langword="true"/>
@@ -94,7 +94,7 @@ public interface IDistributedReadWriteLockStorage
     /// <summary>
     /// Releases the caller's exclusive write lease for <paramref name="resource"/>. The
     /// implementation MUST clear both the held writer id AND the writer-waiting marker derived
-    /// from the same <paramref name="leaseId"/> (per D8) so a cancelled queued writer doesn't
+    /// from the same <paramref name="leaseId"/> so a cancelled queued writer doesn't
     /// strand the resource until TTL expiry. Idempotent — must not throw when the stored id
     /// doesn't match or the key no longer exists.
     /// </summary>

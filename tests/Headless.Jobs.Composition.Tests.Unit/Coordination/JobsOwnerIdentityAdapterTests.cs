@@ -69,7 +69,7 @@ public sealed class JobsOwnerIdentityAdapterTests
 
         adapter.MembershipLostToken.IsCancellationRequested.Should().BeFalse();
 
-        // R9: on membership loss the token fires and the stamp gate closes.
+        // On membership loss the token fires and the stamp gate closes.
         cts.Cancel();
         membership.Identity = null;
 

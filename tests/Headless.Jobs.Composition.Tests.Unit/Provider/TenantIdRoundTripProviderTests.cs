@@ -12,7 +12,7 @@ using Microsoft.Extensions.Time.Testing;
 namespace Tests.Provider;
 
 /// <summary>
-/// U4/R3: the in-memory provider persists <see cref="Headless.Jobs.Entities.BaseEntity.BaseJobEntity.TenantId"/> and
+/// The in-memory provider persists <see cref="Headless.Jobs.Entities.BaseEntity.BaseJobEntity.TenantId"/> and
 /// re-materializes it through every storage projection — the clone/hierarchy path (<c>_CloneTicker</c> via
 /// <see cref="JobsInMemoryPersistenceProvider{TTimeJob,TCronJob}.GetTimeJobByIdAsync"/>) and the pickup projection
 /// (<c>_ForQueueTimeJobs</c>) at all three chain levels, including the timed-out re-queue path (<see

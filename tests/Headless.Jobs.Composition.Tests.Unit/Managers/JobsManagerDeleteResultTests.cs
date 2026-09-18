@@ -152,7 +152,7 @@ public sealed class JobsManagerDeleteResultTests : TestBase
             NullLogger<JobsManager<TimeJobEntity, CronJobEntity>>.Instance
         );
 
-        // Delete/Update never touch unit-of-work coordination (KD5), so the facade's IUnitOfWorkManager is never
+        // Delete/Update never touch unit-of-work coordination, so the facade's IUnitOfWorkManager is never
         // read here; a real (unused) manager keeps the facade's constructor contract without a bespoke stub.
         var unitOfWorkManager = new ServiceCollection().AddUnitOfWork().BuildServiceProvider();
         var facade = new JobsManagerFacade<TimeJobEntity, CronJobEntity>(

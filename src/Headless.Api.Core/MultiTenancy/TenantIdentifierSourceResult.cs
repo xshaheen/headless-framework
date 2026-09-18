@@ -4,7 +4,7 @@ namespace Headless.Api.MultiTenancy;
 
 /// <summary>
 /// The closed set of states one <see cref="ITenantIdentifierSource"/> can report for a request:
-/// no identifier present, an identifier found, or an input too ambiguous to interpret (KTD1).
+/// no identifier present, an identifier found, or an input too ambiguous to interpret.
 /// </summary>
 [PublicAPI]
 public enum TenantIdentifierSourceResultKind
@@ -21,14 +21,14 @@ public enum TenantIdentifierSourceResultKind
     /// <summary>
     /// The input is present but ambiguous — for example a tenant header repeated with two different
     /// values. The request is rejected with the catalog's invalid-identifier outcome before any store
-    /// call; later sources never run (R5).
+    /// call; later sources never run.
     /// </summary>
     Invalid = 2,
 }
 
 /// <summary>
 /// The three-state result of consulting one <see cref="ITenantIdentifierSource"/>: no identifier,
-/// a raw identifier, or an ambiguous input that must reject the request (KTD1). Exactly one
+/// a raw identifier, or an ambiguous input that must reject the request. Exactly one
 /// <see cref="Kind"/> applies per consult; <see cref="Identifier"/> is populated only for
 /// <see cref="TenantIdentifierSourceResultKind.Found"/>.
 /// </summary>

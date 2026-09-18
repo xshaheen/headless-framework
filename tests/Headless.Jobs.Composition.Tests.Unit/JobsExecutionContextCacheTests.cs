@@ -8,7 +8,7 @@ using Headless.Testing.Tests;
 namespace Tests;
 
 /// <summary>
-/// U3/R6: <see cref="JobsExecutionContext.CacheFunctionReferences(JobExecutionState, JobFunctionRegistry)"/> must
+/// <see cref="JobsExecutionContext.CacheFunctionReferences(JobExecutionState, JobFunctionRegistry)"/> must
 /// stamp the cached delegate/priority/max-concurrency onto EVERY node of a hydrated chain — not just the first two
 /// levels — so a chain deeper than a grandchild, or a branching one, executes its whole tail with the right per-node
 /// scheduling knobs after a fallback pickup.

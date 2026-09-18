@@ -7,7 +7,7 @@ namespace Headless.Jobs.Internal;
 internal static class JobsKeys
 {
     /// <summary>
-    /// Acquire options for the cron-seed migration guard. KTD4: try-once
+    /// Acquire options for the cron-seed migration guard. Try-once
     /// (<see cref="DistributedLockAcquireOptions.AcquireTimeout"/> = <see cref="TimeSpan.Zero"/>) so a contended node
     /// skips immediately instead of queuing; a generous finite TTL so a holder that dies mid-seed releases via expiry
     /// rather than wedging the resource forever; <see cref="LockMonitoringMode.None"/> because the seed is short and

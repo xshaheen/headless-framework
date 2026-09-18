@@ -17,7 +17,7 @@ namespace Headless.Api.Middlewares;
 /// For 403 responses that carry a <c>TenantContextRequiredFeature</c> on the request, the middleware
 /// clears any partial response and writes a <c>g:tenant_required</c> discriminator body, overriding
 /// any <c>Content-Type</c> or <c>Content-Length</c> set by upstream authorization middleware.
-/// A request carrying a <c>TenantIdentifierMismatchFeature</c> (R19) is rewritten whatever status the
+/// A request carrying a <c>TenantIdentifierMismatchFeature</c> is rewritten whatever status the
 /// authorization pipeline produced — not only a bare 403, since a cookie-style scheme forbids with a
 /// 302 — because the secure-by-default mismatch rejection must stay byte-identical to the generic
 /// unknown/disabled rejection (<see cref="TenantCatalogRejectionWriter.RejectMismatchAsync"/>). Both the
@@ -42,17 +42,18 @@ internal sealed class StatusCodesRewriterMiddleware(
             return;
         }
 
-        // TenantIdentifierIntegrityHandler stashes this marker on an R19 mismatch. The secure-by-default
-        // rejection must be byte-identical to the generic unknown/disabled rejection, so it is evaluated
-        // before — and independently of — the status-code switch below: the status the authorization
-        // pipeline produced is not necessarily a bare 403 (a cookie-style scheme forbids with a 302), and
-        // any surviving difference is exactly the enumeration signal R11/KTD9 exists to remove. Both the
-        // status and the body are overridden here, not just the body.
+        // TenantIdentifierIntegrityHandler stashes this marker on an identifier/claim mismatch. The
+        // secure-by-default rejection must be byte-identical to the generic unknown/disabled rejection, so
+        // it is evaluated before — and independently of — the status-code switch below: the status the
+        // authorization pipeline produced is not necessarily a bare 403 (a cookie-style scheme forbids with
+        // a 302), and any surviving difference is exactly the enumeration signal the secure-by-default
+        // rejection is designed to remove. Both the status and the body are overridden here, not just the
+        // body.
         if (context.Features.Get<TenantIdentifierMismatchFeature>() is not null)
         {
             context.Response.Clear();
 
-            // RejectMismatchAsync also stamps Cache-Control: no-store (R17) — the same rejection path
+            // RejectMismatchAsync also stamps Cache-Control: no-store — the same rejection path
             // TenantResolutionMiddleware's claim-vs-feature fast path takes, so both mismatch rewrites stay
             // byte-identical, headers included.
             await TenantCatalogRejectionWriter

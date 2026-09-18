@@ -6,12 +6,12 @@ using Headless.Testing.Tests;
 namespace Tests;
 
 /// <summary>
-/// Store-conformance suite run by every <see cref="ITenantStore"/> implementation (KTD10): round-trip
+/// Store-conformance suite run by every <see cref="ITenantStore"/> implementation: round-trip
 /// lookup by normalized identifier and by canonical id, unknown-identifier/unknown-id misses,
-/// duplicate-identifier rejection (R20), enumeration including disabled tenants (R4), disabled-tenant
-/// surfacing without rejection (R9 — rejection is a resolution-time, catalog-service concern, never a
+/// duplicate-identifier rejection, enumeration including disabled tenants, disabled-tenant
+/// surfacing without rejection (rejection is a resolution-time, catalog-service concern, never a
 /// store concern), and <see cref="TenantInfo.ExtraProperties"/> round-trip. Also covers the store-level
-/// half of R7: stores compare the normalized identifier ordinally and never re-normalize —
+/// half of the store contract: stores compare the normalized identifier ordinally and never re-normalize —
 /// normalization-equivalence itself (e.g. that <c>ACME</c> and <c>acme</c> resolve to the same tenant) is
 /// a catalog-<em>service</em> behavior, tested in <c>Headless.MultiTenancy.Tests.Unit</c>, not here.
 /// </summary>
@@ -87,8 +87,8 @@ public abstract class TenantStoreConformanceTests<TFixture>(TFixture fixture) : 
     [Fact]
     public async Task should_not_match_identifier_differing_only_by_case()
     {
-        // given - stores compare ordinally and never re-normalize (R7); a differently-cased query against
-        // an already-normalized stored identifier must miss. Case-insensitive matching (AE7) is the
+        // given - stores compare ordinally and never re-normalize; a differently-cased query against
+        // an already-normalized stored identifier must miss. Case-insensitive matching is the
         // catalog service's job, not the store's.
         var seed = TenantSeedFaker.Create(Faker);
         var store = await fixture.SeedAsync([seed], AbortToken);
@@ -111,7 +111,7 @@ public abstract class TenantStoreConformanceTests<TFixture>(TFixture fixture) : 
         // when
         var act = async () => await fixture.SeedAsync([first, second], AbortToken);
 
-        // then - AE10: the concrete exception type is provider-specific (see ITenantCatalogStoreFixture).
+        // then - the concrete exception type is provider-specific (see ITenantCatalogStoreFixture).
         await act.Should().ThrowAsync<Exception>();
     }
 
@@ -136,7 +136,7 @@ public abstract class TenantStoreConformanceTests<TFixture>(TFixture fixture) : 
     [Fact]
     public async Task should_surface_disabled_tenant_through_lookup_without_rejecting()
     {
-        // given - store-level reads never reject on disablement (R9); rejection is resolution-time only.
+        // given - store-level reads never reject on disablement; rejection is resolution-time only.
         var disabled = TenantSeedFaker.Create(Faker, isEnabled: false);
         var store = await fixture.SeedAsync([disabled], AbortToken);
 

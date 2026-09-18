@@ -737,7 +737,7 @@ public sealed class BusTests : TestBase
     [Fact]
     public void should_register_as_scoped_service()
     {
-        // given — IBus is scoped (KD5) so it reads this scope's IUnitOfWorkManager.Current at publish time.
+        // given — IBus is scoped so it reads this scope's IUnitOfWorkManager.Current at publish time.
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddHeadlessMessaging(setup =>

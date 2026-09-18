@@ -80,7 +80,7 @@ public sealed class MessagingBuilderTests
 
         await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 
-        // then — IBus/IQueue are scoped (KTD9): resolve from a created scope, never the root provider.
+        // then — IBus/IQueue are scoped: resolve from a created scope, never the root provider.
         provider.GetRequiredService<IRuntimeSubscriber>().Should().NotBeNull();
         provider.GetRequiredService<IBootstrapper>().Should().NotBeNull();
         using var scope = provider.CreateScope();

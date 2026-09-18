@@ -76,7 +76,7 @@ public static class SetupFileSystemBlob
         ));
 
         // Container lifecycle is a separately-resolved capability (not a cast from IBlobStorage), registered with
-        // its own per-store options + normalizer to mirror the storage's isolation (U12 / KTD5).
+        // its own per-store options + normalizer to mirror the storage's isolation.
         services.AddSingleton<IBlobContainerManager>(serviceProvider => new FileSystemBlobContainerManager(
             serviceProvider.GetRequiredService<IOptions<FileSystemBlobStorageOptions>>(),
             new CrossOsNamingNormalizer()

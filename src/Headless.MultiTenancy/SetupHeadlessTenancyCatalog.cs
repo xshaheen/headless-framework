@@ -23,7 +23,7 @@ public static class SetupHeadlessTenancyCatalog
     /// <exception cref="ArgumentNullException"><paramref name="builder"/> or <paramref name="configure"/> is <see langword="null"/>.</exception>
     /// <exception cref="InvalidOperationException">
     /// Zero or more than one storage provider was registered on the callback, or a storage provider was
-    /// already registered for the catalog on this host (R18).
+    /// already registered for the catalog on this host.
     /// </exception>
     public static HeadlessTenancyBuilder Catalog(
         this HeadlessTenancyBuilder builder,

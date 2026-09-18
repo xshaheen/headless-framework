@@ -26,11 +26,11 @@ using Tests.Helpers;
 namespace Tests;
 
 /// <summary>
-/// Pins the R3 header source end to end through the real catalog pipeline: a single header resolves
-/// with <c>Vary</c> stamped, a repeated header line is rejected as invalid before any catalog call
-/// (AE4/R5/R17), a custom name bound from configuration replaces the default, the R19 claim-mismatch
-/// check still applies to a header-selected tenant (and its documented no-claim limit holds), and a
-/// host source registered first wins without the header source ever being consulted (AE5/KTD4).
+/// Pins the header source end to end through the real catalog pipeline: a single header resolves
+/// with <c>Vary</c> stamped, a repeated header line is rejected as invalid before any catalog call,
+/// a custom name bound from configuration replaces the default, the claim-mismatch check still
+/// applies to a header-selected tenant (and its documented no-claim limit holds), and a host source
+/// registered first wins without the header source ever being consulted.
 /// </summary>
 public sealed class HeaderTenantIdentifierSourceTests : TestBase
 {
@@ -56,7 +56,7 @@ public sealed class HeaderTenantIdentifierSourceTests : TestBase
     [Fact]
     public async Task should_stamp_vary_on_a_host_context_response_when_the_header_is_absent()
     {
-        // KTD4: the source is consulted (and finds nothing), so the cacheable success response must
+        // The source is consulted (and finds nothing), so the cacheable success response must
         // still vary on the header — a cached copy would otherwise be served to a request that carries it.
         await using var app = await _CreateAppAsync(sources => sources.AddHeaderSource());
         using var client = HttpTenancyTestHarness.CreateClient(app);
@@ -73,7 +73,7 @@ public sealed class HeaderTenantIdentifierSourceTests : TestBase
     [Fact]
     public async Task should_reject_a_repeated_header_line_before_any_catalog_call()
     {
-        // AE4: two X-Tenant lines. HttpClient folds repeated custom header values into one line, so the
+        // Two X-Tenant lines. HttpClient folds repeated custom header values into one line, so the
         // request is written over a raw socket to prove Kestrel keeps them as two values.
         ConsultCountingStubSource.Consultations = 0;
         var store = new CountingTenantStore();
@@ -174,8 +174,8 @@ public sealed class HeaderTenantIdentifierSourceTests : TestBase
     [Fact]
     public async Task should_reject_a_header_selected_tenant_when_the_authenticated_claim_names_another_tenant()
     {
-        // R19 applies to header-selected tenants exactly as to any other source: the test scheme turns
-        // X-Test-Tenant into the tenant-id claim, which disagrees with the acme catalog row.
+        // The claim-mismatch check applies to header-selected tenants exactly as to any other source: the
+        // test scheme turns X-Test-Tenant into the tenant-id claim, which disagrees with the acme catalog row.
         await using var app = await _CreateAppAsync(sources => sources.AddHeaderSource());
         using var client = HttpTenancyTestHarness.CreateClient(app);
 
@@ -204,7 +204,7 @@ public sealed class HeaderTenantIdentifierSourceTests : TestBase
     [Fact]
     public async Task should_resolve_a_header_selected_tenant_for_a_principal_without_a_tenant_claim()
     {
-        // Pins the documented R19 limit: a principal with no tenant claim passes a source-selected
+        // Pins the documented limit: a principal with no tenant claim passes a source-selected
         // tenant unchecked — there is nothing to compare against.
         await using var app = await _CreateAppAsync(sources => sources.AddHeaderSource());
         using var client = HttpTenancyTestHarness.CreateClient(app);
@@ -222,8 +222,8 @@ public sealed class HeaderTenantIdentifierSourceTests : TestBase
     [Fact]
     public async Task should_let_a_host_source_registered_first_win_without_consulting_the_header_source()
     {
-        // AE5: first Found wins, so the header source never runs — and because it never ran, the
-        // response must not vary on X-Tenant (KTD4 stamps Vary only on consult).
+        // First Found wins, so the header source never runs — and because it never ran, the
+        // response must not vary on X-Tenant (Vary is stamped only on consult).
         await using var app = await _CreateAppAsync(sources =>
             sources.AddHostSource("{tenant}.example.com").AddHeaderSource()
         );
@@ -244,7 +244,7 @@ public sealed class HeaderTenantIdentifierSourceTests : TestBase
     [Fact]
     public async Task should_fail_host_startup_when_a_header_name_is_not_an_http_token()
     {
-        // R7: the validator's message names the offending header and surfaces through ValidateOnStart.
+        // The validator's message names the offending header and surfaces through ValidateOnStart.
         var act = () => _CreateAppAsync(sources => sources.AddHeaderSource("X Tenant"));
 
         (await act.Should().ThrowAsync<OptionsValidationException>()).WithMessage("*X Tenant*").WithMessage("*token*");
@@ -390,7 +390,7 @@ public sealed class HeaderTenantIdentifierSourceTests : TestBase
 
     private sealed record RawResponse(int StatusCode, List<(string Name, string Value)> Headers, string Body);
 
-    /// <summary>A later source whose consult count proves an Invalid result short-circuits the loop (R5).</summary>
+    /// <summary>A later source whose consult count proves an Invalid result short-circuits the loop.</summary>
     private sealed class ConsultCountingStubSource : ITenantIdentifierSource
     {
         public static int Consultations;

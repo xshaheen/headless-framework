@@ -10,7 +10,7 @@ public sealed class InMemoryTenantStoreOptions
 {
     /// <summary>
     /// The seeded tenants. Identifiers are normalized (trimmed, lowercased) by the store at startup;
-    /// two seeds whose identifiers normalize to the same value fail startup (R20).
+    /// two seeds whose identifiers normalize to the same value fail startup.
     /// </summary>
     public IList<TenantInfo> Tenants { get; set; } = [];
 }
@@ -32,7 +32,7 @@ internal sealed class InMemoryTenantStoreOptionsValidator : AbstractValidator<In
 
     private const string _DuplicateIdentifierMessage =
         "Two or more seeded tenants normalize to the same identifier. "
-        + "Headless.MultiTenancy in-memory store requires unique normalized identifiers (R20).";
+        + "Headless.MultiTenancy in-memory store requires unique normalized identifiers.";
 
     private const string _DuplicateIdMessage =
         "Two or more seeded tenants share the same canonical tenant id. "

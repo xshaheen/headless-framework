@@ -689,7 +689,8 @@ internal sealed class RedisBlobStorage : IBlobStorage
         // non-lexicographic order and MAY yield the same field more than once if the hash is rehashed mid-scan.
         // The opaque cursor round-trips as the page's ContinuationToken (a "0" cursor marks the end). COUNT is only a
         // hint, so the page size is approximate; we return exactly one server batch and never cap it, because capping
-        // would silently drop fields the cursor has already advanced past. This is the weaker emulated tier (KTD3).
+        // would silently drop fields the cursor has already advanced past. This is the weaker emulated tier compared
+        // to backends with native paging support.
         var (nextCursor, entries) = await _HashScanAsync(infoHash, match, cursor, query.PageSize, cancellationToken)
             .ConfigureAwait(false);
 

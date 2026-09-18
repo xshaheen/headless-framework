@@ -17,7 +17,7 @@ namespace Headless.DistributedLocks.InMemory;
 /// </para>
 /// <para>
 /// Thread-safety is achieved with a per-resource <see langword="lock"/> that serialises all read/write
-/// state mutations. The implementation enforces writer-preference (design decision D8): when a writer is
+/// state mutations. The implementation enforces writer-preference: when a writer is
 /// waiting, new readers are blocked until the writer acquires and releases the resource.
 /// </para>
 /// <para>
@@ -34,7 +34,7 @@ internal sealed class InMemoryDistributedReadWriteLockStorage(TimeProvider timeP
     /// <summary>
     /// Atomically acquires a shared (read) lease on <paramref name="resource"/> for the caller
     /// identified by <paramref name="leaseId"/> when no writer holds the resource and no
-    /// writer-waiting marker is present (writer-preference; D8).
+    /// writer-waiting marker is present (writer-preference).
     /// </summary>
     /// <param name="resource">The resource name to read-lock. Must not be <see langword="null"/> or empty.</param>
     /// <param name="leaseId">
@@ -177,7 +177,7 @@ internal sealed class InMemoryDistributedReadWriteLockStorage(TimeProvider timeP
     /// <summary>
     /// Atomically acquires an exclusive write lease on <paramref name="resource"/> when no readers
     /// and no other writer hold the resource. When readers are present, plants or refreshes the
-    /// writer-waiting marker derived from <paramref name="waitingId"/> (writer-preference; D8), using
+    /// writer-waiting marker derived from <paramref name="waitingId"/> (writer-preference), using
     /// <paramref name="markerTtl"/> so that an abandoned writer does not block readers for the full
     /// lease window.
     /// </summary>
@@ -302,7 +302,7 @@ internal sealed class InMemoryDistributedReadWriteLockStorage(TimeProvider timeP
     /// <summary>
     /// Releases the caller's exclusive write lease for <paramref name="resource"/> and clears both
     /// the held writer ID and the writer-waiting marker derived from the same
-    /// <paramref name="leaseId"/> (D8) so a cancelled queued writer does not strand the resource
+    /// <paramref name="leaseId"/> so a cancelled queued writer does not strand the resource
     /// until TTL expiry. Idempotent — does not throw when the stored ID does not match or the key
     /// no longer exists.
     /// </summary>
