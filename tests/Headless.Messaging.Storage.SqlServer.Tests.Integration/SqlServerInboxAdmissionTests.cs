@@ -25,12 +25,11 @@ public sealed class SqlServerInboxAdmissionTests(SqlServerTestFixture fixture, I
     {
         var schema = $"admission_{Guid.NewGuid():N}";
         var messagingOptions = Options.Create(new MessagingOptions { Version = "v1" });
-        var sqlOptions = Options.Create(
-            new SqlServerOptions { ConnectionString = fixture.ConnectionString, Schema = schema }
-        );
+        var sqlOptions = Options.Create(new SqlServerOptions { ConnectionString = fixture.ConnectionString });
         var initializer = new SqlServerStorageInitializer(
             NullLogger<SqlServerStorageInitializer>.Instance,
             sqlOptions,
+            TestStorageOptions.For(schema),
             messagingOptions
         );
         await initializer.InitializeAsync(AbortToken);
@@ -42,6 +41,7 @@ public sealed class SqlServerInboxAdmissionTests(SqlServerTestFixture fixture, I
             var storage = new SqlServerDataStorage(
                 messagingOptions,
                 sqlOptions,
+                TestStorageOptions.For(schema),
                 initializer,
                 new JsonUtf8Serializer(messagingOptions),
                 new SequentialGuidGenerator(SequentialGuidType.SqlServer),

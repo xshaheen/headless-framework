@@ -15,7 +15,7 @@ public sealed class SqlServerScheduledDeliveryOperationTests(SqlServerTestFixtur
 {
     protected override async Task AgeHistoryAsync(ServiceProvider provider, TimeSpan age)
     {
-        var schema = provider.GetRequiredService<IOptions<SqlServerOptions>>().Value.Schema;
+        var schema = provider.GetRequiredService<IOptions<MessagingStorageOptions>>().Value.Schema;
         await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         await using var command = new SqlCommand(
@@ -32,10 +32,7 @@ public sealed class SqlServerScheduledDeliveryOperationTests(SqlServerTestFixtur
     protected override void ConfigureStorage(MessagingSetupBuilder setup)
     {
         setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
-        setup.UseSqlServer(options =>
-        {
-            options.ConnectionString = fixture.ConnectionString;
-            options.Schema = $"scheduled_policy_{Guid.NewGuid():N}";
-        });
+        setup.ConfigureStorage(storage => storage.Schema = $"scheduled_policy_{Guid.NewGuid():N}");
+        setup.UseSqlServer(fixture.ConnectionString);
     }
 }

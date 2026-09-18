@@ -15,7 +15,7 @@ public sealed class PostgreSqlScheduledDeliveryOperationTests(PostgreSqlTestFixt
 {
     protected override async Task AgeHistoryAsync(ServiceProvider provider, TimeSpan age)
     {
-        var schema = provider.GetRequiredService<IOptions<PostgreSqlOptions>>().Value.Schema;
+        var schema = provider.GetRequiredService<IOptions<MessagingStorageOptions>>().Value.Schema;
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         await using var command = new NpgsqlCommand(
@@ -32,10 +32,7 @@ public sealed class PostgreSqlScheduledDeliveryOperationTests(PostgreSqlTestFixt
     protected override void ConfigureStorage(MessagingSetupBuilder setup)
     {
         setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
-        setup.UsePostgreSql(options =>
-        {
-            options.ConnectionString = fixture.ConnectionString;
-            options.Schema = $"scheduled_policy_{Guid.NewGuid():N}";
-        });
+        setup.ConfigureStorage(storage => storage.Schema = $"scheduled_policy_{Guid.NewGuid():N}");
+        setup.UsePostgreSql(fixture.ConnectionString);
     }
 }

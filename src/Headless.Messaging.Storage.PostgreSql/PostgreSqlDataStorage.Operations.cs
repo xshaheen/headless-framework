@@ -14,9 +14,9 @@ namespace Headless.Messaging.Storage.PostgreSql;
 
 internal sealed partial class PostgreSqlDataStorage
 {
-    private string InboxReceiptsTable => $"\"{postgreSqlOptions.Value.Schema}\".\"inbox_operation_receipts\"";
+    private string InboxReceiptsTable => $"\"{storageOptions.Value.Schema}\".\"inbox_operation_receipts\"";
 
-    private string InboxAuditTable => $"\"{postgreSqlOptions.Value.Schema}\".\"inbox_audit\"";
+    private string InboxAuditTable => $"\"{storageOptions.Value.Schema}\".\"inbox_audit\"";
 
     public async ValueTask<IndexPage<InboxGenerationView>> QueryAsync(
         InboxGenerationQuery query,

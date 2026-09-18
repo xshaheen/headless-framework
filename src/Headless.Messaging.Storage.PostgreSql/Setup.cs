@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using FluentValidation;
 using Headless.Checks;
+using Headless.Constants;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
@@ -30,6 +32,11 @@ public static class SetupPostgreSqlMessaging
         }
 
         /// <summary>Configures PostgreSQL message storage from a configuration section.</summary>
+        /// <remarks>
+        /// <paramref name="configuration"/> supplies the <see cref="PostgreSqlOptions"/> values directly, and
+        /// the feature-owned schema is read from its <see cref="MessagingStorageOptions.SectionPath"/>
+        /// subsection, so passing the configuration root binds <c>Headless:Messaging:Storage:Schema</c>.
+        /// </remarks>
         /// <param name="configuration">Configuration containing <see cref="PostgreSqlOptions"/> values.</param>
         /// <returns>The setup builder for chaining.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="configuration"/> is null.</exception>
@@ -39,10 +46,16 @@ public static class SetupPostgreSqlMessaging
             return _AddPostgreSqlStorageCore(
                 setup,
                 services =>
+                {
                     services
                         .AddOptions<PostgreSqlOptions, PostgreSqlOptionsValidator>()
                         .Bind(configuration)
-                        .Configure(options => options.Version = setup.Options.Version)
+                        .Configure(options => options.Version = setup.Options.Version);
+
+                    services
+                        .AddOptions<MessagingStorageOptions>()
+                        .Bind(configuration.GetSection(MessagingStorageOptions.SectionPath));
+                }
             );
         }
 
@@ -98,11 +111,22 @@ public static class SetupPostgreSqlMessaging
                     inboxCapability: MessagingInboxCapabilityTier.DurableDedupeOnly
                 )
             );
+            // The schema is feature-owned, so this provider only validates it, once, against PostgreSQL's
+            // identifier rules. The EF-context storage path reuses this extension and is validated here too.
+            services.AddOptions<MessagingStorageOptions, PostgreSqlMessagingStorageOptionsValidator>();
             configureOptions(services);
             services.AddSingleton<PostgreSqlDataStorage>();
             services.AddSingleton<IDataStorage>(sp => sp.GetRequiredService<PostgreSqlDataStorage>());
             services.AddSingleton<IDeliveryCoordinationResolver>(sp => sp.GetRequiredService<PostgreSqlDataStorage>());
             services.AddSingleton<IStorageInitializer, PostgreSqlStorageInitializer>();
+        }
+    }
+
+    private sealed class PostgreSqlMessagingStorageOptionsValidator : AbstractValidator<MessagingStorageOptions>
+    {
+        public PostgreSqlMessagingStorageOptionsValidator()
+        {
+            RuleFor(x => x.Schema).IsValidIdentifierFor(StorageProvider.PostgreSql);
         }
     }
 }

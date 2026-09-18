@@ -15,8 +15,11 @@ public sealed class SqlServerTransactionalInboxScopeTests(SqlServerTestFixture f
     protected override void ConfigureContext(DbContextOptionsBuilder options) =>
         options.UseSqlServer(fixture.ConnectionString);
 
-    protected override void ConfigureStorage(MessagingSetupBuilder setup) =>
-        setup.UseEntityFramework<InboxScopeDbContext>(options => options.Schema = _Schema);
+    protected override void ConfigureStorage(MessagingSetupBuilder setup)
+    {
+        setup.ConfigureStorage(storage => storage.Schema = _Schema);
+        setup.UseEntityFramework<InboxScopeDbContext>();
+    }
 
     protected override string CreateEffectsTableSql =>
         "IF OBJECT_ID(N'TenantInboxScopeEffects', N'U') IS NULL CREATE TABLE [TenantInboxScopeEffects] ([Id] uniqueidentifier PRIMARY KEY, [TenantId] nvarchar(64) NULL);";

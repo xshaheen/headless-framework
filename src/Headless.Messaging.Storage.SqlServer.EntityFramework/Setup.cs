@@ -62,7 +62,6 @@ public static class SetupSqlServerEntityFrameworkMessaging
             new SetupSqlServerMessaging.SqlServerMessagesOptionsExtension(storageServices =>
                 storageServices.Configure<SqlServerOptions, SqlServerOptionsValidator>(storageOptions =>
                 {
-                    storageOptions.Schema = options.Schema;
                     storageOptions.OwnerColumnMaxLength = options.OwnerColumnMaxLength;
                     storageOptions.Version = version;
                 })

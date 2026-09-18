@@ -37,7 +37,6 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
         services.Configure<SqlServerOptions>(x =>
         {
             x.ConnectionString = fixture.ConnectionString;
-            x.Schema = "messaging";
         });
         services.Configure<MessagingOptions>(x =>
         {
@@ -64,6 +63,7 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
         _storage = new SqlServerDataStorage(
             provider.GetRequiredService<IOptions<MessagingOptions>>(),
             provider.GetRequiredService<IOptions<SqlServerOptions>>(),
+            TestStorageOptions.For(),
             initializer,
             provider.GetRequiredService<ISerializer>(),
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),

@@ -28,17 +28,17 @@ public sealed class PostgreSqlRetentionTests(PostgreSqlTestFixture fixture) : Te
     {
         await base.InitializeAsync();
         var messagingOptions = Options.Create(new MessagingOptions { Version = "v1" });
-        _postgreSqlOptions = Options.Create(
-            new PostgreSqlOptions { ConnectionString = fixture.ConnectionString, Schema = _schema }
-        );
+        _postgreSqlOptions = Options.Create(new PostgreSqlOptions { ConnectionString = fixture.ConnectionString });
         _initializer = new PostgreSqlStorageInitializer(
             NullLogger<PostgreSqlStorageInitializer>.Instance,
             _postgreSqlOptions,
+            TestStorageOptions.For(_schema),
             messagingOptions
         );
         _table = _initializer.GetReceivedTableName();
         _storage = new PostgreSqlDataStorage(
             _postgreSqlOptions,
+            TestStorageOptions.For(_schema),
             messagingOptions,
             _initializer,
             new JsonUtf8Serializer(messagingOptions),

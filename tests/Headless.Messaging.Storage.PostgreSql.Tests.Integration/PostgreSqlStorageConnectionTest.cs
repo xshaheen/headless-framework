@@ -38,6 +38,7 @@ public sealed class PostgreSqlStorageConnectionTest(PostgreSqlTestFixture fixtur
         await initializer.InitializeAsync();
         _storage = new PostgreSqlDataStorage(
             provider.GetRequiredService<IOptions<PostgreSqlOptions>>(),
+            TestStorageOptions.For(),
             provider.GetRequiredService<IOptions<MessagingOptions>>(),
             initializer,
             provider.GetRequiredService<ISerializer>(),

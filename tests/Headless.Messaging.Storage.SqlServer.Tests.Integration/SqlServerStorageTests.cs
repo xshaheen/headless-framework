@@ -231,6 +231,7 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
         return new SqlServerDataStorage(
             _messagingOptions!,
             _sqlServerOptions!,
+            TestStorageOptions.For(),
             _initializer!,
             _serializer!,
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
@@ -299,7 +300,6 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
         services.Configure<SqlServerOptions>(x =>
         {
             x.ConnectionString = fixture.ConnectionString;
-            x.Schema = "messaging";
         });
         services.Configure<MessagingOptions>(x =>
         {
@@ -320,6 +320,7 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
         _initializer = new SqlServerStorageInitializer(
             NullLogger<SqlServerStorageInitializer>.Instance,
             _sqlServerOptions,
+            TestStorageOptions.For(),
             _messagingOptions
         );
 
@@ -1722,11 +1723,12 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
             );
             var messagingOptions = new MessagingOptions { Version = "v1", RetryBatchSize = 1 };
             var sqlServerOptions = Options.Create(
-                new SqlServerOptions { ConnectionString = databaseBuilder.ConnectionString, Schema = "messaging" }
+                new SqlServerOptions { ConnectionString = databaseBuilder.ConnectionString }
             );
             var initializer = new SqlServerStorageInitializer(
                 NullLogger<SqlServerStorageInitializer>.Instance,
                 sqlServerOptions,
+                TestStorageOptions.For(),
                 Options.Create(messagingOptions)
             );
             await initializer.InitializeAsync(AbortToken);
@@ -1893,18 +1895,18 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
         messagingOptions.RetryPolicy.MaxPersistedRetries = 4;
         messagingOptions.FailedMessageExpiredAfter = 3600;
 
-        var sqlServerOptions = Options.Create(
-            new SqlServerOptions { ConnectionString = connectionString, Schema = "messaging" }
-        );
+        var sqlServerOptions = Options.Create(new SqlServerOptions { ConnectionString = connectionString });
         var initializer = new SqlServerStorageInitializer(
             NullLogger<SqlServerStorageInitializer>.Instance,
             sqlServerOptions,
+            TestStorageOptions.For(),
             Options.Create(messagingOptions)
         );
 
         return new SqlServerDataStorage(
             Options.Create(messagingOptions),
             sqlServerOptions,
+            TestStorageOptions.For(),
             initializer,
             GetSerializer(),
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
@@ -2054,7 +2056,8 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
     {
         return new SqlServerStorageInitializer(
             NullLogger<SqlServerStorageInitializer>.Instance,
-            Options.Create(new SqlServerOptions { ConnectionString = connectionString, Schema = schema }),
+            Options.Create(new SqlServerOptions { ConnectionString = connectionString }),
+            TestStorageOptions.For(schema),
             Options.Create(new MessagingOptions())
         );
     }

@@ -26,6 +26,7 @@ namespace Headless.Messaging.Storage.SqlServer;
 internal sealed partial class SqlServerDataStorage(
     IOptions<MessagingOptions> messagingOptions,
     IOptions<SqlServerOptions> options,
+    IOptions<MessagingStorageOptions> storageOptions,
     IStorageInitializer initializer,
     ISerializer serializer,
     [FromKeyedServices(SequentialGuidType.SqlServer)] IGuidGenerator guidGenerator,
@@ -1455,7 +1456,7 @@ internal sealed partial class SqlServerDataStorage(
 
         return new SqlParameter("@Ids", SqlDbType.Structured)
         {
-            TypeName = $"[{options.Value.Schema}].[HeadlessMessagingIdList]",
+            TypeName = $"[{storageOptions.Value.Schema}].[HeadlessMessagingIdList]",
             Value = idsTable,
         };
     }
@@ -1465,7 +1466,14 @@ internal sealed partial class SqlServerDataStorage(
     /// </summary>
     public IMonitoringApi GetMonitoringApi()
     {
-        return new SqlServerMonitoringApi(options, messagingOptions, initializer, serializer, timeProvider);
+        return new SqlServerMonitoringApi(
+            options,
+            storageOptions,
+            messagingOptions,
+            initializer,
+            serializer,
+            timeProvider
+        );
     }
 
     public IInboxOperationsApi GetInboxOperationsApi() => this;
@@ -2128,7 +2136,7 @@ internal sealed partial class SqlServerDataStorage(
 
         return new SqlParameter("@PoisonMessages", SqlDbType.Structured)
         {
-            TypeName = $"[{options.Value.Schema}].[HeadlessMessagingPoisonMessageList]",
+            TypeName = $"[{storageOptions.Value.Schema}].[HeadlessMessagingPoisonMessageList]",
             Value = messagesTable,
         };
     }
@@ -2193,7 +2201,7 @@ internal sealed partial class SqlServerDataStorage(
 
         return new SqlParameter("@DeadOwners", SqlDbType.Structured)
         {
-            TypeName = $"[{options.Value.Schema}].[HeadlessMessagingOwnerList]",
+            TypeName = $"[{storageOptions.Value.Schema}].[HeadlessMessagingOwnerList]",
             Value = ownersTable,
         };
     }

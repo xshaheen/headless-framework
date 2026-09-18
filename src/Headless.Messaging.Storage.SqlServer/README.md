@@ -46,11 +46,8 @@ builder.Services.AddHeadlessMessaging(options =>
         )
     );
     options.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
-    options.UseSqlServer(config =>
-    {
-        config.ConnectionString = "Server=localhost;Database=myapp;...";
-        config.Schema = "messaging";
-    });
+    options.ConfigureStorage(storage => storage.Schema = "messaging");
+    options.UseSqlServer(config => config.ConnectionString = "Server=localhost;Database=myapp;...");
 
     options.UseRabbitMq(rmq =>
     { /* ... */
@@ -67,10 +64,13 @@ History retention uses the shared `MessagingOptions` defaults: cleanup receipts/
 On an upgraded schema, the history tables (`InboxOperationReceipts`, `InboxAudit`) already hold their backlog. The first startup builds their history indexes offline, one command per index. Because `ONLINE = ON` depends on the SQL Server edition, the builds do not use it. A build holds a shared lock that blocks writes to that history table until it finishes. It runs while the initializer lock is held, and inbox readiness is published only after it finishes. Other replicas wait on that lock rather than fail. On a large backlog, pre-create the indexes during a maintenance window or allow for a longer first startup. `DdlCommandTimeout` bounds these builds and the lock wait.
 
 ```csharp
+// The schema belongs to the feature, not the provider: one setting serves every messaging storage
+// backend, and this provider validates it against SQL Server identifier rules at startup.
+options.ConfigureStorage(storage => storage.Schema = "messaging");
+
 options.UseSqlServer(config =>
 {
     config.ConnectionString = "connection_string";
-    config.Schema = "messaging";
 
     // Optional: cap schema-init DDL that scales with table size (history-index builds and the
     // initializer-lock wait). Default null = no timeout (wait indefinitely), decoupled from the OLTP

@@ -491,11 +491,8 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         var services = new ServiceCollection();
         services.AddOptions();
         services.AddLogging();
-        services.Configure<SqlServerOptions>(x =>
-        {
-            x.ConnectionString = fixture.ConnectionString;
-            x.Schema = schema;
-        });
+        services.Configure<SqlServerOptions>(x => x.ConnectionString = fixture.ConnectionString);
+        services.Configure<MessagingStorageOptions>(x => x.Schema = schema);
         services.Configure<MessagingOptions>(x =>
         {
             x.Version = "v1";

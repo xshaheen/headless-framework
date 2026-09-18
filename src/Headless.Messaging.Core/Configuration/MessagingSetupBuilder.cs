@@ -53,6 +53,22 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
     /// </summary>
     public MessagingInstrumentationOptions Instrumentation { get; } = new();
 
+    /// <summary>
+    /// Applies <paramref name="configure"/> to the shared <see cref="MessagingStorageOptions"/>, which owns
+    /// the database naming used by every storage provider.
+    /// </summary>
+    /// <param name="configure">A delegate that mutates the storage options.</param>
+    /// <returns>This builder, to allow chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
+    public MessagingSetupBuilder ConfigureStorage(Action<MessagingStorageOptions> configure)
+    {
+        Argument.IsNotNull(configure);
+
+        configure(StorageOptions ??= new MessagingStorageOptions());
+
+        return this;
+    }
+
     /// <summary>Gets the structural registration root for Bus consumers.</summary>
     public IBusRegistrationBuilder Bus { get; }
 
@@ -60,6 +76,13 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
     public IQueueRegistrationBuilder Queue { get; }
 
     internal IServiceCollection Services { get; }
+
+    /// <summary>
+    /// The storage options an explicit <see cref="ConfigureStorage"/> call built, or <see langword="null"/>
+    /// when the caller never made one. Stays null in that case so the setup pipeline does not overwrite a
+    /// value a provider bound from configuration with this type's defaults.
+    /// </summary>
+    internal MessagingStorageOptions? StorageOptions { get; private set; }
 
     internal ConsumerRegistry Registry { get; }
 

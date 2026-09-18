@@ -64,7 +64,6 @@ public static class SetupPostgreSqlEntityFrameworkMessaging
             new SetupPostgreSqlMessaging.PostgreSqlMessagesOptionsExtension(storageServices =>
                 storageServices.Configure<PostgreSqlOptions, PostgreSqlOptionsValidator>(storageOptions =>
                 {
-                    storageOptions.Schema = options.Schema;
                     storageOptions.OwnerColumnMaxLength = options.OwnerColumnMaxLength;
                     storageOptions.Version = version;
                 })

@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using FluentValidation;
 using Headless.Checks;
+using Headless.Constants;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
@@ -27,6 +29,11 @@ public static class SetupSqlServerMessaging
         }
 
         /// <summary>Configures SQL Server message storage from a configuration section.</summary>
+        /// <remarks>
+        /// <paramref name="configuration"/> supplies the <see cref="SqlServerOptions"/> values directly, and
+        /// the feature-owned schema is read from its <see cref="MessagingStorageOptions.SectionPath"/>
+        /// subsection, so passing the configuration root binds <c>Headless:Messaging:Storage:Schema</c>.
+        /// </remarks>
         /// <param name="configuration">Configuration containing <see cref="SqlServerOptions"/> values.</param>
         /// <returns>The setup builder for chaining.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="configuration"/> is null.</exception>
@@ -36,10 +43,16 @@ public static class SetupSqlServerMessaging
             return _AddSqlServerStorageCore(
                 setup,
                 services =>
+                {
                     services
                         .AddOptions<SqlServerOptions, SqlServerOptionsValidator>()
                         .Bind(configuration)
-                        .Configure(options => options.Version = setup.Options.Version)
+                        .Configure(options => options.Version = setup.Options.Version);
+
+                    services
+                        .AddOptions<MessagingStorageOptions>()
+                        .Bind(configuration.GetSection(MessagingStorageOptions.SectionPath));
+                }
             );
         }
 
@@ -95,11 +108,22 @@ public static class SetupSqlServerMessaging
                     inboxCapability: MessagingInboxCapabilityTier.DurableDedupeOnly
                 )
             );
+            // The schema is feature-owned, so this provider only validates it, once, against SQL Server's
+            // identifier rules. The EF-context storage path reuses this extension and is validated here too.
+            services.AddOptions<MessagingStorageOptions, SqlServerMessagingStorageOptionsValidator>();
             configureOptions(services);
             services.AddSingleton<SqlServerDataStorage>();
             services.AddSingleton<IDataStorage>(sp => sp.GetRequiredService<SqlServerDataStorage>());
             services.AddSingleton<IDeliveryCoordinationResolver>(sp => sp.GetRequiredService<SqlServerDataStorage>());
             services.AddSingleton<IStorageInitializer, SqlServerStorageInitializer>();
+        }
+    }
+
+    private sealed class SqlServerMessagingStorageOptionsValidator : AbstractValidator<MessagingStorageOptions>
+    {
+        public SqlServerMessagingStorageOptionsValidator()
+        {
+            RuleFor(x => x.Schema).IsValidIdentifierFor(StorageProvider.SqlServer);
         }
     }
 }

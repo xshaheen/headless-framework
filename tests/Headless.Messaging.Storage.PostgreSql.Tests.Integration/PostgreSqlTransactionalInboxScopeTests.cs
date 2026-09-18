@@ -15,8 +15,11 @@ public sealed class PostgreSqlTransactionalInboxScopeTests(PostgreSqlTestFixture
     protected override void ConfigureContext(DbContextOptionsBuilder options) =>
         options.UseNpgsql(fixture.ConnectionString);
 
-    protected override void ConfigureStorage(MessagingSetupBuilder setup) =>
-        setup.UseEntityFramework<InboxScopeDbContext>(options => options.Schema = _Schema);
+    protected override void ConfigureStorage(MessagingSetupBuilder setup)
+    {
+        setup.ConfigureStorage(storage => storage.Schema = _Schema);
+        setup.UseEntityFramework<InboxScopeDbContext>();
+    }
 
     protected override string CreateEffectsTableSql =>
         "CREATE TABLE IF NOT EXISTS \"TenantInboxScopeEffects\" (\"Id\" uuid PRIMARY KEY, \"TenantId\" text NULL);";

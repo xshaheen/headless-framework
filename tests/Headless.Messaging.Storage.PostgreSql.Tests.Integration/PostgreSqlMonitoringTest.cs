@@ -635,11 +635,13 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
         _initializer = new PostgreSqlStorageInitializer(
             NullLogger<PostgreSqlStorageInitializer>.Instance,
             postgreSqlOptions,
+            TestStorageOptions.For(),
             messagingOptions
         );
 
         _storage = new PostgreSqlDataStorage(
             postgreSqlOptions,
+            TestStorageOptions.For(),
             messagingOptions,
             _initializer,
             provider.GetRequiredService<ISerializer>(),

@@ -11,10 +11,7 @@ public sealed class SqlServerInboxStorageConformanceTests(SqlServerTestFixture f
     protected override void ConfigureStorage(MessagingSetupBuilder setup)
     {
         setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
-        setup.UseSqlServer(options =>
-        {
-            options.ConnectionString = fixture.ConnectionString;
-            options.Schema = $"inbox_conformance_{Guid.NewGuid():N}";
-        });
+        setup.ConfigureStorage(storage => storage.Schema = $"inbox_conformance_{Guid.NewGuid():N}");
+        setup.UseSqlServer(fixture.ConnectionString);
     }
 }

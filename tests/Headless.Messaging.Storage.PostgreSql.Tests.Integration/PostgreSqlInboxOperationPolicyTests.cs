@@ -25,7 +25,7 @@ public sealed class PostgreSqlInboxOperationPolicyTests(PostgreSqlTestFixture fi
         await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
         provider.GetRequiredService<IOptions<MessagingOptions>>().Value.CommandTimeout = TimeSpan.FromSeconds(1);
         var storage = provider.GetRequiredService<IDataStorage>();
-        var schema = provider.GetRequiredService<IOptions<PostgreSqlOptions>>().Value.Schema;
+        var schema = provider.GetRequiredService<IOptions<MessagingStorageOptions>>().Value.Schema;
         await storage.GetInboxOperationsApi().HoldAsync(_Request(Guid.NewGuid(), StatusName.Succeeded), AbortToken);
         var cutoffs = await storage.GetInboxHistoryRetentionCutoffsAsync(AbortToken);
         var table = receipts ? "inbox_operation_receipts" : "inbox_audit";
@@ -63,7 +63,7 @@ public sealed class PostgreSqlInboxOperationPolicyTests(PostgreSqlTestFixture fi
         await using var provider = _CreateProvider(new FakeTimeProvider(DateTimeOffset.UtcNow.AddDays(skewDays)));
         await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
-        var schema = provider.GetRequiredService<IOptions<PostgreSqlOptions>>().Value.Schema;
+        var schema = provider.GetRequiredService<IOptions<MessagingStorageOptions>>().Value.Schema;
         await storage.GetInboxOperationsApi().HoldAsync(_Request(Guid.NewGuid(), StatusName.Succeeded), AbortToken);
         var cutoffs = await storage.GetInboxHistoryRetentionCutoffsAsync(AbortToken);
         (await storage.DeleteExpiredInboxAuditsAsync(cutoffs, 1, AbortToken)).Should().Be(0);
@@ -92,7 +92,7 @@ public sealed class PostgreSqlInboxOperationPolicyTests(PostgreSqlTestFixture fi
     {
         await using var provider = _CreateProvider();
         var initializer = provider.GetRequiredService<IStorageInitializer>();
-        var schema = provider.GetRequiredService<IOptions<PostgreSqlOptions>>().Value.Schema;
+        var schema = provider.GetRequiredService<IOptions<MessagingStorageOptions>>().Value.Schema;
         await initializer.InitializeAsync(AbortToken);
         await initializer.InitializeAsync(AbortToken);
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
@@ -125,7 +125,7 @@ public sealed class PostgreSqlInboxOperationPolicyTests(PostgreSqlTestFixture fi
         await using var provider = _CreateProvider();
         await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
-        var schema = provider.GetRequiredService<IOptions<PostgreSqlOptions>>().Value.Schema;
+        var schema = provider.GetRequiredService<IOptions<MessagingStorageOptions>>().Value.Schema;
         var request = _Request(Guid.NewGuid(), StatusName.Succeeded);
         await storage.GetInboxOperationsApi().HoldAsync(request, AbortToken);
         await AgeHistoryAsync(provider, TimeSpan.FromDays(100));
@@ -197,7 +197,7 @@ public sealed class PostgreSqlInboxOperationPolicyTests(PostgreSqlTestFixture fi
 
     protected override async Task AgeHistoryAsync(ServiceProvider provider, TimeSpan age)
     {
-        var schema = provider.GetRequiredService<IOptions<PostgreSqlOptions>>().Value.Schema;
+        var schema = provider.GetRequiredService<IOptions<MessagingStorageOptions>>().Value.Schema;
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         await using var command = new NpgsqlCommand(
@@ -338,10 +338,7 @@ public sealed class PostgreSqlInboxOperationPolicyTests(PostgreSqlTestFixture fi
     protected override void ConfigureStorage(MessagingSetupBuilder setup)
     {
         setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
-        setup.UsePostgreSql(options =>
-        {
-            options.ConnectionString = fixture.ConnectionString;
-            options.Schema = $"inbox_policy_{Guid.NewGuid():N}";
-        });
+        setup.ConfigureStorage(storage => storage.Schema = $"inbox_policy_{Guid.NewGuid():N}");
+        setup.UsePostgreSql(fixture.ConnectionString);
     }
 }

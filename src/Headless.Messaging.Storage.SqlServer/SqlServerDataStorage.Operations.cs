@@ -14,9 +14,9 @@ namespace Headless.Messaging.Storage.SqlServer;
 
 internal sealed partial class SqlServerDataStorage
 {
-    private string InboxReceiptsTable => $"[{options.Value.Schema}].[InboxOperationReceipts]";
+    private string InboxReceiptsTable => $"[{storageOptions.Value.Schema}].[InboxOperationReceipts]";
 
-    private string InboxAuditTable => $"[{options.Value.Schema}].[InboxAudit]";
+    private string InboxAuditTable => $"[{storageOptions.Value.Schema}].[InboxAudit]";
 
     public async ValueTask<IndexPage<InboxGenerationView>> QueryAsync(
         InboxGenerationQuery query,

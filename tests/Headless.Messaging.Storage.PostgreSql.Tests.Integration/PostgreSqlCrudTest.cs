@@ -44,6 +44,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         await initializer.InitializeAsync();
         _storage = new PostgreSqlDataStorage(
             provider.GetRequiredService<IOptions<PostgreSqlOptions>>(),
+            TestStorageOptions.For(),
             provider.GetRequiredService<IOptions<MessagingOptions>>(),
             initializer,
             provider.GetRequiredService<ISerializer>(),
@@ -200,6 +201,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         var initializer = new PostgreSqlStorageInitializer(
             NullLogger<PostgreSqlStorageInitializer>.Instance,
             Options.Create(new PostgreSqlOptions { ConnectionString = fixture.ConnectionString }),
+            TestStorageOptions.For(),
             Options.Create(new MessagingOptions { Version = "v1" })
         );
         var tableName = initializer.GetPublishedTableName();
@@ -230,6 +232,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         var initializer = new PostgreSqlStorageInitializer(
             NullLogger<PostgreSqlStorageInitializer>.Instance,
             Options.Create(new PostgreSqlOptions { ConnectionString = fixture.ConnectionString }),
+            TestStorageOptions.For(),
             Options.Create(new MessagingOptions { Version = "v1" })
         );
         var tableName = initializer.GetPublishedTableName();
