@@ -2,6 +2,7 @@
 
 using System.Buffers.Binary;
 using System.Data;
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using Headless.Jobs.Models;
@@ -171,7 +172,9 @@ internal static class JobsKeyLock
         {
             if (result is int failure && failure < 0)
             {
-                throw new InvalidOperationException($"Transaction-owned Jobs key lock failed with status {failure}.");
+                throw new InvalidOperationException(
+                    $"Transaction-owned Jobs key lock failed with status {failure.ToString(CultureInfo.InvariantCulture)}."
+                );
             }
             throw new TimeoutException("Could not acquire the transaction-owned Jobs key lock.");
         }

@@ -152,8 +152,7 @@ public static class ReflectionHelper
         var parameters = parent.GetGenericArguments();
 
         var isParameterLessGeneric = !(
-            parameters is { Length: > 0 }
-            && (parameters[0].Attributes & TypeAttributes.BeforeFieldInit) == TypeAttributes.BeforeFieldInit
+            parameters is { Length: > 0 } && parameters[0].Attributes.HasFlag(TypeAttributes.BeforeFieldInit)
         );
 
         // Hoisted once per base-type-chain iteration: the full generic definition of `parent` is loop-invariant, so we

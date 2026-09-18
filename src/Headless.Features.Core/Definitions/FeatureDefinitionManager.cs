@@ -51,7 +51,7 @@ public sealed class FeatureDefinitionManager(
             return snapshot.Merged;
         }
 
-        var staticFeatureNames = staticFeatures.Select(p => p.Name).ToImmutableHashSet();
+        var staticFeatureNames = staticFeatures.Select(p => p.Name).ToImmutableHashSet(StringComparer.Ordinal);
 
         // Prefer static features over dynamics
         var uniqueDynamicFeatures = dynamicFeatures.Where(d => !staticFeatureNames.Contains(d.Name));
@@ -82,7 +82,7 @@ public sealed class FeatureDefinitionManager(
             return snapshot.Merged;
         }
 
-        var staticGroupNames = staticGroups.Select(p => p.Name).ToImmutableHashSet();
+        var staticGroupNames = staticGroups.Select(p => p.Name).ToImmutableHashSet(StringComparer.Ordinal);
 
         // Prefer static features over dynamics
         var uniqueDynamicGroups = dynamicGroups.Where(d => !staticGroupNames.Contains(d.Name));

@@ -10,7 +10,7 @@ namespace Headless.Caching;
 /// <see cref="HybridCacheOptions"/> configurations that are valid but likely unintentional.
 /// Never throws — advisory only.
 /// </summary>
-internal sealed partial class HybridCacheBestPracticesAdvisor(
+internal sealed class HybridCacheBestPracticesAdvisor(
     HybridCacheOptions options,
     ILogger<HybridCacheBestPracticesAdvisor> logger,
     string? instanceName = null

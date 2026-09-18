@@ -282,7 +282,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             var definitionIds = activeItems.Where(x => x.NextCronOccurrence is null).Select(x => x.Id).ToArray();
             var definitions =
                 definitionIds.Length == 0
-                    ? new Dictionary<Guid, TCronJob>()
+                    ? []
                     : await dbContext
                         .Set<TCronJob>()
                         .AsNoTracking()

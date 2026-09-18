@@ -181,7 +181,7 @@ public class Startup
         Headless.Messaging.Registration.IScannedConsumerBuilder consumer
     )
     {
-        if (context.ConsumerType.Name != "PersonConsumer")
+        if (!string.Equals(context.ConsumerType.Name, "PersonConsumer", StringComparison.Ordinal))
         {
             throw new InvalidOperationException($"Missing durable identity for {context.ConsumerType}.");
         }

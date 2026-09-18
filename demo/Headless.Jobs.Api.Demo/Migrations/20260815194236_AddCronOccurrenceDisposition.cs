@@ -19,10 +19,10 @@ namespace Headless.Jobs.Api.Demo.Migrations
             // migration. Only rows that migration retires from here on carry ReplacementOwed and re-fire.
             migrationBuilder.AddColumn<string>(
                 name: "Disposition",
-                schema: "jobs",
                 table: "CronJobOccurrences",
                 type: "character varying(32)",
                 maxLength: 32,
+                schema: "jobs",
                 nullable: false,
                 defaultValue: "Accounted"
             );
@@ -51,7 +51,7 @@ namespace Headless.Jobs.Api.Demo.Migrations
                 """
             );
 
-            migrationBuilder.DropColumn(name: "Disposition", schema: "jobs", table: "CronJobOccurrences");
+            migrationBuilder.DropColumn(name: "Disposition", table: "CronJobOccurrences", schema: "jobs");
         }
     }
 }

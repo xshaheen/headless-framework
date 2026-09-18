@@ -17,7 +17,7 @@ namespace Headless.MultiTenancy;
 /// <c>VALIDATOR_THREW</c> error diagnostic so a single buggy validator cannot mask issues from other
 /// validators.
 /// </remarks>
-internal sealed partial class HeadlessTenancyStartupValidator(
+internal sealed class HeadlessTenancyStartupValidator(
     IEnumerable<IHeadlessTenancyValidator> validators,
     IServiceProvider serviceProvider,
     TenantPostureManifest manifest,

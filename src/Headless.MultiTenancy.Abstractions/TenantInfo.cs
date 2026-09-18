@@ -27,7 +27,9 @@ public class TenantInfo : IHasExtraProperties
     /// <param name="isEnabled">Whether the tenant is currently enabled.</param>
     /// <exception cref="ArgumentNullException"><paramref name="id"/> or <paramref name="identifier"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException"><paramref name="id"/> or <paramref name="identifier"/> is empty or white space.</exception>
+#pragma warning disable IDE0290 // A primary constructor cannot carry the <exception> contract documented above.
     public TenantInfo(string id, string identifier, string? name, bool isEnabled)
+#pragma warning restore IDE0290
     {
         Id = Argument.IsNotNullOrWhiteSpace(id);
         Identifier = Argument.IsNotNullOrWhiteSpace(identifier);

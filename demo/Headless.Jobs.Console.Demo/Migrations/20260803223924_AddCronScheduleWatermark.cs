@@ -17,94 +17,94 @@ namespace Headless.Jobs.Console.Demo.Migrations
         {
             migrationBuilder.AddColumn<string>(
                 name: "EvaluationFingerprint",
-                schema: "jobs",
                 table: "CronJobs",
                 type: "character varying(128)",
                 maxLength: 128,
+                schema: "jobs",
                 nullable: true
             );
 
             migrationBuilder.AddColumn<int>(
                 name: "FingerprintFailureCount",
-                schema: "jobs",
                 table: "CronJobs",
                 type: "integer",
+                schema: "jobs",
                 nullable: false,
                 defaultValue: 0
             );
 
             migrationBuilder.AddColumn<DateTime>(
                 name: "FingerprintRetryAfterUtc",
-                schema: "jobs",
                 table: "CronJobs",
                 type: "timestamp with time zone",
+                schema: "jobs",
                 nullable: true
             );
 
             migrationBuilder.AddColumn<int>(
                 name: "MissedRunGraceSeconds",
-                schema: "jobs",
                 table: "CronJobs",
                 type: "integer",
+                schema: "jobs",
                 nullable: false,
                 defaultValue: 0
             );
 
             migrationBuilder.AddColumn<DateTime>(
                 name: "NextDueUtc",
-                schema: "jobs",
                 table: "CronJobs",
                 type: "timestamp with time zone",
+                schema: "jobs",
                 nullable: false,
                 defaultValue: new DateTime(1, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified)
             );
 
             migrationBuilder.AddColumn<string>(
                 name: "OnMissedRun",
-                schema: "jobs",
                 table: "CronJobs",
                 type: "character varying(32)",
                 maxLength: 32,
+                schema: "jobs",
                 nullable: false,
                 defaultValue: "Coalesce"
             );
 
             migrationBuilder.AddColumn<DateTime>(
                 name: "ReconciledThroughUtc",
-                schema: "jobs",
                 table: "CronJobs",
                 type: "timestamp with time zone",
+                schema: "jobs",
                 nullable: false,
                 defaultValue: new DateTime(1, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified)
             );
 
             migrationBuilder.AddColumn<DateTime>(
                 name: "RecoveredFromUtc",
-                schema: "jobs",
                 table: "CronJobOccurrences",
                 type: "timestamp with time zone",
+                schema: "jobs",
                 nullable: true
             );
 
             migrationBuilder.CreateIndex(
                 name: "IX_CronJobs_EvaluationFingerprint",
-                schema: "jobs",
                 table: "CronJobs",
-                column: "EvaluationFingerprint"
+                column: "EvaluationFingerprint",
+                schema: "jobs"
             );
 
             migrationBuilder.CreateIndex(
                 name: "IX_CronJobs_FingerprintRetryAfterUtc_Id",
-                schema: "jobs",
                 table: "CronJobs",
-                columns: new[] { "FingerprintRetryAfterUtc", "Id" }
+                columns: ["FingerprintRetryAfterUtc", "Id"],
+                schema: "jobs"
             );
 
             migrationBuilder.CreateIndex(
                 name: "IX_CronJobs_IsPaused_NextDueUtc",
-                schema: "jobs",
                 table: "CronJobs",
-                columns: new[] { "IsPaused", "NextDueUtc" }
+                columns: ["IsPaused", "NextDueUtc"],
+                schema: "jobs"
             );
         }
 
@@ -133,31 +133,31 @@ namespace Headless.Jobs.Console.Demo.Migrations
                 """
             );
 
-            migrationBuilder.DropIndex(name: "IX_CronJobs_EvaluationFingerprint", schema: "jobs", table: "CronJobs");
+            migrationBuilder.DropIndex(name: "IX_CronJobs_EvaluationFingerprint", table: "CronJobs", schema: "jobs");
 
             migrationBuilder.DropIndex(
                 name: "IX_CronJobs_FingerprintRetryAfterUtc_Id",
-                schema: "jobs",
-                table: "CronJobs"
+                table: "CronJobs",
+                schema: "jobs"
             );
 
-            migrationBuilder.DropIndex(name: "IX_CronJobs_IsPaused_NextDueUtc", schema: "jobs", table: "CronJobs");
+            migrationBuilder.DropIndex(name: "IX_CronJobs_IsPaused_NextDueUtc", table: "CronJobs", schema: "jobs");
 
-            migrationBuilder.DropColumn(name: "EvaluationFingerprint", schema: "jobs", table: "CronJobs");
+            migrationBuilder.DropColumn(name: "EvaluationFingerprint", table: "CronJobs", schema: "jobs");
 
-            migrationBuilder.DropColumn(name: "FingerprintFailureCount", schema: "jobs", table: "CronJobs");
+            migrationBuilder.DropColumn(name: "FingerprintFailureCount", table: "CronJobs", schema: "jobs");
 
-            migrationBuilder.DropColumn(name: "FingerprintRetryAfterUtc", schema: "jobs", table: "CronJobs");
+            migrationBuilder.DropColumn(name: "FingerprintRetryAfterUtc", table: "CronJobs", schema: "jobs");
 
-            migrationBuilder.DropColumn(name: "MissedRunGraceSeconds", schema: "jobs", table: "CronJobs");
+            migrationBuilder.DropColumn(name: "MissedRunGraceSeconds", table: "CronJobs", schema: "jobs");
 
-            migrationBuilder.DropColumn(name: "NextDueUtc", schema: "jobs", table: "CronJobs");
+            migrationBuilder.DropColumn(name: "NextDueUtc", table: "CronJobs", schema: "jobs");
 
-            migrationBuilder.DropColumn(name: "OnMissedRun", schema: "jobs", table: "CronJobs");
+            migrationBuilder.DropColumn(name: "OnMissedRun", table: "CronJobs", schema: "jobs");
 
-            migrationBuilder.DropColumn(name: "ReconciledThroughUtc", schema: "jobs", table: "CronJobs");
+            migrationBuilder.DropColumn(name: "ReconciledThroughUtc", table: "CronJobs", schema: "jobs");
 
-            migrationBuilder.DropColumn(name: "RecoveredFromUtc", schema: "jobs", table: "CronJobOccurrences");
+            migrationBuilder.DropColumn(name: "RecoveredFromUtc", table: "CronJobOccurrences", schema: "jobs");
         }
     }
 }
