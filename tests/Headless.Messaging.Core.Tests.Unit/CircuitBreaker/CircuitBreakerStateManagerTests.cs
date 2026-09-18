@@ -785,19 +785,22 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         await _ReportTransientFailuresAsync(sut, _Group, 2);
         sut.IsOpen(_Group).Should().BeTrue();
 
-        // Drive the first timer to HalfOpen, then re-trip it deterministically.
+        // when — the first timer fires at its 30ms due time and hands out exactly one resume.
+        // Awaiting the signal before every count read is what keeps the count exact: no resume can
+        // still be queued on the pool, so the reads below cannot observe a half-delivered transition.
         _timeProvider.Advance(TimeSpan.FromMilliseconds(30));
-        await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
-
-        // The second open is escalated to 60ms.
-        _timeProvider.Advance(TimeSpan.FromMilliseconds(60) - TimeSpan.FromTicks(1));
-        sut.GetState(_Group).Should().Be(CircuitBreakerState.Open);
-        _timeProvider.Advance(TimeSpan.FromTicks(1));
         (await resumeSignals.WaitAsync(TimeSpan.FromSeconds(5), AbortToken)).Should().BeTrue();
+        Volatile.Read(ref resumeCallCount).Should().Be(1);
 
-        // Re-trip from HalfOpen and prove only the replacement timer fires.
+        // Re-trip from HalfOpen. Escalation makes the replacement open last 60ms, so the replaced
+        // timer's 30ms due time now falls strictly inside the new window — nothing may transition there.
         await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
-        _timeProvider.Advance(TimeSpan.FromMilliseconds(120) - TimeSpan.FromTicks(1));
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(30));
+        sut.GetState(_Group).Should().Be(CircuitBreakerState.Open);
+        Volatile.Read(ref resumeCallCount).Should().Be(1);
+
+        // then — only the replacement timer fires, and only once its own 60ms has fully elapsed.
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(30) - TimeSpan.FromTicks(1));
         sut.GetState(_Group).Should().Be(CircuitBreakerState.Open);
         _timeProvider.Advance(TimeSpan.FromTicks(1));
         (await resumeSignals.WaitAsync(TimeSpan.FromSeconds(5), AbortToken)).Should().BeTrue();

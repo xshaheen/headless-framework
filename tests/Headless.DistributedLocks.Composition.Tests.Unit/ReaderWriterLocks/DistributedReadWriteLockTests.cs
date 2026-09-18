@@ -76,7 +76,7 @@ public sealed class DistributedReadWriteLockTests : TestBase
             _timeProvider.Advance(TimeSpan.FromSeconds(1));
         }
 
-        var act = async () => await releaseTask;
+        var act = async () => await releaseTask.Bounded();
 
         // then
         await act.Should().NotThrowAsync();
@@ -400,7 +400,7 @@ public sealed class DistributedReadWriteLockTests : TestBase
         );
         await Task.Yield();
         _timeProvider.Advance(TimeSpan.FromSeconds(2));
-        var result = await acquireTask;
+        var result = await acquireTask.Bounded();
 
         // then
         result.Should().BeNull();

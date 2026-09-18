@@ -254,9 +254,9 @@ public sealed class DistributedLockExtensionsTests : TestBase
             AbortToken
         );
 
-        await started.Task;
+        await started.Task.Bounded();
         await leaseLostCts.CancelAsync();
-        var result = await task;
+        var result = await task.Bounded();
 
         // then
         result.Should().BeTrue();
@@ -382,9 +382,9 @@ public sealed class DistributedLockExtensionsTests : TestBase
             AbortToken
         );
 
-        await started.Task;
+        await started.Task.Bounded();
         await leaseLostCts.CancelAsync();
-        var result = await task;
+        var result = await task.Bounded();
 
         // then
         result.Should().BeTrue();

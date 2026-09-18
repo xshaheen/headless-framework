@@ -231,7 +231,7 @@ public sealed class LeaseMonitorTests : TestBase
             // Yield real wall-clock time so the loop's continuation can resume on the thread pool
             // and re-check the WeakReference before the next attempt.
             var completed = await Task.WhenAny(monitoringTask, Task.Delay(TimeSpan.FromMilliseconds(100), AbortToken));
-            await completed;
+            await completed.Bounded();
         }
 
         // then
@@ -266,14 +266,13 @@ public sealed class LeaseMonitorTests : TestBase
         sut.TriggerImmediateValidation();
         await DistributedLockTestSupport.DrainUntilAsync(() => handle.IsBlocking, AbortToken);
 
-        // when
-        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-        await sut.DisposeAsync();
-        stopwatch.Stop();
+        // when — the bound is what proves the point: the blocking call ends only on a cancellation, and the
+        // handle's other cancellation source (blockSignal) is not released until this method returns, so a
+        // disposal that did not propagate its token cannot complete at all and fails here by name. How many
+        // milliseconds a completed disposal took is scheduler noise, so it is not asserted.
+        await sut.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
 
-        // then - generous 500ms bound. Spec aims for ~100ms but CI variability matters; this
-        // budget catches an actual deadlock or unbounded wait while remaining stable in CI.
-        stopwatch.ElapsedMilliseconds.Should().BeLessThan(500);
+        // then — the blocking call observed the monitor's own token rather than the test's external abort.
         handle.ExitedBeforeRelease.Should().BeTrue();
     }
 

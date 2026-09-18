@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Diagnostics;
 using System.Globalization;
 using System.Reflection;
 using Headless.Messaging;
@@ -11,6 +10,7 @@ using Headless.Messaging.Testing;
 using Headless.Messaging.Testing.Internal;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
 
@@ -348,8 +348,10 @@ public sealed class RecordingInfrastructureTests : TestBase
     public async Task recording_consume_middleware_pipeline_runs_the_consumer_when_the_published_record_wait_elapses()
     {
         // given: a current-round message (no ResetGeneration stamp mismatch, no Clear) whose Published record never
-        // arrives, so WaitForPublishedRecordAsync must run out its full budget rather than short-circuit.
-        var store = new MessageObservationStore();
+        // arrives, so WaitForPublishedRecordAsync must run out its full budget rather than short-circuit. The store
+        // waits on the injected clock, so the budget is spent by advancing it — no wall-clock time is involved.
+        var timeProvider = new TimerArmedTimeProvider();
+        var store = new MessageObservationStore(timeProvider);
         var medium = _MakeMediumMessage(id: "never-published");
         var context = _MakeConsumerContext(medium);
         var inner = new FakePipeline(new ConsumerExecutedResult(null, null, "never-published", null, null));
@@ -362,14 +364,23 @@ public sealed class RecordingInfrastructureTests : TestBase
         );
 
         // when
-        var elapsed = Stopwatch.StartNew();
-        await pipeline.ExecuteAsync(context, new SimplePayload { Value = "orphan" }, typeof(SimplePayload), AbortToken);
-        elapsed.Stop();
+        var execution = pipeline.ExecuteAsync(
+            context,
+            new SimplePayload { Value = "orphan" },
+            typeof(SimplePayload),
+            AbortToken
+        );
+
+        // The budget's timer exists only once the wait has started, and nothing but this clock can end that wait,
+        // so a consumer that has not run here proves the budget genuinely gates it — a cleared-round short-circuit
+        // would have reached the consumer without ever arming a timer.
+        await timeProvider.TimerArmed.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        inner.CallCount.Should().Be(0);
+
+        timeProvider.Advance(waitBudget);
+        await execution;
 
         // then: the elapsed wait was swallowed, the consumer ran, and the round was still live so it was recorded.
-        // A cleared-round short-circuit would finish in milliseconds; BeCloseTo proves the budget genuinely elapsed
-        // while tolerating timer resolution firing marginally around the nominal budget.
-        elapsed.Elapsed.Should().BeCloseTo(waitBudget, TimeSpan.FromMilliseconds(50));
         inner.CallCount.Should().Be(1);
         store.Consumed.Should().ContainSingle();
         store.Faulted.Should().BeEmpty();
@@ -792,5 +803,25 @@ public sealed class RecordingInfrastructureTests : TestBase
     private sealed class SimplePayload
     {
         public string? Value { get; set; }
+    }
+
+    /// <summary>
+    /// A <see cref="FakeTimeProvider"/> that reports when a timer has been armed against it. Advancing before the
+    /// timer exists would leave it armed at the already-advanced "now" plus its due time, with nothing left to move
+    /// the clock, so a wait driven by this clock must be observed to arm first.
+    /// </summary>
+    private sealed class TimerArmedTimeProvider : FakeTimeProvider
+    {
+        private readonly TaskCompletionSource _armed = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task TimerArmed => _armed.Task;
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            var timer = base.CreateTimer(callback, state, dueTime, period);
+            _armed.TrySetResult();
+
+            return timer;
+        }
     }
 }

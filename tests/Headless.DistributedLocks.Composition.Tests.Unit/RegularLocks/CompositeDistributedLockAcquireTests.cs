@@ -276,7 +276,7 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
         await CompositeTestScheduler.DrainUntilAsync(() => first.RenewalCount == 1);
         secondResult.SetResult(second);
 
-        var result = await acquireTask;
+        var result = await acquireTask.Bounded();
 
         result.Should().NotBeNull();
         first.RenewalCount.Should().Be(1);
@@ -371,7 +371,7 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
 
         await secondStarted.Task.WaitAsync(AbortToken);
         timeProvider.Advance(TimeSpan.FromSeconds(10));
-        var result = await acquireTask;
+        var result = await acquireTask.Bounded();
 
         result.Should().BeNull();
         events.Should().Equal("release:A", "dispose:A");
@@ -415,7 +415,7 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
         await renewalStarted.Task.WaitAsync(AbortToken);
         timeProvider.Advance(TimeSpan.FromSeconds(5));
 
-        var result = await acquireTask;
+        var result = await acquireTask.Bounded();
 
         result.Should().BeNull();
         renewalCancelled.Task.IsCompleted.Should().BeTrue();
@@ -538,7 +538,7 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
         await secondStarted.Task.WaitAsync(AbortToken);
         first.MarkLost();
 
-        var act = async () => await acquireTask;
+        var act = async () => await acquireTask.Bounded();
 
         await act.Should().ThrowAsync<LockHandleLostException>().Where(exception => exception.Resource == "A");
         events.Should().Equal("release:B", "dispose:B", "release:A", "dispose:A");
@@ -574,7 +574,7 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
 
         await secondStarted.Task.WaitAsync(AbortToken);
         await callerSource.CancelAsync();
-        var act = async () => await acquireTask;
+        var act = async () => await acquireTask.Bounded();
 
         await act.Should().ThrowAsync<OperationCanceledException>();
         events.Should().Equal("release:B", "dispose:B", "release:A", "dispose:A");
@@ -605,7 +605,7 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
 
         await secondStarted.Task.WaitAsync(AbortToken);
         await callerSource.CancelAsync();
-        var act = async () => await acquireTask;
+        var act = async () => await acquireTask.Bounded();
 
         var exception = (await act.Should().ThrowAsync<AggregateException>()).Which;
         exception.InnerExceptions.Should().HaveCount(2);
@@ -651,7 +651,7 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
 
         await secondStarted.Task.WaitAsync(AbortToken);
         timeProvider.Advance(TimeSpan.FromSeconds(5));
-        var act = async () => await acquireTask;
+        var act = async () => await acquireTask.Bounded();
 
         await act.Should().ThrowAsync<LockHandleLostException>().Where(exception => exception.Resource == "A");
         first.RenewalCount.Should().Be(1);
@@ -714,7 +714,7 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
         await thirdStarted.Task.WaitAsync(AbortToken);
         timeProvider.Advance(TimeSpan.FromSeconds(5));
         await allRenewalsStarted.Task.WaitAsync(AbortToken);
-        var act = async () => await acquireTask;
+        var act = async () => await acquireTask.Bounded();
 
         await act.Should().ThrowAsync<LockHandleLostException>().Where(exception => exception.Resource == "B");
         first.RenewalCount.Should().Be(1);
@@ -751,7 +751,7 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
 
         await secondStarted.Task.WaitAsync(AbortToken);
         timeProvider.Advance(TimeSpan.FromSeconds(5));
-        var act = async () => await acquireTask;
+        var act = async () => await acquireTask.Bounded();
 
         (await act.Should().ThrowAsync<InvalidOperationException>()).Which.Should().BeSameAs(renewalError);
         events.Should().Equal("release:A", "dispose:A");
@@ -913,7 +913,7 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
         await providerCallStarted.Task.WaitAsync(AbortToken);
         await callerSource.CancelAsync();
         providerResult.TrySetException(providerError);
-        var act = async () => await acquireTask;
+        var act = async () => await acquireTask.Bounded();
 
         var exception = (await act.Should().ThrowAsync<AggregateException>()).Which;
         exception.InnerExceptions.Should().HaveCount(2);
