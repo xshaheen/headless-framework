@@ -2,6 +2,7 @@
 
 using FluentValidation;
 using Headless.Checks;
+using Headless.Constants;
 using Headless.Features.Repositories;
 using Headless.Features.SqlServer;
 using Headless.Serializer;
@@ -119,10 +120,10 @@ public static class SetupFeaturesSqlServer
     {
         public SqlServerFeaturesStorageOptionsValidator()
         {
-            RuleFor(x => x.Schema).IsValidSqlServerIdentifier();
-            RuleFor(x => x.FeatureValuesTableName).IsValidSqlServerIdentifier();
-            RuleFor(x => x.FeatureDefinitionsTableName).IsValidSqlServerIdentifier();
-            RuleFor(x => x.FeatureGroupDefinitionsTableName).IsValidSqlServerIdentifier();
+            RuleFor(x => x.Schema).IsValidIdentifierFor(StorageProvider.SqlServer);
+            RuleFor(x => x.FeatureValuesTableName).IsValidIdentifierFor(StorageProvider.SqlServer);
+            RuleFor(x => x.FeatureDefinitionsTableName).IsValidIdentifierFor(StorageProvider.SqlServer);
+            RuleFor(x => x.FeatureGroupDefinitionsTableName).IsValidIdentifierFor(StorageProvider.SqlServer);
         }
     }
 }

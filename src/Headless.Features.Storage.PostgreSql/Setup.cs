@@ -2,6 +2,7 @@
 
 using FluentValidation;
 using Headless.Checks;
+using Headless.Constants;
 using Headless.Features.PostgreSql;
 using Headless.Features.Repositories;
 using Headless.Serializer;
@@ -121,10 +122,10 @@ public static class SetupFeaturesPostgreSql
     {
         public PostgreSqlFeaturesStorageOptionsValidator()
         {
-            RuleFor(x => x.Schema).IsValidPostgreSqlIdentifier();
-            RuleFor(x => x.FeatureValuesTableName).IsValidPostgreSqlIdentifier();
-            RuleFor(x => x.FeatureDefinitionsTableName).IsValidPostgreSqlIdentifier();
-            RuleFor(x => x.FeatureGroupDefinitionsTableName).IsValidPostgreSqlIdentifier();
+            RuleFor(x => x.Schema).IsValidIdentifierFor(StorageProvider.PostgreSql);
+            RuleFor(x => x.FeatureValuesTableName).IsValidIdentifierFor(StorageProvider.PostgreSql);
+            RuleFor(x => x.FeatureDefinitionsTableName).IsValidIdentifierFor(StorageProvider.PostgreSql);
+            RuleFor(x => x.FeatureGroupDefinitionsTableName).IsValidIdentifierFor(StorageProvider.PostgreSql);
         }
     }
 }

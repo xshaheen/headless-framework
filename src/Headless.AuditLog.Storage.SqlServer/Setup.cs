@@ -4,6 +4,7 @@ using FluentValidation;
 using Headless.Abstractions;
 using Headless.AuditLog.SqlServer;
 using Headless.Checks;
+using Headless.Constants;
 using Headless.MultiTenancy;
 using Headless.Serializer;
 using Microsoft.Extensions.Configuration;
@@ -159,8 +160,8 @@ public static class SetupAuditLogSqlServer
     {
         public SqlServerAuditLogStorageOptionsValidator()
         {
-            RuleFor(x => x.Schema).IsValidSqlServerIdentifier();
-            RuleFor(x => x.TableName).IsValidSqlServerIdentifier();
+            RuleFor(x => x.Schema).IsValidIdentifierFor(StorageProvider.SqlServer);
+            RuleFor(x => x.TableName).IsValidIdentifierFor(StorageProvider.SqlServer);
             // SqlServer only supports NvarcharMax; Jsonb/Json are PostgreSQL column types.
             When(
                 x => x.JsonColumnType.HasValue,

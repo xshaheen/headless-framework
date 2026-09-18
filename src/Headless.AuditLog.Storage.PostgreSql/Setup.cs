@@ -4,6 +4,7 @@ using FluentValidation;
 using Headless.Abstractions;
 using Headless.AuditLog.PostgreSql;
 using Headless.Checks;
+using Headless.Constants;
 using Headless.MultiTenancy;
 using Headless.Serializer;
 using Microsoft.Extensions.Configuration;
@@ -161,8 +162,8 @@ public static class SetupAuditLogPostgreSql
     {
         public PostgreSqlAuditLogStorageOptionsValidator()
         {
-            RuleFor(x => x.Schema).IsValidPostgreSqlIdentifier();
-            RuleFor(x => x.TableName).IsValidPostgreSqlIdentifier();
+            RuleFor(x => x.Schema).IsValidIdentifierFor(StorageProvider.PostgreSql);
+            RuleFor(x => x.TableName).IsValidIdentifierFor(StorageProvider.PostgreSql);
             // PG accepts Jsonb (default) or Json; NvarcharMax is a SqlServer column type.
             When(
                 x => x.JsonColumnType.HasValue,
