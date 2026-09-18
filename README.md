@@ -6,78 +6,63 @@
 
 <div align="center">
 
-**The modular .NET framework that stays out of your way.**
+**Production backend infrastructure for .NET, without a framework taking over your app.**
 
 [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4)](https://dotnet.microsoft.com)
+[![NuGet](https://img.shields.io/nuget/v/Headless.Extensions?label=nuget)](https://www.nuget.org/packages?q=Headless.)
 [![GitHub Stars](https://img.shields.io/github/stars/xshaheen/headless-framework?style=social)](https://github.com/xshaheen/headless-framework)
-
 
 [اللغة: العربية](README.ar.md)
 
-150+ NuGet packages &bull; Abstraction + provider pattern &bull; Explicit infrastructure
+168 packages &bull; One setup grammar &bull; Swap any provider in one line
 
-[Start Here](#start-here) &bull; [Package Model](#package-model) &bull; [Pick Packages By Job](#pick-packages-by-job) &bull; [Quick Start](#quick-start) &bull; [Packages](#packages) &bull; [Contributing](#contributing)
+[Why Headless](#why-headless) &bull; [60-second start](#60-second-start) &bull; [One grammar, every domain](#one-grammar-every-domain) &bull; [What is in the box](#what-is-in-the-box) &bull; [Package catalog](#package-catalog)
 
 </div>
 
 ---
 
-## Start Here
+## Why Headless
 
-Headless Framework is a modular .NET framework for APIs and backend services that need production infrastructure without hiding the infrastructure choices. It gives application code stable contracts for common backend concerns, then lets each service choose the concrete provider it will run on.
+Every backend service needs the same twenty things: a cache, blob storage, background jobs, a message bus, distributed locks, feature flags, dynamic settings, audit logs, email, SMS. You have three usual options, and each one costs you something.
 
-Use it when a service needs one or more of these building blocks:
+- **Hand-roll them.** You write the outbox, the job claim query, and the lock renewal yourself. Those are the parts that fail at 3 a.m.
+- **Glue twenty libraries together.** StackExchange.Redis, Hangfire, MassTransit, and Azure SDKs each have their own setup style, their own idea of a connection, and their own opinions about your DI container.
+- **Adopt a full application framework.** You get everything at once, along with base classes you must inherit, a module system you must obey, and a migration path out that nobody wants to walk.
 
-- API host defaults: problem details, health endpoints, OpenTelemetry, OpenAPI, forwarded headers, compression, and startup validation.
-- Storage-facing abstractions: caching, blob storage, SQL access, dynamic settings, audit logs, permissions, and feature flags.
-- Distributed runtime primitives: jobs, messaging, distributed locks, coordination, commit coordination, and dashboards.
-- Delivery integrations: email, SMS, push notifications, CAPTCHA, image processing, media indexing, payments, TUS uploads, and serialization.
-- Testing support: in-memory providers, test doubles, ASP.NET Core test hosting, and Testcontainers fixtures.
+Headless is a fourth option. Each concern ships as a small contract package plus provider packages that you pick at the composition root. Your code depends on `ICache`, never on Redis. Every domain uses the same registration shape, so learning caching teaches you blob storage. Nothing inherits from anything, and nothing runs that you did not register.
 
-The framework is not a single platform package and it is not an application template. Start application and library code from the abstraction package, then add the core/runtime package and provider package at the service composition root.
+### What that buys you
 
-## Package Model
+**Providers swap in one line.** Run in-memory in tests, Redis in production, and change nothing else.
 
-Most feature families follow the same shape:
-
-```text
-Headless.<Feature>.Abstractions  -> contracts application code depends on
-Headless.<Feature>.Core          -> provider-agnostic runtime and setup builder
-Headless.<Feature>.<Provider>    -> concrete backend integration
-Headless.<Feature>.Testing       -> test helpers when the domain has them
+```csharp
+// Composition root. This is the only file that names a provider.
+builder.Services.AddHeadlessCaching(setup => setup.UseInMemory()); // dev and tests
+builder.Services.AddHeadlessCaching(setup => setup.UseRedis(...)); // production
 ```
 
-That shape keeps provider decisions at the composition root:
+Every service, repository, and handler that injects `ICache` is untouched by that edit. The same holds for `IBlobStorage` across S3, Azure, Cloudflare R2, the file system, Redis, and SFTP; for `IEmailSender` across SES, Azure Communication Services, and SMTP; and for messaging across eight transports.
 
-- Application code depends on contracts such as `ICache`, `IBlobStorage`, `IEmailSender`, `IDistributedLock`, `ISettingManager`, job managers, or messaging publishers.
-- Provider packages contribute `UseRedis`, `UsePostgreSql`, `UseFileSystem`, `UseAws`, `UseAzure`, and similar setup members.
-- Setup is explicit. A service only registers the domains and providers it actually uses.
-- Local and test providers are first-class for development, but production behavior still depends on the provider's durability, transaction, ordering, locking, and operational limits.
+**You install three packages, not 168.** The catalog is large because the provider matrix is large. A service that needs caching installs `Headless.Caching.Abstractions`, `Headless.Caching.Core`, and one provider. Domain and application libraries reference the abstraction package alone. `Headless.Caching.Abstractions` pulls in one thing: `Headless.Extensions`.
 
-## Pick Packages By Job
+**Tests do not need Docker to be fast.** Caching, distributed locks, and messaging ship in-memory providers; email, SMS, and push notifications ship dev providers that send nothing; blob storage runs against the local file system. Unit tests exercise the real contract with no containers. When you want the real backend, `Headless.Testing.Testcontainers` supplies the fixtures. The repository itself runs 130 unit-test projects and 60 integration-test projects on that split.
 
-| Job | Start With | Add When You Need |
-|-----|------------|-------------------|
-| API contracts and host defaults | `Headless.Api.Abstractions` | `Headless.Api.Core` or `Headless.Api.ServiceDefaults` for runnable API hosts |
-| Cache contracts | `Headless.Caching.Abstractions` | `Headless.Caching.Core` plus one default provider: in-memory, Redis, or hybrid; add named caches when a service needs multiple stores |
-| Blob storage contracts | `Headless.Blobs.Abstractions` | `Headless.Blobs.Core` plus Azure, AWS, Cloudflare R2, filesystem, Redis, or SFTP provider |
-| Background job contracts | `Headless.Jobs.Abstractions` | `Headless.Jobs.Core`, `Headless.Jobs.SourceGenerator`, dashboard, EF Core persistence, and a PostgreSQL or SQL Server native claim provider when contention warrants it |
-| Distributed lock contracts | `Headless.DistributedLocks.Abstractions` | `Headless.DistributedLocks.Core` plus in-memory, Redis, PostgreSQL, or SQL Server provider |
-| Cluster membership contracts | `Headless.Coordination.Abstractions` | `Headless.Coordination.Core` plus Redis, PostgreSQL, or SQL Server provider |
-| Transaction-bound side-effect contracts | `Headless.UnitOfWork.Abstractions` | `Headless.UnitOfWork` plus the EF Core, PostgreSQL, or SQL Server provider package |
-| Dynamic settings contracts | `Headless.Settings.Abstractions` | `Headless.Settings.Core` plus EF Core, PostgreSQL, or SQL Server storage |
-| Feature flag contracts | `Headless.Features.Abstractions` | `Headless.Features.Core` plus EF Core, PostgreSQL, or SQL Server storage |
-| Permission contracts | `Headless.Permissions.Abstractions` | `Headless.Permissions.Core` plus EF Core, PostgreSQL, SQL Server, or testing provider |
-| Audit log contracts | `Headless.AuditLog.Abstractions` | `Headless.AuditLog.Core` plus EF Core, PostgreSQL, or SQL Server storage |
-| Email contracts | `Headless.Emails.Abstractions` | `Headless.Emails.Core` plus AWS SES, Azure Communication Services, MailKit SMTP, or dev provider |
-| SMS contracts | `Headless.Sms.Abstractions` | `Headless.Sms.Core` plus AWS, Cequens, Connekio, Infobip, Twilio, VictoryLink, Vodafone, or dev provider |
-| Push notification contracts | `Headless.PushNotifications.Abstractions` | `Headless.PushNotifications.Core` plus Firebase or dev provider |
-| Messaging contracts | `Headless.Messaging.Abstractions` | `Headless.Messaging.Core`, bus/queue abstractions, one transport, one durable storage provider when needed, dashboard, and testing packages |
-| Test-only infrastructure | Domain abstraction package | In-memory provider, dev provider, or testing package for that domain |
+**The hard parts are already written.** Background jobs claim work atomically with `FOR UPDATE SKIP LOCKED` on PostgreSQL and `UPDLOCK, READPAST, ROWLOCK` on SQL Server. Messaging writes to a transactional outbox inside your EF Core save. Distributed locks use PostgreSQL advisory locks and SQL Server application locks rather than an improvised `SET NX`. Node membership reads liveness from the server clock, not the node's clock. Each of these is a place where a plausible-looking implementation loses messages or runs a job twice.
 
-## Quick Start
+**Two dashboards come with it.** `Headless.Jobs.Dashboard` and `Headless.Messaging.Dashboard` are real web UIs for inspecting runs, failures, and retries, with shared authentication and Kubernetes node discovery.
 
-### Start an API Host
+**AI coding agents get first-class docs.** [`docs/llms/`](docs/llms/) is a per-domain documentation set written for agents to fetch on demand. See [using Headless with AI agents](#using-headless-with-ai-agents).
+
+### When not to use it
+
+Headless is not an application template and not a starter kit. It gives you no project scaffolding, no admin UI, no CRUD generator, and no opinion about your architecture. If you want a batteries-included platform that lays out the whole application for you, ABP or Orchard Core fits better.
+
+It also does not force exclusivity. Keep MassTransit and add only `Headless.Caching`. Keep Hangfire and add only `Headless.Blobs`. Each family stands alone.
+
+## 60-second start
+
+### Stand up an API host
 
 ```bash
 dotnet add package Headless.Api.ServiceDefaults
@@ -103,9 +88,9 @@ app.MapHeadlessEndpoints();
 app.Run();
 ```
 
-### Add a Cache
+### Add a cache
 
-Application code that only consumes a cache should reference `Headless.Caching.Abstractions`. A runnable host adds the runtime package plus one provider. This example uses the in-memory provider for local development and tests.
+Application code that only consumes a cache references `Headless.Caching.Abstractions`. A runnable host adds the runtime package plus one provider.
 
 ```bash
 dotnet add package Headless.Caching.Abstractions
@@ -121,7 +106,7 @@ builder.Services.AddHeadlessCaching(setup =>
 });
 ```
 
-Switching to Redis changes the provider package and the setup member, not the consuming code that depends on `ICache`.
+To move to Redis, install the provider and change the setup member. Consuming code that depends on `ICache` does not change.
 
 ```bash
 dotnet add package Headless.Caching.Redis
@@ -138,9 +123,9 @@ builder.Services.AddHeadlessCaching(setup =>
 });
 ```
 
-### Add Blob Storage
+### Add blob storage
 
-Use named stores when one application needs several storage backends or several instances of the same backend.
+Use named stores when one application needs several storage backends, or several instances of the same backend.
 
 ```bash
 dotnet add package Headless.Blobs.Abstractions
@@ -156,41 +141,115 @@ builder.Services.AddHeadlessBlobs(blobs =>
 });
 ```
 
-### Add Messaging When a Service Actually Needs It
+### Go further
 
-Messaging is one package family, not the framework's center of gravity. Add it when the service has cross-process publish/consume, queues, outbox, delayed delivery, or persisted retry requirements.
+A full worked service — validated upload, blob write, read-through cache, and a background job — lives in [`docs/llms/index.md`](docs/llms/index.md). Twenty runnable demos live in [`demo/`](demo/).
 
-Start with:
+## One grammar, every domain
 
-- [`docs/llms/messaging.md`](docs/llms/messaging.md) for the detailed mental model.
-- [`demo/Headless.Messaging.Console.Demo`](demo/Headless.Messaging.Console.Demo) for local in-memory wiring.
-- [`demo/Headless.Messaging.RabbitMq.SqlServer.Demo`](demo/Headless.Messaging.RabbitMq.SqlServer.Demo) or [`demo/Headless.Messaging.Kafka.PostgreSql.Demo`](demo/Headless.Messaging.Kafka.PostgreSql.Demo) for durable examples.
+The registration shape is the same everywhere. Learn it once.
 
-## Production Guidance
+```csharp
+services.AddHeadless<Feature>(setup => setup.Use<Provider>(options => { ... }));
+```
 
-Production use is a composition choice, not a global switch:
+| Domain | Entry point | Providers you pick from |
+|--------|-------------|-------------------------|
+| Caching | `AddHeadlessCaching` | `UseInMemory`, `UseRedis`, `UseHybrid` (L1+L2) |
+| Blob storage | `AddHeadlessBlobs` | `UseAws`, `UseAzure`, `UseCloudflareR2`, `UseFileSystem`, `UseRedis`, `UseSsh` |
+| Email | `AddHeadlessEmails` | `UseAwsSes`, `UseAzure`, `UseMailkit`, `UseDevelopment`, `UseNoop` |
+| SMS | `AddHeadlessSms` | `UseTwilio`, `UseAwsSns`, `UseInfobip`, `UseCequens`, `UseConnekio`, `UseVictoryLink`, `UseVodafone`, `UseDevelopment` |
+| Push notifications | `AddHeadlessPushNotifications` | `UseFirebase`, `UseNoop` |
+| Distributed locks | `AddHeadlessDistributedLocks` | `UseInMemory`, `UseRedis`, `UsePostgreSql`, `UseSqlServer` |
+| Node membership | `AddHeadlessCoordination` | `UseRedis`, `UsePostgreSql`, `UseSqlServer` |
+| Feature flags | `AddHeadlessFeatures` | `UseEntityFramework<TContext>`, `UsePostgreSql`, `UseSqlServer` |
+| Dynamic settings | `AddHeadlessSettings` | `UseEntityFramework<TContext>`, `UsePostgreSql`, `UseSqlServer` |
+| Permissions | `AddHeadlessPermissions` | `UseEntityFramework<TContext>`, `UsePostgreSql`, `UseSqlServer` |
+| Audit log | `AddHeadlessAuditLog` | `UseEntityFramework<TContext>`, `UsePostgreSql`, `UseSqlServer` |
+| CAPTCHA | `AddHeadlessCaptcha` | `UseReCaptchaV2`, `UseReCaptchaV3`, `UseTurnstile` |
+| Messaging | `AddHeadlessMessaging` | Transport: `UseRabbitMq`, `UseKafka`, `UseAws`, `UseAzureServiceBus`, `UseNats`, `UsePulsar`, `UseRedis`, `UseInMemory`. Storage: `UsePostgreSql`, `UseSqlServer`, `UseInMemoryStorage` |
+| Background jobs | `AddHeadlessJobs` | EF Core persistence with PostgreSQL or SQL Server atomic claims |
 
-- Choose durable providers for state that must survive process restart.
+Two rules follow from that shape:
+
+- **Setup is explicit.** A service registers only the domains and providers it uses. No package registers itself, and none scans your assemblies uninvited.
+- **Named instances are built in.** When one service talks to two caches, three blob stores, or two SMS senders, `AddNamed` gives each a key instead of forcing a second container.
+
+## What is in the box
+
+| Area | What you get |
+|------|--------------|
+| **API host** | `AddHeadless()` one-line bootstrap: problem details, OpenTelemetry, OpenAPI, health checks, compression, forwarded headers, HSTS, startup validation. Minimal API and MVC integrations, FluentValidation filters, Stripe-style HTTP idempotency. |
+| **Data** | EF Core conventions, global filters, soft deletes, DDD base types, seed data. Raw connection factories for PostgreSQL, SQL Server, and SQLite. Couchbase. Geospatial support through NetTopologySuite. |
+| **State and storage** | Caching (memory, Redis, hybrid L1/L2, tagging, stampede protection). Blob storage across six backends. Dynamic settings, feature flags, permissions, and audit logs, each with three storage providers. |
+| **Distributed runtime** | Messaging with a transactional outbox, retries, and delayed delivery over eight transports. Background jobs with cron, retries, and source-generated registration. Distributed locks. Node membership and liveness. A scoped unit of work that drains outbox and job work atomically on commit. |
+| **Integrations** | Email, SMS, push notifications, CAPTCHA, image processing, media text extraction, Paymob payments, TUS resumable uploads, sitemaps, slugs, URL building. |
+| **Multi-tenancy** | Tenant context that flows through HTTP resolution, EF Core query filters, permission caching, and messaging headers, plus an optional tenant catalog. |
+| **Testing** | xUnit v3 base classes, Bogus builders, `WebApplicationFactory` fixtures with database reset, Testcontainers fixtures, and a messaging test harness that asserts on published, consumed, and faulted messages. |
+
+## How packages are shaped
+
+Most feature families follow one layout:
+
+```text
+Headless.<Feature>.Abstractions  -> contracts your application code depends on
+Headless.<Feature>.Core          -> provider-agnostic runtime and setup builder
+Headless.<Feature>.<Provider>    -> concrete backend integration
+Headless.<Feature>.Testing       -> test helpers, where the domain has them
+```
+
+Reference the abstraction package from domain and application libraries. Add the core package and a provider package at the composition root of the runnable host. That split is what keeps provider types out of business code.
+
+## Production guidance
+
+Production readiness is a composition choice, not a global switch.
+
+- Choose durable providers for state that must survive a process restart.
 - Use in-memory and dev providers for local development, tests, and isolated demos.
-- Prefer named instances when one service talks to multiple logical stores or senders.
-- Keep provider configuration at the composition root; do not leak concrete provider clients into business code unless the provider option deliberately exposes an SDK type.
-- Read the package README for the domain you install. Each package documents dependencies, side effects, setup requirements, and provider limits.
-- Test the actual provider combination used in production when behavior depends on storage, transactions, locks, ordering, broker delivery, or cloud service semantics.
+- Prefer named instances when one service talks to several logical stores or senders.
+- Keep provider configuration at the composition root. Do not leak concrete provider clients into business code unless the provider option deliberately exposes an SDK type.
+- Read the package README for each domain you install. It documents dependencies, side effects, setup requirements, and provider limits.
+- Test the provider combination you actually run in production whenever behavior depends on storage, transactions, locks, ordering, broker delivery, or cloud service semantics.
 
-## Versioning and Compatibility
+## Versioning and compatibility
 
-- Most packages target `.NET 10`.
-- Source generator packages target `netstandard2.0`.
+The framework is published on nuget.org at `0.4.x`. It is pre-1.0 and this is a greenfield project: breaking changes land when they materially improve correctness or the API, rather than accumulating compatibility shims. Pin your versions and read the release notes before upgrading.
+
+- Most packages target `.NET 10`. Source generator packages target `netstandard2.0`.
 - The repository pins the .NET SDK in [`global.json`](global.json).
-- Package release notes are published from [GitHub releases](https://github.com/xshaheen/headless-framework/releases).
+- Release notes are published from [GitHub releases](https://github.com/xshaheen/headless-framework/releases).
 
-Check release notes before upgrading, especially for configuration APIs, provider setup, storage schema, retry behavior, and source-generated code.
+Pay particular attention to release notes covering configuration APIs, provider setup, storage schema, retry behavior, and source-generated code.
 
-## Packages
+## Using Headless with AI agents
+
+Add this to your `AGENTS.md` or `CLAUDE.md` so coding agents fetch the right documentation instead of guessing at the API:
+
+```markdown
+## Headless Framework
+
+This project uses [Headless .NET Framework](https://github.com/xshaheen/headless-framework).
+
+When working with Headless packages, fetch the docs index:
+https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/index.md
+
+The index lists per-domain docs to fetch as needed.
+```
+
+The index carries the framework's agent rules and links to per-domain documentation under [`docs/llms/`](docs/llms/).
+
+## Extending Headless
+
+Provider packages are ordinary NuGet packages. To add a custom backend, implement the domain abstraction, expose a `Use{Provider}` setup extension that matches the family builder, and keep concrete provider details at the composition root. Read the README of the closest existing provider in the same domain first.
+
+## Package catalog
+
+<details>
+<summary><strong>All 168 packages, grouped by domain</strong> — expand to browse</summary>
 
 ### API & Web
 
-Everything you need to stand up production-grade ASP.NET Core APIs — request/response conventions, validation pipelines, structured logging, and OpenAPI documentation out of the box.
+Production ASP.NET Core APIs: request and response conventions, validation pipelines, structured logging, and OpenAPI documentation.
 
 | Package | Description |
 |---------|-------------|
@@ -218,11 +277,13 @@ Foundational building blocks shared across the framework — domain primitives, 
 | [Headless.Domain](src/Headless.Domain/README.md) | Domain entities and events |
 | [Headless.Domain.LocalEventBus](src/Headless.Domain.LocalEventBus/README.md) | DI-based `ILocalEventBus` for in-process domain event publishing |
 | [Headless.Mediator](src/Headless.Mediator/README.md) | Mediator pipeline behaviors (FluentValidation, request/response logging) |
+| [Headless.MultiTenancy.Abstractions](src/Headless.MultiTenancy.Abstractions/README.md) | Tenant-context contracts plus the optional tenant catalog's store SPI and models |
 | [Headless.MultiTenancy](src/Headless.MultiTenancy/README.md) | Composition surface for tenant posture across Headless packages |
+| [Headless.MultiTenancy.Storage.EntityFramework](src/Headless.MultiTenancy.Storage.EntityFramework/README.md) | EF Core `ITenantStore` for the optional tenant catalog |
 
 ### Audit Log
 
-Property-level audit logging for tracking entity mutations and explicit business events. Records what changed, who changed it, and when — with EF Core persistence.
+Property-level audit logging for entity mutations and explicit business events. Records what changed, who changed it, and when.
 
 | Package | Description |
 |---------|-------------|
@@ -234,7 +295,7 @@ Property-level audit logging for tracking entity mutations and explicit business
 
 ### Blob Storage
 
-Unified blob storage interface with providers for every major cloud and protocol. Store and retrieve files without coupling to any single vendor.
+One blob storage interface with providers for every major cloud and protocol.
 
 | Package | Description |
 |---------|-------------|
@@ -249,7 +310,7 @@ Unified blob storage interface with providers for every major cloud and protocol
 
 ### Caching
 
-Multi-tier caching with a clean abstraction layer. Supports in-memory, Redis, and hybrid (L1/L2) strategies — swap providers without touching business logic.
+Multi-tier caching behind one abstraction: in-memory, Redis, and hybrid L1/L2.
 
 | Package | Description |
 |---------|-------------|
@@ -264,7 +325,7 @@ Multi-tier caching with a clean abstraction layer. Supports in-memory, Redis, an
 
 ### Captcha
 
-Verify CAPTCHA tokens behind one pass/fail abstraction. Compose Google reCAPTCHA v2/v3 and Cloudflare Turnstile through a single builder — swap or combine providers without touching call sites.
+Verify CAPTCHA tokens behind one pass/fail abstraction. Compose Google reCAPTCHA v2/v3 and Cloudflare Turnstile through a single builder.
 
 | Package | Description |
 |---------|-------------|
@@ -275,7 +336,7 @@ Verify CAPTCHA tokens behind one pass/fail abstraction. Compose Google reCAPTCHA
 
 ### Email
 
-Send transactional and marketing emails through a unified interface. Plug in AWS SES, SMTP via MailKit, or a no-op dev provider for local testing.
+Transactional and marketing email through one interface.
 
 | Package | Description |
 |---------|-------------|
@@ -288,7 +349,7 @@ Send transactional and marketing emails through a unified interface. Plug in AWS
 
 ### Feature Management
 
-Runtime feature flags backed by persistent storage. Toggle features without redeployment and query flag state from anywhere in your application.
+Runtime feature flags backed by persistent storage. Toggle features without a redeployment.
 
 | Package | Description |
 |---------|-------------|
@@ -308,7 +369,7 @@ Identity persistence and storage extensions for ASP.NET Core Identity, built on 
 
 ### Imaging
 
-Image processing pipeline with pluggable backends. Resize, crop, convert, and optimize images through a clean abstraction.
+Image processing with pluggable backends: resize, crop, convert, and optimize.
 
 | Package | Description |
 |---------|-------------|
@@ -318,7 +379,7 @@ Image processing pipeline with pluggable backends. Resize, crop, convert, and op
 
 ### Logging
 
-Structured logging utilities and enrichers built on top of Serilog.
+Structured logging utilities and enrichers built on Serilog.
 
 | Package | Description |
 |---------|-------------|
@@ -326,7 +387,7 @@ Structured logging utilities and enrichers built on top of Serilog.
 
 ### Media
 
-Content indexing and metadata extraction for media files — images, video, and documents.
+Content indexing and metadata extraction for images, video, and documents.
 
 | Package | Description |
 |---------|-------------|
@@ -335,7 +396,7 @@ Content indexing and metadata extraction for media files — images, video, and 
 
 ### Messaging
 
-Reliable distributed message bus with transactional outbox, automatic retries, delayed delivery, and type-safe consumers. 8 transport providers and 3 storage backends — swap the underlying infrastructure without changing application code.
+Distributed message bus with a transactional outbox, retries, delayed delivery, and type-safe consumers. Eight transports and three storage backends.
 
 | Package | Description |
 |---------|-------------|
@@ -372,13 +433,13 @@ Reliable distributed message bus with transactional outbox, automatic retries, d
 
 ### Jobs
 
-Distributed background job scheduling with cron expressions, delayed execution, monitoring dashboard, and OpenTelemetry observability. Source-generated for compile-time safety.
+Distributed background job scheduling with cron expressions, delayed execution, a monitoring dashboard, and OpenTelemetry observability. Job registration is source-generated at compile time.
 
 | Package | Description |
 |---------|-------------|
 | [Headless.Jobs.Abstractions](src/Headless.Jobs.Abstractions/README.md) | Job scheduling interfaces |
 | [Headless.Jobs.Core](src/Headless.Jobs.Core/README.md) | Job engine: cron, delays, retries, monitoring |
-| [Headless.Jobs.SourceGenerator](src/Headless.Jobs.SourceGenerator/README.md) | Compile-time code gen for `[Jobs]`-marked jobs |
+| [Headless.Jobs.SourceGenerator](src/Headless.Jobs.SourceGenerator/README.md) | Compile-time code generation for `[JobFunction]`-marked methods |
 | [Headless.Jobs.Dashboard](src/Headless.Jobs.Dashboard/README.md) | Web UI for job monitoring |
 | [Headless.Jobs.EntityFramework](src/Headless.Jobs.EntityFramework/README.md) | EF Core job state persistence; uses optional `Headless.Caching.ICache` for cron-expression caching |
 | [Headless.Jobs.EntityFramework.PostgreSql](src/Headless.Jobs.EntityFramework.PostgreSql/README.md) | PostgreSQL atomic claims with `FOR UPDATE SKIP LOCKED` |
@@ -386,7 +447,7 @@ Distributed background job scheduling with cron expressions, delayed execution, 
 
 ### OpenAPI
 
-API documentation generation and interactive UIs. Supports NSwag for spec generation, OData query conventions, and Scalar for a modern API explorer.
+Specification generation and interactive documentation UIs.
 
 | Package | Description |
 |---------|-------------|
@@ -396,17 +457,18 @@ API documentation generation and interactive UIs. Supports NSwag for spec genera
 
 ### ORM
 
-Database access utilities for Entity Framework Core and Couchbase — conventions, seed data, soft deletes, and multi-tenancy support.
+Database access for Entity Framework Core and Couchbase — conventions, seed data, soft deletes, and multi-tenancy support.
 
 | Package | Description |
 |---------|-------------|
 | [Headless.EntityFramework](src/Headless.EntityFramework/README.md) | Entity Framework Core utilities |
+| [Headless.EntityFramework.Core](src/Headless.EntityFramework.Core/README.md) | Provider-neutral EF converters, primitive mappings, and query helpers without `HeadlessDbContext` |
 | [Headless.EntityFramework.Messaging](src/Headless.EntityFramework.Messaging/README.md) | EF Core outbox dispatcher — atomic integration-event writes on save |
 | [Headless.Couchbase](src/Headless.Couchbase/README.md) | Couchbase data-access utilities |
 
 ### Payments
 
-Payment gateway integrations for the MENA region. Cash-in (collection) and cash-out (disbursement) flows through Paymob.
+Payment gateway integrations for the MENA region: cash-in (collection) and cash-out (disbursement) through Paymob.
 
 | Package | Description |
 |---------|-------------|
@@ -416,7 +478,7 @@ Payment gateway integrations for the MENA region. Cash-in (collection) and cash-
 
 ### Permissions
 
-Dynamic, database-backed permission system. Define permissions as code, store assignments in EF Core, and query access control at runtime.
+Database-backed permission system. Define permissions as code, store assignments in your database, and query access control at runtime.
 
 | Package | Description |
 |---------|-------------|
@@ -429,7 +491,7 @@ Dynamic, database-backed permission system. Define permissions as code, store as
 
 ### Push Notifications
 
-Send push notifications through Firebase Cloud Messaging with a clean abstraction. Includes a no-op dev provider for local testing.
+Firebase Cloud Messaging behind a clean abstraction, with a no-op dev provider for local testing.
 
 | Package | Description |
 |---------|-------------|
@@ -454,7 +516,7 @@ Coordinate access to shared resources across distributed services.
 
 ### Coordination
 
-Cluster membership and liveness tracking — know which nodes are alive across a distributed deployment, with pluggable relational and Redis backends.
+Cluster membership and liveness tracking. Know which nodes are alive across a distributed deployment.
 
 | Package | Description |
 |---------|-------------|
@@ -467,7 +529,7 @@ Cluster membership and liveness tracking — know which nodes are alive across a
 
 ### Unit of Work
 
-Explicit, scoped unit of work: begin it on the line you choose, do business work, and complete it — outbox dispatch and durable jobs enlisted inside it drain atomically on commit and discard on rollback.
+Explicit, scoped unit of work: begin it on the line you choose, do business work, and complete it. Outbox dispatch and durable jobs enlisted inside it drain atomically on commit and discard on rollback.
 
 | Package | Description |
 |---------|-------------|
@@ -479,7 +541,7 @@ Explicit, scoped unit of work: begin it on the line you choose, do business work
 
 ### Serialization
 
-Pluggable serialization with providers for System.Text.Json and MessagePack. Use the same interface for JSON APIs and binary wire formats.
+One interface for JSON APIs and binary wire formats.
 
 | Package | Description |
 |---------|-------------|
@@ -489,7 +551,7 @@ Pluggable serialization with providers for System.Text.Json and MessagePack. Use
 
 ### Settings
 
-Dynamic application settings stored in a database. Change configuration at runtime without redeployment, with caching and change notification support.
+Dynamic application settings stored in a database. Change configuration at runtime, with caching and change notification.
 
 | Package | Description |
 |---------|-------------|
@@ -501,7 +563,7 @@ Dynamic application settings stored in a database. Change configuration at runti
 
 ### SMS
 
-Send SMS messages through a unified interface with providers for major regional and global carriers.
+One interface with providers for major regional and global carriers.
 
 | Package | Description |
 |---------|-------------|
@@ -518,7 +580,7 @@ Send SMS messages through a unified interface with providers for major regional 
 
 ### SQL
 
-Lightweight connection factories for raw SQL access when you need to drop below the ORM. Supports PostgreSQL, SQL Server, and SQLite.
+Connection factories for raw SQL access when you need to drop below the ORM.
 
 | Package | Description |
 |---------|-------------|
@@ -530,7 +592,7 @@ Lightweight connection factories for raw SQL access when you need to drop below 
 
 ### Testing
 
-Test infrastructure and utilities — base classes, builders, fixtures, and Testcontainers integration for real-database integration tests.
+Base classes, builders, fixtures, and Testcontainers integration for real-database integration tests.
 
 | Package | Description |
 |---------|-------------|
@@ -540,7 +602,7 @@ Test infrastructure and utilities — base classes, builders, fixtures, and Test
 
 ### TUS (Resumable Uploads)
 
-[TUS protocol](https://tus.io) support for reliable, resumable file uploads. Handles large files gracefully with Azure Blob Storage and distributed locking.
+[TUS protocol](https://tus.io) support for resumable file uploads, with Azure Blob Storage and distributed locking.
 
 | Package | Description |
 |---------|-------------|
@@ -550,7 +612,7 @@ Test infrastructure and utilities — base classes, builders, fixtures, and Test
 
 ### Utilities
 
-Cross-cutting utilities that don't belong to a specific domain — validation extensions, source generators, hosting helpers, geospatial, and more.
+Cross-cutting utilities that belong to no single domain.
 
 | Package | Description |
 |---------|-------------|
@@ -566,27 +628,10 @@ Cross-cutting utilities that don't belong to a specific domain — validation ex
 | [Headless.Slugs](src/Headless.Slugs/README.md) | URL slug generation |
 | [Headless.Urls](src/Headless.Urls/README.md) | Fluent URL builder and parser |
 
-## Extending Headless
+</details>
 
-Provider packages are ordinary NuGet packages. To add a custom backend, implement the domain abstraction, expose a `Use{Provider}` setup extension that matches the family builder, and keep concrete provider details at the composition root. See the package README for the closest provider in the same domain before adding a new one.
-
-## Using Headless with AI Agents
-
-If your project uses Headless packages, add the following to your `AGENTS.md` or `CLAUDE.md` so AI coding agents can fetch the correct documentation on demand:
-
-```markdown
-## Headless Framework
-
-This project uses [Headless .NET Framework](https://github.com/xshaheen/headless-framework).
-
-When working with Headless packages, fetch the docs index:
-https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/index.md
-
-The index lists per-domain docs to fetch as needed.
-```
-
-The index contains the framework's agent rules and links to per-domain documentation under [`docs/llms/`](docs/llms/).
+The canonical package list lives in [`eng/expected-packages.txt`](eng/expected-packages.txt), one ID per packable project.
 
 ## Contributing
 
-Contributions are welcome — issues, feature requests, and PRs. See individual package READMEs for package-specific details.
+Issues, feature requests, and pull requests are welcome. Read the README of the package you are changing first — each one documents its dependencies, side effects, and provider limits.
