@@ -55,14 +55,12 @@ public sealed class SqlServerDistributedLockSetupTests : TestBase
     }
 
     [Theory]
-    [InlineData("", "dbo", "prefix:", 30)] // empty connection string
-    [InlineData("Server=localhost;", "invalid schema name!", "prefix:", 30)] // invalid schema identifier
-    [InlineData("Server=localhost;", "dbo", "", 30)] // empty prefix
-    [InlineData("Server=localhost;", "dbo", "prefix:", 0)] // zero timeout
-    [InlineData("Server=localhost;", "dbo", "prefix:", -5)] // negative timeout
+    [InlineData("", "prefix:", 30)] // empty connection string
+    [InlineData("Server=localhost;", "", 30)] // empty prefix
+    [InlineData("Server=localhost;", "prefix:", 0)] // zero timeout
+    [InlineData("Server=localhost;", "prefix:", -5)] // negative timeout
     public void should_fail_validation_when_options_are_invalid(
         string connectionString,
-        string schema,
         string keyPrefix,
         int commandTimeoutSeconds
     )
@@ -74,7 +72,6 @@ public sealed class SqlServerDistributedLockSetupTests : TestBase
             setup.UseSqlServer(options =>
             {
                 options.ConnectionString = connectionString;
-                options.Schema = schema;
                 options.KeyPrefix = keyPrefix;
                 options.CommandTimeout = TimeSpan.FromSeconds(commandTimeoutSeconds);
             })
@@ -84,6 +81,29 @@ public sealed class SqlServerDistributedLockSetupTests : TestBase
 
         // when
         var act = () => provider.GetRequiredService<IOptions<SqlServerDistributedLockOptions>>().Value;
+
+        // then
+        act.Should().Throw<OptionsValidationException>();
+    }
+
+    [Theory]
+    [InlineData("invalid schema name!")]
+    [InlineData("")]
+    public void should_fail_validation_when_storage_schema_is_not_a_sql_server_identifier(string schema)
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessDistributedLocks(setup =>
+            setup
+                .ConfigureStorage(storage => storage.Schema = schema)
+                .UseSqlServer(options => options.ConnectionString = "Server=localhost;")
+        );
+
+        using var provider = services.BuildServiceProvider();
+
+        // when
+        var act = () => provider.GetRequiredService<IOptions<DistributedLocksStorageOptions>>().Value;
 
         // then
         act.Should().Throw<OptionsValidationException>();

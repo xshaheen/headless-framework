@@ -27,8 +27,10 @@ public sealed class PostgreSqlMembershipFixture
         await base.InitializeAsync();
         await using var connection = new NpgsqlConnection(ConnectionString);
         await connection.OpenAsync(CancellationToken.None);
+        // The membership tables now live in the feature-owned schema, so drop the schema itself rather than
+        // three names that would resolve through search_path to whatever the old default was.
         await using var command = new NpgsqlCommand(
-            "DROP TABLE IF EXISTS coordination_liveness, coordination_descriptor, coordination_node_generation CASCADE;",
+            $"""DROP SCHEMA IF EXISTS "{CoordinationStorageOptions.DefaultSchema}" CASCADE;""",
             connection
         );
 

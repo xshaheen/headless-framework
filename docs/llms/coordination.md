@@ -157,6 +157,20 @@ Applications normally use a provider package and call `AddHeadlessCoordination(s
 
 Set `HeartbeatInterval < SuspicionThreshold < DeadThreshold`; `DeadThreshold` must be at least three heartbeat intervals (a single missed or slow beat must not kill the node), and `DeadRetentionWindow` must be at least two heartbeat intervals.
 
+Storage naming is a separate, feature-owned options type. `CoordinationStorageOptions.Schema` (default `"coordination"`) names the database schema that holds the membership tables, and it is configured through the setup builder rather than through any one provider:
+
+```csharp
+services.AddHeadlessCoordination(setup =>
+{
+    setup.ConfigureStorage(storage => storage.Schema = "cluster_meta");
+    setup.UsePostgreSql(connectionString); // or UseSqlServer(...)
+});
+```
+
+`setup.ConfigureStorage(configuration)` binds the same options from configuration — pass the `Headless:Coordination:Storage` section to bind `Headless:Coordination:Storage:Schema`.
+
+Coordination owns the setting so the membership tables land in the same schema whichever relational provider backs them; the provider package contributes only the dialect rules the schema is validated against on startup (PostgreSQL's 63-character unquoted-identifier rules, SQL Server's 128-character regular-identifier rules). Redis ignores the option entirely. The trade-off: a schema name valid on one provider can be rejected on the other, and that failure surfaces at startup rather than at first write.
+
 ### Dependencies
 
 - `Headless.Coordination.Abstractions`
@@ -260,6 +274,8 @@ services.AddHeadlessCoordination(setup =>
 ### Configuration
 
 Configure shared `CoordinationOptions` with `setup.Configure(...)`. Configure `PostgreSqlCoordinationOptions.ConnectionString`, optional `DataSource`, `CommandTimeout`, and `InitializeOnStartup` with `setup.UsePostgreSql(...)`.
+
+The schema is not a provider option: set it with `setup.ConfigureStorage(storage => storage.Schema = "…")` (default `"coordination"`). The initializer creates that schema when absent and every statement names its tables as `"schema"."table"`, so the provider no longer depends on `search_path`. The provider validates the schema against PostgreSQL's unquoted-identifier rules at startup.
 
 ### Dependencies
 
@@ -386,7 +402,9 @@ services.AddHeadlessCoordination(setup =>
 
 ### Configuration
 
-Configure shared `CoordinationOptions` with `setup.Configure(...)`. Configure `ConnectionString`, `Schema` (`dbo` by default), `CommandTimeout`, and `InitializeOnStartup` with `setup.UseSqlServer(...)`.
+Configure shared `CoordinationOptions` with `setup.Configure(...)`. Configure `ConnectionString`, `CommandTimeout`, and `InitializeOnStartup` with `setup.UseSqlServer(...)`.
+
+The schema is not a provider option: set it with `setup.ConfigureStorage(storage => storage.Schema = "…")`. The default is the feature name `"coordination"`, not `dbo` — the initializer creates the schema when absent. The provider validates the schema against SQL Server's regular-identifier rules at startup.
 
 ### Dependencies
 

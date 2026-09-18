@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using FluentValidation;
 using Headless.Checks;
+using Headless.Constants;
 using Headless.Coordination.PostgreSql;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -105,10 +107,19 @@ public static class SetupPostgreSqlCoordination
 
     private static void _AddPostgreSqlCoordinationProviderCore(IServiceCollection services)
     {
+        services.AddOptions<CoordinationStorageOptions, PostgreSqlCoordinationStorageOptionsValidator>();
         services.TryAddSingleton<IMembershipStore>(static sp => sp.GetRequiredService<PostgreSqlMembershipStore>());
         services.TryAddSingleton<IMembershipStorageInitializer>(static sp =>
             sp.GetRequiredService<PostgreSqlMembershipStorageInitializer>()
         );
         services.AddInitializerHostedService<PostgreSqlMembershipStorageInitializer>();
+    }
+
+    private sealed class PostgreSqlCoordinationStorageOptionsValidator : AbstractValidator<CoordinationStorageOptions>
+    {
+        public PostgreSqlCoordinationStorageOptionsValidator()
+        {
+            RuleFor(x => x.Schema).IsValidIdentifierFor(StorageProvider.PostgreSql);
+        }
     }
 }

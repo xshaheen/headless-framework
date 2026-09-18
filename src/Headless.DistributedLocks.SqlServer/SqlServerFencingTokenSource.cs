@@ -28,9 +28,10 @@ namespace Headless.DistributedLocks.SqlServer;
 /// supplied, <see cref="NextAsync"/> reuses it to avoid opening a second connection per exclusive acquire.
 /// </para>
 /// </remarks>
-internal sealed class SqlServerFencingTokenSource(IOptions<SqlServerDistributedLockOptions> options)
-    : IFencingTokenSource,
-        IDisposable
+internal sealed class SqlServerFencingTokenSource(
+    IOptions<SqlServerDistributedLockOptions> options,
+    IOptions<DistributedLocksStorageOptions> storageOptions
+) : IFencingTokenSource, IDisposable
 {
     private readonly SemaphoreSlim _ensureGate = new(1, 1);
     private bool _sequenceEnsured;
@@ -83,7 +84,7 @@ internal sealed class SqlServerFencingTokenSource(IOptions<SqlServerDistributedL
         await using var command = connection.CreateCommand();
         command.CommandTimeout = SqlServerApplicationLock.GetCommandTimeoutSeconds(options.Value.CommandTimeout);
         command.CommandText =
-            $"SELECT NEXT VALUE FOR {SqlServerIdentifier.Quote(options.Value.Schema)}.{SqlServerIdentifier.Quote(SqlServerIdentifier.FenceSequenceName(options.Value.KeyPrefix))}";
+            $"SELECT NEXT VALUE FOR {SqlServerIdentifier.Quote(storageOptions.Value.Schema)}.{SqlServerIdentifier.Quote(SqlServerIdentifier.FenceSequenceName(options.Value.KeyPrefix))}";
 
         return Convert.ToInt64(
             await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false),
@@ -108,7 +109,7 @@ internal sealed class SqlServerFencingTokenSource(IOptions<SqlServerDistributedL
             }
 
             await SqlServerDistributedLocksStorageInitializer
-                .EnsureSequenceAsync(connection, options.Value, cancellationToken)
+                .EnsureSequenceAsync(connection, options.Value, storageOptions.Value.Schema, cancellationToken)
                 .ConfigureAwait(false);
             Volatile.Write(ref _sequenceEnsured, value: true);
         }

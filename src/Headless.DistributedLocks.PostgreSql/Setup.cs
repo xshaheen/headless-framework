@@ -1,7 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using FluentValidation;
 using Headless.Abstractions;
 using Headless.Checks;
+using Headless.Constants;
 using Headless.DistributedLocks.PostgreSql;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -159,6 +161,7 @@ public static class SetupPostgreSqlDistributedLocks
 
     private static IServiceCollection _AddPostgreSqlDistributedLocksCore(IServiceCollection services)
     {
+        services.AddOptions<DistributedLocksStorageOptions, PostgreSqlDistributedLocksStorageOptionsValidator>();
         services.TryAddSingleton(TimeProvider.System);
         services.AddHeadlessGuidGenerator();
 
@@ -195,5 +198,14 @@ public static class SetupPostgreSqlDistributedLocks
         services.TryAddSingleton<IDistributedReadWriteLock, ConnectionScopedReadWriteLock>();
 
         return services;
+    }
+
+    private sealed class PostgreSqlDistributedLocksStorageOptionsValidator
+        : AbstractValidator<DistributedLocksStorageOptions>
+    {
+        public PostgreSqlDistributedLocksStorageOptionsValidator()
+        {
+            RuleFor(x => x.Schema).IsValidIdentifierFor(StorageProvider.PostgreSql);
+        }
     }
 }

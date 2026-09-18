@@ -472,6 +472,20 @@ options.PollingCadenceFraction = 0.5;
 options.AutoExtensionCadenceFraction = 1.0 / 3.0;
 ```
 
+Storage naming is a separate, feature-owned options type. `DistributedLocksStorageOptions.Schema` (default `"locks"`) names the database schema that holds the fencing sequence, and it is configured on the setup builder rather than on any one provider:
+
+```csharp
+services.AddHeadlessDistributedLocks(setup =>
+{
+    setup.ConfigureStorage(storage => storage.Schema = "app_locks");
+    setup.UsePostgreSql(connectionString); // or UseSqlServer(...)
+});
+```
+
+`setup.ConfigureStorage(configuration)` binds the same options from configuration — pass the `Headless:DistributedLocks:Storage` section to bind `Headless:DistributedLocks:Storage:Schema`.
+
+The feature owns the setting so the fencing sequence lands in the same schema whichever relational provider backs it; the provider package contributes only the dialect rules the schema is validated against on startup. Redis and in-memory providers create no schema-bound object and ignore it. The trade-off: a schema name valid on one provider can be rejected on the other, and that failure surfaces at startup rather than at first acquire.
+
 Use `DistributedLockAcquireOptions` to override per-call expiration, acquire timeout, monitoring, and dispose behavior:
 
 ```csharp
@@ -715,6 +729,18 @@ options.EnablePushWakeup = true;
 options.KeepAlive = TimeSpan.FromSeconds(30); // applied only to a provider-built DataSource
 ```
 
+The fencing sequence's schema is not a provider option. Set it on the feature:
+
+```csharp
+services.AddHeadlessDistributedLocks(setup =>
+{
+    setup.ConfigureStorage(storage => storage.Schema = "app_locks");
+    setup.UsePostgreSql(connectionString);
+});
+```
+
+The default is the feature name `"locks"`. Earlier versions of this provider had no schema setting at all and created `headless_distributed_locks_fence` unqualified, so it landed wherever `search_path` pointed; it is now created inside the configured schema (which the provider creates when absent) and read back as `"schema"."headless_distributed_locks_fence"`. The provider validates the schema against PostgreSQL's unquoted-identifier rules at startup.
+
 ### Dependencies
 
 - `Headless.DistributedLocks.Core.Database`
@@ -868,11 +894,22 @@ await transaction.CommitAsync(ct);
 
 ```csharp
 options.ConnectionString = "..."; // required
-options.Schema = "dbo"; // fencing sequence schema
 options.KeyPrefix = "distributed-lock:";
 options.CommandTimeout = TimeSpan.FromSeconds(30);
 options.EnableFencing = true;
 ```
+
+The fencing sequence's schema is not a provider option. Set it on the feature:
+
+```csharp
+services.AddHeadlessDistributedLocks(setup =>
+{
+    setup.ConfigureStorage(storage => storage.Schema = "app_locks");
+    setup.UseSqlServer(connectionString);
+});
+```
+
+The default is the feature name `"locks"`, not `dbo`; the initializer creates the schema when absent. The provider validates it against SQL Server's regular-identifier rules at startup.
 
 ### Dependencies
 

@@ -11,6 +11,9 @@ namespace Tests;
 public sealed class PostgresFencingConcurrentInitTests(PostgreSqlDistributedLockFixture fixture) : TestBase
 {
     private const string _SequenceName = "headless_distributed_locks_fence";
+    private const string _QualifiedSequence = $"""
+        "{DistributedLocksStorageOptions.DefaultSchema}"."{_SequenceName}"
+        """;
 
     [Fact]
     public async Task should_initialize_fence_sequence_safely_when_many_first_acquirers_race()
@@ -79,7 +82,7 @@ public sealed class PostgresFencingConcurrentInitTests(PostgreSqlDistributedLock
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         await using var command = connection.CreateCommand();
-        command.CommandText = $"DROP SEQUENCE IF EXISTS {_SequenceName}";
+        command.CommandText = $"DROP SEQUENCE IF EXISTS {_QualifiedSequence}";
         await command.ExecuteNonQueryAsync(AbortToken);
     }
 

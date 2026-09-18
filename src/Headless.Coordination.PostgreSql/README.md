@@ -45,6 +45,8 @@ services.AddHeadlessCoordination(setup =>
 
 Configure shared `CoordinationOptions` with `setup.Configure(...)`. Configure `PostgreSqlCoordinationOptions.ConnectionString`, optional `DataSource`, `CommandTimeout`, and `InitializeOnStartup` with `setup.UsePostgreSql(...)`.
 
+The schema is not a provider option: set it with `setup.ConfigureStorage(storage => storage.Schema = "…")` (default `"coordination"`). The initializer creates that schema when absent and every statement names its tables as `"schema"."table"`, so the provider no longer depends on `search_path`. The provider validates the schema against PostgreSQL's unquoted-identifier rules at startup.
+
 ## Dependencies
 
 - `Headless.Coordination.Core.Database`

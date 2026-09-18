@@ -13,21 +13,11 @@ namespace Headless.DistributedLocks.SqlServer;
 [PublicAPI]
 public sealed class SqlServerDistributedLockOptions
 {
-    /// <summary>Default SQL Server schema used for the fencing sequence object when <see cref="Schema"/> is not overridden.</summary>
-    public const string DefaultSchema = "dbo";
-
     /// <summary>
     /// SQL Server connection string used to open dedicated connections for lock acquisition and the fencing
     /// sequence. Must not be <see langword="null"/> or empty; validated on startup.
     /// </summary>
     public string? ConnectionString { get; set; }
-
-    /// <summary>
-    /// SQL Server schema that hosts the fencing sequence created by
-    /// <see cref="SqlServerDistributedLocksStorageInitializer"/>. Defaults to <see cref="DefaultSchema"/>
-    /// (<c>"dbo"</c>). Must be a valid SQL Server identifier; validated on startup.
-    /// </summary>
-    public string Schema { get; set; } = DefaultSchema;
 
     /// <summary>
     /// Prefix prepended to every resource name before encoding. Allows multiple logical namespaces to
@@ -62,7 +52,6 @@ internal sealed class SqlServerDistributedLockOptionsValidator : AbstractValidat
     public SqlServerDistributedLockOptionsValidator()
     {
         RuleFor(x => x.ConnectionString).NotEmpty();
-        RuleFor(x => x.Schema).IsValidSqlServerIdentifier();
         RuleFor(x => x.KeyPrefix).NotEmpty();
         RuleFor(x => x.CommandTimeout).GreaterThan(TimeSpan.Zero).LessThanOrEqualTo(TimeSpan.FromMinutes(10));
     }

@@ -15,6 +15,7 @@ namespace Headless.Coordination.SqlServer;
 #pragma warning disable CA2100 // SQL text is built from validated schema plus internal table constants.
 internal sealed class SqlServerMembershipStore(
     IOptions<SqlServerCoordinationOptions> providerOptions,
+    IOptions<CoordinationStorageOptions> storageOptions,
     IOptions<CoordinationOptions> coordinationOptions,
     [FromKeyedServices(CoordinationOptions.JsonSerializerServiceKey)] IJsonSerializer serializer,
     TimeProvider timeProvider,
@@ -28,11 +29,11 @@ internal sealed class SqlServerMembershipStore(
     // singleton), so the per-tick paths (heartbeat, liveness reads, retention prune) precompute their command
     // text once instead of rebuilding ~40-line strings every beat. The lifecycle paths (allocate/upsert/leave)
     // run once per node and keep building inline.
-    private readonly string _heartbeatSql = _BuildHeartbeatSql(providerOptions.Value.Schema);
-    private readonly string _readLivenessSql = _BuildReadLivenessSql(providerOptions.Value.Schema);
-    private readonly string _readNodeLivenessSql = _BuildReadNodeLivenessSql(providerOptions.Value.Schema);
-    private readonly string _readLiveNodesSql = _BuildReadLiveNodesSql(providerOptions.Value.Schema);
-    private readonly string _pruneExpiredRowsSql = _BuildPruneExpiredRowsSql(providerOptions.Value.Schema);
+    private readonly string _heartbeatSql = _BuildHeartbeatSql(storageOptions.Value.Schema);
+    private readonly string _readLivenessSql = _BuildReadLivenessSql(storageOptions.Value.Schema);
+    private readonly string _readNodeLivenessSql = _BuildReadNodeLivenessSql(storageOptions.Value.Schema);
+    private readonly string _readLiveNodesSql = _BuildReadLiveNodesSql(storageOptions.Value.Schema);
+    private readonly string _pruneExpiredRowsSql = _BuildPruneExpiredRowsSql(storageOptions.Value.Schema);
 
     protected override async ValueTask<NodeIncarnation> AllocateIncarnationCoreAsync(
         string clusterName,
@@ -377,7 +378,7 @@ internal sealed class SqlServerMembershipStore(
 
     private string _Qualified(string table)
     {
-        return SqlServerCoordinationIdentifier.Qualified(providerOptions.Value.Schema, table);
+        return SqlServerCoordinationIdentifier.Qualified(storageOptions.Value.Schema, table);
     }
 
     private static string _BuildHeartbeatSql(string schema)

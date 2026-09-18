@@ -5,6 +5,18 @@ namespace Headless.Coordination.PostgreSql;
 /// <summary>PostgreSQL physical identifiers for coordination membership.</summary>
 internal static class PostgreSqlMembershipSchema
 {
+    /// <summary>
+    /// Returns the double-quoted <c>"schema"."table"</c> identifier. Quoting is required rather than cosmetic:
+    /// PostgreSQL case-folds unquoted identifiers, so a mixed-case schema would be created under one name and
+    /// referenced under another.
+    /// </summary>
+    public static string Qualified(string schema, string table)
+    {
+        return $"""
+            "{schema}"."{table}"
+            """;
+    }
+
     public const string ClusterName = "cluster_name";
     public const string NodeId = "node_id";
     public const string Incarnation = "incarnation";

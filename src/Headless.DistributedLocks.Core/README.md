@@ -65,6 +65,18 @@ options.PollingCadenceFraction = 0.5;
 options.AutoExtensionCadenceFraction = 1.0 / 3.0;
 ```
 
+Storage naming is a separate, feature-owned options type. `DistributedLocksStorageOptions.Schema` (default `"locks"`) names the database schema that holds the fencing sequence, and it is configured on the setup builder rather than on any one provider:
+
+```csharp
+services.AddHeadlessDistributedLocks(setup =>
+{
+    setup.ConfigureStorage(storage => storage.Schema = "app_locks");
+    setup.UsePostgreSql(connectionString); // or UseSqlServer(...)
+});
+```
+
+`setup.ConfigureStorage(configuration)` binds the same options from configuration — pass the `Headless:DistributedLocks:Storage` section to bind `Headless:DistributedLocks:Storage:Schema`. The feature owns the setting so the sequence lands in the same schema whichever relational provider backs it; the provider package contributes only the dialect rules the schema is validated against on startup. Redis and in-memory providers create no schema-bound object and ignore it.
+
 Default lock expiration is 20 minutes and default acquire timeout is 30 seconds; override those per call by passing a `DistributedLockAcquireOptions` instance to `AcquireAsync(...)` or `TryAcquireAsync(...)`. Set `Monitoring = LockMonitoringMode.Monitor` for `LostToken` loss detection and `Monitoring = LockMonitoringMode.AutoExtend` for background renewal.
 
 Use `AutoExtend` when the protected work can exceed the initial TTL and should keep the lease alive while the process is healthy:

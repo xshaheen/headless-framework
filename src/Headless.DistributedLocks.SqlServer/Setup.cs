@@ -1,7 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using FluentValidation;
 using Headless.Abstractions;
 using Headless.Checks;
+using Headless.Constants;
 using Headless.DistributedLocks.SqlServer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -147,6 +149,7 @@ public static class SetupSqlServerDistributedLocks
 
     private static IServiceCollection _AddSqlServerDistributedLocksCore(IServiceCollection services)
     {
+        services.AddOptions<DistributedLocksStorageOptions, SqlServerDistributedLocksStorageOptionsValidator>();
         services.TryAddSingleton(TimeProvider.System);
         services.AddHeadlessGuidGenerator();
         services.TryAddSingleton<SqlServerConnectionScopedLockStorage>();
@@ -181,5 +184,14 @@ public static class SetupSqlServerDistributedLocks
         services.TryAddSingleton<IDistributedReadWriteLock, ConnectionScopedReadWriteLock>();
 
         return services;
+    }
+
+    private sealed class SqlServerDistributedLocksStorageOptionsValidator
+        : AbstractValidator<DistributedLocksStorageOptions>
+    {
+        public SqlServerDistributedLocksStorageOptionsValidator()
+        {
+            RuleFor(x => x.Schema).IsValidIdentifierFor(StorageProvider.SqlServer);
+        }
     }
 }

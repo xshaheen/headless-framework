@@ -11,6 +11,11 @@ namespace Tests;
 [Collection<PostgreSqlMembershipFixture>]
 public sealed class PostgreSqlMembershipNativeTests(PostgreSqlMembershipFixture fixture) : TestBase
 {
+    private const string _Schema = CoordinationStorageOptions.DefaultSchema;
+    private const string _GenerationTable = $"\"{_Schema}\".\"coordination_node_generation\"";
+    private const string _DescriptorTable = $"\"{_Schema}\".\"coordination_descriptor\"";
+    private const string _LivenessTable = $"\"{_Schema}\".\"coordination_liveness\"";
+
     [Fact]
     public async Task should_create_snake_case_membership_schema_identifiers()
     {
@@ -20,20 +25,20 @@ public sealed class PostgreSqlMembershipNativeTests(PostgreSqlMembershipFixture 
 
         var tables = await _ReadStringsAsync(
             connection,
-            """
+            $$"""
             SELECT table_name
             FROM information_schema.tables
-            WHERE table_schema = 'public'
+            WHERE table_schema = '{{_Schema}}'
               AND table_name LIKE 'coordination_%'
             ORDER BY table_name;
             """
         );
         var columns = await _ReadStringsAsync(
             connection,
-            """
+            $$"""
             SELECT column_name
             FROM information_schema.columns
-            WHERE table_schema = 'public'
+            WHERE table_schema = '{{_Schema}}'
               AND table_name IN ('coordination_descriptor', 'coordination_liveness', 'coordination_node_generation')
             ORDER BY column_name;
             """
@@ -69,18 +74,18 @@ public sealed class PostgreSqlMembershipNativeTests(PostgreSqlMembershipFixture 
 
         var columns = await _ReadStringsAsync(
             connection,
-            """
+            $$"""
             SELECT column_name
             FROM information_schema.columns
-            WHERE table_schema = 'public'
+            WHERE table_schema = '{{_Schema}}'
               AND table_name IN ('coordination_descriptor', 'coordination_node_generation');
             """
         );
         await using var command = new NpgsqlCommand(
-            """
+            $$"""
             SELECT count(*)
-            FROM coordination_node_generation generation
-            JOIN coordination_descriptor descriptor USING (cluster_name, node_id)
+            FROM {{_GenerationTable}} generation
+            JOIN {{_DescriptorTable}} descriptor USING (cluster_name, node_id)
             WHERE generation.updated_at = @updatedAt
               AND descriptor.created_at = @createdAt;
             """,
@@ -179,12 +184,12 @@ public sealed class PostgreSqlMembershipNativeTests(PostgreSqlMembershipFixture 
         await connection.OpenAsync(AbortToken);
         var livenessRows = await _CountClusterRowsAsync(
             connection,
-            "SELECT count(*) FROM coordination_liveness WHERE cluster_name = @ClusterName;",
+            $"SELECT count(*) FROM {_LivenessTable} WHERE cluster_name = @ClusterName;",
             cluster
         );
         var descriptorRows = await _CountClusterRowsAsync(
             connection,
-            "SELECT count(*) FROM coordination_descriptor WHERE cluster_name = @ClusterName;",
+            $"SELECT count(*) FROM {_DescriptorTable} WHERE cluster_name = @ClusterName;",
             cluster
         );
 
@@ -311,7 +316,7 @@ public sealed class PostgreSqlMembershipNativeTests(PostgreSqlMembershipFixture 
         await connection.OpenAsync(AbortToken);
         var livenessRows = await _CountClusterRowsAsync(
             connection,
-            "SELECT count(*) FROM coordination_liveness WHERE cluster_name = @ClusterName;",
+            $"SELECT count(*) FROM {_LivenessTable} WHERE cluster_name = @ClusterName;",
             cluster
         );
 
@@ -337,10 +342,7 @@ public sealed class PostgreSqlMembershipNativeTests(PostgreSqlMembershipFixture 
     {
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
-        await using var command = new NpgsqlCommand(
-            "DROP TABLE IF EXISTS coordination_liveness, coordination_descriptor, coordination_node_generation CASCADE;",
-            connection
-        );
+        await using var command = new NpgsqlCommand($"""DROP SCHEMA IF EXISTS "{_Schema}" CASCADE;""", connection);
 
         await command.ExecuteNonQueryAsync(AbortToken);
     }
@@ -349,16 +351,19 @@ public sealed class PostgreSqlMembershipNativeTests(PostgreSqlMembershipFixture 
     {
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
+        // The legacy tables are created inside the feature-owned schema, which is where the initializer's
+        // rename migration now looks for them.
         await using var command = new NpgsqlCommand(
-            """
-            CREATE TABLE coordination_node_generation (
+            $$"""
+            CREATE SCHEMA IF NOT EXISTS "{{_Schema}}";
+            CREATE TABLE {{_GenerationTable}} (
                 cluster_name varchar(200) NOT NULL,
                 node_id varchar(400) NOT NULL,
                 current_incarnation bigint NOT NULL,
                 date_updated timestamptz NOT NULL,
                 PRIMARY KEY (cluster_name, node_id)
             );
-            CREATE TABLE coordination_descriptor (
+            CREATE TABLE {{_DescriptorTable}} (
                 cluster_name varchar(200) NOT NULL,
                 node_id varchar(400) NOT NULL,
                 incarnation bigint NOT NULL,
@@ -369,8 +374,8 @@ public sealed class PostgreSqlMembershipNativeTests(PostgreSqlMembershipFixture 
                 date_created timestamptz NOT NULL,
                 PRIMARY KEY (cluster_name, node_id, incarnation)
             );
-            INSERT INTO coordination_node_generation VALUES ('legacy', 'node-a', 1, @updatedAt);
-            INSERT INTO coordination_descriptor
+            INSERT INTO {{_GenerationTable}} VALUES ('legacy', 'node-a', 1, @updatedAt);
+            INSERT INTO {{_DescriptorTable}}
                 (cluster_name, node_id, incarnation, date_created)
             VALUES ('legacy', 'node-a', 1, @createdAt);
             """,
@@ -383,10 +388,10 @@ public sealed class PostgreSqlMembershipNativeTests(PostgreSqlMembershipFixture 
 
     private async Task<long> _CountTablesAsync(NpgsqlConnection connection, string tableName)
     {
-        const string sql = """
+        const string sql = $$"""
             SELECT count(*)
             FROM information_schema.tables
-            WHERE table_schema = 'public'
+            WHERE table_schema = '{{_Schema}}'
               AND table_name = @TableName;
             """;
 
@@ -398,10 +403,10 @@ public sealed class PostgreSqlMembershipNativeTests(PostgreSqlMembershipFixture 
 
     private async Task<long> _CountIndexesAsync(NpgsqlConnection connection, string indexName)
     {
-        const string sql = """
+        const string sql = $$"""
             SELECT count(*)
             FROM pg_indexes
-            WHERE schemaname = 'public'
+            WHERE schemaname = '{{_Schema}}'
               AND indexname = @IndexName;
             """;
 
@@ -427,9 +432,9 @@ public sealed class PostgreSqlMembershipNativeTests(PostgreSqlMembershipFixture 
 
     private async Task<long> _ReadCurrentIncarnationAsync(string connectionString, string cluster)
     {
-        const string sql = """
+        const string sql = $$"""
             SELECT current_incarnation
-            FROM coordination_node_generation
+            FROM {{_GenerationTable}}
             WHERE cluster_name = @ClusterName
               AND node_id = 'node-a';
             """;

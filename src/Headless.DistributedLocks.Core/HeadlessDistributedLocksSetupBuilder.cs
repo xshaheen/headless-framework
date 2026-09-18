@@ -93,6 +93,46 @@ public sealed class HeadlessDistributedLocksSetupBuilder
     }
 
     /// <summary>
+    /// Configures <see cref="DistributedLocksStorageOptions"/> (the schema the fencing sequence lives in) using
+    /// the supplied delegate. Applies to every relational provider; providers that create no schema-bound object
+    /// ignore it.
+    /// </summary>
+    /// <param name="configure">Delegate that mutates the storage options instance.</param>
+    /// <returns>The same <see cref="HeadlessDistributedLocksSetupBuilder"/> for chaining.</returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="configure"/> is <see langword="null"/>.
+    /// </exception>
+    public HeadlessDistributedLocksSetupBuilder ConfigureStorage(Action<DistributedLocksStorageOptions> configure)
+    {
+        Argument.IsNotNull(configure);
+
+        // No validator here: the selected provider attaches the one that knows its dialect, so the same
+        // schema string is checked against PostgreSQL or SQL Server identifier rules, never both.
+        Services.Configure(configure);
+
+        return this;
+    }
+
+    /// <summary>
+    /// Binds <see cref="DistributedLocksStorageOptions"/> from the supplied <see cref="IConfiguration"/>
+    /// section — pass the <c>Headless:DistributedLocks:Storage</c> section to bind
+    /// <c>Headless:DistributedLocks:Storage:Schema</c>.
+    /// </summary>
+    /// <param name="configuration">The configuration section whose values are bound to the storage options.</param>
+    /// <returns>The same <see cref="HeadlessDistributedLocksSetupBuilder"/> for chaining.</returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="configuration"/> is <see langword="null"/>.
+    /// </exception>
+    public HeadlessDistributedLocksSetupBuilder ConfigureStorage(IConfiguration configuration)
+    {
+        Argument.IsNotNull(configuration);
+
+        Services.Configure<DistributedLocksStorageOptions>(configuration);
+
+        return this;
+    }
+
+    /// <summary>
     /// Registers a backend provider extension. Exactly one extension must be registered;
     /// <see cref="SetupDistributedLocks"/> enforces this constraint at setup time.
     /// Provider packages call this method from their <c>Use*</c> builder extensions — callers

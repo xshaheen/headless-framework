@@ -6,32 +6,34 @@ using Microsoft.Extensions.Options;
 namespace Headless.Coordination.SqlServer;
 
 #pragma warning disable CA2100 // SQL text is built from validated schema plus internal table constants.
-internal sealed class SqlServerMembershipStorageInitializer(IOptions<SqlServerCoordinationOptions> providerOptions)
-    : HostedInitializer,
-        IMembershipStorageInitializer
+internal sealed class SqlServerMembershipStorageInitializer(
+    IOptions<SqlServerCoordinationOptions> providerOptions,
+    IOptions<CoordinationStorageOptions> storageOptions
+) : HostedInitializer, IMembershipStorageInitializer
 {
     protected override bool RunOnStartup => providerOptions.Value.InitializeOnStartup;
 
     public override async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
+        var schema = storageOptions.Value.Schema;
+
         await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         await using var command = connection.CreateCommand();
         command.CommandTimeout = DatabaseAdoHelpers.GetCommandTimeoutSeconds(providerOptions.Value.CommandTimeout);
-        command.CommandText = _CreateScript(providerOptions.Value);
+        command.CommandText = _CreateScript(schema);
         command.Parameters.AddWithValue(
             "LockTimeout",
             _GetLockTimeoutMilliseconds(providerOptions.Value.CommandTimeout)
         );
-        command.Parameters.AddWithValue("LockResource", $"headless_coordination_init:{providerOptions.Value.Schema}");
+        command.Parameters.AddWithValue("LockResource", $"headless_coordination_init:{schema}");
 
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private static string _CreateScript(SqlServerCoordinationOptions provider)
+    private static string _CreateScript(string schema)
     {
-        var schema = provider.Schema;
         var generationTable = _Qualified(schema, SqlServerMembershipSchema.Generation.Table);
         var descriptorTable = _Qualified(schema, SqlServerMembershipSchema.Descriptor.Table);
         var livenessTable = _Qualified(schema, SqlServerMembershipSchema.Liveness.Table);

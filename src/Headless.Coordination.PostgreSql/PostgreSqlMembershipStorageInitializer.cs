@@ -11,7 +11,7 @@ namespace Headless.Coordination.PostgreSql;
 #pragma warning disable CA2100 // SQL text is built from internal schema constants only.
 internal sealed partial class PostgreSqlMembershipStorageInitializer(
     IOptions<PostgreSqlCoordinationOptions> providerOptions,
-    IOptions<CoordinationOptions> coordinationOptions,
+    IOptions<CoordinationStorageOptions> storageOptions,
     ILogger<PostgreSqlMembershipStorageInitializer> logger
 ) : HostedInitializer, IMembershipStorageInitializer
 {
@@ -39,10 +39,12 @@ internal sealed partial class PostgreSqlMembershipStorageInitializer(
                 command.CommandTimeout = DatabaseAdoHelpers.GetCommandTimeoutSeconds(
                     providerOptions.Value.CommandTimeout
                 );
-                command.CommandText = _CreateSchemaScript();
+                command.CommandText = _CreateSchemaScript(storageOptions.Value.Schema);
+                // Keyed on the schema, not the cluster: the DDL below creates schema-wide objects, so two
+                // clusters sharing one schema must serialize on the same advisory lock.
                 command.Parameters.AddWithValue(
                     "LockResource",
-                    $"headless_coordination_init:{coordinationOptions.Value.ClusterName}"
+                    $"headless_coordination_init:{storageOptions.Value.Schema}"
                 );
 
                 await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
@@ -69,12 +71,18 @@ internal sealed partial class PostgreSqlMembershipStorageInitializer(
         }
     }
 
-    private static string _CreateSchemaScript()
+    private static string _CreateSchemaScript(string schema)
     {
+        var generationTable = PostgreSqlMembershipSchema.Qualified(schema, PostgreSqlMembershipSchema.Generation.Table);
+        var descriptorTable = PostgreSqlMembershipSchema.Qualified(schema, PostgreSqlMembershipSchema.Descriptor.Table);
+        var livenessTable = PostgreSqlMembershipSchema.Qualified(schema, PostgreSqlMembershipSchema.Liveness.Table);
+
         return $$"""
             SELECT pg_advisory_xact_lock(hashtextextended(@LockResource, 0));
 
-            CREATE TABLE IF NOT EXISTS {{PostgreSqlMembershipSchema.Generation.Table}} (
+            CREATE SCHEMA IF NOT EXISTS "{{schema}}";
+
+            CREATE TABLE IF NOT EXISTS {{generationTable}} (
                 {{PostgreSqlMembershipSchema.ClusterName}} varchar(200) NOT NULL,
                 {{PostgreSqlMembershipSchema.NodeId}} varchar(400) NOT NULL,
                 {{PostgreSqlMembershipSchema.Generation.CurrentIncarnation}} bigint NOT NULL,
@@ -85,7 +93,7 @@ internal sealed partial class PostgreSqlMembershipStorageInitializer(
                 )
             );
 
-            CREATE TABLE IF NOT EXISTS {{PostgreSqlMembershipSchema.Descriptor.Table}} (
+            CREATE TABLE IF NOT EXISTS {{descriptorTable}} (
                 {{PostgreSqlMembershipSchema.ClusterName}} varchar(200) NOT NULL,
                 {{PostgreSqlMembershipSchema.NodeId}} varchar(400) NOT NULL,
                 {{PostgreSqlMembershipSchema.Incarnation}} bigint NOT NULL,
@@ -101,7 +109,7 @@ internal sealed partial class PostgreSqlMembershipStorageInitializer(
                 )
             );
 
-            CREATE TABLE IF NOT EXISTS {{PostgreSqlMembershipSchema.Liveness.Table}} (
+            CREATE TABLE IF NOT EXISTS {{livenessTable}} (
                 {{PostgreSqlMembershipSchema.ClusterName}} varchar(200) NOT NULL,
                 {{PostgreSqlMembershipSchema.NodeId}} varchar(400) NOT NULL,
                 {{PostgreSqlMembershipSchema.Incarnation}} bigint NOT NULL,
@@ -118,37 +126,37 @@ internal sealed partial class PostgreSqlMembershipStorageInitializer(
             BEGIN
                 IF EXISTS (
                     SELECT 1 FROM pg_attribute
-                    WHERE attrelid = to_regclass('{{PostgreSqlMembershipSchema.Generation.Table}}')
+                    WHERE attrelid = to_regclass('{{generationTable}}')
                       AND attname = 'date_updated'
                       AND NOT attisdropped
                 ) AND NOT EXISTS (
                     SELECT 1 FROM pg_attribute
-                    WHERE attrelid = to_regclass('{{PostgreSqlMembershipSchema.Generation.Table}}')
+                    WHERE attrelid = to_regclass('{{generationTable}}')
                       AND attname = '{{PostgreSqlMembershipSchema.UpdatedAt}}'
                       AND NOT attisdropped
                 ) THEN
-                    ALTER TABLE {{PostgreSqlMembershipSchema.Generation.Table}}
+                    ALTER TABLE {{generationTable}}
                         RENAME COLUMN date_updated TO {{PostgreSqlMembershipSchema.UpdatedAt}};
                 END IF;
 
                 IF EXISTS (
                     SELECT 1 FROM pg_attribute
-                    WHERE attrelid = to_regclass('{{PostgreSqlMembershipSchema.Descriptor.Table}}')
+                    WHERE attrelid = to_regclass('{{descriptorTable}}')
                       AND attname = 'date_created'
                       AND NOT attisdropped
                 ) AND NOT EXISTS (
                     SELECT 1 FROM pg_attribute
-                    WHERE attrelid = to_regclass('{{PostgreSqlMembershipSchema.Descriptor.Table}}')
+                    WHERE attrelid = to_regclass('{{descriptorTable}}')
                       AND attname = '{{PostgreSqlMembershipSchema.CreatedAt}}'
                       AND NOT attisdropped
                 ) THEN
-                    ALTER TABLE {{PostgreSqlMembershipSchema.Descriptor.Table}}
+                    ALTER TABLE {{descriptorTable}}
                         RENAME COLUMN date_created TO {{PostgreSqlMembershipSchema.CreatedAt}};
                 END IF;
             END $migration$;
 
             CREATE INDEX IF NOT EXISTS ix_{{PostgreSqlMembershipSchema.Liveness.Table}}_cluster_lastbeat
-                ON {{PostgreSqlMembershipSchema.Liveness.Table}} ({{PostgreSqlMembershipSchema.ClusterName}}, {{PostgreSqlMembershipSchema.Liveness.LastBeat}});
+                ON {{livenessTable}} ({{PostgreSqlMembershipSchema.ClusterName}}, {{PostgreSqlMembershipSchema.Liveness.LastBeat}});
             """;
     }
 

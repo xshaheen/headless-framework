@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using FluentValidation;
 using Headless.Checks;
+using Headless.Constants;
 using Headless.Coordination.SqlServer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -102,10 +104,19 @@ public static class SetupSqlServerCoordination
 
     private static void _AddSqlServerCoordinationProviderCore(IServiceCollection services)
     {
+        services.AddOptions<CoordinationStorageOptions, SqlServerCoordinationStorageOptionsValidator>();
         services.TryAddSingleton<IMembershipStore>(static sp => sp.GetRequiredService<SqlServerMembershipStore>());
         services.TryAddSingleton<IMembershipStorageInitializer>(static sp =>
             sp.GetRequiredService<SqlServerMembershipStorageInitializer>()
         );
         services.AddInitializerHostedService<SqlServerMembershipStorageInitializer>();
+    }
+
+    private sealed class SqlServerCoordinationStorageOptionsValidator : AbstractValidator<CoordinationStorageOptions>
+    {
+        public SqlServerCoordinationStorageOptionsValidator()
+        {
+            RuleFor(x => x.Schema).IsValidIdentifierFor(StorageProvider.SqlServer);
+        }
     }
 }
