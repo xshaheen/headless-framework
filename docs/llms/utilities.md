@@ -122,7 +122,7 @@ var errors = result.Errors.ToErrorDescriptors(); // IReadOnlyDictionary<string, 
 | Date/Time | `InThePast`, `InTheFuture`, `NotInThePast`, `NotInTheFuture`, `MinimumAge` (`DateTime`/`DateTimeOffset`/`DateOnly` + nullable, `TimeProvider`-based) |
 | Enum | `EnumName(typeof(TEnum))` |
 | Safe Text | `NoScripts` |
-| Storage Identifier | `IsValidPostgreSqlIdentifier`, `IsValidSqlServerIdentifier`, `IsValidCrossProviderIdentifier` |
+| Storage Identifier | `IsValidIdentifierFor(StorageProvider)` for a known dialect, `IsValidCrossProviderIdentifier` when the dialect is only known at runtime |
 | ID | `Id` (validates non-empty Guid, positive int/long) |
 
 ### Configuration
