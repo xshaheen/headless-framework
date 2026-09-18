@@ -1,164 +1,67 @@
 # CLAUDE.md
 
-## Project Overview
+## What this repository is
 
-**headless-framework** is a modular .NET 10 framework for building APIs and backend services. Composed of 150+ NuGet packages organized by functional domains (API, Blobs, Caching, Messaging, ORM, etc.). Unopinionated, zero lock-in design.
+**headless-framework** is a modular .NET 10 framework for APIs and backend services: 150+ NuGet packages grouped by domain (API, Blobs, Caching, Messaging, ORM, and more), unopinionated, with no lock-in.
 
-**This is a framework, not a finished application.**
-It is designed to support multiple projects and packages, both internal and external. As such, it may contain abstractions, extension points, and utility classes or methods that are not directly used within this repository. These elements exist deliberately to enable extensibility, customization, and reuse by downstream consumers and future integrations.
+Two facts drive most judgment calls here:
 
-**This is a greenfield project.**
-Prefer simpler, cleaner APIs even when that requires breaking changes. Breaking changes that materially improve correctness or performance are acceptable and recommended over compatibility shims unless explicitly requested otherwise.
+- **It is a framework, not an application.** Abstractions, extension points, and helpers that nothing in this repository calls are deliberate. Downstream consumers and future providers use them. Do not delete a public member because it has no local caller.
+- **It is greenfield.** Prefer a simpler, cleaner API even when that breaks consumers. A breaking change that materially improves correctness or performance beats a compatibility shim, unless the request says otherwise. This covers the database too: there are no deployed schemas and no data to preserve, so change a schema in place and reset or rewrite its migrations rather than adding an upgrade path. Do not write a migration, a backfill, or a compatibility shim for a schema nobody is running.
 
-**Coverage targets:**
-- **Line coverage**: ≥85% (minimum: 80%)
-- **Branch coverage**: ≥80% (minimum: 70%)
-- **Mutation score**: ≥70% (goal: 85%+)
+Coverage targets: line ≥85% (floor 80%), branch ≥80% (floor 70%), mutation score ≥70% (goal 85%).
 
-## Architecture Pattern
+## Architecture
 
-Each feature follows **abstraction + provider pattern**:
-- `Headless.*.Abstractions` — interfaces and contracts
-- `Headless.*.<Provider>` — concrete implementation
-Example: `Headless.Caching.Abstractions` + `Headless.Caching.Redis`
+Each feature ships as an abstraction package plus one package per provider: `Headless.<Feature>.Abstractions` holds the interfaces, and `Headless.<Feature>.<Provider>` implements them. For example, `Headless.Caching.Abstractions` with `Headless.Caching.Redis`.
 
-## Test Structure
+Registration follows that split. The feature's Core package owns `AddHeadless{Feature}(Action<Headless{Feature}SetupBuilder>)` plus the provider gates, and each provider package contributes `Use{Provider}` members on the builder. Read [provider setup and options](docs/solutions/conventions/provider-setup-and-options.md) before adding a registration entry point, a provider package, or an options class.
 
-- `*.Tests.Unit` — isolated, mocked, no external deps
-- `*.Tests.Integration` — real deps via Testcontainers (requires Docker)
-- `*.Tests.Harness` — shared fixtures and builders
+## Build and test
 
-**Stack**: xUnit v3 (Microsoft Testing Platform), AwesomeAssertions (fork of FluentAssertions), NSubstitute, Bogus
+`make help` lists every target. Use the targets instead of raw `dotnet`; they pin configuration, results directories, and parallelism. What `make help` does not tell you:
 
-**Cancellation token**: test classes derive from `TestBase` (`Headless.Testing.Tests`) and pass its `protected static CancellationToken AbortToken` to async calls — never reference `TestContext.Current.CancellationToken` directly.
+- **Scope the command to the work.** `make build-project PROJECT=src/.../X.csproj` restores only that project graph, so prefer it over `make build` when the work sits in one project. Tests scope the same way: `make test-project TEST_PROJECT=…`, `test-class CLASS='*ClockTests'`, `test-method`, `test-namespace`, `test-trait`, `test-query`.
+- **The dashboards need Node 22+ on `PATH`.** Building `Headless.Jobs.Dashboard` or `Headless.Messaging.Dashboard` runs `npm ci` and a Vite build (`eng/DashboardSpa.targets`), then embeds the generated `wwwroot/dist`, which is not committed. `make dashboards` rebuilds the SPAs. Pass `/p:BuildDashboardSpa=false` to skip the npm build when a `wwwroot/dist` is already there.
+- **`make quality-fix` refuses to run unfiltered.** Pass one rule at a time in `QUALITY_DIAGNOSTICS` and run `make rebuild` between rules, because four fixers emit code that does not compile. See [dotnet format analyzer fixers](docs/solutions/tooling-decisions/dotnet-format-analyzer-fixers.md).
+- **Before opening a PR**, run `make quality-analyzers` after the build, test, and format gates, and fix what it reports. Narrow a noisy run with `QUALITY_SEVERITY=warn` or `QUALITY_DIAGNOSTICS=MA0154`. The Headless SDKs turn warnings into errors in CI.
+- `make test-integration` needs Docker. A fresh clone or new worktree needs `make bootstrap`.
 
-### When to create a `*.Tests.Harness` package
+The solution file is [headless-framework.slnx](headless-framework.slnx). CLI tools are pinned in [dotnet-tools.json](dotnet-tools.json): run `dotnet tool restore`, then `dotnet <tool>`.
 
-This repo's abstraction-plus-provider pattern (`Headless.<Feature>.Abstractions` + `Headless.<Feature>.<Provider>`) implies that every feature has 2+ providers (EF + PostgreSQL + SqlServer for storage domains; Redis + Memory for caching; etc.). The same observable behavior must hold for each provider. Test that with a `Headless.<Feature>.Tests.Harness` package — do **not** copy-paste fixtures across `<Provider>.Tests.Integration` projects.
+## Tests
 
-**Trigger to extract:**
-- Adding the 2nd or later provider-integration project for a feature: extract the harness first, then add the new provider against it.
-- 3+ hand-rolled fixtures with substantial overlap (>30 lines of copy-pasteable boilerplate) already exist: queue the extraction as a dedicated batch; do not let the count grow.
+- `*.Tests.Unit` — isolated and mocked, no external dependencies.
+- `*.Tests.Integration` — real dependencies through Testcontainers.
+- `*.Tests.Harness` — shared fixtures, builders, and cross-provider conformance suites.
 
-**What goes in the harness package:**
-- An abstract `<Feature>FixtureBase<TOptions>` owning Testcontainers container lifecycle, host bootstrap (DI + `setup.Use…` pivot), initializer / migration / topology waiters (the `WaitForXxxStorageInitializerAsync` pattern), and inter-test cleanup (DDL drop, container reset).
-- An abstract `<Feature>ConformanceTests<TFixture>` carrying the cross-provider scenarios — round-trip, idempotency, concurrency / contention, error paths, cancellation behavior, schema-init re-entry. `TFixture` satisfies xUnit v3's `IClassFixture<>` / `ICollectionFixture<>` pattern.
-- Shared test-data builders / `Faker<T>` instances for the contract's value types.
+The stack is xUnit v3 on Microsoft Testing Platform, AwesomeAssertions (a FluentAssertions fork), NSubstitute, and Bogus.
 
-**What stays in each leaf integration project:**
-- A concrete `<Provider><Feature>Fixture : <Feature>FixtureBase<<Provider>Options>` that wires the specific `setup.Use<Provider>(…)` extension, container image, and connection-string materialization.
-- Tests that exercise behavior unique to that backend (PostgreSQL `pg_advisory_xact_lock`, SqlServer `sp_getapplock`, Redis Lua scripts, EF Core migration-snapshot drift). These intentionally have no sibling — they don't need a base class because they are non-portable by construction.
+Test classes derive from `TestBase` (`Headless.Testing.Tests`) and pass its `protected static CancellationToken AbortToken` to async calls. Never reference `TestContext.Current.CancellationToken` directly. [docs/llms/testing.md](docs/llms/testing.md) documents the rest of the `Headless.Testing` surface, including the Testcontainers fixtures.
 
-**Existing harnesses to reference for shape:**
-- [Headless.Blobs.Tests.Harness](tests/Headless.Blobs.Tests.Harness) — blob-backend conformance (S3, Azure, FS, SSH, Redis)
-- [Headless.DistributedLocks.Tests.Harness](tests/Headless.DistributedLocks.Tests.Harness) — lock-provider conformance
-- [Headless.EntityFramework.Tests.Harness](tests/Headless.EntityFramework.Tests.Harness) — `HeadlessDbContext` runtime + EF Core base behavior
-- [Headless.Messaging.Core.Tests.Harness](tests/Headless.Messaging.Core.Tests.Harness) — messaging dispatch/outbox
-- [Headless.Jobs.EntityFramework.Tests.Harness](tests/Headless.Jobs.EntityFramework.Tests.Harness) — Jobs+Coordination conformance across the EF DB providers (Postgres, SqlServer); uses the interface + extensions shape (`IJobsCoordinationFixture`) rather than an abstract fixture base
-
-**Anti-pattern to avoid:** the storage-domain integration tests today (`Headless.{AuditLog,Features,Permissions,Settings}.Storage.{EntityFramework,PostgreSql,SqlServer}.Tests.Integration`) each own a private `<Provider><Feature>Fixture.cs` with substantial overlap. This is the exact shape this rule is meant to prevent — when adding a new domain or provider, extract first.
-
-## Build & Test
-
-- Solution file: [headless-framework.slnx](headless-framework.slnx) (modern XML format).
-- Local CLI tools pinned in [dotnet-tools.json](dotnet-tools.json) — `dotnet tool restore`, then `dotnet <tool>`.
-- Headless SDKs treat warnings as errors in CI.
-
-**Makefile (preferred entry point):**
-
-Use the [Makefile](Makefile) targets instead of raw `dotnet` invocations — they pin configuration, results directories, and parallelism consistently. `make help` lists everything; `make` alone prints it.
-
-- **Setup**: run `make bootstrap` when initializing a fresh clone or new worktree; it restores tools, packages, and git hooks. Use `make tools` and `make restore` individually only when you need a narrower setup step. Use `make restore-project PROJECT=src/.../X.csproj` for a project-scoped restore.
-- **Node prerequisite (dashboards)**: building `Headless.Jobs.Dashboard` / `Headless.Messaging.Dashboard` requires **Node 22+** on `PATH` (CI pins Node 22; newer majors build fine locally) — their `dotnet build` runs `npm ci` + a Vite build (`eng/DashboardSpa.targets`) and embeds the generated `wwwroot/dist` (no longer committed). Run `make dashboards` to (re)build the SPAs. Pass `/p:BuildDashboardSpa=false` (or set the `BuildDashboardSpa=false` env var) to skip the npm build when a `wwwroot/dist` is already present.
-- **Build**: `make build` (incremental, errors-only), `make rebuild` (no incremental), `make build-project PROJECT=src/.../X.csproj`. Prefer `build-project` when the work is scoped to a specified project; it restores only the selected project graph before building and does not restore the full solution.
-- **Format**: `make format` (CSharpier write), `make format-check` (verify only).
-- **Code quality analyzers**: `make quality-analyzers` for the solution, or `make quality-analyzers-project PROJECT=src/.../X.csproj` for focused work. These run a quiet no-incremental build that reports only warning/error diagnostics, then `dotnet format analyzers` in verify-only mode for analyzer suggestions. Scope with `QUALITY_SEVERITY=warn` or `QUALITY_DIAGNOSTICS=MA0154`.
-- **Test**: `make test` (build + run all). `make test-fast` / `make test-project-fast` skip restore/build when outputs exist. Scope with `make test-project TEST_PROJECT=…`, `test-class CLASS='*ClockTests'`, `test-method METHOD=…`, `test-namespace`, `test-trait`, `test-query`. Group runs: `test-unit`, `test-integration` (needs Docker).
-- **Before opening a PR**: run `make quality-analyzers` after the relevant build/test/format gates so analyzer warnings and suggestions are visible and fix them before CI or review.
-- **Coverage**: `make coverage` (Cobertura), `coverage-html`, `coverage-json` (Summary.json), `coverage-open`.
-- **Package/release**: `make pack`, `pack-sbom`, `outdated`, `version`.
-- **Discovery**: `make list-projects`, `list-tests`, `clean`.
-- **Overrides**: pass vars on the command line, e.g. `make test CONFIGURATION=Debug`, `make test TEST_FILTER='--filter-class X'`, `make coverage TEST_MAX_PARALLEL=2`.
+Adding a second or later provider-integration project for one feature means extracting a shared harness first, rather than copying the fixture. See [Tests.Harness extraction](docs/solutions/best-practices/tests-harness-extraction.md).
 
 ## Conventions
 
-**Reuse Before Reinventing (check `Headless.Extensions` first):**
+- **File header.** Every `.cs` file starts with `// Copyright (c) Mahmoud Shaheen. All rights reserved.`
+- **Argument validation.** Use `Headless.Checks` (`Argument.*`, `Ensure.*`), not `ArgumentNullException.ThrowIfNull`, `ArgumentOutOfRangeException.ThrowIfGreaterThan`, or their siblings.
+- **Package versions.** Every version lives in `Directory.Packages.props`. Never put a `Version` attribute in a `.csproj`.
+- **Namespaces.** The anchor is the project's `<RootNamespace>`, and sibling packages may share one family root as long as type names stay unique across them. Types live in the owning namespace, the registration surface in the family root, and helpers on foreign types in the augmented type's namespace behind a `Headless`-prefixed holder. Read the [namespace policy](docs/solutions/conventions/namespace-policy.md) before placing a type, an extension holder, or a new package's namespace.
+- **Analyzer suppressions.** Put the reason inline on the pragma — `#pragma warning disable MA0045 // <why>` — never in a comment block above it, and extend an existing pragma instead of adding a second one. Suppress only for a false positive, or where the fix would make the code worse, and say which in the pragma. A false positive about a *type* rather than a line goes in `eng/analyzers/*.txt` as `[Namespace.Type]::Method`. Those files reach every project through `AdditionalFiles`. Changing a rule's severity in `.editorconfig` is a repository decision, not a code change.
+- **Error codes** in `ProblemDetails` responses use the `g:lower_snake_case` shape. Adding one touches a `MessageDescriber` class plus `Messages.resx` and `Messages.ar.resx`. See [ProblemDetails error codes](docs/solutions/conventions/problem-details-error-codes.md).
+- **Deliberate non-goals.** `ICache` implementations do not enforce key length, and `CacheInvalidationMessage` and similar DTOs do not enforce payload size. Consuming applications own those limits, at their own boundaries and in their broker configuration. Do not add enforcement here.
 
-- Before writing any general-purpose utility — a string/collection/date/IO/reflection helper, a result or error type, a guard, a domain primitive or value object, pagination, a constant, or a validator — check [docs/llms/extensions.md](docs/llms/extensions.md). `Headless.Extensions` is the framework's base library and almost certainly already ships it; reuse it instead of hand-rolling a duplicate.
-- Read the relevant **Design Notes** before using a type, not just to confirm it exists — they document non-obvious behavior you would otherwise miss (e.g. `Currency` `*`/`/` take a `decimal` scalar, `KeyedAsyncLock`'s timeout overload returns `null` instead of throwing, `ParallelForEachAsync` does not preserve order).
-- Search by capability, not by package name: types live across several `Headless.*` namespaces (`Headless.Primitives`, `Headless.Collections`, `Headless.Threading`, `Headless.IO`, …) and many are extension methods surfaced on BCL types in `System.*`.
-- If `Headless.Extensions` genuinely lacks it, prefer adding the helper there (or to the matching foundational package) over duplicating it locally — then update `docs/llms/extensions.md` and the package README per [docs/authoring/AUTHORING.md](docs/authoring/AUTHORING.md).
+### Reuse before reinventing
 
-**Argument Validation:**
+Before writing any general-purpose utility — a string, collection, date, IO, or reflection helper, a result or error type, a guard, a domain primitive or value object, pagination, a constant, a validator — check [docs/llms/extensions.md](docs/llms/extensions.md). `Headless.Extensions` is the framework's base library and almost certainly already ships it.
 
-- Use `Headless.Checks` (`Argument.*`, `Ensure.*`) for argument validation; avoid `ArgumentNullException.ThrowIfNull`, `ArgumentOutOfRangeException.ThrowIfGreaterThan`, etc.
+- Search by capability, not by package name. These types span several `Headless.*` namespaces (`Headless.Primitives`, `Headless.Collections`, `Headless.Threading`, `Headless.IO`), and many are extension methods that surface on BCL types in `System.*`.
+- Read the type's **Design Notes** before using it, not just to confirm it exists. They carry the non-obvious behavior: `Currency` `*` and `/` take a `decimal` scalar, `KeyedAsyncLock`'s timeout overload returns `null` instead of throwing, `ParallelForEachAsync` does not preserve order.
+- If the helper genuinely does not exist, add it to `Headless.Extensions` or the matching foundational package rather than duplicating it locally, then update `docs/llms/extensions.md` and the package README per [docs/authoring/AUTHORING.md](docs/authoring/AUTHORING.md).
 
-**Options Pattern**:
+### New projects
 
-- Validate options only when needed; when you do, use FluentValidation via the `Headless.Hosting` extensions: `AddOptions<TOptions, TValidator>()` / `Configure<TOptions, TValidator>(...)`. Avoid custom `IValidateOptions<T>` when hosting covers it.
-- Create an `internal sealed class {OptionsName}Validator : AbstractValidator<{OptionsName}>` in the same file as the options class, directly below it if the option has any property that need validation.
-- Register validators via DI using `services.Configure<TOption, TValidator>(action)` or `services.AddOptions<TOption, TValidator>()` from `Headless.Hosting`; these wire up FluentValidation + `ValidateOnStart()` automatically.
-- Higher-level bootstrap APIs may auto-bind required options from owned default sections (for example `Headless:*`) when part of the package contract.
-- If options are required, do not offer a parameterless registration overload; require options and delegate to the optioned path.
-- Never call `new Validator().ValidateAndThrow()` manually; use the DI pipeline.
-
-**DI Registration (Setup classes):**
-
-Every provider package exposes a single static `Setup{Provider}` class in `Setup.cs` at the package root. Multi-provider features follow the unified setup builder pattern (see `docs/solutions/architecture-patterns/unified-provider-setup-builder-pattern.md`): the feature's Core package owns the root `AddHeadless{Feature}(Action<Headless{Feature}SetupBuilder>)` entry plus the provider gates, and each provider package contributes `Use{Provider}` extension members on the builder:
-
-```csharp
-public static class SetupRedisCache
-{
-    extension(HeadlessCachingSetupBuilder setup) // C# 14 extension members
-    {
-        public HeadlessCachingSetupBuilder UseRedis(IConfiguration configuration) { ... }
-        public HeadlessCachingSetupBuilder UseRedis(Action<TOptions> setupAction) { ... }
-        public HeadlessCachingSetupBuilder UseRedis(Action<TOptions, IServiceProvider> setupAction) { ... }
-    }
-
-    private static IServiceCollection _AddCacheCore(...) { /* shared wiring */ }
-}
-```
-
-Single-backend packages with no provider choice keep plain `Add{Feature}` extensions on `IServiceCollection` (same overload trio).
-
-- Name the shared private helper `_Add{Feature}Core`.
-- The overload trio applies to **provider** `Use{Provider}` / `Add{Feature}` members that bind that backend's options. **Cross-cutting consumer extensions** that adapt an already-composed feature (for example `UseOutputCache` / `UseBclCache`, which consume a named `ICache` rather than supply a provider) intentionally expose a single `Action<TOptions>` overload plus the consumed feature's builder — they do not bind a provider's option section, so the `IConfiguration` / `Action<TOptions, IServiceProvider>` overloads do not apply.
-- **Provider `Setup*`/fluent-extension holders live in the family root namespace** (the `Setup*` and `Setup*Named` classes, plus the messaging `*MessageBuilderExtensions` holders), so a single `using Headless.<Feature>;` exposes the entire registration surface — the `AddHeadless{Feature}` entry, the builder, AND every installed provider's `Use{Provider}` members. Every other provider type (options, storage/client implementations, headers, exceptions) stays in the provider's own namespace; lambda type inference means an options callback needs no extra `using`. Because the `Setup*.cs` file usually sits at the provider package root while declaring the family namespace, prefix its `namespace` with `#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace`.
-
-**Namespace Policy:**
-
-- The namespace anchor is the project's **`<RootNamespace>`**, not the package name. A package's ENTIRE public surface — types, interfaces, enums, AND registration/extension holder classes (`Add*`/`Use*`/`Map*`) — lives under its root namespace. When the root namespace differs from the package name (e.g. `Headless.EntityFramework.Messaging` ships `Headless.EntityFramework`), declare `<RootNamespace>` explicitly in the csproj so the identity is intentional, not accidental.
-- **Multiple packages MAY share one root namespace** — BCL-style, like the `Microsoft.Extensions.*` package family. This is the norm for feature families here: `Headless.Caching.*` packages all ship `Headless.Caching`, provider/`.Core`/`.Abstractions` packages share their feature root. The constraint that makes this safe: **type names must stay unique within the shared namespace across all sibling packages** (two packages shipping a same-name type in one namespace produces CS0433 for consumers).
-- **Three-tier placement.** (1) **Types** — options, records, builders, exceptions, interfaces, enums — always live in the package/family-owned namespace; a type NEVER goes into `Microsoft.*`, `System.*`, `OpenTelemetry.*`, `Npgsql`, or any other foreign namespace. When a helper file mixes a type with an extension holder, split the type into its own file. (2) The **registration surface** (`Setup*`/`Add*`/`Use*`/`Map*` and fluent-builder extension holders) lives in the family root namespace, so one `using Headless.<Feature>;` exposes the whole registration API. (3) **Helper extension methods on foreign types** that belong in everyday application code — extensions on `ILogger`, `HttpContext`/`HttpRequest`/`IFormFile`, `IQueryable`/`DbContext`/`ModelBuilder`, `SqlConnection`, `NpgsqlConnection`, etc. — live in the AUGMENTED type's namespace (`Microsoft.Extensions.Logging`, `Microsoft.AspNetCore.Http`, `Microsoft.EntityFrameworkCore`, `Microsoft.Data.SqlClient`, `Npgsql`, …) so they surface in IntelliSense next to the type they extend and need no discovery `using Headless.<Feature>;`. Their holder class names MUST be `Headless`-prefixed and unique across every sibling package that shares the target foreign namespace (e.g. `HeadlessHttpContextExtensions`; `Headless.EntityFramework`'s `HeadlessDbContextTransactionExtensions` in `Microsoft.EntityFrameworkCore` is the same pattern — a distinctly-named holder per package, never a name a sibling package could also plausibly pick), never bare BCL-collision names (`ServiceCollectionExtensions`, `CollectionExtensions`) which produce CS0433 for consumers. Mark the foreign namespace with `#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace`. Deliberate exception: a helper whose foreign namespace would be root `System` on a near-universal type (e.g. `object.ToObject<T>` in `Headless.Serializer`) stays in its Headless namespace — root-`System` injection on `object` is pollution, not discoverability.
-- **Augmentation packages** exist specifically to augment a foreign namespace and extend it wholesale (not just tier-3 helpers): `Headless.Extensions`, `Headless.Primitives`, `Headless.Urls`, `Headless.Hosting`, `Headless.Testing` (plus `Testing.AspNetCore` / `Testing.Testcontainers` where they extend test-library namespaces), and `Headless.NetTopologySuite`. Compiler polyfills (e.g. `IsExternalInit` in `System.Runtime.CompilerServices`) are also exempt. The same collision-proof-naming rule as tier 3 applies — prefix holders with `Headless` or the augmented type (`HeadlessHttpContextExtensions`, `TaskExtensions`) — never bare BCL-adjacent names (`ServiceCollectionExtensions`, `CollectionExtensions`), which collide with same-name BCL/ASP.NET types and produce CS0433 for consumers.
-- A namespace that exactly matches another package's name belongs to that package (only `Headless.Api.Abstractions` may ship the `Headless.Api.Abstractions` namespace). Documented exception: the API response-envelope surface (`DataEnvelope<T>`, `CollectionEnvelope<T>`, `ValueEnvelope<T>`, `IdEnvelope`, `IdMessageEnvelope`, `MessageEnvelope`, `OperationDescriptor`, `OperationsDataEnvelope<T>`, `OperationsCollectionEnvelope<T>` in `Headless.Api.Core`, plus the `ApiResult` conversion holders in `Headless.Api.Mvc`/`Headless.Api.MinimalApi`) deliberately ships into the `Headless.Primitives` namespace so envelopes surface beside the result primitives consumers already import. This is safe only while type names stay unique across every package shipping into `Headless.Primitives` — check for collisions before adding a type to that namespace from any package. Outside these cases, family packages share their feature root freely.
-
-**Source File Header:**
-
-Every `.cs` file starts with: `// Copyright (c) Mahmoud Shaheen. All rights reserved.`
-
-**Problem Details Error Codes:**
-
-- Error codes embedded in `ProblemDetails` responses use the `g:lower_snake_case` shape (the `g:` prefix marks "general" codes intended for the framework's shared descriptor space). Example: `g:tenant_required`, `g:idempotency_key_reused`, `g:concurrency_failure`.
-- Do not use kebab-case (`g:tenant-required`) or other separators — the existing framework codes are all snake_case and clients parsing `errors[].code` should see a single consistent shape.
-- New codes go in the relevant `MessageDescriber` class plus matching `Messages.resx` / `Messages.ar.resx` entries. The resx `<data name="...">` attribute uses the same `g:snake_case` form; the generated C# field (`Messages.g_snake_case`) collapses the `:` to `_`.
-- Expose externally-referenced codes as `public const string` on a `*ErrorCodes` static class (`[PublicAPI]`) so client code has a compile-time link.
-
-**Input Validation Responsibility:**
-
-This framework delegates certain input validation to consuming applications:
-
-- **Cache key length limits**: Not enforced by `ICache` implementations. Consumers should validate key lengths at their application boundaries if DoS protection is needed.
-- **Message payload sizes**: `CacheInvalidationMessage` and similar DTOs don't enforce size limits. Consumers should configure their messaging infrastructure (RabbitMQ, Redis, etc.) with appropriate limits.
-
-## Package Management
-
-- All versions in `Directory.Packages.props`. **Never** add `Version` attribute in `.csproj` files.
-
-## New .NET Projects
-
-When adding a new `.csproj` to the solution, set the project SDK to one of the Headless MSBuild SDKs declared in [global.json](global.json). Do not use the stock `Microsoft.NET.Sdk` family for new projects. Versions are pinned in `global.json`'s `msbuild-sdks` block, so omit the version from the project declaration, for example `<Project Sdk="Headless.NET.Sdk.Web">`.
+Give every new `.csproj` one of the Headless MSBuild SDKs, not a stock `Microsoft.NET.Sdk`. [global.json](global.json) pins the versions in its `msbuild-sdks` block, so the declaration omits the version: `<Project Sdk="Headless.NET.Sdk.Web">`.
 
 | Project type | SDK |
 | --- | --- |
@@ -169,31 +72,34 @@ When adding a new `.csproj` to the solution, set the project SDK to one of the H
 | Blazor WebAssembly | `Headless.NET.Sdk.BlazorWebAssembly` |
 | WPF / Windows Forms | `Headless.NET.Sdk.WindowsDesktop` |
 
-After creating the project, attach it to [headless-framework.slnx](headless-framework.slnx). The Headless SDKs apply the project's strict baseline, including nullable references, current analyzers, banned `Newtonsoft.Json`, deterministic builds, and CI-aware warning handling. Do not disable defaults without a documented reason. Configuration switches and `Disable*` properties are documented at https://raw.githubusercontent.com/xshaheen/headless-sdk/refs/heads/main/README.md.
+Then attach the project to [headless-framework.slnx](headless-framework.slnx). These SDKs apply the strict baseline — nullable references, current analyzers, banned `Newtonsoft.Json`, deterministic builds, CI-aware warning handling — so do not disable a default without documenting why. The configuration switches and `Disable*` properties are listed at <https://raw.githubusercontent.com/xshaheen/headless-sdk/refs/heads/main/README.md>.
 
 ## Documentation
 
-- `docs/solutions/` is a searchable knowledge store of past fixes and patterns, organized by category (`api`, `concurrency`, `guides`, `messaging`, etc.) with YAML frontmatter (`module`, `tags`, `problem_type`). Search it before implementing features, debugging issues, or making decisions in a documented area.
-- `CONCEPTS.md` (repo root) — shared domain vocabulary (entities, named processes, status concepts with project-specific meaning); relevant when orienting to the codebase or discussing domain concepts.
-- Two agent-facing doc surfaces must stay in lockstep: `docs/llms/<domain>.md` and `src/Headless.<Package>/README.md`. Authoring rules, templates, and lifecycle workflows live in [docs/authoring/AUTHORING.md](docs/authoring/AUTHORING.md) — **read it before editing either surface**. Docs are not pure API reference; they must explain core concepts, trade-offs, and provider decisions.
-- **Sync trigger** — a code change in `src/Headless.*` requires a docs update when any of these are true: public API surface changes, package added/renamed/removed, consumer-visible behavior changes (defaults, ordering, retry, cancellation, threading), or configuration options added/removed. Internal refactors, perf-only, test-only, and formatting changes do **not** require doc updates. When triggered, follow the drift checks in `docs/authoring/AUTHORING.md`.
+- `docs/solutions/` is the searchable store of past fixes, conventions, and decisions, filed by category (`api`, `concurrency`, `conventions`, `messaging`, and more) with YAML frontmatter (`module`, `tags`, `problem_type`). Search it before implementing, debugging, or deciding in an area it covers.
+- `docs/llms/` is the consumer-facing contract: how an application that uses the framework wires and calls each domain. [docs/llms/index.md](docs/llms/index.md) lists every domain file plus the package catalog, and a per-domain file is `docs/llms/<domain>.md`. Read a domain's file before integrating with that domain from another package, rather than reading its source. These docs are not pure API reference — they explain the concepts, trade-offs, and provider decisions.
+- Those domain files, `docs/llms/index.md`, and `src/Headless.<Package>/README.md` must stay in lockstep. Read [docs/authoring/AUTHORING.md](docs/authoring/AUTHORING.md) before editing any of the three; it owns the templates, drift checks, and lifecycle.
+- `CONCEPTS.md` holds the shared domain vocabulary: entities, named processes, and status concepts that carry a project-specific meaning.
+- **Docs sync trigger.** A change under `src/Headless.*` needs a docs update when the public API surface changes, a package is added, renamed, or removed, consumer-visible behavior changes (defaults, ordering, retry, cancellation, threading), or a configuration option is added or removed. Internal refactors and perf-only, test-only, or formatting changes do not.
 
 ## Learnings
 
-- Ambient commit coordination (`AsyncLocal`-backed) was replaced by `Headless.UnitOfWork`: `IUnitOfWorkManager` is a scoped DI service whose `Current` is a plain field, never an `AsyncLocal`. The developer opens a unit of work explicitly, on the line they choose — no framework-opened unit of work. Nesting is join-by-default: a begin on the same resource returns a child view whose completions transfer to the parent, a different resource under an active unit throws, and a resource-bearing begin under a resource-less root opens an independent nested unit. `IBus`, `IQueue`, and the three Jobs manager interfaces moved from singleton to scoped as a consequence; a singleton or hosted service that needs one now creates its own scope. (2026-09-17)
-- `main` requires only the `CI status` gate job in `ci.yml`; add every new CI job to its `needs` (a skipped job passes). Pack + SBOM, the Africa/Cairo unit-test leg, and messaging and R2 conformance run only for a published release or a `workflow_dispatch` with `release_checks`, so rehearse that path before tagging when a change touches packaging or time handling. The test build skips analyzers (`-p:RunAnalyzers=false`); `Lint · .NET analyzers` is the analyzer gate, and pull requests collect no coverage. (2026-09-11)
+One line per durable trap, newest first. A learning that needs an investigation written out — evidence, alternatives, a resolution — is a `docs/solutions/<category>/` document instead, and this list links to it rather than summarizing it.
+
+- `IUnitOfWorkManager` is a scoped DI service whose `Current` is a plain field, never an `AsyncLocal`, and the developer opens a unit of work explicitly. `IBus`, `IQueue`, and the three Jobs manager interfaces are scoped facades as a consequence, so a singleton or hosted service that needs one creates its own scope. The full contract, including join-by-default nesting, is in [docs/llms/unit-of-work.md](docs/llms/unit-of-work.md). (2026-09-17)
+- ASP.NET Core link generation drops a leading `{tenant}` route segment for `Url.Action` / `GetPathByAction` / `GetPathByName` because the endpoint-name scheme passes null ambient values; `AddRouteSource` wraps `LinkGenerator` and falls back to `Request.RouteValues` to keep the segment, at the cost of `?tenant=` on links to routes without it. Host-matching regexes need `RegexOptions.CultureInvariant` alongside `IgnoreCase`, or literal labels containing `i` stop matching under tr-TR. (2026-09-17)
+- `main` requires only the `CI status` gate job in `ci.yml`, so add every new CI job to its `needs`. A skipped job passes. Pack and SBOM, the Africa/Cairo unit-test leg, and the messaging and R2 conformance legs run only for a published release or a `workflow_dispatch` with `release_checks`; rehearse that path before tagging a change that touches packaging or time handling. The test build skips analyzers (`-p:RunAnalyzers=false`), `Lint · .NET analyzers` is the analyzer gate, and pull requests collect no coverage. (2026-09-11)
 - Messaging graceful retry release must fence the exact store-returned `(row, lane, Owner, LockedUntil)` generation: quiesce pickup before dispatcher drain, release only completed or pre-execution-abandoned attempts, and retain running or crashed leases for normal expiry. (2026-08-05)
 - ApiResult is the value-based counterpart to the API exception path: conflict and authorization errors preserve `ErrorDescriptor` data, validation preserves field-keyed descriptors, validation-only aggregates map to 422, and Minimal API result wrappers publish the full response set as endpoint metadata. (2026-07-27)
 - Cache events are best-effort observability: preserve `AsyncEvent<T>` handlers, capture the copy-on-write handler array at emission, and feed one lazy bounded FIFO shared by the cache root and tier hubs; producers never block, accepted signals retain FIFO, and a full buffer drops the incoming signal. (2026-07-25)
-- CI runs unit tests only (`make ci-test`); integration suites never gate merges, so a semantics change can silently break provider-integration tests for weeks (a Redis membership test contradicted the #643 heartbeat contract unnoticed). Run the affected `*.Tests.Integration` projects locally when touching provider behavior. (2026-07-21)
+- CI runs unit tests only (`make ci-test`), so no integration suite gates a merge and a semantics change can break provider-integration tests unnoticed for weeks. A Redis membership test contradicted the #643 heartbeat contract that way. Run the affected `*.Tests.Integration` projects locally when you touch provider behavior. (2026-07-21)
 - PostgreSQL materializes `DateTime` at microsecond granularity while SQL Server `datetime2(7)` keeps ticks; conformance asserts on round-tripped values must use `BeCloseTo(1µs)` (messaging-harness precedent). Exact `.Be()` may still pass nondeterministically when the read hits the EF identity map instead of a fresh context — passing once proves nothing. (2026-07-21)
 - Broker conformance fixtures need protocol-specific anti-flake controls: Kafka container reuse stays disabled because stale log readiness can false-pass, while Pulsar.Client requires a trailing-slash-free broker URL, an explicit short negative-ack delay in tests, and cancellation of the in-flight receive when pausing. (2026-07-16)
-- Workflow trigger changes must stay synchronized with `main` branch protection: removing the CodeQL `pull_request` trigger while `Analyze (csharp)` remains required leaves PRs permanently waiting. Package publication is gated by a published GitHub Release; Release Drafter updates drafts but does not publish them. (2026-07-16)
+- Workflow triggers and `main` branch protection must change together: removing the CodeQL `pull_request` trigger while `Analyze (csharp)` stays required leaves every PR waiting forever. Package publication is gated on a published GitHub Release. Release Drafter updates the draft and never publishes it. (2026-07-16)
 - Jobs generated registration freezes once only after the `AddHeadlessJobs` options callback has loaded every `AddJobsDiscovery` assembly; public descriptors remain configuration-independent, while all live runtime and Dashboard reads must use the immutable per-`IHost` registry. (2026-07-15)
 - Messaging retry ceilings require an atomic durable attempt reservation before transport or consumer invocation; persisting progress only after failure lets a crash reset an inline burst. Recovery of a consumed reservation advances Messaging-owned persisted state without applying domain exception classification. (2026-07-10)
 - Jobs retry recovery depends on carrying `RetryCount` through every EF and in-memory pickup projection and persisting it before Polly waits; omitting it from a projection silently restores a fresh retry budget after process restart. (2026-07-10)
+- A green MTP run is not a clean build: `dotnet test --project` compiles and runs test code that `dotnet build` rejects with an analyzer error, as seen with AsyncFixer04. Verify a changed project with `dotnet build -c Release -v:minimal` before CI. (2026-07-10)
 - `[JsonExtensionData]` properties must be `{ get; set; }` (never `init`) and every source-gen `JsonSerializerContext` whose models carry extension data needs `[JsonSerializable(typeof(object))]` + `[JsonSerializable(typeof(JsonElement))]`. `init` binding throws on EVERY deserialization; missing object metadata throws on any unknown response field — both at runtime only, build stays green. Found via Paymob CashOut/CashIn unit tests. (2026-07-07)
-- `Range<T>` uses `null` bounds as infinities; range-to-range operations must compare lower and upper bounds with side-specific semantics instead of reusing value containment. (2026-07-04)
 - Kafka concurrent consumers must commit offsets by per-partition contiguous completed watermark; committing a high completed offset directly can acknowledge lower in-flight messages and lose them after a crash. (2026-07-06)
-- MTP `dotnet test --project` can compile+run test code that a direct `dotnet build` rejects with an analyzer error (observed with AsyncFixer04). A green test run is not a clean build — verify changed projects with `dotnet build -c Release -v:minimal` before CI. (2026-07-10)
-- ASP.NET Core link generation drops a leading `{tenant}` route segment for `Url.Action` / `GetPathByAction` / `GetPathByName` because the endpoint-name scheme passes null ambient values; `AddRouteSource` wraps `LinkGenerator` and falls back to `Request.RouteValues` to keep the segment, at the cost of `?tenant=` on links to routes without it. Host-matching regexes need `RegexOptions.CultureInvariant` alongside `IgnoreCase`, or literal labels containing `i` stop matching under tr-TR. (2026-09-17)
+- `Range<T>` uses `null` bounds as infinities; range-to-range operations must compare lower and upper bounds with side-specific semantics instead of reusing value containment. (2026-07-04)

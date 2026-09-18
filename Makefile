@@ -50,6 +50,10 @@ QUALITY_DIAGNOSTICS ?=
 QUALITY_REPORT_DIR ?= $(ARTIFACTS_DIR)/quality-analyzers-report
 QUALITY_FORMAT_LOG ?= $(ARTIFACTS_DIR)/quality-analyzers-format.log
 QUALITY_FORMAT_ARGS = --no-restore --verify-no-changes --severity "$(QUALITY_SEVERITY)" -v minimal --report "$(QUALITY_REPORT_DIR)" $(if $(QUALITY_DIAGNOSTICS),--diagnostics $(QUALITY_DIAGNOSTICS),)
+# The fix path always runs at `hidden`: `dotnet format` matches IDE rules only at that severity, even
+# for sites the report lists as info. QUALITY_DIAGNOSTICS is what bounds the blast radius, not severity.
+QUALITY_FIX_SEVERITY ?= hidden
+QUALITY_FIX_ARGS = --no-restore --severity "$(QUALITY_FIX_SEVERITY)" -v minimal --diagnostics $(QUALITY_DIAGNOSTICS)
 QUALITY_BUILD_ARGS = --configuration "$(CONFIGURATION)" --no-restore --no-incremental -v:q -nologo /clp:NoSummary $(MSBUILD_ARGS)
 TEST_MAX_PARALLEL ?= 3
 TEST_TIMEOUT ?= 15m
@@ -188,6 +192,21 @@ quality-analyzers-project: ## Report build warnings/errors and analyzer suggesti
 		awk '!/: hidden [[:alnum:]]+:/' "$(QUALITY_FORMAT_LOG)"; \
 		if awk '/: (info|warning|error) [[:alnum:]]+:/ { found=1 } END { exit found ? 0 : 1 }' "$(QUALITY_FORMAT_LOG)"; then exit 2; fi; \
 		if [ $$format_status -ne 0 ] && [ $$format_status -ne 2 ]; then cat "$(QUALITY_FORMAT_LOG)"; exit $$format_status; fi
+
+.PHONY: quality-fix
+quality-fix: ## Apply analyzer fixes for QUALITY_DIAGNOSTICS, then reformat. Rebuild afterwards to verify.
+	@test -n "$(QUALITY_DIAGNOSTICS)" || (echo "QUALITY_DIAGNOSTICS is required. Example: make quality-fix QUALITY_DIAGNOSTICS='MA0002 MA0006'" && exit 2)
+	Configuration="$(CONFIGURATION)" $(DOTNET) format analyzers "$(SOLUTION)" $(QUALITY_FIX_ARGS)
+	Configuration="$(CONFIGURATION)" $(DOTNET) format style "$(SOLUTION)" $(QUALITY_FIX_ARGS)
+	$(DOTNET) csharpier format .
+
+.PHONY: quality-fix-project
+quality-fix-project: ## Apply analyzer fixes for QUALITY_DIAGNOSTICS in PROJECT, then reformat.
+	@test -n "$(PROJECT)" || (echo "PROJECT is required. Example: make quality-fix-project PROJECT=src/Headless.Api/Headless.Api.csproj QUALITY_DIAGNOSTICS=MA0002" && exit 2)
+	@test -n "$(QUALITY_DIAGNOSTICS)" || (echo "QUALITY_DIAGNOSTICS is required. Example: make quality-fix-project PROJECT=src/Headless.Api/Headless.Api.csproj QUALITY_DIAGNOSTICS=MA0002" && exit 2)
+	Configuration="$(CONFIGURATION)" $(DOTNET) format analyzers "$(PROJECT)" $(QUALITY_FIX_ARGS)
+	Configuration="$(CONFIGURATION)" $(DOTNET) format style "$(PROJECT)" $(QUALITY_FIX_ARGS)
+	$(DOTNET) csharpier format .
 
 .PHONY: dashboards
 dashboards: dashboard-jobs dashboard-messaging ## Rebuild every SPA dashboard (npm ci + vite build into wwwroot/dist).
