@@ -550,11 +550,24 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         {
             result = await action(scope.ServiceProvider).ConfigureAwait(false);
         }
-        catch
+        catch (Exception actionException)
         {
             // Disposal alone would roll back, but rolling back here disposes the scope-local buffers before the
             // caller observes the exception, so the captured rows are already discarded when the test asserts.
-            await unitOfWork.RollbackAsync().ConfigureAwait(false);
+            // A rollback fault must not replace the action's own exception, so both travel together.
+            try
+            {
+                await unitOfWork.RollbackAsync().ConfigureAwait(false);
+            }
+            catch (Exception rollbackException)
+            {
+                throw new AggregateException(
+                    "Unit-of-work action failed and the rollback faulted as well.",
+                    actionException,
+                    rollbackException
+                );
+            }
+
             throw;
         }
 

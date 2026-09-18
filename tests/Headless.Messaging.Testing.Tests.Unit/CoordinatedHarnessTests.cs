@@ -239,4 +239,36 @@ public sealed class CoordinatedHarnessTests : TestBase
         harness.Published.Should().ContainSingle();
         harness.Consumed.Should().ContainSingle();
     }
+
+    [Fact]
+    public async Task should_preserve_action_exception_when_the_rollback_also_faults()
+    {
+        // OnFailed faults are logged, never propagated; a scope-local state whose disposal throws is the one
+        // rollback fault that reaches the caller, and it must travel with the action's exception, not replace it.
+        await using var harness = await _CreatePublishOnlyHarnessAsync();
+
+        var actionEx = new InvalidOperationException("action failed");
+        var rollbackEx = new InvalidOperationException("scope-state disposal failed");
+
+        var act = () =>
+            harness.RunInUnitOfWorkAsync(async services =>
+            {
+                var unitOfWork = services.GetRequiredService<IUnitOfWorkManager>().Current;
+                unitOfWork.Should().NotBeNull();
+                unitOfWork!.GetOrAdd(_ => new ThrowingDisposable(rollbackEx));
+
+                await Task.Yield();
+                throw actionEx;
+            });
+
+        var ex = await act.Should().ThrowAsync<AggregateException>();
+        ex.Which.InnerExceptions.Should().Contain(actionEx);
+        ex.Which.InnerExceptions.Should()
+            .Contain(e => ReferenceEquals(e, rollbackEx) || e.InnerException == rollbackEx);
+    }
+
+    private sealed class ThrowingDisposable(Exception fault) : IDisposable
+    {
+        public void Dispose() => throw fault;
+    }
 }

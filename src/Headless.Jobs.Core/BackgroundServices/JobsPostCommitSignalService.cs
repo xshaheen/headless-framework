@@ -64,7 +64,9 @@ internal sealed partial class JobsPostCommitSignalService(
     // Cancelled only when the host's shutdown budget is exhausted or the service is disposed without a stop — NOT by
     // the stopping token, which base.StopAsync cancels immediately and would abort the drain of signals that are
     // already queued. The read loop and the side effects observe only this source.
+#pragma warning disable CA2213 // Disposing _drainCts races with late-fault tasks touching drainToken; cancellation alone is sufficient.
     private readonly CancellationTokenSource _drainCts = new();
+#pragma warning restore CA2213
     private readonly JobsActivationBarrier _activationBarrier = Argument.IsNotNull(activationBarrier);
     private readonly TimeProvider _timeProvider = Argument.IsNotNull(timeProvider);
     private readonly ILogger<JobsPostCommitSignalService> _logger = Argument.IsNotNull(logger);
@@ -150,6 +152,12 @@ internal sealed partial class JobsPostCommitSignalService(
         }
         catch (OperationCanceledException)
         {
+            // Stopped before activation. StopAsync has usually completed the writer already; a dispose without a stop
+            // cancels the same token without ever touching it. Close the writer on every reader exit so TrySignal
+            // reports drops instead of accepting signals this exited loop will never read.
+            Volatile.Write(ref _stopping, 1);
+            _channel.Writer.TryComplete();
+
             return;
         }
 
@@ -159,11 +167,16 @@ internal sealed partial class JobsPostCommitSignalService(
             // under an unverified schedule interpretation.
             Log.StoppedOnActivationFailure(_logger, activationFailure);
 
+            // Activation failure aborts host startup before StopAsync can run, so without this the writer stays open
+            // and TrySignal keeps accepting signals this exited loop will never read. The drop warning/counter is the
+            // only contract difference; the poll sweep recovers the rows either way.
+            Volatile.Write(ref _stopping, 1);
+            _channel.Writer.TryComplete();
+
             return;
         }
 
         var reader = _channel.Reader;
-        // Captured once: Dispose cancels and then disposes the source, and the Token getter throws after disposal.
         var drainToken = _drainCts.Token;
 
         try
@@ -176,14 +189,14 @@ internal sealed partial class JobsPostCommitSignalService(
             // The drain token ends the loop only on shutdown-budget exhaustion or a dispose without a stop.
             while (await reader.WaitToReadAsync(drainToken).ConfigureAwait(false))
             {
-                while (reader.TryRead(out var signal))
+                while (!drainToken.IsCancellationRequested && reader.TryRead(out var signal))
                 {
-                    if (drainToken.IsCancellationRequested)
-                    {
-                        return;
-                    }
-
                     await _ProcessAsync(signal, drainToken).ConfigureAwait(false);
+                }
+
+                if (drainToken.IsCancellationRequested)
+                {
+                    return;
                 }
             }
         }
@@ -213,8 +226,8 @@ internal sealed partial class JobsPostCommitSignalService(
         }
 
         // A side effect abandoned at its deadline still holds the drain token; cancelling here stops it with the host.
+        // Omit Dispose() to prevent ObjectDisposedException on late-fault tasks or unregistration callbacks.
         _drainCts.Cancel();
-        _drainCts.Dispose();
         base.Dispose();
     }
 
@@ -233,6 +246,13 @@ internal sealed partial class JobsPostCommitSignalService(
         catch (OperationCanceledException) when (drainToken.IsCancellationRequested)
         {
             Log.PostCommitSignalAbandonedOnShutdown(_logger, signal.JobScope);
+
+            // Mirror the deadline branch: the wait was abandoned, not the side effect. A fault surfacing after
+            // shutdown-budget cancellation must still be observed rather than die unobserved with the host.
+            if (work is { IsCompleted: false })
+            {
+                LateFaultObserver.ObserveLateFault(work, _logger, signal.JobScope, Log.PostCommitSignalFailed);
+            }
         }
         catch (TimeoutException) when (work is { IsCompleted: false })
         {

@@ -314,7 +314,8 @@ public sealed class JobsPostCommitSignalServiceTests : TestBase
     [Fact]
     public async Task should_abandon_the_drain_when_the_shutdown_budget_is_exhausted()
     {
-        var (service, _) = _CreateService(new FakeTimeProvider());
+        var (service, logger) = _CreateService(new FakeTimeProvider());
+        using var drops = new DroppedSignalCounter();
         var firstStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var firstCancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var secondProcessed = false;
@@ -357,6 +358,42 @@ public sealed class JobsPostCommitSignalServiceTests : TestBase
         await firstCancelled.Task.WaitAsync(_WaitTimeout, AbortToken);
         await service.ExecuteTask!.WaitAsync(_WaitTimeout, AbortToken);
         secondProcessed.Should().BeFalse();
+        service.PendingCount.Should().Be(0);
+        logger.Entries.Should().Contain(e => e.Level == LogLevel.Warning && e.Exception == null);
+        drops.Measurements.Should().ContainSingle().Which.Should().Be((1L, "stopping"));
+    }
+
+    [Fact]
+    public async Task should_log_a_late_fault_from_a_signal_abandoned_by_shutdown_budget_exhaustion()
+    {
+        var (service, logger) = _CreateService(new FakeTimeProvider());
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var lateFault = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await service.StartAsync(AbortToken);
+        // The side effect ignores the drain token; it faults only after the budget cancellation abandoned it.
+        service.TrySignal(
+            new TestPostCommitSignal(
+                "late",
+                (_, _) =>
+                {
+                    started.TrySetResult();
+                    return lateFault.Task;
+                }
+            )
+        );
+        await started.Task.WaitAsync(_WaitTimeout, AbortToken);
+        using var shutdownBudget = new CancellationTokenSource();
+
+        var stop = service.StopAsync(shutdownBudget.Token);
+        await shutdownBudget.CancelAsync();
+        await stop.WaitAsync(_WaitTimeout, AbortToken);
+
+        var boom = new InvalidOperationException("late boom after shutdown");
+        lateFault.SetException(boom);
+
+        var entry = await logger.WaitForAsync(e => e.Exception is not null, AbortToken);
+        entry.Level.Should().Be(LogLevel.Warning);
+        entry.Exception.Should().BeOfType<AggregateException>().Which.InnerExceptions.Should().Contain(boom);
     }
 
     [Fact]
@@ -365,22 +402,28 @@ public sealed class JobsPostCommitSignalServiceTests : TestBase
         var barrier = new JobsActivationBarrier();
         barrier.MarkFailed(new InvalidOperationException("activation failed"));
         var (service, logger) = _CreateService(new FakeTimeProvider(), barrier);
+        using var drops = new DroppedSignalCounter();
         var processed = false;
 
         await service.StartAsync(AbortToken);
         await service.ExecuteTask!.WaitAsync(_WaitTimeout, AbortToken);
-        service.TrySignal(
-            new TestPostCommitSignal(
-                "late",
-                (_, _) =>
-                {
-                    processed = true;
-                    return Task.CompletedTask;
-                }
+        service
+            .TrySignal(
+                new TestPostCommitSignal(
+                    "late",
+                    (_, _) =>
+                    {
+                        processed = true;
+                        return Task.CompletedTask;
+                    }
+                )
             )
-        );
+            .Should()
+            .BeFalse();
 
+        // The exited loop closed the writer, so the late signal is reported as a stopping drop, not accepted.
         processed.Should().BeFalse();
+        drops.Measurements.Should().ContainSingle().Which.Should().Be((1L, "stopping"));
         logger
             .Entries.Should()
             .ContainSingle(e => e.Level == LogLevel.Warning && e.Exception is InvalidOperationException);
