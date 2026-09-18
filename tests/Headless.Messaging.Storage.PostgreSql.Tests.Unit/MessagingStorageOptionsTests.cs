@@ -49,17 +49,13 @@ public sealed class MessagingStorageOptionsTests : TestBase
     public async Task should_bind_the_schema_from_the_messaging_storage_configuration_section()
     {
         // given
-        var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(
-                new Dictionary<string, string?>(StringComparer.Ordinal)
-                {
-                    ["ConnectionString"] = "Host=localhost;Database=test",
-                    ["Headless:Messaging:Storage:Schema"] = "msg_from_configuration",
-                }
-            )
-            .Build();
+        var configuration = _BuildConfiguration("msg_from_configuration");
 
-        var services = _BuildServices(setup => setup.UsePostgreSql(configuration));
+        var services = _BuildServices(setup =>
+        {
+            setup.ConfigureStorage(configuration.GetSection(_StorageSection));
+            setup.UsePostgreSql("Host=localhost;Database=test");
+        });
 
         // when
         await using var provider = services.BuildServiceProvider();
@@ -72,23 +68,16 @@ public sealed class MessagingStorageOptionsTests : TestBase
     }
 
     [Fact]
-    public async Task should_prefer_the_configured_schema_over_the_bound_configuration_value()
+    public async Task should_apply_the_delegate_when_it_follows_the_bound_section()
     {
         // given
-        var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(
-                new Dictionary<string, string?>(StringComparer.Ordinal)
-                {
-                    ["ConnectionString"] = "Host=localhost;Database=test",
-                    ["Headless:Messaging:Storage:Schema"] = "msg_from_configuration",
-                }
-            )
-            .Build();
+        var configuration = _BuildConfiguration("msg_from_configuration");
 
         var services = _BuildServices(setup =>
         {
+            setup.ConfigureStorage(configuration.GetSection(_StorageSection));
             setup.ConfigureStorage(storage => storage.Schema = "msg_from_code");
-            setup.UsePostgreSql(configuration);
+            setup.UsePostgreSql("Host=localhost;Database=test");
         });
 
         // when
@@ -96,6 +85,29 @@ public sealed class MessagingStorageOptionsTests : TestBase
 
         // then
         provider.GetRequiredService<IOptions<MessagingStorageOptions>>().Value.Schema.Should().Be("msg_from_code");
+    }
+
+    [Fact]
+    public async Task should_apply_the_bound_section_when_it_follows_the_delegate()
+    {
+        // given
+        var configuration = _BuildConfiguration("msg_from_configuration");
+
+        var services = _BuildServices(setup =>
+        {
+            setup.ConfigureStorage(storage => storage.Schema = "msg_from_code");
+            setup.ConfigureStorage(configuration.GetSection(_StorageSection));
+            setup.UsePostgreSql("Host=localhost;Database=test");
+        });
+
+        // when
+        await using var provider = services.BuildServiceProvider();
+
+        // then
+        provider
+            .GetRequiredService<IOptions<MessagingStorageOptions>>()
+            .Value.Schema.Should()
+            .Be("msg_from_configuration", "both overloads register in call order, so the last one wins");
     }
 
     [Theory]
@@ -120,6 +132,17 @@ public sealed class MessagingStorageOptionsTests : TestBase
 
         // then
         act.Should().Throw<OptionsValidationException>();
+    }
+
+    private const string _StorageSection = "Headless:Messaging:Storage";
+
+    private static IConfiguration _BuildConfiguration(string schema)
+    {
+        return new ConfigurationBuilder()
+            .AddInMemoryCollection(
+                new Dictionary<string, string?>(StringComparer.Ordinal) { [$"{_StorageSection}:Schema"] = schema }
+            )
+            .Build();
     }
 
     private static ServiceCollection _BuildServices(Action<MessagingSetupBuilder> configure)

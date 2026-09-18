@@ -32,11 +32,6 @@ public static class SetupPostgreSqlMessaging
         }
 
         /// <summary>Configures PostgreSQL message storage from a configuration section.</summary>
-        /// <remarks>
-        /// <paramref name="configuration"/> supplies the <see cref="PostgreSqlOptions"/> values directly, and
-        /// the feature-owned schema is read from its <see cref="MessagingStorageOptions.SectionPath"/>
-        /// subsection, so passing the configuration root binds <c>Headless:Messaging:Storage:Schema</c>.
-        /// </remarks>
         /// <param name="configuration">Configuration containing <see cref="PostgreSqlOptions"/> values.</param>
         /// <returns>The setup builder for chaining.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="configuration"/> is null.</exception>
@@ -46,16 +41,10 @@ public static class SetupPostgreSqlMessaging
             return _AddPostgreSqlStorageCore(
                 setup,
                 services =>
-                {
                     services
                         .AddOptions<PostgreSqlOptions, PostgreSqlOptionsValidator>()
                         .Bind(configuration)
-                        .Configure(options => options.Version = setup.Options.Version);
-
-                    services
-                        .AddOptions<MessagingStorageOptions>()
-                        .Bind(configuration.GetSection(MessagingStorageOptions.SectionPath));
-                }
+                        .Configure(options => options.Version = setup.Options.Version)
             );
         }
 

@@ -66,6 +66,8 @@ On an upgraded schema, the history tables (`InboxOperationReceipts`, `InboxAudit
 ```csharp
 // The schema belongs to the feature, not the provider: one setting serves every messaging storage
 // backend, and this provider validates it against SQL Server identifier rules at startup.
+// ConfigureStorage also binds from configuration:
+//   options.ConfigureStorage(builder.Configuration.GetSection("Headless:Messaging:Storage"));
 options.ConfigureStorage(storage => storage.Schema = "messaging");
 
 options.UseSqlServer(config =>

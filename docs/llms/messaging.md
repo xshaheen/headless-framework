@@ -273,10 +273,11 @@ services.AddHeadlessMessaging(setup =>
   once at startup against its own dialect's identifier rules — PostgreSQL's unquoted-identifier rules
   (63 chars) or SQL Server's regular-identifier rules (128 chars). An invalid schema fails host startup
   with an `OptionsValidationException` instead of a later DDL error.
-- **Configuration binding.** A provider's `IConfiguration` overload also binds
-  `Headless:Messaging:Storage:Schema` from the configuration it is given, so passing the configuration
-  root picks the schema up from `appsettings.json`. An explicit `ConfigureStorage` call wins over the
-  bound value.
+- **Configuration binding.** `ConfigureStorage` also takes an `IConfiguration`, so the schema can come
+  from `appsettings.json`: `setup.ConfigureStorage(builder.Configuration.GetSection("Headless:Messaging:Storage"))`.
+  Pass the section itself, not the configuration root — its keys map to the option's properties. Provider
+  `Use…(IConfiguration)` overloads bind only their own options and never the schema. Both `ConfigureStorage`
+  overloads register in call order, so the last one applied wins.
 - **EF-context storage paths** read the same setting: `setup.UseEntityFramework<TContext>()` takes no
   schema of its own, so pair it with `ConfigureStorage` when the tables do not live in `messaging`.
 

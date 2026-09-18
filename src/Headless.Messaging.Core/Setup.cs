@@ -259,14 +259,6 @@ public static class SetupMessaging
         // requires Services/Registry to be initialized - which only happens in AddHeadlessMessaging.
         services.Configure<MessagingOptions, MessagingOptionsValidator>(options.CopyTo);
 
-        // Registered after the provider extensions above, so an explicit ConfigureStorage call overrides a
-        // schema a provider's IConfiguration overload bound. Skipped entirely when the caller never called
-        // ConfigureStorage, otherwise these defaults would overwrite that bound value.
-        if (setup.StorageOptions is { } storageOptions)
-        {
-            services.Configure<MessagingStorageOptions>(storageOptions.CopyTo);
-        }
-
         // Register and validate circuit breaker and retry processor options via DI pipeline
         services.Configure<CircuitBreakerOptions, CircuitBreakerOptionsValidator>(cb =>
             options.CircuitBreaker.CopyTo(cb)

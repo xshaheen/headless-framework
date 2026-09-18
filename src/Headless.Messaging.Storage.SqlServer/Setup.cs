@@ -29,11 +29,6 @@ public static class SetupSqlServerMessaging
         }
 
         /// <summary>Configures SQL Server message storage from a configuration section.</summary>
-        /// <remarks>
-        /// <paramref name="configuration"/> supplies the <see cref="SqlServerOptions"/> values directly, and
-        /// the feature-owned schema is read from its <see cref="MessagingStorageOptions.SectionPath"/>
-        /// subsection, so passing the configuration root binds <c>Headless:Messaging:Storage:Schema</c>.
-        /// </remarks>
         /// <param name="configuration">Configuration containing <see cref="SqlServerOptions"/> values.</param>
         /// <returns>The setup builder for chaining.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="configuration"/> is null.</exception>
@@ -43,16 +38,10 @@ public static class SetupSqlServerMessaging
             return _AddSqlServerStorageCore(
                 setup,
                 services =>
-                {
                     services
                         .AddOptions<SqlServerOptions, SqlServerOptionsValidator>()
                         .Bind(configuration)
-                        .Configure(options => options.Version = setup.Options.Version);
-
-                    services
-                        .AddOptions<MessagingStorageOptions>()
-                        .Bind(configuration.GetSection(MessagingStorageOptions.SectionPath));
-                }
+                        .Configure(options => options.Version = setup.Options.Version)
             );
         }
 

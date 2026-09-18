@@ -3,6 +3,7 @@
 using Headless.Checks;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Registration;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -54,6 +55,25 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
     public MessagingInstrumentationOptions Instrumentation { get; } = new();
 
     /// <summary>
+    /// Binds the shared <see cref="MessagingStorageOptions"/>, which owns the database naming used by every
+    /// storage provider, from <paramref name="configuration"/>.
+    /// </summary>
+    /// <param name="configuration">
+    /// The configuration section to bind, normally <c>Headless:Messaging:Storage</c>. The section's keys map
+    /// to the option's properties, so the schema comes from its <c>Schema</c> key.
+    /// </param>
+    /// <returns>This builder, to allow chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="configuration"/> is <see langword="null"/>.</exception>
+    public MessagingSetupBuilder ConfigureStorage(IConfiguration configuration)
+    {
+        Argument.IsNotNull(configuration);
+
+        Services.Configure<MessagingStorageOptions>(configuration);
+
+        return this;
+    }
+
+    /// <summary>
     /// Applies <paramref name="configure"/> to the shared <see cref="MessagingStorageOptions"/>, which owns
     /// the database naming used by every storage provider.
     /// </summary>
@@ -64,7 +84,7 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
     {
         Argument.IsNotNull(configure);
 
-        configure(StorageOptions ??= new MessagingStorageOptions());
+        Services.Configure(configure);
 
         return this;
     }
@@ -76,13 +96,6 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
     public IQueueRegistrationBuilder Queue { get; }
 
     internal IServiceCollection Services { get; }
-
-    /// <summary>
-    /// The storage options an explicit <see cref="ConfigureStorage"/> call built, or <see langword="null"/>
-    /// when the caller never made one. Stays null in that case so the setup pipeline does not overwrite a
-    /// value a provider bound from configuration with this type's defaults.
-    /// </summary>
-    internal MessagingStorageOptions? StorageOptions { get; private set; }
 
     internal ConsumerRegistry Registry { get; }
 

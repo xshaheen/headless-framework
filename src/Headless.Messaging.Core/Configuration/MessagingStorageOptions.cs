@@ -9,17 +9,14 @@ namespace Headless.Messaging.Configuration;
 /// validates it once against its own dialect's identifier rules.
 /// </summary>
 /// <remarks>
-/// Configure it with <c>setup.ConfigureStorage(options =&gt; options.Schema = "…")</c> inside
-/// <c>AddHeadlessMessaging</c>, or bind it from configuration through a provider's
-/// <c>Use…(IConfiguration)</c> overload, which reads <see cref="SectionPath"/>. An explicit
-/// <c>ConfigureStorage</c> call wins over the bound configuration value.
+/// Configure it inside <c>AddHeadlessMessaging</c> with either
+/// <c>setup.ConfigureStorage(options =&gt; options.Schema = "…")</c> or
+/// <c>setup.ConfigureStorage(configuration.GetSection("Headless:Messaging:Storage"))</c>. Both register
+/// in call order, so the last one applied wins.
 /// </remarks>
 [PublicAPI]
 public sealed class MessagingStorageOptions
 {
-    /// <summary>The configuration section these options bind from: <c>Headless:Messaging:Storage</c>.</summary>
-    public const string SectionPath = "Headless:Messaging:Storage";
-
     /// <summary>The schema default, matching the feature name.</summary>
     public const string DefaultSchema = "messaging";
 
@@ -29,14 +26,4 @@ public sealed class MessagingStorageOptions
     /// so an invalid name fails the host rather than a later DDL statement.
     /// </summary>
     public string Schema { get; set; } = DefaultSchema;
-
-    /// <summary>
-    /// Copies every property to <paramref name="target"/>. Centralizes the property list so adding a
-    /// property here only requires extending this method — the setup pipeline picks it up instead of
-    /// silently dropping it from the DI-resolved instance.
-    /// </summary>
-    internal void CopyTo(MessagingStorageOptions target)
-    {
-        target.Schema = Schema;
-    }
 }
