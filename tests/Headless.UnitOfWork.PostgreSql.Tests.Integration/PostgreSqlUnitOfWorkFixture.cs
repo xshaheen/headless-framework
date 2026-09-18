@@ -20,13 +20,74 @@ namespace Tests;
 public sealed class PostgreSqlUnitOfWorkFixture
     : HeadlessPostgreSqlFixture,
         ICollectionFixture<PostgreSqlUnitOfWorkFixture>,
-        IUnitOfWorkRunFixture
+        IUnitOfWorkRunFixture,
+        IUnitOfWorkResourceFixture
 {
     public string ConnectionString => Container.GetConnectionString();
 
     protected override PostgreSqlBuilder Configure()
     {
         return base.Configure().WithDatabase("unit_of_work_test").WithUsername("postgres").WithPassword("postgres");
+    }
+
+    public UnitOfWorkResourceSession CreateSession(CapturingLoggerProvider? logs = null)
+    {
+        var provider = BuildProvider(logs);
+        var scope = provider.CreateAsyncScope();
+        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+
+        return new UnitOfWorkResourceSession(provider, scope, manager);
+    }
+
+    public async ValueTask<UnitOfWorkResourceHandle> BeginOwnedAsync(
+        IUnitOfWorkManager manager,
+        CancellationToken cancellationToken
+    )
+    {
+        var connection = new NpgsqlConnection(ConnectionString);
+
+        try
+        {
+            var unitOfWork = await manager.BeginAsync(connection, cancellationToken: cancellationToken);
+
+            return new UnitOfWorkResourceHandle(unitOfWork, connection);
+        }
+        catch
+        {
+            // A rejected begin (a second resource under an active unit) never returns a handle to release the
+            // connection; the manager already rolled the transaction back, but the ADO object must still be
+            // disposed here.
+            await connection.DisposeAsync();
+
+            throw;
+        }
+    }
+
+    public async Task<UnitOfWorkObservedHandle> EnlistObservedAsync(
+        IUnitOfWorkManager manager,
+        CancellationToken cancellationToken
+    )
+    {
+        var connection = new NpgsqlConnection(ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var unitOfWork = manager.Enlist(connection, transaction);
+
+        return new UnitOfWorkObservedHandle(unitOfWork, connection, transaction);
+    }
+
+    public Task InsertProbeRowAsync(IUnitOfWork unitOfWork, string name, CancellationToken cancellationToken)
+    {
+        var resource =
+            (IRelationalUnitOfWorkResource?)unitOfWork.Resource
+            ?? throw new InvalidOperationException("The unit of work exposed no relational resource.");
+
+        return InsertProbeRowAsync(
+            (NpgsqlConnection)resource.Connection,
+            (NpgsqlTransaction)resource.Transaction,
+            name,
+            cancellationToken
+        );
     }
 
     public async Task RunAsync(

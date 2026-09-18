@@ -18,8 +18,69 @@ namespace Tests;
 public sealed class SqlServerUnitOfWorkFixture
     : HeadlessSqlServerFixture,
         ICollectionFixture<SqlServerUnitOfWorkFixture>,
-        IUnitOfWorkRunFixture
+        IUnitOfWorkRunFixture,
+        IUnitOfWorkResourceFixture
 {
+    public UnitOfWorkResourceSession CreateSession(CapturingLoggerProvider? logs = null)
+    {
+        var provider = BuildProvider(logs);
+        var scope = provider.CreateAsyncScope();
+        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+
+        return new UnitOfWorkResourceSession(provider, scope, manager);
+    }
+
+    public async ValueTask<UnitOfWorkResourceHandle> BeginOwnedAsync(
+        IUnitOfWorkManager manager,
+        CancellationToken cancellationToken
+    )
+    {
+        var connection = new SqlConnection(ConnectionString);
+
+        try
+        {
+            var unitOfWork = await manager.BeginAsync(connection, cancellationToken: cancellationToken);
+
+            return new UnitOfWorkResourceHandle(unitOfWork, connection);
+        }
+        catch
+        {
+            // A rejected begin (a second resource under an active unit) never returns a handle to release the
+            // connection; the manager already rolled the transaction back, but the ADO object must still be
+            // disposed here.
+            await connection.DisposeAsync();
+
+            throw;
+        }
+    }
+
+    public async Task<UnitOfWorkObservedHandle> EnlistObservedAsync(
+        IUnitOfWorkManager manager,
+        CancellationToken cancellationToken
+    )
+    {
+        var connection = new SqlConnection(ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        var transaction = (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        var unitOfWork = manager.Enlist(connection, transaction);
+
+        return new UnitOfWorkObservedHandle(unitOfWork, connection, transaction);
+    }
+
+    public Task InsertProbeRowAsync(IUnitOfWork unitOfWork, string name, CancellationToken cancellationToken)
+    {
+        var resource =
+            (IRelationalUnitOfWorkResource?)unitOfWork.Resource
+            ?? throw new InvalidOperationException("The unit of work exposed no relational resource.");
+
+        return InsertProbeRowAsync(
+            (SqlConnection)resource.Connection,
+            (SqlTransaction)resource.Transaction,
+            name,
+            cancellationToken
+        );
+    }
+
     public async Task RunAsync(
         Func<IUnitOfWorkRunContext, CancellationToken, Task> operation,
         CancellationToken cancellationToken
