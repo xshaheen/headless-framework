@@ -23,7 +23,7 @@ public sealed class PollingReleaseSignalTests : TestBase
 
         timeProvider.Advance(fallback);
 
-        await wait; // completes on the fallback — the correctness floor
+        await wait.Bounded(); // completes on the fallback — the correctness floor
         wait.IsCompletedSuccessfully.Should().BeTrue();
     }
 
@@ -51,14 +51,14 @@ public sealed class PollingReleaseSignalTests : TestBase
         var first = signal.WaitAsync("resource", TimeSpan.FromMinutes(10), AbortToken).AsTask();
 
         await signal.PublishAsync("resource", AbortToken);
-        await first;
+        await first.Bounded();
 
         var later = signal.WaitAsync("resource", fallback, AbortToken).AsTask();
 
         later.IsCompleted.Should().BeFalse();
 
         timeProvider.Advance(fallback);
-        await later;
+        await later.Bounded();
 
         later.IsCompletedSuccessfully.Should().BeTrue();
     }
@@ -79,7 +79,7 @@ public sealed class PollingReleaseSignalTests : TestBase
 
         timeProvider.Advance(fallback);
 
-        await wait; // completes on the fallback rather than hanging
+        await wait.Bounded(); // completes on the fallback rather than hanging
         wait.IsCompletedSuccessfully.Should().BeTrue();
     }
 
@@ -94,7 +94,7 @@ public sealed class PollingReleaseSignalTests : TestBase
 
         await cts.CancelAsync();
 
-        var act = async () => await wait;
+        var act = async () => await wait.Bounded();
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
 }

@@ -18,6 +18,27 @@ internal static class DistributedLockTestSupport
     /// <summary>EventId of <c>RegularLockLoggerExtensions.LogTryOnceSafetyDeadlineFired</c>.</summary>
     public const int SafetyDeadlineFiredEventId = 24;
 
+    /// <summary>
+    /// Long enough that a merely starved continuation still completes, short enough that a stuck one is reported.
+    /// </summary>
+    private static readonly TimeSpan _WaitBound = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// Bounds a wait on work another thread, timer or lock must finish. An await with no bound turns a single stuck
+    /// test into a silent hang of the whole assembly until the CI job's own deadline, with no test name to go on;
+    /// this fails that one test instead. It never shortens a passing wait, so it is not a timing assertion.
+    /// </summary>
+    public static Task Bounded(this Task task)
+    {
+        return task.WaitAsync(_WaitBound);
+    }
+
+    /// <inheritdoc cref="Bounded(Task)"/>
+    public static Task<T> Bounded<T>(this Task<T> task)
+    {
+        return task.WaitAsync(_WaitBound);
+    }
+
     /// <summary>EventId of <c>RegularLockLoggerExtensions.LogFailedToAcquireLockAfter</c> (routine contention).</summary>
     public const int FailedToAcquireLockAfterEventId = 13;
 

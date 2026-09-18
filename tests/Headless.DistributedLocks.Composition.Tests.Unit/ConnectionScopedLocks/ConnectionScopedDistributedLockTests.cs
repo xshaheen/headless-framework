@@ -174,7 +174,7 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
         _timeProvider.Advance(TimeSpan.FromMilliseconds(40) + TimeSpan.FromTicks(1));
         await _PollUntilAsync(() => _storage.AcquireCount == 2);
 
-        await using var handle = await acquire;
+        await using var handle = await acquire.Bounded();
         handle.Should().NotBeNull();
         _storage.AcquireCount.Should().Be(2);
     }
@@ -287,7 +287,7 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
         alwaysContended.GrantNext();
 
         // Drain the first acquirer so its background loop doesn't outlive the test.
-        await using var handle = await first;
+        await using var handle = await first.Bounded();
     }
 
     [Fact]
@@ -314,7 +314,7 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
         blockingSignal.ReleaseAll();
         alwaysContended.GrantNext();
 
-        await using var handle = await first;
+        await using var handle = await first.Bounded();
     }
 
     [Fact]

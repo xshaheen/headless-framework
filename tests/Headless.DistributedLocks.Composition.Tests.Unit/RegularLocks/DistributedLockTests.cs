@@ -351,7 +351,7 @@ public sealed class DistributedLockTests : TestBase
         await cts.CancelAsync();
 
         // then
-        var act = async () => await acquireTask;
+        var act = async () => await acquireTask.Bounded();
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
@@ -471,7 +471,7 @@ public sealed class DistributedLockTests : TestBase
         }
 
         // when
-        var result = await acquireTask;
+        var result = await acquireTask.Bounded();
 
         // then - should have retried and succeeded
         result.Should().NotBeNull();
@@ -740,7 +740,7 @@ public sealed class DistributedLockTests : TestBase
 
         // then — the call must complete with null rather than hang forever
         acquireTask.IsCompleted.Should().BeTrue("safety deadline must bound the storage call");
-        var result = await acquireTask;
+        var result = await acquireTask.Bounded();
         result.Should().BeNull();
     }
 
@@ -768,7 +768,7 @@ public sealed class DistributedLockTests : TestBase
         await _DrainContinuationsAsync(acquireTask);
 
         // then — safety deadline wins, caller token is unaffected
-        var result = await acquireTask;
+        var result = await acquireTask.Bounded();
         result.Should().BeNull();
         callerCts
             .IsCancellationRequested.Should()
@@ -974,7 +974,7 @@ public sealed class DistributedLockTests : TestBase
 
         _timeProvider.Advance(TimeSpan.FromSeconds(_SafetyDeadlineSeconds + 1));
         await _DrainContinuationsAsync(acquireTask);
-        await acquireTask;
+        await acquireTask.Bounded();
 
         // then — orphan cleanup fires symmetrically with the non-Zero path
         await storage
@@ -1098,7 +1098,7 @@ public sealed class DistributedLockTests : TestBase
             _timeProvider.Advance(TimeSpan.FromSeconds(1));
         }
 
-        await releaseTask;
+        await releaseTask.Bounded();
 
         // then
         callCount.Should().BeGreaterThanOrEqualTo(3);
@@ -1223,7 +1223,7 @@ public sealed class DistributedLockTests : TestBase
             _timeProvider.Advance(TimeSpan.FromSeconds(1));
         }
 
-        var act = async () => await releaseTask;
+        var act = async () => await releaseTask.Bounded();
 
         // then — no throw and no publish (an unconfirmed release must not wake waiters early)
         await act.Should().NotThrowAsync();

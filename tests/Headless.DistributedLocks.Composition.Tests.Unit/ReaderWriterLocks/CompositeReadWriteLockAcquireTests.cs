@@ -602,7 +602,7 @@ public sealed class CompositeReadWriteLockAcquireTests : TestBase
 
         await secondStarted.Task.WaitAsync(AbortToken);
         timeProvider.Advance(TimeSpan.FromSeconds(5));
-        var act = async () => await acquireTask;
+        var act = async () => await acquireTask.Bounded();
 
         await act.Should().ThrowAsync<LockHandleLostException>().Where(exception => exception.Resource == "a");
         first.RenewalCount.Should().Be(1);

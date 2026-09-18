@@ -130,7 +130,7 @@ public sealed class CompositeDistributedLeaseTests : TestBase
         await allRenewalsStarted.Task.WaitAsync(AbortToken);
         await cancellation.CancelAsync();
 
-        var act = async () => await renewal;
+        var act = async () => await renewal.Bounded();
 
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
@@ -274,7 +274,7 @@ public sealed class CompositeDistributedLeaseTests : TestBase
         Volatile.Read(ref releaseCalls).Should().Be(0);
         allowRenewal.TrySetResult();
         (await renewal).Should().BeTrue();
-        await release;
+        await release.Bounded();
         releaseCalls.Should().Be(1);
         (await sut.RenewAsync(cancellationToken: AbortToken)).Should().BeFalse();
     }

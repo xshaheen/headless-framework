@@ -545,6 +545,7 @@ public abstract class CacheConformanceTestsBase : TestBase
         var cache = CreateCache(Faker.Random.AlphaNumeric(8));
         var key = Faker.Random.AlphaNumeric(10);
         var options = _CreateEagerOptions();
+        using var eagerRefreshed = _SubscribeEagerRefresh(cache);
 
         await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("v1"), options, AbortToken);
         // Past the eager point (50% of 400ms) but well before logical expiration.
@@ -555,11 +556,8 @@ public abstract class CacheConformanceTestsBase : TestBase
         hit.Value.Should().Be("v1");
         hit.IsStale.Should().BeFalse();
 
-        await _WaitUntilAsync(async () =>
-        {
-            var cached = await cache.GetAsync<string>(key, AbortToken);
-            return cached is { HasValue: true, Value: "v2" };
-        });
+        await _AwaitEagerRefreshAsync(eagerRefreshed);
+        (await cache.GetAsync<string>(key, AbortToken)).Value.Should().Be("v2");
     }
 
     public virtual async Task should_not_stampede_eager_refresh_across_concurrent_readers()
@@ -570,6 +568,7 @@ public abstract class CacheConformanceTestsBase : TestBase
         var options = _CreateEagerOptions();
         var factoryCalls = 0;
         var factoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var eagerRefreshed = _SubscribeEagerRefresh(cache);
 
         await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("v1"), options, AbortToken);
         await AdvanceAsync(TimeSpan.FromMilliseconds(250));
@@ -588,12 +587,8 @@ public abstract class CacheConformanceTestsBase : TestBase
 
         factoryGate.SetResult("v2");
 
-        await _WaitUntilAsync(async () =>
-        {
-            var cached = await cache.GetAsync<string>(key, AbortToken);
-            return cached is { HasValue: true, Value: "v2" };
-        });
-
+        await _AwaitEagerRefreshAsync(eagerRefreshed);
+        (await cache.GetAsync<string>(key, AbortToken)).Value.Should().Be("v2");
         factoryCalls.Should().Be(1);
     }
 
@@ -1346,6 +1341,44 @@ public abstract class CacheConformanceTestsBase : TestBase
         {
             await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(10), AbortToken);
             await AdvanceAsync(TimeSpan.FromMilliseconds(20));
+        }
+    }
+
+    private static EagerRefreshSignal _SubscribeEagerRefresh(ICache cache)
+    {
+        // Subscribe before the read that triggers the refresh: the refresh is detached, so its signal can land at
+        // any point afterwards, and the cache buffers a signal only for an event that already has a handler.
+        var completion = new TaskCompletionSource<CacheRefreshEventArgs>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+
+        return new EagerRefreshSignal(
+            completion,
+            cache.Events.EagerRefresh.AddHandler(args => completion.TrySetResult(args))
+        );
+    }
+
+    /// <summary>
+    /// Waits for the cache's own eager-refresh completion signal. The coordinator raises it only after the refreshed
+    /// value has been committed, so a read taken afterwards observes that value without polling — and without moving
+    /// the clock, which would otherwise be free to expire the very entry the in-flight refresh is about to rewrite.
+    /// </summary>
+    private static async Task _AwaitEagerRefreshAsync(EagerRefreshSignal signal)
+    {
+        var args = await signal.Completion.WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
+        args.Outcome.Should().Be(CacheFactoryOutcome.Success);
+    }
+
+    private sealed class EagerRefreshSignal(
+        TaskCompletionSource<CacheRefreshEventArgs> completion,
+        IDisposable registration
+    ) : IDisposable
+    {
+        public Task<CacheRefreshEventArgs> Completion => completion.Task;
+
+        public void Dispose()
+        {
+            registration.Dispose();
         }
     }
 

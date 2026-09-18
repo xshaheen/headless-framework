@@ -262,7 +262,7 @@ public sealed class DistributedSemaphoreProviderTests : TestBase
 
         // then — waiter is unblocked faster than the polling budget
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-        await using var second = await waiterTask;
+        await using var second = await waiterTask.Bounded();
         stopwatch.Stop();
 
         second.Should().NotBeNull();
@@ -434,7 +434,7 @@ public sealed class DistributedSemaphoreProviderTests : TestBase
             _timeProvider.Advance(TimeSpan.FromSeconds(1));
         }
 
-        var act = async () => await releaseTask;
+        var act = async () => await releaseTask.Bounded();
 
         // then
         await act.Should().NotThrowAsync();

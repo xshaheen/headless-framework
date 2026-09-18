@@ -115,15 +115,14 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
             lostSignal
         );
 
-        // when
-        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        // when — the released notification names a lock id the handle does not own, which must cancel its
+        // LostToken. Nothing else can complete this signal, so waiting for it is the whole assertion; how many
+        // milliseconds the notification took to land is the scheduler's business, not the contract's.
         ((ICanReceiveLockReleased)provider).OnLockReleased(new DistributedLockReleased(resource, "foreign-lock"));
-        await lostSignal.Task.WaitAsync(TimeSpan.FromMilliseconds(500), AbortToken);
-        stopwatch.Stop();
+        await lostSignal.Task.Bounded();
 
         // then
         handle!.LostToken.IsCancellationRequested.Should().BeTrue();
-        stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromMilliseconds(200));
     }
 
     [Fact]
