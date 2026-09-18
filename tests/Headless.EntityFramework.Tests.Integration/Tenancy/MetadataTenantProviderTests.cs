@@ -62,9 +62,11 @@ public sealed class SqlServerTenantIndexTests(SqlServerMetadataTenantFixture fix
         fixture.CurrentTenant.Id = null;
         await using var scope = fixture.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<MetadataTenantContext>();
+        // Interpolation holes become SQL parameters here, so the code stays a hole rather than inline text.
+        const string code = "host-code";
         Func<Task<int>> insert = () =>
             db.Database.ExecuteSqlInterpolatedAsync(
-                $"INSERT INTO [tenancy].[HostRows] ([Id], [Code], [TenantId]) VALUES ({Guid.NewGuid()}, {"host-code"}, NULL)",
+                $"INSERT INTO [tenancy].[HostRows] ([Id], [Code], [TenantId]) VALUES ({Guid.NewGuid()}, {code}, NULL)",
                 AbortToken
             );
         await insert();

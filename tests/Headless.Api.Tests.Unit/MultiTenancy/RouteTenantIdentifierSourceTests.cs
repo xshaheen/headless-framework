@@ -87,8 +87,8 @@ public sealed class RouteTenantIdentifierSourceTests : TestBase
 
         var descriptors = services.Where(d => d.ServiceType == typeof(ITenantIdentifierSource)).ToList();
 
-        descriptors.Should().HaveCount(1);
-        descriptors[0].ImplementationType.Should().Be(typeof(RouteTenantIdentifierSource));
+        descriptors.Should().ContainSingle();
+        descriptors[0].ImplementationType.Should().Be<RouteTenantIdentifierSource>();
     }
 
     [Fact]
@@ -139,7 +139,9 @@ public sealed class RouteTenantIdentifierSourceTests : TestBase
     public void should_bind_the_route_value_name_from_configuration()
     {
         var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?> { ["RouteValueName"] = "slug" })
+            .AddInMemoryCollection(
+                new Dictionary<string, string?>(StringComparer.Ordinal) { ["RouteValueName"] = "slug" }
+            )
             .Build();
         var services = new ServiceCollection();
         var builder = new HeadlessTenantCatalogResolutionBuilder(services);

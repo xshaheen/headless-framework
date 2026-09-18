@@ -1082,16 +1082,23 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
                 new Dictionary<string, string?>(headers, StringComparer.Ordinal) { [Headers.RoutingAffinityKey] = " " }
             ),
             "missing-identity" => JsonSerializer.Serialize(
-                new Dictionary<string, string?> { [Headers.RoutingAffinityKey] = "order-42" }
+                new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.RoutingAffinityKey] = "order-42" }
             ),
             _ => JsonSerializer.Serialize(headers),
         };
         var attributes = new Dictionary<string, Amazon.SQS.Model.MessageAttributeValue>(StringComparer.Ordinal)
         {
-            [encoding == "unknown-envelope-missing-identity" ? "headless-aws-headers-v2" : "headless-aws-headers-v1"] =
-                new() { DataType = encoding == "wrong-type" ? "Number" : "String", StringValue = json },
+            [
+                string.Equals(encoding, "unknown-envelope-missing-identity", StringComparison.Ordinal)
+                    ? "headless-aws-headers-v2"
+                    : "headless-aws-headers-v1"
+            ] = new()
+            {
+                DataType = string.Equals(encoding, "wrong-type", StringComparison.Ordinal) ? "Number" : "String",
+                StringValue = json,
+            },
         };
-        if (encoding == "flat-attributes")
+        if (string.Equals(encoding, "flat-attributes", StringComparison.Ordinal))
         {
             attributes = headers
                 .Where(pair => pair.Value is not null)
@@ -1105,7 +1112,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
                     StringComparer.Ordinal
                 );
         }
-        if (encoding == "mixed")
+        if (string.Equals(encoding, "mixed", StringComparison.Ordinal))
         {
             attributes[Headers.MessageId] = new() { DataType = "String", StringValue = "other" };
         }
@@ -1120,7 +1127,9 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         sqs.DeleteMessageAsync(sourceQueue, "receipt-bag", Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
+#pragma warning disable MA0045 // A substitute callback returning the response value cannot await CancelAsync.
                 stop.Cancel();
+#pragma warning restore MA0045
                 return new DeleteMessageResponse();
             });
         sqs.ReceiveMessageAsync(Arg.Any<ReceiveMessageRequest>(), Arg.Any<CancellationToken>())

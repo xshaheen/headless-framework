@@ -264,7 +264,9 @@ public sealed class TenantIdentifierSourceContractTests : TestBase
         )
         {
             IdentifierLookups++;
-            return Task.FromResult(normalizedIdentifier == "acme" ? _acme : null);
+            return Task.FromResult(
+                string.Equals(normalizedIdentifier, "acme", StringComparison.Ordinal) ? _acme : null
+            );
         }
 
         public Task<TenantInfo?> FindByIdAsync(string id, CancellationToken cancellationToken = default)

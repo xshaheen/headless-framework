@@ -1115,7 +1115,7 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
             .BeTrue();
         var succeededInside = await connection.ExecuteScalarAsync<bool>(
             new CommandDefinition(
-                """SELECT CAST(CASE WHEN StatusName='Succeeded' THEN 1 ELSE 0 END AS bit) FROM messaging.Received WHERE Id=@Id""",
+                "SELECT CAST(CASE WHEN StatusName='Succeeded' THEN 1 ELSE 0 END AS bit) FROM messaging.Received WHERE Id=@Id",
                 new { Id = message.StorageId },
                 transaction,
                 cancellationToken: AbortToken
@@ -1127,7 +1127,7 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
 
         var succeededOutside = await connection.ExecuteScalarAsync<bool>(
             new CommandDefinition(
-                """SELECT CAST(CASE WHEN StatusName='Succeeded' THEN 1 ELSE 0 END AS bit) FROM messaging.Received WHERE Id=@Id""",
+                "SELECT CAST(CASE WHEN StatusName='Succeeded' THEN 1 ELSE 0 END AS bit) FROM messaging.Received WHERE Id=@Id",
                 new { Id = message.StorageId },
                 cancellationToken: AbortToken
             )
@@ -1754,7 +1754,11 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
                 );
             }
 
-            var claimed = await _ClaimRetryAsync(storage, tableName == "Published", MessageLane.Bus);
+            var claimed = await _ClaimRetryAsync(
+                storage,
+                string.Equals(tableName, "Published", StringComparison.Ordinal),
+                MessageLane.Bus
+            );
 
             claimed.Should().ContainSingle(message => message.StorageId == retryId);
         }

@@ -48,9 +48,9 @@ public abstract class HeadlessDbContextSaveChangesTestBase<TFixture, TContext> :
             db.TestEntities.Add(first);
             if (synchronous)
             {
-#pragma warning disable MA0045 // Synchronous provider conformance case.
+#pragma warning disable MA0045, VSTHRD103 // Synchronous provider conformance case.
                 db.SaveChanges();
-#pragma warning restore MA0045
+#pragma warning restore MA0045, VSTHRD103
             }
             else
             {
@@ -63,9 +63,9 @@ public abstract class HeadlessDbContextSaveChangesTestBase<TFixture, TContext> :
             db.TestEntities.Add(second);
             if (synchronous)
             {
-#pragma warning disable MA0045 // Synchronous provider conformance case.
+#pragma warning disable MA0045, VSTHRD103 // Synchronous provider conformance case.
                 db.SaveChanges();
-#pragma warning restore MA0045
+#pragma warning restore MA0045, VSTHRD103
             }
             else
             {
@@ -73,7 +73,7 @@ public abstract class HeadlessDbContextSaveChangesTestBase<TFixture, TContext> :
             }
 
             second.GetDomainEvents().Should().BeEmpty();
-            db.EmittedLocalMessages.Count.Should().Be(firstCount + 2);
+            db.EmittedLocalMessages.Should().HaveCount(firstCount + 2);
             if (rollback)
             {
                 await transaction.RollbackAsync(AbortToken);

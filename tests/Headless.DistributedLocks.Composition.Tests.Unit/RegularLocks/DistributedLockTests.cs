@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using Headless.Abstractions;
 using Headless.DistributedLocks;
@@ -455,16 +456,22 @@ public sealed class DistributedLockTests : TestBase
             AbortToken
         );
 
-        // Drive the provider's retry loop by advancing fake time until it acquires.
-        // A bare `await Task.Yield()` between advances does not reliably drain the
-        // CTS-cancellation continuation queued from a prior advance, so we wait for
-        // an observable signal (callCount tick) before advancing again.
-        for (var advances = 0; advances < 10 && !acquireTask.IsCompleted; advances++)
+        // Drive the provider's retry loop by advancing fake time until it acquires. Each advance is followed by
+        // a wait for observable progress — a bare `await Task.Yield()` does not reliably drain the
+        // CTS-cancellation continuation queued from a prior advance — and the drive keeps going until the
+        // acquisition completes. A fixed budget of advances cannot work here: a starved continuation exhausts it
+        // while the task is still pending, and because this clock is the only thing that fires the provider's
+        // retry delay, the drive stopping is the same as the delay never elapsing. The real-time bound is a
+        // safety net so a provider that stops retrying fails by name instead of waiting forever.
+        var drive = Stopwatch.StartNew();
+        var driveBudget = TimeSpan.FromSeconds(30);
+
+        while (!acquireTask.IsCompleted && drive.Elapsed < driveBudget)
         {
             var observedBefore = callCount;
             _timeProvider.Advance(TimeSpan.FromMilliseconds(500));
 
-            for (var i = 0; i < 200 && callCount == observedBefore && !acquireTask.IsCompleted; i++)
+            while (callCount == observedBefore && !acquireTask.IsCompleted && drive.Elapsed < driveBudget)
             {
                 await Task.Yield();
             }

@@ -952,7 +952,9 @@ public sealed class ConsumerRegisterTests : TestBase
     {
         var handle = Activator.CreateInstance(handleType, nonPublic: true)!;
         handleType.GetProperty("Logger")!.SetValue(handle, NullLogger<ConsumerRegister>.Instance);
+#pragma warning disable CA2000 // The GroupHandle owns the source once it is assigned.
         handleType.GetProperty("Cts")!.SetValue(handle, new CancellationTokenSource());
+#pragma warning restore CA2000
         handleType.GetProperty("GroupName")!.SetValue(handle, "payments");
         handleType.GetProperty("ConsumerTasks")!.SetValue(handle, new ConcurrentBag<Task>());
         return handle;

@@ -35,7 +35,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         string? messageId
     )
     {
-        var fakeUnitOfWork = FakeUnitOfWorks.CreateActive();
+        await using var fakeUnitOfWork = FakeUnitOfWorks.CreateActive();
         await using var transaction = Substitute.For<System.Data.Common.DbTransaction>();
         var resolver = Substitute.For<IDeliveryCoordinationResolver>();
         resolver.Resolve(fakeUnitOfWork).Returns(DeliveryCoordination.Compatible(fakeUnitOfWork, transaction));
@@ -224,7 +224,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         MessageLane lane
     )
     {
-        var fakeUnitOfWork = FakeUnitOfWorks.CreateActive();
+        await using var fakeUnitOfWork = FakeUnitOfWorks.CreateActive();
         await using var transaction = Substitute.For<System.Data.Common.DbTransaction>();
         var resolver = Substitute.For<IDeliveryCoordinationResolver>();
         resolver.Resolve(fakeUnitOfWork).Returns(DeliveryCoordination.Compatible(fakeUnitOfWork, transaction));
@@ -285,7 +285,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         MessageLane lane
     )
     {
-        var fakeUnitOfWork = FakeUnitOfWorks.CreateActive();
+        await using var fakeUnitOfWork = FakeUnitOfWorks.CreateActive();
         await using var transaction = Substitute.For<System.Data.Common.DbTransaction>();
         var resolver = Substitute.For<IDeliveryCoordinationResolver>();
         resolver.Resolve(fakeUnitOfWork).Returns(DeliveryCoordination.Compatible(fakeUnitOfWork, transaction));
@@ -460,7 +460,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
     [Fact]
     public async Task should_reject_durable_delivery_through_incompatible_unit_of_work_before_any_side_effect()
     {
-        var fakeUnitOfWork = FakeUnitOfWorks.CreateActive();
+        await using var fakeUnitOfWork = FakeUnitOfWorks.CreateActive();
         await using var harness = _CreateHarness(coordinationResolver: static () =>
             new IncompatibleCoordinationResolver()
         );
@@ -814,7 +814,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
     [Fact]
     public async Task should_send_transport_direct_through_incompatible_unit_of_work_without_storage_side_effects()
     {
-        var fakeUnitOfWork = FakeUnitOfWorks.CreateActive();
+        await using var fakeUnitOfWork = FakeUnitOfWorks.CreateActive();
         await using var harness = _CreateHarness(coordinationResolver: static () =>
             new IncompatibleCoordinationResolver()
         );

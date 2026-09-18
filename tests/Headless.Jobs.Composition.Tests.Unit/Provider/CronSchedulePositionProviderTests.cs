@@ -367,10 +367,12 @@ public sealed class CronSchedulePositionProviderTests : TestBase
             workerStarted.Set();
             try
             {
+#pragma warning disable MA0045 // The test needs a real thread parked on the call; awaiting would release it.
                 provider
                     .MaterializeCronScheduleOccurrenceAsync(_Materialization(definition), cancellation.Token)
                     .GetAwaiter()
                     .GetResult();
+#pragma warning restore MA0045
             }
             catch (Exception exception)
             {
@@ -414,7 +416,9 @@ public sealed class CronSchedulePositionProviderTests : TestBase
             NextCronOccurrence = new NextCronOccurrence(result.OccurrenceId!.Value, result.OccurrenceCreatedAt!.Value),
         };
 
-        var claimed = await provider.QueueCronJobOccurrencesAsync((_Projection, [context]), AbortToken).ToArrayAsync();
+        var claimed = await provider
+            .QueueCronJobOccurrencesAsync((_Projection, [context]), AbortToken)
+            .ToArrayAsync(AbortToken);
 
         claimed.Should().ContainSingle();
         claimed[0].Status.Should().Be(JobStatus.Queued);

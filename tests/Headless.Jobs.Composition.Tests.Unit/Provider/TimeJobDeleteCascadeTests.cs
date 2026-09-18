@@ -153,7 +153,9 @@ public sealed class TimeJobDeleteCascadeTests : TestBase
         sut.OnTreeDeleteBeforeFirstDelete = () =>
         {
             Interlocked.Increment(ref attempts);
+#pragma warning disable VSTHRD103 // The hook is a synchronous Action, so CancelAsync cannot be awaited.
             cancellation.Cancel();
+#pragma warning restore VSTHRD103
             throw new OperationCanceledException(cancellation.Token);
         };
 

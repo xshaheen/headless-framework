@@ -670,11 +670,11 @@ public static class JobsCoordinationFixtureExtensions
 
         command.CommandText =
             $"INSERT INTO {fixture.QualifiedCronJobsTable} ({_CronInsertColumns}, \"ContractVersion\") "
-            + $"VALUES (@id, @function, @function, @expression, @timeZoneId, @isPaused, @scheduleRevision, 0, "
+            + "VALUES (@id, @function, @function, @expression, @timeZoneId, @isPaused, @scheduleRevision, 0, "
             + $"{fixture.UtcNowSqlExpression}, {fixture.UtcNowSqlExpression}, @onNodeDeath, "
             + $"{fixture.UtcNowOffsetSqlExpression(reconciledThroughOffsetSeconds)}, "
             + $"{fixture.UtcNowOffsetSqlExpression(nextDueOffsetSeconds)}, "
-            + $"@missedRunGraceSeconds, @onMissedRun, '1');";
+            + "@missedRunGraceSeconds, @onMissedRun, '1');";
 
         AddParameter(command, "@id", id);
         AddParameter(command, "@function", function);

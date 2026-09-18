@@ -879,7 +879,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         await sut
             .Persistence.DidNotReceive()
             .AcquireImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>());
-        await sut.Dispatcher.DidNotReceiveWithAnyArgs().DispatchAsync(default!, default);
+        await sut.Dispatcher.DidNotReceiveWithAnyArgs().DispatchAsync(default!, AbortToken);
         sut.SignalsLogger.Entries.Should().BeEmpty();
     }
 
@@ -1431,7 +1431,9 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         }
         else
         {
+#pragma warning disable MA0045 // _CreateSut is the synchronous factory the tests arrange through.
             unitOfWorkServices.Dispose();
+#pragma warning restore MA0045
         }
 
         var logger = new CapturingLogger<JobsManager<TimeJobEntity, CronJobEntity>>();

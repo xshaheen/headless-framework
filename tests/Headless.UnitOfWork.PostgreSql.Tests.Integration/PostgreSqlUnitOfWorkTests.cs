@@ -24,7 +24,7 @@ public sealed class PostgreSqlUnitOfWorkTests(PostgreSqlUnitOfWorkFixture fixtur
     public async Task should_commit_the_row_when_an_owned_unit_completes()
     {
         await fixture.ResetAsync(AbortToken);
-        var logs = new CapturingLoggerProvider();
+        using var logs = new CapturingLoggerProvider();
         await using var provider = PostgreSqlUnitOfWorkFixture.BuildProvider(logs);
         await using var scope = provider.CreateAsyncScope();
         var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
@@ -91,7 +91,7 @@ public sealed class PostgreSqlUnitOfWorkTests(PostgreSqlUnitOfWorkFixture fixtur
     [Fact]
     public async Task should_drain_once_when_the_caller_completes_an_observed_unit_after_commit()
     {
-        var logs = new CapturingLoggerProvider();
+        using var logs = new CapturingLoggerProvider();
         await using var provider = PostgreSqlUnitOfWorkFixture.BuildProvider(logs);
         await using var scope = provider.CreateAsyncScope();
         var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
@@ -122,7 +122,7 @@ public sealed class PostgreSqlUnitOfWorkTests(PostgreSqlUnitOfWorkFixture fixtur
     [Fact]
     public async Task should_warn_and_discard_when_an_observed_unit_is_disposed_without_a_completion_verb_after_commit()
     {
-        var logs = new CapturingLoggerProvider();
+        using var logs = new CapturingLoggerProvider();
         await using var provider = PostgreSqlUnitOfWorkFixture.BuildProvider(logs);
         await using var scope = provider.CreateAsyncScope();
         var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
@@ -159,7 +159,7 @@ public sealed class PostgreSqlUnitOfWorkTests(PostgreSqlUnitOfWorkFixture fixtur
     [Fact]
     public async Task should_stay_silent_when_the_caller_rolls_an_observed_unit_back_explicitly()
     {
-        var logs = new CapturingLoggerProvider();
+        using var logs = new CapturingLoggerProvider();
         await using var provider = PostgreSqlUnitOfWorkFixture.BuildProvider(logs);
         await using var scope = provider.CreateAsyncScope();
         var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
@@ -191,7 +191,7 @@ public sealed class PostgreSqlUnitOfWorkTests(PostgreSqlUnitOfWorkFixture fixtur
     [Fact]
     public async Task should_not_warn_when_an_observed_unit_is_disposed_before_the_transaction_completes()
     {
-        var logs = new CapturingLoggerProvider();
+        using var logs = new CapturingLoggerProvider();
         await using var provider = PostgreSqlUnitOfWorkFixture.BuildProvider(logs);
         await using var scope = provider.CreateAsyncScope();
         var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();

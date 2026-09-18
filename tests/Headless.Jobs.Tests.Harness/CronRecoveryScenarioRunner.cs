@@ -117,7 +117,7 @@ public static class CronRecoveryScenarioRunner
 
         // The returned run could be right while the write behind it is wrong, so the durable row is checked too.
         var stored = rows.Single(x => x.Id == expectedRunId);
-        stored.Status.Should().Be(JobStatus.Idle.ToString(), $"{because} — the persisted run remains claimable");
+        stored.Status.Should().Be(nameof(JobStatus.Idle), $"{because} — the persisted run remains claimable");
         stored.OwnerId.Should().BeNull($"{because} — the persisted run's ownership is revoked");
         stored
             .ExecutionTimeUtc.Should()

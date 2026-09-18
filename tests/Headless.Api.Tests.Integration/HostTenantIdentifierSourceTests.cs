@@ -179,7 +179,7 @@ public sealed class HostTenantIdentifierSourceTests : TestBase
             tenancy.Http(http =>
                 http.ResolveFromCatalog(sources =>
                 {
-                    if (template == "{tenant}")
+                    if (string.Equals(template, "{tenant}", StringComparison.Ordinal))
                     {
                         sources.AddHostSource(options => options.Templates.Add("{tenant}"));
                     }

@@ -66,7 +66,8 @@ public sealed class JobSchedulerTests : TestBase
             CorrelationId = parentCorrelation,
             CronOccurrenceOperations = new CronOccurrenceOperations(() => { }),
         };
-        using var trace = new Activity("unrelated-diagnostic-trace").Start();
+        using var trace = new Activity("unrelated-diagnostic-trace");
+        trace.Start();
         using var causalScope = hasParent ? JobCausalContext.Enter(parent) : null;
 
         var id = await scheduler.EnqueueAsync(new SampleRequest("invoice"), cancellationToken: AbortToken);
@@ -525,7 +526,7 @@ public sealed class JobSchedulerTests : TestBase
     {
         var methods = typeof(IJobScheduler)
             .GetMethods(BindingFlags.Instance | BindingFlags.Public)
-            .Where(method => method.GetCustomAttribute<ObsoleteAttribute>() is null)
+            .Where(method => !Attribute.IsDefined(method, typeof(ObsoleteAttribute)))
             .ToArray();
 
         methods.Should().HaveCount(30);

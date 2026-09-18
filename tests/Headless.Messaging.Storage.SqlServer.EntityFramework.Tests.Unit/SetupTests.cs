@@ -46,9 +46,10 @@ public sealed class SetupTests : TestBase
                 descriptor.ServiceType.Name == "IInboxTransactionRunner"
                 && descriptor.Lifetime == ServiceLifetime.Scoped
             );
+
         provider
             .GetServices<MessagingProviderCapabilities>()
-            .Single(capability => capability.Provider == "SqlServer")
+            .Single(capability => string.Equals(capability.Provider, "SqlServer", StringComparison.Ordinal))
             .InboxCapability.Should()
             .Be(MessagingInboxCapabilityTier.Transactional);
     }
@@ -72,7 +73,7 @@ public sealed class SetupTests : TestBase
         services.Should().NotContain(descriptor => descriptor.ServiceType.Name == "IInboxTransactionRunner");
         provider
             .GetServices<MessagingProviderCapabilities>()
-            .Single(capability => capability.Provider == "SqlServer")
+            .Single(capability => string.Equals(capability.Provider, "SqlServer", StringComparison.Ordinal))
             .InboxCapability.Should()
             .Be(MessagingInboxCapabilityTier.DurableDedupeOnly);
     }

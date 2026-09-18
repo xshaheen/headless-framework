@@ -39,9 +39,9 @@ public sealed class RetryAttributeTests
     }
 
     [Fact]
-    public void should_round_trip_retry_test_case_serialization()
+    public async Task should_round_trip_retry_test_case_serialization()
     {
-        var testCase = new RetryTestCase(
+        await using var testCase = new RetryTestCase(
             4,
             _CreateTestMethod(nameof(should_retry_fact_until_it_succeeds)),
             "display-name",
@@ -54,16 +54,20 @@ public sealed class RetryAttributeTests
         testCase.TestLabel.Should().Be("row-label");
 
         var serialized = SerializationHelper.Instance.Serialize(testCase);
-        var deserialized = Assert.IsType<RetryTestCase>(SerializationHelper.Instance.Deserialize(serialized));
+        var deserialized = SerializationHelper
+            .Instance.Deserialize(serialized)
+            .Should()
+            .BeOfType<RetryTestCase>()
+            .Subject;
 
         deserialized.MaxRetries.Should().Be(4);
         deserialized.DisableParallelization.Should().BeTrue();
     }
 
     [Fact]
-    public void should_round_trip_delay_enumerated_retry_test_case_serialization()
+    public async Task should_round_trip_delay_enumerated_retry_test_case_serialization()
     {
-        var testCase = new RetryDelayEnumeratedTestCase(
+        await using var testCase = new RetryDelayEnumeratedTestCase(
             5,
             _CreateTestMethod(nameof(should_retry_delay_enumerated_theory_rows)),
             "display-name",
@@ -73,9 +77,11 @@ public sealed class RetryAttributeTests
         );
 
         var serialized = SerializationHelper.Instance.Serialize(testCase);
-        var deserialized = Assert.IsType<RetryDelayEnumeratedTestCase>(
-            SerializationHelper.Instance.Deserialize(serialized)
-        );
+        var deserialized = SerializationHelper
+            .Instance.Deserialize(serialized)
+            .Should()
+            .BeOfType<RetryDelayEnumeratedTestCase>()
+            .Subject;
 
         deserialized.MaxRetries.Should().Be(5);
         deserialized.SkipTestWithoutData.Should().BeTrue();

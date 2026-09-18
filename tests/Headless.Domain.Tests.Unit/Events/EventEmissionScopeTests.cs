@@ -73,7 +73,8 @@ public sealed class EventEmissionScopeTests : TestBase
     [Fact]
     public void should_root_business_correlation_independently_of_activity()
     {
-        using var activity = new Activity("trace-only").Start();
+        using var activity = new Activity("trace-only");
+        activity.Start();
         var occurrence = EventContext.Capture<object>(new Fact("root"));
         occurrence.CorrelationId.Should().Be(occurrence.EventId);
         occurrence.CausationId.Should().BeNull();

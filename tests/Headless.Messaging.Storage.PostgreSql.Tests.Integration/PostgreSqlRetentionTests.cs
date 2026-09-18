@@ -183,7 +183,7 @@ public sealed class PostgreSqlRetentionTests(PostgreSqlTestFixture fixture) : Te
                 foreach (var pair in values)
                 {
                     if (
-                        pair.Key == "CommandText"
+                        string.Equals(pair.Key, "CommandText", StringComparison.Ordinal)
                         && pair.Value is string sql
                         && sql.Contains("retention_expired", StringComparison.Ordinal)
                     )

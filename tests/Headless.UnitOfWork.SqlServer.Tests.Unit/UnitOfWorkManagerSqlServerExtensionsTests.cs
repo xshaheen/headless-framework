@@ -37,24 +37,31 @@ public sealed class UnitOfWorkManagerSqlServerExtensionsTests : TestBase
     [Fact]
     public async Task should_validate_arguments_before_touching_the_connection()
     {
-        using var provider = new ServiceCollection().AddSqlServerUnitOfWork().BuildServiceProvider();
+        await using var provider = new ServiceCollection().AddSqlServerUnitOfWork().BuildServiceProvider();
         using var scope = provider.CreateScope();
         var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
         await using var connection = new SqlConnection(
             "Server=localhost;Database=unused;Integrated Security=false;User Id=x;Password=y;TrustServerCertificate=true"
         );
 
-        var beginNull = await Assert.ThrowsAsync<ArgumentNullException>(() =>
-            manager.BeginAsync((SqlConnection)null!, cancellationToken: AbortToken).AsTask()
-        );
-        var enlistNull = Assert.Throws<ArgumentNullException>(() => manager.Enlist(connection, null!));
-        var runNull = await Assert.ThrowsAsync<ArgumentNullException>(() =>
-            manager.RunAsync(
-                connection,
-                (Func<IUnitOfWork, CancellationToken, Task>)null!,
-                cancellationToken: AbortToken
-            )
-        );
+        var beginAct = () => manager.BeginAsync((SqlConnection)null!, cancellationToken: AbortToken).AsTask();
+        var beginNull = (await beginAct.Should().ThrowAsync<ArgumentNullException>()).Which;
+
+        var enlistAct = () => manager.Enlist(connection, null!);
+        var enlistNull = enlistAct.Should().Throw<ArgumentNullException>().Which;
+
+        var runNull = (
+            await FluentActions
+                .Awaiting(() =>
+                    manager.RunAsync(
+                        connection,
+                        (Func<IUnitOfWork, CancellationToken, Task>)null!,
+                        cancellationToken: AbortToken
+                    )
+                )
+                .Should()
+                .ThrowAsync<ArgumentNullException>()
+        ).Which;
 
         beginNull.ParamName.Should().Be("connection");
         enlistNull.ParamName.Should().Be("transaction");

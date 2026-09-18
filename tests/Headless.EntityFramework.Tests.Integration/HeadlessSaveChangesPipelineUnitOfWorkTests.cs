@@ -392,9 +392,9 @@ public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContext
     {
         if (sync)
         {
-#pragma warning disable MA0045 // Test intentionally exercises the synchronous SaveChanges path.
+#pragma warning disable MA0045, VSTHRD103 // Test intentionally exercises the synchronous SaveChanges path.
             return Task.FromResult(db.SaveChanges());
-#pragma warning restore MA0045
+#pragma warning restore MA0045, VSTHRD103
         }
 
         return db.SaveChangesAsync(ct);

@@ -135,7 +135,9 @@ public sealed class AuditLogIntegrationTests : TestBase
         db.GeneratedOrders.Add(order);
 
         // when
+#pragma warning disable VSTHRD103 // The synchronous overload is the path under test.
         db.SaveChanges(acceptAllChangesOnSuccess: false);
+#pragma warning restore VSTHRD103
 
         // then
         order.Id.Should().BePositive();

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
+using System.Globalization;
 using Headless.Coordination;
 using Headless.Jobs;
 using Headless.Jobs.Entities;
@@ -40,7 +41,7 @@ public sealed class PostgreSqlJobsCoordinationFixture
     public string UtcNowSqlExpression => "now()";
 
     public string UtcNowOffsetSqlExpression(int seconds) =>
-        FormattableString.Invariant($"(now() + interval '{seconds} seconds')");
+        string.Create(CultureInfo.InvariantCulture, $"(now() + interval '{seconds} seconds')");
 
     // Npgsql translates a bare DateTime.UtcNow inside an expression tree to the server's now().
     public string EfTranslatedDatabaseClockSql => "now()";

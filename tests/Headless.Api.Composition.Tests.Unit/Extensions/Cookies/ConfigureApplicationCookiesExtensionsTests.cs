@@ -27,7 +27,7 @@ public sealed class ConfigureApplicationCookiesExtensionsTests
         services.AddLogging();
         services.AddAuthentication().AddCookie(IdentityConstants.ApplicationScheme);
         services.ConfigureApiApplicationCookie();
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         var options = provider
             .GetRequiredService<IOptionsMonitor<CookieAuthenticationOptions>>()
             .Get(IdentityConstants.ApplicationScheme);

@@ -264,7 +264,7 @@ public abstract class UnitOfWorkResourceConformanceTests<TFixture>(TFixture fixt
     public virtual async Task should_roll_back_the_probe_row_and_warn_when_the_scope_disposes_with_an_active_owned_unit()
     {
         await fixture.ResetAsync(AbortToken);
-        var logs = new CapturingLoggerProvider();
+        using var logs = new CapturingLoggerProvider();
         var session = fixture.CreateSession(logs);
         var handle = await fixture.BeginOwnedAsync(session.Manager, AbortToken);
         UnitOfWorkFailure? failure = null;
@@ -294,7 +294,7 @@ public abstract class UnitOfWorkResourceConformanceTests<TFixture>(TFixture fixt
     public virtual async Task should_drain_without_committing_when_an_observed_unit_completes_after_the_callers_commit()
     {
         await fixture.ResetAsync(AbortToken);
-        var logs = new CapturingLoggerProvider();
+        using var logs = new CapturingLoggerProvider();
         await using var session = fixture.CreateSession(logs);
         await using var handle = await fixture.EnlistObservedAsync(session.Manager, AbortToken);
         var calls = 0;
@@ -318,7 +318,7 @@ public abstract class UnitOfWorkResourceConformanceTests<TFixture>(TFixture fixt
     public virtual async Task should_log_the_forgotten_completion_warning_when_an_observed_unit_is_disposed_without_a_verb_after_the_callers_commit()
     {
         await fixture.ResetAsync(AbortToken);
-        var logs = new CapturingLoggerProvider();
+        using var logs = new CapturingLoggerProvider();
         await using var session = fixture.CreateSession(logs);
         IUnitOfWork unit;
 
@@ -343,7 +343,7 @@ public abstract class UnitOfWorkResourceConformanceTests<TFixture>(TFixture fixt
     public virtual async Task should_not_log_the_forgotten_completion_warning_when_the_callers_rollback_is_followed_by_an_explicit_rollback()
     {
         await fixture.ResetAsync(AbortToken);
-        var logs = new CapturingLoggerProvider();
+        using var logs = new CapturingLoggerProvider();
         await using var session = fixture.CreateSession(logs);
         await using var handle = await fixture.EnlistObservedAsync(session.Manager, AbortToken);
         UnitOfWorkFailure? failure = null;

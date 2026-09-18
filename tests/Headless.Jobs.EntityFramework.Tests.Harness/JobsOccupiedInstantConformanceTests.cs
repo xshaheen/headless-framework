@@ -70,7 +70,7 @@ public abstract class JobsOccupiedInstantConformanceTests<TFixture>(TFixture fix
     /// Total over every <see cref="JobStatus" />, both meaningful <see cref="CronOccurrenceDisposition" /> values on
     /// <c>Skipped</c>, and one value no binary in this repo can write.
     /// </summary>
-    public static MatrixCase[] Matrix =>
+    public MatrixCase[] Matrix =>
         [
             new("idle", JobStatus.Idle, CronOccurrenceDisposition.Accounted, true, RecoveryEffect.Repurposed),
             new("queued", JobStatus.Queued, CronOccurrenceDisposition.Accounted, true, RecoveryEffect.Repurposed),

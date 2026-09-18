@@ -81,7 +81,7 @@ public abstract class JobsIdempotentEnqueueConformanceTests<TFixture>(TFixture f
             // store clock is the authority, so move ExpiresAt into the past through the reservation set.
             await _BackdateReservationAsync(host, "expired-key", ct);
 
-            var callers = 8;
+            const int callers = 8;
             var barrier = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             var results = new Guid[callers];
             var tasks = Enumerable
@@ -101,7 +101,7 @@ public abstract class JobsIdempotentEnqueueConformanceTests<TFixture>(TFixture f
             await Task.WhenAll(tasks);
 
             var distinct = results.Distinct().ToArray();
-            distinct.Length.Should().Be(1, "post-expiry contenders must all observe the one winner");
+            distinct.Should().ContainSingle("post-expiry contenders must all observe the one winner");
             var winner = distinct[0];
             winner.Should().NotBe(first, "the expired reservation's job is not the new winner");
             (await fixture.CountTimeJobsAsync(ct)).Should().Be(2, "first job + exactly one replacement");
@@ -263,10 +263,14 @@ public abstract class JobsIdempotentEnqueueConformanceTests<TFixture>(TFixture f
         await using var db = await host
             .Services.GetRequiredService<IDbContextFactory<JobsDbContext>>()
             .CreateDbContextAsync(ct);
-        var function = JobsCoordinationFixtureExtensions.CoordinatedFacadeFunctionName;
+
+        const string function = JobsCoordinationFixtureExtensions.CoordinatedFacadeFunctionName;
+
         var reservation = await db.Set<JobIdempotencyReservationEntity>()
             .SingleAsync(row => row.IdempotencyKey == idempotencyKey && row.Function == function, ct);
+
         reservation.ExpiresAt = DateTime.UtcNow - TimeSpan.FromMinutes(1);
+
         await db.SaveChangesAsync(ct);
     }
 }

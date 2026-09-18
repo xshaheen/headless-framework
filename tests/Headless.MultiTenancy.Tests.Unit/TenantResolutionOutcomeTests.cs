@@ -106,7 +106,7 @@ public sealed class TenantResolutionOutcomeTests
     {
         ((int)TenantResolutionKind.None).Should().Be(0);
         Enum.GetNames<TenantResolutionKind>()
-            .Where(name => name != nameof(TenantResolutionKind.None))
+            .Where(name => !string.Equals(name, nameof(TenantResolutionKind.None), StringComparison.Ordinal))
             .Select(Enum.Parse<TenantResolutionKind>)
             .Should()
             .AllSatisfy(kind => ((int)kind).Should().NotBe(0));

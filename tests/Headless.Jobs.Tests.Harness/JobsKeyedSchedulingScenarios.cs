@@ -333,7 +333,13 @@ public static class JobsKeyedSchedulingScenarios
                         await store.UpdateTimeJobsAsync([dto], cancellationToken);
                     }
                     catch (InvalidOperationException) { }
-                    catch (Exception exception) when (exception.GetType().Name == "DbUpdateConcurrencyException") { }
+                    catch (Exception exception)
+                        when (string.Equals(
+                                exception.GetType().Name,
+                                "DbUpdateConcurrencyException",
+                                StringComparison.Ordinal
+                            )
+                        ) { }
                 },
                 cancellationToken
             );

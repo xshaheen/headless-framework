@@ -265,7 +265,7 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
         // pipeline must not silently serve every request as host context; it loses only the
         // SkipTenantResolution opt-out. Both rejections short-circuit before next(), so neither touches
         // the one-shot ordering warning this test deliberately does not reset.
-        await using var app = await _CreateAppAsync(applyBeforeUseRouting: true, detailedResolutionErrors: true);
+        await using var app = await _CreateAppAsync(detailedResolutionErrors: true, applyBeforeUseRouting: true);
         using var client = HttpTenancyTestHarness.CreateClient(app);
 
         using var unknownResponse = await _SendAsync(client, identifier: "ghost");
@@ -345,7 +345,7 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
     [Fact]
     public async Task should_reject_mismatch_at_granular_status_when_diagnostics_enabled()
     {
-        await using var app = await _CreateAppAsync(requireAuthenticatedUser: true, detailedResolutionErrors: true);
+        await using var app = await _CreateAppAsync(detailedResolutionErrors: true, requireAuthenticatedUser: true);
         using var client = HttpTenancyTestHarness.CreateClient(app);
 
         using var response = await _SendAsync(client, identifier: "acme", user: "alice", tenantId: "ten_999");
@@ -363,7 +363,7 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
     [Fact]
     public async Task should_reject_mismatch_in_combined_pipeline_with_resolve_from_claims_also_active()
     {
-        await using var app = await _CreateAppAsync(alsoResolveFromClaims: true, requireAuthenticatedUser: true);
+        await using var app = await _CreateAppAsync(requireAuthenticatedUser: true, alsoResolveFromClaims: true);
         using var client = HttpTenancyTestHarness.CreateClient(app);
 
         using var response = await _SendAsync(client, identifier: "acme", user: "alice", tenantId: "ten_999");
@@ -381,7 +381,7 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
     [Fact]
     public async Task should_pass_combined_pipeline_when_claim_matches_resolved_identifier()
     {
-        await using var app = await _CreateAppAsync(alsoResolveFromClaims: true, requireAuthenticatedUser: true);
+        await using var app = await _CreateAppAsync(requireAuthenticatedUser: true, alsoResolveFromClaims: true);
         using var client = HttpTenancyTestHarness.CreateClient(app);
 
         using var response = await _SendAsync(client, identifier: "acme", user: "alice", tenantId: "ten_123");
@@ -974,6 +974,7 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
         return await client.SendAsync(request, AbortToken);
     }
 
+#pragma warning disable MA0045 // Writes to a MemoryStream; async disposal buys nothing and would spread to every caller.
     private static string _StripVolatile(string json)
     {
         using var doc = JsonDocument.Parse(json);
@@ -1005,6 +1006,7 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
 
         return Encoding.UTF8.GetString(stream.ToArray());
     }
+#pragma warning restore MA0045
 }
 
 internal sealed record TenantCatalogResponse(string? Id, bool IsAvailable, string? Name = null);

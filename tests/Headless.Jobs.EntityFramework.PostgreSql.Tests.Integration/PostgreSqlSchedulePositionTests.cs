@@ -13,16 +13,10 @@ namespace Tests;
 
 /// <summary>Runs the cron schedule-position advance conformance suite against PostgreSQL.</summary>
 [Collection<PostgreSqlJobsCoordinationFixture>]
-public sealed class PostgreSqlSchedulePositionTests
-    : JobsSchedulePositionConformanceTests<PostgreSqlJobsCoordinationFixture>
+public sealed class PostgreSqlSchedulePositionTests(PostgreSqlJobsCoordinationFixture fixture)
+    : JobsSchedulePositionConformanceTests<PostgreSqlJobsCoordinationFixture>(fixture)
 {
-    private readonly PostgreSqlJobsCoordinationFixture _fixture;
-
-    public PostgreSqlSchedulePositionTests(PostgreSqlJobsCoordinationFixture fixture)
-        : base(fixture)
-    {
-        _fixture = fixture;
-    }
+    private readonly PostgreSqlJobsCoordinationFixture _fixture = fixture;
 
     [Fact]
     public override Task advance_from_the_observed_watermark_persists_the_new_position()

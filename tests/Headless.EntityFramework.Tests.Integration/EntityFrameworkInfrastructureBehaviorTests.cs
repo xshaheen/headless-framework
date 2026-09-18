@@ -93,7 +93,7 @@ public sealed class EntityFrameworkInfrastructureBehaviorTests : TestBase
 
         var exception = await action.Should().ThrowAsync<InvalidOperationException>();
         exception.Which.Message.Should().Contain(nameof(UnregisteredDbContext));
-        exception.Which.Message.Should().Contain(nameof(IDbContextFactory<UnregisteredDbContext>));
+        exception.Which.Message.Should().Contain(nameof(IDbContextFactory<>));
     }
 
     [Fact]

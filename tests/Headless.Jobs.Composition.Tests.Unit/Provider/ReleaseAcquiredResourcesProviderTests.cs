@@ -90,14 +90,14 @@ public sealed class ReleaseAcquiredResourcesProviderTests : TestBase
         var mineInProgress = _Occurrence(JobStatus.InProgress, _NodeA);
         var foreignQueued = _Occurrence(JobStatus.Queued, _NodeB);
         await provider.InsertCronJobsAsync(
-            new[] { mineQueued, mineInProgress, foreignQueued }
-                .Select(x => new FakeCronJob
+            [
+                .. new[] { mineQueued, mineInProgress, foreignQueued }.Select(x => new FakeCronJob
                 {
                     Id = x.CronJobId,
                     Function = "fn",
                     Expression = "* * * * *",
-                })
-                .ToArray(),
+                }),
+            ],
             AbortToken
         );
         await provider.InsertCronJobOccurrencesAsync([mineQueued, mineInProgress, foreignQueued], AbortToken);

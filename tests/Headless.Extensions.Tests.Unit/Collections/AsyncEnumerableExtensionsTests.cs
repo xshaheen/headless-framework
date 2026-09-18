@@ -93,7 +93,9 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
         );
 
         // when
-        var result = await source.DistinctByAsync(x => x.Key, AbortToken).ToListAsync(AbortToken);
+        var result = await source
+            .DistinctByAsync(x => x.Key, StringComparer.Ordinal, AbortToken)
+            .ToListAsync(AbortToken);
 
         // then
         result.Should().HaveCount(2);

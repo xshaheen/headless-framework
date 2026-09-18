@@ -42,7 +42,8 @@ public sealed class ApiSurfaceOpenApiTests : TestBase
         {
             if (customize)
             {
-                options.ShouldInclude = description => description.RelativePath != "portal/hidden";
+                options.ShouldInclude = description =>
+                    !string.Equals(description.RelativePath, "portal/hidden", StringComparison.Ordinal);
                 options.AddDocumentTransformer(
                     (document, _, _) =>
                     {
@@ -70,7 +71,9 @@ public sealed class ApiSurfaceOpenApiTests : TestBase
         }
         builder.Services.AddOpenApi(
             "extra",
-            options => options.ShouldInclude = description => description.GroupName == "extra"
+            options =>
+                options.ShouldInclude = description =>
+                    string.Equals(description.GroupName, "extra", StringComparison.Ordinal)
         );
         await using var app = builder.Build();
         app.MapGet("/portal/visible", () => new PortalPayload("public"))
@@ -207,7 +210,7 @@ public sealed class ApiSurfaceOpenApiTests : TestBase
 
     private static void _ConfigureEncryption(WebApplicationBuilder builder) =>
         builder.Configuration.AddInMemoryCollection(
-            new Dictionary<string, string?>
+            new Dictionary<string, string?>(StringComparer.Ordinal)
             {
                 ["Headless:StringEncryption:DefaultPassPhrase"] = "TestPassPhrase123456",
                 ["Headless:StringEncryption:InitVectorBytes"] = "VGVzdElWMDEyMzQ1Njc4OQ==",

@@ -5,6 +5,7 @@ using Headless.Couchbase.Context;
 using Headless.Couchbase.Managers;
 using Microsoft.Extensions.Logging.Abstractions;
 
+#pragma warning disable CA2000 // CouchbaseTestFactory returns substitutes and a cleanup-disabled Transactions; none owns a resource.
 namespace Tests;
 
 public sealed class CouchbaseAssemblyCollectionsReaderTests

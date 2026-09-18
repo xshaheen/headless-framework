@@ -71,7 +71,8 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
         var id = await facade.EnqueueAsync(chain, AbortToken);
 
         id.Should().NotBeEmpty();
-        middlewareCalls.Should().BeGreaterThan(0);
+        middlewareCalls.Should().BePositive();
+
         if (coordinated)
         {
             await sut

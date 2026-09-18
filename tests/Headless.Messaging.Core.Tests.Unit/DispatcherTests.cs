@@ -1572,7 +1572,7 @@ public sealed class DispatcherTests : TestBase
     {
         var dispatcher = _CreateDispatcher(new TestThreadSafeMessageSender());
         await dispatcher.DisposeAsync();
-        var unitOfWork = new FakeUnitOfWork();
+        await using var unitOfWork = new FakeUnitOfWork();
         var buffer = new MessageOutboxBuffer(unitOfWork, dispatcher);
         var delayed = _CreateTestMessage(_StorageGuid(1));
         delayed.ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(1);
@@ -1633,7 +1633,7 @@ public sealed class DispatcherTests : TestBase
         await using var dispatcher = _CreateDispatcher(sender);
         using var cts = new CancellationTokenSource();
         await dispatcher.StartAsync(cts.Token);
-        var unitOfWork = new FakeUnitOfWork();
+        await using var unitOfWork = new FakeUnitOfWork();
         var buffer = new MessageOutboxBuffer(unitOfWork, dispatcher);
         buffer.Add(_CreateTestMessage());
 

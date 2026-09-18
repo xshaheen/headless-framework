@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
+using System.Globalization;
 using Headless.Abstractions;
 using Headless.Jobs;
 using Headless.Jobs.Configurations;
@@ -147,7 +148,7 @@ public abstract class JobsCronMaterializationConformanceTests(Action<DbContextOp
             );
         try
         {
-            await Task.WhenAny(edit, Task.Delay(TimeSpan.FromMilliseconds(200), AbortToken));
+            _ = await Task.WhenAny(edit, Task.Delay(TimeSpan.FromMilliseconds(200), AbortToken));
             edit.IsCompleted.Should().BeFalse();
         }
         finally
@@ -207,13 +208,15 @@ public abstract class JobsCronMaterializationConformanceTests(Action<DbContextOp
                 .Select(i => new CronJobEntity
                 {
                     // The trailing bytes reverse SQL Server's native uniqueidentifier order relative to .NET Guid order.
-                    Id = Guid.Parse(FormattableString.Invariant($"0000000{i}-0000-0000-0000-00000000000{4 - i}")),
-                    Function = "materialization-" + i,
+                    Id = Guid.Parse(
+                        string.Create(CultureInfo.InvariantCulture, $"0000000{i}-0000-0000-0000-00000000000{4 - i}")
+                    ),
+                    Function = "materialization-" + i.ToString(CultureInfo.InvariantCulture),
                     ContractVersion = "1",
                     Expression = "0 * * * * *",
                     Request = [(byte)i],
-                    CorrelationId = "correlation-" + i,
-                    CausationId = "cause-" + i,
+                    CorrelationId = "correlation-" + i.ToString(CultureInfo.InvariantCulture),
+                    CausationId = "cause-" + i.ToString(CultureInfo.InvariantCulture),
                 }),
         ];
 

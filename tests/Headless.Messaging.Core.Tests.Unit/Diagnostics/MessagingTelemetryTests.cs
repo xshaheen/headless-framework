@@ -168,7 +168,9 @@ public sealed class MessagingTelemetryTests : TestBase
 
         var (_, publishTags) = measurements.First(m =>
             string.Equals(m.Name, "messaging.publish.messages", StringComparison.Ordinal)
-            && m.Tags.Any(tag => tag.Key == "messaging.system" && Equals(tag.Value, broker.Name))
+            && m.Tags.Any(tag =>
+                string.Equals(tag.Key, "messaging.system", StringComparison.Ordinal) && Equals(tag.Value, broker.Name)
+            )
         );
         publishTags
             .Select(tag => tag.Key)

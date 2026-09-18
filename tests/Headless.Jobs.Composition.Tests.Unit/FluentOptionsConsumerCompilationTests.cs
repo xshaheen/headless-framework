@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Globalization;
 using Headless.Jobs;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Interfaces;
@@ -334,7 +335,9 @@ public sealed class FluentOptionsConsumerCompilationTests : TestBase
             errors
                 .Should()
                 .OnlyContain(error =>
-                    error.GetMessage().Contains("explicit DateTimeOffset instant", StringComparison.Ordinal)
+                    error
+                        .GetMessage(CultureInfo.InvariantCulture)
+                        .Contains("explicit DateTimeOffset instant", StringComparison.Ordinal)
                 );
         }
     }

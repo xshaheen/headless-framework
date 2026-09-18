@@ -103,9 +103,9 @@ public sealed class DashboardEndpointMetadataTests : TestBase
         builder.Services.AddSingleton(Substitute.For<ICronJobManager<CronJobEntity>>());
         builder.Services.AddSingleton(Substitute.For<IJobScheduler>());
         builder.Services.AddSingleton(Substitute.For<IJobsHostScheduler>());
-        builder.Services.AddAuthorization(options =>
-            options.AddPolicy("DashboardAdmin", policy => policy.RequireAssertion(_ => true))
-        );
+        builder
+            .Services.AddAuthorizationBuilder()
+            .AddPolicy("DashboardAdmin", policy => policy.RequireAssertion(_ => true));
 
         var app = builder.Build();
         app.MapDashboardEndpoints<TimeJobEntity, CronJobEntity>(config);

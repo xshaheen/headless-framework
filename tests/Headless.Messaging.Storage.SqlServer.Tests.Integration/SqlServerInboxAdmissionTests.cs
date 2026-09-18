@@ -78,7 +78,7 @@ public sealed class SqlServerInboxAdmissionTests(SqlServerTestFixture fixture, I
             var admissions = await Task.WhenAll(pending);
 
             admissions.Should().OnlyContain(result => result.Disposition == InboxAdmissionDisposition.Winner);
-            admissions.Select(result => result.Message.StorageId).Should().OnlyHaveUniqueItems();
+            admissions.Should().OnlyHaveUniqueItems(result => result.Message.StorageId);
             for (var index = 0; index < concurrentCount; index++)
             {
                 var duplicate = await _AdmitAsync(storage, $"concurrent-{index}");
@@ -124,11 +124,20 @@ public sealed class SqlServerInboxAdmissionTests(SqlServerTestFixture fixture, I
                 var hashSeeks = XDocument
                     .Parse(plan)
                     .Descendants(showplan + "RelOp")
-                    .Where(operation => (string?)operation.Attribute("PhysicalOp") == "Index Seek")
+                    .Where(operation =>
+                        string.Equals(
+                            (string?)operation.Attribute("PhysicalOp"),
+                            "Index Seek",
+                            StringComparison.Ordinal
+                        )
+                    )
                     .SelectMany(operation => operation.Elements(showplan + "IndexScan"))
                     .Where(scan =>
-                        (string?)scan.Element(showplan + "Object")?.Attribute("Index")
-                        == $"[UX_{schema}_Received_InboxRootKey]"
+                        string.Equals(
+                            (string?)scan.Element(showplan + "Object")?.Attribute("Index"),
+                            $"[UX_{schema}_Received_InboxRootKey]",
+                            StringComparison.Ordinal
+                        )
                     )
                     .ToList();
                 hashSeeks.Should().ContainSingle();

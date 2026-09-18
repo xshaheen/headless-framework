@@ -60,7 +60,7 @@ internal static class CouchbaseTestFactory
     private static readonly MethodInfo _AddClusterService = typeof(ClusterOptionsExtensions)
         .GetMethods(BindingFlags.Public | BindingFlags.Static)
         .Single(method =>
-            method.Name == nameof(ClusterOptionsExtensions.AddClusterService)
+            string.Equals(method.Name, nameof(ClusterOptionsExtensions.AddClusterService), StringComparison.Ordinal)
             && method.IsGenericMethodDefinition
             && method.GetGenericArguments().Length == 1
             && method.GetParameters().Length == 2

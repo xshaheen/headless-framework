@@ -271,12 +271,21 @@ public sealed class JobSchedulingDefaultsTests : TestBase
             {
                 Enlistment = hostAtomic ? TransactionEnlistment.Required : TransactionEnlistment.WhenAvailable,
             },
-            identity == "request" ? new() { [typeof(Request)] = required } : [],
-            identity == "request" ? [] : new() { [identity == "typed-descriptor" ? _Typed : _Requestless] = required }
+            string.Equals(identity, "request", StringComparison.Ordinal) ? new() { [typeof(Request)] = required } : [],
+            string.Equals(identity, "request", StringComparison.Ordinal)
+                ? []
+                : new()
+                {
+                    [
+                        string.Equals(identity, "typed-descriptor", global::System.StringComparison.Ordinal)
+                            ? _Typed
+                            : _Requestless
+                    ] = required,
+                }
         );
         var (atomicScheduler, _, atomicCron) = _CreateScheduler(new FakeTimeProvider(), policies);
         await (
-            identity == "requestless-descriptor"
+            string.Equals(identity, "requestless-descriptor", StringComparison.Ordinal)
                 ? atomicScheduler.ScheduleRecurringAsync(_Requestless, "0 * * * * *", AbortToken)
                 : atomicScheduler.ScheduleRecurringAsync(new Request(), "0 * * * * *", AbortToken)
         );

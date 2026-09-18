@@ -308,7 +308,7 @@ public abstract class JobsRecoveryConformanceTests<TFixture>(TFixture fixture) :
         {
             await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(firstHost, ct);
             var firstProvider = _Persistence(firstHost);
-            await firstProvider.InsertCronJobsAsync(ids.Select(_StaleDefinition).ToArray(), ct);
+            await firstProvider.InsertCronJobsAsync([.. ids.Select(_StaleDefinition)], ct);
             var first = await firstProvider.GetStaleFingerprintDefinitionsAsync(
                 new CronFingerprintSweepRequest { CurrentFingerprints = ["current"], Limit = 1 },
                 ct
@@ -361,7 +361,7 @@ public abstract class JobsRecoveryConformanceTests<TFixture>(TFixture fixture) :
             new Guid("00000003-0000-0000-0000-000000000000"),
             new Guid("00000004-0000-0000-0000-000000000000"),
         };
-        await persistence.InsertCronJobsAsync(ids.Select(_StaleDefinition).ToArray(), ct);
+        await persistence.InsertCronJobsAsync([.. ids.Select(_StaleDefinition)], ct);
 
         var first = await persistence.GetStaleFingerprintDefinitionsAsync(
             new CronFingerprintSweepRequest

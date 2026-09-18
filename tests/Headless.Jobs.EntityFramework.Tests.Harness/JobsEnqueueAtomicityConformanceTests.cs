@@ -76,9 +76,9 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
                     await using var scope = host.Services.CreateAsyncScope();
                     var caller = scope.ServiceProvider.GetRequiredService<ObservableJobsDbContext>();
                     caller.Database.SetDbConnection(connection, contextOwnsConnection: false);
-#pragma warning disable MA0045 // Enlisting the existing transaction is an in-memory operation.
+#pragma warning disable MA0045, VSTHRD103 // Enlisting the existing transaction is an in-memory operation.
                     caller.Database.UseTransaction(transaction);
-#pragma warning restore MA0045
+#pragma warning restore MA0045, VSTHRD103
 
                     observer.Reset();
                     observer.RegisterCaller(caller.ContextId.InstanceId);

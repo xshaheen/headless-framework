@@ -44,7 +44,9 @@ public sealed class PostgreSqlUnitOfWorkFixture
         CancellationToken cancellationToken
     )
     {
+#pragma warning disable CA2000 // Ownership moves to the returned handle; the catch covers the only path returning none.
         var connection = new NpgsqlConnection(ConnectionString);
+#pragma warning restore CA2000
 
         try
         {
@@ -68,7 +70,9 @@ public sealed class PostgreSqlUnitOfWorkFixture
         CancellationToken cancellationToken
     )
     {
+#pragma warning disable CA2000 // Ownership moves to the returned handle; the catch covers the only path returning none.
         var connection = new NpgsqlConnection(ConnectionString);
+#pragma warning restore CA2000
         await connection.OpenAsync(cancellationToken);
         var transaction = await connection.BeginTransactionAsync(cancellationToken);
         var unitOfWork = manager.Enlist(connection, transaction);

@@ -11,6 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
+#pragma warning disable CA2000 // CouchbaseTestFactory returns substitutes and a cleanup-disabled Transactions; none owns a resource.
 namespace Tests;
 
 public sealed class CouchbaseContextInitializationTests : TestBase
@@ -115,7 +116,7 @@ public sealed class CouchbaseContextInitializationTests : TestBase
         clusterProvider
             .GetClusterAsync("primary", cancellationToken)
             .Returns(new CouchbaseClusterConnection { Cluster = cluster, Transactions = transactions });
-        using var serviceProvider = new ServiceCollection().BuildServiceProvider();
+        await using var serviceProvider = new ServiceCollection().BuildServiceProvider();
         var sut = new BucketContextProvider(clusterProvider, serviceProvider);
 
         var act = () => sut.GetAsync<TestBucketContext>("primary", "app", null, cancellationToken).AsTask();

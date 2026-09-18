@@ -13,7 +13,7 @@ namespace Tests.MultiTenancy;
 /// <summary>
 /// Pins the decorator contract in isolation: the ambient tenant route value is promoted into a
 /// COPY of the explicit values only when the explicit values lack it, an explicit value (even
-/// <c>null</c>) always wins, the request's route values back up a <c>null</c> ambient dictionary
+/// <see langword="null"/>) always wins, the request's route values back up a <see langword="null"/> ambient dictionary
 /// (the <c>GetPathByName</c> surface), the context-free overloads pass through unchanged,
 /// and <see cref="RouteTenantIdentifierSourceOptions.PromoteAmbientRouteValue"/> is honored at
 /// call time. Also pins the once-only registration through <c>AddRouteSource</c>.
@@ -117,7 +117,7 @@ public sealed class TenantAmbientRouteValueLinkGeneratorTests : TestBase
         context.Request.RouteValues["tenant"] = "from-request";
         var ambientValues = new RouteValueDictionary { ["tenant"] = "from-ambient" };
 
-        generator.GetPathByAddress(context, "address", new RouteValueDictionary(), ambientValues);
+        generator.GetPathByAddress(context, "address", [], ambientValues);
 
         inner.Values!["tenant"].Should().Be("from-ambient");
     }
@@ -221,7 +221,7 @@ public sealed class TenantAmbientRouteValueLinkGeneratorTests : TestBase
         var result = generator.GetPathByAddress(
             context,
             "address",
-            new RouteValueDictionary(),
+            [],
             ambientValues: null,
             pathBase: "/base",
             fragment: new FragmentString("#top"),

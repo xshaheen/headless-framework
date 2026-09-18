@@ -83,7 +83,7 @@ public sealed class SetupTests : TestBase
             );
         provider
             .GetServices<MessagingProviderCapabilities>()
-            .Single(capability => capability.Provider == "PostgreSql")
+            .Single(capability => string.Equals(capability.Provider, "PostgreSql", StringComparison.Ordinal))
             .InboxCapability.Should()
             .Be(MessagingInboxCapabilityTier.Transactional);
     }
@@ -108,7 +108,7 @@ public sealed class SetupTests : TestBase
         services.Should().NotContain(descriptor => descriptor.ServiceType.Name == "IInboxTransactionRunner");
         provider
             .GetServices<MessagingProviderCapabilities>()
-            .Single(capability => capability.Provider == "PostgreSql")
+            .Single(capability => string.Equals(capability.Provider, "PostgreSql", StringComparison.Ordinal))
             .InboxCapability.Should()
             .Be(MessagingInboxCapabilityTier.DurableDedupeOnly);
     }

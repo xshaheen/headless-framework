@@ -870,8 +870,10 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
             .GetValue(sut)!;
 
         var groupsType = groupsValue.GetType();
+#pragma warning disable REFL009 // Both members live on runtime types the analyzer only sees as object.
         var state = groupsType.GetProperty("Item")!.GetValue(groupsValue, [_Group]);
         state!.GetType().GetProperty("CurrentEpoch")!.SetValue(state, 999L);
+#pragma warning restore REFL009
 
         timeProvider.Advance(TimeSpan.FromMinutes(1));
 

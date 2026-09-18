@@ -13,6 +13,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 
+#pragma warning disable MA0015 // Specify the parameter name in ArgumentException
 namespace Tests.Managers;
 
 /// <summary>

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
+using System.Globalization;
 using Headless.Coordination;
 using Headless.Jobs;
 using Headless.Jobs.Entities;
@@ -37,7 +38,7 @@ public sealed class SqlServerJobsCoordinationFixture
     public string UtcNowSqlExpression => "SYSUTCDATETIME()";
 
     public string UtcNowOffsetSqlExpression(int seconds) =>
-        FormattableString.Invariant($"DATEADD(second, {seconds}, SYSUTCDATETIME())");
+        string.Create(CultureInfo.InvariantCulture, $"DATEADD(second, {seconds}, SYSUTCDATETIME())");
 
     // The SQL Server EF provider translates a bare DateTime.UtcNow inside an expression tree to GETUTCDATE(), not
     // SYSUTCDATETIME(). Its datetime precision (~3.33 ms) is immaterial against minute-scale leases, and unlike

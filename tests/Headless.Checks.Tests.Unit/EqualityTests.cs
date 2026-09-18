@@ -10,7 +10,7 @@ public sealed class EqualityTests
     public void should_return_value_when_is_equal_to_equal()
     {
         Argument.IsEqualTo(5, 5).Should().Be(5);
-        Argument.IsEqualTo("abc", "abc").Should().Be("abc");
+        Argument.IsEqualTo("abc", "abc", StringComparer.Ordinal).Should().Be("abc");
     }
 
     [Fact]
