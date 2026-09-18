@@ -104,32 +104,24 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     internal SchedulerOptionsBuilder SchedulerOptions { get; }
 
     /// <summary>
-    /// Storage naming authored on this builder and snapshotted by whichever store provider is installed. Held here
-    /// rather than on a provider builder so every Jobs table resolves its schema from one place.
+    /// Storage naming authored on this builder, deferred in call order and replayed by <c>AddHeadlessJobs</c>. Held
+    /// here rather than on a provider builder so every Jobs table resolves its schema from one place, and kept as an
+    /// ordered list so the two <c>ConfigureStorage</c> overloads compose as last call wins.
     /// </summary>
-    internal JobsStorageOptions StorageOptions { get; } = new();
+    internal List<Action<IServiceCollection>> StorageConfigurationActions { get; } = [];
 
     /// <summary>
-    /// Whether the callback overload authored anything. The snapshot is applied only then, so registering it can
-    /// never write this builder's untouched defaults over a section bound through the configuration overload.
+    /// Applies <paramref name="configure"/> to <see cref="JobsStorageOptions"/>, which names the database schema
+    /// holding every Jobs table.
     /// </summary>
-    internal bool HasStorageOptionsOverride { get; private set; }
-
-    /// <summary>Configuration section bound to the storage options, when the configuration overload was used.</summary>
-    internal IConfiguration? StorageConfiguration { get; private set; }
-
-    /// <summary>
-    /// Applies <paramref name="configure"/> to the shared <see cref="JobsStorageOptions"/>, which names the database
-    /// schema holding every Jobs table.
-    /// </summary>
+    /// <remarks>Composes with the configuration overload as last call wins.</remarks>
     /// <param name="configure">A delegate that mutates the storage options.</param>
     /// <returns>This builder for method chaining.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="configure"/> is null.</exception>
     public JobsOptionsBuilder<TTimeJob, TCronJob> ConfigureStorage(Action<JobsStorageOptions> configure)
     {
         Argument.IsNotNull(configure);
-        configure(StorageOptions);
-        HasStorageOptionsOverride = true;
+        StorageConfigurationActions.Add(services => services.Configure(configure));
         return this;
     }
 
@@ -138,16 +130,14 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     /// <c>Headless:Jobs:Storage</c> section itself — the section is bound directly, so its keys are the option's
     /// property names (<c>Schema</c>), not a further nested path.
     /// </summary>
-    /// <remarks>
-    /// Combining this with the callback overload is allowed: the callback is applied after the section, so a value
-    /// authored in code wins over the same value supplied by configuration.
-    /// </remarks>
+    /// <remarks>Composes with the callback overload as last call wins.</remarks>
     /// <param name="configuration">The <c>Headless:Jobs:Storage</c> configuration section.</param>
     /// <returns>This builder for method chaining.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="configuration"/> is null.</exception>
     public JobsOptionsBuilder<TTimeJob, TCronJob> ConfigureStorage(IConfiguration configuration)
     {
-        StorageConfiguration = Argument.IsNotNull(configuration);
+        Argument.IsNotNull(configuration);
+        StorageConfigurationActions.Add(services => services.Configure<JobsStorageOptions>(configuration));
         return this;
     }
 

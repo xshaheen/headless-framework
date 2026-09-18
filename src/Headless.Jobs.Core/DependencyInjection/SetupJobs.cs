@@ -266,11 +266,12 @@ public static class SetupJobs
             JobFunctionProvider.CreateHostRegistry(provider.GetService<IConfiguration>())
         );
 
-        // Storage naming is owned by the feature, so the section binds here rather than in a store provider. This runs
-        // before the provider's own registrations so a schema authored in code is applied last and wins over it.
-        if (optionInstance.StorageConfiguration is { } storageConfiguration)
+        // Storage naming is owned by the feature, so both ConfigureStorage overloads register here rather than in a
+        // store provider. Replaying them in call order is what makes the pair compose as last call wins: options
+        // configuration runs in registration order, so the final call is the one that decides the value.
+        foreach (var storageConfiguration in optionInstance.StorageConfigurationActions)
         {
-            services.Configure<JobsStorageOptions>(storageConfiguration);
+            storageConfiguration(services);
         }
 
         optionInstance.ExternalProviderConfigServiceAction?.Invoke(services);

@@ -19,13 +19,4 @@ public sealed class JobsStorageOptions
     /// and idempotency-reservation tables alike. Default: <see cref="DefaultSchema"/>.
     /// </summary>
     public string Schema { get; set; } = DefaultSchema;
-
-    /// <summary>
-    /// Copies every property to <paramref name="target"/>. Centralizes the property list so adding a property here
-    /// only requires extending this single method — the setup pipeline picks it up instead of silently dropping it.
-    /// </summary>
-    internal void CopyTo(JobsStorageOptions target)
-    {
-        target.Schema = Schema;
-    }
 }

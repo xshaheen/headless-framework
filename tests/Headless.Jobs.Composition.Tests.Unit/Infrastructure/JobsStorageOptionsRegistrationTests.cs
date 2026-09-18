@@ -10,8 +10,8 @@ using Microsoft.Extensions.Options;
 namespace Tests.Infrastructure;
 
 /// <summary>
-/// How the two <c>ConfigureStorage</c> overloads compose once the EF store is registered: the section binds in the
-/// Core layer, the callback snapshot is applied after it by the provider, and the resolved value is validated.
+/// How the two <c>ConfigureStorage</c> overloads compose once the EF store is registered: both register in the Core
+/// layer in call order so the pair is last call wins, and the resolved value is validated by the provider's rule.
 /// </summary>
 [Collection<JobsHelperCollection>]
 public sealed class JobsStorageOptionsRegistrationTests
@@ -25,7 +25,7 @@ public sealed class JobsStorageOptionsRegistrationTests
     }
 
     [Fact]
-    public void schema_authored_in_code_wins_over_the_bound_section()
+    public void a_delegate_after_a_section_wins()
     {
         using var provider = _BuildProvider(jobs =>
         {
@@ -37,13 +37,17 @@ public sealed class JobsStorageOptionsRegistrationTests
     }
 
     [Fact]
-    public void bound_section_survives_a_registration_that_never_authored_a_schema()
+    public void a_section_after_a_delegate_wins()
     {
-        // The provider registers its snapshot on every host. Were that snapshot unconditional it would write the
-        // builder's untouched default over the bound section, which is the whole reason it is applied conditionally.
-        using var provider = _BuildProvider(jobs => jobs.ConfigureStorage(_StorageSection("section_only")));
+        // The other half of last-call-wins, and the half a precedence rule expressed as "code beats configuration"
+        // would get wrong: the overloads are ordered against each other, neither outranks the other by kind.
+        using var provider = _BuildProvider(jobs =>
+        {
+            jobs.ConfigureStorage(storage => storage.Schema = "from_code");
+            jobs.ConfigureStorage(_StorageSection("from_configuration"));
+        });
 
-        provider.GetRequiredService<JobsStorageOptions>().Schema.Should().Be("section_only");
+        provider.GetRequiredService<JobsStorageOptions>().Schema.Should().Be("from_configuration");
     }
 
     [Fact]
