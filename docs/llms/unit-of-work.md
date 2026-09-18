@@ -67,7 +67,7 @@ Beginning a unit of work while one is already active in the scope does not alway
 | A *different* resource while a resource-bearing unit is active | Throws — one physical resource per scope; run the second operation in its own service scope. |
 | A concurrent `BeginAsync`/`Enlist` while another begin is in flight in the same scope | Throws — the manager claims its slot synchronously before the first `await`, so two begins racing in one scope fail deterministically instead of silently producing two roots. |
 
-`Current` always returns the innermost active frame: the child while it is active, the root again once the child completes.
+`Current` always returns the innermost active frame: the child while it is active, the outer child (or the root) again once the inner child completes.
 
 ### The `DbContext` binding and adoption
 

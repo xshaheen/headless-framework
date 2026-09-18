@@ -119,12 +119,6 @@ internal sealed class HeadlessSaveChangesPipeline(
         serviceProvider
     );
 
-    // Looked up on every domain-event recollection pass of every save; the chain is fixed for the pipeline's
-    // lifetime, so it is resolved once from the same instances the chain runs and cached (a null result is
-    // cached too, hence the separate flag).
-    private HeadlessMessageCollectorSaveEntryProcessor? _messageCollector;
-    private bool _messageCollectorResolved;
-
     private readonly ILogger<HeadlessSaveChangesPipeline> _logger =
         logger ?? NullLogger<HeadlessSaveChangesPipeline>.Instance;
 
@@ -218,15 +212,11 @@ internal sealed class HeadlessSaveChangesPipeline(
 #pragma warning restore MA0045
     }
 
+    // Resolved per recollection pass rather than cached: the pipeline instance is shared by every context in the
+    // scope, so a lazily written cache would need synchronization, and the chain is a handful of processors.
     private HeadlessMessageCollectorSaveEntryProcessor? _ResolveMessageCollector()
     {
-        if (!_messageCollectorResolved)
-        {
-            _messageCollector = _entryProcessors.OfType<HeadlessMessageCollectorSaveEntryProcessor>().SingleOrDefault();
-            _messageCollectorResolved = true;
-        }
-
-        return _messageCollector;
+        return _entryProcessors.OfType<HeadlessMessageCollectorSaveEntryProcessor>().SingleOrDefault();
     }
 
     private static EntityEntry[] _SnapshotEntries(DbContext context)

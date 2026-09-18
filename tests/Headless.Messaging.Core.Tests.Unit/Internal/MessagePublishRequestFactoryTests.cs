@@ -46,6 +46,7 @@ public sealed class MessagePublishRequestFactoryTests
     [Theory]
     [InlineData(Headers.RequestedDeliveryMode)]
     [InlineData(Headers.ResolvedDeliveryMode)]
+    [InlineData(Headers.RequestedEnlistment)]
     public void should_reject_custom_delivery_metadata_headers(string header)
     {
         var factory = _CreateFactory();

@@ -237,6 +237,7 @@ internal sealed class SqlServerMonitoringApi(
                         var delivery = DeliveryMetadata.ReadStoredEnvelope(serializer, message.Content);
                         message.RequestedDeliveryMode = delivery.RequestedDeliveryMode;
                         message.ResolvedDeliveryMode = delivery.ResolvedDeliveryMode;
+                        message.RequestedEnlistment = delivery.RequestedEnlistment;
                         messages.Add(message);
                     }
 

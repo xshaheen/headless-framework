@@ -210,6 +210,10 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         stored.Value!.Lane.Should().Be(lane);
         stored.Value.Origin.Headers[Headers.RequestedDeliveryMode].Should().Be(nameof(DeliveryMode.Durable));
         stored.Value.Origin.Headers[Headers.ResolvedDeliveryMode].Should().Be(nameof(DeliveryMode.Durable));
+        stored
+            .Value.Origin.Headers[Headers.RequestedEnlistment]
+            .Should()
+            .Be(nameof(TransactionEnlistment.WhenAvailable), "the host default enlistment travels on the wire");
         harness.Dispatcher.CommittedMessages.Should().ContainSingle().Which.Should().BeSameAs(stored.Value);
     }
 

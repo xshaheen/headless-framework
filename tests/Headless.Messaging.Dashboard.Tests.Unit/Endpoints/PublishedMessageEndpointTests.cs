@@ -81,6 +81,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
         payload["lane"].GetString().Should().Be(nameof(MessageLane.Bus));
         payload["requestedDeliveryMode"].ValueKind.Should().Be(JsonValueKind.Null);
         payload["resolvedDeliveryMode"].GetString().Should().Be(nameof(DeliveryMode.Durable));
+        payload["requestedEnlistment"].ValueKind.Should().Be(JsonValueKind.Null);
     }
 
     [Fact]
@@ -119,6 +120,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
                     Lane = MessageLane.Queue,
                     RequestedDeliveryMode = DeliveryMode.Direct,
                     ResolvedDeliveryMode = DeliveryMode.Durable,
+                    RequestedEnlistment = Headless.UnitOfWork.TransactionEnlistment.Required,
                     Content = "{\"key\":\"value\"}",
                     Added = new DateTimeOffset(2026, 03, 24, 10, 00, 00, TimeSpan.Zero),
                     Retries = 2,
@@ -167,6 +169,10 @@ public sealed class PublishedMessageEndpointTests : TestBase
         item.GetProperty("lane").GetString().Should().Be(nameof(MessageLane.Queue));
         item.GetProperty("requestedDeliveryMode").GetString().Should().Be(nameof(DeliveryMode.Direct));
         item.GetProperty("resolvedDeliveryMode").GetString().Should().Be(nameof(DeliveryMode.Durable));
+        item.GetProperty("requestedEnlistment")
+            .GetString()
+            .Should()
+            .Be(nameof(Headless.UnitOfWork.TransactionEnlistment.Required));
         await _monitoringApi
             .Received(1)
             .GetMessagesAsync(

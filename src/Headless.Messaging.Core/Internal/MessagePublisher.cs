@@ -178,7 +178,18 @@ internal sealed class MessagePublisher(
         }
 
         var resolver = coordinationResolver();
-        return resolver?.Resolve(unitOfWork)
-            ?? DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.MissingRelationalCapability);
+
+        if (resolver is not null)
+        {
+            // The storage decides: the in-memory storage joins a resource-less unit through its buffer, the
+            // relational storages join only a same-database relational resource.
+            return resolver.Resolve(unitOfWork);
+        }
+
+        // A storage with no resolver can join nothing. A resource-less unit then behaves like no unit at all
+        // (KD7) rather than as an incompatible one, so WhenAvailable still writes a standalone durable row.
+        return unitOfWork.Resource is null
+            ? DeliveryCoordination.None
+            : DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.MissingRelationalCapability);
     }
 }

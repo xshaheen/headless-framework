@@ -6,6 +6,7 @@ import { formatDateTime, timeAgo } from '@/utilities/dateTimeParser'
 
 export type MessageLane = 'Bus' | 'Queue'
 export type DeliveryMode = 'Durable' | 'Direct'
+export type TransactionEnlistment = 'WhenAvailable' | 'Required' | 'Never'
 
 export interface MessageDetail {
   storageId: string
@@ -18,6 +19,7 @@ export interface MessageDetail {
   lane: MessageLane
   requestedDeliveryMode: DeliveryMode | null
   resolvedDeliveryMode: DeliveryMode | null
+  requestedEnlistment: TransactionEnlistment | null
   group?: string
   exceptionInfo?: string
 }
@@ -293,6 +295,10 @@ async function copyContent() {
           <div class="meta-item">
             <span class="meta-label">Resolved delivery</span>
             <span class="meta-value">{{ message.resolvedDeliveryMode ?? 'Not recorded' }}</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Requested enlistment</span>
+            <span class="meta-value">{{ message.requestedEnlistment ?? 'Not recorded' }}</span>
           </div>
         </div>
       </div>

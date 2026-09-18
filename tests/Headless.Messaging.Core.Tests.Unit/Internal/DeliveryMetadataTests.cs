@@ -2,6 +2,7 @@
 
 using Headless.Messaging;
 using Headless.Messaging.Internal;
+using Headless.UnitOfWork;
 
 namespace Tests.Internal;
 
@@ -14,12 +15,14 @@ public sealed class DeliveryMetadataTests
         {
             [Headers.RequestedDeliveryMode] = nameof(DeliveryMode.Durable),
             [Headers.ResolvedDeliveryMode] = nameof(DeliveryMode.Direct),
+            [Headers.RequestedEnlistment] = nameof(TransactionEnlistment.Required),
         };
 
         var delivery = DeliveryMetadata.Read(headers);
 
         delivery.RequestedDeliveryMode.Should().Be(DeliveryMode.Durable);
         delivery.ResolvedDeliveryMode.Should().Be(DeliveryMode.Direct);
+        delivery.RequestedEnlistment.Should().Be(TransactionEnlistment.Required);
     }
 
     [Fact]
@@ -29,12 +32,30 @@ public sealed class DeliveryMetadataTests
         {
             [Headers.RequestedDeliveryMode] = "auto",
             [Headers.ResolvedDeliveryMode] = "customer-controlled-value",
+            [Headers.RequestedEnlistment] = "always",
         };
 
         var delivery = DeliveryMetadata.Read(headers);
 
         delivery.RequestedDeliveryMode.Should().BeNull();
         delivery.ResolvedDeliveryMode.Should().BeNull();
+        delivery.RequestedEnlistment.Should().BeNull();
+    }
+
+    [Fact]
+    public void should_leave_the_enlistment_unrecorded_for_legacy_stored_envelopes()
+    {
+        // Rows stamped before the enlistment header existed carry the delivery modes only.
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [Headers.RequestedDeliveryMode] = nameof(DeliveryMode.Durable),
+            [Headers.ResolvedDeliveryMode] = nameof(DeliveryMode.Durable),
+        };
+
+        var delivery = DeliveryMetadata.ReadStoredHeaders(headers);
+
+        delivery.ResolvedDeliveryMode.Should().Be(DeliveryMode.Durable);
+        delivery.RequestedEnlistment.Should().BeNull();
     }
 
     [Fact]

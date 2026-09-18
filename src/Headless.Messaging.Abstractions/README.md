@@ -46,7 +46,7 @@ public sealed class OrderPlacedHandler(ILogger<OrderPlacedHandler> logger) : ICo
 
 Use `Headless.Messaging.Bus.Abstractions` for broadcast publisher contracts and `Headless.Messaging.Queue.Abstractions` for point-to-point publisher contracts.
 
-`DeliveryMode` has three values. `Durable` (default) stores first — in the caller's transaction under a compatible coordinated scope, standalone with no scope — and rejects an incompatible scope; `Coordinated` requires a compatible live scope and throws before any effect otherwise; `Direct` bypasses storage and coordination and cannot be combined with `Delay` or `ScheduledAt`. Precedence is per call, then per type (`WithDeliveryMode`), then `MessagingOptions.DefaultDeliveryMode`, which defaults to `Durable`; configure `setup.Options.DefaultDeliveryMode` to change the host default. The full guarantee matrix lives in [Delivery Modes](../../docs/llms/messaging.md#delivery-modes).
+`DeliveryMode` has two values. `Durable` (default) stores first — inside the caller's active unit of work when its resource is compatible and the message's `TransactionEnlistment` allows it, standalone otherwise — and `Direct` bypasses storage and the unit of work entirely and cannot be combined with `Delay` or `ScheduledAt`. Whether a durable publish enlists is the separate `TransactionEnlistment` axis (`WhenAvailable`, `Required`, `Never`; see [Unit of Work](../../docs/llms/unit-of-work.md)). Precedence for both is per call, then per type (`WithDeliveryMode` / `WithEnlistment`), then `MessagingOptions.DefaultDeliveryMode` / `DefaultEnlistment`. The full guarantee matrix lives in [Delivery Modes](../../docs/llms/messaging.md#delivery-modes).
 
 ## Callbacks
 

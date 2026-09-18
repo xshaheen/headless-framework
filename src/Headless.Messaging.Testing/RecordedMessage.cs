@@ -73,6 +73,13 @@ public sealed record RecordedMessage
     public DeliveryMode? ResolvedDeliveryMode { get; init; }
 
     /// <summary>
+    /// The <see cref="Headless.UnitOfWork.TransactionEnlistment"/> the publish asked for (per call, per type, or
+    /// the host default) as stamped in the <c>headless-enlistment-requested</c> header. <see langword="null"/> when
+    /// the headers carry no delivery metadata.
+    /// </summary>
+    public Headless.UnitOfWork.TransactionEnlistment? RequestedEnlistment { get; init; }
+
+    /// <summary>
     /// UTC wall-clock time when the observation was recorded — publish acknowledgment
     /// or consume completion, not the original message creation time.
     /// </summary>
@@ -112,6 +119,7 @@ public sealed record RecordedMessage
             Lane = lane,
             RequestedDeliveryMode = delivery.RequestedDeliveryMode,
             ResolvedDeliveryMode = delivery.ResolvedDeliveryMode,
+            RequestedEnlistment = delivery.RequestedEnlistment,
             Timestamp = timestamp,
             Exception = exception,
         };

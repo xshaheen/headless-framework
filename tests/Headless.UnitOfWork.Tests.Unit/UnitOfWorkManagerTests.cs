@@ -324,6 +324,28 @@ public sealed class UnitOfWorkManagerTests : TestBase
     }
 
     [Fact]
+    public async Task should_restore_current_to_the_outer_child_when_an_inner_child_completes()
+    {
+        // Two levels of join-by-default nesting: Current must always be the innermost frame that is still active,
+        // so completing the inner child hands Current back to the outer child, not straight to the root.
+        var (manager, _) = Create();
+        await using var root = await manager.BeginAsync(cancellationToken: AbortToken);
+        var outer = await manager.BeginAsync(cancellationToken: AbortToken);
+        var inner = await manager.BeginAsync(cancellationToken: AbortToken);
+        manager.Current.Should().BeSameAs(inner);
+
+        await inner.CompleteAsync(AbortToken);
+
+        manager.Current.Should().BeSameAs(outer, "the outer child is still active");
+
+        await outer.CompleteAsync(AbortToken);
+
+        manager.Current.Should().BeSameAs(root);
+        await root.CompleteAsync(AbortToken);
+        root.State.Should().Be(UnitOfWorkState.Completed);
+    }
+
+    [Fact]
     public async Task should_adopt_reentrantly_when_the_slot_holds_a_child_view_over_the_offered_root()
     {
         // BeginAsync(db) binds the root handle to the context; a nested resource-less BeginAsync() makes Current

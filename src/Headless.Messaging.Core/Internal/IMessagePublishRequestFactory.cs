@@ -70,6 +70,7 @@ internal sealed class MessagePublishRequestFactory(
         Headers.Intent,
         Headers.RequestedDeliveryMode,
         Headers.ResolvedDeliveryMode,
+        Headers.RequestedEnlistment,
     };
 
     private static readonly HashSet<string> _ProviderReservedHeaders = new(_ReservedHeaders, StringComparer.Ordinal)

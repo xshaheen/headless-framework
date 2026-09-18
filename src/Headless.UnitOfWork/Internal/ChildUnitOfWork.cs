@@ -99,7 +99,7 @@ internal sealed class ChildUnitOfWork(Internal.UnitOfWork root, UnitOfWorkManage
             );
         }
 
-        await manager.CompleteChildAsync(root).ConfigureAwait(false);
+        await manager.CompleteChildAsync(root, this).ConfigureAwait(false);
     }
 
     public ValueTask RollbackAsync()

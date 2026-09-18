@@ -338,9 +338,10 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
 
     /// <summary>
     /// Completes a child view: its registrations already live on the root engine, so completing keeps them
-    /// there (the transfer) and they drain when the root completes.
+    /// there (the transfer) and they drain when the root completes. <see cref="Current" /> returns to the
+    /// innermost frame that is still active: an outer child view when one exists, otherwise the root handle.
     /// </summary>
-    internal ValueTask CompleteChildAsync(Internal.UnitOfWork root)
+    internal ValueTask CompleteChildAsync(Internal.UnitOfWork root, ChildUnitOfWork child)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
@@ -350,14 +351,8 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
 
             if (frameIndex >= 0)
             {
-                var frame = _frames[frameIndex];
-
-                if (frame.ActiveChildren > 0)
-                {
-                    frame.ActiveChildren--;
-                }
-
-                Current = frame.Handle;
+                _frames[frameIndex].CloseChild(child);
+                Current = _frames[frameIndex].Innermost;
             }
         }
 
@@ -625,14 +620,8 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
 
             if (frameIndex >= 0)
             {
-                var frame = _frames[frameIndex];
-
-                if (frame.ActiveChildren > 0)
-                {
-                    frame.ActiveChildren--;
-                }
-
-                Current = frame.Handle;
+                _frames[frameIndex].CloseChild(child);
+                Current = _frames[frameIndex].Innermost;
             }
         }
 
@@ -651,9 +640,9 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
 
     private ChildUnitOfWork _OpenChild(Frame frame)
     {
-        frame.ActiveChildren++;
-
         var child = new ChildUnitOfWork(frame.Engine, this);
+
+        frame.OpenChild(child);
         Current = child;
 
         return child;
@@ -754,14 +743,24 @@ internal sealed partial class UnitOfWorkManager(ILogger<UnitOfWorkManager>? logg
 
     private sealed class Frame(Internal.UnitOfWork engine, IUnitOfWork handle)
     {
+        // Innermost last; a child view that completes or is abandoned out of order is removed wherever it sits.
+        private readonly List<ChildUnitOfWork> _children = [];
+
         public Internal.UnitOfWork Engine { get; } = engine;
 
         public IUnitOfWork Handle { get; } = handle;
 
-        public int ActiveChildren { get; set; }
+        public int ActiveChildren => _children.Count;
+
+        /// <summary>The frame's innermost still-active view: the newest open child, or the root handle itself.</summary>
+        public IUnitOfWork Innermost => _children.Count > 0 ? _children[^1] : Handle;
 
         /// <summary>True when the frame mirrors a unit owned by another scope's manager (see <see cref="Adopt" />).</summary>
         public bool Adopted { get; init; }
+
+        public void OpenChild(ChildUnitOfWork child) => _children.Add(child);
+
+        public void CloseChild(ChildUnitOfWork child) => _children.Remove(child);
     }
 
     private sealed class NoOpAdoption : IDisposable
