@@ -412,9 +412,19 @@ builder.Services.AddHeadlessMessaging(setup => { /* ... */ })
 Registration scopes:
 
 - `AddBusPublishMiddleware<T>()` / `AddBusConsumeMiddleware<T>()`: object-typed middleware for every publish or consume.
+- `AddReceiveMiddleware<T>()`: global receive middleware running on both lanes before payload deserialization.
 - `AddPublishMiddlewareFor<TMiddleware, TMessage>()`: typed publish middleware for one message type.
+- `AddReceiveMiddlewareFor<TMiddleware, TMessage>(group, lane)`: typed receive middleware for one message type, consumer group, and lane before deserialization.
 - `AddConsumeMiddlewareFor<TMiddleware, TMessage>(group)`: typed consume middleware for one message type and consumer group.
 - `.WithPriority(int)`: lower values run first; ties use registration order. Framework tenant propagation middleware uses priority `-1000`, so user middleware defaults (`0`) run after tenant restoration/stamping.
+
+### Receive Middleware (Pre-Deserialization)
+
+`IReceiveMiddleware` intercepts raw inbound transport envelopes on `ReceiveContext` after subscriber lookup and before contract-version validation or deserialization:
+- `ReceiveContext` exposes read-only `Headers` and `Body` views with copy-on-write `SetHeader`, `RemoveHeader`, and `ReplaceBody` mutations (identity headers protected).
+- Explicit outcomes via `Skip(reason)` (commits without storage) or `Reject(reason, cause)` (commits poison row, fires `OnExhausted`, releases breaker probe for policy rejects).
+- Deserialization failures surface as terminal `MessageDeserializationException` (poison on arrival at Stage A; exhausted at attempt 1 at Stage B).
+- Poison envelope storage is bounded by `MessagingOptions.MaxPoisonEnvelopeBytes` (default 1 MB).
 
 Middleware can short-circuit by returning without calling `next`. Use ordinary `try/catch` around `await next()` for compensation and error policy. The framework still guards two runtime invariants: post-success middleware failures are logged and suppressed only after the inner ring completed, and cancellation matching `context.CancellationToken` is never silently swallowed. Production publish contexts freeze the delivery mode, `Delay`, and `ScheduledAt` before middleware runs. Middleware can change other options before `await next()`; all mutations throw after `next()` returns. Reads, including `IsTransactional`, remain valid.
 

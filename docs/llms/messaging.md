@@ -596,7 +596,7 @@ The collector obtains one fixed provider-clock history cutoff snapshot per invoc
 - `UseStorageLock` coordinates retry processors through a messaging-keyed distributed lock provider.
 - `DeadNodeReconcileInterval` (default 1 minute, `> 0`) sets the always-on dead-owner recovery reconcile cadence (see [Dead-owner recovery](#dead-owner-recovery)). Independent of `UseStorageLock`.
 - `ShutdownTimeout` (default 30 seconds, `> 0`, `<= 5m`) is one end-to-end messaging shutdown bound. Shutdown first quiesces every processor, then concurrently initiates all drains using the remaining portion of one monotonic deadline. Configure the generic host or orchestrator termination grace to exceed this value; an earlier kill intentionally falls back to normal lease-expiry recovery while eventual cleanup remains fault-observed.
-- Register middleware through `MessagingBuilder.AddBusPublishMiddleware<T>()`, `AddBusConsumeMiddleware<T>()`, `AddPublishMiddlewareFor<TMiddleware,TMessage>()`, and `AddConsumeMiddlewareFor<TMiddleware,TMessage>(groupName)`.
+- Register middleware through `MessagingBuilder.AddBusPublishMiddleware<T>()`, `AddReceiveMiddleware<T>()`, `AddBusConsumeMiddleware<T>()`, `AddPublishMiddlewareFor<TMiddleware,TMessage>()`, `AddReceiveMiddlewareFor<TMiddleware,TMessage>(groupName, lane)`, and `AddConsumeMiddlewareFor<TMiddleware,TMessage>(groupName, lane)`.
 - Runtime subscriptions attach handlers after startup through `IRuntimeSubscriber`.
 
 ### Dependencies
@@ -848,14 +848,29 @@ Catch `MissingTenantContextException` directly (it inherits from `Exception`, no
 
 ## Middleware
 
-The pipeline supports cross-cutting middleware on both sides via typed russian-doll contracts:
+The pipeline supports cross-cutting middleware across three stages via russian-doll contracts:
 
-- `IConsumeMiddleware<TContext>` where `TContext : ConsumeContext`
-- `IPublishMiddleware<TContext>` where `TContext : PublishContext`
+- **Publish middleware**: `IPublishMiddleware<TContext>` where `TContext : PublishContext` (typed object before serialization)
+- **Receive middleware**: `IReceiveMiddleware` on `ReceiveContext` (raw envelope after subscriber lookup and before contract-version validation and deserialization)
+- **Consume middleware**: `IConsumeMiddleware<TContext>` where `TContext : ConsumeContext` (typed object after deserialization and inbox admission)
 
-Middleware receives one mutable context plus `Func<ValueTask> next`. Code before `await next()` runs before the inner ring; code after it runs after a successful inner ring. Use ordinary `try/catch` around `await next()` for compensation, retries, and error policy. Returning without calling `next` short-circuits the inner handler or publisher.
+Middleware receives one context plus `Func<ValueTask> next`. Code before `await next()` runs before the inner ring; code after it runs after a successful inner ring. Use ordinary `try/catch` around `await next()` for compensation, retries, and error policy. Returning without calling `next` short-circuits the pipeline.
 
 ```csharp
+public sealed class SignatureVerificationReceiveMiddleware : IReceiveMiddleware
+{
+    public ValueTask InvokeAsync(ReceiveContext context, Func<ValueTask> next)
+    {
+        if (!context.Headers.ContainsKey("x-signature"))
+        {
+            context.Reject("Missing signature header");
+            return ValueTask.CompletedTask;
+        }
+
+        return next();
+    }
+}
+
 public sealed class AuditConsumeMiddleware(ILogger<AuditConsumeMiddleware> logger)
     : IConsumeMiddleware<ConsumeContext>
 {
@@ -881,15 +896,33 @@ public sealed class CorrelationPublishMiddleware
 }
 
 builder.Services.AddHeadlessMessaging(options => { /* ... */ })
+    .AddReceiveMiddleware<SignatureVerificationReceiveMiddleware>()
     .AddBusConsumeMiddleware<AuditConsumeMiddleware>()
     .AddPublishMiddlewareFor<CorrelationPublishMiddleware, OrderPlaced>();
 ```
 
+### Receive Middleware
+
+Receive middleware intercepts the raw transport envelope (`ReceiveContext.Headers`, `ReceiveContext.Body`) before payload deserialization. It runs per delivery with the consumer identity known (`MessageType`, `ConsumerContractVersion`, `MessageName`, `GroupName`, `Lane`).
+
+- **Context views & copy-on-write:** `context.Headers` and `context.Body` provide read-only views of the current envelope as subsequent components will see it. Calling `context.SetHeader(key, value)`, `context.RemoveHeader(key)`, or `context.ReplaceBody(bytes)` performs copy-on-write modification. Identity headers (`headless-msg-id`, `headless-msg-name`, `headless-msg-group`) and `headless-exception` cannot be modified.
+- **Outcomes:** Middleware controls execution via `next()`, `context.Skip(reason)`, or `context.Reject(reason, cause)`.
+- **Outcome ownership:** `ConsumerRegister` owns all transport settlement, storage writes, and circuit-breaker signals:
+  - `Accept`: `next()` completes; persists admitted message, commits transport, dispatches to consumer.
+  - `Skip`: commits transport, drops message without storage rows or `OnExhausted`.
+  - `Reject`: stores received-exception poison row (`data:` URI), commits transport, fires `OnExhausted`. Explicit policy `Reject(reason, cause)` releases the circuit-breaker probe without reporting failure; thrown exceptions or undeclared outcomes report breaker failures.
+  - `Cancelled`: bound `OperationCanceledException` requeues delivery without storage rows.
+  - `Post-success throw`: exception after `next()` succeeds is logged and suppressed, preserving the accepted delivery.
+- **Ordering rule:** byte-exact verification middleware (HMAC/signature) must register with lower `Priority` than any body-transforming middleware (`ReplaceBody`/`SetHeader`), because `ReceiveContext` deliberately exposes only the current transformed envelope.
+- **Poison cap:** persisted poison `data:` URIs are bounded by `MessagingOptions.MaxPoisonEnvelopeBytes` (default 1 MB) to prevent storage amplification on oversized rejected payloads.
+
 **Registration scopes:**
 
-- `AddBusPublishMiddleware<T>()` / `AddBusConsumeMiddleware<T>()`: object-typed middleware for every publish or consume. Bus scope must implement `IPublishMiddleware<PublishContext>` or `IConsumeMiddleware<ConsumeContext>`.
+- `AddBusPublishMiddleware<T>()` / `AddBusConsumeMiddleware<T>()`: object-typed middleware for every publish or consume.
+- `AddReceiveMiddleware<T>()`: global receive middleware running on both lanes for every resolved consumer.
 - `AddPublishMiddlewareFor<TMiddleware, TMessage>()`: typed publish middleware for one message type.
-- `AddConsumeMiddlewareFor<TMiddleware, TMessage>(group)`: typed consume middleware for one message type and consumer group.
+- `AddReceiveMiddlewareFor<TMiddleware, TMessage>(group, lane)`: typed receive middleware for one message type, consumer group, and lane.
+- `AddConsumeMiddlewareFor<TMiddleware, TMessage>(group, lane)`: typed consume middleware for one message type and consumer group.
 - Each call returns a registration handle with `.WithPriority(int)`. Lower priority runs first and wraps later middleware. Ties use registration order. Default priority is `0`; first-party tenant propagation uses `-1000`.
 
 **Framework guarantees:**

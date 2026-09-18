@@ -44,6 +44,7 @@ internal static class MessagingMetrics
     internal const string InboxRetentionName = "messaging.inbox.retention";
     internal const string InboxCapabilitiesName = "messaging.inbox.capabilities";
     internal const string OperatorOperationsName = "messaging.operator.operations";
+    internal const string ReceiveOutcomesName = "messaging.receive.outcomes";
 
     // --- Dimension (tag) names --------------------------------------------------------------------------------
 
@@ -53,6 +54,7 @@ internal static class MessagingMetrics
     internal const string TagErrorType = "error.type";
     internal const string TagSubscriber = "messaging.subscriber";
     internal const string TagPersistenceType = "messaging.persistence.type";
+    internal const string TagReceiveOutcome = "messaging.receive.outcome";
 
     // --- Instruments ------------------------------------------------------------------------------------------
 
@@ -130,6 +132,10 @@ internal static class MessagingMetrics
         OperatorOperationsName
     );
 
+    private static readonly Counter<long> _ReceiveOutcomes = MessagingDiagnostics.Meter.CreateCounter<long>(
+        ReceiveOutcomesName
+    );
+
     /// <summary>Whether any messaging instrument currently has a subscribed listener.</summary>
     internal static bool AnyEnabled =>
         _MessagesPublished.Enabled
@@ -149,7 +155,8 @@ internal static class MessagingMetrics
         || _InboxTerminal.Enabled
         || _InboxReplays.Enabled
         || _InboxRetention.Enabled
-        || _InboxCapabilities.Enabled;
+        || _InboxCapabilities.Enabled
+        || _ReceiveOutcomes.Enabled;
 
     internal static void RecordInbox(
         InboxMetricKind kind,
@@ -391,6 +398,22 @@ internal static class MessagingMetrics
         }
 
         _MessageSize.Record(sizeBytes, new TagList { { TagOperation, operation } });
+    }
+
+    /// <summary>
+    /// Records one receive-stage outcome per delivery: <c>accepted</c> when the delivery continued to
+    /// admission, <c>skipped</c> on a middleware-declared skip, <c>rejected</c> on poison-on-arrival
+    /// (explicit reject, middleware fault, undeclared outcome, or a Stage A deserialization failure),
+    /// and <c>cancelled</c> when the receive was aborted by its bound cancellation token.
+    /// </summary>
+    internal static void RecordReceiveOutcome(string outcome)
+    {
+        if (!_ReceiveOutcomes.Enabled)
+        {
+            return;
+        }
+
+        _ReceiveOutcomes.Add(1, new TagList { { TagReceiveOutcome, outcome } });
     }
 
     private static TagList _CreateDeliveryTags(

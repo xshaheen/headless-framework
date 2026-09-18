@@ -301,6 +301,28 @@ internal sealed class SubscribeExecutor(
             _ReleaseHalfOpenProbe(message);
             return MessagingRetryAttempt.Completed(OperateResult.Failed(ex));
         }
+        catch (Exception ex) when (_IsDeserializationException(ex))
+        {
+            logger.ConsumerExecuteFailed(
+                ex,
+                LogSanitizer.Sanitize(message.Origin.Name),
+                message.StorageId,
+                message.Origin.GetExecutionInstanceId()
+            );
+
+            await _SetFailedState(
+                    message,
+                    ex,
+                    dispatchServices,
+                    Math.Max(0, message.InlineAttempts - 1),
+                    MessagingRetryDecision.Exhausted,
+                    executionState,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            return MessagingRetryAttempt.Completed(OperateResult.Failed(ex));
+        }
         catch (Exception ex)
         {
             logger.ConsumerExecuteFailed(
@@ -850,4 +872,16 @@ internal sealed class SubscribeExecutor(
     }
 
     #endregion
+    private static bool _IsDeserializationException(Exception? ex)
+    {
+        for (var current = ex; current != null; current = current.InnerException)
+        {
+            if (current is MessageDeserializationException)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 }

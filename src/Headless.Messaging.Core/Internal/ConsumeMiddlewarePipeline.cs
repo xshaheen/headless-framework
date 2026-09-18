@@ -158,13 +158,25 @@ internal sealed class ConsumeMiddlewarePipeline(
             consumeContextAccessor?.Current = previousConsumeContext;
         }
 
-        consumeHeaders.TryGetValue(Headers.CallbackName, out var callbackName);
-        var callbackHeaders = consumeHeaders.ResponseHeader;
+        string? callbackName = null;
+        if (!consumeContext.IsResponseSuppressed)
+        {
+            callbackName =
+                consumeContext.ResponseDestination
+                ?? (
+                    consumeHeaders.TryGetValue(Headers.CallbackName, out var wireCallback)
+                    && !string.IsNullOrWhiteSpace(wireCallback)
+                        ? wireCallback
+                        : null
+                );
+        }
+
+        var callbackHeaders = consumeContext.ResponseHeaders;
         return new ConsumerExecutedResult(
             consumeContext.Response,
             consumeContext.ResponseType,
             context.MediumMessage.Origin.Id,
-            string.IsNullOrEmpty(callbackName) ? null : callbackName,
+            callbackName,
             callbackHeaders,
             consumeContext.ResponseCallbackName
         );

@@ -385,6 +385,98 @@ public sealed class ConsumeContextTests : TestBase
         context.MessageName.Should().Be(messageName);
     }
 
+    [Fact]
+    public void should_set_and_overwrite_response_header()
+    {
+        // given
+        var context = _CreateContext(new TestMessage("1", 10m));
+
+        // when
+        context.SetResponseHeader("key1", "val1");
+        context.SetResponseHeader("key2", "val2");
+        context.SetResponseHeader("key1", "val1-overwritten");
+
+        // then
+        context.ResponseHeaders.Should().NotBeNull();
+        context.ResponseHeaders!["key1"].Should().Be("val1-overwritten");
+        context.ResponseHeaders["key2"].Should().Be("val2");
+    }
+
+    [Fact]
+    public void should_allow_null_response_header_value()
+    {
+        // given
+        var context = _CreateContext(new TestMessage("1", 10m));
+
+        // when
+        context.SetResponseHeader("nullable-key", null);
+
+        // then
+        context.ResponseHeaders.Should().NotBeNull();
+        context.ResponseHeaders!["nullable-key"].Should().BeNull();
+    }
+
+    [Fact]
+    public void should_set_response_destination()
+    {
+        // given
+        var context = _CreateContext(new TestMessage("1", 10m));
+
+        // when
+        context.SetResponseDestination("dest.callback");
+
+        // then
+        context.ResponseDestination.Should().Be("dest.callback");
+        context.IsResponseSuppressed.Should().BeFalse();
+    }
+
+    [Fact]
+    public void should_suppress_response()
+    {
+        // given
+        var context = _CreateContext(new TestMessage("1", 10m));
+
+        // when
+        context.SuppressResponse();
+
+        // then
+        context.IsResponseSuppressed.Should().BeTrue();
+    }
+
+    [Fact]
+    public void should_unsuppress_when_setting_response_destination()
+    {
+        // given
+        var context = _CreateContext(new TestMessage("1", 10m));
+        context.SuppressResponse();
+        context.IsResponseSuppressed.Should().BeTrue();
+
+        // when
+        context.SetResponseDestination("new.destination");
+
+        // then
+        context.IsResponseSuppressed.Should().BeFalse();
+        context.ResponseDestination.Should().Be("new.destination");
+    }
+
+    [Fact]
+    public void should_throw_when_mutators_called_after_completed()
+    {
+        // given
+        var context = _CreateContext(new TestMessage("1", 10m));
+        context.MarkCompleted();
+
+        // when / then
+        var actHeader = () => context.SetResponseHeader("key", "val");
+        actHeader.Should().Throw<InvalidOperationException>().WithMessage("*read-only*");
+
+        var actDest = () => context.SetResponseDestination("dest");
+        actDest.Should().Throw<InvalidOperationException>().WithMessage("*read-only*");
+
+        var actSuppress = () => context.SuppressResponse();
+        actSuppress.Should().Throw<InvalidOperationException>().WithMessage("*read-only*");
+    }
+
     private ConsumeContext<TestMessage> _CreateContext(TestMessage message)
     {
         return new ConsumeContext<TestMessage>

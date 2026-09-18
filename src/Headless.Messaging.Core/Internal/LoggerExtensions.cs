@@ -778,4 +778,62 @@ internal static partial class LoggerExtensions
         Message = "The transactional inbox attempt for message {MessageId} committed durably but draining its unit of work faulted; the attempt is reported as succeeded and the relay recovers any enlisted rows."
     )]
     public static partial void InboxPostCommitDrainFaulted(this ILogger logger, Exception exception, Guid messageId);
+
+    [LoggerMessage(
+        EventId = 99,
+        EventName = "ReceiveMessageSkipped",
+        Level = LogLevel.Information,
+        Message = "Receive middleware {MiddlewareType} skipped message {MessageId} (name '{MessageName}', group '{Group}', lane '{Lane}'). Reason: {Reason}"
+    )]
+    public static partial void ReceiveMessageSkipped(
+        this ILogger logger,
+        string middlewareType,
+        string messageId,
+        string messageName,
+        string? group,
+        string lane,
+        string? reason
+    );
+
+    [LoggerMessage(
+        EventId = 100,
+        EventName = "ReceiveMessageRejected",
+        Level = LogLevel.Warning,
+        Message = "Receive middleware {MiddlewareType} rejected message {MessageId} (name '{MessageName}', group '{Group}', lane '{Lane}'). Reason: {Reason}"
+    )]
+    public static partial void ReceiveMessageRejected(
+        this ILogger logger,
+        Exception? exception,
+        string middlewareType,
+        string messageId,
+        string messageName,
+        string? group,
+        string lane,
+        string? reason
+    );
+
+    [LoggerMessage(
+        EventId = 101,
+        EventName = "ReceiveOutcomeCancelled",
+        Level = LogLevel.Debug,
+        Message = "Receive of message {MessageId} (name '{MessageName}', group '{Group}') was cancelled before settlement; the transport will redeliver."
+    )]
+    public static partial void ReceiveOutcomeCancelled(
+        this ILogger logger,
+        string messageId,
+        string messageName,
+        string? group
+    );
+
+    [LoggerMessage(
+        EventId = 102,
+        EventName = "ReceivePostSuccessMiddlewareFailed",
+        Level = LogLevel.Warning,
+        Message = "Receive middleware {MiddlewareType} threw after the inner receive completed; suppressing to avoid discarding the accepted delivery."
+    )]
+    public static partial void ReceivePostSuccessMiddlewareFailed(
+        this ILogger logger,
+        Exception exception,
+        string middlewareType
+    );
 }

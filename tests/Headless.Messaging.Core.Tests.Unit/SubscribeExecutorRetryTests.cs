@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
+using Headless.Messaging.Exceptions;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
@@ -984,6 +985,165 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             );
         await storage.DidNotReceiveWithAnyArgs().LeaseReceiveAsync(null!, TimeSpan.Zero, AbortToken);
         await storage.DidNotReceiveWithAnyArgs().ReserveReceiveAttemptAsync(null!, 0, AbortToken);
+    }
+
+    [Fact]
+    public async Task should_treat_message_deserialization_exception_as_terminal_exhausted_on_first_attempt()
+    {
+        // given
+        var storage = Substitute.For<IDataStorage>();
+        storage
+            .ChangeReceiveRetryStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(true));
+
+        var invoker = Substitute.For<ISubscribeInvoker>();
+        invoker
+            .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
+            .Returns(
+                Task.FromException<ConsumerExecutedResult>(
+                    new MessageDeserializationException("Stage B payload deserialization failed")
+                )
+            );
+
+        var onExhaustedInvoked = false;
+        Exception? exhaustedException = null;
+
+        var executor = _CreateExecutor(
+            invoker,
+            storage,
+            new MessagingOptions
+            {
+                RetryPolicy =
+                {
+                    RetryStrategy = TestRetryStrategies.FixedDelay(5, TimeSpan.FromMilliseconds(1)),
+                    MaxPersistedRetries = 5,
+                    OnExhausted = (info, _) =>
+                    {
+                        onExhaustedInvoked = true;
+                        exhaustedException = info.Exception;
+                        return Task.CompletedTask;
+                    },
+                },
+            }
+        );
+
+        var message = _CreateMediumMessage();
+
+        // when
+        var result = await executor.ExecuteAsync(message, _EmptyScope, _CreateDescriptor(), AbortToken);
+
+        // then
+        result.Succeeded.Should().BeFalse();
+        result.Exception.Should().BeOfType<SubscriberExecutionFailedException>();
+        result.Exception!.InnerException.Should().BeOfType<MessageDeserializationException>();
+
+        // Exactly one attempt; retries not consulted
+        await invoker.Received(1).InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>());
+        message.Retries.Should().Be(0);
+
+        // OnExhausted invoked once with the exception
+        onExhaustedInvoked.Should().BeTrue();
+        exhaustedException.Should().NotBeNull();
+        (
+            exhaustedException is MessageDeserializationException
+            || exhaustedException?.InnerException is MessageDeserializationException
+        )
+            .Should()
+            .BeTrue();
+
+        // Persisted state was Failed with no NextRetryAt and no lock
+        await storage
+            .Received(1)
+            .ChangeReceiveRetryStateAsync(
+                message,
+                StatusName.Failed,
+                MessageContentWrite.Refresh,
+                Arg.Is<DateTimeOffset?>(v => v == null),
+                Arg.Is<DateTimeOffset?>(v => v == null),
+                Arg.Is(0),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_treat_wrapped_subscriber_execution_failed_exception_with_deserialization_inner_as_terminal()
+    {
+        // given
+        var storage = Substitute.For<IDataStorage>();
+        storage
+            .ChangeReceiveRetryStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(true));
+
+        var innerEx = new MessageDeserializationException("Corrupted element");
+        var wrappedEx = new SubscriberExecutionFailedException("Invocation failed", innerEx);
+
+        var invoker = Substitute.For<ISubscribeInvoker>();
+        invoker
+            .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<ConsumerExecutedResult>(wrappedEx));
+
+        var onExhaustedInvoked = false;
+
+        var executor = _CreateExecutor(
+            invoker,
+            storage,
+            new MessagingOptions
+            {
+                RetryPolicy =
+                {
+                    RetryStrategy = TestRetryStrategies.FixedDelay(3, TimeSpan.FromMilliseconds(1)),
+                    MaxPersistedRetries = 5,
+                    OnExhausted = (_, _) =>
+                    {
+                        onExhaustedInvoked = true;
+                        return Task.CompletedTask;
+                    },
+                },
+            }
+        );
+
+        var message = _CreateMediumMessage();
+
+        // when
+        var result = await executor.ExecuteAsync(message, _EmptyScope, _CreateDescriptor(), AbortToken);
+
+        // then
+        result.Succeeded.Should().BeFalse();
+        await invoker.Received(1).InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>());
+        onExhaustedInvoked.Should().BeTrue();
+        message.Retries.Should().Be(0);
+
+        await storage
+            .Received(1)
+            .ChangeReceiveRetryStateAsync(
+                message,
+                StatusName.Failed,
+                MessageContentWrite.Refresh,
+                Arg.Is<DateTimeOffset?>(v => v == null),
+                Arg.Is<DateTimeOffset?>(v => v == null),
+                Arg.Is(0),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     private sealed class ScopedMarker;

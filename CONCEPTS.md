@@ -140,6 +140,14 @@ timers, retry decisions, and probe releases carry the epoch captured when their 
 The consumer-group apply gate rejects epochs older than its last completed apply, so an in-flight
 recovery cannot undo a newer Open state.
 
+### Poison-on-arrival
+The terminal disposition for an inbound message rejected before any consume attempt runs: the
+framework never dispatches it, stores the received envelope (headers plus body as a `data:` URI)
+in a received-exception row, commits (acks) the transport delivery, and invokes the configured
+`RetryPolicy.OnExhausted` callback with no storage id. Produced by subscriber-not-found,
+contract-version mismatch, deserialization failure, and (with receive middleware) an explicit
+or defaulted Reject outcome.
+
 ## Flagged ambiguities
 
 - "Generation" had been used loosely for both a node's Incarnation and the durable counter that
