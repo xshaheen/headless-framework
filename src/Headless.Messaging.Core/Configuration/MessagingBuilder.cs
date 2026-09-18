@@ -200,6 +200,58 @@ public sealed class MessagingBuilder(IServiceCollection services, MessagingOptio
         );
     }
 
+    /// <summary>Registers receive middleware that intercepts every inbound delivery before deserialization, on both lanes.</summary>
+    /// <typeparam name="T">The middleware implementation type.</typeparam>
+    /// <returns>A <see cref="MiddlewareRegistration"/> handle for chaining priority configuration.</returns>
+    /// <remarks>
+    /// Global receive middleware is lane-agnostic: the descriptor is stored with
+    /// <see cref="MessageLane.Bus"/> because the direction requires a value, but the registry lookup
+    /// ignores the lane for bus-scope receive descriptors, so it runs for bus and queue deliveries alike.
+    /// </remarks>
+    public MiddlewareRegistration AddReceiveMiddleware<T>()
+        where T : class, IReceiveMiddleware
+    {
+        return _AddMiddleware<T>(
+            MiddlewareDirection.Receive,
+            MiddlewareScope.Bus,
+            typeof(IReceiveMiddleware),
+            typeof(ReceiveContext),
+            messageType: null,
+            groupName: null,
+            lane: MessageLane.Bus
+        );
+    }
+
+    /// <summary>Registers receive middleware that intercepts inbound deliveries for a specific payload type, consumer group, and lane.</summary>
+    /// <typeparam name="TMiddleware">The middleware implementation type.</typeparam>
+    /// <typeparam name="TMessage">The consumer payload type this middleware targets.</typeparam>
+    /// <param name="groupName">The consumer group name this middleware is scoped to. Must not be null or whitespace.</param>
+    /// <param name="lane">The message lane this middleware targets.</param>
+    /// <returns>A <see cref="MiddlewareRegistration"/> handle for chaining priority configuration.</returns>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="groupName"/> is null or whitespace.</exception>
+    /// <remarks>
+    /// The group name is matched against the consumer's registration-derived group after the host's
+    /// configured group-name prefix (if any) is applied, mirroring <c>AddConsumeMiddlewareFor</c>.
+    /// </remarks>
+    public MiddlewareRegistration AddReceiveMiddlewareFor<TMiddleware, TMessage>(string groupName, MessageLane lane)
+        where TMiddleware : class, IReceiveMiddleware
+        where TMessage : class
+    {
+        Argument.IsNotNullOrWhiteSpace(groupName);
+
+        var resolvedGroupName = options?.ApplyGroupNamePrefix(groupName) ?? groupName;
+
+        return _AddMiddleware<TMiddleware>(
+            MiddlewareDirection.Receive,
+            MiddlewareScope.Message,
+            typeof(IReceiveMiddleware),
+            typeof(ReceiveContext),
+            typeof(TMessage),
+            resolvedGroupName,
+            lane
+        );
+    }
+
     private MiddlewareRegistration _AddMiddleware<TMiddleware>(
         MiddlewareDirection direction,
         MiddlewareScope scope,

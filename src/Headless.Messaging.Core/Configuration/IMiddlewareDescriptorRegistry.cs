@@ -20,6 +20,13 @@ internal interface IMiddlewareDescriptorRegistry
         MessageLane lane,
         out IReadOnlyList<MiddlewareDescriptor> descriptors
     );
+
+    bool TryGetReceiveDescriptors(
+        Type messageType,
+        string groupName,
+        MessageLane lane,
+        out IReadOnlyList<MiddlewareDescriptor> descriptors
+    );
 }
 
 internal sealed class MiddlewareDescriptorRegistry : IMiddlewareDescriptorRegistry
@@ -156,6 +163,51 @@ internal sealed class MiddlewareDescriptorRegistry : IMiddlewareDescriptorRegist
         }
     }
 
+    public bool TryGetReceiveDescriptors(
+        Type messageType,
+        string groupName,
+        MessageLane lane,
+        out IReadOnlyList<MiddlewareDescriptor> descriptors
+    )
+    {
+        lock (_lock)
+        {
+            var bus = new List<MiddlewareDescriptor>();
+            var typed = new List<MiddlewareDescriptor>();
+
+            foreach (var descriptor in _descriptors)
+            {
+                if (descriptor.Direction != MiddlewareDirection.Receive)
+                {
+                    continue;
+                }
+
+                if (descriptor.Scope == MiddlewareScope.Bus)
+                {
+                    // Global receive middleware is lane-agnostic: one registration covers both bus
+                    // and queue deliveries, so the lane filter is skipped for bus-scope descriptors.
+                    bus.Add(descriptor);
+                }
+                else if (
+                    descriptor.Scope == MiddlewareScope.Message
+                    && descriptor.Lane == lane
+                    && descriptor.MessageType == messageType
+                    && string.Equals(descriptor.GroupName, groupName, StringComparison.Ordinal)
+                )
+                {
+                    typed.Add(descriptor);
+                }
+            }
+
+            descriptors = _Sort(bus).Concat(_Sort(typed)).ToArray();
+
+            // Unlike the consume lookup, resolution here is registry-only with no DI-scan fallback,
+            // so the boolean must mean "middleware will run" — never a lane-matching descriptor that
+            // does not participate in this delivery.
+            return descriptors.Count > 0;
+        }
+    }
+
     private static IOrderedEnumerable<MiddlewareDescriptor> _Sort(List<MiddlewareDescriptor> descriptors)
     {
         return descriptors
@@ -229,6 +281,7 @@ internal enum MiddlewareDirection
 {
     Publish,
     Consume,
+    Receive,
 }
 
 internal enum MiddlewareScope
