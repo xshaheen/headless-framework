@@ -162,4 +162,61 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             throw;
         }
     }
+
+    async Task<JobIdempotencyEnqueueResult> ICoordinatedJobWriter<TTimeJob, TCronJob>.WriteIdempotentTimeJobAsync(
+        TTimeJob job,
+        string idempotencyKey,
+        TimeSpan idempotencyTtl,
+        IRelationalUnitOfWorkResource relationalResource,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var context = _CreateCoordinatedContext(relationalResource);
+        // The savepoint-wrapped kernel matches keyed scheduling: a kernel fault inside the caller's transaction
+        // rolls back to the savepoint (reservation + job vanish together) without poisoning the outer transaction.
+        return await _WithIdempotencySavepointAsync(
+                context,
+                () => _AddIdempotentAsync(context, job, idempotencyKey, idempotencyTtl, cancellationToken),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    // Same savepoint discipline as the keyed wrapper, typed for the idempotency result: release on success,
+    // roll back to the savepoint on fault so the reservation and job vanish together, and never let a rollback
+    // fault hide the original failure.
+    private static async Task<JobIdempotencyEnqueueResult> _WithIdempotencySavepointAsync(
+        TDbContext context,
+        Func<Task<JobIdempotencyEnqueueResult>> operation,
+        CancellationToken cancellationToken
+    )
+    {
+        var transaction = context.Database.CurrentTransaction!;
+        _RequireKeyedSavepoints(context);
+
+        var savepoint = "jobs_" + Guid.NewGuid().ToString("N")[..24];
+        await transaction.CreateSavepointAsync(savepoint, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var result = await operation().ConfigureAwait(false);
+            await transaction.ReleaseSavepointAsync(savepoint, cancellationToken).ConfigureAwait(false);
+            return result with { IsProvisional = true };
+        }
+        catch (Exception failure)
+        {
+            using var rollbackBudget = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            try
+            {
+                await transaction.RollbackToSavepointAsync(savepoint, rollbackBudget.Token).ConfigureAwait(false);
+            }
+            catch (Exception rollbackFailure)
+            {
+                throw new InvalidOperationException(
+                    "The idempotent Jobs enqueue failed and its savepoint could not be restored. The caller transaction is not recoverable here; an outer rollback and fresh unit of work are required.",
+                    new AggregateException(failure, rollbackFailure)
+                );
+            }
+            throw;
+        }
+    }
 }

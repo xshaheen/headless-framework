@@ -51,4 +51,24 @@ public sealed record JobOptions
     /// ambient tenant is present or an explicit <see cref="TenantId"/> is supplied.
     /// </summary>
     public bool IsSystemJob { get; init; }
+
+    /// <summary>
+    /// Deduplicates this enqueue against other enqueues that resolve the same function, contract version, tenant
+    /// scope, and key within the idempotency window. A repeat call inside the window returns the first call's job
+    /// ID without inserting a second job or emitting a second set of enqueue side effects.
+    /// </summary>
+    /// <remarks>
+    /// Idempotency is an enqueue deduplication window, not exactly-once execution: the payload is not part of the
+    /// identity, so a repeat with different payload bytes still observes the first job. The key survives job
+    /// completion, failure, cancellation, and retention deletion; it is released only by expiry. Honored by
+    /// <c>EnqueueAsync</c>, <c>ScheduleAsync</c>, and <c>ScheduleAfterAsync</c>; rejected by keyed, recurring,
+    /// and chain scheduling.
+    /// </remarks>
+    public string? IdempotencyKey { get; init; }
+
+    /// <summary>
+    /// Lifetime of the idempotency window opened by <see cref="IdempotencyKey"/>. Required whenever the key is
+    /// supplied; must be at least 1 second and at most 30 days. There is no host-level default.
+    /// </summary>
+    public TimeSpan? IdempotencyTtl { get; init; }
 }

@@ -95,6 +95,10 @@ internal sealed class JobSchedulingPolicies
                 function?.Enlistment,
                 includeHostEnlistment ? _defaults.Enlistment : null
             ),
+            // The idempotency window is per call by contract: it is never inherited from host/function policy
+            // (Snapshot rejects it there), so only the call's own key and TTL survive resolution.
+            IdempotencyKey = call?.IdempotencyKey,
+            IdempotencyTtl = call?.IdempotencyTtl,
         };
         _ValidateOptions(result);
         return result;
@@ -134,6 +138,7 @@ internal sealed class JobSchedulingPolicies
             || options.Description is not null
             || options.TenantId is not null
             || options.IsSystemJob
+            || options.IdempotencyKey is not null
         )
         {
             throw new ArgumentException(
@@ -157,6 +162,28 @@ internal sealed class JobSchedulingPolicies
         if (!Enum.IsDefined(options.Enlistment))
         {
             throw new ArgumentException("The transaction-enlistment value must be a defined value.", nameof(options));
+        }
+        if (options.IdempotencyKey is { } key)
+        {
+            // Same bounded-string rules as every other durable Jobs identity, so one validator and one collation
+            // story cover JobKey, contract names, and idempotency keys. TTL bounds live in JobContract beside the
+            // other identity rules; every public surface that accepts a TTL validates through the same member.
+            JobContract.ValidateName(key);
+            if (options.IdempotencyTtl is not { } ttl)
+            {
+                throw new ArgumentException(
+                    "An idempotency key requires a TTL; supply both or neither.",
+                    nameof(options)
+                );
+            }
+            JobContract.ValidateIdempotencyTtl(ttl);
+        }
+        else if (options.IdempotencyTtl is not null)
+        {
+            throw new ArgumentException(
+                "An idempotency TTL requires its idempotency key; supply both or neither.",
+                nameof(options)
+            );
         }
     }
 }

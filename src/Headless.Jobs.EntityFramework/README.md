@@ -121,6 +121,52 @@ Ordinary adds and updates also reject a child whose persisted parent reference t
 
 Key and run locks use one database command per acquisition call. Bulk operations retain every guarded run and parent ID, deduplicate them, and acquire them in sorted order. Each call has one 30-second contention budget for the complete batch, with a 60-second command timeout. Contention raises `TimeoutException` without changing the caller's lock-timeout policy or aborting its transaction. Any locks already acquired remain owned by that transaction until commit or rollback.
 
+### Idempotent enqueue storage
+
+Idempotent enqueue stores its reservations in the Jobs-owned `jobs.TimeJobIdempotencyReservations` table: composite primary key `(ScopeKey, Function, ContractVersion, IdempotencyKey)` — `ScopeKey` is the canonical non-null scope (`S` system, `T:{tenant-id}` tenant) so uniqueness never depends on nullable-tenant index semantics — plus `JobId`, `ExpiresAt` (non-unique index, reserved for a future sweeper; correctness never depends on sweeping), `TenantId` for querying, and created/updated stamps. The four identity columns require the same ordinal collations as keyed scheduling; missing or different collations reject idempotent enqueue before any write. The built-in model customizer maps the table automatically, and `FinalizeJobsModel` maps it for consumer-managed models.
+
+**Upgrading an existing database:** the mapping arrives with the package, but the table does not. Before the first idempotent enqueue, apply the additive DDL below through your migration pipeline — no backfill, no drops. Fresh databases created from the model need no separate step.
+
+PostgreSQL:
+
+```sql
+CREATE TABLE jobs."TimeJobIdempotencyReservations" (
+    "ScopeKey"         varchar(202) COLLATE "C"      NOT NULL,
+    "Function"         varchar(200) COLLATE "C"      NOT NULL,
+    "ContractVersion"  varchar(100) COLLATE "C"      NOT NULL,
+    "IdempotencyKey"   varchar(200) COLLATE "C"      NOT NULL,
+    "TenantId"         varchar(200)                   NULL,
+    "JobId"            uuid                           NOT NULL,
+    "ExpiresAt"        timestamp with time zone       NOT NULL,
+    "CreatedAt"        timestamp with time zone       NOT NULL,
+    "UpdatedAt"        timestamp with time zone       NOT NULL,
+    CONSTRAINT "PK_TimeJobIdempotencyReservations"
+        PRIMARY KEY ("ScopeKey", "Function", "ContractVersion", "IdempotencyKey")
+);
+CREATE INDEX "IX_TimeJobIdempotencyReservations_ExpiresAt"
+    ON jobs."TimeJobIdempotencyReservations" ("ExpiresAt");
+```
+
+SQL Server:
+
+```sql
+CREATE TABLE [jobs].[TimeJobIdempotencyReservations] (
+    [ScopeKey]         nvarchar(202) COLLATE Latin1_General_100_BIN2 NOT NULL,
+    [Function]         nvarchar(200) COLLATE Latin1_General_100_BIN2 NOT NULL,
+    [ContractVersion]  nvarchar(100) COLLATE Latin1_General_100_BIN2 NOT NULL,
+    [IdempotencyKey]   nvarchar(200) COLLATE Latin1_General_100_BIN2 NOT NULL,
+    [TenantId]         nvarchar(200) NULL,
+    [JobId]            uniqueidentifier NOT NULL,
+    [ExpiresAt]        datetime2(7) NOT NULL,
+    [CreatedAt]        datetime2(7) NOT NULL,
+    [UpdatedAt]        datetime2(7) NOT NULL,
+    CONSTRAINT [PK_TimeJobIdempotencyReservations]
+        PRIMARY KEY ([ScopeKey], [Function], [ContractVersion], [IdempotencyKey])
+);
+CREATE INDEX [IX_TimeJobIdempotencyReservations_ExpiresAt]
+    ON [jobs].[TimeJobIdempotencyReservations] ([ExpiresAt]);
+```
+
 Standalone keyed schedule, replacement, and cancellation run their entire transaction through the configured EF execution strategy. Failures before commit can retry with a fresh context and scheduling candidate. Once commit starts, a failure propagates without automatic replay because the commit outcome may be unknown; inspect the retained key and generation before deciding how to recover. Coordinated operations remain under the caller's transaction and retry ownership.
 
 ## Dependencies

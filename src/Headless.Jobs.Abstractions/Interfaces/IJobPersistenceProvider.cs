@@ -83,6 +83,25 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
+    /// Atomically reserves an idempotency key and inserts the job, or observes the live reservation's job ID.
+    /// </summary>
+    /// <remarks>
+    /// Reservation identity is derived from the entity's function, contract version, and final tenant scope
+    /// (explicit or ambient-captured — the caller must resolve tenant scope before calling). The entity's
+    /// pre-assigned identifier becomes the reserved job ID on creation. When a live reservation exists (its
+    /// expiry is in the store's future), nothing is inserted and the stored job ID is returned as
+    /// <see cref="JobIdempotencyEnqueueResult.Created"/> = <see langword="false"/>; the payload is not compared.
+    /// An expired reservation is atomically replaced by exactly one contender under concurrency. No default
+    /// implementation exists because a correct fallback cannot be atomic.
+    /// </remarks>
+    Task<JobIdempotencyEnqueueResult> AddIdempotentTimeJobAsync(
+        TTimeJob job,
+        string idempotencyKey,
+        TimeSpan idempotencyTtl,
+        CancellationToken cancellationToken = default
+    );
+
     /// <summary>Conditionally cancels only the observed current generation, retaining every generation indefinitely.</summary>
     Task<JobScheduleResult> CancelKeyedTimeJobAsync(
         JobKeyScope scope,
