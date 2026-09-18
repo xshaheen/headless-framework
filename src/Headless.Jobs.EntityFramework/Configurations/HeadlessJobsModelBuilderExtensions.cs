@@ -23,16 +23,11 @@ public static class HeadlessJobsModelBuilderExtensions
         Argument.IsNotNull(context);
 
         JobsKeyedModelConfiguration.Configure<TTimeJob>(builder, context);
-
-        // The reservation table is not generic, so its mapping is provider-driven; the collation mirrors what the
-        // built-in customizer applies for the same ordinal-identity discipline.
-        var contractCollation = context.Database.ProviderName switch
-        {
-            "Microsoft.EntityFrameworkCore.SqlServer" => "Latin1_General_100_BIN2",
-            "Npgsql.EntityFrameworkCore.PostgreSQL" => "C",
-            _ => null,
-        };
-        JobsIdempotencyModelConfiguration.Configure(builder, contractCollation);
+        // The reservation table is not generic, so this is the one place a consumer-managed model maps it.
+        JobsIdempotencyModelConfiguration.Configure(
+            builder,
+            JobsContractCollation.TryResolve(context.Database.ProviderName)
+        );
         return builder;
     }
 }

@@ -21,12 +21,7 @@ public class JobsDbContext<TTimeJob, TCronJob> : DbContext
     {
         var schema = this.GetService<JobsEfCoreOptionBuilder<TTimeJob, TCronJob>>().Schema;
 
-        var contractCollation = Database.ProviderName switch
-        {
-            "Microsoft.EntityFrameworkCore.SqlServer" => "Latin1_General_100_BIN2",
-            "Npgsql.EntityFrameworkCore.PostgreSQL" => "C",
-            _ => null,
-        };
+        var contractCollation = JobsContractCollation.TryResolve(Database.ProviderName);
 
         modelBuilder.ApplyConfiguration(new TimeJobConfigurations<TTimeJob>(schema, contractCollation));
         modelBuilder.ApplyConfiguration(new CronJobConfigurations<TCronJob>(schema, contractCollation));

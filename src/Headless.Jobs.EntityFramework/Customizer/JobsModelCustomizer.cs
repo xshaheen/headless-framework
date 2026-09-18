@@ -14,12 +14,7 @@ internal sealed class JobsModelCustomizer<TTimeJob, TCronJob>(ModelCustomizerDep
 {
     public override void Customize(ModelBuilder builder, DbContext context)
     {
-        var contractCollation = context.Database.ProviderName switch
-        {
-            "Microsoft.EntityFrameworkCore.SqlServer" => "Latin1_General_100_BIN2",
-            "Npgsql.EntityFrameworkCore.PostgreSQL" => "C",
-            _ => null,
-        };
+        var contractCollation = JobsContractCollation.TryResolve(context.Database.ProviderName);
 
         builder.ApplyConfiguration(new TimeJobConfigurations<TTimeJob>(contractCollation: contractCollation));
         builder.ApplyConfiguration(new CronJobConfigurations<TCronJob>(contractCollation: contractCollation));

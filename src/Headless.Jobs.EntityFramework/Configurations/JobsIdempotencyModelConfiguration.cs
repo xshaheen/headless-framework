@@ -61,14 +61,10 @@ internal static class JobsIdempotencyModelConfiguration
     // case-insensitive database collation could merge two caller-distinct keys into one reservation.
     internal static void ValidateOrdinalScope(DbContext context)
     {
-        var requiredCollation = context.Database.ProviderName switch
-        {
-            "Npgsql.EntityFrameworkCore.PostgreSQL" => "C",
-            "Microsoft.EntityFrameworkCore.SqlServer" => "Latin1_General_100_BIN2",
-            _ => throw new NotSupportedException(
-                "Idempotent enqueue requires PostgreSQL, SQL Server, or the in-memory provider."
-            ),
-        };
+        var requiredCollation = JobsContractCollation.Require(
+            context.Database.ProviderName,
+            "Idempotent enqueue requires PostgreSQL, SQL Server, or the in-memory provider."
+        );
 
         var model = context.GetService<IDesignTimeModel>().Model;
         var entity = model.FindEntityType(typeof(JobIdempotencyReservationEntity));
