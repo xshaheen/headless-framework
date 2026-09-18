@@ -54,9 +54,14 @@ public static class SetupJobsEntityFramework
             // The schema is authored on the feature builder before the host exists, so the registered instance is
             // materialized from that snapshot. Every model path then reads the one resolved JobsStorageOptions
             // instead of a per-path default, which is what let the customizer and the reservation table drift.
-            services
-                .AddOptions<JobsStorageOptions, JobsEntityFrameworkStorageOptionsValidator>()
-                .Configure(options => jobsConfiguration.StorageOptions.CopyTo(options));
+            var storageOptions = services.AddOptions<JobsStorageOptions, JobsEntityFrameworkStorageOptionsValidator>();
+
+            // Applied only when the callback overload authored something: an unconditional snapshot would write this
+            // builder's untouched defaults over a schema the Core layer already bound from configuration.
+            if (jobsConfiguration.HasStorageOptionsOverride)
+            {
+                storageOptions.Configure(options => jobsConfiguration.StorageOptions.CopyTo(options));
+            }
 
             // Model building resolves the value type directly: a DbContext reaches application services through
             // its own GetService, and the schema is needed while the model is built, long before any IOptions

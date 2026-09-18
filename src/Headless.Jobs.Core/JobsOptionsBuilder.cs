@@ -6,6 +6,7 @@ using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Models;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Jobs;
@@ -109,6 +110,15 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     internal JobsStorageOptions StorageOptions { get; } = new();
 
     /// <summary>
+    /// Whether the callback overload authored anything. The snapshot is applied only then, so registering it can
+    /// never write this builder's untouched defaults over a section bound through the configuration overload.
+    /// </summary>
+    internal bool HasStorageOptionsOverride { get; private set; }
+
+    /// <summary>Configuration section bound to the storage options, when the configuration overload was used.</summary>
+    internal IConfiguration? StorageConfiguration { get; private set; }
+
+    /// <summary>
     /// Applies <paramref name="configure"/> to the shared <see cref="JobsStorageOptions"/>, which names the database
     /// schema holding every Jobs table.
     /// </summary>
@@ -119,6 +129,25 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     {
         Argument.IsNotNull(configure);
         configure(StorageOptions);
+        HasStorageOptionsOverride = true;
+        return this;
+    }
+
+    /// <summary>
+    /// Binds <paramref name="configuration"/> to <see cref="JobsStorageOptions"/>. Pass the
+    /// <c>Headless:Jobs:Storage</c> section itself — the section is bound directly, so its keys are the option's
+    /// property names (<c>Schema</c>), not a further nested path.
+    /// </summary>
+    /// <remarks>
+    /// Combining this with the callback overload is allowed: the callback is applied after the section, so a value
+    /// authored in code wins over the same value supplied by configuration.
+    /// </remarks>
+    /// <param name="configuration">The <c>Headless:Jobs:Storage</c> configuration section.</param>
+    /// <returns>This builder for method chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="configuration"/> is null.</exception>
+    public JobsOptionsBuilder<TTimeJob, TCronJob> ConfigureStorage(IConfiguration configuration)
+    {
+        StorageConfiguration = Argument.IsNotNull(configuration);
         return this;
     }
 

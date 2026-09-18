@@ -266,6 +266,13 @@ public static class SetupJobs
             JobFunctionProvider.CreateHostRegistry(provider.GetService<IConfiguration>())
         );
 
+        // Storage naming is owned by the feature, so the section binds here rather than in a store provider. This runs
+        // before the provider's own registrations so a schema authored in code is applied last and wins over it.
+        if (optionInstance.StorageConfiguration is { } storageConfiguration)
+        {
+            services.Configure<JobsStorageOptions>(storageConfiguration);
+        }
+
         optionInstance.ExternalProviderConfigServiceAction?.Invoke(services);
         optionInstance.DashboardServiceAction?.Invoke(services, requestSerializationOptions);
 

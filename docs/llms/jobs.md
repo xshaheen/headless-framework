@@ -721,7 +721,7 @@ Provides reliable background job scheduling with cron expressions, delayed execu
 - **Storage-agnostic recovery planner**: `CronRecoveryPlanner` resolves the whole coalesce decision as a pure value (`CronRecoveryPlan`, `CronRecoveryWindow`, `CronRecoveryRunStep`, `CronRecoveryRunStepKind`, `CronRecoveryResolution`) that every provider — relational, in-memory, or third-party — applies with its own fenced writes. See [Applying a recovery pass](#applying-a-recovery-pass).
 - **`DisableBackgroundServices()`**: suppresses background execution; only the managers are registered (useful for worker-side-only nodes and test projects).
 - **Seeder API**: `UseJobsSeeder(Func<ITimeJobManager<TTimeJob>, Task>)` and `UseJobsSeeder(Func<ICronJobManager<TCronJob>, Task>)` for startup data seeding; `IgnoreSeedDefinedCronJobs()` to skip auto-seeding of attribute-defined cron jobs.
-- **Feature-owned storage naming**: `ConfigureStorage(storage => storage.Schema = "…")` on `JobsOptionsBuilder` sets the database schema holding every Jobs table (default `"jobs"`). The setting lives here rather than on a store provider's builder, so one value covers every table a provider maps — including non-generic ones like the idempotency reservation table — and cannot be honored by one registration path while another silently keeps the default.
+- **Feature-owned storage naming**: `ConfigureStorage(storage => storage.Schema = "…")` on `JobsOptionsBuilder` sets the database schema holding every Jobs table (default `"jobs"`). The setting lives here rather than on a store provider's builder, so one value covers every table a provider maps — including non-generic ones like the idempotency reservation table — and cannot be honored by one registration path while another silently keeps the default. A second overload binds a configuration section directly: `ConfigureStorage(configuration.GetSection("Headless:Jobs:Storage"))`. Pass that section itself, so its keys are the option's property names. Using both is allowed — the callback is applied after the section, so a schema authored in code wins.
 - **GZip request payloads**: `UseGZipCompression()` on `JobsOptionsBuilder` compresses serialized request bytes. Decompression is capped at 64 MiB by default; use `UseGZipCompression(maxDecompressedBytes)` only when the application deliberately supports a different bounded payload size.
 - **Exception handler**: `SetExceptionHandler<THandler>()` registers an `IJobExceptionHandler` singleton.
 - **Node-death policy enforcement**: claim predicate gates the lease-expiry re-claim arm on `OnNodeDeath == Retry`; clock skew cannot speculatively re-run `Skip` or `MarkFailed` jobs.
@@ -903,6 +903,8 @@ builder.Services.AddHeadlessJobs(options =>
 
     // Database schema for every Jobs table. Feature-owned, so it applies to whichever store is installed.
     options.ConfigureStorage(storage => storage.Schema = "jobs"); // default: "jobs"
+    // Or bind the section itself instead of authoring the value in code:
+    // options.ConfigureStorage(builder.Configuration.GetSection("Headless:Jobs:Storage"));
 
     options.SetExceptionHandler<MyJobExceptionHandler>();
     options.DisableBackgroundServices(); // test / enqueue-only nodes
