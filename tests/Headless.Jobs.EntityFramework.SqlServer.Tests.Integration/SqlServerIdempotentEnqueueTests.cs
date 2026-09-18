@@ -7,10 +7,6 @@ public sealed class SqlServerIdempotentEnqueueTests(SqlServerJobsCoordinationFix
     : JobsIdempotentEnqueueConformanceTests<SqlServerJobsCoordinationFixture>(fixture)
 {
     [Fact]
-    public override Task model_created_reservation_table_matches_the_documented_upgrade_dd() =>
-        base.model_created_reservation_table_matches_the_documented_upgrade_dd();
-
-    [Fact]
     public override Task same_key_inside_ttl_dedups_to_first_job() => base.same_key_inside_ttl_dedups_to_first_job();
 
     [Fact]

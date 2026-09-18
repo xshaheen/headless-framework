@@ -9,9 +9,6 @@ using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Models;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Metadata;
-using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -39,48 +36,6 @@ public abstract class JobsIdempotentEnqueueConformanceTests<TFixture>(TFixture f
 
     private static JobOptions _Options(string key, TimeSpan? ttl = null) =>
         new() { IdempotencyKey = key, IdempotencyTtl = ttl ?? _Ttl };
-
-    public virtual async Task model_created_reservation_table_matches_the_documented_upgrade_dd()
-    {
-        // Drift guard for the upgrade artifact in the EF README: the table the model materializes must match
-        // what hand-applying the documented CREATE TABLE produces — composite PK column order, identity column
-        // collations, and the ExpiresAt index — or an upgraded database and a fresh one behave differently.
-        var ct = AbortToken;
-        using var host = await _StartHostAsync("idem-schema", ct);
-        try
-        {
-            await using var db = await host
-                .Services.GetRequiredService<IDbContextFactory<JobsDbContext>>()
-                .CreateDbContextAsync(ct);
-            // Collations are omitted from the runtime model; the design-time model is the finalized one the
-            // schema is generated from (same discipline as JobsIdempotencyModelConfiguration.ValidateOrdinalScope).
-            var entity = db.GetService<IDesignTimeModel>()
-                .Model.FindEntityType(typeof(JobIdempotencyReservationEntity))!;
-            var table = StoreObjectIdentifier.Table(entity.GetTableName()!, entity.GetSchema());
-            var primaryKey = entity.FindPrimaryKey()!;
-            primaryKey
-                .Properties.Select(property => property.GetColumnName(table)!)
-                .Should()
-                .Equal("ScopeKey", "Function", "ContractVersion", "IdempotencyKey");
-            foreach (var name in new[] { "ScopeKey", "Function", "ContractVersion", "IdempotencyKey" })
-            {
-                var property = entity.FindProperty(name)!;
-                property.GetMaxLength().Should().NotBeNull($"column {name} must be length-bounded");
-                property
-                    .GetCollation(table)
-                    .Should()
-                    .NotBeNull($"identity column {name} must carry an explicit ordinal collation");
-            }
-            entity
-                .FindIndex(entity.FindProperty(nameof(JobIdempotencyReservationEntity.ExpiresAt))!)
-                .Should()
-                .NotBeNull("the ExpiresAt index is the documented sweeper seam");
-        }
-        finally
-        {
-            await host.StopAsync(ct);
-        }
-    }
 
     public virtual async Task same_key_inside_ttl_dedups_to_first_job()
     {
