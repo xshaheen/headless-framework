@@ -89,8 +89,10 @@ public static partial class Argument
     private static void _ThrowForIsInEnum<T>(T argument, string? message, string? paramName)
         where T : struct, Enum
     {
+#pragma warning disable MA0076 // Enum formatting is culture-independent; an explicit ToString() only trades this for IDE0071.
         message ??=
             $"The argument {paramName.ToAssertString()} = {argument} is not a valid value for Enum type <{typeof(T).Name}>. (Parameter: '{paramName}')";
+#pragma warning restore MA0076
 
 #pragma warning disable MA0015
         throw new InvalidEnumArgumentException(message);

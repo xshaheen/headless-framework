@@ -361,7 +361,7 @@ public sealed class JobsActivationBarrierStartupTests : TestBase
                 {
                     _RecordSelection();
 
-                    return Array.Empty<JobExecutionState>();
+                    return [];
                 });
 
             manager

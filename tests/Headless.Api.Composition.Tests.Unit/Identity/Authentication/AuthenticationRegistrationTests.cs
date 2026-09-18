@@ -30,7 +30,7 @@ public sealed class AuthenticationRegistrationTests
                     options.ApiKeyParamName = "partner_key";
                 }
             );
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
 
         // then
         var scheme = await provider.GetRequiredService<IAuthenticationSchemeProvider>().GetSchemeAsync("PartnerKey");
@@ -63,7 +63,7 @@ public sealed class AuthenticationRegistrationTests
         services
             .AddAuthentication()
             .AddBasicSchema<RegistrationUser, string>(configureOptions: options => options.Scheme = "InternalBasic");
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
 
         // then
         var scheme = await provider

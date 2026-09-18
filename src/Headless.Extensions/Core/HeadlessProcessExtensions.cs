@@ -112,9 +112,9 @@ public static class HeadlessProcessExtensions
             // Process has already exited (WaitForExitAsync awaited above), so the synchronous WaitForExit() returns
             // immediately after draining buffered stdio — no deadlock risk; the async overload does not guarantee
             // redirected streams have fully drained.
-#pragma warning disable CA1849, AsyncFixer02, MA0042
+#pragma warning disable CA1849, AsyncFixer02, MA0042, VSTHRD103
             process.WaitForExit();
-#pragma warning restore CA1849, AsyncFixer02, MA0042
+#pragma warning restore CA1849, AsyncFixer02, MA0042, VSTHRD103
 
             exitCode = process.ExitCode;
         }
@@ -224,9 +224,9 @@ public static class HeadlessProcessExtensions
                 // callbacks may still be in-flight. The no-argument WaitForExit() blocks until
                 // all redirected streams have been fully read, ensuring OnNext is never called
                 // after OnCompleted (which would violate the Rx contract).
-#pragma warning disable CA1849, MA0042 // Synchronous WaitForExit() is intentional: the async overload does not guarantee redirected stdio has drained.
+#pragma warning disable CA1849, MA0042, VSTHRD103 // Synchronous WaitForExit() is intentional: the async overload does not guarantee redirected stdio has drained.
                 process.WaitForExit();
-#pragma warning restore CA1849, MA0042
+#pragma warning restore CA1849, MA0042, VSTHRD103
 
                 observer.OnNext(
                     new ProcessObservedOutput(

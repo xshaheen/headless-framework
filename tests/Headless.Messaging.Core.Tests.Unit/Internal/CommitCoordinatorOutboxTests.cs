@@ -22,7 +22,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
     public async Task should_buffer_message_and_only_signal_committed_dispatch_after_commit()
     {
         await using var transaction = new TestDbTransaction();
-        var unitOfWork = new FakeUnitOfWork();
+        await using var unitOfWork = new FakeUnitOfWork();
 
         var storage = Substitute.For<IDataStorage>();
         MediumMessage? stored = null;
@@ -65,7 +65,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
 
         dispatcher.CommittedMessages.Should().BeEmpty();
 
-        await unitOfWork.CompleteAsync();
+        await unitOfWork.CompleteAsync(AbortToken);
 
         dispatcher.CommittedMessages.Should().ContainSingle().Which.Should().BeSameAs(stored);
         dispatcher.PublishCalls.Should().Be(0, "post-commit acceleration must not wait on transport dispatch");
@@ -75,7 +75,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
     public async Task should_capture_bus_and_queue_work_in_the_same_transaction_and_release_together()
     {
         await using var transaction = new TestDbTransaction();
-        var unitOfWork = new FakeUnitOfWork();
+        await using var unitOfWork = new FakeUnitOfWork();
 
         var storage = Substitute.For<IDataStorage>();
         var stored = new List<MediumMessage>();
@@ -115,7 +115,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
         stored.Select(message => message.Lane).Should().Equal(MessageLane.Bus, MessageLane.Queue);
         dispatcher.CommittedMessages.Should().BeEmpty();
 
-        await unitOfWork.CompleteAsync();
+        await unitOfWork.CompleteAsync(AbortToken);
 
         dispatcher.CommittedMessages.Should().Equal(stored);
     }
@@ -145,7 +145,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
         // A compatible unit without a relational handle is only valid for a storage that implements the
         // coordinated seam; a plain IDataStorage must fail before any durable write or dispatcher hand-off,
         // otherwise a standalone row would survive the caller's rollback.
-        var unitOfWork = new FakeUnitOfWork();
+        await using var unitOfWork = new FakeUnitOfWork();
         var storage = Substitute.For<IDataStorage>();
         await using var dispatcher = new RecordingCommittedDispatcher();
         var writer = new OutboxMessageWriter(storage, dispatcher, TimeProvider.System);
@@ -180,7 +180,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
                 Arg.Any<CancellationToken>()
             );
 
-        await unitOfWork.CompleteAsync();
+        await unitOfWork.CompleteAsync(AbortToken);
 
         dispatcher.CommittedMessages.Should().BeEmpty();
     }
@@ -188,14 +188,14 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
     [Fact]
     public async Task should_signal_delayed_message_after_commit_without_scheduler_io()
     {
-        var unitOfWork = new FakeUnitOfWork();
+        await using var unitOfWork = new FakeUnitOfWork();
         await using var dispatcher = new RecordingCommittedDispatcher();
         var buffer = new MessageOutboxBuffer(unitOfWork, dispatcher);
         var message = _BuildMessage();
         message.ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(30);
         buffer.Add(message);
 
-        await unitOfWork.CompleteAsync();
+        await unitOfWork.CompleteAsync(AbortToken);
 
         dispatcher.CommittedDelayedMessages.Should().ContainSingle().Which.Should().BeSameAs(message);
         dispatcher.SchedulerCalls.Should().Be(0, "the schedule state was already committed with the durable row");
@@ -236,7 +236,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
     public async Task coordinated_delay_should_store_schedule_state_atomically_and_signal_after_commit()
     {
         await using var transaction = new TestDbTransaction();
-        var unitOfWork = new FakeUnitOfWork();
+        await using var unitOfWork = new FakeUnitOfWork();
 
         var now = TimeProvider.System.GetUtcNow();
         var publishAt = now.AddMinutes(30);
@@ -269,7 +269,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
 
         dispatcher.CommittedDelayedMessages.Should().BeEmpty();
 
-        await unitOfWork.CompleteAsync();
+        await unitOfWork.CompleteAsync(AbortToken);
 
         dispatcher.CommittedDelayedMessages.Should().ContainSingle().Which.Should().BeSameAs(stored);
         dispatcher.SchedulerCalls.Should().Be(0);

@@ -4,6 +4,7 @@ using Headless.Api.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 
+#pragma warning disable MA0015 // Specify the parameter name in ArgumentException
 namespace Tests.Diagnostics;
 
 public sealed class MiddlewareAnalysisDiagnosticAdapterTests

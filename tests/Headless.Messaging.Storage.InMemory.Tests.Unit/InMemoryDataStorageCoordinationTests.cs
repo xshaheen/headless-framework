@@ -204,7 +204,9 @@ public sealed class InMemoryDataStorageCoordinationTests : TestBase
         // A resource-less unit of work has no scope-bound resource to release, so a manager resolved from its
         // own throwaway scope is sufficient for this test's lifetime — the scope's disposal is irrelevant once
         // the returned unit of work has been disposed.
-        return provider.CreateScope().ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+#pragma warning disable CA2000 // The scope's disposal is irrelevant, per the note above.
+        return provider.CreateAsyncScope().ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+#pragma warning restore CA2000
     }
 
     private static IUnitOfWork _FakeRelationalUnitOfWork()

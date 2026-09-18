@@ -401,7 +401,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
 
         // AggregateRoot.Add emits EntityCreated + EntityChanged = 2 domain events. Each handler must fire
         // exactly once across BOTH attempts — a re-fire on the replay would double the count to 4.
-        bus.Occurrences.Select(occurrence => occurrence.EventId).Should().OnlyHaveUniqueItems();
+        bus.Occurrences.Should().OnlyHaveUniqueItems(occurrence => occurrence.EventId);
         entity.GetDomainEvents().Should().BeEmpty();
         bus.PublishCount.Should().Be(2, "each domain event must be published exactly once despite the retry");
 
@@ -522,7 +522,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
             var countAfterFirstSave = dispatcher.LocalEmitters.Count;
             db.Entities.Add(new RuntimeEntity { Name = "second" });
             await _SaveAsync(db, synchronous);
-            dispatcher.LocalEmitters.Count.Should().Be(countAfterFirstSave + 2);
+            dispatcher.LocalEmitters.Should().HaveCount(countAfterFirstSave + 2);
             if (rollback)
             {
                 await transaction.RollbackAsync(AbortToken);
@@ -726,12 +726,14 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
             DateTimeOffset timestamp
         )
         {
-            CapturedNames = entries
-                .OfType<EntityEntry>()
-                .Select(entry => entry.Entity)
-                .OfType<RuntimeEntity>()
-                .Select(entity => entity.Name)
-                .ToArray();
+            CapturedNames =
+            [
+                .. entries
+                    .OfType<EntityEntry>()
+                    .Select(entry => entry.Entity)
+                    .OfType<RuntimeEntity>()
+                    .Select(entity => entity.Name),
+            ];
             return [];
         }
     }
@@ -769,9 +771,9 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
 
     private static Task<int> _SaveAsync(RuntimeTestDbContext db, bool synchronous)
     {
-#pragma warning disable MA0045 // Explicit synchronous SaveChanges conformance case.
+#pragma warning disable MA0045, VSTHRD103 // Explicit synchronous SaveChanges conformance case.
         return synchronous ? Task.FromResult(db.SaveChanges()) : db.SaveChangesAsync(AbortToken);
-#pragma warning restore MA0045
+#pragma warning restore MA0045, VSTHRD103
     }
 
     private static async Task<(ServiceProvider Provider, SqliteConnection Connection)> _CreateProviderAsync(

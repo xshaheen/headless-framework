@@ -55,7 +55,7 @@ public sealed class JobFunctionDescriptorTests
         var forward = () => JobFunctionRegistryBuilder.Build([], [], [first, second]);
         var reverse = () => JobFunctionRegistryBuilder.Build([], [], [second, first]);
         var forwardFailure = forward.Should().Throw<InvalidOperationException>().Which;
-        reverse.Should().Throw<InvalidOperationException>().Which.Message.Should().Be(forwardFailure.Message);
+        reverse.Should().Throw<InvalidOperationException>().WithMessage(forwardFailure.Message);
     }
 
     [Fact]
@@ -68,7 +68,7 @@ public sealed class JobFunctionDescriptorTests
                 [],
                 [new KeyValuePair<string, JobFunctionDescriptor>("alias", descriptor)]
             );
-        build.Should().Throw<InvalidOperationException>().Which.Message.Should().Contain("alias").And.Contain("actual");
+        build.Should().Throw<InvalidOperationException>().WithMessage("*alias*").WithMessage("*actual*");
     }
 
     [Fact]

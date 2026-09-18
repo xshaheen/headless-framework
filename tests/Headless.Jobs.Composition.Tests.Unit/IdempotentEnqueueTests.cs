@@ -82,7 +82,7 @@ public sealed class IdempotentEnqueueTests : TestBase
         stored.Should().NotBeNull();
         stored!.Request.Should().NotBeNull();
         (await persistence.GetEarliestTimeJobsAsync(AbortToken)).Jobs.Should().ContainSingle();
-        provider.Dispose();
+        await provider.DisposeAsync();
     }
 
     [Fact]
@@ -93,7 +93,7 @@ public sealed class IdempotentEnqueueTests : TestBase
         clock.Advance(TimeSpan.FromMinutes(6));
         var second = await scheduler.EnqueueAsync(new IdemRequest("second"), _Options("k2"), AbortToken);
         second.Should().NotBe(first, "an expired reservation is replaced by a new job");
-        provider.Dispose();
+        await provider.DisposeAsync();
     }
 
     [Fact]
@@ -110,7 +110,7 @@ public sealed class IdempotentEnqueueTests : TestBase
             AbortToken
         );
         tenanted.Should().NotBe(system);
-        provider.Dispose();
+        await provider.DisposeAsync();
     }
 
     [Fact]
@@ -122,7 +122,7 @@ public sealed class IdempotentEnqueueTests : TestBase
         await manager.DeleteAsync(first, AbortToken);
         var after = await scheduler.EnqueueAsync(new IdemRequest("re-enqueue"), _Options("k4"), AbortToken);
         after.Should().Be(first, "a deleted job does not release an unexpired reservation");
-        provider.Dispose();
+        await provider.DisposeAsync();
     }
 
     [Fact]
@@ -142,7 +142,7 @@ public sealed class IdempotentEnqueueTests : TestBase
         await ttlWithoutKey.Should().ThrowAsync<ArgumentException>();
         await tooShort.Should().ThrowAsync<ArgumentException>();
         await tooLong.Should().ThrowAsync<ArgumentException>();
-        provider.Dispose();
+        await provider.DisposeAsync();
     }
 
     [Fact]
@@ -165,7 +165,7 @@ public sealed class IdempotentEnqueueTests : TestBase
         await zeroTtl.Should().ThrowAsync<ArgumentException>();
         await negativeTtl.Should().ThrowAsync<ArgumentException>();
         await oversizedTtl.Should().ThrowAsync<ArgumentException>();
-        provider.Dispose();
+        await provider.DisposeAsync();
     }
 
     [Fact]
@@ -181,7 +181,7 @@ public sealed class IdempotentEnqueueTests : TestBase
                 AbortToken
             );
         await keyed.Should().ThrowAsync<ArgumentException>();
-        provider.Dispose();
+        await provider.DisposeAsync();
     }
 
     private sealed record IdemRequest(string Value);

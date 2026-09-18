@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Data.Common;
+using System.Globalization;
 using System.Reflection;
 using Headless.Coordination;
 using Headless.Jobs;
@@ -833,7 +834,7 @@ internal sealed class SqlServerNativeClaimsFixture(string connectionString) : IJ
     public string UtcNowSqlExpression => "SYSUTCDATETIME()";
 
     public string UtcNowOffsetSqlExpression(int seconds) =>
-        FormattableString.Invariant($"DATEADD(second, {seconds}, SYSUTCDATETIME())");
+        string.Create(CultureInfo.InvariantCulture, $"DATEADD(second, {seconds}, SYSUTCDATETIME())");
 
     public string EfTranslatedDatabaseClockSql => "GETUTCDATE()";
 

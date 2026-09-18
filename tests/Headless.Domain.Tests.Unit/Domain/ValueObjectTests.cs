@@ -20,8 +20,8 @@ public sealed class ValueObjectTests
 
         protected override void BuildHashCode(ref HashCode hash)
         {
-            hash.Add(Street);
-            hash.Add(City);
+            hash.Add(Street, StringComparer.Ordinal);
+            hash.Add(City, StringComparer.Ordinal);
         }
     }
 

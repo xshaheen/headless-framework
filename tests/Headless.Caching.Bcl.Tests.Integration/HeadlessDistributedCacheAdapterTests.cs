@@ -140,6 +140,7 @@ public sealed class HeadlessDistributedCacheAdapterTests(BclRedisFixture fixture
         using var host = await _StartHostAsync(cacheName, keyPrefix, TimeSpan.FromHours(8));
         var distributedCache = host.Services.GetRequiredService<IDistributedCache>();
 
+#pragma warning disable VSTHRD103 // The synchronous IDistributedCache surface is what this test covers.
         distributedCache.Set(
             key,
             payload,
@@ -156,6 +157,7 @@ public sealed class HeadlessDistributedCacheAdapterTests(BclRedisFixture fixture
         distributedCache.Remove(key);
 
         distributedCache.Get(key).Should().BeNull();
+#pragma warning restore VSTHRD103
     }
 
     [Fact]

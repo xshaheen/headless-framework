@@ -98,11 +98,13 @@ public sealed class MethodMatcherCacheInboxTests : TestBase
     [InlineData(MessageLane.Queue, "orders.#")]
     public void should_reject_wildcards_in_public_inbox_contract_registrations(MessageLane lane, string contract)
     {
+#pragma warning disable MA0045 // The assertion is that registration throws synchronously, so this stays an Action.
         var act = () =>
         {
             using var provider = _CreateProvider(lane, contract);
             provider.GetRequiredService<IConsumerServiceSelector>().SelectCandidates();
         };
+#pragma warning restore MA0045
 
         act.Should().Throw<ArgumentException>().WithMessage("*contains invalid character*");
     }

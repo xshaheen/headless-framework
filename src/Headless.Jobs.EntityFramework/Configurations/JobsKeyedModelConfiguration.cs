@@ -11,6 +11,14 @@ namespace Headless.Jobs.Configurations;
 
 internal static class JobsKeyedModelConfiguration
 {
+    private static readonly string[] _RequiredKeyedUniqueIndexes =
+    [
+        "UX_TimeJobs_KeyGeneration_Tenant",
+        "UX_TimeJobs_KeyGeneration_System",
+        "UX_TimeJobs_CurrentKey_Tenant",
+        "UX_TimeJobs_CurrentKey_System",
+    ];
+
     internal static void ValidateOrdinalScope<TTimeJob>(DbContext context)
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
     {
@@ -24,13 +32,9 @@ internal static class JobsKeyedModelConfiguration
         var entity = model.FindEntityType(typeof(TTimeJob))!;
         if (
             entity.FindCheckConstraint("CK_TimeJobs_KeyedMetadata") is null
-            || new[]
-            {
-                "UX_TimeJobs_KeyGeneration_Tenant",
-                "UX_TimeJobs_KeyGeneration_System",
-                "UX_TimeJobs_CurrentKey_Tenant",
-                "UX_TimeJobs_CurrentKey_System",
-            }.Any(name => entity.FindIndex(name) is not { IsUnique: true } index || index.GetFilter() is null)
+            || _RequiredKeyedUniqueIndexes.Any(name =>
+                entity.FindIndex(name) is not { IsUnique: true } index || index.GetFilter() is null
+            )
         )
         {
             throw new InvalidOperationException(

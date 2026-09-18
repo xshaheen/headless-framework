@@ -59,7 +59,7 @@ public sealed partial class OutboxBridgeIntegrationTests
             await using var reader = await command.ExecuteReaderAsync(AbortToken);
             (await reader.ReadAsync(AbortToken)).Should().BeTrue();
             reader.GetString(0).Should().Be("Delayed");
-            reader.GetFieldValue<DateTimeOffset>(1).Should().BeAfter(beforePublish);
+            (await reader.GetFieldValueAsync<DateTimeOffset>(1, AbortToken)).Should().BeAfter(beforePublish);
         }
 
         var schedule = async () =>
@@ -107,7 +107,8 @@ public sealed partial class OutboxBridgeIntegrationTests
             new ShipOrder("composition")
         );
 
-        using var incomingTrace = new Activity("composition-incoming").Start();
+        using var incomingTrace = new Activity("composition-incoming");
+        incomingTrace.Start();
         await _InvokeStoredConsumerAsync<ShipOrder, ShipOrderConsumer>(provider, incoming);
         evidence.Parent.Should().NotBeNull();
         evidence.Parent.CausationId.Should().Be(incomingId);
@@ -123,27 +124,34 @@ public sealed partial class OutboxBridgeIntegrationTests
         published.Should().HaveCount(2);
         foreach (var occurrence in evidence.Children)
         {
-            _AssertOccurrence(published.Single(row => row.Id == occurrence.EventId), occurrence);
+            _AssertOccurrence(
+                published.Single(row => string.Equals(row.Id, occurrence.EventId, StringComparison.Ordinal)),
+                occurrence
+            );
             occurrence.CausationId.Should().Be(evidence.Parent.EventId);
         }
 
         // The second consumer receives the exact deserialized durable outbox envelope. Broker delivery is covered
         // by transport conformance; this test owns application, occurrence, consumer, and deadline composition.
-        var stored = published.Single(row => row.Message.Headers[Headers.MessageName] == "orders.shipped");
+        var stored = published.Single(row =>
+            string.Equals(row.Message.Headers[Headers.MessageName], "aaaorders.shipped", StringComparison.Ordinal)
+        );
+
         deadline.FailAfterWrite = true;
+
         var failedDelivery = async () =>
             await _InvokeStoredConsumerAsync<OrderShipped, DeadlineConsumer>(provider, stored.Message);
+
         var failure = await failedDelivery.Should().ThrowAsync<Exception>();
-        failure.Which.ToString().Should().Contain(nameof(DeadlineWriteFailure));
+        failure.Which.ToString().Should().Contain(nameof(DeadlineWriteFailureException));
         (await _ReadDeadlineRowsAsync(provider, stored.Id)).Should().BeEmpty();
         (await _CountDeadlineReceiptsAsync(provider, stored.Id)).Should().Be(0);
         (await _CountOrdersAsync()).Should().Be(1);
         (await _ReadPublishedAsync(provider, "evt-derived")).Should().HaveCount(2);
 
         deadline.FailAfterWrite = false;
-        using var retryTrace = new Activity("composition-redelivery")
-            .SetParentId(ActivityTraceId.CreateRandom(), ActivitySpanId.CreateRandom())
-            .Start();
+        using var retryTrace = new Activity("composition-redelivery");
+        retryTrace.SetParentId(ActivityTraceId.CreateRandom(), ActivitySpanId.CreateRandom()).Start();
         await _InvokeStoredConsumerAsync<OrderShipped, DeadlineConsumer>(provider, stored.Message);
         var committed = (await _ReadDeadlineRowsAsync(provider, stored.Id)).Should().ContainSingle().Subject;
         committed.Generation.Should().Be(1);
@@ -190,7 +198,8 @@ public sealed partial class OutboxBridgeIntegrationTests
         {
             await context.GetService<IRelationalDatabaseCreator>().CreateTablesAsync(AbortToken);
         }
-        catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.DuplicateTable)
+        catch (PostgresException exception)
+            when (string.Equals(exception.SqlState, PostgresErrorCodes.DuplicateTable, StringComparison.Ordinal))
         {
             // Another theory case already created this collection's Jobs schema.
         }
@@ -221,7 +230,7 @@ public sealed partial class OutboxBridgeIntegrationTests
         where TConsumer : IConsume<TMessage>
     {
         var method = typeof(IConsume<TMessage>).GetMethod(
-            nameof(IConsume<TMessage>.ConsumeAsync),
+            nameof(IConsume<>.ConsumeAsync),
             BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
             [typeof(ConsumeContext<TMessage>), typeof(CancellationToken)]
         )!;
@@ -268,7 +277,7 @@ public sealed partial class OutboxBridgeIntegrationTests
         public List<JobScheduleResult> Results { get; } = [];
     }
 
-    private sealed class DeadlineWriteFailure : Exception;
+    private sealed class DeadlineWriteFailureException : Exception;
 
     private sealed class DeadlineConsumer(BridgeTestDbContext db, IJobScheduler scheduler, DeadlineEvidence evidence)
         : IConsume<OrderShipped>
@@ -300,7 +309,7 @@ public sealed partial class OutboxBridgeIntegrationTests
                     );
                     if (evidence.FailAfterWrite)
                     {
-                        throw new DeadlineWriteFailure();
+                        throw new DeadlineWriteFailureException();
                     }
                 },
                 cancellationToken: cancellationToken

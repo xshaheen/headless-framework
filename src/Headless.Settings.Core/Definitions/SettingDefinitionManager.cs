@@ -29,7 +29,7 @@ public sealed class SettingDefinitionManager(
     public async Task<IReadOnlyList<SettingDefinition>> GetAllAsync(CancellationToken cancellationToken = default)
     {
         var staticSettings = await staticStore.GetAllAsync(cancellationToken).ConfigureAwait(false);
-        var staticSettingNames = staticSettings.Select(p => p.Name).ToImmutableHashSet();
+        var staticSettingNames = staticSettings.Select(p => p.Name).ToImmutableHashSet(StringComparer.Ordinal);
         // Prefer static settings over dynamics
         var dynamicSettings = await dynamicStore.GetAllAsync(cancellationToken).ConfigureAwait(false);
         var uniqueDynamicSettings = dynamicSettings.Where(d => !staticSettingNames.Contains(d.Name));

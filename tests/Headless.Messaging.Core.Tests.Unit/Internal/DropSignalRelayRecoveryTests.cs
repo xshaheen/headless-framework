@@ -45,7 +45,7 @@ public sealed class DropSignalRelayRecoveryTests : TestBase
         var storage = provider.GetRequiredService<IDataStorage>();
 
         await using var transaction = new TestDbTransaction();
-        var unitOfWork = new FakeUnitOfWork();
+        await using var unitOfWork = new FakeUnitOfWork();
         var dispatcher = Substitute.For<IDispatcher>();
 
         var writer = new OutboxMessageWriter(storage, dispatcher, TimeProvider.System);

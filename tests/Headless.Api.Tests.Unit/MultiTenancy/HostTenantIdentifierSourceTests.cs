@@ -114,7 +114,7 @@ public sealed class HostTenantIdentifierSourceTests : TestBase
     {
         var source = _CreateSource("{tenant}");
         var context = new DefaultHttpContext();
-        context.Request.Host = new HostString(string.Join(".", Enumerable.Repeat("a", 300)));
+        context.Request.Host = new HostString(string.Join('.', Enumerable.Repeat("a", 300)));
 
         source.GetIdentifier(context).Should().Be(TenantIdentifierSourceResult.None);
     }
@@ -160,7 +160,7 @@ public sealed class HostTenantIdentifierSourceTests : TestBase
         // 'b' labels make the host textually distinct from the template so the assertion below
         // can prove the warning carries the template only, never any host fragment.
         var context = new DefaultHttpContext();
-        context.Request.Host = new HostString(string.Join(".", Enumerable.Repeat("b", 50_000)) + ".example.com");
+        context.Request.Host = new HostString(string.Join('.', Enumerable.Repeat("b", 50_000)) + ".example.com");
 
         var first = source.GetIdentifier(context);
         var second = source.GetIdentifier(context);
@@ -187,7 +187,7 @@ public sealed class HostTenantIdentifierSourceTests : TestBase
             maxHostLength: int.MaxValue
         );
         var context = new DefaultHttpContext();
-        context.Request.Host = new HostString(string.Join(".", Enumerable.Repeat("b", 50_000)) + ".example.com");
+        context.Request.Host = new HostString(string.Join('.', Enumerable.Repeat("b", 50_000)) + ".example.com");
 
         _ = source.GetIdentifier(context);
         logger.Entries.Should().ContainSingle();
@@ -220,8 +220,8 @@ public sealed class HostTenantIdentifierSourceTests : TestBase
 
         var descriptors = services.Where(d => d.ServiceType == typeof(ITenantIdentifierSource)).ToList();
 
-        descriptors.Should().HaveCount(1);
-        descriptors[0].ImplementationType.Should().Be(typeof(HostTenantIdentifierSource));
+        descriptors.Should().ContainSingle();
+        descriptors[0].ImplementationType.Should().Be<HostTenantIdentifierSource>();
     }
 
     [Fact]
@@ -249,7 +249,7 @@ public sealed class HostTenantIdentifierSourceTests : TestBase
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(
-                new Dictionary<string, string?>
+                new Dictionary<string, string?>(StringComparer.Ordinal)
                 {
                     ["Templates:0"] = "{tenant}.a.com",
                     ["Templates:1"] = "{tenant}.b.com",

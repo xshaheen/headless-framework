@@ -44,7 +44,10 @@ public sealed class NswagSurfaceGenerationTests : TestBase
         registrations.Select(x => x.DocumentName).Should().BeEquivalentTo("portal", "console", "extra", "native");
         configureCalls.Should().Be(1);
         provider.GetRequiredService<ApiSurfaceRegistry>().Surfaces.Should().HaveCount(2);
-        registrations.Single(x => x.DocumentName == "portal").Settings.Title.Should().Be("Portal API");
+        registrations
+            .Single(x => string.Equals(x.DocumentName, "portal", StringComparison.Ordinal))
+            .Settings.Title.Should()
+            .Be("Portal API");
     }
 
     [Fact]

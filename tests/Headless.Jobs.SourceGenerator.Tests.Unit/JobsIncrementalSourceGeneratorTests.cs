@@ -52,14 +52,15 @@ public sealed class JobsIncrementalSourceGeneratorTests
             .NotContain(x => x.Severity == DiagnosticSeverity.Error);
 
         static string[] Contracts(GeneratorDriver driver) =>
-            driver
-                .GetRunResult()
-                .GeneratedTrees.SelectMany(tree => tree.ToString().Split('\n'))
-                .Where(line =>
-                    line.Contains("descriptors.Add(", StringComparison.Ordinal)
-                    || line.Contains("JobFunctionDescriptorMetadataAttribute(", StringComparison.Ordinal)
-                )
-                .ToArray();
+            [
+                .. driver
+                    .GetRunResult()
+                    .GeneratedTrees.SelectMany(tree => tree.ToString().Split('\n'))
+                    .Where(line =>
+                        line.Contains("descriptors.Add(", StringComparison.Ordinal)
+                        || line.Contains("JobFunctionDescriptorMetadataAttribute(", StringComparison.Ordinal)
+                    ),
+            ];
         Contracts(forward).Should().Equal(Contracts(reverse));
         Contracts(forward).Should().Equal(Contracts(rename));
         Contracts(forward).Should().Contain(line => line.Contains("\"schema-v2\"", StringComparison.Ordinal));

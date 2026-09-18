@@ -17,8 +17,10 @@ public sealed class ApiSurfaceConventionTests : TestBase
     [Route("items")]
     private sealed class DummyPortalController
     {
+#pragma warning disable IDE0060 // The conventions under test read the action's shape, so it matches the route template.
         [HttpGet("{id}")]
         public IActionResult Get(string id) => new OkResult();
+#pragma warning restore IDE0060
     }
 
     [Fact]

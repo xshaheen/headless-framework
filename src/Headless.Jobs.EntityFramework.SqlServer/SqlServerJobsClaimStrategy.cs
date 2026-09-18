@@ -299,7 +299,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                         .ToArray();
                     var definitions =
                         definitionIds.Length == 0
-                            ? new Dictionary<Guid, TCronJob>()
+                            ? []
                             : await dbContext
                                 .Set<TCronJob>()
                                 .AsNoTracking()

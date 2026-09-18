@@ -17,11 +17,7 @@ public sealed class QueryableBehaviorTests : TestBase
     {
         await using var fixture = await QueryFixture.CreateAsync(AbortToken);
 
-        var generic = await Microsoft.EntityFrameworkCore.HeadlessQueryableExtensions.FirstByIdAsync<QueryRow, int>(
-            fixture.Context.Rows,
-            1,
-            AbortToken
-        );
+        var generic = await fixture.Context.Rows.FirstByIdAsync<QueryRow, int>(1, AbortToken);
         var guid = await fixture.Context.GuidRows.FirstByIdAsync(QueryFixture.GuidId, AbortToken);
         var longKey = await fixture.Context.LongRows.FirstByIdAsync(4_000_000_000L, AbortToken);
         var stringKey = await fixture.Context.StringRows.FirstByIdAsync("row-key", AbortToken);

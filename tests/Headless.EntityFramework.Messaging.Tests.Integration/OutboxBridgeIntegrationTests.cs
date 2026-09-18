@@ -124,13 +124,13 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         db.Orders.Add(order);
 
         // when — sync save path drives the sync Dispatch (sync-over-async) bridge.
+#pragma warning disable VSTHRD103 // The sync save path is the path under test.
         // ReSharper disable once MethodHasAsyncOverload
         db.SaveChanges();
+#pragma warning restore VSTHRD103
 
         // then
-        (await _CountPublishedContainingAsync(marker))
-            .Should()
-            .Be(1);
+        (await _CountPublishedContainingAsync(marker)).Should().Be(1);
     }
 
     [Fact]
@@ -349,7 +349,10 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         {
             foreach (var occurrence in saved)
             {
-                _AssertOccurrence(rows.Single(row => row.Id == occurrence.EventId), occurrence);
+                _AssertOccurrence(
+                    rows.Single(row => string.Equals(row.Id, occurrence.EventId, StringComparison.Ordinal)),
+                    occurrence
+                );
             }
         }
     }
@@ -383,7 +386,10 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         rows.Should().HaveCount(2);
         foreach (var occurrence in evidence.Children)
         {
-            _AssertOccurrence(rows.Single(row => row.Id == occurrence.EventId), occurrence);
+            _AssertOccurrence(
+                rows.Single(row => string.Equals(row.Id, occurrence.EventId, StringComparison.Ordinal)),
+                occurrence
+            );
         }
         (await _CountOrdersAsync()).Should().Be(1);
         order.GetIntegrationEvents().Should().BeEmpty();
@@ -454,7 +460,7 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
             Content = provider.GetRequiredService<ISerializer>().Serialize(message),
         };
         var method = typeof(IConsume<ShipOrder>).GetMethod(
-            nameof(IConsume<ShipOrder>.ConsumeAsync),
+            nameof(IConsume<>.ConsumeAsync),
             BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
             [typeof(ConsumeContext<ShipOrder>), typeof(CancellationToken)]
         )!;
@@ -478,7 +484,8 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
                 .ToArray(),
         };
 
-        using var trace = new Activity("incoming-trace").Start();
+        using var trace = new Activity("incoming-trace");
+        trace.Start();
         await provider
             .GetRequiredService<ISubscribeInvoker>()
             .InvokeAsync(new ConsumerContext(descriptor, medium), AbortToken);
@@ -490,14 +497,17 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         evidence.SaveTrace.Should().NotBe(trace.TraceId);
         var rows = await _ReadPublishedAsync(provider, "evt-derived");
         rows.Should().HaveCount(2);
-        evidence.Children.Select(child => child.EventId).Should().OnlyHaveUniqueItems();
+        evidence.Children.Should().OnlyHaveUniqueItems(child => child.EventId);
         foreach (var child in evidence.Children)
         {
             child.EventId.Should().NotBe(evidence.Parent.EventId);
             child.CorrelationId.Should().Be("business-root");
             child.CausationId.Should().Be(evidence.Parent.EventId);
             child.TenantId.Should().Be("tenant-source");
-            _AssertOccurrence(rows.Single(row => row.Id == child.EventId), child);
+            _AssertOccurrence(
+                rows.Single(row => string.Equals(row.Id, child.EventId, StringComparison.Ordinal)),
+                child
+            );
         }
         var forwarded = (await _ReadPublishedAsync(provider, "evt-forwarded-root")).Single();
         _AssertOccurrence(forwarded, evidence.Forwarded);
@@ -606,7 +616,7 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         await using var command = connection.CreateCommand();
         command.CommandText =
             """SELECT "MessageId", "Content" FROM messaging."published" WHERE "Content" LIKE @marker""";
-        command.Parameters.AddWithValue("marker", $"%{marker}%");
+        command.Parameters.AddWithValue(nameof(marker), $"%{marker}%");
         await using var reader = await command.ExecuteReaderAsync(AbortToken);
         var serializer = provider.GetRequiredService<ISerializer>();
         var rows = new List<(string, Message)>();
@@ -639,8 +649,10 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         {
             return db.SaveChangesAsync(AbortToken);
         }
+#pragma warning disable VSTHRD103 // The sync branch drives the sync-over-async bridge callers compare against.
         // ReSharper disable once MethodHasAsyncOverload
         db.SaveChanges();
+#pragma warning restore VSTHRD103
         return Task.CompletedTask;
     }
 
@@ -751,9 +763,8 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
                 ((IIntegrationEventEmitter)order).AddIntegrationEvent(forwarded);
             }
             db.Orders.Add(order);
-            using var saveTrace = new Activity("independent-save-trace")
-                .SetParentId(ActivityTraceId.CreateRandom(), ActivitySpanId.CreateRandom())
-                .Start();
+            using var saveTrace = new Activity("independent-save-trace");
+            saveTrace.SetParentId(ActivityTraceId.CreateRandom(), ActivitySpanId.CreateRandom()).Start();
             evidence.SaveTrace = saveTrace.TraceId;
             await db.SaveChangesAsync(cancellationToken);
         }

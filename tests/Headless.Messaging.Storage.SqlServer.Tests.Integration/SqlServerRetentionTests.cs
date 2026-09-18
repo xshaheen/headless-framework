@@ -105,7 +105,7 @@ public sealed class SqlServerRetentionTests(SqlServerTestFixture fixture) : Test
         // Replay the exact executed batch with actual-plan reporting; an outer transaction rolls the replay back.
         var sql = await connection.QueryFirstAsync<string>(
             new CommandDefinition(
-                $$"""
+                """
                 SELECT TOP (1) t.text
                 FROM sys.dm_exec_query_stats s
                 CROSS APPLY sys.dm_exec_sql_text(s.sql_handle) t
@@ -134,7 +134,7 @@ public sealed class SqlServerRetentionTests(SqlServerTestFixture fixture) : Test
         Logger.LogInformation("Indexed cleanup plan: {Plan}", plan);
         XNamespace ns = "http://schemas.microsoft.com/sqlserver/2004/07/showplan";
         plan.Descendants(ns + "RelOp")
-            .Where(node => (string?)node.Attribute("PhysicalOp") == "Index Seek")
+            .Where(node => string.Equals((string?)node.Attribute("PhysicalOp"), "Index Seek", StringComparison.Ordinal))
             .SelectMany(node => node.Descendants(ns + "Object"))
             .Should()
             .Contain(node => (string?)node.Attribute("Index") == $"[IX_{_schema}_Received_InboxRetention]");

@@ -322,7 +322,7 @@ public abstract class ScheduledDeliveryOperationConformanceTests : TestBase
         var clock = provider.GetRequiredService<TimeProvider>();
 
         // High-precision sub-millisecond instant
-        var ticks = 1234567L; // non-zero sub-millisecond ticks
+        const long ticks = 1234567L; // non-zero sub-millisecond ticks
         var due = clock.GetUtcNow().AddHours(2) + TimeSpan.FromTicks(ticks);
         var stored = await _StoreScheduledAsync(storage, "orders.precision", due, MessageLane.Bus);
 

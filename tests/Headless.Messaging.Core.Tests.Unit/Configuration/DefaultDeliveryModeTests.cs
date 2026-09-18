@@ -23,11 +23,12 @@ public sealed class DefaultDeliveryModeTests : TestBase
     public async Task should_inherit_global_mode_in_all_ordinary_call_forms(MessageLane lane, DeliveryMode mode)
     {
         await using var provider = _CreateProvider(mode);
+        await using var scope = provider.CreateAsyncScope();
         provider.GetRequiredService<IOptions<MessagingOptions>>().Value.DefaultDeliveryMode.Should().Be(mode);
         var message = new TestMessage("inherit");
         if (lane == MessageLane.Bus)
         {
-            var bus = provider.CreateScope().ServiceProvider.GetRequiredService<IBus>();
+            var bus = scope.ServiceProvider.GetRequiredService<IBus>();
             await bus.PublishAsync(message, AbortToken);
             await bus.PublishAsync(message, options: null, AbortToken);
             await bus.PublishAsync(message, new PublishOptions { CorrelationId = "record" }, AbortToken);
@@ -35,7 +36,7 @@ public sealed class DefaultDeliveryModeTests : TestBase
         }
         else
         {
-            var queue = provider.CreateScope().ServiceProvider.GetRequiredService<IQueue>();
+            var queue = scope.ServiceProvider.GetRequiredService<IQueue>();
             await queue.EnqueueAsync(message, AbortToken);
             await queue.EnqueueAsync(message, options: null, AbortToken);
             await queue.EnqueueAsync(message, new QueueOptions { CorrelationId = "record" }, AbortToken);
@@ -57,18 +58,17 @@ public sealed class DefaultDeliveryModeTests : TestBase
     )
     {
         await using var provider = _CreateProvider(globalMode);
+        await using var scope = provider.CreateAsyncScope();
         var message = new TestMessage("override");
         if (lane == MessageLane.Bus)
         {
-            await provider
-                .CreateScope()
+            await scope
                 .ServiceProvider.GetRequiredService<IBus>()
                 .PublishAsync(message, new PublishOptions { DeliveryMode = explicitMode }, AbortToken);
         }
         else
         {
-            await provider
-                .CreateScope()
+            await scope
                 .ServiceProvider.GetRequiredService<IQueue>()
                 .EnqueueAsync(message, new QueueOptions { DeliveryMode = explicitMode }, AbortToken);
         }
@@ -103,14 +103,13 @@ public sealed class DefaultDeliveryModeTests : TestBase
         var message = new TestMessage("required");
         TransactionEnlistment? explicitEnlistment = viaHostDefault ? null : TransactionEnlistment.Required;
 
+        await using var scope = provider.CreateAsyncScope();
         var act = () =>
             lane == MessageLane.Bus
-                ? provider
-                    .CreateScope()
+                ? scope
                     .ServiceProvider.GetRequiredService<IBus>()
                     .PublishAsync(message, new PublishOptions { Enlistment = explicitEnlistment }, AbortToken)
-                : provider
-                    .CreateScope()
+                : scope
                     .ServiceProvider.GetRequiredService<IQueue>()
                     .EnqueueAsync(message, new QueueOptions { Enlistment = explicitEnlistment }, AbortToken);
 
@@ -232,14 +231,13 @@ public sealed class DefaultDeliveryModeTests : TestBase
         var message = new TestMessage("delayed");
         var delay = TimeSpan.FromMinutes(1);
 
+        await using var scope = provider.CreateAsyncScope();
         var act = () =>
             lane == MessageLane.Bus
-                ? provider
-                    .CreateScope()
+                ? scope
                     .ServiceProvider.GetRequiredService<IBus>()
                     .PublishAsync(message, new PublishOptions { Delay = delay }, AbortToken)
-                : provider
-                    .CreateScope()
+                : scope
                     .ServiceProvider.GetRequiredService<IQueue>()
                     .EnqueueAsync(message, new QueueOptions { Delay = delay }, AbortToken);
 
@@ -285,10 +283,8 @@ public sealed class DefaultDeliveryModeTests : TestBase
             setup => setup.Bus.ForConsumersFromAssemblyContaining<DefaultDeliveryModeTests>(_ConfigureScannedConsumer)
         );
 
-        await provider
-            .CreateScope()
-            .ServiceProvider.GetRequiredService<IBus>()
-            .PublishAsync(new ScannedMessage("scan"), AbortToken);
+        await using var scope = provider.CreateAsyncScope();
+        await scope.ServiceProvider.GetRequiredService<IBus>().PublishAsync(new ScannedMessage("scan"), AbortToken);
 
         await _AssertStoredCountAsync(provider, MessageLane.Bus, 0);
     }
@@ -307,10 +303,8 @@ public sealed class DefaultDeliveryModeTests : TestBase
             }
         );
 
-        await provider
-            .CreateScope()
-            .ServiceProvider.GetRequiredService<IBus>()
-            .PublishAsync(new ScannedMessage("scan"), AbortToken);
+        await using var scope = provider.CreateAsyncScope();
+        await scope.ServiceProvider.GetRequiredService<IBus>().PublishAsync(new ScannedMessage("scan"), AbortToken);
 
         await _AssertStoredCountAsync(provider, MessageLane.Bus, 0);
     }
@@ -339,22 +333,27 @@ public sealed class DefaultDeliveryModeTests : TestBase
         builder.Contract("test.scanned").ConsumerIdentity($"tests.default-mode.{context.ConsumerType.Name}");
     }
 
-    private static Task _PublishAsync(
+    private static async Task _PublishAsync(
         IServiceProvider provider,
         MessageLane lane,
         TestMessage message,
         DeliveryMode? explicitMode
     )
     {
-        return lane == MessageLane.Bus
-            ? provider
-                .CreateScope()
+        await using var scope = provider.CreateAsyncScope();
+
+        if (lane == MessageLane.Bus)
+        {
+            await scope
                 .ServiceProvider.GetRequiredService<IBus>()
-                .PublishAsync(message, new PublishOptions { DeliveryMode = explicitMode }, AbortToken)
-            : provider
-                .CreateScope()
+                .PublishAsync(message, new PublishOptions { DeliveryMode = explicitMode }, AbortToken);
+        }
+        else
+        {
+            await scope
                 .ServiceProvider.GetRequiredService<IQueue>()
                 .EnqueueAsync(message, new QueueOptions { DeliveryMode = explicitMode }, AbortToken);
+        }
     }
 
     private static ServiceProvider _CreateProvider(

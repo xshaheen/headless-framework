@@ -26,8 +26,8 @@ public sealed class TenantIdentifierSourceRegistrationTests : TestBase
         var descriptors = services.Where(d => d.ServiceType == typeof(ITenantIdentifierSource)).ToList();
 
         descriptors.Should().HaveCount(2);
-        descriptors[0].ImplementationType.Should().Be(typeof(FirstStubSource));
-        descriptors[1].ImplementationType.Should().Be(typeof(SecondStubSource));
+        descriptors[0].ImplementationType.Should().Be<FirstStubSource>();
+        descriptors[1].ImplementationType.Should().Be<SecondStubSource>();
     }
 
     [Fact]

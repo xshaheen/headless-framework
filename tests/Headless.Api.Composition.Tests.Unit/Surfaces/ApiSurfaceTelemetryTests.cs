@@ -28,11 +28,12 @@ public sealed class ApiSurfaceTelemetryTests : TestBase
         bool overrideEnrichment
     )
     {
-        var completed = new ConcurrentDictionary<string, TaskCompletionSource<string?>>();
+        var completed = new ConcurrentDictionary<string, TaskCompletionSource<string?>>(StringComparer.Ordinal);
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseUrls("http://127.0.0.1:0");
+
         builder.Configuration.AddInMemoryCollection(
-            new Dictionary<string, string?>
+            new Dictionary<string, string?>(StringComparer.Ordinal)
             {
                 ["Headless:StringEncryption:DefaultPassPhrase"] = "TestPassPhrase123456",
                 ["Headless:StringEncryption:InitVectorBytes"] = "VGVzdElWMDEyMzQ1Njc4OQ==",
@@ -40,6 +41,7 @@ public sealed class ApiSurfaceTelemetryTests : TestBase
                 ["Headless:StringHash:DefaultSalt"] = "TestSalt",
             }
         );
+
         builder.AddHeadless(configureServices: options =>
         {
             options.Validation.RequireUseHeadless = false;

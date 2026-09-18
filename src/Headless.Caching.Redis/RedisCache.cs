@@ -1071,7 +1071,9 @@ public sealed class RedisCache(
                 ttlTasks[j] = batch.KeyTimeToLiveAsync(slidingOrLegacyHits[j].RedisKey, cacheOptions.ReadMode);
             }
 
+#pragma warning disable VSTHRD103 // IBatch.Execute() flushes queued commands; IDatabaseAsync.ExecuteAsync is unrelated.
             batch.Execute();
+#pragma warning restore VSTHRD103
             var ttlResults = await Task.WhenAll(ttlTasks).ConfigureAwait(false);
 
             for (var j = 0; j < slidingOrLegacyHits.Count; j++)

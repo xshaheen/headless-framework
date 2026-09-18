@@ -147,7 +147,7 @@ public sealed class MessagePublishRequestFactoryTests
             null,
             withContributor
                 ? new Dictionary<Type, object> { [typeof(AffinityContributor)] = new AffinityContributor() }
-                : new Dictionary<Type, object>(),
+                : [],
             []
         );
         var registry = new MessageMetadataRegistry([registration]);

@@ -217,7 +217,9 @@ public sealed class JobsWakeClockDomainTests : TestBase
         {
             var nodeClock = new FakeTimeProvider(new DateTimeOffset(_NodeNow, TimeSpan.Zero));
             var serviceClock = new ObservedNodeClock(nodeClock);
+#pragma warning disable CA2000 // Ownership moves to the SchedulerRig this method returns.
             var taskScheduler = new JobsTaskScheduler(maxConcurrency: 1, timeProvider: nodeClock);
+#pragma warning restore CA2000
             var manager = Substitute.For<IInternalJobManager>();
             var executionContext = new JobsExecutionContext();
 

@@ -55,12 +55,12 @@ public sealed class StreamDivergenceReportTests : TestBase
         var desired = new StreamConfig
         {
             Name = "s",
-            Metadata = new Dictionary<string, string> { ["owner"] = "orders" },
+            Metadata = new Dictionary<string, string>(StringComparer.Ordinal) { ["owner"] = "orders" },
         };
         var live = new StreamConfig
         {
             Name = "s",
-            Metadata = new Dictionary<string, string> { ["owner"] = "orders" },
+            Metadata = new Dictionary<string, string>(StringComparer.Ordinal) { ["owner"] = "orders" },
         };
         var asserted = new HashSet<string>(StringComparer.Ordinal) { nameof(StreamConfig.Metadata) };
 

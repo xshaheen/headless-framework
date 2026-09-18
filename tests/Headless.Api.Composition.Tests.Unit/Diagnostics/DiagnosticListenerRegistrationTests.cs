@@ -17,8 +17,8 @@ public sealed class DiagnosticListenerRegistrationTests
     public async Task should_log_bad_request_until_composite_subscription_is_disposed()
     {
         // given
-        var listener = new DiagnosticListener("api-tests");
-        var loggerProvider = new CapturingLoggerProvider();
+        using var listener = new DiagnosticListener("api-tests");
+        using var loggerProvider = new CapturingLoggerProvider();
         var builder = WebApplication.CreateBuilder();
         builder.Logging.ClearProviders();
         builder.Logging.AddProvider(loggerProvider);

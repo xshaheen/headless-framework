@@ -242,8 +242,8 @@ public sealed class HeaderTenantIdentifierSourceTests : TestBase
 
         var descriptors = services.Where(d => d.ServiceType == typeof(ITenantIdentifierSource)).ToList();
 
-        descriptors.Should().HaveCount(1);
-        descriptors[0].ImplementationType.Should().Be(typeof(HeaderTenantIdentifierSource));
+        descriptors.Should().ContainSingle();
+        descriptors[0].ImplementationType.Should().Be<HeaderTenantIdentifierSource>();
     }
 
     [Fact]
@@ -279,7 +279,8 @@ public sealed class HeaderTenantIdentifierSourceTests : TestBase
 
         builder.AddHeaderSource(HeaderTenantIdentifierSourceOptions.DefaultHeaderName).AddHeaderSource(LegacyHeader);
 
-        services.Where(d => d.ServiceType == typeof(ITenantIdentifierSource)).Should().HaveCount(1);
+        services.Should().ContainSingle(d => d.ServiceType == typeof(ITenantIdentifierSource));
+
         _ResolveOptions(services)
             .HeaderNames.Should()
             .Equal(HeaderTenantIdentifierSourceOptions.DefaultHeaderName, LegacyHeader);
@@ -347,7 +348,9 @@ public sealed class HeaderTenantIdentifierSourceTests : TestBase
     public void should_replace_the_untouched_default_when_configuration_lists_header_names()
     {
         var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?> { ["HeaderNames:0"] = "X-Custom" })
+            .AddInMemoryCollection(
+                new Dictionary<string, string?>(StringComparer.Ordinal) { ["HeaderNames:0"] = "X-Custom" }
+            )
             .Build();
         var services = new ServiceCollection();
         var builder = new HeadlessTenantCatalogResolutionBuilder(services);
@@ -414,10 +417,12 @@ public sealed class HeaderTenantIdentifierSourceTests : TestBase
     /// </summary>
     private static List<string> _VaryEntries(HttpContext context)
     {
-        return context
-            .Response.Headers.Vary.SelectMany(entry => (entry ?? string.Empty).Split(','))
-            .Select(token => token.Trim())
-            .Where(token => token.Length > 0)
-            .ToList();
+        return
+        [
+            .. context
+                .Response.Headers.Vary.SelectMany(entry => (entry ?? string.Empty).Split(','))
+                .Select(token => token.Trim())
+                .Where(token => token.Length > 0),
+        ];
     }
 }

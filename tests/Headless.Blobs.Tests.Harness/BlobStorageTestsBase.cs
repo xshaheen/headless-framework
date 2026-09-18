@@ -261,7 +261,7 @@ public abstract class BlobStorageTestsBase : TestBase
         // Download the stream from storage
         await using var downloadResult = await storage.OpenReadStreamAsync(location, AbortToken);
         downloadResult.Should().NotBeNull();
-        var actual = XElement.Load(downloadResult.Stream);
+        var actual = await XElement.LoadAsync(downloadResult.Stream, LoadOptions.None, AbortToken);
         actual.ToString(SaveOptions.DisableFormatting).Should().Be(element.ToString(SaveOptions.DisableFormatting));
     }
 

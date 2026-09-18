@@ -216,6 +216,7 @@ public sealed class TenantCatalogRewriterPostureTests : TestBase
         return await client.SendAsync(request, AbortToken);
     }
 
+#pragma warning disable MA0045 // Writes to a MemoryStream; async disposal buys nothing and would spread to every caller.
     private static string _StripVolatile(string json)
     {
         using var document = JsonDocument.Parse(json);
@@ -246,6 +247,7 @@ public sealed class TenantCatalogRewriterPostureTests : TestBase
 
         return Encoding.UTF8.GetString(stream.ToArray());
     }
+#pragma warning restore MA0045
 }
 
 /// <summary>

@@ -526,6 +526,8 @@ public sealed class DeliveryDecisionResolverTests : TestBase
 
     private static DeliveryCoordination _CompatibleCoordination()
     {
+#pragma warning disable CA2000 // The returned coordination carries the unit of work.
         return DeliveryCoordination.Compatible(FakeUnitOfWorks.CreateActive(), transaction: null);
+#pragma warning restore CA2000
     }
 }

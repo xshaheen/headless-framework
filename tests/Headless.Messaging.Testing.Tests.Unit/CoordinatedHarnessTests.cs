@@ -186,23 +186,26 @@ public sealed class CoordinatedHarnessTests : TestBase
         // old conflated durability-and-enlistment request tied it to: a TransactionEnlistment.Required registration
         // boots fine next to a durable consumer even though in-memory storage only offers the ProcessLocal inbox
         // tier, and the message consumes normally once published inside a unit of work.
-        await using var harness = await MessagingTestHarness.CreateAsync(services =>
-        {
-            services.AddHeadlessMessaging(setup =>
+        await using var harness = await MessagingTestHarness.CreateAsync(
+            services =>
             {
-                setup.UseInMemory();
-                setup.UseInMemoryStorage();
-                setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
-                setup.Bus.ForMessage<CoordinatedOrderPlaced>(message =>
-                    message
-                        .Contract("coordinated-order-placed")
-                        .WithEnlistment(TransactionEnlistment.Required)
-                        .Consumer<CoordinatedOrderPlacedConsumer>(consumer =>
-                            consumer.ConsumerIdentity("tests.messaging-testing.coordinated-order-placed")
-                        )
-                );
-            });
-        });
+                services.AddHeadlessMessaging(setup =>
+                {
+                    setup.UseInMemory();
+                    setup.UseInMemoryStorage();
+                    setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
+                    setup.Bus.ForMessage<CoordinatedOrderPlaced>(message =>
+                        message
+                            .Contract("coordinated-order-placed")
+                            .WithEnlistment(TransactionEnlistment.Required)
+                            .Consumer<CoordinatedOrderPlacedConsumer>(consumer =>
+                                consumer.ConsumerIdentity("tests.messaging-testing.coordinated-order-placed")
+                            )
+                    );
+                });
+            },
+            AbortToken
+        );
 
         await harness.RunInUnitOfWorkAsync(sp =>
             sp.GetRequiredService<IBus>().PublishAsync(new CoordinatedOrderPlaced("C6"), cancellationToken: AbortToken)

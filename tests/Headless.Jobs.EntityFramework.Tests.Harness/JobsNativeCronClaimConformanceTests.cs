@@ -125,7 +125,7 @@ public abstract class JobsNativeCronClaimConformanceTests<TFixture>(TFixture fix
             capture.Commands.Should().HaveCount(existingCount == batchSize ? 1 : 2);
             capture.Commands.Count(sql => sql.Contains("CronJobOccurrences", StringComparison.Ordinal)).Should().Be(1);
             claims.Should().HaveCount(batchSize);
-            claims.Select(x => x.CronJobId).Should().Equal(dispatches.Select(x => x.Id));
+            claims.Should().Equal(dispatches, (claim, dispatch) => claim.CronJobId == dispatch.Id);
 
             var stored = await db.Set<CronJobOccurrenceEntity<CronJobEntity>>()
                 .AsNoTracking()

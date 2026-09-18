@@ -36,7 +36,7 @@ public sealed class EqualityBaseTests
 
         protected override void BuildHashCode(ref HashCode hash)
         {
-            hash.Add(Name);
+            hash.Add(Name, StringComparer.Ordinal);
             hash.Add(Value);
         }
     }

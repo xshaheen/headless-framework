@@ -115,7 +115,7 @@ public sealed class IsTransactionalPropagationTests : TestBase
         await using var transaction = new TestDbTransaction();
         var resource = Substitute.For<IRelationalUnitOfWorkResource>();
         resource.Transaction.Returns(transaction);
-        var unitOfWork = new FakeUnitOfWork { Resource = resource };
+        await using var unitOfWork = new FakeUnitOfWork { Resource = resource };
 
         var publisher = _BuildMessagePublisher(pipeline);
 

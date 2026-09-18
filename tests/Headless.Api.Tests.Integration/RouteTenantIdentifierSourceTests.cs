@@ -224,7 +224,13 @@ public sealed class RouteTenantIdentifierSourceTests : TestBase
                         // one under test; it deliberately yields nothing.
                         sources.AddSource(_ => null);
                     }
-                    else if (routeValueName == RouteTenantIdentifierSourceOptions.DefaultRouteValueName)
+                    else if (
+                        string.Equals(
+                            routeValueName,
+                            RouteTenantIdentifierSourceOptions.DefaultRouteValueName,
+                            StringComparison.Ordinal
+                        )
+                    )
                     {
                         sources.AddRouteSource();
                     }

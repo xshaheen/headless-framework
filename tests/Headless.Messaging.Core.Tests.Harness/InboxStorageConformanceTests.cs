@@ -228,7 +228,9 @@ public abstract class InboxStorageConformanceTests : TestBase
         var released = (await _AdmitAsync(storage, envelope)).Message;
         released.Owner.Should().BeNull();
         released.LockedUntil.Should().BeNull();
-        released.NextRetryAt.Should().Be(operation == "defer" ? nextRetryAt : winner.NextRetryAt);
+        released
+            .NextRetryAt.Should()
+            .Be(string.Equals(operation, "defer", StringComparison.Ordinal) ? nextRetryAt : winner.NextRetryAt);
         (await _MutateLeaseAsync(storage, operation, identity, nextRetryAt)).Should().BeFalse();
     }
 
@@ -386,20 +388,20 @@ public abstract class InboxStorageConformanceTests : TestBase
         await using var provider = _CreateProvider();
         var storage = provider.GetRequiredService<IDataStorage>();
         var message = _CreateMessage(MessageLane.Bus);
-        if (parameter == "message.Origin.Id")
+        if (string.Equals(parameter, "message.Origin.Id", StringComparison.Ordinal))
         {
             message.Origin.Headers[Headers.MessageId] = value;
         }
-        if (parameter == "message")
+        if (string.Equals(parameter, "message", StringComparison.Ordinal))
         {
             message.Origin.Headers[Headers.TenantId] = value;
         }
         var error = await Record.ExceptionAsync(async () =>
             await storage.AdmitReceivedMessageAsync(
-                parameter == "name" ? value! : "orders.created",
+                string.Equals(parameter, "name", StringComparison.Ordinal) ? value! : "orders.created",
                 "group",
-                parameter == "consumerIdentity" ? value! : "orders.consumer",
-                parameter == "contractVersion" ? value! : "v1",
+                string.Equals(parameter, "consumerIdentity", StringComparison.Ordinal) ? value! : "orders.consumer",
+                string.Equals(parameter, "contractVersion", StringComparison.Ordinal) ? value! : "v1",
                 message,
                 cancellationToken: AbortToken
             )

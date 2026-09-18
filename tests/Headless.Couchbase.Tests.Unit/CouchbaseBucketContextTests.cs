@@ -5,6 +5,7 @@ using Headless.Couchbase.Context;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 
+#pragma warning disable CA2000 // CouchbaseTestFactory returns substitutes and a cleanup-disabled Transactions; none owns a resource.
 namespace Tests;
 
 public sealed class CouchbaseBucketContextTests : TestBase
@@ -59,7 +60,7 @@ public sealed class CouchbaseBucketContextTests : TestBase
 
         var query = context.Query<TestDocument>("sales", "orders");
 
-        query.ElementType.Should().Be(typeof(TestDocument));
+        query.ElementType.Should().Be<TestDocument>();
         _GetQueryKeyspace(query).Should().Be(("sales", "orders"));
     }
 

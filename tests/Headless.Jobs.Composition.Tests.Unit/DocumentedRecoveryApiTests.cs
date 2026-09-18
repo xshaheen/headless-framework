@@ -15,6 +15,7 @@ namespace Tests;
 /// </summary>
 public sealed class DocumentedRecoveryApiTests : TestBase
 {
+#pragma warning disable IDE0060 // These are the documented examples verbatim; trimming a parameter stops pinning them.
     private sealed class DocumentedJob
     {
         // The attribute example from "Configuring it".
@@ -37,6 +38,7 @@ public sealed class DocumentedRecoveryApiTests : TestBase
             return Task.CompletedTask;
         }
     }
+#pragma warning restore IDE0060
 
     [Fact]
     public void the_documented_attribute_shape_compiles_and_round_trips()

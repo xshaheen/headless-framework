@@ -57,7 +57,7 @@ public sealed class InMemoryCronOccurrenceLifecycleTests : TestBase
         stored.Request.Should().Equal(1, 2, 3);
         stored.Expression.Should().Be(upgradedSeed.Expression);
         (await provider.GetAllCronJobExpressionsAsync(AbortToken))
-            .Single(x => x.Function == "new.contract")
+            .Single(x => string.Equals(x.Function, "new.contract", StringComparison.Ordinal))
             .ContractVersion.Should()
             .Be("2");
 

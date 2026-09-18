@@ -106,7 +106,13 @@ public sealed class HeadlessTenantWriteGuardTests(
             .BeNull();
         typeof(HeadlessEntityFrameworkTenancyBuilder)
             .GetMethods()
-            .Where(method => method.Name == nameof(HeadlessEntityFrameworkTenancyBuilder.GuardTenantWrites))
+            .Where(method =>
+                string.Equals(
+                    method.Name,
+                    nameof(HeadlessEntityFrameworkTenancyBuilder.GuardTenantWrites),
+                    StringComparison.Ordinal
+                )
+            )
             .Should()
             .ContainSingle()
             .Which.GetParameters()
@@ -446,7 +452,9 @@ public sealed class HeadlessTenantWriteGuardTests(
         db.Tests.Add(entity);
 
         // when
+#pragma warning disable VSTHRD103 // The guard's synchronous SaveChanges path is what this test covers.
         db.SaveChanges();
+#pragma warning restore VSTHRD103
 
         // then
         entity.TenantId.Should().Be("tenant-a");

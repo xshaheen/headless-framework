@@ -133,7 +133,7 @@ public sealed class ProblemDetailsOperationProcessorTests : TestBase
         new ProblemDetailsOperationProcessor().Process(context);
 
         var definition = context.Document.Definitions[nameof(TooManyRequestsProblemDetails)];
-        var retryAfter = nameof(TooManyRequestsProblemDetails.RetryAfter);
+        const string retryAfter = nameof(TooManyRequestsProblemDetails.RetryAfter);
         definition.AllowAdditionalProperties.Should().BeFalse();
         definition.ActualProperties.Should().ContainKey(retryAfter);
         definition.ActualProperties[retryAfter].IsRequired.Should().BeTrue();

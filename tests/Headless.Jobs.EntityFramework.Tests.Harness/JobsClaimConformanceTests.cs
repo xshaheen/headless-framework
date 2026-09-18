@@ -66,7 +66,7 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
         stored.Request.Should().Equal(1, 2, 3);
         stored.Expression.Should().Be(upgradedSeed.Expression);
         (await restartedProvider.GetAllCronJobExpressionsAsync(ct))
-            .Single(x => x.Function == "new.contract")
+            .Single(x => string.Equals(x.Function, "new.contract", StringComparison.Ordinal))
             .ContractVersion.Should()
             .Be("2");
 

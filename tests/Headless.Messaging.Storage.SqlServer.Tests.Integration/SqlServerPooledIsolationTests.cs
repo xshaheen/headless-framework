@@ -182,7 +182,7 @@ public sealed class SqlServerPooledIsolationTests(SqlServerTestFixture fixture) 
         }
         finally
         {
-            using var pool = new SqlConnection(connectionOptions.ConnectionString);
+            await using var pool = new SqlConnection(connectionOptions.ConnectionString);
             SqlConnection.ClearPool(pool);
             await master.ExecuteAsync(
                 new CommandDefinition(

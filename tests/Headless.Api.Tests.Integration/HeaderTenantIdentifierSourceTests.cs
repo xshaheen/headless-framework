@@ -44,7 +44,10 @@ public sealed class HeaderTenantIdentifierSourceTests : TestBase
         await using var app = await _CreateAppAsync(sources => sources.AddHeaderSource());
         using var client = HttpTenancyTestHarness.CreateClient(app);
 
-        using var response = await _SendAsync(client, new Dictionary<string, string> { [TenantHeader] = "acme" });
+        using var response = await _SendAsync(
+            client,
+            new Dictionary<string, string>(StringComparer.Ordinal) { [TenantHeader] = "acme" }
+        );
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var tenant = await response.Content.ReadFromJsonAsync<TenantCatalogResponse>(cancellationToken: AbortToken);
@@ -115,7 +118,11 @@ public sealed class HeaderTenantIdentifierSourceTests : TestBase
 
         using var response = await _SendAsync(
             client,
-            new Dictionary<string, string> { [TenantHeader] = "acme", [LegacyTenantHeader] = "acme" }
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                [TenantHeader] = "acme",
+                [LegacyTenantHeader] = "acme",
+            }
         );
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -139,7 +146,10 @@ public sealed class HeaderTenantIdentifierSourceTests : TestBase
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(
-                new Dictionary<string, string?> { ["Tenant:Header:HeaderNames:0"] = CustomTenantHeader }
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    ["Tenant:Header:HeaderNames:0"] = CustomTenantHeader,
+                }
             )
             .Build();
         await using var app = await _CreateAppAsync(sources =>
@@ -149,11 +159,11 @@ public sealed class HeaderTenantIdentifierSourceTests : TestBase
 
         using var customResponse = await _SendAsync(
             client,
-            new Dictionary<string, string> { [CustomTenantHeader] = "acme" }
+            new Dictionary<string, string>(StringComparer.Ordinal) { [CustomTenantHeader] = "acme" }
         );
         using var defaultResponse = await _SendAsync(
             client,
-            new Dictionary<string, string> { [TenantHeader] = "acme" }
+            new Dictionary<string, string>(StringComparer.Ordinal) { [TenantHeader] = "acme" }
         );
 
         customResponse.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -181,7 +191,7 @@ public sealed class HeaderTenantIdentifierSourceTests : TestBase
 
         using var response = await _SendAsync(
             client,
-            new Dictionary<string, string>
+            new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 [TenantHeader] = "acme",
                 [HttpTenancyTestHarness.UserHeader] = "alice",
@@ -211,7 +221,11 @@ public sealed class HeaderTenantIdentifierSourceTests : TestBase
 
         using var response = await _SendAsync(
             client,
-            new Dictionary<string, string> { [TenantHeader] = "acme", [HttpTenancyTestHarness.UserHeader] = "alice" }
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                [TenantHeader] = "acme",
+                [HttpTenancyTestHarness.UserHeader] = "alice",
+            }
         );
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -231,7 +245,7 @@ public sealed class HeaderTenantIdentifierSourceTests : TestBase
 
         using var response = await _SendAsync(
             client,
-            new Dictionary<string, string> { [TenantHeader] = "globex" },
+            new Dictionary<string, string>(StringComparer.Ordinal) { [TenantHeader] = "globex" },
             host: "acme.example.com"
         );
 
@@ -359,12 +373,12 @@ public sealed class HeaderTenantIdentifierSourceTests : TestBase
         await tcp.ConnectAsync(uri.Host, uri.Port, AbortToken);
         await using var stream = tcp.GetStream();
         await stream.WriteAsync(Encoding.ASCII.GetBytes(requestText.ToString()), AbortToken);
-        using var buffer = new MemoryStream();
+        await using var buffer = new MemoryStream();
         await stream.CopyToAsync(buffer, AbortToken);
 
         var responseText = Encoding.UTF8.GetString(buffer.ToArray());
         var headerEnd = responseText.IndexOf("\r\n\r\n", StringComparison.Ordinal);
-        headerEnd.Should().BeGreaterThan(0, "the raw response must contain a header block");
+        headerEnd.Should().BePositive("the raw response must contain a header block");
         var lines = responseText[..headerEnd].Split("\r\n");
         var statusCode = int.Parse(lines[0].Split(' ')[1], CultureInfo.InvariantCulture);
         var parsedHeaders = lines
@@ -381,11 +395,13 @@ public sealed class HeaderTenantIdentifierSourceTests : TestBase
 
     private static List<string> _VaryTokens(RawResponse response)
     {
-        return response
-            .Headers.Where(h => string.Equals(h.Name, "Vary", StringComparison.OrdinalIgnoreCase))
-            .SelectMany(h => h.Value.Split(','))
-            .Select(token => token.Trim())
-            .ToList();
+        return
+        [
+            .. response
+                .Headers.Where(h => string.Equals(h.Name, "Vary", StringComparison.OrdinalIgnoreCase))
+                .SelectMany(h => h.Value.Split(','))
+                .Select(token => token.Trim()),
+        ];
     }
 
     private sealed record RawResponse(int StatusCode, List<(string Name, string Value)> Headers, string Body);
@@ -419,12 +435,14 @@ public sealed class HeaderTenantIdentifierSourceTests : TestBase
         )
         {
             IdentifierLookups++;
-            return Task.FromResult(normalizedIdentifier == "acme" ? _acme : null);
+            return Task.FromResult(
+                string.Equals(normalizedIdentifier, "acme", StringComparison.Ordinal) ? _acme : null
+            );
         }
 
         public Task<TenantInfo?> FindByIdAsync(string id, CancellationToken cancellationToken = default)
         {
-            return Task.FromResult(id == _acme.Id ? _acme : null);
+            return Task.FromResult(string.Equals(id, _acme.Id, StringComparison.Ordinal) ? _acme : null);
         }
     }
 }

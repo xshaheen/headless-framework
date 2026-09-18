@@ -182,10 +182,7 @@ public static class SetupApiTenancy
 
         var seam = manifest.GetSeam(TenantCatalogPosture.Seam);
 
-        if (
-            seam is null
-            || !seam.Capabilities.Contains(TenantCatalogPosture.ResolutionCapability, StringComparer.Ordinal)
-        )
+        if (seam?.Capabilities.Contains(TenantCatalogPosture.ResolutionCapability, StringComparer.Ordinal) != true)
         {
             // Not configured, or accessor-only (store configured, resolution never requested) — this is the
             // explicit accessor-only carve-out. The resolution middleware must never run for these hosts.

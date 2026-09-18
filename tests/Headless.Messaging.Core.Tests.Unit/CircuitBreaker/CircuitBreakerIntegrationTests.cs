@@ -481,7 +481,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         await using var provider = _CreateRegisterProvider();
         var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
         var client = Substitute.For<IConsumerClient>();
-        var handle = await _CreateHandleAsync(register, group, client);
+        var handle = await _CreateHandleAsync(group, client);
 
         stateManager.RegisterGroupCallbacks(
             circuitGroup,
@@ -527,7 +527,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         await using var provider = _CreateRegisterProvider();
         var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
         var client = Substitute.For<IConsumerClient>();
-        var handle = await _CreateHandleAsync(register, group, client);
+        var handle = await _CreateHandleAsync(group, client);
 
         stateManager.RegisterGroupCallbacks(
             circuitGroup,
@@ -572,7 +572,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         await using var provider = _CreateRegisterProvider();
         var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
         var client = Substitute.For<IConsumerClient>();
-        var handle = await _CreateHandleAsync(register, group, client);
+        var handle = await _CreateHandleAsync(group, client);
 
         stateManager.RegisterGroupCallbacks(
             circuitGroup,
@@ -621,8 +621,8 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
             .SetValue(register, stateManager);
         var replacementClient = Substitute.For<IConsumerClient>();
         var legacyClient = Substitute.For<IConsumerClient>();
-        var replacementHandle = await _CreateHandleAsync(register, group, replacementClient);
-        var legacyHandle = await _CreateHandleAsync(register, group, legacyClient);
+        var replacementHandle = await _CreateHandleAsync(group, replacementClient);
+        var legacyHandle = await _CreateHandleAsync(group, legacyClient);
 
         stateManager.RegisterGroupCallbacks(
             circuitGroup,
@@ -676,7 +676,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         client
             .ResumeAsync(Arg.Any<CancellationToken>())
             .Returns(_ => ValueTask.FromException(new InvalidOperationException("resume failed")));
-        var handle = await _CreateHandleAsync(register, group, client);
+        var handle = await _CreateHandleAsync(group, client);
 
         stateManager.RegisterGroupCallbacks(
             circuitGroup,
@@ -714,7 +714,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         await using var provider = _CreateRegisterProvider();
         var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
         var replacementClient = Substitute.For<IConsumerClient>();
-        var replacementHandle = await _CreateHandleAsync(register, group, replacementClient);
+        var replacementHandle = await _CreateHandleAsync(group, replacementClient);
 
         stateManager.RegisterGroupCallbacks(
             circuitGroup,
@@ -728,8 +728,12 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
 
         var reopenMethod = typeof(CircuitBreakerStateManager).GetMethod(
             "_ReopenAfterResumeFailureAsync",
-            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+            null,
+            [typeof(string), typeof(long)],
+            null
         )!;
+
         await (Task)reopenMethod.Invoke(stateManager, [circuitGroup, currentEpoch])!;
 
         stateManager.GetState(circuitGroup).Should().Be(CircuitBreakerState.Open);
@@ -762,16 +766,14 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         return services.BuildServiceProvider();
     }
 
-    private static async ValueTask<object> _CreateHandleAsync(
-        ConsumerRegister register,
-        string groupName,
-        IConsumerClient client
-    )
+    private static async ValueTask<object> _CreateHandleAsync(string groupName, IConsumerClient client)
     {
         var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
         var handle = Activator.CreateInstance(handleType, nonPublic: true)!;
         handleType.GetProperty("Logger")!.SetValue(handle, NullLogger<ConsumerRegister>.Instance);
+#pragma warning disable CA2000 // The GroupHandle owns the source once it is assigned.
         handleType.GetProperty("Cts")!.SetValue(handle, new CancellationTokenSource());
+#pragma warning restore CA2000
         handleType.GetProperty("GroupName")!.SetValue(handle, groupName);
         handleType.GetProperty("ConsumerTasks")!.SetValue(handle, new ConcurrentBag<Task>());
         await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, [client])!;

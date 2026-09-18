@@ -11,4 +11,7 @@
     <PackageReference Include="JetBrains.Annotations" PrivateAssets="all" />
     <Using Include="JetBrains.Annotations" />
   </ItemGroup>
+  <ItemGroup Label="Analyzer configuration">
+    <AdditionalFiles Include="$(MSBuildThisFileDirectory)eng/analyzers/*.txt" />
+  </ItemGroup>
 </Project>

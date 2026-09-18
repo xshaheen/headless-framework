@@ -470,7 +470,7 @@ public sealed class MessageObservationStoreTests : TestBase
     {
         var field = typeof(MessageObservationStore).GetField(
             "_publishedArrivals",
-            BindingFlags.Instance | BindingFlags.NonPublic
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         );
 
         field.Should().NotBeNull("the store is expected to keep a private _publishedArrivals map");

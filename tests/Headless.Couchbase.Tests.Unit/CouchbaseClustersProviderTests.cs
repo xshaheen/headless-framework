@@ -57,11 +57,11 @@ public sealed class CouchbaseClustersProviderTests : TestBase
             var resolved = await sharedWait.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
             resolved.Should().BeSameAs(connection);
-            await optionsProvider.DidNotReceiveWithAnyArgs().GetAsync(default!, default);
+            await optionsProvider.DidNotReceiveWithAnyArgs().GetAsync(default!, AbortToken);
         }
         finally
         {
-            releaseConnection.TrySetCanceled();
+            releaseConnection.TrySetCanceled(AbortToken);
             cancellation.Dispose();
             await sut.DisposeAsync();
         }

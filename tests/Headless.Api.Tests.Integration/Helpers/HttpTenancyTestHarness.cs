@@ -60,12 +60,14 @@ internal static class HttpTenancyTestHarness
     {
         // Redirect following has to be disabled for assertions on a scheme that forbids with a 302 —
         // otherwise the handler follows the redirect and the asserted response is the redirect target.
+#pragma warning disable CA2000 // HttpClient disposes its handler; the client is the caller's to dispose.
         return allowAutoRedirect
             ? new HttpClient { BaseAddress = new Uri(app.Urls.Single()) }
             : new HttpClient(new HttpClientHandler { AllowAutoRedirect = false, CheckCertificateRevocationList = true })
             {
                 BaseAddress = new Uri(app.Urls.Single()),
             };
+#pragma warning restore CA2000
     }
 
     public static HttpRequestMessage CreateRequest(
