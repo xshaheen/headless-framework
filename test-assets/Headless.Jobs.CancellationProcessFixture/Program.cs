@@ -56,7 +56,7 @@ internal static class Program
             });
             options.UseEntityFramework(ef =>
             {
-                ef.UseJobsDbContext<JobsDbContext>(db => db.UseNpgsql(connectionString), "jobs");
+                ef.UseJobsDbContext<JobsDbContext>(db => db.UseNpgsql(connectionString));
                 ef.UsePostgreSqlClaims();
             });
         });

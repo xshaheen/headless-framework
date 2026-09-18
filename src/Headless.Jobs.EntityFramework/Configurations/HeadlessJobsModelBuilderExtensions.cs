@@ -1,8 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Jobs;
 using Headless.Jobs.Configurations;
 using Headless.Jobs.Entities;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.EntityFrameworkCore;
@@ -23,9 +25,11 @@ public static class HeadlessJobsModelBuilderExtensions
         Argument.IsNotNull(context);
 
         JobsKeyedModelConfiguration.Configure<TTimeJob>(builder, context);
-        // The reservation table is not generic, so this is the one place a consumer-managed model maps it.
+        // The reservation table is not generic, so this is the one place a consumer-managed model maps it. It takes
+        // its schema from the same option as every other Jobs table so an override cannot strand it in "jobs".
         JobsIdempotencyModelConfiguration.Configure(
             builder,
+            context.GetService<JobsStorageOptions>().Schema,
             JobsContractCollation.TryResolve(context.Database.ProviderName)
         );
         return builder;

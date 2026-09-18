@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using FluentValidation;
 using Headless.Checks;
+using Headless.Constants;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
@@ -98,11 +100,22 @@ public static class SetupPostgreSqlMessaging
                     inboxCapability: MessagingInboxCapabilityTier.DurableDedupeOnly
                 )
             );
+            // The schema is feature-owned, so this provider only validates it, once, against PostgreSQL's
+            // identifier rules. The EF-context storage path reuses this extension and is validated here too.
+            services.AddOptions<MessagingStorageOptions, PostgreSqlMessagingStorageOptionsValidator>();
             configureOptions(services);
             services.AddSingleton<PostgreSqlDataStorage>();
             services.AddSingleton<IDataStorage>(sp => sp.GetRequiredService<PostgreSqlDataStorage>());
             services.AddSingleton<IDeliveryCoordinationResolver>(sp => sp.GetRequiredService<PostgreSqlDataStorage>());
             services.AddSingleton<IStorageInitializer, PostgreSqlStorageInitializer>();
+        }
+    }
+
+    private sealed class PostgreSqlMessagingStorageOptionsValidator : AbstractValidator<MessagingStorageOptions>
+    {
+        public PostgreSqlMessagingStorageOptionsValidator()
+        {
+            RuleFor(x => x.Schema).IsValidIdentifierFor(StorageProvider.PostgreSql);
         }
     }
 }

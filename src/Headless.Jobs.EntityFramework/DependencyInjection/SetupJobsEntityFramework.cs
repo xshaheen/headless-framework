@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using FluentValidation;
 using Headless.Checks;
 using Headless.Jobs.Entities;
 using Microsoft.Extensions.DependencyInjection;
@@ -18,12 +19,13 @@ public static class SetupJobsEntityFramework
     /// Coordinated membership requires exactly one <c>INodeMembership</c> provider (e.g.,
     /// <c>Headless.Coordination.EntityFramework</c>) to be registered. Without it the application
     /// will fail to start. Use <see cref="JobsEfCoreOptionBuilder{TTimeJob,TCronJob}"/> via
-    /// <paramref name="efConfiguration"/> to select a DbContext and configure pool size and schema.
+    /// <paramref name="efConfiguration"/> to select a DbContext and configure pool size; the schema
+    /// comes from <c>JobsOptionsBuilder.ConfigureStorage</c> on <paramref name="jobsConfiguration"/>.
     /// </remarks>
     /// <param name="jobsConfiguration">The jobs options builder.</param>
     /// <param name="efConfiguration">
     /// Optional callback to configure EF Core options. When <see langword="null"/>, defaults are used
-    /// (pool size 1024, schema "jobs").
+    /// (pool size 1024).
     /// </param>
     /// <exception cref="ArgumentOutOfRangeException">The configured pool size is ≤ 0.</exception>
     public static JobsOptionsBuilder<TTimeJob, TCronJob> UseEntityFramework<TTimeJob, TCronJob>(
@@ -47,8 +49,33 @@ public static class SetupJobsEntityFramework
         jobsConfiguration.ExternalProviderConfigServiceAction += (services) =>
             services.AddSingleton(_ => efCoreOptionBuilder);
 
+        jobsConfiguration.ExternalProviderConfigServiceAction += services =>
+        {
+            // The value itself is authored on the feature builder and registered by the Core layer; this provider
+            // only attaches the validator it can speak for. Every model path then reads the one resolved
+            // JobsStorageOptions instead of a per-path default, which is what let the customizer and the
+            // reservation table drift apart.
+            services.AddOptions<JobsStorageOptions, JobsEntityFrameworkStorageOptionsValidator>();
+
+            // Model building resolves the value type directly: a DbContext reaches application services through
+            // its own GetService, and the schema is needed while the model is built, long before any IOptions
+            // consumer would normally run.
+            services.AddSingletonOptionValue<JobsStorageOptions>();
+        };
+
         jobsConfiguration.ExternalProviderConfigServiceAction += efCoreOptionBuilder.ConfigureServices;
 
         return jobsConfiguration;
+    }
+
+    // EF dispatches to whatever database the consumer wired up, so this validator uses the cross-provider
+    // identifier rule (the SQL Server superset) rather than a dialect-specific one; the database itself
+    // surfaces any remaining length or character objection at schema-creation time.
+    private sealed class JobsEntityFrameworkStorageOptionsValidator : AbstractValidator<JobsStorageOptions>
+    {
+        public JobsEntityFrameworkStorageOptionsValidator()
+        {
+            RuleFor(x => x.Schema).IsValidCrossProviderIdentifier();
+        }
     }
 }

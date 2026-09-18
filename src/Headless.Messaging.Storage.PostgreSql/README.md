@@ -46,11 +46,8 @@ builder.Services.AddHeadlessMessaging(options =>
         )
     );
     options.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
-    options.UsePostgreSql(config =>
-    {
-        config.ConnectionString = "Host=localhost;Database=myapp;...";
-        config.Schema = "messaging";
-    });
+    options.ConfigureStorage(storage => storage.Schema = "messaging");
+    options.UsePostgreSql(config => config.ConnectionString = "Host=localhost;Database=myapp;...");
 
     options.UseRabbitMq(rmq =>
     { /* ... */
@@ -65,10 +62,15 @@ Known orphans use a separate bounded probe batch and recover only when the exact
 History retention uses the shared `MessagingOptions` defaults: cleanup receipts/audits 7 days each, operator receipts 30 days, and operator audits 90 days. All four are positive configurable minimum residence durations. Audit references can extend receipt lifetime; deleting history does not release holds. PostgreSQL database time controls history age. Initialization adds the history-selection and audit-reference indexes idempotently. This history also covers scheduled-delivery operator actions (revoke, dispatch-now) under the shared `TargetKind` ledger; the schema is created fresh with the generalized ledger columns (greenfield — no prior schema versions exist), and the `inbox` schema-state version pins the readiness contract. See the [Core lifecycle and retention contract](https://www.nuget.org/packages/Headless.Messaging.Core#readme-body-tab) for probe settings, replay limits, rollout effects, and collector pacing.
 
 ```csharp
+// The schema belongs to the feature, not the provider: one setting serves every messaging storage
+// backend, and this provider validates it against PostgreSQL identifier rules at startup.
+// ConfigureStorage also binds from configuration:
+//   options.ConfigureStorage(builder.Configuration.GetSection("Headless:Messaging:Storage"));
+options.ConfigureStorage(storage => storage.Schema = "messaging");
+
 options.UsePostgreSql(config =>
 {
     config.ConnectionString = "connection_string";
-    config.Schema = "messaging";
 
     // Optional: cap schema-init DDL (CREATE/DROP INDEX CONCURRENTLY, the CREATE EXTENSION probe, and the
     // advisory-lock waits that gate them). Default null = no timeout (wait indefinitely), decoupled from

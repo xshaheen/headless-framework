@@ -278,7 +278,7 @@ public abstract class MembershipConformanceTests<TFixture>(TFixture fixture) : T
             cluster,
             "node-a",
             MembershipLostBehavior.StopApplication,
-            AbortToken
+            cancellationToken: AbortToken
         );
         var firstIdentity = await first.Membership.RegisterAsync(AbortToken);
 

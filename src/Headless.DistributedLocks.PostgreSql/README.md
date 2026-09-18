@@ -80,6 +80,18 @@ options.EnablePushWakeup = true;
 options.KeepAlive = TimeSpan.FromSeconds(30); // applied only to a provider-built DataSource
 ```
 
+The fencing sequence's schema is not a provider option. Set it on the feature:
+
+```csharp
+services.AddHeadlessDistributedLocks(setup =>
+{
+    setup.ConfigureStorage(storage => storage.Schema = "app_locks");
+    setup.UsePostgreSql(connectionString);
+});
+```
+
+The default is the feature name `"locks"`. Earlier versions of this provider had no schema setting at all and created `headless_distributed_locks_fence` unqualified, so it landed wherever `search_path` pointed; it is now created inside the configured schema (which the provider creates when absent). The provider validates the schema against PostgreSQL's unquoted-identifier rules at startup.
+
 ## Dependencies
 
 - `Headless.DistributedLocks.Core.Database`

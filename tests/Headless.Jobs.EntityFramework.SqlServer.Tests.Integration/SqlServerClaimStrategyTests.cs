@@ -316,6 +316,9 @@ public sealed class SqlServerClaimStrategyTests(SqlServerJobsCoordinationFixture
                 "DROP TABLE IF EXISTS [mapped_jobs].[native_cron_occurrences];"
                 + "DROP TABLE IF EXISTS [mapped_jobs].[native_time_jobs];"
                 + "DROP TABLE IF EXISTS [mapped_jobs].[CronJobs];"
+                // The reservation table follows the configured schema like every other Jobs table, so it lands here
+                // too and SQL Server refuses to drop a schema that still owns it.
+                + "DROP TABLE IF EXISTS [mapped_jobs].[TimeJobIdempotencyReservations];"
                 + "IF EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'mapped_jobs') DROP SCHEMA [mapped_jobs];";
             await command.ExecuteNonQueryAsync(cleanup.Token);
         }
@@ -574,14 +577,11 @@ public sealed class SqlServerClaimStrategyTests(SqlServerJobsCoordinationFixture
             options.DisableBackgroundServices();
             options.UseEntityFramework(ef =>
             {
-                ef.UseJobsDbContext<JobsDbContext>(
-                    db =>
-                    {
-                        fixture.ConfigureStore(db);
-                        db.AddInterceptors(interceptor);
-                    },
-                    "jobs"
-                );
+                ef.UseJobsDbContext<JobsDbContext>(db =>
+                {
+                    fixture.ConfigureStore(db);
+                    db.AddInterceptors(interceptor);
+                });
                 fixture.ConfigureClaims(ef);
             });
         });
@@ -827,6 +827,8 @@ internal sealed class SqlServerNativeClaimsFixture(string connectionString) : IJ
     public string QualifiedCronJobsTable => "[jobs].[CronJobs]";
 
     public string QualifiedCronJobOccurrencesTable => "[jobs].[CronJobOccurrences]";
+
+    public string QualifyTable(string schema, string table) => $"[{schema}].[{table}]";
 
     public string UtcNowSqlExpression => "SYSUTCDATETIME()";
 

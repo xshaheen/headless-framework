@@ -175,7 +175,7 @@ public sealed partial class OutboxBridgeIntegrationTests
         {
             options.DisableBackgroundServices();
             options.UseEntityFramework(ef =>
-                ef.UseJobsDbContext<JobsDbContext>(db => db.UseNpgsql(fixture.ConnectionString), schema: "jobs")
+                ef.UseJobsDbContext<JobsDbContext>(db => db.UseNpgsql(fixture.ConnectionString))
             );
         });
         services.AddSingleton<DeadlineEvidence>();

@@ -71,11 +71,22 @@ await transaction.CommitAsync(ct);
 
 ```csharp
 options.ConnectionString = "..."; // required
-options.Schema = "dbo"; // fencing sequence schema
 options.KeyPrefix = "distributed-lock:";
 options.CommandTimeout = TimeSpan.FromSeconds(30);
 options.EnableFencing = true;
 ```
+
+The fencing sequence's schema is not a provider option. Set it on the feature:
+
+```csharp
+services.AddHeadlessDistributedLocks(setup =>
+{
+    setup.ConfigureStorage(storage => storage.Schema = "app_locks");
+    setup.UseSqlServer(connectionString);
+});
+```
+
+The default is the feature name `"locks"`, not `dbo`; the initializer creates the schema when absent. The provider validates it against SQL Server's regular-identifier rules at startup.
 
 ## Dependencies
 

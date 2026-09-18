@@ -81,7 +81,8 @@ public static class SetupJobs
         var schedulerOptionsBuilder = new SchedulerOptionsBuilder();
         var optionInstance = new JobsOptionsBuilder<TTimeJob, TCronJob>(
             tickerExecutionContext,
-            schedulerOptionsBuilder
+            schedulerOptionsBuilder,
+            services
         );
         var discoveryParticipant = JobFunctionProvider.BeginDiscovery();
         try

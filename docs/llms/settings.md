@@ -40,7 +40,7 @@ Define settings via `ISettingDefinitionProvider.Define()`. Read via `ISettingMan
 - Core registers a `SettingsInitializationBackgroundService` hosted service — do not register your own init logic for settings.
 - `AddHeadlessSettings(...)` is the single entry point — it registers the management core automatically alongside the storage provider. Only one storage provider (EF / PostgreSQL / SqlServer) may be registered; a second registration throws at startup.
 - To tune management options, call `setup.ConfigureManagement(options => ...)` inside the `AddHeadlessSettings` block. An `(options, IServiceProvider)` overload is available for late-bound configuration. `services.Configure<SettingManagementOptions>(...)` also works and composes regardless of call order.
-- To tune schema and table names, call `setup.ConfigureStorage(o => ...)` inside the same block.
+- To tune schema and table names, call `setup.ConfigureStorage(o => ...)` inside the same block. The `IConfiguration` overload binds the `Headless:Settings:Storage` section instead.
 - For EF storage: register `AddDbContextFactory<TContext>()` and call `modelBuilder.AddHeadlessSettings(this)` in `OnModelCreating` before calling `setup.UseEntityFramework<TContext>()`. The `(SettingsStorageOptions)` overload exists when you already hold the options object.
 - Required services before `AddHeadlessSettings(...)`: `TimeProvider`, caching (`ICache`), distributed lock (`IDistributedLock`), and `IStringEncryptionService`. The core throws `InvalidOperationException` on startup if encryption is missing.
 - `DeleteAsync(providerName, providerKey)` removes all setting values for a given provider and key — use it when cleaning up a deleted tenant or user.

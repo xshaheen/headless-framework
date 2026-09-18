@@ -6,6 +6,7 @@ using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Models;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Jobs;
@@ -102,10 +103,53 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     /// <summary>Scheduler options instance, exposed so Core-layer extensions can toggle internal flags.</summary>
     internal SchedulerOptionsBuilder SchedulerOptions { get; }
 
-    internal JobsOptionsBuilder(JobsExecutionContext tickerExecutionContext, SchedulerOptionsBuilder schedulerOptions)
+    /// <summary>
+    /// The collection <c>AddHeadlessJobs</c> is registering into. Storage naming is registered against it the moment
+    /// it is authored, rather than snapshotted on this builder, so the schema lives in one place and the two
+    /// <c>ConfigureStorage</c> overloads order against each other by call order alone.
+    /// </summary>
+    internal IServiceCollection Services { get; }
+
+    /// <summary>
+    /// Applies <paramref name="configure"/> to <see cref="JobsStorageOptions"/>, which names the database schema
+    /// holding every Jobs table.
+    /// </summary>
+    /// <remarks>Composes with the configuration overload as last call wins.</remarks>
+    /// <param name="configure">A delegate that mutates the storage options.</param>
+    /// <returns>This builder for method chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="configure"/> is null.</exception>
+    public JobsOptionsBuilder<TTimeJob, TCronJob> ConfigureStorage(Action<JobsStorageOptions> configure)
+    {
+        Argument.IsNotNull(configure);
+        Services.Configure(configure);
+        return this;
+    }
+
+    /// <summary>
+    /// Binds <paramref name="configuration"/> to <see cref="JobsStorageOptions"/>. Pass the
+    /// <c>Headless:Jobs:Storage</c> section itself — the section is bound directly, so its keys are the option's
+    /// property names (<c>Schema</c>), not a further nested path.
+    /// </summary>
+    /// <remarks>Composes with the callback overload as last call wins.</remarks>
+    /// <param name="configuration">The <c>Headless:Jobs:Storage</c> configuration section.</param>
+    /// <returns>This builder for method chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="configuration"/> is null.</exception>
+    public JobsOptionsBuilder<TTimeJob, TCronJob> ConfigureStorage(IConfiguration configuration)
+    {
+        Argument.IsNotNull(configuration);
+        Services.Configure<JobsStorageOptions>(configuration);
+        return this;
+    }
+
+    internal JobsOptionsBuilder(
+        JobsExecutionContext tickerExecutionContext,
+        SchedulerOptionsBuilder schedulerOptions,
+        IServiceCollection services
+    )
     {
         _tickerExecutionContext = tickerExecutionContext;
         SchedulerOptions = schedulerOptions;
+        Services = services;
         // Store this instance in the execution context for later retrieval
         tickerExecutionContext.OptionsSeeding = this;
     }

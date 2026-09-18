@@ -9,16 +9,6 @@ namespace Tests;
 public sealed class PostgreSqlOptionsTests : TestBase
 {
     [Fact]
-    public void should_have_default_schema()
-    {
-        // when
-        var options = new PostgreSqlOptions();
-
-        // then
-        options.Schema.Should().Be(PostgreSqlOptions.DefaultSchema);
-    }
-
-    [Fact]
     public void should_allow_setting_connection_string()
     {
         // given

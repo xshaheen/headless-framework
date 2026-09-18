@@ -85,7 +85,7 @@ services.AddHeadlessFeatures(setup =>
 });
 ```
 
-Configure schema and table names via `setup.ConfigureStorage(...)`:
+Configure schema and table names via `setup.ConfigureStorage(...)`, either with a delegate or by passing the `Headless:Features:Storage` configuration section:
 
 ```csharp
 services.AddHeadlessFeatures(setup =>

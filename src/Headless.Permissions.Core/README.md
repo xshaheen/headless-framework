@@ -111,7 +111,7 @@ builder.Services.AddHeadlessPermissions(setup =>
 
 An `(options, IServiceProvider)` overload is available for late-bound configuration. `services.Configure<PermissionManagementOptions>(...)` also works and composes regardless of call order.
 
-Configure schema and table names via `setup.ConfigureStorage(...)`:
+Configure schema and table names via `setup.ConfigureStorage(...)`, either with a delegate or by passing the `Headless:Permissions:Storage` configuration section:
 
 ```csharp
 setup.ConfigureStorage(o =>

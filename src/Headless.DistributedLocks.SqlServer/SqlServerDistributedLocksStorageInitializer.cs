@@ -14,7 +14,8 @@ namespace Headless.DistributedLocks.SqlServer;
 /// <remarks>
 /// <para>
 /// Runs only when <see cref="SqlServerDistributedLockOptions.EnableFencing"/> is
-/// <see langword="true"/>. Creates (if absent) the configured schema and a <c>bigint</c> sequence named
+/// <see langword="true"/>. Creates (if absent) the feature-owned
+/// <see cref="DistributedLocksStorageOptions.Schema"/> and a <c>bigint</c> sequence named
 /// <c>{KeyPrefix}_headless_distlocks_fence</c> (truncated to 128 characters if necessary) inside that
 /// schema. Schema and sequence creation are guarded by a session-scoped <c>sp_getapplock</c> so
 /// concurrent initializers on multiple nodes do not race on DDL.
@@ -25,8 +26,10 @@ namespace Headless.DistributedLocks.SqlServer;
 /// callers that resolve the provider without hosting (no <c>IHostedService</c> startup).
 /// </para>
 /// </remarks>
-internal sealed class SqlServerDistributedLocksStorageInitializer(IOptions<SqlServerDistributedLockOptions> options)
-    : HostedInitializer
+internal sealed class SqlServerDistributedLocksStorageInitializer(
+    IOptions<SqlServerDistributedLockOptions> options,
+    IOptions<DistributedLocksStorageOptions> storageOptions
+) : HostedInitializer
 {
     /// <inheritdoc/>
     protected override bool RunOnStartup => options.Value.EnableFencing;
@@ -41,7 +44,8 @@ internal sealed class SqlServerDistributedLocksStorageInitializer(IOptions<SqlSe
     {
         await using var connection = options.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await EnsureSequenceAsync(connection, options.Value, cancellationToken).ConfigureAwait(false);
+        await EnsureSequenceAsync(connection, options.Value, storageOptions.Value.Schema, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <summary>
@@ -51,19 +55,21 @@ internal sealed class SqlServerDistributedLocksStorageInitializer(IOptions<SqlSe
     /// </summary>
     /// <param name="connection">An open SQL Server connection on which to run the DDL.</param>
     /// <param name="options">
-    /// Provider options supplying <see cref="SqlServerDistributedLockOptions.Schema"/>,
-    /// <see cref="SqlServerDistributedLockOptions.KeyPrefix"/>, and
+    /// Provider options supplying <see cref="SqlServerDistributedLockOptions.KeyPrefix"/> and
     /// <see cref="SqlServerDistributedLockOptions.CommandTimeout"/>.
+    /// </param>
+    /// <param name="schema">
+    /// The feature-owned <see cref="DistributedLocksStorageOptions.Schema"/> the sequence is created in.
     /// </param>
     /// <param name="cancellationToken">Token used to cancel the operation.</param>
     /// <remarks>Underlying <see cref="Microsoft.Data.SqlClient.SqlException"/> errors propagate to the caller.</remarks>
     internal static async ValueTask EnsureSequenceAsync(
         SqlConnection connection,
         SqlServerDistributedLockOptions options,
+        string schema,
         CancellationToken cancellationToken = default
     )
     {
-        var schema = options.Schema;
         var sequenceName = SqlServerIdentifier.FenceSequenceName(options.KeyPrefix);
         var lockResource = SqlServerResourceName.Encode($"{options.KeyPrefix}init:{schema}.{sequenceName}");
         var qualifiedSequence = $"{SqlServerIdentifier.Quote(schema)}.{SqlServerIdentifier.Quote(sequenceName)}";

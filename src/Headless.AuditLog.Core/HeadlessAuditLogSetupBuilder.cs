@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.AuditLog;
@@ -62,6 +63,22 @@ public sealed class HeadlessAuditLogSetupBuilder
     {
         Argument.IsNotNull(configure);
         configure(StorageOptions);
+
+        return this;
+    }
+
+    /// <summary>
+    /// Binds the shared <see cref="AuditLogStorageOptions"/> from <paramref name="configuration"/>; pass the
+    /// <c>Headless:AuditLog:Storage</c> section. Applied immediately, in call order with the delegate overload.
+    /// </summary>
+    /// <param name="configuration">The configuration section to bind from.</param>
+    /// <returns>This builder, to allow chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="configuration"/> is <see langword="null"/>.</exception>
+    public HeadlessAuditLogSetupBuilder ConfigureStorage(IConfiguration configuration)
+    {
+        Argument.IsNotNull(configuration);
+
+        configuration.Bind(StorageOptions);
 
         return this;
     }

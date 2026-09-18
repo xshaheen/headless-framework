@@ -233,7 +233,7 @@ Provides the full permission management runtime: AWS IAM-style grant resolution 
 - `PermissionsInitializationBackgroundService` — seeds static definitions with up to 10 jittered exponential-back-off retries capped at 30 seconds; pre-caches dynamic definitions when enabled; implements `IInitializer`
 - `PermissionManagementOptions` — all tuning options for lock keys/timeouts, cache expiry, dynamic store toggle
 - `PermissionsStorageOptions` — schema and table name configuration shared across all storage providers
-- `HeadlessPermissionsSetupBuilder` — fluent builder returned inside `AddHeadlessPermissions`; exposes `ConfigureManagement`, `ConfigureStorage`, `RegisterExtension`
+- `HeadlessPermissionsSetupBuilder` — fluent builder returned inside `AddHeadlessPermissions`; exposes `ConfigureManagement`, `ConfigureStorage`, `RegisterExtension` `ConfigureStorage` also accepts the `Headless:Permissions:Storage` configuration section.
 - `HeadlessPermissionsBuilder` — returned by `AddHeadlessPermissions`; exposes `Services` for post-registration additions
 - `services.AddPermissionDefinitionProvider<T>()` — registers a custom `IPermissionDefinitionProvider` as singleton
 - `services.AddPermissionGrantProvider<T>()` — registers an additional grant provider (last-registered = highest priority)

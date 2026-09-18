@@ -19,6 +19,7 @@ namespace Headless.Messaging.Storage.SqlServer;
 /// </summary>
 internal sealed class SqlServerMonitoringApi(
     IOptions<SqlServerOptions> options,
+    IOptions<MessagingStorageOptions> storageOptions,
     IOptions<MessagingOptions> messagingOptions,
     IStorageInitializer initializer,
     ISerializer serializer,
@@ -26,6 +27,7 @@ internal sealed class SqlServerMonitoringApi(
 ) : IMonitoringApi
 {
     private readonly SqlServerOptions _options = Argument.IsNotNull(options.Value);
+    private readonly MessagingStorageOptions _storageOptions = Argument.IsNotNull(storageOptions.Value);
     private readonly MessagingOptions _messagingOptions = messagingOptions.Value;
     private readonly string _publishedTable = initializer.GetPublishedTableName();
     private readonly string _receivedTable = initializer.GetReceivedTableName();
@@ -521,7 +523,7 @@ internal sealed class SqlServerMonitoringApi(
         // stay constant regardless of id count, so SQL Server reuses one cached query plan instead of
         // compiling a fresh plan per dynamic IN-list length — and it stays portable to older engines
         // (table types need no OPENJSON / compatibility level 130).
-        var tvpTypeName = $"[{_options.Schema}].[HeadlessMessagingIdList]";
+        var tvpTypeName = $"[{_storageOptions.Schema}].[HeadlessMessagingIdList]";
 
         var idsTable = new DataTable();
         idsTable.Columns.Add("Id", typeof(Guid));

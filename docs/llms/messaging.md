@@ -255,6 +255,34 @@ How to read each column:
 
 Internal-wiring asymmetries (for example, `Headless.Messaging.Storage.SqlServer` additionally registers `DiagnosticProcessorObserver` and a `DiagnosticRegister` background server for SQL Server-specific telemetry that PostgreSql does not need) are deliberately not surfaced as matrix columns — they are implementation details, not chooser-relevant capabilities.
 
+### Storage schema
+
+Messaging owns the database naming, so the schema is one feature-level setting rather than a copy per
+provider. Configure it on `MessagingStorageOptions` through the setup builder; `PostgreSqlOptions`,
+`SqlServerOptions`, and both EF options types no longer carry a `Schema` member.
+
+```csharp
+services.AddHeadlessMessaging(setup =>
+{
+    setup.ConfigureStorage(storage => storage.Schema = "messaging"); // default: "messaging"
+    setup.UsePostgreSql(builder.Configuration.GetConnectionString("Messaging")!);
+});
+```
+
+- **One setting, per-provider validation.** Whichever storage provider is registered validates the value
+  once at startup against its own dialect's identifier rules — PostgreSQL's unquoted-identifier rules
+  (63 chars) or SQL Server's regular-identifier rules (128 chars). An invalid schema fails host startup
+  with an `OptionsValidationException` instead of a later DDL error.
+- **Configuration binding.** `ConfigureStorage` also takes an `IConfiguration`, so the schema can come
+  from `appsettings.json`: `setup.ConfigureStorage(builder.Configuration.GetSection("Headless:Messaging:Storage"))`.
+  Pass the section itself, not the configuration root — its keys map to the option's properties. Provider
+  `Use…(IConfiguration)` overloads bind only their own options and never the schema. Both `ConfigureStorage`
+  overloads register in call order, so the last one applied wins.
+- **EF-context storage paths** read the same setting: `setup.UseEntityFramework<TContext>()` takes no
+  schema of its own, so pair it with `ConfigureStorage` when the tables do not live in `messaging`.
+
+Table names are not configurable; each provider creates its own fixed set inside the configured schema.
+
 ## Headless.Messaging.Abstractions
 
 ### Problem Solved
@@ -1715,7 +1743,7 @@ Provides PostgreSQL durable storage for messaging publish/receive state, retries
 
 - `IMessageRevocationStorage` atomically deletes a scheduled row before reservation, fenced by storage version, terminal status, and retry state. Claimed but unreserved rows remain revocable; deleted rows cannot be restored by reservation or shutdown flush.
 - `setup.UsePostgreSql(...)` — connection string, `IConfiguration` binding, `Action<PostgreSqlOptions>`, or `Action<PostgreSqlOptions, IServiceProvider>`.
-- PostgreSQL schema/table configuration.
+- Validates the feature-owned `MessagingStorageOptions.Schema` against PostgreSQL identifier rules at startup.
 - Raw ADO.NET integration and startup initialization.
 - Declares `MessagingInboxCapabilityTier.DurableDedupeOnly`; durable consumers can require `DurableDedupeOnly` or `ProcessLocal`. The default `Transactional` requirement is rejected unless the configured provider declares that stronger guarantee.
 - **GUID Row IDs**: Message storage identifiers come from the `Version7` keyed `IGuidGenerator` and are persisted as PostgreSQL `UUID` columns.
@@ -1736,7 +1764,7 @@ setup.UsePostgreSql(builder.Configuration.GetConnectionString("Messaging")!);
 
 ### Configuration
 
-Configure connection string, schema, table names, and provider-specific storage options through `PostgreSqlOptions`.
+Configure the connection string and provider-specific storage options through `PostgreSqlOptions`. The schema is **not** one of them — it belongs to the feature, on `MessagingStorageOptions` (see [Storage schema](#storage-schema)).
 
 Known orphans use a separate bounded probe batch and recover only when the exact consumer identity, logical contract name/version, and lane return. They do not expire automatically. Unclaimed orphans permit Hold/ReleaseHold and unheld Purge; live claims block those actions, and ForceReprocess remains terminal-only. A hold protects retention and purge but does not stop recovery.
 
@@ -1772,7 +1800,7 @@ Provides SQL Server durable storage for messaging publish/receive state, retries
 
 - `IMessageRevocationStorage` atomically deletes a scheduled row before reservation, fenced by storage version, terminal status, and retry state. Claimed but unreserved rows remain revocable; deleted rows cannot be restored by reservation or shutdown flush.
 - `setup.UseSqlServer(...)` — connection string, `IConfiguration` binding, `Action<SqlServerOptions>`, or `Action<SqlServerOptions, IServiceProvider>`.
-- SQL Server schema/table configuration.
+- Validates the feature-owned `MessagingStorageOptions.Schema` against SQL Server identifier rules at startup.
 - Raw ADO.NET integration and startup initialization.
 - Declares `MessagingInboxCapabilityTier.DurableDedupeOnly`; durable consumers can require `DurableDedupeOnly` or `ProcessLocal`. The default `Transactional` requirement is rejected unless the configured provider declares that stronger guarantee.
 - **GUID Row IDs**: Message storage identifiers come from the `SqlServer` keyed `IGuidGenerator` and are persisted as SQL Server `uniqueidentifier` columns.
@@ -1793,7 +1821,7 @@ setup.UseSqlServer(builder.Configuration.GetConnectionString("Messaging")!);
 
 ### Configuration
 
-Configure connection string, schema, table names, and provider-specific storage options through `SqlServerOptions`.
+Configure the connection string and provider-specific storage options through `SqlServerOptions`. The schema is **not** one of them — it belongs to the feature, on `MessagingStorageOptions` (see [Storage schema](#storage-schema)).
 
 Known orphans use a separate bounded probe batch and recover only when the exact consumer identity, logical contract name/version, and lane return. They do not expire automatically. Unclaimed orphans permit Hold/ReleaseHold and unheld Purge; live claims block those actions, and ForceReprocess remains terminal-only. A hold protects retention and purge but does not stop recovery.
 

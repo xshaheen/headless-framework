@@ -15,6 +15,7 @@ namespace Headless.Messaging.Storage.PostgreSql;
 internal sealed class PostgreSqlStorageInitializer(
     ILogger<PostgreSqlStorageInitializer> logger,
     IOptions<PostgreSqlOptions> postgreSqlOptions,
+    IOptions<MessagingStorageOptions> storageOptions,
     IOptions<MessagingOptions> messagingOptions
 ) : IStorageInitializer
 {
@@ -33,7 +34,7 @@ internal sealed class PostgreSqlStorageInitializer(
     /// </summary>
     public string GetPublishedTableName()
     {
-        return $"\"{postgreSqlOptions.Value.Schema}\".\"published\"";
+        return $"\"{storageOptions.Value.Schema}\".\"published\"";
     }
 
     /// <summary>
@@ -42,7 +43,7 @@ internal sealed class PostgreSqlStorageInitializer(
     /// </summary>
     public string GetReceivedTableName()
     {
-        return $"\"{postgreSqlOptions.Value.Schema}\".\"received\"";
+        return $"\"{storageOptions.Value.Schema}\".\"received\"";
     }
 
     /// <summary>
@@ -67,7 +68,7 @@ internal sealed class PostgreSqlStorageInitializer(
             return;
         }
 
-        var sql = _CreateDbTablesScript(postgreSqlOptions.Value.Schema);
+        var sql = _CreateDbTablesScript(storageOptions.Value.Schema);
         await using var connection = postgreSqlOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
@@ -82,7 +83,7 @@ internal sealed class PostgreSqlStorageInitializer(
         // name (hashtextextended is deterministic across sessions and needs no superuser, unlike
         // CREATE EXTENSION). Without it two replicas booting together can race the CONCURRENTLY builds /
         // probe-then-DROP below and one replica's startup fails (InitializeAsync has no retry).
-        var schema = postgreSqlOptions.Value.Schema;
+        var schema = storageOptions.Value.Schema;
         object[] lockParams = [new NpgsqlParameter("@Schema", schema)];
 
         // PostgreSQL supports transactional DDL — wrap the batch so a mid-script failure
@@ -206,7 +207,7 @@ internal sealed class PostgreSqlStorageInitializer(
                     .ConfigureAwait(false);
                 await connection
                     .ExecuteNonQueryAsync(
-                        $"CREATE INDEX CONCURRENTLY IF NOT EXISTS \"{indexName}\" ON \"{postgreSqlOptions.Value.Schema}\".\"{table}\" ({columns});",
+                        $"CREATE INDEX CONCURRENTLY IF NOT EXISTS \"{indexName}\" ON \"{storageOptions.Value.Schema}\".\"{table}\" ({columns});",
                         commandTimeout: _GetDdlCommandTimeout(),
                         cancellationToken: cancellationToken
                     )
@@ -368,7 +369,7 @@ internal sealed class PostgreSqlStorageInitializer(
         probeCommand.CommandTimeout = (int)
             Math.Min(Math.Ceiling(messagingOptions.Value.CommandTimeout.TotalSeconds), int.MaxValue);
         probeCommand.Parameters.Add(new NpgsqlParameter("@IndexName", indexName));
-        probeCommand.Parameters.Add(new NpgsqlParameter("@Schema", postgreSqlOptions.Value.Schema));
+        probeCommand.Parameters.Add(new NpgsqlParameter("@Schema", storageOptions.Value.Schema));
 
         var probeResult = await probeCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
 
@@ -377,7 +378,7 @@ internal sealed class PostgreSqlStorageInitializer(
             // The leftover index would otherwise be matched by `CREATE INDEX ... IF NOT EXISTS` and
             // skipped, leaving the seq-scan fallback in place. Drop it concurrently so writes stay
             // live during the repair.
-            var dropSql = $"""DROP INDEX CONCURRENTLY IF EXISTS "{postgreSqlOptions.Value.Schema}"."{indexName}";""";
+            var dropSql = $"""DROP INDEX CONCURRENTLY IF EXISTS "{storageOptions.Value.Schema}"."{indexName}";""";
 
             // #510 — the repair DROP is itself a CONCURRENTLY op that can run long on a busy table, so it
             // uses the DDL timeout. The probe SELECT above stays on the OLTP budget: it is a fast catalog
@@ -390,7 +391,7 @@ internal sealed class PostgreSqlStorageInitializer(
                 )
                 .ConfigureAwait(false);
 
-            logger.LogInvalidIndexDropped(indexName, postgreSqlOptions.Value.Schema);
+            logger.LogInvalidIndexDropped(indexName, storageOptions.Value.Schema);
         }
     }
 
@@ -403,7 +404,7 @@ internal sealed class PostgreSqlStorageInitializer(
             .ExecuteScalarAsync(
                 "SELECT COUNT(1) FROM pg_indexes WHERE schemaname=@Schema AND indexname IN ('uq_received_inbox_root_key','uq_received_inbox_lifecycle_generation');",
                 commandTimeout: messagingOptions.Value.CommandTimeout,
-                sqlParams: [new NpgsqlParameter("@Schema", postgreSqlOptions.Value.Schema)],
+                sqlParams: [new NpgsqlParameter("@Schema", storageOptions.Value.Schema)],
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
@@ -450,7 +451,7 @@ internal sealed class PostgreSqlStorageInitializer(
                 )::int;
                 """,
                 commandTimeout: messagingOptions.Value.CommandTimeout,
-                sqlParams: [new NpgsqlParameter("@Schema", postgreSqlOptions.Value.Schema)],
+                sqlParams: [new NpgsqlParameter("@Schema", storageOptions.Value.Schema)],
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
@@ -462,7 +463,7 @@ internal sealed class PostgreSqlStorageInitializer(
         }
 
         var sql = $"""
-            INSERT INTO "{postgreSqlOptions.Value.Schema}"."schema_state" ("Component","SchemaVersion","ReadyAt")
+            INSERT INTO "{storageOptions.Value.Schema}"."schema_state" ("Component","SchemaVersion","ReadyAt")
             VALUES ('inbox', 1, statement_timestamp())
             ON CONFLICT ("Component") DO UPDATE
             SET "SchemaVersion"=EXCLUDED."SchemaVersion", "ReadyAt"=EXCLUDED."ReadyAt";

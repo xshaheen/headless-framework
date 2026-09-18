@@ -48,8 +48,35 @@ public static class CoordinationFixtureExtensions
     )
     {
         return await fixture
-            .CreateNodeAsync(clusterName, nodeId, MembershipLostBehavior.StopMembershipOnly, cancellationToken)
+            .CreateNodeAsync(
+                clusterName,
+                nodeId,
+                MembershipLostBehavior.StopMembershipOnly,
+                schema: null,
+                cancellationToken
+            )
             .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Creates a node whose membership tables live in <paramref name="schema"/> instead of the default. The
+    /// caller asserts through the provider's own catalog that the objects landed there.
+    /// </summary>
+    public static ValueTask<CoordinationNodeHandle> CreateNodeInSchemaAsync(
+        this ICoordinationFixture fixture,
+        string clusterName,
+        string nodeId,
+        string schema,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return fixture.CreateNodeAsync(
+            clusterName,
+            nodeId,
+            MembershipLostBehavior.StopMembershipOnly,
+            schema,
+            cancellationToken
+        );
     }
 
     public static async ValueTask<CoordinationNodeHandle> CreateNodeAsync(
@@ -57,6 +84,7 @@ public static class CoordinationFixtureExtensions
         string clusterName,
         string nodeId,
         MembershipLostBehavior lostBehavior,
+        string? schema = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -69,6 +97,12 @@ public static class CoordinationFixtureExtensions
         services.AddHeadlessCoordination(setup =>
         {
             fixture.ConfigureProvider(services, setup);
+
+            if (schema is not null)
+            {
+                setup.ConfigureStorage(storage => storage.Schema = schema);
+            }
+
             setup.Configure(options =>
             {
                 options.ClusterName = clusterName;

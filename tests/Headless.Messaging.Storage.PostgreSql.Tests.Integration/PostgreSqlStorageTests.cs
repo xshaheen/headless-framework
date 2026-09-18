@@ -230,6 +230,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
     {
         return new PostgreSqlDataStorage(
             _postgreSqlOptions!,
+            TestStorageOptions.For(),
             _messagingOptions!,
             _initializer!,
             _serializer!,
@@ -250,6 +251,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
 
         return new PostgreSqlDataStorage(
             _postgreSqlOptions!,
+            TestStorageOptions.For(),
             Options.Create(messagingOptions),
             _initializer!,
             _serializer!,
@@ -347,6 +349,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         _initializer = new PostgreSqlStorageInitializer(
             NullLogger<PostgreSqlStorageInitializer>.Instance,
             _postgreSqlOptions,
+            TestStorageOptions.For(),
             _messagingOptions
         );
 
@@ -1997,7 +2000,8 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
     {
         return new PostgreSqlStorageInitializer(
             NullLogger<PostgreSqlStorageInitializer>.Instance,
-            Options.Create(new PostgreSqlOptions { ConnectionString = connectionString, Schema = schema }),
+            Options.Create(new PostgreSqlOptions { ConnectionString = connectionString }),
+            TestStorageOptions.For(schema),
             Options.Create(new MessagingOptions())
         );
     }

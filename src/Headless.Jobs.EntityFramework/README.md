@@ -12,7 +12,7 @@ Provides persistence of time jobs and cron occurrences across restarts and acros
 - **Application-owned schema**: initialize the Jobs database from the current EF model before starting workers or definition writers. Required bounded contract columns, occurrence-owned tuples, constraints, and indexes are part of that initial schema. Library mappings never mutate the schema automatically.
 - **Durable storage**: persists `TimeJobEntity`, `CronJobEntity`, and `CronJobOccurrenceEntity` in EF Core-mapped tables (default schema: `jobs`).
 - **`UseEntityFramework(ef => …)`**: the EF registration extension on `JobsOptionsBuilder`.
-- **`UseJobsDbContext<TDbContext>(dbOptions, schema?)`**: registers a dedicated `JobsDbContext` with configurable schema.
+- **`UseJobsDbContext<TDbContext>(dbOptions)`**: registers a dedicated `JobsDbContext`. The schema comes from the feature-owned `ConfigureStorage` option, not from this call.
 - **`UseApplicationDbContext<TDbContext>(ConfigurationType)`**: shares an existing application `DbContext` instead of a dedicated one.
 - **Database-clock lease authority**: lease renewal comparisons use the database server clock (`now()`/`GETUTCDATE()`), not the node's `TimeProvider`. Cross-node clock skew cannot reclaim a healthy renewing job.
 - **Atomic cron materialization**: one transaction locks the expected schedule position, recognizes or inserts the exact unclaimed `Idle` occurrence, and advances the watermark only with that durable outcome. Claiming and database-clock lease stamping happen afterward.
@@ -28,7 +28,7 @@ Provides persistence of time jobs and cron occurrences across restarts and acros
 - **Fail-fast coordination check**: startup throws `InvalidOperationException` when no coordination provider is registered.
 - **Cron-expression caching**: reuses the host's `ICache` (optional). No `ICache` → reads from DB, cache invalidation is skipped. Cache failures are fail-open.
 - **DbContext pool**: configurable via `SetDbContextPoolSize(n)` (default 1024).
-- **Custom schema**: `SetSchema("custom_schema")` or the `schema` parameter on `UseJobsDbContext`.
+- **Custom schema**: `ConfigureStorage(storage => storage.Schema = "custom_schema")` on the Jobs options builder (default `"jobs"`). The schema is owned by the feature, not by this provider, so one setting moves every Jobs table — the idempotency reservation table included — on the dedicated-context, application-context, and consumer-managed model paths alike. The value is validated at startup against cross-provider identifier rules.
 
 ## Design Notes
 
@@ -103,13 +103,14 @@ builder
             // How often the durable path reconciles dead nodes to catch missed NodeLeft signals.
             scheduler.DeadNodeReconcileInterval = TimeSpan.FromMinutes(1); // default: 1 min
         });
+        // Schema naming is feature-owned: this moves every Jobs table, whichever store is installed.
+        options.ConfigureStorage(storage => storage.Schema = "background"); // default: "jobs"
     })
     .UseEntityFramework(ef =>
     {
         ef.UseJobsDbContext<JobsDbContext>(db => db.UseSqlServer(conn));
         ef.UseSqlServerClaims();
         ef.SetDbContextPoolSize(512); // default: 1024
-        ef.SetSchema("background"); // default: "jobs"
     });
 ```
 

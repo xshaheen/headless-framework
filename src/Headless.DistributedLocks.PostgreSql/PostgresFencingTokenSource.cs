@@ -7,18 +7,20 @@ using Npgsql;
 
 namespace Headless.DistributedLocks.PostgreSql;
 
+#pragma warning disable CA2100 // The only interpolated value is the schema, validated against the PostgreSQL identifier rules at startup and quoted here.
 /// <summary>
 /// Implements <see cref="IFencingTokenSource"/> over a PostgreSQL database sequence named
-/// <c>headless_distributed_locks_fence</c>. Each call to <see cref="NextAsync"/> returns the next value
-/// from the sequence, guaranteeing a strictly-increasing token across all processes connected to the same
+/// <c>headless_distributed_locks_fence</c>, created inside the feature-owned
+/// <see cref="DistributedLocksStorageOptions.Schema"/>. Each call to <see cref="NextAsync"/> returns the next
+/// value from the sequence, guaranteeing a strictly-increasing token across all processes connected to the same
 /// database.
 /// </summary>
 /// <remarks>
 /// <para>
-/// The sequence is created lazily on first use (<see cref="_EnsureSequenceAsync"/>). Creation is
+/// The schema and sequence are created lazily on first use (<see cref="_EnsureSequenceAsync"/>). Creation is
 /// serialized across in-process callers via a <see cref="SemaphoreSlim"/> and across replicas via a
-/// transaction-scoped advisory lock keyed on <c>headless_fencing_init:headless_distributed_locks_fence</c>,
-/// so the <c>CREATE SEQUENCE IF NOT EXISTS</c> is safe against concurrent process start-up.
+/// transaction-scoped advisory lock keyed on the qualified sequence name, so the
+/// <c>CREATE SEQUENCE IF NOT EXISTS</c> is safe against concurrent process start-up.
 /// </para>
 /// <para>
 /// This source always opens a fresh pooled connection from its owned <see cref="NpgsqlDataSource"/>
@@ -37,11 +39,19 @@ namespace Headless.DistributedLocks.PostgreSql;
 /// </param>
 internal sealed class PostgresFencingTokenSource(
     IOptions<PostgreSqlDistributedLockOptions> options,
+    IOptions<DistributedLocksStorageOptions> storageOptions,
     NpgsqlDataSource dataSource
 ) : IFencingTokenSource, IAsyncDisposable
 {
     private const string _SequenceName = "headless_distributed_locks_fence";
     private readonly TimeSpan _commandTimeout = options.Value.CommandTimeout;
+    private readonly string _schema = storageOptions.Value.Schema;
+
+    // Quoted rather than bare: PostgreSQL case-folds unquoted identifiers, so a mixed-case schema would be
+    // created under one name and read back under another.
+    private readonly string _qualifiedSequence = $"""
+        "{storageOptions.Value.Schema}"."{_SequenceName}"
+        """;
     private readonly SemaphoreSlim _ensureGate = new(1, 1);
     private bool _sequenceEnsured;
 
@@ -80,7 +90,7 @@ internal sealed class PostgresFencingTokenSource(
         await _EnsureSequenceAsync(pooledConnection, cancellationToken).ConfigureAwait(false);
 
         await using var command = pooledConnection.CreateCommand();
-        command.CommandText = $"SELECT nextval('{_SequenceName}')";
+        command.CommandText = $"SELECT nextval('{_qualifiedSequence}')";
         command.CommandTimeout = (int)_commandTimeout.TotalSeconds;
 
         return (long?)await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
@@ -120,7 +130,7 @@ internal sealed class PostgresFencingTokenSource(
                 {
                     lockCommand.Transaction = transaction;
                     lockCommand.CommandText =
-                        $"SELECT pg_advisory_xact_lock(hashtextextended('headless_fencing_init:{_SequenceName}', 0))";
+                        $"SELECT pg_advisory_xact_lock(hashtextextended('headless_fencing_init:{_qualifiedSequence}', 0))";
                     lockCommand.CommandTimeout = (int)_commandTimeout.TotalSeconds;
                     await lockCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
                 }
@@ -128,7 +138,10 @@ internal sealed class PostgresFencingTokenSource(
                 await using (var command = connection.CreateCommand())
                 {
                     command.Transaction = transaction;
-                    command.CommandText = $"CREATE SEQUENCE IF NOT EXISTS {_SequenceName}";
+                    command.CommandText = $"""
+                        CREATE SCHEMA IF NOT EXISTS "{_schema}";
+                        CREATE SEQUENCE IF NOT EXISTS {_qualifiedSequence};
+                        """;
                     command.CommandTimeout = (int)_commandTimeout.TotalSeconds;
                     await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
                 }
@@ -168,3 +181,4 @@ internal sealed class PostgresFencingTokenSource(
         return default;
     }
 }
+#pragma warning restore CA2100

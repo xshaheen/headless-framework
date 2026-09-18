@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using FluentValidation;
 using Headless.Checks;
+using Headless.Constants;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
@@ -95,11 +97,22 @@ public static class SetupSqlServerMessaging
                     inboxCapability: MessagingInboxCapabilityTier.DurableDedupeOnly
                 )
             );
+            // The schema is feature-owned, so this provider only validates it, once, against SQL Server's
+            // identifier rules. The EF-context storage path reuses this extension and is validated here too.
+            services.AddOptions<MessagingStorageOptions, SqlServerMessagingStorageOptionsValidator>();
             configureOptions(services);
             services.AddSingleton<SqlServerDataStorage>();
             services.AddSingleton<IDataStorage>(sp => sp.GetRequiredService<SqlServerDataStorage>());
             services.AddSingleton<IDeliveryCoordinationResolver>(sp => sp.GetRequiredService<SqlServerDataStorage>());
             services.AddSingleton<IStorageInitializer, SqlServerStorageInitializer>();
+        }
+    }
+
+    private sealed class SqlServerMessagingStorageOptionsValidator : AbstractValidator<MessagingStorageOptions>
+    {
+        public SqlServerMessagingStorageOptionsValidator()
+        {
+            RuleFor(x => x.Schema).IsValidIdentifierFor(StorageProvider.SqlServer);
         }
     }
 }

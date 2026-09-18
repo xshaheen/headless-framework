@@ -10,6 +10,8 @@ namespace Tests;
 [Collection<SqlServerMembershipFixture>]
 public sealed class SqlServerMembershipNativeTests(SqlServerMembershipFixture fixture) : TestBase
 {
+    private const string _Schema = CoordinationStorageOptions.DefaultSchema;
+
     [Fact]
     public async Task should_create_pascal_case_membership_schema_identifiers()
     {
@@ -17,22 +19,28 @@ public sealed class SqlServerMembershipNativeTests(SqlServerMembershipFixture fi
         await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
 
+        // Both queries are scoped to the feature schema. Sibling tests configure their own schemas, so an
+        // unscoped catalog read would pick up same-named tables from those and assert against the wrong ones.
         var tables = await _ReadStringsAsync(
             connection,
-            """
-            SELECT name
-            FROM sys.tables
-            WHERE name LIKE 'Coordination%'
-            ORDER BY name;
+            $$"""
+            SELECT t.name
+            FROM sys.tables t
+            JOIN sys.schemas s ON s.schema_id = t.schema_id
+            WHERE s.name = N'{{_Schema}}'
+              AND t.name LIKE 'Coordination%'
+            ORDER BY t.name;
             """
         );
         var columns = await _ReadStringsAsync(
             connection,
-            """
+            $$"""
             SELECT c.name
             FROM sys.columns c
             JOIN sys.tables t ON t.object_id = c.object_id
-            WHERE t.name IN ('CoordinationDescriptor', 'CoordinationLiveness', 'CoordinationNodeGeneration')
+            JOIN sys.schemas s ON s.schema_id = t.schema_id
+            WHERE s.name = N'{{_Schema}}'
+              AND t.name IN ('CoordinationDescriptor', 'CoordinationLiveness', 'CoordinationNodeGeneration')
             ORDER BY c.name;
             """
         );
@@ -67,17 +75,17 @@ public sealed class SqlServerMembershipNativeTests(SqlServerMembershipFixture fi
 
         var columns = await _ReadStringsAsync(
             connection,
-            """
+            $$"""
             SELECT c.name
             FROM sys.columns c
-            WHERE c.object_id IN (OBJECT_ID(N'dbo.CoordinationDescriptor'), OBJECT_ID(N'dbo.CoordinationNodeGeneration'));
+            WHERE c.object_id IN (OBJECT_ID(N'{{_Schema}}.CoordinationDescriptor'), OBJECT_ID(N'{{_Schema}}.CoordinationNodeGeneration'));
             """
         );
         await using var command = new SqlCommand(
-            """
+            $$"""
             SELECT count(*)
-            FROM dbo.CoordinationNodeGeneration generation
-            JOIN dbo.CoordinationDescriptor descriptor
+            FROM {{_Schema}}.CoordinationNodeGeneration generation
+            JOIN {{_Schema}}.CoordinationDescriptor descriptor
               ON descriptor.ClusterName = generation.ClusterName AND descriptor.NodeId = generation.NodeId
             WHERE generation.UpdatedAt = @updatedAt
               AND descriptor.CreatedAt = @createdAt;
@@ -283,7 +291,7 @@ public sealed class SqlServerMembershipNativeTests(SqlServerMembershipFixture fi
 
     private async Task<int> _CountClusterLivenessRowsAsync(string cluster)
     {
-        const string sql = "SELECT count(*) FROM dbo.CoordinationLiveness WHERE ClusterName = @ClusterName;";
+        const string sql = $"SELECT count(*) FROM {_Schema}.CoordinationLiveness WHERE ClusterName = @ClusterName;";
 
         await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
@@ -298,10 +306,11 @@ public sealed class SqlServerMembershipNativeTests(SqlServerMembershipFixture fi
         await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         await using var command = new SqlCommand(
-            """
-            DROP TABLE IF EXISTS dbo.CoordinationLiveness;
-            DROP TABLE IF EXISTS dbo.CoordinationDescriptor;
-            DROP TABLE IF EXISTS dbo.CoordinationNodeGeneration;
+            $$"""
+            DROP TABLE IF EXISTS {{_Schema}}.CoordinationLiveness;
+            DROP TABLE IF EXISTS {{_Schema}}.CoordinationDescriptor;
+            DROP TABLE IF EXISTS {{_Schema}}.CoordinationNodeGeneration;
+            IF SCHEMA_ID(N'{{_Schema}}') IS NOT NULL EXEC(N'DROP SCHEMA [{{_Schema}}]');
             """,
             connection
         );
@@ -314,15 +323,16 @@ public sealed class SqlServerMembershipNativeTests(SqlServerMembershipFixture fi
         await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         await using var command = new SqlCommand(
-            """
-            CREATE TABLE dbo.CoordinationNodeGeneration (
+            $$"""
+            IF SCHEMA_ID(N'{{_Schema}}') IS NULL EXEC(N'CREATE SCHEMA [{{_Schema}}]');
+            CREATE TABLE {{_Schema}}.CoordinationNodeGeneration (
                 ClusterName nvarchar(200) NOT NULL,
                 NodeId nvarchar(400) NOT NULL,
                 CurrentIncarnation bigint NOT NULL,
                 DateUpdated datetime2(7) NOT NULL,
                 PRIMARY KEY (ClusterName, NodeId)
             );
-            CREATE TABLE dbo.CoordinationDescriptor (
+            CREATE TABLE {{_Schema}}.CoordinationDescriptor (
                 ClusterName nvarchar(200) NOT NULL,
                 NodeId nvarchar(400) NOT NULL,
                 Incarnation bigint NOT NULL,
@@ -333,8 +343,8 @@ public sealed class SqlServerMembershipNativeTests(SqlServerMembershipFixture fi
                 DateCreated datetime2(7) NOT NULL,
                 PRIMARY KEY (ClusterName, NodeId, Incarnation)
             );
-            INSERT INTO dbo.CoordinationNodeGeneration VALUES (N'legacy', N'node-a', 1, @updatedAt);
-            INSERT INTO dbo.CoordinationDescriptor
+            INSERT INTO {{_Schema}}.CoordinationNodeGeneration VALUES (N'legacy', N'node-a', 1, @updatedAt);
+            INSERT INTO {{_Schema}}.CoordinationDescriptor
                 (ClusterName, NodeId, Incarnation, DateCreated)
             VALUES (N'legacy', N'node-a', 1, @createdAt);
             """,
@@ -347,11 +357,11 @@ public sealed class SqlServerMembershipNativeTests(SqlServerMembershipFixture fi
 
     private async Task<int> _CountTablesAsync(SqlConnection connection, string tableName)
     {
-        const string sql = """
+        const string sql = $$"""
             SELECT count(*)
             FROM sys.tables t
             JOIN sys.schemas s ON s.schema_id = t.schema_id
-            WHERE s.name = N'dbo'
+            WHERE s.name = N'{{_Schema}}'
               AND t.name = @TableName;
             """;
 
@@ -363,12 +373,12 @@ public sealed class SqlServerMembershipNativeTests(SqlServerMembershipFixture fi
 
     private async Task<int> _CountIndexesAsync(SqlConnection connection, string tableName, string indexName)
     {
-        const string sql = """
+        const string sql = $$"""
             SELECT count(*)
             FROM sys.indexes i
             JOIN sys.tables t ON t.object_id = i.object_id
             JOIN sys.schemas s ON s.schema_id = t.schema_id
-            WHERE s.name = N'dbo'
+            WHERE s.name = N'{{_Schema}}'
               AND t.name = @TableName
               AND i.name = @IndexName;
             """;
@@ -396,9 +406,9 @@ public sealed class SqlServerMembershipNativeTests(SqlServerMembershipFixture fi
 
     private async Task<long> _ReadCurrentIncarnationAsync(string cluster)
     {
-        const string sql = """
+        const string sql = $$"""
             SELECT CurrentIncarnation
-            FROM dbo.CoordinationNodeGeneration
+            FROM {{_Schema}}.CoordinationNodeGeneration
             WHERE ClusterName = @ClusterName
               AND NodeId = 'node-a';
             """;

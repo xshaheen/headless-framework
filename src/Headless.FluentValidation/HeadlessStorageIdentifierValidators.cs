@@ -9,15 +9,16 @@ namespace FluentValidation;
 /// FluentValidation extensions for validating provider-bound storage identifiers (schema names,
 /// table names) against the per-provider regex + length cap published in
 /// <see cref="StorageIdentifier"/>. Encapsulates the
-/// <c>.NotEmpty().Matches(pattern).MaximumLength(maxLength)</c> trio so the 12 provider Setup
-/// validators stay one-line each and never drift apart on rule order or message wording.
+/// <c>.NotEmpty().Matches(pattern).MaximumLength(maxLength)</c> trio so every provider setup validator stays
+/// one line and none drifts on rule order or message wording.
 /// </summary>
 [PublicAPI]
 public static class HeadlessStorageIdentifierValidators
 {
     /// <summary>
     /// Validates a schema or table name against the identifier rules of <paramref name="provider" />. Provider
-    /// setups that know their dialect use this one rule; the provider-named helpers below are shorthands for it.
+    /// setups that know their dialect use this rule; EF setups that learn the dialect only at runtime use the
+    /// cross-provider rule below.
     /// </summary>
 #nullable disable // keep the builder nullability-agnostic: binds to nullable and non-nullable properties, preserving the caller's nullability
     public static IRuleBuilderOptions<T, string> IsValidIdentifierFor<T>(
@@ -29,29 +30,6 @@ public static class HeadlessStorageIdentifierValidators
         var (pattern, maxLength) = StorageIdentifier.For(provider);
 
         return rule.NotEmpty().Matches(pattern).MaximumLength(maxLength);
-    }
-
-    /// <summary>
-    /// Validates a PostgreSQL unquoted identifier (schema/table name): leading letter or
-    /// underscore, then letters / digits / underscores, capped at NAMEDATALEN - 1 = 63 chars.
-    /// </summary>
-#nullable disable // keep the builder nullability-agnostic: binds to nullable and non-nullable properties, preserving the caller's nullability
-    public static IRuleBuilderOptions<T, string> IsValidPostgreSqlIdentifier<T>(this IRuleBuilder<T, string> rule)
-#nullable restore
-    {
-        return rule.IsValidIdentifierFor(StorageProvider.PostgreSql);
-    }
-
-    /// <summary>
-    /// Validates a SQL Server regular identifier (schema/table name): leading letter or
-    /// underscore, then letters / digits / underscores / <c>@</c> / <c>$</c> / <c>#</c>, capped
-    /// at 128 chars.
-    /// </summary>
-#nullable disable // keep the builder nullability-agnostic: binds to nullable and non-nullable properties, preserving the caller's nullability
-    public static IRuleBuilderOptions<T, string> IsValidSqlServerIdentifier<T>(this IRuleBuilder<T, string> rule)
-#nullable restore
-    {
-        return rule.IsValidIdentifierFor(StorageProvider.SqlServer);
     }
 
     /// <summary>

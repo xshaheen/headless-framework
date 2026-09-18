@@ -35,7 +35,6 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
         services.Configure<SqlServerOptions>(x =>
         {
             x.ConnectionString = fixture.ConnectionString;
-            x.Schema = "messaging";
             x.Version = "v1"; // Must match MessagingOptions.Version for retry queries
         });
         services.Configure<MessagingOptions>(x => x.Version = "v1");
@@ -48,6 +47,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
         _storage = new SqlServerDataStorage(
             provider.GetRequiredService<IOptions<MessagingOptions>>(),
             provider.GetRequiredService<IOptions<SqlServerOptions>>(),
+            TestStorageOptions.For(),
             initializer,
             provider.GetRequiredService<ISerializer>(),
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),

@@ -59,11 +59,12 @@ public sealed class SqlServerPooledIsolationTests(SqlServerTestFixture fixture) 
 
             var messagingOptions = Options.Create(new MessagingOptions { Version = "v1", SchedulerBatchSize = 10 });
             var sqlOptions = Options.Create(
-                new SqlServerOptions { ConnectionString = connectionOptions.ConnectionString, Schema = "messaging" }
+                new SqlServerOptions { ConnectionString = connectionOptions.ConnectionString }
             );
             var initializer = new SqlServerStorageInitializer(
                 NullLogger<SqlServerStorageInitializer>.Instance,
                 sqlOptions,
+                TestStorageOptions.For(),
                 messagingOptions
             );
             await initializer.InitializeAsync(AbortToken);
@@ -71,6 +72,7 @@ public sealed class SqlServerPooledIsolationTests(SqlServerTestFixture fixture) 
             var storage = new SqlServerDataStorage(
                 messagingOptions,
                 sqlOptions,
+                TestStorageOptions.For(),
                 initializer,
                 serializer,
                 new SequentialGuidGenerator(SequentialGuidType.SqlServer),

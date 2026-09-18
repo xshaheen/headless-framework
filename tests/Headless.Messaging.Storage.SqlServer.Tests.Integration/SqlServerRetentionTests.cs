@@ -29,18 +29,18 @@ public sealed class SqlServerRetentionTests(SqlServerTestFixture fixture) : Test
     {
         await base.InitializeAsync();
         var messagingOptions = Options.Create(new MessagingOptions { Version = "v1" });
-        _sqlServerOptions = Options.Create(
-            new SqlServerOptions { ConnectionString = fixture.ConnectionString, Schema = _schema }
-        );
+        _sqlServerOptions = Options.Create(new SqlServerOptions { ConnectionString = fixture.ConnectionString });
         _initializer = new SqlServerStorageInitializer(
             NullLogger<SqlServerStorageInitializer>.Instance,
             _sqlServerOptions,
+            TestStorageOptions.For(_schema),
             messagingOptions
         );
         _table = _initializer.GetReceivedTableName();
         _storage = new SqlServerDataStorage(
             messagingOptions,
             _sqlServerOptions,
+            TestStorageOptions.For(_schema),
             _initializer,
             new JsonUtf8Serializer(messagingOptions),
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),

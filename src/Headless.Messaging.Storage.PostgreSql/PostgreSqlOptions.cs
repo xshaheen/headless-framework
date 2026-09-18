@@ -1,46 +1,19 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
-using Headless.Checks;
-using Headless.Constants;
 using Headless.Messaging.Persistence;
 using Npgsql;
 
 namespace Headless.Messaging.Storage.PostgreSql;
 
 /// <summary>
-/// PostgreSQL-specific configuration for the raw ADO.NET messaging storage backend.
+/// PostgreSQL-specific configuration for the raw ADO.NET messaging storage backend. The schema that
+/// holds the messaging tables is not here: it belongs to the feature, on
+/// <see cref="Headless.Messaging.Configuration.MessagingStorageOptions"/>.
 /// </summary>
 [PublicAPI]
 public sealed class PostgreSqlOptions
 {
-    public const string DefaultSchema = "messaging";
-
-    /// <summary>PostgreSQL maximum identifier length for schema names.</summary>
-    public const int MaxSchemaLength = StorageIdentifier.PostgreSql.IdentifierMaxLength;
-
-    /// <summary>Gets or sets the schema used when creating messaging database objects.</summary>
-    public string Schema
-    {
-        get;
-        set
-        {
-            Argument.IsNotNullOrWhiteSpace(value);
-            Argument.IsLessThanOrEqualTo(
-                value.Length,
-                MaxSchemaLength,
-                $"Schema name must not exceed {MaxSchemaLength} chars"
-            );
-            Argument.Matches(
-                value,
-                StorageIdentifier.PostgreSql.IdentifierPattern,
-                $"Schema name must start with a letter or underscore and contain only letters, digits, underscores (max {MaxSchemaLength} chars)"
-            );
-
-            field = value;
-        }
-    } = DefaultSchema;
-
     /// <summary>Gets or sets the maximum length for the Owner column.</summary>
     public int OwnerColumnMaxLength { get; set; } = DataStorageConstants.OwnerColumnMaxLength;
 

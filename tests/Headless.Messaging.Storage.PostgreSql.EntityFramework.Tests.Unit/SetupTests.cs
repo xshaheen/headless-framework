@@ -39,7 +39,8 @@ public sealed class SetupTests : TestBase
         {
             setup.Options.Version = "v9";
             setup.UseInMemory();
-            setup.UseEntityFramework<TestMessagingDbContext>(postgreSql => postgreSql.Schema = "custom_schema");
+            setup.ConfigureStorage(storage => storage.Schema = "custom_schema");
+            setup.UseEntityFramework<TestMessagingDbContext>();
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -48,7 +49,7 @@ public sealed class SetupTests : TestBase
         var options = provider.GetRequiredService<IOptions<PostgreSqlOptions>>().Value;
         options.ConnectionString.Should().Contain("Host=localhost");
         options.ConnectionString.Should().Contain("Database=entity");
-        options.Schema.Should().Be("custom_schema");
+        provider.GetRequiredService<IOptions<MessagingStorageOptions>>().Value.Schema.Should().Be("custom_schema");
         _GetInternalString(options, "Version").Should().Be("v9");
     }
 

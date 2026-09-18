@@ -49,6 +49,18 @@ Custom `IMembershipStore` implementations must provide `ReadNodeLivenessAsync(No
 
 Set `HeartbeatInterval < SuspicionThreshold < DeadThreshold`; `DeadThreshold` must be at least three heartbeat intervals (a single missed or slow beat must not kill the node), and `DeadRetentionWindow` must be at least two heartbeat intervals.
 
+Storage naming is a separate, feature-owned options type. `CoordinationStorageOptions.Schema` (default `"coordination"`) names the database schema that holds the membership tables, and it is configured on the setup builder rather than on any one provider:
+
+```csharp
+services.AddHeadlessCoordination(setup =>
+{
+    setup.ConfigureStorage(storage => storage.Schema = "cluster_meta");
+    setup.UsePostgreSql(connectionString); // or UseSqlServer(...)
+});
+```
+
+`setup.ConfigureStorage(configuration)` binds the same options from configuration — pass the `Headless:Coordination:Storage` section to bind `Headless:Coordination:Storage:Schema`. Coordination owns the setting so the tables land in the same schema whichever relational provider backs them; the provider package contributes only the dialect rules the schema is validated against on startup. Redis ignores the option.
+
 ## Dependencies
 
 - `Headless.Coordination.Abstractions`

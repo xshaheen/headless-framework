@@ -26,7 +26,7 @@ public sealed class SqlServerInboxOperationPolicyTests(SqlServerTestFixture fixt
         await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
         provider.GetRequiredService<IOptions<MessagingOptions>>().Value.CommandTimeout = TimeSpan.FromSeconds(1);
         var storage = provider.GetRequiredService<IDataStorage>();
-        var schema = provider.GetRequiredService<IOptions<SqlServerOptions>>().Value.Schema;
+        var schema = provider.GetRequiredService<IOptions<MessagingStorageOptions>>().Value.Schema;
         await storage.GetInboxOperationsApi().HoldAsync(_Request(Guid.NewGuid(), StatusName.Succeeded), AbortToken);
         var cutoffs = await storage.GetInboxHistoryRetentionCutoffsAsync(AbortToken);
         var table = receipts ? "InboxOperationReceipts" : "InboxAudit";
@@ -64,7 +64,7 @@ public sealed class SqlServerInboxOperationPolicyTests(SqlServerTestFixture fixt
         await using var provider = _CreateProvider(new FakeTimeProvider(DateTimeOffset.UtcNow.AddDays(skewDays)));
         await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
-        var schema = provider.GetRequiredService<IOptions<SqlServerOptions>>().Value.Schema;
+        var schema = provider.GetRequiredService<IOptions<MessagingStorageOptions>>().Value.Schema;
         await storage.GetInboxOperationsApi().HoldAsync(_Request(Guid.NewGuid(), StatusName.Succeeded), AbortToken);
         var cutoffs = await storage.GetInboxHistoryRetentionCutoffsAsync(AbortToken);
         (await storage.DeleteExpiredInboxAuditsAsync(cutoffs, 1, AbortToken)).Should().Be(0);
@@ -93,7 +93,7 @@ public sealed class SqlServerInboxOperationPolicyTests(SqlServerTestFixture fixt
     {
         await using var provider = _CreateProvider();
         var initializer = provider.GetRequiredService<IStorageInitializer>();
-        var schema = provider.GetRequiredService<IOptions<SqlServerOptions>>().Value.Schema;
+        var schema = provider.GetRequiredService<IOptions<MessagingStorageOptions>>().Value.Schema;
         await initializer.InitializeAsync(AbortToken);
         await initializer.InitializeAsync(AbortToken);
         await using var connection = new SqlConnection(fixture.ConnectionString);
@@ -128,7 +128,7 @@ public sealed class SqlServerInboxOperationPolicyTests(SqlServerTestFixture fixt
         await using var provider = _CreateProvider();
         await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
-        var schema = provider.GetRequiredService<IOptions<SqlServerOptions>>().Value.Schema;
+        var schema = provider.GetRequiredService<IOptions<MessagingStorageOptions>>().Value.Schema;
         var request = _Request(Guid.NewGuid(), StatusName.Succeeded);
         await storage.GetInboxOperationsApi().HoldAsync(request, AbortToken);
         await AgeHistoryAsync(provider, TimeSpan.FromDays(100));
@@ -222,7 +222,7 @@ public sealed class SqlServerInboxOperationPolicyTests(SqlServerTestFixture fixt
 
     protected override async Task AgeHistoryAsync(ServiceProvider provider, TimeSpan age)
     {
-        var schema = provider.GetRequiredService<IOptions<SqlServerOptions>>().Value.Schema;
+        var schema = provider.GetRequiredService<IOptions<MessagingStorageOptions>>().Value.Schema;
         await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         await using var command = new SqlCommand(
@@ -363,10 +363,7 @@ public sealed class SqlServerInboxOperationPolicyTests(SqlServerTestFixture fixt
     protected override void ConfigureStorage(MessagingSetupBuilder setup)
     {
         setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
-        setup.UseSqlServer(options =>
-        {
-            options.ConnectionString = fixture.ConnectionString;
-            options.Schema = $"inbox_policy_{Guid.NewGuid():N}";
-        });
+        setup.ConfigureStorage(storage => storage.Schema = $"inbox_policy_{Guid.NewGuid():N}");
+        setup.UseSqlServer(fixture.ConnectionString);
     }
 }

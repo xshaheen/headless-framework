@@ -15,8 +15,11 @@ public sealed class SqlServerTransactionalInboxRetryTests(SqlServerTestFixture f
     protected override void ConfigureContext(DbContextOptionsBuilder options) =>
         options.UseSqlServer(fixture.ConnectionString);
 
-    protected override void ConfigureStorage(MessagingSetupBuilder setup) =>
-        setup.UseEntityFramework<InboxRetryDbContext>(options => options.Schema = _Schema);
+    protected override void ConfigureStorage(MessagingSetupBuilder setup)
+    {
+        setup.ConfigureStorage(storage => storage.Schema = _Schema);
+        setup.UseEntityFramework<InboxRetryDbContext>();
+    }
 
     protected override string CreateEffectsTableSql =>
         "IF OBJECT_ID(N'InboxScopeEffects', N'U') IS NULL CREATE TABLE [InboxScopeEffects] ([Id] uniqueidentifier PRIMARY KEY);";

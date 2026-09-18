@@ -3,6 +3,7 @@
 using Headless.Checks;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Registration;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -52,6 +53,41 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
     /// to the <c>Headless.Messaging</c> scope is what enables emission.
     /// </summary>
     public MessagingInstrumentationOptions Instrumentation { get; } = new();
+
+    /// <summary>
+    /// Binds the shared <see cref="MessagingStorageOptions"/>, which owns the database naming used by every
+    /// storage provider, from <paramref name="configuration"/>.
+    /// </summary>
+    /// <param name="configuration">
+    /// The configuration section to bind, normally <c>Headless:Messaging:Storage</c>. The section's keys map
+    /// to the option's properties, so the schema comes from its <c>Schema</c> key.
+    /// </param>
+    /// <returns>This builder, to allow chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="configuration"/> is <see langword="null"/>.</exception>
+    public MessagingSetupBuilder ConfigureStorage(IConfiguration configuration)
+    {
+        Argument.IsNotNull(configuration);
+
+        Services.Configure<MessagingStorageOptions>(configuration);
+
+        return this;
+    }
+
+    /// <summary>
+    /// Applies <paramref name="configure"/> to the shared <see cref="MessagingStorageOptions"/>, which owns
+    /// the database naming used by every storage provider.
+    /// </summary>
+    /// <param name="configure">A delegate that mutates the storage options.</param>
+    /// <returns>This builder, to allow chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
+    public MessagingSetupBuilder ConfigureStorage(Action<MessagingStorageOptions> configure)
+    {
+        Argument.IsNotNull(configure);
+
+        Services.Configure(configure);
+
+        return this;
+    }
 
     /// <summary>Gets the structural registration root for Bus consumers.</summary>
     public IBusRegistrationBuilder Bus { get; }

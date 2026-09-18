@@ -119,7 +119,7 @@ constants and localized descriptor factories live in `Headless.FluentValidation.
 | Pagination | `PageIndex`, `PageSize`, `SearchQuery` |
 | URL | `Url`, `HttpUrl`, `HttpsOnlyUrl`, `HttpsOrLoopbackHttpUrl`, `FileUrl`, `FtpUrl`, `MailtoUrl`, `CorsOrigin` |
 | Network | `Ipv4`, `Ipv6`, `IpAddress` |
-| Storage Identifier | `IsValidPostgreSqlIdentifier`, `IsValidSqlServerIdentifier`, `IsValidCrossProviderIdentifier` |
+| Storage Identifier | `IsValidIdentifierFor(StorageProvider)` for a known dialect, `IsValidCrossProviderIdentifier` when the dialect is only known at runtime |
 | String | `OnlyIntegers`, `OnlyDecimals`, `Slug`, `Username`, `ZipCode`, `HexColor`, `Base64`, `Trimmed`, `Culture` |
 | Date/Time | `InThePast`, `InTheFuture`, `NotInThePast`, `NotInTheFuture`, `MinimumAge` (`DateTime`/`DateTimeOffset`/`DateOnly` + nullable; `TimeProvider`-based) |
 | Enum | `EnumName(typeof(TEnum))` |

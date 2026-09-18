@@ -41,6 +41,7 @@ public sealed class SqlServerStorageConnectionTest(SqlServerTestFixture fixture)
         _storage = new SqlServerDataStorage(
             provider.GetRequiredService<IOptions<MessagingOptions>>(),
             provider.GetRequiredService<IOptions<SqlServerOptions>>(),
+            TestStorageOptions.For(),
             initializer,
             provider.GetRequiredService<ISerializer>(),
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),

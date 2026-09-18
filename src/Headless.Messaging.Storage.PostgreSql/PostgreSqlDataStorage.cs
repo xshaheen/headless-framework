@@ -25,6 +25,7 @@ namespace Headless.Messaging.Storage.PostgreSql;
 /// </summary>
 internal sealed partial class PostgreSqlDataStorage(
     IOptions<PostgreSqlOptions> postgreSqlOptions,
+    IOptions<MessagingStorageOptions> storageOptions,
     IOptions<MessagingOptions> messagingOptions,
     IStorageInitializer initializer,
     ISerializer serializer,

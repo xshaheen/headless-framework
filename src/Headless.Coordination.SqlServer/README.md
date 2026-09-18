@@ -46,7 +46,9 @@ services.AddHeadlessCoordination(setup =>
 
 ## Configuration
 
-Configure shared `CoordinationOptions` with `setup.Configure(...)`. Configure `ConnectionString`, `Schema` (`dbo` by default), `CommandTimeout`, and `InitializeOnStartup` with `setup.UseSqlServer(...)`.
+Configure shared `CoordinationOptions` with `setup.Configure(...)`. Configure `ConnectionString`, `CommandTimeout`, and `InitializeOnStartup` with `setup.UseSqlServer(...)`.
+
+The schema is not a provider option: set it with `setup.ConfigureStorage(storage => storage.Schema = "…")`. The default is the feature name `"coordination"`, not `dbo` — the initializer creates the schema when absent. The provider validates the schema against SQL Server's regular-identifier rules at startup.
 
 ## Dependencies
 

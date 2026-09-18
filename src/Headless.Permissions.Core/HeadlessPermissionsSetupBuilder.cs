@@ -2,6 +2,7 @@
 
 using Headless.Checks;
 using Headless.Permissions.Models;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Permissions;
@@ -35,6 +36,22 @@ public sealed class HeadlessPermissionsSetupBuilder
         Argument.IsNotNull(configure);
 
         configure(StorageOptions);
+
+        return this;
+    }
+
+    /// <summary>
+    /// Binds the shared <see cref="PermissionsStorageOptions"/> from <paramref name="configuration"/>; pass the
+    /// <c>Headless:Permissions:Storage</c> section. Applied immediately, in call order with the delegate overload.
+    /// </summary>
+    /// <param name="configuration">The configuration section to bind from.</param>
+    /// <returns>This builder, to allow chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="configuration"/> is <see langword="null"/>.</exception>
+    public HeadlessPermissionsSetupBuilder ConfigureStorage(IConfiguration configuration)
+    {
+        Argument.IsNotNull(configuration);
+
+        configuration.Bind(StorageOptions);
 
         return this;
     }

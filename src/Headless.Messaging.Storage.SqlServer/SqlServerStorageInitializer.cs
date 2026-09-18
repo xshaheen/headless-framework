@@ -16,6 +16,7 @@ namespace Headless.Messaging.Storage.SqlServer;
 internal sealed class SqlServerStorageInitializer(
     ILogger<SqlServerStorageInitializer> logger,
     IOptions<SqlServerOptions> options,
+    IOptions<MessagingStorageOptions> storageOptions,
     IOptions<MessagingOptions> messagingOptions
 ) : IStorageInitializer
 {
@@ -25,7 +26,7 @@ internal sealed class SqlServerStorageInitializer(
     /// </summary>
     public string GetPublishedTableName()
     {
-        return $"{options.Value.Schema}.Published";
+        return $"{storageOptions.Value.Schema}.Published";
     }
 
     /// <summary>
@@ -34,7 +35,7 @@ internal sealed class SqlServerStorageInitializer(
     /// </summary>
     public string GetReceivedTableName()
     {
-        return $"{options.Value.Schema}.Received";
+        return $"{storageOptions.Value.Schema}.Received";
     }
 
     /// <summary>
@@ -52,7 +53,7 @@ internal sealed class SqlServerStorageInitializer(
             return;
         }
 
-        var schema = options.Value.Schema;
+        var schema = storageOptions.Value.Schema;
         var lockResource = $"headless_messaging_init:{schema}";
         await using var connection = new SqlConnection(options.Value.ConnectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
