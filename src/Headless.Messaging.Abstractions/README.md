@@ -48,12 +48,17 @@ Use `Headless.Messaging.Bus.Abstractions` for broadcast publisher contracts and 
 
 `DeliveryMode` has two values. `Durable` (default) stores first — inside the caller's active unit of work when its resource is compatible and the message's `TransactionEnlistment` allows it, standalone otherwise — and `Direct` bypasses storage and the unit of work entirely and cannot be combined with `Delay` or `ScheduledAt`. Whether a durable publish enlists is the separate `TransactionEnlistment` axis (`WhenAvailable`, `Required`, `Never`; see [Unit of Work](../../docs/llms/unit-of-work.md)). Precedence for both is per call, then per type (`WithDeliveryMode` / `WithEnlistment`), then `MessagingOptions.DefaultDeliveryMode` / `DefaultEnlistment`. The full guarantee matrix lives in [Delivery Modes](../../docs/llms/messaging.md#delivery-modes).
 
-## Callbacks
+## Callbacks and Response Metadata
 
-Callbacks are fire-and-forget async chaining, not request/reply. The publisher sets `PublishOptions.CallbackName` (or `QueueOptions.CallbackName`) on the request; the consumer shapes the response through two `ConsumeContext` methods:
+Callbacks are fire-and-forget async chaining, not request/reply. The publisher sets `PublishOptions.CallbackName` (or `QueueOptions.CallbackName`) on the request; the consumer shapes the response entirely through `ConsumeContext` methods:
 
 - `context.SetResponse<TResponse>(value)` — capture a typed response body to publish to the request's callback message name through the durable bus path. `TResponse` must be a reference type (`where TResponse : class`); wrap value types in a record if needed. No `SetResponse` keeps the callback headers-only; `SetResponse` without a `CallbackName` is dropped.
-- `context.SetResponseCallbackName(callbackName)` — stamp the response callback name the published response will carry, enabling explicit multi-hop chaining (typed alternative to writing the reserved `CallbackName` key through `AddResponseHeader`).
+- `context.SetResponseCallbackName(callbackName)` — stamp the response callback name the published response will carry, enabling explicit multi-hop chaining.
+- `context.SetResponseHeader(key, value)` — add or overwrite custom response metadata headers forwarded to the callback subscriber.
+- `context.SetResponseDestination(messageName)` — redirect the post-consume callback invocation to a different destination message name.
+- `context.SuppressResponse()` — suppress the response callback entirely, preventing callback publication after handler completion.
+
+`MessageHeader` is a pure read-only snapshot of inbound headers; all response mutations are managed through the `ConsumeContext` response contract.
 
 Callback delivery is at-least-once — make response consumers idempotent (for example, dedupe on `(CausationId, CorrelationSequence)`). `CorrelationId` identifies the chain root; `CausationId` identifies the immediate parent message. The framework does not deduplicate callback deliveries.
 
