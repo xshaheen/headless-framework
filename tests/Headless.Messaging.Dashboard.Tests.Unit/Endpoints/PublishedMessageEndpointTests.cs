@@ -28,7 +28,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
 
     public PublishedMessageEndpointTests()
     {
-        // Legacy bulk requeue/delete fence pending scheduled ids (KTD10); default to no pending rows so
+        // Legacy bulk requeue/delete fence pending scheduled ids; default to no pending rows so
         // existing published-message behavior is unaffected unless a test configures otherwise.
         _scheduledOperationsApi
             .QueryAsync(
@@ -81,6 +81,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
         payload["lane"].GetString().Should().Be(nameof(MessageLane.Bus));
         payload["requestedDeliveryMode"].ValueKind.Should().Be(JsonValueKind.Null);
         payload["resolvedDeliveryMode"].GetString().Should().Be(nameof(DeliveryMode.Durable));
+        payload["requestedEnlistment"].ValueKind.Should().Be(JsonValueKind.Null);
     }
 
     [Fact]
@@ -117,8 +118,9 @@ public sealed class PublishedMessageEndpointTests : TestBase
                     Version = "v1",
                     Name = "orders.created",
                     Lane = MessageLane.Queue,
-                    RequestedDeliveryMode = DeliveryMode.Auto,
+                    RequestedDeliveryMode = DeliveryMode.Direct,
                     ResolvedDeliveryMode = DeliveryMode.Durable,
+                    RequestedEnlistment = Headless.UnitOfWork.TransactionEnlistment.Required,
                     Content = "{\"key\":\"value\"}",
                     Added = new DateTimeOffset(2026, 03, 24, 10, 00, 00, TimeSpan.Zero),
                     Retries = 2,
@@ -165,8 +167,12 @@ public sealed class PublishedMessageEndpointTests : TestBase
         item.GetProperty("storageId").GetString().Should().Be("11111111-1111-1111-1111-111111111123");
         item.GetProperty("messageId").GetString().Should().Be("logical-pub-123");
         item.GetProperty("lane").GetString().Should().Be(nameof(MessageLane.Queue));
-        item.GetProperty("requestedDeliveryMode").GetString().Should().Be(nameof(DeliveryMode.Auto));
+        item.GetProperty("requestedDeliveryMode").GetString().Should().Be(nameof(DeliveryMode.Direct));
         item.GetProperty("resolvedDeliveryMode").GetString().Should().Be(nameof(DeliveryMode.Durable));
+        item.GetProperty("requestedEnlistment")
+            .GetString()
+            .Should()
+            .Be(nameof(Headless.UnitOfWork.TransactionEnlistment.Required));
         await _monitoringApi
             .Received(1)
             .GetMessagesAsync(
@@ -275,7 +281,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
     [Fact]
     public async Task should_reject_pending_scheduled_id_and_delete_others_when_published_delete()
     {
-        // given: one pending scheduled id (rejected, KTD10) and one Succeeded id (deleted, unaffected).
+        // given: one pending scheduled id (rejected) and one Succeeded id (deleted, unaffected).
         var pendingId = Guid.Parse("11111111-1111-1111-1111-111111111991");
         var succeededId = Guid.Parse("11111111-1111-1111-1111-111111111992");
         _scheduledOperationsApi
@@ -342,7 +348,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
     [Fact]
     public async Task should_reject_pending_scheduled_id_and_requeue_others_when_published_requeue()
     {
-        // given: one pending scheduled id (rejected, KTD10) and one Succeeded id (requeued, unaffected).
+        // given: one pending scheduled id (rejected) and one Succeeded id (requeued, unaffected).
         var pendingId = Guid.Parse("11111111-1111-1111-1111-111111111991");
         var succeededId = Guid.Parse("11111111-1111-1111-1111-111111111992");
         _scheduledOperationsApi
@@ -439,7 +445,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
         appBuilder.Services.AddSingleton(new ConsulDiscoveryOptions { NodeName = "test-node" });
         appBuilder.Services.AddSingleton<GatewayProxyAgent>();
 
-        // Legacy requeue's transport-availability check (KTD10 fencing tests exercise the happy path).
+        // Legacy requeue's transport-availability check (the fencing tests exercise the happy path).
         appBuilder.Services.AddSingleton(Substitute.For<IDispatcher>());
         appBuilder.Services.AddSingleton(Substitute.For<IBusTransport>());
 

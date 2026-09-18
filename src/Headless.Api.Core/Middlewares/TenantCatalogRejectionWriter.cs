@@ -10,13 +10,13 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Headless.Api.Middlewares;
 
 /// <summary>
-/// Maps tenant-catalog resolution outcomes to <see cref="ProblemDetails"/> per R11/KTD9 (secure-by-default
+/// Maps tenant-catalog resolution outcomes to <see cref="ProblemDetails"/> (secure-by-default
 /// collapse of unknown/disabled/mismatch into one generic rejection; granular codes only under
 /// <see cref="TenantCatalogOptions.DetailedResolutionErrors"/>) and writes them through the same
 /// <see cref="IProblemDetailsService"/> + <c>Results.Problem</c> fallback precedent as
 /// <c>StatusCodesRewriterMiddleware</c>. Shared by <c>TenantCatalogResolutionMiddleware</c> (pre-auth
 /// unknown/disabled/invalid), <c>TenantResolutionMiddleware</c>'s claim-vs-feature fast path, and
-/// <c>StatusCodesRewriterMiddleware</c>'s post-authorization R19 mismatch rewrite.
+/// <c>StatusCodesRewriterMiddleware</c>'s post-authorization identifier/claim mismatch rewrite.
 /// </summary>
 internal static class TenantCatalogRejectionWriter
 {
@@ -33,7 +33,7 @@ internal static class TenantCatalogRejectionWriter
         return _WriteRejectionAsync(context, statusCode, problemDetails);
     }
 
-    /// <summary>Builds and writes the ProblemDetails response for an R19 identifier/claim mismatch.</summary>
+    /// <summary>Builds and writes the ProblemDetails response for an identifier/claim mismatch.</summary>
     public static Task RejectMismatchAsync(
         HttpContext context,
         IProblemDetailsCreator problemDetailsCreator,
@@ -46,7 +46,7 @@ internal static class TenantCatalogRejectionWriter
     }
 
     /// <summary>
-    /// Writes a tenant rejection. Every tenant-catalog rejection is non-cacheable (R17/KTD9): 404 is
+    /// Writes a tenant rejection. Every tenant-catalog rejection is non-cacheable: 404 is
     /// heuristically cacheable, and the opt-in no-cache middleware may sit downstream of the short-circuit,
     /// so <c>Cache-Control: no-store</c> is stamped here rather than left to pipeline placement.
     /// </summary>
@@ -57,7 +57,7 @@ internal static class TenantCatalogRejectionWriter
         await WriteAsync(context, statusCode, problemDetails).ConfigureAwait(false);
     }
 
-    /// <summary>Maps <see cref="TenantResolutionKind.Unknown"/>, <see cref="TenantResolutionKind.Disabled"/>, and <see cref="TenantResolutionKind.Invalid"/> per R11/KTD9.</summary>
+    /// <summary>Maps <see cref="TenantResolutionKind.Unknown"/>, <see cref="TenantResolutionKind.Disabled"/>, and <see cref="TenantResolutionKind.Invalid"/> to their rejection status and problem details.</summary>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="kind"/> is <see cref="TenantResolutionKind.Resolved"/> or <see cref="TenantResolutionKind.Ignored"/> — neither is a rejection outcome.</exception>
     public static (int StatusCode, ProblemDetails ProblemDetails) BuildOutcome(
         TenantResolutionKind kind,
@@ -68,7 +68,7 @@ internal static class TenantCatalogRejectionWriter
         return kind switch
         {
             // Shape validation reveals nothing tenant-specific — always its own code/status regardless
-            // of the diagnostics option (R11).
+            // of the diagnostics option.
             TenantResolutionKind.Invalid => (
                 StatusCodes.Status400BadRequest,
                 problemDetailsCreator.BadRequest(error: TenancyMessageDescriber.IdentifierInvalid())
@@ -82,7 +82,7 @@ internal static class TenantCatalogRejectionWriter
                 problemDetailsCreator.Forbidden(error: TenancyMessageDescriber.Disabled())
             ),
             // Secure-by-default collapse: unknown and disabled are byte-identical to each other (and to
-            // the R19 mismatch rejection built by BuildMismatch) so a caller cannot enumerate tenants or
+            // the identifier/claim mismatch rejection built by BuildMismatch) so a caller cannot enumerate tenants or
             // their status from response differences.
             TenantResolutionKind.Unknown or TenantResolutionKind.Disabled => (
                 StatusCodes.Status404NotFound,
@@ -92,7 +92,7 @@ internal static class TenantCatalogRejectionWriter
         };
     }
 
-    /// <summary>Maps the R19 identifier/claim mismatch outcome per R11/KTD9.</summary>
+    /// <summary>Maps the identifier/claim mismatch outcome to its rejection status and problem details.</summary>
     public static (int StatusCode, ProblemDetails ProblemDetails) BuildMismatch(
         IProblemDetailsCreator problemDetailsCreator,
         bool detailed

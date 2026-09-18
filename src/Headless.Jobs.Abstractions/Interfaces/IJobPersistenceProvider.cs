@@ -252,7 +252,7 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
 
     /// <summary>
     /// Reconciles the <b>timed</b> chain descendants (<c>ExecutionTime != null</c>) of parents that have reached a
-    /// terminal state — the release/skip half of the timed-descendant gate that the claim paths enforce (R13). For
+    /// terminal state — the release/skip half of the timed-descendant gate that the claim paths enforce. For
     /// every idle timed child whose parent is terminal: when its <c>RunCondition</c> matches the parent's terminal
     /// state it is <i>released</i> (a child whose execution time already passed is re-stamped to the store's now so the
     /// staleness-filtered main peek claims it promptly); when it does not match it is stamped <c>Skipped</c> together
@@ -340,7 +340,7 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
 
     /// <summary>
     /// Slides the running time job's lease forward (<c>LockedUntil = now + LeaseDuration</c>), fenced on
-    /// current ownership + non-terminal status (#316/KTD3). Returns the affected row count: <c>1</c> when the
+    /// current ownership + non-terminal status (#316). Returns the affected row count: <c>1</c> when the
     /// lease was renewed, <c>0</c> when the lease was lost (reclaimed, owner changed, or terminalized) — the
     /// caller treats <c>0</c> as cancel-on-loss — or a <b>negative</b> value when coordination membership is not
     /// currently established (#461), which the caller treats as "skip this renewal tick", not loss.
@@ -362,7 +362,7 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
 
     /// <summary>
     /// Reclaims time jobs stuck <c>InProgress</c> whose lease lapsed (<c>LockedUntil &lt;= now</c>), independent of
-    /// node death (#316/U3 — the gap-closer). Applies the same per-<c>OnNodeDeath</c> transitions as the dead-node
+    /// node death (#316 — the gap-closer). Applies the same per-<c>OnNodeDeath</c> transitions as the dead-node
     /// sweep: <c>Retry</c> → released to <c>Idle</c> (re-claimable), <c>MarkFailed</c> → <c>Failed</c>, <c>Skip</c> →
     /// <c>Skipped</c>. A healthy renewing job keeps a future lease and is never matched. Returns the affected count.
     /// </summary>
@@ -810,7 +810,7 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
 
     /// <summary>
     /// Slides the running cron occurrence's lease forward (<c>LockedUntil = now + LeaseDuration</c>), fenced on
-    /// current ownership + non-terminal status (#316/KTD3). Returns <c>1</c> when renewed, <c>0</c> when the
+    /// current ownership + non-terminal status (#316). Returns <c>1</c> when renewed, <c>0</c> when the
     /// lease was lost — the caller treats <c>0</c> as cancel-on-loss — or a <b>negative</b> value when coordination
     /// membership is not currently established (#461), treated as "skip this renewal tick", not loss.
     /// </summary>
@@ -828,7 +828,7 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     Task<int> RenewCronJobOccurrenceLeaseAsync(Guid occurrenceId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Reclaims cron occurrences stuck <c>InProgress</c> whose lease lapsed (#316/U3) — the cron mirror of
+    /// Reclaims cron occurrences stuck <c>InProgress</c> whose lease lapsed (#316) — the cron mirror of
     /// <see cref="ReclaimStalledTimeJobsAsync"/>, applying the same per-<c>OnNodeDeath</c> transitions. Returns the
     /// affected count.
     /// </summary>
@@ -903,8 +903,8 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// <remarks>
     /// <b>All-or-nothing.</b> The whole call — every root and every nested descendant across all chains — is written
     /// as a single atomic unit: on any failure no row from this call is persisted, so a chain is never left partially
-    /// visible. The scheduler's chain enqueue relies on this to persist a multi-node tree atomically (issue #311,
-    /// R10); custom providers <b>must</b> preserve the all-or-nothing contract.
+    /// visible. The scheduler's chain enqueue relies on this to persist a multi-node tree atomically (issue #311);
+    /// custom providers <b>must</b> preserve the all-or-nothing contract.
     /// </remarks>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task<int> AddTimeJobsAsync(TTimeJob[] jobs, CancellationToken cancellationToken = default);

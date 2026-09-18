@@ -313,7 +313,7 @@ public sealed class JobExecutionTaskHandlerTests : TestBase
     [Fact]
     public async Task executes_a_linear_five_deep_chain_in_order()
     {
-        // U3/AE7 (in-memory executor half): the in-process recursion runs every descendant of a five-node chain in
+        // In-memory executor half: the in-process recursion runs every descendant of a five-node chain in
         // parent-before-child order, past the old grandchild-level ceiling. A linear chain has one child per node, so
         // completion order is deterministic.
         var manager = _HealthyManager();
@@ -340,7 +340,7 @@ public sealed class JobExecutionTaskHandlerTests : TestBase
     [Fact]
     public async Task executes_all_deferred_children_beyond_the_static_sibling_buffer()
     {
-        // KTD8: persisted data can carry more than the old fixed five-slot sibling buffer; every deferred child must
+        // Persisted data can carry more than the old fixed five-slot sibling buffer; every deferred child must
         // still run once the buffers become lists.
         var manager = _HealthyManager();
         var services = new ServiceCollection();
@@ -364,7 +364,7 @@ public sealed class JobExecutionTaskHandlerTests : TestBase
     [Fact]
     public async Task does_not_process_children_when_the_parent_loses_its_lease()
     {
-        // KTD7: a lease-lost parent returns WITHOUT a terminal status (row left InProgress for the reclaim sweep). Its
+        // A lease-lost parent returns WITHOUT a terminal status (row left InProgress for the reclaim sweep). Its
         // children must be left unprocessed for reclaim — never wrongly Skipped by evaluating them against InProgress.
         var manager = _HealthyManager();
         manager.RenewLeaseAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(0));
@@ -388,7 +388,7 @@ public sealed class JobExecutionTaskHandlerTests : TestBase
     [Fact]
     public async Task does_not_process_children_when_the_terminal_completion_write_is_fenced()
     {
-        // KTD7: the parent runs to a local Succeeded status, but the completion write matches 0 rows — the row was
+        // The parent runs to a local Succeeded status, but the completion write matches 0 rows — the row was
         // reclaimed/terminalized by a sweep and this status was never persisted (and may contradict the durable
         // record). Children must be left unprocessed (not run, not skipped) for reclaim, not driven from unpersisted
         // state.
@@ -416,7 +416,7 @@ public sealed class JobExecutionTaskHandlerTests : TestBase
     [Fact]
     public async Task does_not_process_children_when_a_terminate_exception_completion_write_is_fenced()
     {
-        // R7/KTD7: the parent throws TerminateExecutionException (a Skipped terminal), but its fenced terminal write in
+        // The parent throws TerminateExecutionException (a Skipped terminal), but its fenced terminal write in
         // the catch block matches 0 rows — the row was reclaimed/terminalized by a sweep. LeaseLost must be set and
         // the children left for reclaim (never driven from the unpersisted Skipped status).
         var manager = _HealthyManager();
@@ -452,7 +452,7 @@ public sealed class JobExecutionTaskHandlerTests : TestBase
     [Fact]
     public async Task does_not_process_children_when_a_durable_cancellation_completion_write_is_fenced()
     {
-        // R7/KTD7: durable cancellation is observed mid-run and the job settles Cancelled, but its fenced terminal
+        // Durable cancellation is observed mid-run and the job settles Cancelled, but its fenced terminal
         // write matches 0 rows (the row was reclaimed). LeaseLost must be set and the children left for reclaim.
         var manager = _HealthyManager();
         manager

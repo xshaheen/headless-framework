@@ -9,9 +9,9 @@ namespace Headless.MultiTenancy;
 /// <summary>
 /// EF Core configuration for <see cref="TenantRecord"/>: table name, column lengths, and a unique index
 /// on <see cref="TenantRecord.NormalizedIdentifier"/> pinned to a deterministic, case- and
-/// accent-sensitive collation (KTD6) so a lookup never matches a row differing only by case — the default
+/// accent-sensitive collation so a lookup never matches a row differing only by case — the default
 /// collation on SQL Server is case-insensitive, which would silently break the catalog service's ordinal
-/// lookup contract (R7).
+/// lookup contract.
 /// </summary>
 /// <param name="providerName">
 /// The active EF Core provider's invariant name (<see cref="Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade.ProviderName"/>),

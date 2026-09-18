@@ -11,7 +11,7 @@ namespace Headless.Blobs.Azure;
 /// <summary>
 /// <see cref="IBlobContainerManager"/> implementation for Azure Blob Storage containers. Registered as a separate
 /// keyed/default service (per-instance, mirroring the storage) rather than implemented by <see cref="AzureBlobStorage"/>
-/// itself, so container management is discoverable from DI and segregated from the data plane (KTD5).
+/// itself, so container management is discoverable from DI and segregated from the data plane.
 /// </summary>
 /// <remarks>
 /// The <see cref="BlobServiceClient"/> is owned by DI / the caller's client factory — the same client the storage

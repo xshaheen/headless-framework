@@ -16,7 +16,7 @@ using NSubstitute.ExceptionExtensions;
 namespace Tests.Managers;
 
 /// <summary>
-/// U5/KTD3: the internal manager wraps the provider reconcile with the post-commit scheduler nudge
+/// The internal manager wraps the provider reconcile with the post-commit scheduler nudge
 /// (<c>IJobsHostScheduler.RestartIfNeeded</c>) and runs the poll-time skip-only safety net inside
 /// <c>GetNextJobs</c>. Uses the real in-memory provider so the release/skip semantics and the wiring are exercised
 /// together; a substitute host scheduler captures the wake.

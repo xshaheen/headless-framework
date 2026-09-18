@@ -166,7 +166,7 @@ public static class CronRecoveryScenarios
             {
                 Name = "a-migration-retired-row-still-owes-its-fire",
                 Contract =
-                    "KTD1: the seeding migration retires a row WITHOUT a replacement, so the instant is unaccounted "
+                    "The seeding migration retires a row WITHOUT a replacement, so the instant is unaccounted "
                     + "for and owes a NEW run — resurrecting the retired row instead would undo the migration",
                 MissedInstantIndexes = [0],
                 BoundedProgressIndex = 0,

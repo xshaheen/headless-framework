@@ -19,7 +19,7 @@ public sealed class DistributedReadWriteLockSetupTests : TestBase
 
         // when
         services.AddHeadlessDistributedLocks(setup => setup.UseInMemory());
-        using var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 
         // then
         provider.GetRequiredService<IDistributedReadWriteLock>().Should().NotBeNull();
@@ -66,7 +66,7 @@ public sealed class DistributedReadWriteLockSetupTests : TestBase
             setup.ConfigureOptions(configuration);
             setup.UseInMemory();
         });
-        using var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 
         // then
         var resolved = provider.GetRequiredService<IDistributedReadWriteLock>();
@@ -97,7 +97,7 @@ public sealed class DistributedReadWriteLockSetupTests : TestBase
             );
             setup.UseInMemory();
         });
-        using var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 
         // then
         var resolved = provider.GetRequiredService<IDistributedReadWriteLock>();

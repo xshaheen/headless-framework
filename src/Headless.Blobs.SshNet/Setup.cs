@@ -84,7 +84,7 @@ public static class SetupSsh
         ));
 
         // Container lifecycle is a separately-resolved capability (not a cast from IBlobStorage), so the SSH
-        // provider registers a dedicated manager that shares the DI-owned pool with the storage (KTD5 / U12).
+        // provider registers a dedicated manager that shares the DI-owned pool with the storage.
         services.AddSingleton<IBlobContainerManager>(serviceProvider => new SshBlobContainerManager(
             serviceProvider.GetRequiredService<SftpClientPool>(),
             new CrossOsNamingNormalizer(),

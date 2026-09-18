@@ -14,9 +14,9 @@ using Microsoft.Extensions.Time.Testing;
 namespace Tests.Provider;
 
 /// <summary>
-/// U3: the in-memory provider claims and hydrates a chain to the configured <c>MaxChainDepth</c> — beyond the
-/// old fixed grandchild cap — carrying the full field set at every level, and adds a chain tree all-or-nothing
-/// (KTD6). Cross-provider parity is proved in the EF harness (U7).
+/// The in-memory provider claims and hydrates a chain to the configured <c>MaxChainDepth</c> — beyond the
+/// old fixed grandchild cap — carrying the full field set at every level, and adds a chain tree all-or-nothing.
+/// Cross-provider parity is proved in the EF harness.
 /// </summary>
 public sealed class DeepChainProviderTests : TestBase
 {
@@ -167,7 +167,7 @@ public sealed class DeepChainProviderTests : TestBase
     [Fact]
     public async Task claim_stops_at_a_non_idle_intermediate_node_and_prunes_its_tail()
     {
-        // KTD2: a mid-chain node terminalized by a sweep (here c2 = Succeeded) is a claim boundary. The claim must not
+        // A mid-chain node terminalized by a sweep (here c2 = Succeeded) is a claim boundary. The claim must not
         // lease nodes below it, and the returned tree must be rebuilt strictly from the claimed set — so the tail
         // never executes unclaimed.
         var (provider, _) = _Create();
@@ -225,7 +225,7 @@ public sealed class DeepChainProviderTests : TestBase
     [Fact]
     public async Task add_time_jobs_with_a_duplicate_id_in_the_tree_adds_nothing()
     {
-        // KTD6 all-or-nothing: a duplicate id anywhere in the tree must leave NO row visible (validate before mutate),
+        // All-or-nothing: a duplicate id anywhere in the tree must leave NO row visible (validate before mutate),
         // not a partially-added parent.
         var (provider, _) = _Create();
         var root = new FakeTimeJob { Id = Guid.NewGuid(), Function = "root" };
@@ -246,7 +246,7 @@ public sealed class DeepChainProviderTests : TestBase
     [Fact]
     public async Task add_time_jobs_colliding_with_an_existing_row_leaves_the_new_tree_unadded()
     {
-        // KTD6: a child id that collides with an already-stored row rejects the WHOLE new tree — the fresh root must
+        // A child id that collides with an already-stored row rejects the WHOLE new tree — the fresh root must
         // not become visible on its own.
         var (provider, _) = _Create();
         var existing = new FakeTimeJob { Id = Guid.NewGuid(), Function = "existing" };
@@ -274,7 +274,7 @@ public sealed class DeepChainProviderTests : TestBase
     [Fact]
     public async Task add_time_jobs_rejects_the_whole_call_when_a_later_root_collides_with_an_earlier_root_subtree()
     {
-        // KTD6 cross-root all-or-nothing: two roots in ONE call, where the second root's id collides with a DESCENDANT
+        // Cross-root all-or-nothing: two roots in ONE call, where the second root's id collides with a DESCENDANT
         // of the first. The whole call must be rejected — the first root and its child must NOT become visible. The old
         // per-root loop committed the first root's subtree before the second root failed, stranding it.
         var (provider, _) = _Create();
@@ -298,7 +298,7 @@ public sealed class DeepChainProviderTests : TestBase
     [Fact]
     public async Task add_time_jobs_with_a_valid_root_and_a_root_colliding_with_existing_state_adds_nothing()
     {
-        // KTD6 cross-root all-or-nothing: a call carrying a valid root AND a root that collides with an already-stored
+        // Cross-root all-or-nothing: a call carrying a valid root AND a root that collides with an already-stored
         // row must reject the WHOLE call — the valid root must NOT become visible (the old per-root loop committed it
         // before the colliding root failed). The pre-existing row is untouched.
         var (provider, _) = _Create();
@@ -318,7 +318,7 @@ public sealed class DeepChainProviderTests : TestBase
     [Fact]
     public async Task add_time_jobs_leaves_no_publication_barrier_state_on_committed_rows()
     {
-        // KTD6 publication barrier: rows are parked (Status=InProgress + far-future synthetic lease) only WHILE the
+        // Publication barrier: rows are parked (Status=InProgress + far-future synthetic lease) only WHILE the
         // batch installs; once AddTimeJobsAsync returns, every row must carry its authored state — no leftover barrier
         // InProgress and no synthetic lease — so the batch is claimable exactly as written.
         var (provider, _) = _Create();

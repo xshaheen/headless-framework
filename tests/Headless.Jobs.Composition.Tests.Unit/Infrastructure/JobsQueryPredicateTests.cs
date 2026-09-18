@@ -74,7 +74,7 @@ public sealed class JobsQueryPredicateTests
     [Fact]
     public void where_owned_by_does_not_touch_a_fast_restart_incarnation()
     {
-        // Reclaiming node-a@5 must never select node-a@6's freshly-stamped rows (R4 / R-2).
+        // Reclaiming node-a@5 must never select node-a@6's freshly-stamped rows.
         var fastRestart = _TimeJob(JobStatus.Queued, ownerId: "node-a@6", lockedUntil: DateTime.UtcNow);
 
         var selected = new[] { fastRestart }.AsQueryable().WhereOwnedBy(_Owner).ToArray();

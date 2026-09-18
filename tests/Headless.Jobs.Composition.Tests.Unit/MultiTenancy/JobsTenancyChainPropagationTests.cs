@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
-using Headless.CommitCoordination;
 using Headless.Jobs;
+using Headless.Jobs.BackgroundServices;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Exceptions;
 using Headless.Jobs.Interfaces;
@@ -11,6 +11,8 @@ using Headless.Jobs.Managers;
 using Headless.Jobs.Models;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;
+using Headless.UnitOfWork;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -19,12 +21,20 @@ namespace Tests.MultiTenancy;
 [Collection<JobsHelperCollection>]
 public sealed class JobsTenancyChainPropagationTests : TestBase
 {
+    // Signal workers are never started here, but the service owns a channel and a cancellation source.
+    private readonly List<JobsPostCommitSignalService> _workers = [];
+
     private const string _Function = "chain-tenancy-fn";
 
     public JobsTenancyChainPropagationTests() => _RegisterFunction();
 
     protected override ValueTask DisposeAsyncCore()
     {
+        foreach (var worker in _workers)
+        {
+            worker.Dispose();
+        }
+
         JobFunctionProvider.ResetForTests();
         return base.DisposeAsyncCore();
     }
@@ -54,7 +64,7 @@ public sealed class JobsTenancyChainPropagationTests : TestBase
         await manager.AddAsync(root, AbortToken);
 
         child.TenantId.Should().Be("t2");
-        // An unset grandchild inherits the ROOT's resolved tenant, not its parent's explicit value (KTD6).
+        // An unset grandchild inherits the ROOT's resolved tenant, not its parent's explicit value.
         grandChild.TenantId.Should().Be("t1");
     }
 
@@ -126,7 +136,7 @@ public sealed class JobsTenancyChainPropagationTests : TestBase
     [Fact]
     public async Task a_batch_aggregates_tenant_validation_and_function_errors_together()
     {
-        // #278 finding #6: a batch that mixes an unknown-function failure with a mid-loop tenant-validation failure must
+        // #278: a batch that mixes an unknown-function failure with a mid-loop tenant-validation failure must
         // surface BOTH in the aggregated JobValidatorException, not just the one that threw first.
         var (manager, _) = _CreateManager(ambient: null);
         var unknownFunction = new TimeJobEntity
@@ -148,7 +158,7 @@ public sealed class JobsTenancyChainPropagationTests : TestBase
     [Fact]
     public async Task a_failed_batch_restores_the_captured_tenant_on_the_caller_entities()
     {
-        // #278 finding #8: a rejected all-or-nothing batch writes nothing, so any tenant the schedule pipeline inherited
+        // #278: a rejected all-or-nothing batch writes nothing, so any tenant the schedule pipeline inherited
         // onto a caller entity mid-pass must be rolled back — otherwise a retry under a different ambient treats the
         // stale value as an explicit one.
         var (manager, _) = _CreateManager(ambient: null);
@@ -170,7 +180,7 @@ public sealed class JobsTenancyChainPropagationTests : TestBase
     [Fact]
     public async Task a_failed_single_add_restores_the_captured_tenant_on_the_caller_entity()
     {
-        // Final review: the single-add path mirrors the batch restore — a pre-persistence failure must not leave the
+        // The single-add path mirrors the batch restore — a pre-persistence failure must not leave the
         // inherited tenant on the caller's entities, or a retry treats the stale value as explicit.
         var (manager, _) = _CreateManager(ambient: null);
         var inheritedChild = _Job();
@@ -187,7 +197,7 @@ public sealed class JobsTenancyChainPropagationTests : TestBase
     [Fact]
     public async Task a_cyclic_chain_in_a_batch_is_rejected_not_hung()
     {
-        // Final review: the tenant snapshot walk runs before the stamping walk's cycle validation, so it must tolerate
+        // The tenant snapshot walk runs before the stamping walk's cycle validation, so it must tolerate
         // a cyclic graph (visited set) and let the stamp reject it deterministically.
         var (manager, _) = _CreateManager(ambient: null);
         var child = _Job();
@@ -228,7 +238,7 @@ public sealed class JobsTenancyChainPropagationTests : TestBase
     [Fact]
     public async Task a_cron_update_carrying_a_tenant_is_rejected()
     {
-        // Final review: updates bypass the schedule middleware, so the cron system-scope rule (R8) must hold on the
+        // Updates bypass the schedule middleware, so the cron system-scope rule must hold on the
         // update paths too — otherwise providers diverge on whether the tenant lands.
         var (manager, persistence) = _CreateManager(ambient: null);
         var cronManager = (ICronJobManager<CronJobEntity>)manager;
@@ -255,7 +265,7 @@ public sealed class JobsTenancyChainPropagationTests : TestBase
     [Fact]
     public async Task update_with_a_new_unset_descendant_inherits_the_stored_root_tenant()
     {
-        // #278 finding #5: a descendant appended through UpdateAsync bypasses the Add path's resolution, so it must
+        // #278: a descendant appended through UpdateAsync bypasses the Add path's resolution, so it must
         // inherit the STORED root tenant (immutable after schedule) even when the update payload omits the root tenant.
         var (manager, persistence) = _CreateManager(ambient: null);
         var storedRoot = _Job(tenantId: "t-stored");
@@ -276,7 +286,7 @@ public sealed class JobsTenancyChainPropagationTests : TestBase
     [Fact]
     public async Task update_with_an_invalid_explicit_descendant_is_rejected_before_persistence()
     {
-        // #278 finding #5: an explicit but invalid (blank) descendant tenant on an update is rejected exactly like the
+        // #278: an explicit but invalid (blank) descendant tenant on an update is rejected exactly like the
         // Add path, before the row is written.
         var (manager, persistence) = _CreateManager(ambient: null);
         var storedRoot = _Job(tenantId: "t-stored");
@@ -297,7 +307,7 @@ public sealed class JobsTenancyChainPropagationTests : TestBase
     [Fact]
     public async Task update_without_children_does_no_stored_root_read()
     {
-        // #278 finding #5: the childless update hot path must not pay for the stored-root read the chain resolution
+        // #278: the childless update hot path must not pay for the stored-root read the chain resolution
         // needs.
         var (manager, persistence) = _CreateManager(ambient: null);
         persistence.UpdateTimeJobsAsync(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>()).Returns(1);
@@ -325,7 +335,7 @@ public sealed class JobsTenancyChainPropagationTests : TestBase
         };
     }
 
-    private static (
+    private (
         ITimeJobManager<TimeJobEntity> Manager,
         IJobPersistenceProvider<TimeJobEntity, CronJobEntity> Persistence
     ) _CreateManager(string? ambient, bool rejectCrossTenant = false)
@@ -336,6 +346,13 @@ public sealed class JobsTenancyChainPropagationTests : TestBase
         var dispatcher = Substitute.For<IJobsDispatcher>();
         dispatcher.IsEnabled.Returns(false);
 
+        var signals = new JobsPostCommitSignalService(
+            TestActivationBarrier.Opened(),
+            TimeProvider.System,
+            Substitute.For<ILogger<JobsPostCommitSignalService>>()
+        );
+        _workers.Add(signals);
+
         var manager = new JobsManager<TimeJobEntity, CronJobEntity>(
             persistence,
             Substitute.For<IJobsHostScheduler>(),
@@ -344,16 +361,23 @@ public sealed class JobsTenancyChainPropagationTests : TestBase
             Substitute.For<IJobsNotificationHubSender>(),
             new JobsExecutionContext(),
             dispatcher,
-            Substitute.For<ICurrentCommitCoordinator>(),
             new CronScheduleCache(TimeZoneInfo.Utc),
-            new SchedulerOptionsBuilder(),
+            signals,
             JobFunctionProvider.CreateHostRegistry(configuration: null),
             Substitute.For<ILogger<JobsManager<TimeJobEntity, CronJobEntity>>>(),
             currentTenant: tenant,
             tenancyOptions: Options.Create(new JobsTenancyOptions { RejectCrossTenantEnqueue = rejectCrossTenant })
         );
 
-        return (manager, persistence);
+        // These scenarios exercise ambient-tenant validation on the Add path with no active unit of work, so the
+        // facade's IUnitOfWorkManager reports no Current — the "no unit of work" branch of the guarantee matrix.
+        var unitOfWorkManager = new ServiceCollection().AddUnitOfWork().BuildServiceProvider();
+        var facade = new JobsManagerFacade<TimeJobEntity, CronJobEntity>(
+            manager,
+            unitOfWorkManager.GetRequiredService<IUnitOfWorkManager>()
+        );
+
+        return (facade, persistence);
     }
 
     private static void _RegisterFunction()

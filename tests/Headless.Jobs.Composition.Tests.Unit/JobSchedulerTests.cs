@@ -610,7 +610,7 @@ public sealed class JobSchedulerTests : TestBase
                 nameof(JobOptions.OnNodeDeath),
                 nameof(JobOptions.TenantId),
                 nameof(JobOptions.IsSystemJob),
-                nameof(JobOptions.RequireAtomicEnlistment)
+                nameof(JobOptions.Enlistment)
             );
         typeof(RecurringJobOptions)
             .GetProperties(BindingFlags.Instance | BindingFlags.Public)
@@ -623,30 +623,42 @@ public sealed class JobSchedulerTests : TestBase
                 nameof(RecurringJobOptions.Description),
                 nameof(RecurringJobOptions.Retries),
                 nameof(RecurringJobOptions.RetryIntervals),
-                nameof(RecurringJobOptions.OnNodeDeath)
+                nameof(RecurringJobOptions.OnNodeDeath),
+                nameof(RecurringJobOptions.Enlistment)
             );
     }
 
     [Fact]
     public void should_register_the_facade_for_the_configured_entity_pair()
     {
+        // IJobScheduler (and the ITimeJobManager<>/ICronJobManager<> facades) are scoped — resolve them from a
+        // scope, on a ValidateScopes host, so a captive-dependency regression fails loud here.
         var defaultServices = new ServiceCollection();
         defaultServices.AddLogging();
         defaultServices.AddHeadlessJobs(options => options.DisableBackgroundServices());
 
-        using var defaultProvider = defaultServices.BuildServiceProvider();
-        defaultProvider
-            .GetRequiredService<IJobScheduler>()
-            .Should()
-            .BeOfType<JobScheduler<TimeJobEntity, CronJobEntity>>();
+        using var defaultProvider = defaultServices.BuildServiceProvider(
+            new ServiceProviderOptions { ValidateScopes = true }
+        );
+        using (var scope = defaultProvider.CreateScope())
+        {
+            scope
+                .ServiceProvider.GetRequiredService<IJobScheduler>()
+                .Should()
+                .BeOfType<JobScheduler<TimeJobEntity, CronJobEntity>>();
+        }
 
         var services = new ServiceCollection();
         services.AddLogging();
 
         services.AddHeadlessJobs<CustomTimeJob, CustomCronJob>(options => options.DisableBackgroundServices());
 
-        using var provider = services.BuildServiceProvider();
-        provider.GetRequiredService<IJobScheduler>().Should().BeOfType<JobScheduler<CustomTimeJob, CustomCronJob>>();
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        using var customScope = provider.CreateScope();
+        customScope
+            .ServiceProvider.GetRequiredService<IJobScheduler>()
+            .Should()
+            .BeOfType<JobScheduler<CustomTimeJob, CustomCronJob>>();
     }
 
     private static (

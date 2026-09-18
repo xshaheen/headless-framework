@@ -536,7 +536,7 @@ public sealed class CompositeSemaphoreAcquireTests : TestBase
     [Fact]
     public async Task should_link_slot_loss_tokens_into_one_composite_loss_signal()
     {
-        // D4 carries loss linking over from the mutex composite; nothing exercised it for semaphore slots.
+        // Loss linking carries over from the mutex composite; nothing exercised it for semaphore slots.
         var provider = _CreateProvider(new FakeTimeProvider());
         await using var firstSlot = new CompositeTestLease("a", canObserveLoss: true);
         await using var secondSlot = new CompositeTestLease("b", canObserveLoss: true);

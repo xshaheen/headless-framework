@@ -5,7 +5,7 @@ namespace Headless.MultiTenancy;
 /// <summary>
 /// Shared TryAdd-then-throw seed indexing used by <see cref="InMemoryTenantStore"/> and
 /// <see cref="ConfigurationTenantStore"/>: builds the immutable id and normalized-identifier lookup
-/// tables from already-converted, already-normalized <see cref="TenantInfo"/> entries (R20), rejecting
+/// tables from already-converted, already-normalized <see cref="TenantInfo"/> entries, rejecting
 /// the first duplicate seen on either axis.
 /// </summary>
 internal static class TenantSeedIndexBuilder
@@ -35,7 +35,7 @@ internal static class TenantSeedIndexBuilder
                 throw new InvalidOperationException(
                     $"Headless.MultiTenancy {storeDisplayName} store: duplicate tenant identifier "
                         + $"'{tenant.Identifier}' (from seed identifier '{rawIdentifier}'). "
-                        + "Seeded identifiers must be unique after normalization (R20)."
+                        + "Seeded identifiers must be unique after normalization."
                 );
             }
 

@@ -735,7 +735,7 @@ public abstract class JobsSchedulePositionConformanceTests<TFixture>(TFixture fi
     }
 
     /// <summary>
-    /// R10 on the attribute-driven path: a stored projection derived under the OLD expression must not survive a
+    /// On the attribute-driven path: a stored projection derived under the OLD expression must not survive a
     /// code-defined expression change — a yearly→minutes edit would otherwise stay dormant until the stale
     /// projection came due. Migrate resets the position to the uninitialized sentinel so the next wake re-derives
     /// it by the creation rule under the new expression.
@@ -967,13 +967,15 @@ public abstract class JobsSchedulePositionConformanceTests<TFixture>(TFixture fi
 
         try
         {
-            var manager = host.Services.GetRequiredService<ICronJobManager<CronJobEntity>>();
             var definition = _Definition("0 0 * * * *");
 
             var beforeInsert = await _StoreUtcNowAsync(ct);
             await fixture.RunCoordinatedTransactionAsync(
                 host.Services,
-                async (_, _, innerCt) => await manager.AddAsync(definition, innerCt),
+                async (scopedServices, _, _, innerCt) =>
+                    await scopedServices
+                        .GetRequiredService<ICronJobManager<CronJobEntity>>()
+                        .AddAsync(definition, innerCt),
                 ct
             );
             var afterInsert = await _StoreUtcNowAsync(ct);
@@ -1010,14 +1012,15 @@ public abstract class JobsSchedulePositionConformanceTests<TFixture>(TFixture fi
 
         try
         {
-            var manager = host.Services.GetRequiredService<ICronJobManager<CronJobEntity>>();
             var definition = _Definition("0 0 * * * *");
             DateTime transactionStartClock = default;
 
             await fixture.RunCoordinatedTransactionAsync(
                 host.Services,
-                async (connection, transaction, innerCt) =>
+                async (scopedServices, connection, transaction, innerCt) =>
                 {
+                    var manager = scopedServices.GetRequiredService<ICronJobManager<CronJobEntity>>();
+
                     // The value an EF-translated DateTime.UtcNow resolves to inside this transaction. On PostgreSQL it
                     // is pinned here for the transaction's whole life; reading it first is what makes the assertion
                     // below a real measurement rather than a race.
@@ -1056,7 +1059,7 @@ public abstract class JobsSchedulePositionConformanceTests<TFixture>(TFixture fi
     }
 
     /// <summary>
-    /// AE3. A definition whose next tick falls between its creation and the first scheduler poll — a window a process
+    /// A definition whose next tick falls between its creation and the first scheduler poll — a window a process
     /// crash can widen arbitrarily — has that tick RECOVERED under its missed-run policy, not silently dropped.
     /// </summary>
     /// <remarks>
@@ -1118,7 +1121,7 @@ public abstract class JobsSchedulePositionConformanceTests<TFixture>(TFixture fi
 
             // At or past, not exactly at: whether the poll lands inside one tick (ordinary dispatch, watermark = the
             // tick) or after several (coalesce recovery, watermark = the recovery instant) is a latency detail. The
-            // contract AE3 asserts is that the tick was ACCOUNTED FOR — the occurrence above proves it fired, and this
+            // contract this test asserts is that the tick was ACCOUNTED FOR — the occurrence above proves it fired, and this
             // proves nothing will reconsider it.
             var position = await fixture.ReadCronSchedulePositionAsync(definitionId, ct);
             position

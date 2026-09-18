@@ -4,6 +4,7 @@ using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Transactions;
 using Headless.Messaging.Transport;
+using Headless.UnitOfWork;
 
 namespace Headless.Messaging.Internal;
 
@@ -28,35 +29,38 @@ internal sealed class OutboxMessageWriter(
         {
             traceHandle = _TracingBefore(publishRequest.Message, publishRequest.Lane);
 
-            // Use the coordinator/transaction captured in the caller's frame — never re-read Current here. If the
+            // Use the unit of work/transaction captured in the caller's frame — never re-read Current here. If the
             // captured transaction has since completed, StoreMessageAsync fails loudly rather than silently dropping
             // to the non-atomic immediate path.
             if (decision.Path is DeliveryPath.DurableCoordinated)
             {
-                var coordinator =
-                    decision.Coordination.Coordinator
-                    ?? throw new InvalidOperationException("Coordinated delivery is missing its commit coordinator.");
-                var transaction =
-                    decision.Coordination.Transaction
-                    ?? throw new InvalidOperationException(
-                        "Coordinated delivery is missing its relational transaction."
-                    );
-                var mediumMessage = await _StoreMessageAsync(publishRequest, decision, transaction, cancellationToken)
+                var unitOfWork =
+                    decision.Coordination.UnitOfWork
+                    ?? throw new InvalidOperationException("Coordinated delivery is missing its unit of work.");
+                var mediumMessage = await _StoreCoordinatedMessageAsync(
+                        publishRequest,
+                        decision,
+                        unitOfWork,
+                        cancellationToken
+                    )
                     .ConfigureAwait(false);
 
                 _TracingAfter(traceHandle, publishRequest.Message, publishRequest.Lane);
 
+                // Obtained after the store call on purpose: a non-relational store enlists its own completion
+                // buffer inside StoreCoordinatedMessageAsync, and callbacks drain in registration order, so the
+                // row is already visible when this buffer hands it to the dispatcher.
                 var bufferState = new MessageOutboxBufferState(dispatcher);
-                var buffer = coordinator.GetOrAdd(
+                var buffer = unitOfWork.GetOrAdd(
                     bufferState,
-                    static (coordinator, state) => new MessageOutboxBuffer(coordinator, state.Dispatcher)
+                    static (unit, state) => new MessageOutboxBuffer(unit, state.Dispatcher)
                 );
                 buffer.Add(mediumMessage);
 
                 return mediumMessage.StorageId;
             }
 
-            // No ambient coordinator (or no relational transaction on it): commit the durable row first.
+            // No active unit of work (or no relational transaction on it): commit the durable row first.
             // Dispatch after this boundary is non-blocking acceleration; retry/delayed pickup owns recovery.
             var immediateMessage = await _StoreMessageAsync(
                     publishRequest,
@@ -95,6 +99,37 @@ internal sealed class OutboxMessageWriter(
     }
 
     private readonly record struct MessageOutboxBufferState(IDispatcher Dispatcher);
+
+    private ValueTask<MediumMessage> _StoreCoordinatedMessageAsync(
+        PreparedPublishMessage publishRequest,
+        DeliveryDecision decision,
+        IUnitOfWork unitOfWork,
+        CancellationToken cancellationToken
+    )
+    {
+        if (decision.Coordination.Transaction is { } transaction)
+        {
+            return _StoreMessageAsync(publishRequest, decision, transaction, cancellationToken);
+        }
+
+        // A compatible unit without a relational handle is only valid for a storage that captures rows on the
+        // unit itself; anything else must fail here rather than fall through to a standalone durable write
+        // that would survive the caller's rollback.
+        if (storage is not ICoordinatedMessageStore coordinatedStore)
+        {
+            throw new InvalidOperationException(
+                $"Coordinated delivery is missing its relational transaction and '{storage.GetType().Name}' cannot capture rows on the unit of work."
+            );
+        }
+
+        return coordinatedStore.StoreCoordinatedMessageAsync(
+            publishRequest.MessageName,
+            _CreateStorageEnvelope(publishRequest),
+            decision.PublishAt,
+            unitOfWork,
+            cancellationToken
+        );
+    }
 
     private ValueTask<MediumMessage> _StoreMessageAsync(
         PreparedPublishMessage publishRequest,

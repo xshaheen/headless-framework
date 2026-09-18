@@ -50,7 +50,7 @@ internal static class MappingExtensions
         };
     }
 
-    // KTD2: a single node projected flat (no nested children). A recursive .Select projection is not EF-translatable,
+    // A single node projected flat (no nested children). A recursive .Select projection is not EF-translatable,
     // so deep hydration claims the id-set to depth, reloads these flat rows, and rebuilds the tree by ParentId in
     // memory (AttachNonTimedDescendantsAsync). Carries the full pickup field set — dropping RetryCount (or any field)
     // from any pickup path silently resets state after restart (docs/solutions precedent).
@@ -78,9 +78,9 @@ internal static class MappingExtensions
     }
 
     /// <summary>
-    /// R12/KTD2: attaches the non-timed in-tree subtree to each already-loaded flat root, frontier by frontier, down
+    /// Attaches the non-timed in-tree subtree to each already-loaded flat root, frontier by frontier, down
     /// to <paramref name="maxChainDepth"/> (roots are depth 1). A timed descendant (<c>ExecutionTime != null</c>) is a
-    /// boundary — excluded from the in-tree walk and claimed independently (U5) — so the frontier descends only
+    /// boundary — excluded from the in-tree walk and claimed independently — so the frontier descends only
     /// through non-timed children. The tree is rebuilt by <c>ParentId</c> in memory because a recursive EF projection
     /// is not translatable.
     /// </summary>
@@ -179,7 +179,7 @@ internal static class MappingExtensions
             TenantId = e.TenantId,
             Request = e.Request,
             RetryCount = e.RetryCount,
-            // R23: the recovery stamp rides every pickup/claim projection, so a coalesced run reclaimed after a
+            // The recovery stamp rides every pickup/claim projection, so a coalesced run reclaimed after a
             // restart still reports the instant it stands for. Dropping it here silently demotes it to an ordinary
             // run — the RetryCount defect shape this repo has already paid for once.
             RecoveredFromUtc = e.RecoveredFromUtc,
@@ -224,7 +224,7 @@ internal static class MappingExtensions
             // Retry enum default when re-queued.
             OnNodeDeath = e.OnNodeDeath,
             RetryCount = e.RetryCount,
-            // R23: see the sibling projection — the recovery stamp must survive this read too.
+            // See the sibling projection — the recovery stamp must survive this read too.
             RecoveredFromUtc = e.RecoveredFromUtc,
             CronJob = new TCronJob
             {

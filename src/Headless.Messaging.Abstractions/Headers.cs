@@ -129,6 +129,14 @@ public static class Headers
     public const string ResolvedDeliveryMode = "headless-delivery-resolved";
 
     /// <summary>
+    /// Transaction enlistment requested by the caller (per call, per type, or the host default) before the
+    /// unit-of-work decision. Values are stable <c>TransactionEnlistment</c> names (<c>WhenAvailable</c>,
+    /// <c>Required</c>, <c>Never</c>). This header is framework-owned and cannot be overridden.
+    /// Value: "headless-enlistment-requested"
+    /// </summary>
+    public const string RequestedEnlistment = "headless-enlistment-requested";
+
+    /// <summary>
     /// Exception information if the message processing failed.
     /// Contains the exception type name and message formatted as "ExceptionTypeName-->ExceptionMessage".
     /// Value: "headless-exception"

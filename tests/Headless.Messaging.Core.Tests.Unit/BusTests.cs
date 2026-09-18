@@ -735,9 +735,9 @@ public sealed class BusTests : TestBase
     }
 
     [Fact]
-    public void should_register_as_singleton_service()
+    public void should_register_as_scoped_service()
     {
-        // given
+        // given — IBus is scoped so it reads this scope's IUnitOfWorkManager.Current at publish time.
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddHeadlessMessaging(setup =>
@@ -752,11 +752,11 @@ public sealed class BusTests : TestBase
         // then
         var descriptor = services.FirstOrDefault(d => d.ServiceType == typeof(IBus));
         descriptor.Should().NotBeNull();
-        descriptor!.Lifetime.Should().Be(ServiceLifetime.Singleton);
+        descriptor!.Lifetime.Should().Be(ServiceLifetime.Scoped);
     }
 
     [Fact]
-    public async Task should_resolve_bus_from_container()
+    public async Task should_resolve_bus_from_a_scope()
     {
         // given
         var services = new ServiceCollection();
@@ -768,10 +768,11 @@ public sealed class BusTests : TestBase
         });
 
         // when
-        await using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 
-        // then - singleton can be resolved directly without scope
-        var publisher = provider.GetService<IBus>();
+        // then — IBus is scoped; resolve from a created scope, never the root provider.
+        using var scope = provider.CreateScope();
+        var publisher = scope.ServiceProvider.GetService<IBus>();
         publisher.Should().NotBeNull();
         publisher.Should().BeOfType<Bus>();
     }

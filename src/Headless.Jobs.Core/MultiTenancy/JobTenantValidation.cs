@@ -13,7 +13,7 @@ namespace Headless.Jobs.MultiTenancy;
 /// </summary>
 internal static class JobTenantValidation
 {
-    /// <summary>Shared rejection message for any path that finds a tenant on a cron definition (R8).</summary>
+    /// <summary>Shared rejection message for any path that finds a tenant on a cron definition.</summary>
     internal const string CronSystemScopeMessage =
         "Cron definitions are always system scope and cannot carry a tenant identifier.";
 
@@ -57,7 +57,7 @@ internal static class JobTenantValidation
         }
     }
 
-    /// <summary>Rejects the system-job contradiction and escalation cases (R7).</summary>
+    /// <summary>Rejects the system-job contradiction and escalation cases.</summary>
     internal static void ValidateSystemJob(string? explicitTenantId, bool ambientPresent)
     {
         if (explicitTenantId is not null)

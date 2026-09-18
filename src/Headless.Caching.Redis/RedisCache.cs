@@ -393,7 +393,7 @@ public sealed class RedisCache(
 
         // MSET/MSETEX writes are atomic per batch, so a full count means every input key was written; emit one Set
         // per caller key on full success. Partial-failure key attribution is not recoverable from the aggregate
-        // count, so nothing is emitted in that rare case. Gate the extra keyspace pass on any subscriber (R6).
+        // count, so nothing is emitted in that rare case. Gate the extra keyspace pass on any subscriber.
         if (writtenCount == value.Count && _coordinator.EventsHub.HasSetSubscribers)
         {
             foreach (var writtenKey in value.Keys)

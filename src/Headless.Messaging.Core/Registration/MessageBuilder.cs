@@ -2,6 +2,7 @@
 
 using Headless.Checks;
 using Headless.Messaging.Configuration;
+using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -21,6 +22,21 @@ public interface IBusMessageBuilder<TMessage>
 
     /// <summary>Requires a locally supported native affinity mapping for this route at startup.</summary>
     IBusMessageBuilder<TMessage> RequireRoutingAffinity();
+
+    /// <summary>
+    /// Pins the delivery mode for every Bus publish of this message type. A per-call
+    /// <see cref="MessageOptions.DeliveryMode"/> still overrides it; without one this policy overrides the host
+    /// <see cref="MessagingOptions.DefaultDeliveryMode"/>.
+    /// </summary>
+    IBusMessageBuilder<TMessage> WithDeliveryMode(DeliveryMode mode);
+
+    /// <summary>
+    /// Pins the transaction-enlistment requirement for every Bus publish of this message type. A per-call
+    /// <see cref="MessageOptions.Enlistment"/> still overrides it; without one this policy overrides the host
+    /// <see cref="MessagingOptions.DefaultEnlistment"/>. <see cref="TransactionEnlistment.Required"/> rejects
+    /// a publish made with no active unit of work before any effect.
+    /// </summary>
+    IBusMessageBuilder<TMessage> WithEnlistment(TransactionEnlistment enlistment);
 
     /// <summary>Registers and configures a Bus consumer.</summary>
     IBusMessageBuilder<TMessage> Consumer<TConsumer>(Action<IBusConsumerBuilder<TConsumer>> configure)
@@ -42,6 +58,21 @@ public interface IQueueMessageBuilder<TMessage>
     /// <summary>Requires a locally supported native affinity mapping for this route at startup.</summary>
     IQueueMessageBuilder<TMessage> RequireRoutingAffinity();
 
+    /// <summary>
+    /// Pins the delivery mode for every Queue enqueue of this message type. A per-call
+    /// <see cref="MessageOptions.DeliveryMode"/> still overrides it; without one this policy overrides the host
+    /// <see cref="MessagingOptions.DefaultDeliveryMode"/>.
+    /// </summary>
+    IQueueMessageBuilder<TMessage> WithDeliveryMode(DeliveryMode mode);
+
+    /// <summary>
+    /// Pins the transaction-enlistment requirement for every Queue enqueue of this message type. A per-call
+    /// <see cref="MessageOptions.Enlistment"/> still overrides it; without one this policy overrides the host
+    /// <see cref="MessagingOptions.DefaultEnlistment"/>. <see cref="TransactionEnlistment.Required"/> rejects
+    /// an enqueue made with no active unit of work before any effect.
+    /// </summary>
+    IQueueMessageBuilder<TMessage> WithEnlistment(TransactionEnlistment enlistment);
+
     /// <summary>Registers and configures a Queue consumer.</summary>
     IQueueMessageBuilder<TMessage> Consumer<TConsumer>(Action<IQueueConsumerBuilder<TConsumer>> configure)
         where TConsumer : class, IConsume<TMessage>;
@@ -57,8 +88,22 @@ internal abstract class MessageBuilder<TMessage>(IServiceCollection services, Me
     private string _contractVersion = MessageOptions.InitialContractVersion;
     private Func<object, string?>? _correlationSelector;
     private bool _requiresRoutingAffinity;
+    private DeliveryMode? _deliveryMode;
+    private TransactionEnlistment? _enlistment;
 
     protected void SetRoutingAffinityRequired() => _requiresRoutingAffinity = true;
+
+    protected void SetDeliveryMode(DeliveryMode mode)
+    {
+        Argument.IsInEnum(mode);
+        _deliveryMode = mode;
+    }
+
+    protected void SetEnlistment(TransactionEnlistment enlistment)
+    {
+        Argument.IsInEnum(enlistment);
+        _enlistment = enlistment;
+    }
 
     protected MessageRegistration BuildRegistration()
     {
@@ -72,7 +117,9 @@ internal abstract class MessageBuilder<TMessage>(IServiceCollection services, Me
             providerConfigs,
             _consumers.ConvertAll(x => x.Build(providerConfigs)),
             _contractVersion,
-            _requiresRoutingAffinity
+            _requiresRoutingAffinity,
+            _deliveryMode,
+            _enlistment
         );
     }
 
@@ -122,6 +169,18 @@ internal sealed class BusMessageBuilder<TMessage>(IServiceCollection services)
         return this;
     }
 
+    public IBusMessageBuilder<TMessage> WithDeliveryMode(DeliveryMode mode)
+    {
+        SetDeliveryMode(mode);
+        return this;
+    }
+
+    public IBusMessageBuilder<TMessage> WithEnlistment(TransactionEnlistment enlistment)
+    {
+        SetEnlistment(enlistment);
+        return this;
+    }
+
     public IBusMessageBuilder<TMessage> CorrelationFrom(Func<TMessage, string?> selector)
     {
         SetCorrelationFrom(selector);
@@ -153,6 +212,18 @@ internal sealed class QueueMessageBuilder<TMessage>(IServiceCollection services)
     public IQueueMessageBuilder<TMessage> RequireRoutingAffinity()
     {
         SetRoutingAffinityRequired();
+        return this;
+    }
+
+    public IQueueMessageBuilder<TMessage> WithDeliveryMode(DeliveryMode mode)
+    {
+        SetDeliveryMode(mode);
+        return this;
+    }
+
+    public IQueueMessageBuilder<TMessage> WithEnlistment(TransactionEnlistment enlistment)
+    {
+        SetEnlistment(enlistment);
         return this;
     }
 

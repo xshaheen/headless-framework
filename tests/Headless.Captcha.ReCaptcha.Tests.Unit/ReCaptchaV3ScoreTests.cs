@@ -9,7 +9,7 @@ namespace Tests;
 /// <summary>
 /// reCAPTCHA v3's score is provider-specific: reachable through <see cref="IReCaptchaV3Verifier"/> (returns
 /// <see cref="ReCaptchaV3VerifyResult"/>), while the generic <see cref="ICaptchaVerifier"/> view is pass/fail only
-/// and requires a cast to read the score (AE2).
+/// and requires a cast to read the score.
 /// </summary>
 public sealed class ReCaptchaV3ScoreTests : TestBase
 {

@@ -12,11 +12,11 @@ using Microsoft.Extensions.Time.Testing;
 namespace Tests.Provider;
 
 /// <summary>
-/// U5/KTD3: a timed chain descendant (<c>ExecutionTime != null</c>, <c>ParentId != null</c>) is claimable only at
+/// A timed chain descendant (<c>ExecutionTime != null</c>, <c>ParentId != null</c>) is claimable only at
 /// the later of its parent's matching terminal state and its own execution time; a non-matching parent terminal
 /// skips it with its subtree. This inverts the pre-#311 behavior where a timed child fired unconditionally at its
 /// time. Proven here on the in-memory provider (gate + release/skip reconcile + poll-time safety net); cross-provider
-/// parity and the native SQL gate land in the EF harness (U7).
+/// parity and the native SQL gate land in the EF harness.
 /// </summary>
 public sealed class TimedDescendantGatingProviderTests : TestBase
 {
@@ -75,7 +75,7 @@ public sealed class TimedDescendantGatingProviderTests : TestBase
             ExecutionTime = null,
         };
 
-    // ----- AE8: claim gate -----
+    // ----- Claim gate -----
 
     [Fact]
     public async Task timed_child_is_not_claimable_while_parent_is_running_even_when_its_time_is_due()
@@ -130,7 +130,7 @@ public sealed class TimedDescendantGatingProviderTests : TestBase
         claimed.Should().NotContain(x => x.Id == child.Id, "the fallback selects timed rows directly and is gated");
     }
 
-    // ----- AE8: release re-stamp -----
+    // ----- Release re-stamp -----
 
     [Fact]
     public async Task reconcile_restamps_a_past_due_matching_child_so_the_main_peek_claims_it_promptly()
@@ -172,7 +172,7 @@ public sealed class TimedDescendantGatingProviderTests : TestBase
         stored.Status.Should().Be(JobStatus.Idle);
     }
 
-    // ----- AE9: skip on non-matching parent terminal -----
+    // ----- Skip on non-matching parent terminal -----
 
     [Fact]
     public async Task parent_failure_skips_a_timed_on_success_child_and_its_whole_subtree()

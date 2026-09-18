@@ -148,7 +148,7 @@ public sealed class CronControlProviderTests : TestBase
     }
 
     /// <summary>
-    /// R10 on the attribute-driven path: a stored projection derived under the OLD expression must not survive a
+    /// On the attribute-driven path: a stored projection derived under the OLD expression must not survive a
     /// code-defined expression change — a yearly→minutes edit would otherwise stay dormant until the stale
     /// projection came due. Migrate resets the position to the uninitialized sentinel so the next wake re-derives
     /// it by the creation rule under the new expression.

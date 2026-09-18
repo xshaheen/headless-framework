@@ -11,9 +11,8 @@ using Microsoft.Extensions.Options;
 namespace Tests.Internal;
 
 /// <summary>
-/// Verifies the U10 (#238) strict-tenancy publish guard added on top of the U2 (#228)
-/// 4-case header integrity policy. See
-/// docs/plans/2026-05-03-002-feat-messaging-phase1-foundations-plan.md U10.
+/// Verifies the strict-tenancy publish guard (#238) added on top of the
+/// 4-case header integrity policy (#228).
 /// </summary>
 public sealed class StrictTenancyPublishGuardTests : TestBase
 {
@@ -102,9 +101,9 @@ public sealed class StrictTenancyPublishGuardTests : TestBase
     }
 
     [Fact]
-    public void should_let_u2_raw_header_integrity_check_fire_before_u10_when_raw_header_set_without_typed()
+    public void should_let_raw_header_integrity_check_fire_before_absence_check_when_raw_header_set_without_typed()
     {
-        // given - U2 raw header integrity check takes priority over U10 absence check
+        // given - the raw header integrity check takes priority over the absence check
         var factory = _CreateFactory(tenantContextRequired: true, ambientTenantId: "acme");
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.TenantId] = "injected" };
 

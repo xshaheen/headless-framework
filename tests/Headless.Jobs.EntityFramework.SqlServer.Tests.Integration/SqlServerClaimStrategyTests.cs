@@ -3,7 +3,6 @@
 using System.Collections.Concurrent;
 using System.Data.Common;
 using System.Reflection;
-using Headless.CommitCoordination;
 using Headless.Coordination;
 using Headless.Jobs;
 using Headless.Jobs.DbContextFactory;
@@ -15,6 +14,7 @@ using Headless.Jobs.Models;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Testing.Tests;
+using Headless.UnitOfWork;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -859,9 +859,9 @@ internal sealed class SqlServerNativeClaimsFixture(string connectionString) : IJ
         return new SqlConnection(ConnectionString);
     }
 
-    public void ConfigureCommitCoordination(IServiceCollection services)
+    public void ConfigureUnitOfWork(IServiceCollection services)
     {
-        services.AddSqlServerCommitCoordination();
+        services.AddSqlServerUnitOfWork();
     }
 
     public void ConfigureMessagingStorage(MessagingSetupBuilder setup)
@@ -871,7 +871,7 @@ internal sealed class SqlServerNativeClaimsFixture(string connectionString) : IJ
 
     public Task RunCoordinatedTransactionAsync(
         IServiceProvider services,
-        Func<DbConnection, DbTransaction, CancellationToken, Task> operation,
+        Func<IServiceProvider, DbConnection, DbTransaction, CancellationToken, Task> operation,
         CancellationToken cancellationToken
     )
     {

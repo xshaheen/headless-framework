@@ -466,7 +466,7 @@ public abstract class MembershipConformanceTests<TFixture>(TFixture fixture) : T
 
         // IsAliveAsync maps every non-Alive targeted state to false, not just absence. As the current-generation
         // node ages out of the alive band its targeted state becomes Suspected, then Dead — both derive false
-        // (only Alive is true), so this pins the R4 derivation beyond the superseded/absent case above.
+        // (only Alive is true), so this pins the derivation beyond the superseded/absent case above.
         await TimeProvider.System.Delay(CoordinationFixtureExtensions.SuspectedWait, AbortToken);
         (await second.Membership.IsAliveAsync(secondIdentity, AbortToken)).Should().BeFalse();
 

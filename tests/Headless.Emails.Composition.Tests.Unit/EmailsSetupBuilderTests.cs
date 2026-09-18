@@ -128,7 +128,7 @@ public sealed class EmailsSetupBuilderTests
     [Fact]
     public async Task should_be_reachable_via_email_sender_provider_when_named_keyed_registration()
     {
-        // given - the instance-scoped Use* overloads land per provider (U2-U5); this exercises the
+        // given - the instance-scoped Use* overloads land per provider; this exercises the
         // provider-agnostic slot mechanics directly through RegisterProvider, mirroring Caching.
         var namedSender = Substitute.For<IEmailSender>();
         var services = new ServiceCollection();

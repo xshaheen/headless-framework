@@ -3,6 +3,7 @@
 using System.Text.Json.Serialization;
 using Headless.Jobs.Entities.BaseEntity;
 using Headless.Jobs.Enums;
+using Headless.UnitOfWork;
 
 namespace Headless.Jobs.Entities;
 
@@ -34,9 +35,9 @@ public class TimeJobEntity<TTicker> : BaseJobEntity
         return clone;
     }
 
-    /// <summary>Requires this scheduling call to enlist in a compatible live application transaction. Never persisted.</summary>
+    /// <summary>How eagerly this scheduling call enlists in the active unit of work. Never persisted.</summary>
     [JsonIgnore]
-    public bool RequireAtomicEnlistment { get; set; }
+    public TransactionEnlistment Enlistment { get; set; }
 
     /// <summary>Reserved business identity. All keyed metadata is null on ordinary jobs.</summary>
     public virtual string? BusinessKey { get; internal set; }

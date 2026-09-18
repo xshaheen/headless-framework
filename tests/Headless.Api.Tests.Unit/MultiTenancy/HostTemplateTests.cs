@@ -7,7 +7,7 @@ using Headless.Testing.Tests;
 namespace Tests.MultiTenancy;
 
 /// <summary>
-/// Pins the KTD2 host template grammar: the documented examples parse and match with the documented
+/// Pins the host template grammar: the documented examples parse and match with the documented
 /// captures, invalid templates fail <see cref="HostTemplate.TryParse"/> with a message naming the
 /// template and the broken rule (surfaced verbatim by the options validator), and the compiled
 /// patterns are exact — one token matches exactly one DNS-style label.

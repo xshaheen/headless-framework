@@ -53,7 +53,7 @@ public sealed class TenantCatalogOptionsValidatorTests
     [Fact]
     public void should_accept_zero_unknown_identifier_cache_expiration()
     {
-        // given — zero disables negative caching (R12); it must not fail validation.
+        // given — zero disables negative caching; it must not fail validation.
         var options = new TenantCatalogOptions { UnknownIdentifierCacheExpiration = TimeSpan.Zero };
 
         // when

@@ -2,6 +2,7 @@
 
 using Headless.Messaging;
 using Headless.Testing.Tests;
+using Headless.UnitOfWork;
 
 namespace Tests;
 
@@ -11,11 +12,31 @@ public sealed class PublishOptionsTests : TestBase
     public void should_expose_stable_delivery_mode_values()
     {
         // then
-        ((int)DeliveryMode.Auto)
+        ((int)DeliveryMode.Durable)
             .Should()
             .Be(0);
-        ((int)DeliveryMode.Durable).Should().Be(1);
-        ((int)DeliveryMode.Direct).Should().Be(2);
+        ((int)DeliveryMode.Direct).Should().Be(1);
+    }
+
+    [Fact]
+    public void should_expose_stable_transaction_enlistment_values()
+    {
+        // then
+        ((int)TransactionEnlistment.WhenAvailable)
+            .Should()
+            .Be(0);
+        ((int)TransactionEnlistment.Required).Should().Be(1);
+        ((int)TransactionEnlistment.Never).Should().Be(2);
+    }
+
+    [Fact]
+    public void should_default_enlistment_to_null()
+    {
+        // when
+        var options = new PublishOptions();
+
+        // then
+        options.Enlistment.Should().BeNull();
     }
 
     [Fact]
@@ -34,7 +55,7 @@ public sealed class PublishOptionsTests : TestBase
         // given
         var expected = new PublishOptions { DeliveryMode = DeliveryMode.Durable, Delay = TimeSpan.FromMinutes(1) };
         var equivalent = new PublishOptions { DeliveryMode = DeliveryMode.Durable, Delay = TimeSpan.FromMinutes(1) };
-        var differentMode = expected with { DeliveryMode = DeliveryMode.Auto };
+        var differentMode = expected with { DeliveryMode = DeliveryMode.Direct };
         var differentDelay = expected with { Delay = TimeSpan.FromMinutes(2) };
 
         // then

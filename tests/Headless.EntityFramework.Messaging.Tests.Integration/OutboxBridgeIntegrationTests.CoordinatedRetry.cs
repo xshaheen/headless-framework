@@ -3,6 +3,7 @@
 using Headless.Domain;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Models;
+using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
@@ -108,7 +109,7 @@ public sealed partial class OutboxBridgeIntegrationTests
                 new JobKey(evidence.Key),
                 DeadlineRegistration.Descriptor,
                 evidence.Due,
-                new JobOptions { RequireAtomicEnlistment = true },
+                new JobOptions { Enlistment = TransactionEnlistment.Required },
                 cancellationToken
             );
             evidence.Writes++;

@@ -2,7 +2,6 @@
 
 using Headless.Abstractions;
 using Headless.Checks;
-using Headless.CommitCoordination;
 using Headless.Coordination;
 using Headless.DistributedLocks;
 using Headless.Jobs.BackgroundServices;
@@ -19,8 +18,8 @@ using Headless.Jobs.Managers;
 using Headless.Jobs.MultiTenancy;
 using Headless.Jobs.Provider;
 using Headless.Jobs.Temps;
-using Headless.Jobs.Transactions;
 using Headless.MultiTenancy;
+using Headless.UnitOfWork;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -36,8 +35,6 @@ namespace Headless.Jobs;
 /// </summary>
 public static class SetupJobs
 {
-    private static readonly TimeSpan _MaximumPostCommitDrainTimeout = TimeSpan.FromMinutes(5);
-
     /// <summary>
     /// Registers the Jobs subsystem using the default <see cref="TimeJobEntity"/> and
     /// <see cref="CronJobEntity"/> entity types. Equivalent to
@@ -107,20 +104,12 @@ public static class SetupJobs
         });
 
         // The pickup lease is stamped as LockedUntil = now + LeaseDuration; a non-positive duration would write a
-        // lease that is already expired, defeating duplicate-suppression entirely (KTD2).
+        // lease that is already expired, defeating duplicate-suppression entirely.
         Ensure.True(
             schedulerOptionsBuilder.LeaseDuration > TimeSpan.Zero,
             "SchedulerOptionsBuilder.LeaseDuration must be greater than TimeSpan.Zero."
         );
         _ = schedulerOptionsBuilder.ResolveCancellationObservationInterval();
-        Ensure.True(
-            schedulerOptionsBuilder.PostCommitDrainTimeout > TimeSpan.Zero,
-            "SchedulerOptionsBuilder.PostCommitDrainTimeout must be greater than TimeSpan.Zero."
-        );
-        Ensure.True(
-            schedulerOptionsBuilder.PostCommitDrainTimeout <= _MaximumPostCommitDrainTimeout,
-            "SchedulerOptionsBuilder.PostCommitDrainTimeout must not exceed 5 minutes."
-        );
         Ensure.True(
             schedulerOptionsBuilder.MaxConcurrency > 0,
             "SchedulerOptionsBuilder.MaxConcurrency must be greater than zero."
@@ -190,9 +179,14 @@ public static class SetupJobs
         // Guid.NewGuid() so they stay index-friendly. Idempotent: TryAdd-based, so a host that already registered it wins.
         services.AddHeadlessGuidGenerator();
 
-        services.AddSingleton<ITimeJobManager<TTimeJob>, JobsManager<TTimeJob, TCronJob>>();
-        services.AddSingleton<ICronJobManager<TCronJob>, JobsManager<TTimeJob, TCronJob>>();
-        services.AddSingleton<IJobScheduler, JobScheduler<TTimeJob, TCronJob>>();
+        // The singleton core plus scoped facades. The facade resolves IUnitOfWorkManager.Current at each call
+        // and passes it into the core's Add/keyed-schedule methods; the core itself never resolves ambient state.
+        // AddUnitOfWork() is idempotent — composition with other AddUnitOfWork() callers is safe.
+        services.AddUnitOfWork();
+        services.AddSingleton<JobsManager<TTimeJob, TCronJob>>();
+        services.AddScoped<ITimeJobManager<TTimeJob>, JobsManagerFacade<TTimeJob, TCronJob>>();
+        services.AddScoped<ICronJobManager<TCronJob>, JobsManagerFacade<TTimeJob, TCronJob>>();
+        services.AddScoped<IJobScheduler, JobScheduler<TTimeJob, TCronJob>>();
         services.AddSingleton<IInternalJobManager, InternalJobsManager<TTimeJob, TCronJob>>();
         // Default owner identity for the in-memory path + always-on instrumentation; the durable path overrides it.
         services.TryAddSingleton<IJobsOwnerIdentity, DefaultJobsOwnerIdentity>();
@@ -202,9 +196,6 @@ public static class SetupJobs
             JobsInMemoryPersistenceProvider<TTimeJob, TCronJob>
         >();
         services.AddSingleton<IJobsNotificationHubSender, NoOpJobsNotificationHubSender>();
-        // Null-coordinator fallback so the JobsManager resolves and takes the direct path in standalone Jobs hosts
-        // (no CommitCoordination, no Messaging). AddCommitCoordination's unconditional registration wins when present.
-        services.TryAddSingleton<ICurrentCommitCoordinator, JobsNullCommitCoordinator>();
         services.TryAddSingleton(TimeProvider.System);
 
         // Per-host tenancy DI (see _AddTenancyServices): runs on EVERY call so a second host built after the process-
@@ -226,6 +217,12 @@ public static class SetupJobs
         // Core initialization — opens the activation barrier when its drain completes.
         services.AddHostedService<JobsInitializationHostedService>();
 
+        // Post-commit worker for coordinated enqueues — registered even with DisableBackgroundServices(): the
+        // managers hand it a signal from the commit callback regardless, and on such hosts its side effects reduce to
+        // no-op dispatch/scheduler calls plus a dashboard notify, so one callback shape serves every host.
+        services.AddSingleton<JobsPostCommitSignalService>();
+        services.AddHostedService(provider => provider.GetRequiredService<JobsPostCommitSignalService>());
+
         // Only register background services if enabled (default is true)
         if (optionInstance.RegisterBackgroundServices)
         {
@@ -236,7 +233,7 @@ public static class SetupJobs
             services.AddHostedService(provider => provider.GetRequiredService<JobsSchedulerBackgroundService>());
             services.AddHostedService(provider => provider.GetRequiredService<JobsFallbackBackgroundService>());
             services.AddSingleton<JobsFallbackBackgroundService>();
-            // KTD7: its own service, because it selects on staleness — the opposite criterion from dispatch.
+            // Its own service, because it selects on staleness — the opposite criterion from dispatch.
             services.AddHostedService<JobsFingerprintSweepBackgroundService>();
             services.AddSingleton<JobsExecutionTaskHandler>();
             services.AddSingleton<JobsExecutionCancellationRegistry>();
@@ -334,7 +331,7 @@ public static class SetupJobs
         await middleware.InvokeAsync(context, next, cancellationToken).ConfigureAwait(false);
     };
 
-    // KTD1 process-global one-shot: only the fresh-discovery participant that wins the reservation inserts the tenancy
+    // Process-global one-shot: only the fresh-discovery participant that wins the reservation inserts the tenancy
     // middleware pair into the frozen-once registry, so overlapping host configuration and post-freeze ExistingCatalog
     // hosts never double-insert (which would dispatch tenancy twice). A post-freeze call skips silently — never throws.
     private static void _RegisterTenancyMiddleware(JobFunctionProvider.DiscoveryParticipation participation)
@@ -361,7 +358,7 @@ public static class SetupJobs
         );
     }
 
-    // Per-host DI (KTD1): the middleware types plus the tenant-context primitives, mirroring Headless.Messaging.Core's
+    // Per-host DI: the middleware types plus the tenant-context primitives, mirroring Headless.Messaging.Core's
     // Setup. NullCurrentTenant remains the fallback that a real Headless.Api / EF / consumer registration strips;
     // CurrentTenant.Id stays null until a caller or seam populates the AsyncLocal, so a strict-mode enqueue with no
     // tenant still fails fast. Runs on every AddHeadlessJobs so a second host still resolves and dispatches the middleware.
@@ -375,7 +372,7 @@ public static class SetupJobs
 
     private static void _AddCoordinatedDurablePath(IServiceCollection services)
     {
-        // Fail-fast (R5): the durable path requires a real coordination provider. INodeMembership resolves by
+        // Fail-fast: the durable path requires a real coordination provider. INodeMembership resolves by
         // last-wins registration (AddHeadlessCoordination uses AddSingleton, not TryAdd), so a consumer package may
         // register a NullNodeMembership fallback first and have coordination replace it. Inspect the LAST descriptor
         // — the one DI will actually resolve — not the first; FirstOrDefault would see the null fallback and reject a
@@ -397,10 +394,10 @@ public static class SetupJobs
             );
         }
 
-        // Override the default owner identity (U1) with the node@incarnation adapter over INodeMembership.
+        // Override the default owner identity with the node@incarnation adapter over INodeMembership.
         services.AddSingleton<IJobsOwnerIdentity, JobsOwnerIdentityAdapter>();
 
-        // Event-driven dead-node recovery (U2, shared bridge) and the registration startup gate (R6).
+        // Event-driven dead-node recovery (shared bridge) and the registration startup gate.
         services.AddSingleton<JobsDeadOwnerReclaimer>();
         services.AddHostedService<DeadOwnerRecoveryBridge<JobsDeadOwnerReclaimer>>();
         services.AddHostedService<JobsCoordinationStartupGate>();

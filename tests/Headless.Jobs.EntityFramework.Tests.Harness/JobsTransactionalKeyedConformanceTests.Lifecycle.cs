@@ -2,12 +2,14 @@
 
 using System.Data;
 using System.Data.Common;
+using System.Diagnostics;
 using Headless.Jobs;
 using Headless.Jobs.DbContextFactory;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Models;
+using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -26,7 +28,7 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>
         {
             await fixture.RunCoordinatedTransactionAsync(
                 host.Services,
-                async (connection, transaction, ct) =>
+                async (_, connection, transaction, ct) =>
                 {
                     await using var different = fixture.CreateConnection();
                     var parsed = new DbConnectionStringBuilder { ConnectionString = different.ConnectionString };
@@ -56,18 +58,29 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>
                             )
                         )
                         {
-                            var manager = incompatible.Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
+                            // "incompatible" is an ENTIRELY SEPARATE DI container, so there is no ambient state its
+                            // own scoped IUnitOfWorkManager could observe automatically (unlike the old AsyncLocal
+                            // coordinator, which crossed containers for free). Enlist the outer caller's
+                            // connection/transaction in observed mode so the preflight check inside AddAsync
+                            // actually runs (and rejects) instead of short-circuiting on "no active unit of work".
+                            await using var incompatibleScope = incompatible.Services.CreateAsyncScope();
+                            var incompatibleManager =
+                                incompatibleScope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+                            incompatibleManager.Enlist(new FixedRelationalResource(connection, transaction));
+                            var manager = incompatibleScope.ServiceProvider.GetRequiredService<
+                                ITimeJobManager<TimeJobEntity>
+                            >();
                             var candidate = new TimeJobEntity
                             {
                                 Function = JobsCoordinationFixtureExtensions.CoordinatedFunctionName,
                                 ExecutionTime = _Due.UtcDateTime,
-                                RequireAtomicEnlistment = true,
+                                Enlistment = TransactionEnlistment.Required,
                             };
                             var write = () => manager.AddAsync(candidate, ct);
                             await write
                                 .Should()
                                 .ThrowAsync<InvalidOperationException>()
-                                .WithMessage(owned ? "*must not own*" : "*database differs*");
+                                .WithMessage(owned ? "*must not own*" : "*belongs to another database*");
                             connection
                                 .State.Should()
                                 .Be(
@@ -96,7 +109,7 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>
         {
             await fixture.RunCoordinatedTransactionAsync(
                 host.Services,
-                async (connection, transaction, ct) =>
+                async (_, connection, transaction, ct) =>
                 {
                     await using var configured = fixture.CreateConnection();
                     var observer = new BorrowedHandleObserver(connection, transaction);
@@ -111,25 +124,48 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>
                             )
                         )
                         {
+                            // "compatible" is an ENTIRELY SEPARATE DI container from the outer coordinated scope, so
+                            // there is no ambient state its own scoped IUnitOfWorkManager could observe automatically
+                            // (unlike the old AsyncLocal coordinator, which crossed containers for free). Enlist the
+                            // SAME connection/transaction the outer unit owns, in observed mode, so a manager resolved
+                            // from this scope sees it as the active unit.
+                            await using var compatibleScope = compatible.Services.CreateAsyncScope();
+                            var compatibleManager =
+                                compatibleScope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+                            var compatibleUnit = compatibleManager.Enlist(
+                                new FixedRelationalResource(connection, transaction)
+                            );
                             if (keyed)
                             {
-                                (await _ScheduleAsync(compatible, new JobKey("configured-override"), "first", ct))
+                                (
+                                    await _ScheduleAsync(
+                                        compatibleScope.ServiceProvider,
+                                        new JobKey("configured-override"),
+                                        "first",
+                                        ct
+                                    )
+                                )
                                     .IsProvisional.Should()
                                     .BeTrue();
                             }
                             else
                             {
-                                var manager = compatible.Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
+                                var manager = compatibleScope.ServiceProvider.GetRequiredService<
+                                    ITimeJobManager<TimeJobEntity>
+                                >();
                                 await manager.AddAsync(
                                     new TimeJobEntity
                                     {
                                         Function = JobsCoordinationFixtureExtensions.CoordinatedFunctionName,
                                         ExecutionTime = _Due.UtcDateTime,
-                                        RequireAtomicEnlistment = true,
+                                        Enlistment = TransactionEnlistment.Required,
                                     },
                                     ct
                                 );
                             }
+                            // Observed mode: CompleteAsync only drains the registered OnCompleted callbacks here — the
+                            // real commit belongs to the outer coordinated block's own unit.
+                            await compatibleUnit.CompleteAsync(ct);
                             observer.Writes.Should().Be(1);
                         }
                         connection.State.Should().Be(ConnectionState.Open);
@@ -158,11 +194,11 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>
                 JobScheduleResult? deadline = null;
                 await fixture.RunCoordinatedTransactionAsync(
                     host.Services,
-                    async (connection, transaction, ct) =>
+                    async (scopedServices, connection, transaction, ct) =>
                     {
                         await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, ct);
                         deadline = await _ScheduleAsync(
-                            host,
+                            scopedServices,
                             new JobKey("restart-failure"),
                             "first",
                             ct,
@@ -172,6 +208,10 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>
                     },
                     AbortToken
                 );
+                // The commit callback only hands JobsPostCommitSignalService a signal (JobsPostCommitSignal.cs); the
+                // scheduler restart itself runs on that hosted worker's own channel-drain loop, off the commit path.
+                // Poll instead of asserting immediately after the commit returns.
+                await _WaitUntilAsync(() => scheduler.Failures >= 1, TimeSpan.FromSeconds(5), AbortToken);
                 scheduler.Failures.Should().Be(1);
                 (await fixture.CountTimeJobsAsync(AbortToken)).Should().Be(1);
                 (await fixture.CountProbeRowsAsync(AbortToken)).Should().Be(1);
@@ -195,17 +235,17 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>
                 ((FastNodeClock)host.Services.GetRequiredService<TimeProvider>()).UtcNow = before.AddHours(1);
                 await fixture.RunCoordinatedTransactionAsync(
                     host.Services,
-                    async (_, _, ct) =>
+                    async (scopedServices, _, _, ct) =>
                     {
                         future = await _ScheduleAsync(
-                            host,
+                            scopedServices,
                             new JobKey("store-future"),
                             "first",
                             ct,
                             due: before.AddMinutes(20)
                         );
                         eligible = await _ScheduleAsync(
-                            host,
+                            scopedServices,
                             new JobKey("store-due"),
                             "first",
                             ct,
@@ -236,6 +276,28 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>
             },
             clock: new FastNodeClock()
         );
+
+    // The post-commit signal worker (JobsPostCommitSignalService) drains its channel off the commit path, so a
+    // side effect like a scheduler restart can lag a moment behind the commit that queued it. Poll instead of
+    // asserting immediately.
+    private static async Task _WaitUntilAsync(
+        Func<bool> condition,
+        TimeSpan timeout,
+        CancellationToken cancellationToken
+    )
+    {
+        var stopwatch = Stopwatch.StartNew();
+
+        while (stopwatch.Elapsed < timeout)
+        {
+            if (condition())
+            {
+                return;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(50), cancellationToken);
+        }
+    }
 
     private async Task<DateTimeOffset> _ReadStoreUtcNowAsync()
     {

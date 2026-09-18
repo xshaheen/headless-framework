@@ -1,14 +1,14 @@
 using Dapper;
 using Headless.Messaging;
+using Headless.UnitOfWork;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
-using Microsoft.EntityFrameworkCore;
 using NameGenerator.Generators;
 
 namespace Demo.Controllers;
 
 [Route("api/[controller]")]
-public class ValuesController(IBus producer, IServiceProvider services) : Controller
+public class ValuesController(IBus producer, IUnitOfWorkManager unitOfWork) : Controller
 {
     private const string _MessageName = "sample.rabbitmq.sqlserver";
 
@@ -55,11 +55,10 @@ public class ValuesController(IBus producer, IServiceProvider services) : Contro
         return Ok();
     }
 
-    // CAPABILITY 1 — raw ADO (Dapper) coordinated transaction via the EnlistCommitCoordination advanced seam.
-    // The caller owns the transaction (so it can pass it to Dapper) and enlists it synchronously, which makes the
-    // coordinator ambient. The PublishAsync then writes its outbox row in the SAME transaction. On SqlServer commit
-    // detection is OUT-OF-BAND (a SqlClient diagnostic listener), so committing the transaction is enough — no
-    // manual signal is needed (contrast with PostgreSQL, which requires an explicit SignalAsync).
+    // CAPABILITY 1 — raw ADO (Dapper) unit of work via IUnitOfWorkManager.RunAsync(connection, …).
+    // RunAsync owns begin and commit: it opens the connection's transaction, runs the block, then commits. The
+    // Publish enlists in that same transaction because it reads the ambient IUnitOfWorkManager.Current from this
+    // scope, and Dapper needs the live transaction object, exposed as an IRelationalUnitOfWorkResource on uow.Resource.
     [Route("~/coordinated/adonet")]
     public async Task<IActionResult> CoordinatedAdoNet()
     {
@@ -68,46 +67,49 @@ public class ValuesController(IBus producer, IServiceProvider services) : Contro
 
         await using var connection = new SqlConnection(AppDbContext.ConnectionString);
         await connection.OpenAsync(ct);
-        var transaction = (SqlTransaction)await connection.BeginTransactionAsync(ct);
 
-        await using (transaction)
-        // Enlist synchronously in this frame so the ambient coordinator flows to the publish below.
-        using (connection.EnlistCommitCoordination(transaction, services))
-        {
-            await connection.ExecuteAsync(
-                new CommandDefinition(
-                    "INSERT INTO Persons(Name, Age, CreateTime) VALUES(@Name, @Age, GETDATE())",
-                    new { person.Name, person.Age },
-                    transaction,
-                    cancellationToken: ct
-                )
-            );
+        await unitOfWork.RunAsync(
+            connection,
+            async (uow, token) =>
+            {
+                var resource = (IRelationalUnitOfWorkResource)uow.Resource!;
 
-            await producer.PublishAsync(
-                person,
-                new PublishOptions { MessageName = _MessageName, DeliveryMode = DeliveryMode.Durable },
-                ct
-            );
+                await connection.ExecuteAsync(
+                    new CommandDefinition(
+                        "INSERT INTO Persons(Name, Age, CreateTime) VALUES(@Name, @Age, GETDATE())",
+                        new { person.Name, person.Age },
+                        resource.Transaction,
+                        cancellationToken: token
+                    )
+                );
 
-            await transaction.CommitAsync(ct); // the out-of-band diagnostic observer drains the publish on commit
-        }
+                await producer.PublishAsync(
+                    person,
+                    new PublishOptions { MessageName = _MessageName, DeliveryMode = DeliveryMode.Durable },
+                    token
+                );
+            },
+            cancellationToken: ct
+        );
 
-        return Ok($"Inserted {person} and published atomically (raw ADO; out-of-band commit detection).");
+        return Ok($"Inserted {person} and published atomically (raw ADO; unit-of-work-owned commit).");
     }
 
-    // CAPABILITY 2 — EF Core coordinated transaction.
-    // The DbContext helper runs inside EF's execution strategy (retry-safe), opens + enlists + commits in one call.
-    // SaveChanges and the publish commit together; a retried attempt discards its buffer and re-runs cleanly.
+    // CAPABILITY 2 — EF Core unit of work via IUnitOfWorkManager.RunAsync(db, …).
+    // RunAsync runs inside EF's execution strategy (retry-safe): begin (owned) → operation → CompleteAsync
+    // (commits, then drains). SaveChanges and the publish commit together; a retried attempt discards its buffer
+    // and re-runs cleanly.
     [Route("~/coordinated/ef")]
     public async Task<IActionResult> CoordinatedEntityFramework([FromServices] AppDbContext dbContext)
     {
         var person = new Person { Name = new RealNameGenerator().Generate(), Age = Random.Shared.Next(10, 99) };
 
-        await dbContext.ExecuteCoordinatedTransactionAsync(
-            async (ctx, ct) =>
+        await unitOfWork.RunAsync(
+            dbContext,
+            async (_, ct) =>
             {
-                ((AppDbContext)ctx).Persons.Add(person);
-                await ctx.SaveChangesAsync(ct);
+                dbContext.Persons.Add(person);
+                await dbContext.SaveChangesAsync(ct);
 
                 await producer.PublishAsync(
                     person,
@@ -115,7 +117,6 @@ public class ValuesController(IBus producer, IServiceProvider services) : Contro
                     ct
                 );
             },
-            services,
             cancellationToken: HttpContext.RequestAborted
         );
 
@@ -132,11 +133,12 @@ public class ValuesController(IBus producer, IServiceProvider services) : Contro
 
         try
         {
-            await dbContext.ExecuteCoordinatedTransactionAsync(
-                async (ctx, ct) =>
+            await unitOfWork.RunAsync(
+                dbContext,
+                async (_, ct) =>
                 {
-                    ((AppDbContext)ctx).Persons.Add(person);
-                    await ctx.SaveChangesAsync(ct);
+                    dbContext.Persons.Add(person);
+                    await dbContext.SaveChangesAsync(ct);
 
                     await producer.PublishAsync(
                         person,
@@ -146,7 +148,6 @@ public class ValuesController(IBus producer, IServiceProvider services) : Contro
 
                     throw new InvalidOperationException("Simulated failure after the buffered publish.");
                 },
-                services,
                 cancellationToken: HttpContext.RequestAborted
             );
         }
@@ -158,18 +159,19 @@ public class ValuesController(IBus producer, IServiceProvider services) : Contro
         return Ok();
     }
 
-    // CAPABILITY 4 — delayed publish inside a coordinated transaction.
+    // CAPABILITY 4 — delayed publish inside a unit of work.
     // The delayed message is still bound to the commit: it is only scheduled if the transaction commits.
     [Route("~/coordinated/delay/{delaySeconds:int}")]
     public async Task<IActionResult> CoordinatedDelay(int delaySeconds, [FromServices] AppDbContext dbContext)
     {
         var person = new Person { Name = new RealNameGenerator().Generate(), Age = Random.Shared.Next(10, 99) };
 
-        await dbContext.ExecuteCoordinatedTransactionAsync(
-            async (ctx, ct) =>
+        await unitOfWork.RunAsync(
+            dbContext,
+            async (_, ct) =>
             {
-                ((AppDbContext)ctx).Persons.Add(person);
-                await ctx.SaveChangesAsync(ct);
+                dbContext.Persons.Add(person);
+                await dbContext.SaveChangesAsync(ct);
 
                 await producer.PublishAsync(
                     person,
@@ -182,7 +184,6 @@ public class ValuesController(IBus producer, IServiceProvider services) : Contro
                     ct
                 );
             },
-            services,
             cancellationToken: HttpContext.RequestAborted
         );
 

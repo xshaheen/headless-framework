@@ -97,7 +97,6 @@ public sealed class TenantCapture
 
 /// <summary>
 /// End-to-end coverage for tenant propagation through <see cref="MessagingTestHarness"/>.
-/// Maps to origin Acceptance Examples AE1-AE8.
 /// </summary>
 public sealed class TenantPropagationE2ETests : TestBase
 {
@@ -127,12 +126,11 @@ public sealed class TenantPropagationE2ETests : TestBase
         });
     }
 
-    // ─── AE1 + AE3 — round-trip ──────────────────────────────────────────────
+    // ─── Round-trip ──────────────────────────────────────────────
 
     [Fact]
     public async Task should_propagate_ambient_tenant_through_publish_and_restore_on_consume()
     {
-        // given — Covers AE1, AE3
         var capture = new TenantCapture();
         await using var harness = await _CreateHarnessAsync(
             capture,
@@ -166,12 +164,11 @@ public sealed class TenantPropagationE2ETests : TestBase
         currentTenant.Id.Should().BeNull();
     }
 
-    // ─── AE2 + AE5 + AE7 — system message (no ambient, no caller-set) ────────
+    // ─── System message (no ambient, no caller-set) ────────
 
     [Fact]
     public async Task should_treat_publish_without_ambient_tenant_as_system_message()
     {
-        // given — Covers AE2, AE5, AE7
         var capture = new TenantCapture();
         await using var harness = await _CreateHarnessAsync(
             capture,
@@ -196,12 +193,11 @@ public sealed class TenantPropagationE2ETests : TestBase
         ambientTenant.Should().BeNull();
     }
 
-    // ─── AE4 — caller override preserved ─────────────────────────────────────
+    // ─── Caller override preserved ─────────────────────────────────────
 
     [Fact]
     public async Task should_preserve_explicit_caller_tenant_id_over_ambient()
     {
-        // given — Covers AE4
         var capture = new TenantCapture();
         await using var harness = await _CreateHarnessAsync(
             capture,
@@ -236,12 +232,12 @@ public sealed class TenantPropagationE2ETests : TestBase
         ambientTenant.Should().Be("system");
     }
 
-    // ─── AE6 — exception path preserves envelope tenant ──────────────────────
+    // ─── Exception path preserves envelope tenant ──────────────────────
 
     [Fact]
     public async Task should_preserve_envelope_tenant_when_consumer_throws()
     {
-        // given — Covers AE6 (the per-attempt invariant: each invocation sees the envelope tenant)
+        // given — the per-attempt invariant: each invocation sees the envelope tenant
         var capture = new TenantCapture();
         await using var harness = await _CreateHarnessAsync(
             capture,
@@ -272,7 +268,7 @@ public sealed class TenantPropagationE2ETests : TestBase
             AbortToken
         );
 
-        // then — both attempts (faulted + successful) saw the envelope tenant. AE6 isolation
+        // then — both attempts (faulted + successful) saw the envelope tenant. This isolation
         //         covers the retry path: tenant context is rebuilt from the envelope on each
         //         invocation, never reused from a previous attempt's residue.
         var retryRecords = capture
@@ -291,12 +287,12 @@ public sealed class TenantPropagationE2ETests : TestBase
         currentTenant.Id.Should().BeNull();
     }
 
-    // ─── AE8 — concurrent isolation ──────────────────────────────────────────
+    // ─── Concurrent isolation ──────────────────────────────────────────
 
     [Fact]
     public async Task should_isolate_tenants_across_concurrent_messages()
     {
-        // given — Covers AE8 (AsyncLocal isolation under parallel dispatch)
+        // given — AsyncLocal isolation under parallel dispatch
         var capture = new TenantCapture();
         await using var harness = await _CreateHarnessAsync(
             capture,
@@ -428,7 +424,7 @@ public sealed class TenantPropagationE2ETests : TestBase
                 )
         );
         var currentTenant = harness.ServiceProvider.GetRequiredService<ICurrentTenant>();
-        var bus = harness.ServiceProvider.GetRequiredService<IBus>();
+        var bus = harness.GetRequiredService<IBus>();
 
         // when — publish via outbox under ambient tenant
         using (currentTenant.Change("globex"))

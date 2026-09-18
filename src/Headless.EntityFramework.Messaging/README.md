@@ -19,11 +19,11 @@ Bridge package that ships the real `IHeadlessOutboxDispatcher` so integration ev
 - **Occurrence forwarding.** The bridge forwards captured integration occurrences and publishes their concrete payloads through Messaging's existing contract name/version resolver. Application handlers derive new facts with new occurrence IDs and the immediate Domain parent as causation; forwarding an existing occurrence keeps its ID. There is no Domain durable-contract registry.
 - **Captured absence.** Each durable publish sets `SuppressAmbientBusinessContext = true`, so a captured root cause or system tenant cannot be replaced by unrelated consume/tenant state at save time. `TenantContextRequired = true` still rejects a captured null tenant. Diagnostic trace propagation and registered Messaging contracts remain independent.
 - **Save and recovery.** Persistence retry within a pipeline-owned save reuses the captured IDs and completed local drain. Each successful caller-owned save clears only its saved batch; outer commit persists all staged batches, while a known outer rollback requires a fresh context and aggregate graph. An unknown commit result requires durable outcome verification or application idempotency before replay. Broker delivery and external effects remain at-least-once.
-- **Direct handler publishes.** A domain handler's coordinated `IBus` write prevents execution-strategy retry because the completed occurrence will not run again to restore its rolled-back outbox row. After failure, use a fresh context and aggregate graph. Captured integration events remain replayable through this bridge.
+- **Direct handler publishes.** A domain handler's enlisted `IBus` write prevents execution-strategy retry (`IUnitOfWork.PreventRetry()`) because the completed occurrence will not run again to restore its rolled-back outbox row. After failure, use a fresh context and aggregate graph. Captured integration events remain replayable through this bridge.
 - **Custom dispatchers.** Both `IHeadlessOutboxDispatcher` methods receive `IReadOnlyList<EventContext<object>>`. Serialize `context.Payload` while preserving `context.EventId`, correlation, causation, and tenant; dispatch never recaptures identity.
-- **Commit-coordinated enlistment.** The save pipeline opens its transaction and synchronously enlists it in commit coordination (`DatabaseFacade.EnlistCommitCoordination`), so the ambient commit coordinator carries the live transaction. The dispatcher publishes each integration event; the outbox writer buffers the rows inside the transaction — not sent to the broker in-band. The registered `IDbTransactionInterceptor` drains the buffered dispatch on commit and discards it on rollback. Outbox rows commit atomically with the business data.
-- **Post-commit delivery.** The interceptor triggers the buffered dispatch on commit; the background relay also sweeps committed rows independently for crash recovery. On PostgreSQL the relay is the primary latency-bounded path. Pick the outbox storage provider on `AddHeadlessMessaging` with that trade-off in mind.
-- **Dependency isolation.** This bridge stays the only messaging-aware seam between the two domains and selects `Headless.EntityFramework.CommitCoordination`. Core `Headless.EntityFramework` depends on neither messaging nor commit coordination.
+- **Unit-of-work enlistment.** The save pipeline makes its transaction the scope's current unit of work (enlisting its own transaction, or adopting one the caller began with `BeginAsync(db)`) before this dispatcher runs. The dispatcher requires a resource-bearing unit and throws before touching the bus otherwise; the scoped `IBus` reads `IUnitOfWorkManager.Current` itself, so the outbox writer buffers the rows inside the unit's transaction — not sent to the broker in-band. `IUnitOfWork.CompleteAsync` drains the buffered dispatch after commit; any rollback discards it. Outbox rows commit atomically with the business data.
+- **Post-commit delivery.** `IUnitOfWork.CompleteAsync` triggers the buffered dispatch after commit; the background relay also sweeps committed rows independently for crash recovery. On PostgreSQL the relay is the primary latency-bounded path. Pick the outbox storage provider on `AddHeadlessMessaging` with that trade-off in mind.
+- **Dependency isolation.** This bridge stays the only messaging-aware seam between the two domains. It references `Headless.UnitOfWork.EntityFramework` for the enlistment contract; core `Headless.EntityFramework` depends on neither messaging nor a separate commit-coordination adapter.
 - **CDC alternative.** Change Data Capture (e.g. Debezium reading the database transaction log) is an advanced alternative deployment for capturing integration events outside the application process; it bypasses this dispatcher entirely and is a host-infrastructure decision, not a package option.
 
 ## Installation
@@ -58,13 +58,12 @@ None. (Configured via `AddHeadlessMessaging`.)
 ## Dependencies
 
 - `Headless.EntityFramework`
-- `Headless.EntityFramework.CommitCoordination`
+- `Headless.UnitOfWork.EntityFramework`
 - `Headless.Domain`
 - `Headless.Messaging.Bus.Abstractions`
 - `Headless.Messaging.Abstractions`
 
 ## Side Effects
 
-- Registers `IHeadlessOutboxDispatcher` as scoped (`TryAdd`) — `OutboxIntegrationEventDispatcher`
+- Registers `IHeadlessOutboxDispatcher` as scoped (`TryAdd`) — `OutboxIntegrationEventDispatcher` (injects the scoped `IBus` and `IUnitOfWorkManager`)
 - Registers `IntegrationEventPublishInvokerCache` as singleton (`TryAdd`)
-- Selects `Headless.EntityFramework.CommitCoordination` for the save pipeline

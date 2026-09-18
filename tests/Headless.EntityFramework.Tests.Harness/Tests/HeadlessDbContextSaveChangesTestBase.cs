@@ -2,6 +2,7 @@
 
 using Headless.Domain;
 using Headless.Testing.Tests;
+using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Tests.Entities;
@@ -259,15 +260,18 @@ public abstract class HeadlessDbContextSaveChangesTestBase<TFixture, TContext> :
     [Fact]
     public virtual async Task distributed_and_local_messages_should_publish_within_existing_transaction()
     {
-        // given
+        // given — the caller owns the transaction, so it enlists it in the scope's unit of work (observed mode):
+        // integration events under a caller-owned transaction require the unit that owns that transaction.
         await using var scope = Fixture.ServiceProvider.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<TContext>();
+        var unitOfWorkManager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
 
         var entity = new HarnessTestEntity { Name = "with-msgs", TenantId = "T1" };
         entity.EmitIntegrationEvent(new HarnessDistributedMessage("hello"));
         db.TestEntities.Add(entity);
 
         await using var tx = await db.Database.BeginTransactionAsync(AbortToken);
+        await using var unitOfWork = unitOfWorkManager.Enlist(db, tx);
 
         // when
         await db.SaveChangesAsync(AbortToken);
@@ -278,6 +282,7 @@ public abstract class HeadlessDbContextSaveChangesTestBase<TFixture, TContext> :
         db.EmittedDistributedMessages.Single().Should().BeOfType<HarnessDistributedMessage>();
 
         await tx.CommitAsync(AbortToken);
+        await unitOfWork.CompleteAsync(AbortToken);
     }
 
     #endregion

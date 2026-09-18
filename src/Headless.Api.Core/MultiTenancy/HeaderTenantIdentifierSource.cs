@@ -9,14 +9,14 @@ using Microsoft.Net.Http.Headers;
 namespace Headless.Api.MultiTenancy;
 
 /// <summary>
-/// Tenant identifier source reading one or more request headers (R3): exactly one value across the
+/// Tenant identifier source reading one or more request headers: exactly one value across the
 /// configured <see cref="HeaderTenantIdentifierSourceOptions.HeaderNames"/> is yielded raw and
 /// unchanged; an absent or whitespace-only value is <see cref="TenantIdentifierSourceResult.None"/>;
 /// any second non-blank value is <see cref="TenantIdentifierSourceResult.Invalid"/>.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Ambiguity is counted, not compared (KTD4): a header line repeated with the same value is as
+/// Ambiguity is counted, not compared: a header line repeated with the same value is as
 /// ambiguous as two differing lines, and a second configured name present beside the first counts
 /// the same way. Blank lines count as absent, so a blank line beside one real value does not make it
 /// ambiguous, and a name listed more than once (case-insensitively) is read once. One header line
@@ -29,19 +29,19 @@ namespace Headless.Api.MultiTenancy;
 /// header (without duplicating an entry already present, case-insensitively). A response resolved by
 /// a later source — or served as host context — and cached without <c>Vary</c> would otherwise be
 /// served to a subsequent request carrying a different header value. The header is stamped
-/// <em>before</em> the request is read so a rejection response carries it too (KTD4).
+/// <em>before</em> the request is read so a rejection response carries it too.
 /// </para>
 /// <para>
 /// No trimming, lowercasing, or shape validation happens here; <c>ITenantCatalogService</c> owns
-/// normalization (R6). A header can only ever select an existing enabled tenant through the catalog,
-/// and R19 still rejects an authenticated caller whose tenant claim disagrees; what it does bypass is
+/// normalization. A header can only ever select an existing enabled tenant through the catalog,
+/// and identifier/claim mismatch enforcement still rejects an authenticated caller whose tenant claim disagrees; what it does bypass is
 /// any perimeter control bound to a tenant's hostname.
 /// </para>
 /// </remarks>
 internal sealed class HeaderTenantIdentifierSource(IOptions<HeaderTenantIdentifierSourceOptions> options)
     : ITenantIdentifierSource
 {
-    // Snapshotted once: startup validation proved the list is non-empty and every name is a token (R7).
+    // Snapshotted once: startup validation proved the list is non-empty and every name is a token.
     // Distinct because the same name can reach the list through several registration paths (a repeated
     // AddHeaderSource(string), a configuration bind, two binds of one section); that is benign intent,
     // not an operator error, and reading one header twice must not count its single value as ambiguous.

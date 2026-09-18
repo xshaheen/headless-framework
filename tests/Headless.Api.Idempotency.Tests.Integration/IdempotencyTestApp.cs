@@ -82,7 +82,7 @@ internal static class IdempotencyTestApp
             builder.Services.AddSingleton<IDistributedLock, InMemoryDistributedLockDouble>();
         }
 
-        // Optional handler gate for concurrency tests (AE3, AE4). When the gate is supplied
+        // Optional handler gate for concurrency tests. When the gate is supplied
         // the default /echo endpoint awaits the gate before completing, so tests can hold the
         // winner mid-request while spawning the loser.
         if (handlerGate is not null)
@@ -209,7 +209,7 @@ internal static class IdempotencyTestApp
     /// User identity state for the harness. Defaults to an authenticated test user so existing
     /// tests without explicit tenant context still satisfy the middleware's "tenant OR user
     /// must be set" precondition. Tests that need to exercise the anonymous pass-through
-    /// branch (AE8) call <see cref="SetAnonymous"/> BEFORE issuing the request — the change
+    /// branch call <see cref="SetAnonymous"/> BEFORE issuing the request — the change
     /// is observed by the next scoped <see cref="ICurrentUser"/> resolution. The flag is
     /// app-level (a singleton field), not request-local, because AsyncLocal does not flow
     /// across the HTTP request boundary in Kestrel's pipeline.

@@ -7,6 +7,7 @@ using Headless.Jobs.Models;
 using Headless.Messaging;
 using Headless.Messaging.Persistence;
 using Headless.Testing.Tests;
+using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -34,7 +35,7 @@ public abstract class JobsApplicationConfigurationConformanceTests<TFixture>(TFi
                     coordination.ConfiguredNodeId = "application-dx-node";
                 }
             );
-            jobs.ConfigureJob<CoordinatedFacadeRequest>(new JobOptions { RequireAtomicEnlistment = true });
+            jobs.ConfigureJob<CoordinatedFacadeRequest>(new JobOptions { Enlistment = TransactionEnlistment.Required });
         });
         builder.Services.AddHeadlessMessaging(messaging =>
         {
@@ -63,12 +64,14 @@ public abstract class JobsApplicationConfigurationConformanceTests<TFixture>(TFi
 
             var sentinel = new InvalidOperationException("rollback application transaction");
             var scheduledId = Guid.Empty;
+            var unitOfWorkManager = services.GetRequiredService<IUnitOfWorkManager>();
             var operation = async () =>
-                await context.ExecuteCoordinatedTransactionAsync(
-                    async (db, ct) =>
+                await unitOfWorkManager.RunAsync(
+                    context,
+                    async (_, ct) =>
                     {
-                        db.Add(new ApplicationProbe { Id = request.Id });
-                        await db.SaveChangesAsync(ct);
+                        context.Add(new ApplicationProbe { Id = request.Id });
+                        await context.SaveChangesAsync(ct);
                         await bus.PublishAsync(new ApplicationMessage(request.Id), ct);
                         scheduledId = await scheduler.ScheduleAsync(request, dueAt, ct);
                         if (!commit)
@@ -76,7 +79,6 @@ public abstract class JobsApplicationConfigurationConformanceTests<TFixture>(TFi
                             throw sentinel;
                         }
                     },
-                    services,
                     cancellationToken: AbortToken
                 );
 

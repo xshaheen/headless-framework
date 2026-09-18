@@ -9,7 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Tests.MultiTenancy;
 
 /// <summary>
-/// Pins the KTD3 registration semantics: type registrations deduplicate keep-first through
+/// Pins the registration semantics: type registrations deduplicate keep-first through
 /// <c>TryAddEnumerable</c>, while instance and delegate registrations always append, and the container
 /// materializes <c>IEnumerable&lt;ITenantIdentifierSource&gt;</c> in that same insertion order.
 /// </summary>

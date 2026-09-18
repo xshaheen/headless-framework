@@ -192,7 +192,9 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                         result = await operation(context, ct).ConfigureAwait(false);
                         commitStarted = true;
                         await transaction.CommitAsync(ct).ConfigureAwait(false);
-                        return (Result: result, Error: null);
+                        // The explicit nullable cast fixes the tuple's Error type; without it the lambda's two returns
+                        // infer a non-nullable ExceptionDispatchInfo and the deconstruction below fails CS8619.
+                        return (Result: result, Error: (ExceptionDispatchInfo?)null);
                     }
                     catch (Exception exception) when (commitStarted)
                     {

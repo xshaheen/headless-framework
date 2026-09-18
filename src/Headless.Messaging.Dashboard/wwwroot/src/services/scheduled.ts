@@ -1,6 +1,6 @@
 import type { MessageLane } from '@/components/MessageDetailDialog.vue'
 
-/** Pending state only: the Delayed/Queued distinction the runtime uses internally collapses to one Pending status for operators (R2). */
+/** Pending state only: the Delayed/Queued distinction the runtime uses internally collapses to one Pending status for operators. */
 export type ScheduledDeliveryStatus = 'Pending'
 
 export interface ScheduledDeliveryView {
@@ -10,7 +10,7 @@ export interface ScheduledDeliveryView {
   lane: MessageLane
   /**
    * The provider's full-precision due instant, exactly as the server serialized it. Never parse
-   * this to a Date and resubmit it — the fence compares the server column verbatim (KTD4); parse
+   * this to a Date and resubmit it — the fence compares the server column verbatim; parse
    * only a throwaway copy for display via utilities/dateTimeParser.
    */
   expectedDueAt: string
@@ -101,7 +101,7 @@ export function canDispatchNow(row: ScheduledDeliveryView): boolean {
 }
 
 /**
- * Outcome messages are keyed by action plus outcome (KTD6): Active means "may or may not deliver"
+ * Outcome messages are keyed by action plus outcome: Active means "may or may not deliver"
  * for revoke and "claimed elsewhere, will be sent once when its lease expires" for dispatch-now.
  */
 export function describeOutcome(

@@ -29,7 +29,7 @@ public sealed class CachingDiagnosticsTests : TestBase
         return base.DisposeAsyncCore();
     }
 
-    // AE1: fail-safe enabled + stale reserve + throwing factory -> failsafe.activations{trigger=factory_error}
+    // Fail-safe enabled + stale reserve + throwing factory -> failsafe.activations{trigger=factory_error}
     // increments by 1, the caller receives the stale value, and no cache key appears on any metric dimension.
     [Fact]
     public async Task should_record_failsafe_activation_with_factory_error_trigger_and_never_put_key_on_metrics()
@@ -65,7 +65,7 @@ public sealed class CachingDiagnosticsTests : TestBase
             .Should()
             .Be(1);
 
-        // AE1 privacy: the raw key must never appear on any metric dimension (a global invariant).
+        // Privacy: the raw key must never appear on any metric dimension (a global invariant).
         metrics.AllTagKeys().Should().NotContain("headless.cache.key");
         metrics.AllTagValues().Should().NotContain(key);
     }
@@ -177,7 +177,7 @@ public sealed class CachingDiagnosticsTests : TestBase
             .Be(1);
     }
 
-    // AE3: hard timeout with no fail-safe reserve -> factory.executions{outcome=timeout} increments, the
+    // Hard timeout with no fail-safe reserve -> factory.executions{outcome=timeout} increments, the
     // cache.get_or_add span status is Error, and CacheFactoryTimeoutException propagates.
 #pragma warning disable CA2025 // The started task is fully awaited before the listener collectors are disposed.
     [Fact]

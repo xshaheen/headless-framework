@@ -120,14 +120,19 @@ internal sealed class JobsInitializationHostedService(
             await SeedDefinedCronJobsAsync(schedulerOptions, cancellationToken).ConfigureAwait(false);
         }
 
+        // Each seeder runs inside its own scope. A consumer-supplied seeder commonly resolves the scoped
+        // ITimeJobManager<>/ICronJobManager<>/IJobScheduler facades; resolving them from this hosted service's
+        // root provider would be a captive-dependency error under ValidateScopes.
         if (options?.TimeSeederAction is not null)
         {
-            await options.TimeSeederAction(serviceProvider).ConfigureAwait(false);
+            await using var scope = serviceProvider.CreateAsyncScope();
+            await options.TimeSeederAction(scope.ServiceProvider).ConfigureAwait(false);
         }
 
         if (options?.CronSeederAction is not null)
         {
-            await options.CronSeederAction(serviceProvider).ConfigureAwait(false);
+            await using var scope = serviceProvider.CreateAsyncScope();
+            await options.CronSeederAction(scope.ServiceProvider).ConfigureAwait(false);
         }
 
         // External provider init (e.g., EF Core dead-node cleanup)
@@ -216,7 +221,12 @@ internal sealed class JobsInitializationHostedService(
         CancellationToken cancellationToken
     )
     {
-        var internalJobsManager = serviceProvider.GetRequiredService<IInternalJobManager>();
+        // Run this seeder in its own scope — matches the TimeSeederAction/CronSeederAction seeders below and
+        // future-proofs against a scoped resolution creeping into this path (IInternalJobManager itself is
+        // singleton today).
+        await using var scope = serviceProvider.CreateAsyncScope();
+        var scopedProvider = scope.ServiceProvider;
+        var internalJobsManager = scopedProvider.GetRequiredService<IInternalJobManager>();
 
         // Resolve the recovery knobs HERE rather than in the provider: attribute value, else the scheduler-wide
         // setting, else the framework default. The threshold has to be identical on every node — if each provider
@@ -232,7 +242,7 @@ internal sealed class JobsInitializationHostedService(
                     x.Value.MissedRunGraceSeconds,
                     schedulerOptions.DefaultMissedRunGraceSeconds
                 ),
-                serviceProvider.GetRequiredService<CronScheduleCache>().ComputeEvaluationFingerprint(timeZoneId: null),
+                scopedProvider.GetRequiredService<CronScheduleCache>().ComputeEvaluationFingerprint(timeZoneId: null),
                 functionRegistry.Descriptors[x.Key].ContractVersion
             ))
             .ToArray();
@@ -254,7 +264,7 @@ internal sealed class JobsInitializationHostedService(
             // throws at resolution — e.g. UseDistributedLock(sp => sp.GetRequiredService<IDistributedLock>()) when no
             // provider is registered — is treated as an acquire fault and skipped, rather than crashing host startup
             // when DI constructs this hosted service.
-            var lockProvider = serviceProvider.GetRequiredKeyedService<IDistributedLock>(JobsKeys.LockProvider);
+            var lockProvider = scopedProvider.GetRequiredKeyedService<IDistributedLock>(JobsKeys.LockProvider);
             lease = await lockProvider
                 .TryAcquireAsync(JobsKeys.CronSeedMigrationResource, JobsKeys.GuardAcquireOptions, cancellationToken)
                 .ConfigureAwait(false);

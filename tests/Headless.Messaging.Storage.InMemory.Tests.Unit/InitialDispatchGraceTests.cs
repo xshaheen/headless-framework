@@ -18,7 +18,7 @@ namespace Tests;
 /// Pins the <c>InitialDispatchGrace</c> exclusion contract for the in-memory data storage.
 /// </summary>
 /// <remarks>
-/// PR #254 review finding #9. All three storage providers (InMemory, PostgreSQL, SQL Server)
+/// PR #254. All three storage providers (InMemory, PostgreSQL, SQL Server)
 /// set <c>NextRetryAt = added + InitialDispatchGrace</c> on initial store and rely on the
 /// pickup query's <c>NextRetryAt &lt;= now</c> predicate to skip freshly-stored messages
 /// during the grace window. A regression that flips the sign or omits the offset would

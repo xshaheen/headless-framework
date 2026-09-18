@@ -21,7 +21,7 @@ tags: ["serialization", "buffer-first", "ibufferwriter", "readonlysequence", "ar
 
 `Headless.Serializer.*` defines a provider-agnostic `ISerializer` consumed on hot paths — cache reads/writes (`Headless.Caching.Redis`), blob metadata (`Headless.Blobs.Redis`), message envelopes. The original contract was `Stream`-in / `Stream`-out, which forced a `MemoryStream` + `ToArray()` double-copy on every serialize and a `MemoryStream` wrapper on every deserialize. The hottest consumer (`RedisCache`) had grown a `MemoryMarshal`/non-writable-`MemoryStream` workaround just to claw that allocation back.
 
-An earlier attempt (`docs/plans/2026-06-16-001-feat-zero-copy-buffer-cache-plan.md`, R2/U2) tried to bolt buffer overloads onto `IBinarySerializer` as default interface methods plus a `RawBytesSerializer`. That was abandoned — `byte[]`/`string` became the cache's native wire format (stored verbatim, never routed through a serializer), so the serializer never sat on the buffer path and the DIM bridges had nothing to do. This learning captures the **follow-through decision**: redesign the `ISerializer` contract itself to be buffer-first, rather than adding a second interface.
+An earlier attempt (`docs/plans/2026-06-16-001-feat-zero-copy-buffer-cache-plan.md`) tried to bolt buffer overloads onto `IBinarySerializer` as default interface methods plus a `RawBytesSerializer`. That was abandoned — `byte[]`/`string` became the cache's native wire format (stored verbatim, never routed through a serializer), so the serializer never sat on the buffer path and the DIM bridges had nothing to do. This learning captures the **follow-through decision**: redesign the `ISerializer` contract itself to be buffer-first, rather than adding a second interface.
 
 Measured result (BenchmarkDotNet, short job; allocation deltas are the robust signal): serialize-to-bytes ~31% faster, **−18% allocations** (1080 B -> 888 B); deserialize-from-bytes ~10% faster, −4% allocations. Plus the deleted `RedisCache` per-read workaround and −1 allocation per typed cache write. *(auto memory [claude]: serialize ~31% faster, −18% allocs; 288 tests pass.)*
 
@@ -129,7 +129,7 @@ services.AddSingleton<IBinarySerializer>(new MessagePackBinarySerializer(options
 
 ## Related
 
-- `docs/plans/2026-06-16-001-feat-zero-copy-buffer-cache-plan.md` — the zero-copy cache plan whose R2/U2 DIM-overload approach was abandoned; this contract redesign is the chosen follow-through ("do not re-implement the DIM overloads").
+- `docs/plans/2026-06-16-001-feat-zero-copy-buffer-cache-plan.md` — the zero-copy cache plan whose DIM-overload approach was abandoned; this contract redesign is the chosen follow-through ("do not re-implement the DIM overloads").
 - `docs/llms/serialization.md` and the `Headless.Serializer.*` package READMEs — consumer-facing docs for the contract, overload selection, and the `untrustedData` decision.
 - `docs/llms/caching.md` — the `IBufferCache` / `RedisCacheEntryFrame` design; `byte[]` is the cache's native wire format (stored verbatim, never serialized), architecturally independent of this serializer buffer path.
 - `docs/solutions/architecture-patterns/unified-provider-setup-builder-pattern.md` — governs the open follow-up to add `Add{Feature}` DI registration extensions for the serializer packages (single-backend -> plain `Add{Feature}` on `IServiceCollection`, not the multi-provider builder shape).

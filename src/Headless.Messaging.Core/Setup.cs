@@ -15,6 +15,7 @@ using Headless.Messaging.Serialization;
 using Headless.Messaging.Transactions;
 using Headless.Messaging.Transport;
 using Headless.MultiTenancy;
+using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
@@ -109,7 +110,9 @@ public static class SetupMessaging
         MessagingBuilder.GetOrAddMiddlewareDescriptorRegistry(services);
         services.AddHeadlessGuidGenerator();
         services.TryAddSingleton(TimeProvider.System);
-        services.TryAddSingleton<CommitCoordination.ICurrentCommitCoordinator, MessagingNullCommitCoordinator>();
+        // Idempotent: registers the scoped IUnitOfWorkManager exactly once regardless of registration order
+        // with other consumer packages (Headless.EntityFramework, Headless.Jobs.Core).
+        services.AddUnitOfWork();
         // Tenant context primitives shared across packages — the AsyncLocal accessor + AddOrReplaceFallbackSingleton
         // wire CurrentTenant (AsyncLocal-backed) as the framework default while letting Headless.Api / EF / consumer
         // overrides supply a real implementation. NullCurrentTenant remains the fallback that's stripped when a real
@@ -174,7 +177,7 @@ public static class SetupMessaging
         services.TryAddSingleton<MessageNeedToRetryProcessor>();
         services.TryAddSingleton<IRetryProcessorMonitor>(sp => sp.GetRequiredService<MessageNeedToRetryProcessor>());
 
-        // Dead-owner recovery bridge: always-on, decoupled from UseStorageLock (KTD3). When no real
+        // Dead-owner recovery bridge: always-on, decoupled from UseStorageLock. When no real
         // INodeMembership is wired the registered NullNodeMembership makes the bridge a benign no-op
         // (empty snapshot, no NodeLeft events). Cross-node safety rests on the owner-scoped conditional
         // reclaim UPDATE being idempotent, not on a held lock.
@@ -230,16 +233,26 @@ public static class SetupMessaging
                 sp.GetRequiredService<IPublishMiddlewarePipeline>(),
                 sp.GetRequiredService<TimeProvider>(),
                 sp.GetRequiredService<IMessageCapabilityGate>(),
-                sp.GetRequiredService<CommitCoordination.ICurrentCommitCoordinator>(),
                 () => sp.GetService<IDeliveryCoordinationResolver>(),
                 () => sp.GetService<OutboxMessageWriter>(),
                 sp.GetService<MessagingTelemetry>(),
                 options.TransportPublishTimeout,
-                sp.GetRequiredService<IOptions<MessagingOptions>>().Value.DefaultDeliveryMode
+                sp.GetRequiredService<IOptions<MessagingOptions>>().Value.DefaultDeliveryMode,
+                sp.GetRequiredService<IOptions<MessagingOptions>>().Value.DefaultEnlistment,
+                sp.GetServices<MessageRegistration>()
             );
         });
-        services.TryAddSingleton<IBus>(sp => new Bus(sp.GetRequiredService<MessagePublisher>()));
-        services.TryAddSingleton<IQueue>(sp => new Queue(sp.GetRequiredService<MessagePublisher>()));
+        // Scoped: reads this scope's IUnitOfWorkManager.Current at publish time so a durable publish enlists
+        // in the caller's active unit of work. Framework-internal singletons (HybridCache, DistributedLocks)
+        // do not resolve these — they build a unit-less Bus/Queue directly over MessagePublisher.
+        services.TryAddScoped<IBus>(sp => new Bus(
+            sp.GetRequiredService<MessagePublisher>(),
+            sp.GetRequiredService<IUnitOfWorkManager>()
+        ));
+        services.TryAddScoped<IQueue>(sp => new Queue(
+            sp.GetRequiredService<MessagePublisher>(),
+            sp.GetRequiredService<IUnitOfWorkManager>()
+        ));
 
         // Register options with values that were set during AddHeadlessMessaging configuration.
         // Don't re-register setupAction as it contains consumer registration logic that

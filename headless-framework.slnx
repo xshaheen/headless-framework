@@ -106,28 +106,13 @@
         <Project Path="src\Headless.Coordination.Redis\Headless.Coordination.Redis.csproj" />
         <Project Path="src\Headless.Coordination.SqlServer\Headless.Coordination.SqlServer.csproj" />
     </Folder>
+    <Folder Name="/Captcha/Demo/">
+        <Project Path="demo/Headless.Captcha.Demo/Headless.Captcha.Demo.csproj" />
+    </Folder>
     <Folder Name="/Captcha/Tests/">
         <Project Path="tests/Headless.Captcha.ReCaptcha.Tests.Unit/Headless.Captcha.ReCaptcha.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Captcha.Tests.Harness/Headless.Captcha.Tests.Harness.csproj" />
         <Project Path="tests/Headless.Captcha.Turnstile.Tests.Unit/Headless.Captcha.Turnstile.Tests.Unit.csproj" />
-    </Folder>
-    <Folder Name="/CommitCoordination/">
-        <Project Path="src/Headless.CommitCoordination.Abstractions/Headless.CommitCoordination.Abstractions.csproj" />
-        <Project Path="src/Headless.CommitCoordination.Core/Headless.CommitCoordination.Core.csproj" />
-        <Project Path="src/Headless.CommitCoordination.DurableWork/Headless.CommitCoordination.DurableWork.csproj" />
-        <Project Path="src/Headless.CommitCoordination.EntityFramework/Headless.CommitCoordination.EntityFramework.csproj" />
-        <Project Path="src/Headless.CommitCoordination.InMemory/Headless.CommitCoordination.InMemory.csproj" />
-        <Project Path="src/Headless.CommitCoordination.PostgreSql/Headless.CommitCoordination.PostgreSql.csproj" />
-        <Project Path="src/Headless.CommitCoordination.SqlServer/Headless.CommitCoordination.SqlServer.csproj" />
-        <Project Path="tests/Headless.CommitCoordination.Conformance.Tests.Unit/Headless.CommitCoordination.Conformance.Tests.Unit.csproj" />
-        <Project Path="tests/Headless.CommitCoordination.Core.Tests.Unit/Headless.CommitCoordination.Core.Tests.Unit.csproj" />
-        <Project Path="tests/Headless.CommitCoordination.DurableWork.Tests.Unit/Headless.CommitCoordination.DurableWork.Tests.Unit.csproj" />
-        <Project Path="tests/Headless.CommitCoordination.EntityFramework.Tests.Unit/Headless.CommitCoordination.EntityFramework.Tests.Unit.csproj" />
-        <Project Path="tests/Headless.CommitCoordination.PostgreSql.Tests.Integration/Headless.CommitCoordination.PostgreSql.Tests.Integration.csproj" />
-        <Project Path="tests/Headless.CommitCoordination.PostgreSql.Tests.Unit/Headless.CommitCoordination.PostgreSql.Tests.Unit.csproj" />
-        <Project Path="tests/Headless.CommitCoordination.SqlServer.Tests.Integration/Headless.CommitCoordination.SqlServer.Tests.Integration.csproj" />
-        <Project Path="tests/Headless.CommitCoordination.SqlServer.Tests.Unit/Headless.CommitCoordination.SqlServer.Tests.Unit.csproj" />
-        <Project Path="tests/Headless.CommitCoordination.Tests.Harness/Headless.CommitCoordination.Tests.Harness.csproj" />
     </Folder>
     <Folder Name="/Caching/Tests/">
         <Project Path="benchmarks\Headless.Caching.Benchmarks\Headless.Caching.Benchmarks.csproj" />
@@ -150,7 +135,6 @@
         <Project Path="src/Headless.Captcha.Core/Headless.Captcha.Core.csproj" />
         <Project Path="src/Headless.Captcha.ReCaptcha/Headless.Captcha.ReCaptcha.csproj" />
         <Project Path="src/Headless.Captcha.Turnstile/Headless.Captcha.Turnstile.csproj" />
-        <Project Path="demo/Headless.Captcha.Demo/Headless.Captcha.Demo.csproj" />
     </Folder>
     <Folder Name="/Dashboard/Tests/">
         <Project Path="tests/Headless.Dashboard.Authentication.Tests.Unit/Headless.Dashboard.Authentication.Tests.Unit.csproj" />
@@ -411,13 +395,10 @@
         <Project Path="src\Headless.Couchbase\Headless.Couchbase.csproj" />
         <Project Path="src\Headless.EntityFramework.Core\Headless.EntityFramework.Core.csproj" />
         <Project Path="src\Headless.EntityFramework\Headless.EntityFramework.csproj" />
-        <Project Path="src/Headless.EntityFramework.CommitCoordination/Headless.EntityFramework.CommitCoordination.csproj" />
         <Project Path="src\Headless.EntityFramework.Messaging\Headless.EntityFramework.Messaging.csproj" />
     </Folder>
     <Folder Name="/Orms/Tests/">
         <Project Path="demo\Headless.EntityFramework.Migrations.Startup\Headless.EntityFramework.Migrations.Startup.csproj" />
-        <Project Path="tests/Headless.EntityFramework.CommitCoordination.Tests.Integration/Headless.EntityFramework.CommitCoordination.Tests.Integration.csproj" />
-        <Project Path="tests/Headless.EntityFramework.CommitCoordination.Tests.Unit/Headless.EntityFramework.CommitCoordination.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Couchbase.Tests.Unit\Headless.Couchbase.Tests.Unit.csproj" />
         <Project Path="tests\Headless.EntityFramework.Core.Tests.Unit\Headless.EntityFramework.Core.Tests.Unit.csproj" />
         <Project Path="tests\Headless.EntityFramework.Messaging.Tests.Integration\Headless.EntityFramework.Messaging.Tests.Integration.csproj" />
@@ -528,5 +509,21 @@
         <File Path="global.json" />
         <File Path="nuget.config" />
         <File Path="README.md" />
+    </Folder>
+    <Folder Name="/UnitOfWork/">
+        <Project Path="src/Headless.UnitOfWork.Abstractions/Headless.UnitOfWork.Abstractions.csproj" />
+        <Project Path="src/Headless.UnitOfWork/Headless.UnitOfWork.csproj" />
+        <Project Path="src/Headless.UnitOfWork.EntityFramework/Headless.UnitOfWork.EntityFramework.csproj" />
+        <Project Path="src/Headless.UnitOfWork.PostgreSql/Headless.UnitOfWork.PostgreSql.csproj" />
+        <Project Path="src/Headless.UnitOfWork.SqlServer/Headless.UnitOfWork.SqlServer.csproj" />
+    </Folder>
+    <Folder Name="/UnitOfWork/Tests/">
+        <Project Path="tests/Headless.UnitOfWork.EntityFramework.Tests.Unit/Headless.UnitOfWork.EntityFramework.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.UnitOfWork.PostgreSql.Tests.Integration/Headless.UnitOfWork.PostgreSql.Tests.Integration.csproj" />
+        <Project Path="tests/Headless.UnitOfWork.PostgreSql.Tests.Unit/Headless.UnitOfWork.PostgreSql.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.UnitOfWork.SqlServer.Tests.Integration/Headless.UnitOfWork.SqlServer.Tests.Integration.csproj" />
+        <Project Path="tests/Headless.UnitOfWork.SqlServer.Tests.Unit/Headless.UnitOfWork.SqlServer.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.UnitOfWork.Tests.Harness/Headless.UnitOfWork.Tests.Harness.csproj" />
+        <Project Path="tests/Headless.UnitOfWork.Tests.Unit/Headless.UnitOfWork.Tests.Unit.csproj" />
     </Folder>
 </Solution>

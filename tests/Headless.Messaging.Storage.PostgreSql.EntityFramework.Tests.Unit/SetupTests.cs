@@ -1,13 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
-using Headless.CommitCoordination;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Storage.PostgreSql;
 using Headless.Testing.Tests;
+using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -67,19 +66,14 @@ public sealed class SetupTests : TestBase
             setup.UseEntityFramework<TestMessagingDbContext>();
         });
 
-        await using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 
-        // then — a real commit coordinator (not the null fallback) is wired, and the interceptor auto-attach
-        // configuration is registered for the consumer's DbContext.
-        provider
-            .GetRequiredService<ICurrentCommitCoordinator>()
-            .GetType()
-            .Name.Should()
-            .NotBe("MessagingNullCommitCoordinator");
-        provider
-            .GetServices<IDbContextOptionsConfiguration<TestMessagingDbContext>>()
-            .Should()
-            .NotBeEmpty("the EF-context path auto-registers the commit-interceptor options configuration");
+        // then — the scoped unit-of-work manager is wired and the inbox transaction runner is registered.
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>().Should().NotBeNull();
+        }
+
         services
             .Should()
             .ContainSingle(descriptor =>
@@ -107,15 +101,9 @@ public sealed class SetupTests : TestBase
             setup.UseEntityFramework<TestMessagingDbContext>(o => o.EnableTransactionalOutbox = false);
         });
 
-        await using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 
-        // then — opt-out restores non-transactional immediate dispatch; no coordinator, no config.
-        provider
-            .GetRequiredService<ICurrentCommitCoordinator>()
-            .GetType()
-            .Name.Should()
-            .Be("MessagingNullCommitCoordinator");
-        provider.GetServices<IDbContextOptionsConfiguration<TestMessagingDbContext>>().Should().BeEmpty();
+        // then — opt-out restores non-transactional immediate dispatch; no inbox transaction runner.
         services.Should().NotContain(descriptor => descriptor.ServiceType.Name == "IInboxTransactionRunner");
         provider
             .GetServices<MessagingProviderCapabilities>()

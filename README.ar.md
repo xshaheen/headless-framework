@@ -76,7 +76,7 @@ Headless.<Feature>.Testing       -> أدوات اختبار عند الحاجة
 | المهام الخلفية | `Headless.Jobs.Abstractions` | `Headless.Jobs.Core`, `Headless.Jobs.SourceGenerator`, Dashboard، أو تخزين دائم عبر EF Core |
 | الأقفال الموزّعة | `Headless.DistributedLocks.Abstractions` | `Headless.DistributedLocks.Core` مع InMemory أو Redis أو PostgreSQL أو SQL Server |
 | عضوية العُقد وحالتها | `Headless.Coordination.Abstractions` | `Headless.Coordination.Core` مع Redis أو PostgreSQL أو SQL Server |
-| ربط الآثار الجانبية بالمعاملة | `Headless.CommitCoordination.Abstractions` | `Headless.CommitCoordination.Core` مع EF Core أو PostgreSQL أو SQL Server أو InMemory أو Durable Work |
+| ربط الآثار الجانبية بالمعاملة | `Headless.UnitOfWork.Abstractions` | `Headless.UnitOfWork` مع مزوّد EF Core أو PostgreSQL أو SQL Server |
 | الإعدادات الديناميكية | `Headless.Settings.Abstractions` | `Headless.Settings.Core` مع تخزين EF Core أو PostgreSQL أو SQL Server |
 | Feature flags | `Headless.Features.Abstractions` | `Headless.Features.Core` مع تخزين EF Core أو PostgreSQL أو SQL Server |
 | الصلاحيات | `Headless.Permissions.Abstractions` | `Headless.Permissions.Core` مع تخزين EF Core أو PostgreSQL أو SQL Server أو مزوّد اختبار |
@@ -358,7 +358,6 @@ Messaging في Headless مجرد عائلة من عائلات الإطار، م�
 | Package | الوصف |
 |---------|-------|
 | [Headless.EntityFramework](src/Headless.EntityFramework/README.md) | أدوات مساعدة لـ Entity Framework Core |
-| [Headless.EntityFramework.CommitCoordination](src/Headless.EntityFramework.CommitCoordination/README.md) | ربط اختياري لمسار حفظ EF بتنسيق المعاملات |
 | [Headless.EntityFramework.Messaging](src/Headless.EntityFramework.Messaging/README.md) | ربط outbox بـ EF Core |
 | [Headless.Couchbase](src/Headless.Couchbase/README.md) | أدوات مساعدة لـ Couchbase |
 
@@ -413,17 +412,15 @@ Messaging في Headless مجرد عائلة من عائلات الإطار، م�
 | [Headless.Coordination.Redis](src/Headless.Coordination.Redis/README.md) | مزوّد Redis |
 | [Headless.Coordination.SqlServer](src/Headless.Coordination.SqlServer/README.md) | مزوّد SQL Server |
 
-### Commit Coordination
+### Unit of Work
 
 | Package | الوصف |
 |---------|-------|
-| [Headless.CommitCoordination.Abstractions](src/Headless.CommitCoordination.Abstractions/README.md) | عقود commit coordination |
-| [Headless.CommitCoordination.Core](src/Headless.CommitCoordination.Core/README.md) | Ambient scopes وربط الشغل بحدود المعاملة |
-| [Headless.CommitCoordination.DurableWork](src/Headless.CommitCoordination.DurableWork/README.md) | Durable work stores تُكتب داخل نفس المعاملة |
-| [Headless.CommitCoordination.EntityFramework](src/Headless.CommitCoordination.EntityFramework/README.md) | ربط EF Core بحدود commit/rollback |
-| [Headless.CommitCoordination.InMemory](src/Headless.CommitCoordination.InMemory/README.md) | إشارات داخل نفس العملية |
-| [Headless.CommitCoordination.PostgreSql](src/Headless.CommitCoordination.PostgreSql/README.md) | نقاط تسجيل PostgreSQL |
-| [Headless.CommitCoordination.SqlServer](src/Headless.CommitCoordination.SqlServer/README.md) | إشارات commit/rollback في SQL Server |
+| [Headless.UnitOfWork.Abstractions](src/Headless.UnitOfWork.Abstractions/README.md) | عقود unit of work المُحدَّدة النطاق (scoped): `IUnitOfWorkManager`، `IUnitOfWork`، `IUnitOfWorkResource`، `TransactionEnlistment` (بدون اعتماديات) |
+| [Headless.UnitOfWork](src/Headless.UnitOfWork/README.md) | المدير المُحدَّد النطاق، المحرك، وتسجيل `AddUnitOfWork()` |
+| [Headless.UnitOfWork.EntityFramework](src/Headless.UnitOfWork.EntityFramework/README.md) | مزوّد EF Core: `BeginAsync(db)` / `Enlist(db, tx)` / `RunAsync(db, ...)` |
+| [Headless.UnitOfWork.PostgreSql](src/Headless.UnitOfWork.PostgreSql/README.md) | مزوّد `NpgsqlConnection` الخام (raw ADO) بنفس الشكل |
+| [Headless.UnitOfWork.SqlServer](src/Headless.UnitOfWork.SqlServer/README.md) | مزوّد `SqlConnection` الخام (raw ADO) بنفس الشكل |
 
 ### Serialization
 

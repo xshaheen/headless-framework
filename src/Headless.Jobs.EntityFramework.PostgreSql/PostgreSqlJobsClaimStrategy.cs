@@ -31,8 +31,8 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
 {
     private readonly TimeSpan _leaseDuration = optionsBuilder.LeaseDuration;
 
-    // R12/KTD2: the maximum number of nodes on a root-to-leaf path the tree claim leases (root = depth 1). A timed
-    // descendant is a boundary — not descended into, claimed independently (U5).
+    // The maximum number of nodes on a root-to-leaf path the tree claim leases (root = depth 1). A timed
+    // descendant is a boundary — not descended into, claimed independently.
     private readonly int _maxChainDepth = optionsBuilder.MaxChainDepth;
 
     public async IAsyncEnumerable<TimeJobEntity> ClaimTimeJobsAsync(
@@ -98,7 +98,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             await claimTransaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        // KTD2: the peek-hydrated tree may include non-idle nodes (and their tails) the claim did not lease; prune to
+        // The peek-hydrated tree may include non-idle nodes (and their tails) the claim did not lease; prune to
         // the claimed set (root + leased non-timed descendants) so nothing runs unclaimed — parity with the CAS path.
         var claimedIds = leasedDescendantIds.ToHashSet();
         var won = claim.Ids.ToHashSet();
@@ -142,7 +142,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             var dbContext = claimTransaction.DbContext;
             var transaction = claimTransaction.Transaction;
             var mapping = TimeJobRelationalMapping.Create<TDbContext, TTimeJob>(dbContext);
-            // U5/KTD3: the fallback selects timed rows directly, so the parent gate is mirrored in its WHERE clause —
+            // The fallback selects timed rows directly, so the parent gate is mirrored in its WHERE clause —
             // a timed descendant is a candidate only once its parent reached its matching terminal state.
             var candidates = $"""
                 SELECT root.{mapping.Id}
@@ -198,7 +198,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                 .CreateDbContextAsync(cancellationToken)
                 .ConfigureAwait(false);
 
-            // R12/KTD2: reload the claimed roots flat and rebuild their non-timed subtree to MaxChainDepth in memory (a
+            // Reload the claimed roots flat and rebuild their non-timed subtree to MaxChainDepth in memory (a
             // recursive .Select is not EF-translatable), then prune to the claim's leased set so deep leased nodes are
             // returned and non-idle tails are dropped. Runs AFTER the claim transaction commits (E2) so this
             // multi-round-trip hydration no longer holds the claim's exclusive row locks; a fresh dbContext reads the
@@ -547,7 +547,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             }
         );
         command.Parameters.Add(new NpgsqlParameter("status", nameof(JobStatus.Queued)));
-        // KTD1: the occupied-instant ACCOUNTING matrix, not the live-only filter this statement used to carry. A
+        // This is the occupied-instant ACCOUNTING matrix, not the live-only filter this statement used to carry. A
         // terminal row at the instant means the instant ran (or was deliberately retired) and must not fire again;
         // only the seeding migration's ReplacementOwed retirement still owes one, and only it falls through. The
         // predicate and its two literals come from CronOccurrenceAccounting via the mapping, so this SQL cannot
@@ -765,12 +765,12 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         }
 
         await using var command = _CreateCommand(dbContext, transaction);
-        // R12/KTD2: bounded WITH RECURSIVE walk that leases the non-timed idle subtree down to maxChainDepth (root =
+        // Bounded WITH RECURSIVE walk that leases the non-timed idle subtree down to maxChainDepth (root =
         // depth 1, so direct children are depth 2). Mirrors the generic-EF frontier claim: descend only THROUGH idle
         // non-timed nodes, so a subtree below a non-idle node (terminalized/running) or a timed boundary (claimed
-        // independently in U5) is never leased. Descendants stay Idle — only owner/lease/updated-at are stamped, in the
+        // independently) is never leased. Descendants stay Idle — only owner/lease/updated-at are stamped, in the
         // same transacted statement as today. RETURNING the leased ids lets the caller prune the hydrated tree to the
-        // claimed set (U3 frontier discipline). SQL structure contains only provider-delimited EF metadata identifiers
+        // claimed set (frontier discipline). SQL structure contains only provider-delimited EF metadata identifiers
         // and fixed clauses; every runtime value remains a command parameter.
 #pragma warning disable CA2100
         command.CommandText = $"""

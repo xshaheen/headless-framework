@@ -92,8 +92,8 @@ public static class SetupCloudflareR2Blob
         // Deliberately NO IBlobContainerManager registration: R2's object-scoped tokens cannot create or manage
         // buckets, and ensuring a missing bucket would not make a later upload succeed. Because container
         // management is a separately-resolved DI capability (not a cast from IBlobStorage), omitting the
-        // registration makes GetService/GetKeyedService<IBlobContainerManager> honestly return null for R2
-        // (KTD5 / U12). R2 bucket provisioning is out of band (IaC/dashboard). Do not copy the AWS registration.
+        // registration makes GetService/GetKeyedService<IBlobContainerManager> honestly return null for R2.
+        // R2 bucket provisioning is out of band (IaC/dashboard). Do not copy the AWS registration.
         return services;
     }
 
@@ -128,7 +128,7 @@ public static class SetupCloudflareR2Blob
 
         // Presigned URLs are a cast from the same instance (R2 supports SigV4 presigning), but container
         // management is not: no keyed IBlobContainerManager is registered for this named R2 instance, so
-        // GetKeyedService<IBlobContainerManager>(name) honestly returns null (KTD5 / U12). Do not add one.
+        // GetKeyedService<IBlobContainerManager>(name) honestly returns null. Do not add one.
         return services;
     }
 

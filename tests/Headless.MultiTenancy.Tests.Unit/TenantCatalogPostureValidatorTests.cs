@@ -12,7 +12,7 @@ public sealed class TenantCatalogPostureValidatorTests
     [Fact]
     public void should_report_nothing_when_catalog_seam_is_not_configured()
     {
-        // given — the catalog is opt-in (R5)
+        // given — the catalog is opt-in
         var context = _CreateContext(new TenantPostureManifest());
 
         // when
@@ -25,7 +25,7 @@ public sealed class TenantCatalogPostureValidatorTests
     [Fact]
     public void should_report_nothing_for_accessor_only_posture()
     {
-        // given — R18's explicit accessor-only carve-out: store configured, no resolution
+        // given — an explicit accessor-only carve-out: store configured, no resolution
         var manifest = new TenantPostureManifest();
         manifest.RecordSeam(
             TenantCatalogPosture.Seam,
@@ -110,7 +110,7 @@ public sealed class TenantCatalogPostureValidatorTests
     public void should_report_error_when_resolution_is_recorded_without_the_status_codes_rewriter_marker()
     {
         // given — a fully wired resolution posture whose only defect is that UseStatusCodesRewriter() was
-        // never called, leaving the R19 authorization-tier rejection distinguishable from an unknown tenant
+        // never called, leaving the authorization-tier rejection distinguishable from an unknown tenant
         var manifest = new TenantPostureManifest();
         manifest.RecordSeam(
             TenantCatalogPosture.Seam,
@@ -155,7 +155,7 @@ public sealed class TenantCatalogPostureValidatorTests
     [Fact]
     public void should_report_nothing_about_the_rewriter_for_an_accessor_only_host()
     {
-        // given — deliberately a different gate from the caching rule: tier-2 R19 only exists for
+        // given — deliberately a different gate from the caching rule: tier-2 only exists for
         // identifier-resolved requests, so an accessor-only host has no mismatch path to collapse
         var manifest = new TenantPostureManifest();
         manifest.RecordSeam(

@@ -1,13 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
-using Headless.CommitCoordination;
 using Headless.Coordination;
 using Headless.Jobs;
 using Headless.Jobs.Entities;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Testing.Testcontainers;
+using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
@@ -92,9 +92,9 @@ public sealed class PostgreSqlJobsCoordinationFixture
         return new NpgsqlConnection(ConnectionString);
     }
 
-    public void ConfigureCommitCoordination(IServiceCollection services)
+    public void ConfigureUnitOfWork(IServiceCollection services)
     {
-        services.AddPostgreSqlCommitCoordination();
+        services.AddPostgreSqlUnitOfWork();
     }
 
     public void ConfigureMessagingStorage(MessagingSetupBuilder setup)
@@ -104,33 +104,26 @@ public sealed class PostgreSqlJobsCoordinationFixture
 
     public async Task RunCoordinatedTransactionAsync(
         IServiceProvider services,
-        Func<DbConnection, DbTransaction, CancellationToken, Task> operation,
+        Func<IServiceProvider, DbConnection, DbTransaction, CancellationToken, Task> operation,
         CancellationToken cancellationToken
     )
     {
+        // A fresh scope so the manager begun below is the SAME scope's IUnitOfWorkManager a resolved
+        // ITimeJobManager<>/ICronJobManager<>/IJobScheduler facade reads .Current from.
+        await using var scope = services.CreateAsyncScope();
+        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
         await using var connection = new NpgsqlConnection(ConnectionString);
 
-        await connection.ExecuteCoordinatedTransactionAsync(
-            async (conn, ct) =>
+        await manager.RunAsync(
+            connection,
+            async (unitOfWork, ct) =>
             {
-                // Reach the live transaction through the same relational capability production participants use.
-                var coordinator =
-                    services.GetRequiredService<ICurrentCommitCoordinator>().Current
-                    ?? throw new InvalidOperationException("No ambient coordinator — the helper did not enlist.");
+                var resource =
+                    unitOfWork.Resource as IRelationalUnitOfWorkResource
+                    ?? throw new InvalidOperationException("The begun unit of work exposed no relational resource.");
 
-                if (
-                    !coordinator.TryGetCapability<IRelationalCommitContext>(out var relational)
-                    || relational.Transaction is null
-                )
-                {
-                    throw new InvalidOperationException(
-                        "The coordinated scope exposed no live relational transaction."
-                    );
-                }
-
-                await operation(conn, relational.Transaction, ct);
+                await operation(scope.ServiceProvider, resource.Connection, resource.Transaction, ct);
             },
-            services,
             cancellationToken: cancellationToken
         );
     }

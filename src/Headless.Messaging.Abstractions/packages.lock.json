@@ -117,6 +117,9 @@
       },
       "headless.checks": {
         "type": "Project"
+      },
+      "headless.unitofwork.abstractions": {
+        "type": "Project"
       }
     }
   }

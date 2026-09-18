@@ -70,6 +70,7 @@ internal sealed class MessagePublishRequestFactory(
         Headers.Intent,
         Headers.RequestedDeliveryMode,
         Headers.ResolvedDeliveryMode,
+        Headers.RequestedEnlistment,
     };
 
     private static readonly HashSet<string> _ProviderReservedHeaders = new(_ReservedHeaders, StringComparer.Ordinal)
@@ -438,12 +439,12 @@ internal sealed class MessagePublishRequestFactory(
 
     // Strict publish-time tenant integrity policy.
     //
-    // U2 4-case header check (shipped in #228): MessageOptions.TenantId is the source of truth;
+    // 4-case header check (shipped in #228): MessageOptions.TenantId is the source of truth;
     // writing the wire header directly is reserved for transport-internal use. Whitespace raw
     // headers are treated as unset to mirror the lenient consume-side mapping in
     // TenantContextScope.ResolveTenantId.
     //
-    // U10 ambient fallback (#238): when MessagingOptions.TenantContextRequired = true and the
+    // Ambient fallback (#238): when MessagingOptions.TenantContextRequired = true and the
     // typed property is unset, resolve from the ambient ICurrentTenant. If both are null, throw
     // MissingTenantContextException. Sibling of the EF (#234) and Mediator (#236) tenancy guards.
     //
@@ -453,7 +454,7 @@ internal sealed class MessagePublishRequestFactory(
         var rawPresent = headers.TryGetValue(Headers.TenantId, out var raw);
         var rawSet = rawPresent && !string.IsNullOrWhiteSpace(raw);
 
-        // U2: typed unset, raw set → reject regardless of TenantContextRequired so injection
+        // Typed unset, raw set → reject regardless of TenantContextRequired so injection
         // attempts cannot bypass by enabling strict tenancy.
         if (typed is null && rawSet)
         {
@@ -470,7 +471,7 @@ internal sealed class MessagePublishRequestFactory(
             throw ex;
         }
 
-        // U10: typed unset (and raw unset since the path above rejected) — fall back to ambient
+        // Typed unset (and raw unset since the path above rejected) — fall back to ambient
         // tenant when strict tenancy is required.
         if (typed is null && _options.TenantContextRequired)
         {
@@ -506,7 +507,7 @@ internal sealed class MessagePublishRequestFactory(
         if (rawSet && !string.Equals(raw, typed, StringComparison.Ordinal))
         {
             // Sanitize wire-side raw value before interpolating into the exception message.
-            // R4 delegates charset validation to consumers, so a malicious caller could otherwise
+            // Charset validation is delegated to consumers, so a malicious caller could otherwise
             // smuggle CR/LF/control chars into Exception.Message and downstream log sinks.
             var safeRaw = LogSanitizer.Sanitize(raw, MessageOptions.TenantIdMaxLength);
 

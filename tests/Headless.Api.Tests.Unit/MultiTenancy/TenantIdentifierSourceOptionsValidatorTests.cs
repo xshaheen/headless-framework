@@ -7,9 +7,9 @@ using Headless.Testing.Tests;
 namespace Tests.MultiTenancy;
 
 /// <summary>
-/// Pins R7 for the host source: an empty template list fails startup validation, an unparsable
+/// Pins startup validation for the host source: an empty template list fails, an unparsable
 /// template fails with the parser's message surfaced verbatim (so the operator sees which template
-/// and which rule), and multiple valid templates pass. Also pins R7 for the route source: a blank
+/// and which rule), and multiple valid templates pass. Also pins startup validation for the route source: a blank
 /// route value name fails validation while the default passes. And for the header source: an empty
 /// header-name list, a blank name, or a name that is not an HTTP token fails, naming the offender.
 /// </summary>
@@ -71,7 +71,7 @@ public sealed class TenantIdentifierSourceOptionsValidatorTests : TestBase
         result.ShouldHaveValidationErrorFor(x => x.Templates);
     }
 
-    // --- route source (R7) ---
+    // --- route source ---
 
     [Fact]
     public void should_accept_the_default_route_value_name()
@@ -96,7 +96,7 @@ public sealed class TenantIdentifierSourceOptionsValidatorTests : TestBase
         result.ShouldHaveValidationErrorFor(x => x.RouteValueName);
     }
 
-    // --- header source (R7) ---
+    // --- header source ---
 
     [Fact]
     public void should_accept_the_default_header_name()

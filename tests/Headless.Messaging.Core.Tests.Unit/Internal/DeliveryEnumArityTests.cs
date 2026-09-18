@@ -3,6 +3,7 @@
 using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.Testing.Tests;
+using Headless.UnitOfWork;
 
 namespace Tests.Internal;
 
@@ -31,8 +32,19 @@ public sealed class DeliveryEnumArityTests : TestBase
         Enum.GetValues<DeliveryMode>()
             .Should()
             .Equal(
-                [DeliveryMode.Auto, DeliveryMode.Durable, DeliveryMode.Direct],
-                "DeliveryDecisionResolver.Resolve rejects anything outside `requestedMode is (Auto or Durable or Direct)`, and its resolvedMode/path switches would hit UnreachableException for a new member"
+                [DeliveryMode.Durable, DeliveryMode.Direct],
+                "DeliveryDecisionResolver.Resolve rejects anything outside `requestedMode is (Durable or Direct)`, and its path switch would hit UnreachableException for a new member"
+            );
+    }
+
+    [Fact]
+    public void should_pin_transaction_enlistment_members_to_the_resolver_guard()
+    {
+        Enum.GetValues<TransactionEnlistment>()
+            .Should()
+            .Equal(
+                [TransactionEnlistment.WhenAvailable, TransactionEnlistment.Required, TransactionEnlistment.Never],
+                "DeliveryDecisionResolver.Resolve rejects anything outside `enlistment is (WhenAvailable or Required or Never)` — widen that guard before this list"
             );
     }
 

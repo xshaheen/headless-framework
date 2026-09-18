@@ -219,9 +219,6 @@
       "headless.checks": {
         "type": "Project"
       },
-      "headless.commitcoordination.abstractions": {
-        "type": "Project"
-      },
       "headless.coordination.abstractions": {
         "type": "Project",
         "dependencies": {
@@ -304,7 +301,8 @@
       "headless.messaging.abstractions": {
         "type": "Project",
         "dependencies": {
-          "Headless.Checks": "[1.0.0, )"
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.UnitOfWork.Abstractions": "[1.0.0, )"
         }
       },
       "headless.messaging.azureservicebus": {
@@ -328,7 +326,6 @@
         "type": "Project",
         "dependencies": {
           "FastExpressionCompiler": "[5.4.1, )",
-          "Headless.CommitCoordination.Abstractions": "[1.0.0, )",
           "Headless.Coordination.Abstractions": "[1.0.0, )",
           "Headless.Coordination.Core": "[1.0.0, )",
           "Headless.Core": "[1.0.0, )",
@@ -339,6 +336,7 @@
           "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
           "Headless.Messaging.Queue.Abstractions": "[1.0.0, )",
           "Headless.MultiTenancy": "[1.0.0, )",
+          "Headless.UnitOfWork": "[1.0.0, )",
           "OpenTelemetry.Api": "[1.18.0, )",
           "Polly.Core": "[8.7.0, )"
         }
@@ -403,6 +401,16 @@
         "dependencies": {
           "Headless.Serializer.Abstractions": "[1.0.0, )"
         }
+      },
+      "headless.unitofwork": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.UnitOfWork.Abstractions": "[1.0.0, )"
+        }
+      },
+      "headless.unitofwork.abstractions": {
+        "type": "Project"
       },
       "headless.urls": {
         "type": "Project",

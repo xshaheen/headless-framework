@@ -38,8 +38,8 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
     private readonly ResiliencePipeline _deadlockRetryPipeline = _BuildDeadlockRetryPipeline(timeProvider, logger);
     private readonly TimeSpan _leaseDuration = optionsBuilder.LeaseDuration;
 
-    // R12/KTD2: the maximum number of nodes on a root-to-leaf path the tree claim leases (root = depth 1). A timed
-    // descendant is a boundary — not descended into, claimed independently (U5).
+    // The maximum number of nodes on a root-to-leaf path the tree claim leases (root = depth 1). A timed
+    // descendant is a boundary — not descended into, claimed independently.
     private readonly int _maxChainDepth = optionsBuilder.MaxChainDepth;
     private readonly Lock _readPastHintsLock = new();
     private Task<string>? _readPastHintsTask;
@@ -113,7 +113,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             )
             .ConfigureAwait(false);
 
-        // KTD2: the peek-hydrated tree may include non-idle nodes (and their tails) the claim did not lease; prune to
+        // The peek-hydrated tree may include non-idle nodes (and their tails) the claim did not lease; prune to
         // the claimed set (root + leased non-timed descendants) so nothing runs unclaimed — parity with the CAS path.
         var claimedIds = leasedDescendantIds.ToHashSet();
         var won = claim.Ids.ToHashSet();
@@ -154,7 +154,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                     var transaction = claimTransaction.Transaction;
                     var mapping = TimeJobRelationalMapping.Create<TDbContext, TTimeJob>(dbContext);
                     var readPastHints = await _GetReadPastHintsAsync(ct).ConfigureAwait(false);
-                    // U5/KTD3: the fallback selects timed rows directly, so the parent gate is mirrored in its WHERE
+                    // The fallback selects timed rows directly, so the parent gate is mirrored in its WHERE
                     // clause — a timed descendant is a candidate only once its parent reached its matching terminal
                     // state.
                     var candidates = $"""
@@ -214,7 +214,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                 .CreateDbContextAsync(cancellationToken)
                 .ConfigureAwait(false);
 
-            // R12/KTD2: reload the claimed roots flat and rebuild their non-timed subtree to MaxChainDepth in memory (a
+            // Reload the claimed roots flat and rebuild their non-timed subtree to MaxChainDepth in memory (a
             // recursive .Select is not EF-translatable), then prune to the claim's leased set so deep leased nodes are
             // returned and non-idle tails are dropped — replacing a fixed-depth nested projection.
             var roots = await dbContext
@@ -578,7 +578,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             }
         );
         command.Parameters.Add(new SqlParameter("status", nameof(JobStatus.Queued)));
-        // KTD1: a row that ACCOUNTS for the instant blocks the insert — every live status, every terminal status,
+        // A row that ACCOUNTS for the instant blocks the insert — every live status, every terminal status,
         // and any status this binary does not recognize (the predicate is a negation, so unknown values fall on the
         // suppressing side). The single exception is the seeding migration's ReplacementOwed retirement, which
         // retired the row without creating a replacement and therefore still owes the fire. Predicate and literals
@@ -809,12 +809,12 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
 
         await using var command = _CreateCommand(dbContext, transaction);
         var rootValues = string.Join(", ", rootIds.Select((_, index) => $"(@{_ParameterName("rootId", index)})"));
-        // R12/KTD2: bounded recursive CTE that leases the non-timed idle subtree down to maxChainDepth (root = depth 1,
+        // Bounded recursive CTE that leases the non-timed idle subtree down to maxChainDepth (root = depth 1,
         // so direct children are depth 2). Mirrors the generic-EF frontier claim: descend only THROUGH idle non-timed
-        // nodes, so a subtree below a non-idle node (terminalized/running) or a timed boundary (claimed independently in
-        // U5) is never leased. Descendants stay Idle — only owner/lease/updated-at are stamped, in the same transacted
+        // nodes, so a subtree below a non-idle node (terminalized/running) or a timed boundary (claimed independently)
+        // is never leased. Descendants stay Idle — only owner/lease/updated-at are stamped, in the same transacted
         // statement as today. OUTPUT returns the leased ids so the caller prunes the hydrated tree to the claimed set
-        // (U3 frontier discipline). MAXRECURSION is sized from maxChainDepth (bounded by JobChain.MaxStructuralDepth =
+        // (frontier discipline). MAXRECURSION is sized from maxChainDepth (bounded by JobChain.MaxStructuralDepth =
         // 64, well under the 32767 ceiling). SQL structure contains only provider-delimited EF metadata identifiers and
         // fixed clauses; every runtime value remains a command parameter.
 #pragma warning disable CA2100

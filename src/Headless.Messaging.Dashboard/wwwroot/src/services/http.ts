@@ -7,7 +7,7 @@ import { authService } from './auth'
 /**
  * Thrown for any non-2xx, non-401 response. Carries the parsed JSON body (or raw text) so
  * callers can render outcome-specific messages (403 remedy, 404 not-found, 409 conflict) instead
- * of a generic failure — the session stays signed in for all of these (KTD9).
+ * of a generic failure — the session stays signed in for all of these.
  */
 export class HttpError extends Error {
   readonly status: number
@@ -84,7 +84,7 @@ class HttpService {
 
       // Only an unauthenticated (401) response ends the session; an authenticated principal
       // without a usable actor (403), a stale fence (404/409), or a JSON validation failure (422)
-      // all carry a parsed body the caller renders in place, never a logout (KTD9).
+      // all carry a parsed body the caller renders in place, never a logout.
       if (response.status === 401) {
         console.warn('Authentication failed, logging out')
         authService.logout()

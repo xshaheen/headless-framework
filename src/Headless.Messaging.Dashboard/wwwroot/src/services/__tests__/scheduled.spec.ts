@@ -35,7 +35,7 @@ describe('scheduled delivery operation requests', () => {
       expectedDueAt: row.expectedDueAt,
       reason: 'Dashboard revoke',
     })
-    // The fence compares this value verbatim (KTD4); it must never be reformatted through a Date.
+    // The fence compares this value verbatim; it must never be reformatted through a Date.
     expect(request.expectedDueAt).toBe('2026-09-14T10:30:00.1234567+00:00')
   })
 
@@ -73,7 +73,7 @@ describe('dispatch-now eligibility', () => {
   })
 
   it('keeps revoke available regardless of dispatch-now eligibility (leased row)', () => {
-    // canDispatchNow only gates the dispatch-now button; revoke has no lease precondition (KTD5).
+    // canDispatchNow only gates the dispatch-now button; revoke has no lease precondition.
     const row = makeRow({ isLeased: true })
 
     expect(canDispatchNow(row)).toBe(false)

@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.UnitOfWork;
+
 namespace Headless.Messaging.Monitoring;
 
 /// <summary>
@@ -34,6 +36,12 @@ public class MessageView
     /// unreadable envelopes expose <see langword="null"/> without failing the containing page.
     /// </summary>
     public DeliveryMode? ResolvedDeliveryMode { get; set; }
+
+    /// <summary>
+    /// Gets or sets the transaction enlistment the caller requested (per call, per type, or the host default), or
+    /// <see langword="null"/> for legacy/unreadable metadata.
+    /// </summary>
+    public TransactionEnlistment? RequestedEnlistment { get; set; }
 
     /// <summary>Gets or sets the serialized message body, or <see langword="null"/> when the content was not projected.</summary>
     public string? Content { get; set; }

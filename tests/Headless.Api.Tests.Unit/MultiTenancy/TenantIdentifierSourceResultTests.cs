@@ -10,7 +10,7 @@ public sealed class TenantIdentifierSourceResultTests : TestBase
     [Fact]
     public void should_treat_default_as_none()
     {
-        // KTD1: None is the zero value so an uninitialized result never masquerades as found.
+        // None is the zero value so an uninitialized result never masquerades as found.
         var result = default(TenantIdentifierSourceResult);
 
         result.Kind.Should().Be(TenantIdentifierSourceResultKind.None);
@@ -63,7 +63,8 @@ public sealed class TenantIdentifierSourceResultTests : TestBase
     public void should_distinguish_none_found_and_invalid_by_equality()
     {
         // The middleware and consumers pattern-match on Kind, but record equality must still partition
-        // the three states correctly — a None/Found mix-up is exactly the "blank found" rule KTD1 removes.
+        // the three states correctly — a None/Found mix-up is exactly the "blank found" case the
+        // null/whitespace-normalization rule above removes.
         TenantIdentifierSourceResult.None.Should().Be(TenantIdentifierSourceResult.Found(null));
         TenantIdentifierSourceResult.None.Should().NotBe(TenantIdentifierSourceResult.Invalid);
         TenantIdentifierSourceResult.Found("acme").Should().NotBe(TenantIdentifierSourceResult.Found("globex"));

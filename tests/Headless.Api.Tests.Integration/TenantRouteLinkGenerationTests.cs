@@ -20,12 +20,13 @@ using Tests.Helpers;
 namespace Tests;
 
 /// <summary>
-/// R12 spike and R13 acceptance: records, per link-generation surface, whether the ambient
+/// Records, per link-generation surface, whether the ambient
 /// <c>{tenant}</c> route value survives when linking to a DIFFERENT endpoint without an explicit
-/// tenant value. Every "preserve" assertion states the desired behavior; before U6 five of them were
+/// tenant value. Every "preserve" assertion states the desired behavior; before the
+/// <see cref="TenantAmbientRouteValueLinkGenerator"/> decorator was introduced, five of them were
 /// red (<c>Url.Action</c>, <c>GetPathByAction</c>, and <c>GetPathByName</c> from both origins), which
-/// is the evidence that ASP.NET Core drops the value on those surfaces and that the
-/// <see cref="TenantAmbientRouteValueLinkGenerator"/> decorator is needed (KTD7). The "explicit" and
+/// is the evidence that ASP.NET Core drops the value on those surfaces and that the decorator is
+/// needed. The "explicit" and
 /// "no ambient tenant" scenarios document the boundaries the decorator keeps: an explicit different
 /// tenant always wins, and a request with no tenant segment has nothing to promote, so the link stays
 /// <c>null</c>. The "registration" scenarios pin the opt-out and the once-only wrap.
@@ -201,7 +202,7 @@ public sealed class TenantRouteLinkGenerationTests : TestBase
         links.PlainTarget.Should().Be("/plain-mvc?tenant=acme");
     }
 
-    // --- registration: opt-out, once-only wrap, registration order (R13, KTD7) ---
+    // --- registration: opt-out, once-only wrap, registration order ---
 
     [Fact]
     public async Task should_not_promote_ambient_tenant_when_promotion_is_disabled()

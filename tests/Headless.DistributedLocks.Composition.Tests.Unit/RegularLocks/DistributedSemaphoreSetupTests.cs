@@ -19,7 +19,7 @@ public sealed class DistributedSemaphoreSetupTests : TestBase
 
         // when
         services.AddHeadlessDistributedLocks(setup => setup.UseInMemory());
-        using var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 
         // then
         provider.GetRequiredService<IDistributedSemaphoreProvider>().Should().NotBeNull();
@@ -66,7 +66,7 @@ public sealed class DistributedSemaphoreSetupTests : TestBase
             setup.ConfigureOptions(configuration);
             setup.UseInMemory();
         });
-        using var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 
         // then
         provider.GetRequiredService<IDistributedSemaphoreProvider>().Should().NotBeNull();
@@ -97,7 +97,7 @@ public sealed class DistributedSemaphoreSetupTests : TestBase
             );
             setup.UseInMemory();
         });
-        using var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 
         // then
         provider.GetRequiredService<IDistributedSemaphoreProvider>().Should().NotBeNull();
@@ -113,7 +113,7 @@ public sealed class DistributedSemaphoreSetupTests : TestBase
 
         // when
         services.AddHeadlessDistributedLocks(setup => setup.UseInMemory());
-        using var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 
         // then — the provider is registered under the ICanReceiveLockReleased seam so the
         // LockReleasedConsumer wakes semaphore waiters, and it is the same singleton instance.
@@ -140,7 +140,7 @@ public sealed class DistributedSemaphoreSetupTests : TestBase
             });
             setup.UseInMemory();
         });
-        using var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 
         // when — materialising options triggers the FluentValidation IValidateOptions pipeline
         var act = () => provider.GetRequiredService<IOptions<DistributedLockOptions>>().Value;

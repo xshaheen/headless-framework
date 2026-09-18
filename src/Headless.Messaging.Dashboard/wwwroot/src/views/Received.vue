@@ -240,6 +240,7 @@ import TableSkeleton from '@/components/common/TableSkeleton.vue'
 import PaginationFooter from '@/components/common/PaginationFooter.vue'
 import MessageDetailDialog, {
   type DeliveryMode,
+  type TransactionEnlistment,
   type MessageDetail,
   type MessageLane,
 } from '@/components/MessageDetailDialog.vue'
@@ -256,6 +257,7 @@ interface ReceivedMessage {
   lane: MessageLane
   requestedDeliveryMode: DeliveryMode | null
   resolvedDeliveryMode: DeliveryMode | null
+  requestedEnlistment: TransactionEnlistment | null
 }
 
 interface DashboardMeta {

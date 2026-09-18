@@ -9,9 +9,9 @@ using Microsoft.EntityFrameworkCore;
 namespace Tests.Chains;
 
 /// <summary>
-/// U5/KTD3 four-way gate parity. The timed-descendant claim gate is implemented four times by hand — the LINQ
+/// Four-way gate parity. The timed-descendant claim gate is implemented four times by hand — the LINQ
 /// <c>HeadlessJobsQueryExtensions.WhereClaimableUnderParentTerminalGate</c>,
-/// the native-SQL <c>TimedChildGateSql.Build</c>, the in-memory <c>_ParentGateAllowsClaim</c>, and (U2) the mismatch
+/// the native-SQL <c>TimedChildGateSql.Build</c>, the in-memory <c>_ParentGateAllowsClaim</c>, and the mismatch
 /// predicate <c>WhereParentTerminalRunConditionMismatched</c> — each carrying a comment that "the three/four must stay
 /// in lockstep" with nothing enforcing it. This replays one shared case grid (every <see cref="RunCondition"/>
 /// including the two non-gated ones and <see langword="null"/>, against every terminal status plus a non-terminal

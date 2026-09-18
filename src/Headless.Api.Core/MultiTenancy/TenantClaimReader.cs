@@ -7,7 +7,7 @@ using Headless.MultiTenancy;
 namespace Headless.Api.MultiTenancy;
 
 /// <summary>
-/// Shared claim-type resolution used by both the R19 post-authorization integrity check
+/// Shared claim-type resolution used by both the identifier/claim mismatch post-authorization integrity check
 /// (<see cref="TenantIdentifierIntegrityHandler"/>) and the claim-resolution fast path
 /// (<c>TenantResolutionMiddleware</c>): resolves <see cref="MultiTenancyOptions.ClaimType"/> — falling
 /// back to <see cref="UserClaimTypes.TenantId"/> when unset — and reads the tenant id from the matching

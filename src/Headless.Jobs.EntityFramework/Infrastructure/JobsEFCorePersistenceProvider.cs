@@ -4,11 +4,11 @@ using System.Linq.Expressions;
 using Headless.Abstractions;
 using Headless.Caching;
 using Headless.Checks;
-using Headless.CommitCoordination;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Models;
+using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Polly;
@@ -95,7 +95,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
 
     async Task ICoordinatedJobWriter<TTimeJob, TCronJob>.WriteTimeJobsAsync(
         TTimeJob[] jobs,
-        IRelationalCommitContext relationalContext,
+        IRelationalUnitOfWorkResource relationalResource,
         CancellationToken cancellationToken
     )
     {
@@ -104,7 +104,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             JobIntentFingerprint.RejectOrdinaryMutation(job);
         }
 
-        await using var dbContext = _CreateCoordinatedContext(relationalContext);
+        await using var dbContext = _CreateCoordinatedContext(relationalResource);
         await dbContext.Set<TTimeJob>().AddRangeAsync(jobs, cancellationToken).ConfigureAwait(false);
         await _GuardTimeJobParentReferencesAsync(
                 dbContext,
@@ -118,11 +118,11 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
     async Task<CronSchedulePositionSeedResult> ICoordinatedJobWriter<TTimeJob, TCronJob>.WriteCronJobsAsync(
         TCronJob[] jobs,
         CronSchedulePositionSeeder seeder,
-        IRelationalCommitContext relationalContext,
+        IRelationalUnitOfWorkResource relationalResource,
         CancellationToken cancellationToken
     )
     {
-        await using var dbContext = _CreateCoordinatedContext(relationalContext);
+        await using var dbContext = _CreateCoordinatedContext(relationalResource);
 
         // The caller's transaction may have opened long before this call, which is exactly why the anchor is the
         // STATEMENT clock: PostgreSQL's now() would report that transaction's start and position the definition
@@ -623,7 +623,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             .Database.BeginTransactionAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        // R10: the schedule position moves inside the SAME transition that clears the pause and bumps the revision, so
+        // The schedule position moves inside the SAME transition that clears the pause and bumps the revision, so
         // no window exposes a resumed definition still carrying its pre-pause position — which would read as a backlog
         // spanning the entire pause and hand recovery an interval that was deliberately not running.
         //
@@ -750,7 +750,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                 return null;
             }
 
-            // R10: a schedule-changing edit rebases the position in the same transition that bumps the revision, so the
+            // A schedule-changing edit rebases the position in the same transition that bumps the revision, so the
             // old expression's projection never survives the edit. A metadata-only edit leaves both untouched — the
             // schedule did not move, so neither should the position. The provider stamps its own clock first, then
             // supplies that exact persisted anchor to the occurrence factory before this transaction commits.
@@ -771,7 +771,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                             .SetProperty(x => x.Retries, update.Definition.Retries)
                             .SetProperty(x => x.RetryIntervals, update.Definition.RetryIntervals)
                             .SetProperty(x => x.OnNodeDeath, update.Definition.OnNodeDeath)
-                            // R17: the runtime API is the AUTHORITY for these two. The attribute only seeds them at
+                            // The runtime API is the AUTHORITY for these two. The attribute only seeds them at
                             // creation and is never reapplied, so persisting them here is what makes an operator
                             // override survive restarts. They change recovery semantics and therefore bump the same
                             // revision fence used by recovery, without replacing the schedule occurrence.

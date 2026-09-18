@@ -43,7 +43,7 @@ public sealed class SmsSenderProviderTests
         // given
         using var provider = _BuildProvider();
 
-        // when / then - AE2
+        // when / then
         provider.GetRequiredService<ISmsSenderProvider>().GetSenderOrNull("nope").Should().BeNull();
     }
 
@@ -57,7 +57,7 @@ public sealed class SmsSenderProviderTests
         // when
         var action = () => senderProvider.GetSender("nope");
 
-        // then - AE2: the message points at AddNamed and the provider Use* members.
+        // then - the message points at AddNamed and the provider Use* members.
         action
             .Should()
             .Throw<InvalidOperationException>()

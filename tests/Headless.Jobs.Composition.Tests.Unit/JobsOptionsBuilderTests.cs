@@ -307,45 +307,6 @@ public sealed class JobsOptionsBuilderTests
     }
 
     [Fact]
-    public void default_post_commit_drain_timeout_is_30_seconds()
-    {
-        var schedulerOptions = new SchedulerOptionsBuilder();
-
-        schedulerOptions.PostCommitDrainTimeout.Should().Be(TimeSpan.FromSeconds(30));
-    }
-
-    [Theory]
-    [InlineData(-1)]
-    [InlineData(0)]
-    [InlineData(301)]
-    public void add_headless_jobs_rejects_post_commit_drain_timeout_outside_valid_range(int timeoutSeconds)
-    {
-        var services = new ServiceCollection();
-
-        var act = () =>
-            services.AddHeadlessJobs(options =>
-                options.ConfigureScheduler(scheduler =>
-                    scheduler.PostCommitDrainTimeout = TimeSpan.FromSeconds(timeoutSeconds)
-                )
-            );
-
-        act.Should().Throw<InvalidOperationException>();
-    }
-
-    [Fact]
-    public void add_headless_jobs_accepts_maximum_post_commit_drain_timeout()
-    {
-        var services = new ServiceCollection();
-
-        var act = () =>
-            services.AddHeadlessJobs(options =>
-                options.ConfigureScheduler(scheduler => scheduler.PostCommitDrainTimeout = TimeSpan.FromMinutes(5))
-            );
-
-        act.Should().NotThrow();
-    }
-
-    [Fact]
     public void add_headless_jobs_rejects_an_undefined_default_missed_run_policy()
     {
         var services = new ServiceCollection();

@@ -14,7 +14,7 @@ public static class HeadlessMultiTenancyModelBuilderExtensions
     {
         /// <summary>
         /// Applies the <see cref="TenantRecord"/> entity configuration, including the provider-specific
-        /// unique-identifier collation (KTD6). Call from <c>OnModelCreating</c> with
+        /// unique-identifier collation. Call from <c>OnModelCreating</c> with
         /// <c>modelBuilder.AddHeadlessTenancyCatalog(this)</c>.
         /// </summary>
         /// <param name="context">

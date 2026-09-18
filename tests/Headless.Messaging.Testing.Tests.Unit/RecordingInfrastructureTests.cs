@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics;
+using System.Globalization;
 using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
@@ -289,6 +291,112 @@ public sealed class RecordingInfrastructureTests : TestBase
         store.Consumed.Should().ContainSingle();
         store.Faulted.Should().BeEmpty();
         store.Published.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task recording_bus_transport_stamps_the_current_reset_generation()
+    {
+        // given
+        var store = new MessageObservationStore();
+        store.Clear();
+        await using var inner = new FakeBusTransport(OperateResult.Success);
+        await using var transport = new RecordingBusTransport(inner, store, Substitute.For<ISerializer>());
+        var message = new TransportMessage(_BaseHeaders(), ReadOnlyMemory<byte>.Empty);
+
+        // when
+        await transport.SendAsync(message, AbortToken);
+
+        // then
+        message
+            .Headers.Should()
+            .Contain(RecordingHeaders.ResetGeneration, store.Generation.ToString(CultureInfo.InvariantCulture));
+    }
+
+    [Fact]
+    public async Task recording_consume_middleware_pipeline_runs_a_message_from_a_cleared_round_without_waiting_or_recording()
+    {
+        // given: the message was sent under generation 0, then a reset moved the store to generation 1
+        var store = new MessageObservationStore();
+        var medium = _MakeMediumMessage();
+        medium.Origin.Headers[RecordingHeaders.ResetGeneration] = "0";
+        store.Clear();
+        var context = _MakeConsumerContext(medium);
+        var inner = new FakePipeline(new ConsumerExecutedResult(null, null, "msg-1", null, null));
+        var pipeline = new RecordingConsumeMiddlewarePipeline(
+            inner,
+            store,
+            awaitPublishedRecord: true,
+            publishedRecordTimeout: TimeSpan.FromSeconds(30)
+        );
+
+        // when: no Published record ever arrives for it
+        var execute = pipeline.ExecuteAsync(
+            context,
+            new SimplePayload { Value = "late" },
+            typeof(SimplePayload),
+            AbortToken
+        );
+        await execute.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+
+        // then: the consumer ran, nothing was recorded, and the pipeline did not sit out the wait budget
+        inner.CallCount.Should().Be(1);
+        store.Consumed.Should().BeEmpty();
+        store.Faulted.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task recording_consume_middleware_pipeline_runs_the_consumer_when_the_published_record_wait_elapses()
+    {
+        // given: a current-round message (no ResetGeneration stamp mismatch, no Clear) whose Published record never
+        // arrives, so WaitForPublishedRecordAsync must run out its full budget rather than short-circuit.
+        var store = new MessageObservationStore();
+        var medium = _MakeMediumMessage(id: "never-published");
+        var context = _MakeConsumerContext(medium);
+        var inner = new FakePipeline(new ConsumerExecutedResult(null, null, "never-published", null, null));
+        var waitBudget = TimeSpan.FromMilliseconds(200);
+        var pipeline = new RecordingConsumeMiddlewarePipeline(
+            inner,
+            store,
+            awaitPublishedRecord: true,
+            publishedRecordTimeout: waitBudget
+        );
+
+        // when
+        var elapsed = Stopwatch.StartNew();
+        await pipeline.ExecuteAsync(context, new SimplePayload { Value = "orphan" }, typeof(SimplePayload), AbortToken);
+        elapsed.Stop();
+
+        // then: the elapsed wait was swallowed, the consumer ran, and the round was still live so it was recorded.
+        // A cleared-round short-circuit would finish in milliseconds; BeCloseTo proves the budget genuinely elapsed
+        // while tolerating timer resolution firing marginally around the nominal budget.
+        elapsed.Elapsed.Should().BeCloseTo(waitBudget, TimeSpan.FromMilliseconds(50));
+        inner.CallCount.Should().Be(1);
+        store.Consumed.Should().ContainSingle();
+        store.Faulted.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task recording_consume_middleware_pipeline_does_not_record_a_message_when_a_reset_lands_during_consumption()
+    {
+        // given: a consumer whose execution straddles a reset
+        var store = new MessageObservationStore();
+        var medium = _MakeMediumMessage();
+        medium.Origin.Headers[RecordingHeaders.ResetGeneration] = store.Generation.ToString(
+            CultureInfo.InvariantCulture
+        );
+        var context = _MakeConsumerContext(medium);
+        var inner = new FakePipeline(
+            new ConsumerExecutedResult(null, null, "msg-1", null, null),
+            onExecute: store.Clear
+        );
+        var pipeline = new RecordingConsumeMiddlewarePipeline(inner, store);
+
+        // when
+        await pipeline.ExecuteAsync(context, new SimplePayload { Value = "ok" }, typeof(SimplePayload), AbortToken);
+
+        // then
+        inner.CallCount.Should().Be(1);
+        store.Consumed.Should().BeEmpty();
     }
 
     [Fact]
@@ -626,10 +734,15 @@ public sealed class RecordingInfrastructureTests : TestBase
     {
         private readonly ConsumerExecutedResult? _result;
         private readonly Exception? _exception;
+        private readonly Action? _onExecute;
 
         public int CallCount { get; private set; }
 
-        public FakePipeline(ConsumerExecutedResult result) => _result = result;
+        public FakePipeline(ConsumerExecutedResult result, Action? onExecute = null)
+        {
+            _result = result;
+            _onExecute = onExecute;
+        }
 
         public int ScopedCallCount { get; private set; }
         public IServiceProvider? Provider { get; private set; }
@@ -645,6 +758,7 @@ public sealed class RecordingInfrastructureTests : TestBase
         )
         {
             CallCount++;
+            _onExecute?.Invoke();
             return _Execute();
         }
 

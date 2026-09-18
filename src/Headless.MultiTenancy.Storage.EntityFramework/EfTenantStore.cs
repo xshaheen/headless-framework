@@ -9,7 +9,7 @@ namespace Headless.MultiTenancy;
 /// <summary>
 /// EF Core implementation of <see cref="ITenantStore"/> and <see cref="ITenantDirectory"/> that stores
 /// <see cref="TenantRecord"/> entities via a pooled <typeparamref name="TContext"/>. Read-only: this
-/// package ships no framework write path (KTD6) — apps insert and update <see cref="TenantRecord"/>
+/// package ships no framework write path — apps insert and update <see cref="TenantRecord"/>
 /// directly against their own <typeparamref name="TContext"/>.
 /// </summary>
 /// <typeparam name="TContext">The <see cref="DbContext"/> type registered with the DI container.</typeparam>

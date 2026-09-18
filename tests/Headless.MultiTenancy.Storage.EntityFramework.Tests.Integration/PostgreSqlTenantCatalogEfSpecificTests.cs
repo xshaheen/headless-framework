@@ -2,7 +2,7 @@
 
 namespace Tests;
 
-/// <summary>Runs the EF-only collation and identifier-update scenarios (KTD6) against PostgreSQL.</summary>
+/// <summary>Runs the EF-only collation and identifier-update scenarios against PostgreSQL.</summary>
 [Collection<PostgreSqlTenantCatalogFixture>]
 public sealed class PostgreSqlTenantCatalogEfSpecificTests(PostgreSqlTenantCatalogFixture fixture)
     : TenantCatalogEfSpecificTests<PostgreSqlTenantCatalogFixture>(fixture);

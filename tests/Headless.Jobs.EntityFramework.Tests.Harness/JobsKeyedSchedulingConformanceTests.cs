@@ -2,7 +2,6 @@
 
 using System.Data.Common;
 using Headless.Abstractions;
-using Headless.CommitCoordination;
 using Headless.Coordination;
 using Headless.Jobs;
 using Headless.Jobs.Configurations;
@@ -14,6 +13,7 @@ using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Models;
 using Headless.Testing.Tests;
+using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -257,13 +257,16 @@ public abstract partial class JobsKeyedSchedulingConformanceTests<TFixture>(TFix
 
         await fixture.RunCoordinatedTransactionAsync(
             host.Services,
-            async (connection, transaction, ct) =>
+            async (scopedServices, connection, transaction, ct) =>
             {
+                // Resolve from the enlisted scope: the facade reads IUnitOfWorkManager.Current from the SAME
+                // scope's manager, and only that scope observes the unit begun by RunCoordinatedTransactionAsync.
+                var scopedManager = scopedServices.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
                 var keyed = JobsKeyedSchedulingScenarios.Candidate();
                 keyed.Function = ordinary.Function;
-                keyed.RequireAtomicEnlistment = true;
+                keyed.Enlistment = TransactionEnlistment.Required;
                 var key = new JobKey("nonordinal-preflight");
-                var schedule = () => manager.ScheduleKeyedAsync(key, keyed, cancellationToken: ct);
+                var schedule = () => scopedManager.ScheduleKeyedAsync(key, keyed, cancellationToken: ct);
                 await schedule.Should().ThrowAsync<InvalidOperationException>().WithMessage("*collation*");
                 probe
                     .Calls.Should()
@@ -274,11 +277,11 @@ public abstract partial class JobsKeyedSchedulingConformanceTests<TFixture>(TFix
                 await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, ct);
 
                 var cancel = () =>
-                    manager.CancelKeyedAsync(
+                    scopedManager.CancelKeyedAsync(
                         new JobKeyScope(ordinary.Function),
                         key,
                         1,
-                        requireAtomicEnlistment: true,
+                        enlistment: TransactionEnlistment.Required,
                         cancellationToken: ct
                     );
                 await cancel.Should().ThrowAsync<InvalidOperationException>().WithMessage("*collation*");
@@ -364,14 +367,13 @@ public abstract partial class JobsKeyedSchedulingConformanceTests<TFixture>(TFix
             var unrelated = JobsKeyedSchedulingScenarios.Candidate();
             await fixture.RunCoordinatedTransactionAsync(
                 host.Services,
-                async (_, _, ct) =>
+                async (_, connection, transaction, ct) =>
                 {
-                    var coordinator = host.Services.GetRequiredService<ICurrentCommitCoordinator>().Current!;
-                    coordinator.TryGetCapability<IRelationalCommitContext>(out var relational).Should().BeTrue();
+                    var relational = new FixedRelationalResource(connection, transaction);
                     var write = async () =>
                         await ((ICoordinatedJobWriter<TimeJobEntity, CronJobEntity>)store).WriteTimeJobsAsync(
                             [unrelated, child],
-                            relational!,
+                            relational,
                             ct
                         );
                     await write.Should().ThrowAsync<InvalidOperationException>().WithMessage("*keyed*parent*");
@@ -399,7 +401,7 @@ public abstract partial class JobsKeyedSchedulingConformanceTests<TFixture>(TFix
         if (scheduleProbe is not null)
         {
             builder.Services.AddSingleton(scheduleProbe);
-            fixture.ConfigureCommitCoordination(builder.Services);
+            fixture.ConfigureUnitOfWork(builder.Services);
         }
         return builder.Build();
     }

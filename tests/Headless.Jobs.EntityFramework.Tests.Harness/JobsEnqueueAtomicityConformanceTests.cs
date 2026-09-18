@@ -18,25 +18,25 @@ namespace Tests;
 
 /// <summary>
 /// Cross-provider conformance for atomic job enqueue via commit coordination (separate from the distributed-lock
-/// coordination suite in <c>JobsCoordinationConformanceTests</c>). Proves the EF coordinated-write seam (U2) and the
-/// manager routing (U3/U4) hold identically on every relational backend:
+/// coordination suite in <c>JobsCoordinationConformanceTests</c>). Proves the EF coordinated-write seam and the
+/// manager routing hold identically on every relational backend:
 /// <list type="bullet">
-/// <item>AE1 — a domain write + <c>AddAsync</c> in one enlisted transaction commit together.</item>
-/// <item>AE1 (rollback) — they discard together; the AsyncLocal-capture regression net (a stranded capture would
+/// <item>A domain write + <c>AddAsync</c> in one enlisted transaction commit together.</item>
+/// <item>Rollback — they discard together; the AsyncLocal-capture regression net (a stranded capture would
 /// take the direct path and auto-commit the row, leaving it after the coordinated rollback).</item>
-/// <item>AE2 — two enqueues in one scope both commit.</item>
-/// <item>AE4 — no coordinator → <c>AddAsync</c> inserts directly.</item>
-/// <item>R5 — <c>AddBatchAsync</c> commits / rolls back atomically with the caller's transaction.</item>
-/// <item>R6 — cron <c>AddAsync</c> commits / rolls back atomically.</item>
-/// <item>R13 — <c>IJobScheduler</c> preserves enlisted writes and deferred scheduler wake-ups.</item>
+/// <item>Two enqueues in one scope both commit.</item>
+/// <item>No coordinator → <c>AddAsync</c> inserts directly.</item>
+/// <item><c>AddBatchAsync</c> commits / rolls back atomically with the caller's transaction.</item>
+/// <item>Cron <c>AddAsync</c> commits / rolls back atomically.</item>
+/// <item><c>IJobScheduler</c> preserves enlisted writes and deferred scheduler wake-ups.</item>
 /// <item>Capstone — domain write + outbox publish + job enqueue commit or roll back as one unit.</item>
 /// </list>
 /// Each leaf derives a sealed class with <c>[Collection&lt;TFixture&gt;]</c> and re-declares the methods with
 /// <c>[Fact]</c> so the runner discovers them per provider.
 /// <para>
-/// AE3's fail-loud modes (dead-transaction throw; non-relational fallback) are intentionally <b>not</b> covered
+/// The fail-loud modes (dead-transaction throw; non-relational fallback) are intentionally <b>not</b> covered
 /// here: the real EF/Postgres/SqlServer enlist always captures a non-null transaction and always exposes
-/// <c>IRelationalCommitContext</c>, so neither state can arise through the production coordinator. Reproducing them
+/// <c>IRelationalUnitOfWorkResource</c>, so neither state can arise through the production manager. Reproducing them
 /// would require injecting a fake relational context into a real host, which just relocates the unit test with no
 /// added fidelity — so they stay unit-only in <c>JobsManagerCoordinatedRoutingTests</c>
 /// (<c>TimeJob_dead_transaction_throws_and_persists_nothing</c>,
@@ -65,14 +65,14 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
 
         try
         {
-            var manager = host.Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
             var probe = new SaveHookProbe { Id = Guid.NewGuid() };
             var job = _TimeJob();
 
             await fixture.RunCoordinatedTransactionAsync(
                 host.Services,
-                async (connection, transaction, innerCt) =>
+                async (scopedServices, connection, transaction, innerCt) =>
                 {
+                    var manager = scopedServices.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
                     await using var scope = host.Services.CreateAsyncScope();
                     var caller = scope.ServiceProvider.GetRequiredService<ObservableJobsDbContext>();
                     caller.Database.SetDbConnection(connection, contextOwnsConnection: false);
@@ -156,14 +156,14 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
 
         try
         {
-            var manager = host.Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
-            var publisher = host.Services.GetRequiredService<IBus>();
             var job = _TimeJob();
 
             await fixture.RunCoordinatedTransactionAsync(
                 host.Services,
-                async (connection, transaction, innerCt) =>
+                async (scopedServices, connection, transaction, innerCt) =>
                 {
+                    var manager = scopedServices.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
+                    var publisher = scopedServices.GetRequiredService<IBus>();
                     await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, innerCt);
                     await publisher.PublishAsync(
                         new CapstoneMessage(job.Id),
@@ -192,16 +192,16 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
 
         try
         {
-            var manager = host.Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
-            var publisher = host.Services.GetRequiredService<IBus>();
             var job = _TimeJob();
             var sentinel = new InvalidOperationException("force rollback");
 
             var act = () =>
                 fixture.RunCoordinatedTransactionAsync(
                     host.Services,
-                    async (connection, transaction, innerCt) =>
+                    async (scopedServices, connection, transaction, innerCt) =>
                     {
+                        var manager = scopedServices.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
+                        var publisher = scopedServices.GetRequiredService<IBus>();
                         await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, innerCt);
                         await publisher.PublishAsync(
                             new CapstoneMessage(job.Id),
@@ -233,8 +233,6 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
 
         try
         {
-            var manager = host.Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
-            var scheduler = host.Services.GetRequiredService<IJobScheduler>();
             var request = new CoordinatedFacadeRequest(Guid.NewGuid(), "facade commit");
             var options = new Headless.Jobs.Models.JobOptions
             {
@@ -247,8 +245,10 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
 
             await fixture.RunCoordinatedTransactionAsync(
                 host.Services,
-                async (connection, transaction, innerCt) =>
+                async (scopedServices, connection, transaction, innerCt) =>
                 {
+                    var manager = scopedServices.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
+                    var scheduler = scopedServices.GetRequiredService<IJobScheduler>();
                     await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, innerCt);
                     (await manager.AddAsync(_TimeJob(), innerCt)).Should().NotBeNull();
                     scheduledId = await scheduler.EnqueueAsync(request, options, innerCt);
@@ -297,15 +297,15 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
 
         try
         {
-            var manager = host.Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
-            var scheduler = host.Services.GetRequiredService<IJobScheduler>();
             var sentinel = new InvalidOperationException("force rollback");
 
             var act = () =>
                 fixture.RunCoordinatedTransactionAsync(
                     host.Services,
-                    async (connection, transaction, innerCt) =>
+                    async (scopedServices, connection, transaction, innerCt) =>
                     {
+                        var manager = scopedServices.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
+                        var scheduler = scopedServices.GetRequiredService<IJobScheduler>();
                         await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, innerCt);
                         await manager.AddAsync(_TimeJob(), innerCt);
                         (
@@ -343,7 +343,7 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
     }
 
     // Two independent AddAsync calls co-commit atomically (count == 2). Cross-call ordering is caller-determined, not
-    // an R3 guarantee; R3 (insertion order within one write) is asserted at the unit level on the seam array.
+    // a guarantee of this seam; insertion order within one write is asserted at the unit level on the seam array.
     public virtual async Task two_enqueues_in_one_scope_both_commit()
     {
         var ct = AbortToken;
@@ -351,12 +351,11 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
 
         try
         {
-            var manager = host.Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
-
             await fixture.RunCoordinatedTransactionAsync(
                 host.Services,
-                async (_, _, innerCt) =>
+                async (scopedServices, _, _, innerCt) =>
                 {
+                    var manager = scopedServices.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
                     (await manager.AddAsync(_TimeJob(), innerCt)).Should().NotBeNull();
                     (await manager.AddAsync(_TimeJob(), innerCt)).Should().NotBeNull();
                 },
@@ -371,7 +370,7 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
         }
     }
 
-    // R5: a batched AddBatchAsync writes every row inside the caller's transaction and commits with it.
+    // A batched AddBatchAsync writes every row inside the caller's transaction and commits with it.
     public virtual async Task batch_enqueue_commits_atomically()
     {
         var ct = AbortToken;
@@ -379,12 +378,11 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
 
         try
         {
-            var manager = host.Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
-
             await fixture.RunCoordinatedTransactionAsync(
                 host.Services,
-                async (_, _, innerCt) =>
+                async (scopedServices, _, _, innerCt) =>
                 {
+                    var manager = scopedServices.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
                     var jobs = new List<TimeJobEntity> { _TimeJob(), _TimeJob() };
                     (await manager.AddBatchAsync(jobs, innerCt)).Should().HaveCount(2);
                 },
@@ -399,7 +397,7 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
         }
     }
 
-    // R5 (rollback): the whole batch discards with the caller's transaction — no partial commit, no stranded rows.
+    // Rollback: the whole batch discards with the caller's transaction — no partial commit, no stranded rows.
     public virtual async Task batch_enqueue_rolls_back()
     {
         var ct = AbortToken;
@@ -407,14 +405,14 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
 
         try
         {
-            var manager = host.Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
             var sentinel = new InvalidOperationException("force rollback");
 
             var act = () =>
                 fixture.RunCoordinatedTransactionAsync(
                     host.Services,
-                    async (_, _, innerCt) =>
+                    async (scopedServices, _, _, innerCt) =>
                     {
+                        var manager = scopedServices.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
                         var jobs = new List<TimeJobEntity> { _TimeJob(), _TimeJob() };
                         await manager.AddBatchAsync(jobs, innerCt);
 
@@ -460,12 +458,18 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
 
         try
         {
-            var manager = host.Services.GetRequiredService<ICronJobManager<CronJobEntity>>();
             var before = await fixture.CountCronJobsAsync(ct);
 
             await fixture.RunCoordinatedTransactionAsync(
                 host.Services,
-                async (_, _, innerCt) => (await manager.AddAsync(_CronJob(), innerCt)).Should().NotBeNull(),
+                async (scopedServices, _, _, innerCt) =>
+                    (
+                        await scopedServices
+                            .GetRequiredService<ICronJobManager<CronJobEntity>>()
+                            .AddAsync(_CronJob(), innerCt)
+                    )
+                        .Should()
+                        .NotBeNull(),
                 ct
             );
 
@@ -484,15 +488,15 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
 
         try
         {
-            var manager = host.Services.GetRequiredService<ICronJobManager<CronJobEntity>>();
             var before = await fixture.CountCronJobsAsync(ct);
             var sentinel = new InvalidOperationException("force rollback");
 
             var act = () =>
                 fixture.RunCoordinatedTransactionAsync(
                     host.Services,
-                    async (_, _, innerCt) =>
+                    async (scopedServices, _, _, innerCt) =>
                     {
+                        var manager = scopedServices.GetRequiredService<ICronJobManager<CronJobEntity>>();
                         await manager.AddAsync(_CronJob(), innerCt);
 
                         throw sentinel;
@@ -509,7 +513,7 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
         }
     }
 
-    // R6 (batch rollback): the whole cron batch discards with the caller's transaction — no partial commit, no stranded rows.
+    // Batch rollback: the whole cron batch discards with the caller's transaction — no partial commit, no stranded rows.
     public virtual async Task cron_batch_enqueue_rolls_back()
     {
         var ct = AbortToken;
@@ -517,15 +521,15 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
 
         try
         {
-            var manager = host.Services.GetRequiredService<ICronJobManager<CronJobEntity>>();
             var before = await fixture.CountCronJobsAsync(ct);
             var sentinel = new InvalidOperationException("force rollback");
 
             var act = () =>
                 fixture.RunCoordinatedTransactionAsync(
                     host.Services,
-                    async (_, _, innerCt) =>
+                    async (scopedServices, _, _, innerCt) =>
                     {
+                        var manager = scopedServices.GetRequiredService<ICronJobManager<CronJobEntity>>();
                         var crons = new List<CronJobEntity> { _CronJob(), _CronJob() };
                         await manager.AddBatchAsync(crons, innerCt);
 

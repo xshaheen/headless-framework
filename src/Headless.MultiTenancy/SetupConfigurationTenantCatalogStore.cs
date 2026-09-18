@@ -17,7 +17,7 @@ public static class SetupConfigurationTenantCatalogStore
         /// Configures the configuration-backed tenant store, binding <see cref="ConfigurationTenantStoreOptions"/>
         /// from <paramref name="configuration"/> once at startup (for example a scoped
         /// <c>Headless:MultiTenancy:Tenants</c> section obtained via <c>IConfiguration.GetSection(...)</c>).
-        /// Reload requires a process restart (KTD7) — there is no change-token re-binding.
+        /// Reload requires a process restart — there is no change-token re-binding.
         /// </summary>
         /// <param name="configuration">The configuration to bind.</param>
         /// <returns>The same <see cref="HeadlessTenancyCatalogSetupBuilder"/> to allow chaining.</returns>
@@ -115,7 +115,7 @@ public static class SetupConfigurationTenantCatalogStore
             }
 
             // Singleton: the store is an immutable snapshot bound once from IOptions<T> at construction
-            // (KTD7) — matching InMemoryTenantStore; unlike a future EF-backed store, which would need
+            // — matching InMemoryTenantStore; unlike a future EF-backed store, which would need
             // Scoped to match its DbContext.
             services.TryAddSingleton<ConfigurationTenantStore>();
             services.TryAddSingleton<ITenantStore>(sp => sp.GetRequiredService<ConfigurationTenantStore>());

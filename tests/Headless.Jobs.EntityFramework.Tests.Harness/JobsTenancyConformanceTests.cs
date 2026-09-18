@@ -14,16 +14,16 @@ using Microsoft.Extensions.Hosting;
 namespace Tests;
 
 /// <summary>
-/// Cross-provider conformance for Jobs tenant propagation (U6): the tenant resolved or captured at schedule time is
+/// Cross-provider conformance for Jobs tenant propagation: the tenant resolved or captured at schedule time is
 /// persisted atomically with the row, survives the pickup projection after a lease timeout, and is resolved per node
-/// across a chain. Proves the schedule-side capture (U2), the EF <c>TenantId</c> mapping + pickup projection (U4), and
-/// the tenancy seam (U5) hold identically on every relational backend:
+/// across a chain. Proves the schedule-side capture, the EF <c>TenantId</c> mapping + pickup projection, and
+/// the tenancy seam hold identically on every relational backend:
 /// <list type="bullet">
-/// <item>R9 — single and batch, direct and commit-coordinated enqueue persist the explicit tenant atomically.</item>
-/// <item>AE1 — an ambient tenant is captured through the seam and persisted in the same write that created the row.</item>
+/// <item>Single and batch, direct and commit-coordinated enqueue persist the explicit tenant atomically.</item>
+/// <item>An ambient tenant is captured through the seam and persisted in the same write that created the row.</item>
 /// <item>Regression guard — pickup after a lease timeout re-materializes <c>TenantId</c> through the EF projection
 /// (the RetryCount-class silent-drop bug).</item>
-/// <item>AE6 — chain descendants persist per-node tenants: an unset child inherits the root's resolved tenant, a
+/// <item>Chain descendants persist per-node tenants: an unset child inherits the root's resolved tenant, a
 /// pre-set explicit child keeps its own.</item>
 /// <item>Rollback — a coordinated enqueue carrying a tenant discards with the caller's transaction, leaving no row
 /// (tenant capture has no post-commit step that could strand a direct-path row).</item>
@@ -34,7 +34,7 @@ namespace Tests;
 public abstract class JobsTenancyConformanceTests<TFixture>(TFixture fixture) : TestBase
     where TFixture : class, IJobsCoordinationFixture
 {
-    // R9 (single, direct): a direct enqueue with an explicit entity tenant (R17 direct-entity-API parity) persists it.
+    // Single, direct: a direct enqueue with an explicit entity tenant (direct-entity-API parity) persists it.
     public virtual async Task direct_single_enqueue_persists_explicit_tenant()
     {
         var ct = AbortToken;
@@ -56,7 +56,7 @@ public abstract class JobsTenancyConformanceTests<TFixture>(TFixture fixture) : 
         }
     }
 
-    // R9 (batch, direct): every row in a direct batch carries its own explicit tenant.
+    // Batch, direct: every row in a direct batch carries its own explicit tenant.
     public virtual async Task direct_batch_enqueue_persists_explicit_tenants()
     {
         var ct = AbortToken;
@@ -80,7 +80,7 @@ public abstract class JobsTenancyConformanceTests<TFixture>(TFixture fixture) : 
         }
     }
 
-    // R9 (single, coordinated): the tenant column commits inside the caller's transaction alongside the domain write.
+    // Single, coordinated: the tenant column commits inside the caller's transaction alongside the domain write.
     public virtual async Task coordinated_single_enqueue_persists_explicit_tenant_atomically()
     {
         var ct = AbortToken;
@@ -88,13 +88,13 @@ public abstract class JobsTenancyConformanceTests<TFixture>(TFixture fixture) : 
 
         try
         {
-            var manager = host.Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
             var job = _TenantTimeJob("tenant-a");
 
             await fixture.RunCoordinatedTransactionAsync(
                 host.Services,
-                async (connection, transaction, innerCt) =>
+                async (scopedServices, connection, transaction, innerCt) =>
                 {
+                    var manager = scopedServices.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
                     await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, innerCt);
                     (await manager.AddAsync(job, innerCt)).Should().NotBeNull();
                 },
@@ -111,7 +111,7 @@ public abstract class JobsTenancyConformanceTests<TFixture>(TFixture fixture) : 
         }
     }
 
-    // R9 (batch, coordinated): a batched enqueue commits every row's tenant with the caller's transaction.
+    // Batch, coordinated: a batched enqueue commits every row's tenant with the caller's transaction.
     public virtual async Task coordinated_batch_enqueue_persists_explicit_tenants_atomically()
     {
         var ct = AbortToken;
@@ -119,14 +119,14 @@ public abstract class JobsTenancyConformanceTests<TFixture>(TFixture fixture) : 
 
         try
         {
-            var manager = host.Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
             var first = _TenantTimeJob("tenant-a");
             var second = _TenantTimeJob("tenant-b");
 
             await fixture.RunCoordinatedTransactionAsync(
                 host.Services,
-                async (connection, transaction, innerCt) =>
+                async (scopedServices, connection, transaction, innerCt) =>
                 {
+                    var manager = scopedServices.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
                     await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, innerCt);
                     (await manager.AddBatchAsync([first, second], innerCt)).Should().HaveCount(2);
                 },
@@ -144,7 +144,7 @@ public abstract class JobsTenancyConformanceTests<TFixture>(TFixture fixture) : 
         }
     }
 
-    // R9 via the IJobScheduler surface: JobOptions.TenantId is copied onto the entity and persisted coordinated.
+    // Via the IJobScheduler surface: JobOptions.TenantId is copied onto the entity and persisted coordinated.
     public virtual async Task coordinated_scheduler_enqueue_persists_options_tenant()
     {
         var ct = AbortToken;
@@ -152,15 +152,15 @@ public abstract class JobsTenancyConformanceTests<TFixture>(TFixture fixture) : 
 
         try
         {
-            var scheduler = host.Services.GetRequiredService<IJobScheduler>();
             var request = new CoordinatedFacadeRequest(Guid.NewGuid(), "tenant scheduler");
             var options = new JobOptions { TenantId = "tenant-a" };
             var scheduledId = Guid.Empty;
 
             await fixture.RunCoordinatedTransactionAsync(
                 host.Services,
-                async (connection, transaction, innerCt) =>
+                async (scopedServices, connection, transaction, innerCt) =>
                 {
+                    var scheduler = scopedServices.GetRequiredService<IJobScheduler>();
                     await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, innerCt);
                     scheduledId = await scheduler.EnqueueAsync(request, options, innerCt);
                     scheduledId.Should().NotBeEmpty();
@@ -178,7 +178,7 @@ public abstract class JobsTenancyConformanceTests<TFixture>(TFixture fixture) : 
         }
     }
 
-    // AE1: with the seam propagating and an ambient tenant set via ICurrentTenant.Change, an enqueue that supplies no
+    // With the seam propagating and an ambient tenant set via ICurrentTenant.Change, an enqueue that supplies no
     // explicit tenant captures the ambient tenant and persists it in the same write — end-to-end capture proof.
     public virtual async Task coordinated_ambient_enqueue_captures_and_persists_tenant()
     {
@@ -191,7 +191,6 @@ public abstract class JobsTenancyConformanceTests<TFixture>(TFixture fixture) : 
 
         try
         {
-            var manager = host.Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
             var currentTenant = host.Services.GetRequiredService<ICurrentTenant>();
             var job = _TenantTimeJob(tenantId: null);
 
@@ -199,8 +198,9 @@ public abstract class JobsTenancyConformanceTests<TFixture>(TFixture fixture) : 
             {
                 await fixture.RunCoordinatedTransactionAsync(
                     host.Services,
-                    async (connection, transaction, innerCt) =>
+                    async (scopedServices, connection, transaction, innerCt) =>
                     {
+                        var manager = scopedServices.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
                         await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, innerCt);
                         (await manager.AddAsync(job, innerCt)).Should().NotBeNull();
                     },
@@ -251,7 +251,7 @@ public abstract class JobsTenancyConformanceTests<TFixture>(TFixture fixture) : 
         }
     }
 
-    // AE6: a chain persists a per-node tenant — an unset descendant inherits the root's resolved tenant, a descendant
+    // A chain persists a per-node tenant — an unset descendant inherits the root's resolved tenant, a descendant
     // that carries its own explicit tenant keeps it. The chain walk lives in JobsManager (the middleware sees only the
     // BaseJobEntity root), so this is the integration-grade proof it runs before persistence on every backend.
     public virtual async Task chain_descendants_persist_resolved_tenants()
@@ -309,15 +309,15 @@ public abstract class JobsTenancyConformanceTests<TFixture>(TFixture fixture) : 
 
         try
         {
-            var manager = host.Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
             var job = _TenantTimeJob("tenant-a");
             var sentinel = new InvalidOperationException("force rollback");
 
             var act = () =>
                 fixture.RunCoordinatedTransactionAsync(
                     host.Services,
-                    async (connection, transaction, innerCt) =>
+                    async (scopedServices, connection, transaction, innerCt) =>
                     {
+                        var manager = scopedServices.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
                         await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, innerCt);
                         await manager.AddAsync(job, innerCt);
 

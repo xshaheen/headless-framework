@@ -818,7 +818,7 @@ public sealed partial class FactoryCacheCoordinator(
             if (timeout == Timeout.InfiniteTimeSpan)
             {
                 // Cancellable caller, no factory timeout: race the factory against caller cancellation only, with
-                // no delay timer. R6 (caller cancellation wins) still holds, even against a non-cooperative factory.
+                // no delay timer. Caller cancellation still wins, even against a non-cooperative factory.
                 var untimedWinner = await Task.WhenAny(factoryTask, callerCancellationTask!).ConfigureAwait(false);
 
                 if (untimedWinner == callerCancellationTask)

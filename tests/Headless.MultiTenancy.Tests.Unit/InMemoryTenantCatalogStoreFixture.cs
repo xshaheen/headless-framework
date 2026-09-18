@@ -20,7 +20,7 @@ public sealed class InMemoryTenantCatalogStoreFixture : ITenantCatalogStoreFixtu
         var options = new InMemoryTenantStoreOptions { Tenants = [.. seeds.Select(_ToTenantInfo)] };
 
         // The store's own constructor validates uniqueness and throws InvalidOperationException on
-        // duplicates (R20) — the same check the FluentValidation options validator performs at DI
+        // duplicates — the same check the FluentValidation options validator performs at DI
         // startup, so bypassing DI here still exercises the duplicate-rejection contract.
         return Task.FromResult<ITenantStore>(new InMemoryTenantStore(Options.Create(options)));
     }

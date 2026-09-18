@@ -8,14 +8,14 @@ using Microsoft.Extensions.Options;
 namespace Headless.Api.MultiTenancy;
 
 /// <summary>
-/// <see cref="LinkGenerator"/> decorator that keeps the tenant route segment in generated links (R13):
+/// <see cref="LinkGenerator"/> decorator that keeps the tenant route segment in generated links:
 /// when the explicit values lack the route value named by
 /// <see cref="RouteTenantIdentifierSourceOptions.RouteValueName"/>, the current request's value is
 /// promoted into a copy of the explicit values before delegating to the wrapped generator.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Why promotion is needed (U5 spike evidence, KTD7): ASP.NET Core discards every ambient route
+/// Why promotion is needed: ASP.NET Core discards every ambient route
 /// value once a required value (controller, action, page) differs from the current request, so
 /// <c>Url.Action</c> and <c>GetPathByAction</c> lose a leading <c>{tenant}</c> segment whenever they
 /// link to another action, and the endpoint-name scheme (<c>GetPathByName</c>) passes no ambient

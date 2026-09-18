@@ -79,7 +79,7 @@ public sealed class MessagingDeadOwnerReclaimerTests : TestBase
     [Fact]
     public async Task should_reclaim_with_none_token_not_the_incoming_token()
     {
-        // given — a non-default incoming token that must NOT be re-threaded into the storage writes (KTD6)
+        // given — a non-default incoming token that must NOT be re-threaded into the storage writes
         var sut = _CreateSut();
         using var cts = new CancellationTokenSource();
 

@@ -23,7 +23,7 @@ public sealed class HybridCacheSetupTests : TestBase
         var remote = new InMemoryRemoteCacheAdapter(l2Inner);
         var services = _CreateServices(remote, setup => setup.UseHybrid());
 
-        await using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 
         // when
         var defaultCache = provider.GetRequiredService<ICache>();
@@ -60,7 +60,7 @@ public sealed class HybridCacheSetupTests : TestBase
         );
         services.AddSingleton(new SetupIdentity("configured-node"));
 
-        await using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         var cache = provider.GetRequiredService<HybridCache>();
 
         provider.GetRequiredService<HybridCacheOptions>().InstanceId.Should().Be("configured-node");
@@ -84,7 +84,7 @@ public sealed class HybridCacheSetupTests : TestBase
             .Build();
         var services = _CreateServices(remote, setup => setup.UseHybrid(configuration));
 
-        await using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         provider.GetRequiredService<ICache>().Should().BeOfType<HybridCache>();
         var options = provider.GetRequiredService<HybridCacheOptions>();
 
@@ -96,7 +96,10 @@ public sealed class HybridCacheSetupTests : TestBase
     {
         var services = new ServiceCollection();
         services.AddSingleton<TimeProvider>(_timeProvider);
-        services.AddSingleton(Substitute.For<IBus>());
+        services.AddLogging();
+        // HybridCache's DI factory builds its own unit-less IBus over the singleton MessagePublisher
+        // core; a real in-memory transport is the lightest way to make that resolvable.
+        services.AddHeadlessMessaging(messaging => messaging.UseInMemory());
         services.AddHeadlessCaching(setup =>
         {
             setup.AddMemoryTier();

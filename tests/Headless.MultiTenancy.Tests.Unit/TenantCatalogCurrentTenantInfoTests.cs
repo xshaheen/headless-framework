@@ -63,8 +63,8 @@ public sealed class TenantCatalogCurrentTenantInfoTests : TestBase
     [Fact]
     public async Task should_observe_the_inner_tenant_inside_a_nested_change_scope_and_the_outer_tenant_after_dispose()
     {
-        // given — AE12: nested ICurrentTenant.Change reads the inner tenant while active, the outer
-        // tenant again once the inner scope disposes. KTD3: no per-scope memoization.
+        // given — nested ICurrentTenant.Change reads the inner tenant while active, the outer
+        // tenant again once the inner scope disposes. No per-scope memoization.
         var currentTenant = new CurrentTenant(AsyncLocalCurrentTenantAccessor.Instance);
         var catalogService = Substitute.For<ITenantCatalogService>();
         var tenantA = new TenantInfo("ten_A", "acme", "Acme", isEnabled: true);

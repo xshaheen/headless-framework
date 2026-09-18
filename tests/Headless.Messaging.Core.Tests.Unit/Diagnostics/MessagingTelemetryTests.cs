@@ -23,7 +23,7 @@ public sealed class MessagingTelemetryTests : TestBase
 {
     private static readonly BrokerAddress _Broker = new("TestBroker", "broker.local:5672");
 
-    // AE1 (R2 parity): the native emitter produces the same span names + headless.messaging.* attribute keys.
+    // Parity: the native emitter produces the same span names + headless.messaging.* attribute keys.
     // Asserts on the started Activity references directly so process-global listener leakage from other test
     // classes running in parallel cannot influence the result.
     [Fact]
@@ -49,7 +49,7 @@ public sealed class MessagingTelemetryTests : TestBase
             extraHeaders: new Dictionary<string, string?>(StringComparer.Ordinal)
             {
                 [Headers.TenantId] = "tenant-7",
-                [Headers.RequestedDeliveryMode] = nameof(DeliveryMode.Auto),
+                [Headers.RequestedDeliveryMode] = nameof(DeliveryMode.Durable),
                 [Headers.ResolvedDeliveryMode] = nameof(DeliveryMode.Direct),
             }
         );
@@ -74,7 +74,7 @@ public sealed class MessagingTelemetryTests : TestBase
             ]);
         publish.GetTagItem(MessagingTags.Lane).Should().Be("bus");
         publish.GetTagItem(MessagingTags.TenantId).Should().Be("tenant-7");
-        publish.GetTagItem(MessagingTags.RequestedDeliveryMode).Should().Be("auto");
+        publish.GetTagItem(MessagingTags.RequestedDeliveryMode).Should().Be("durable");
         publish.GetTagItem(MessagingTags.ResolvedDeliveryMode).Should().Be("direct");
         MessagingTelemetry.PublishStop(publish, publishMessage, _Broker, 200, 260);
 
@@ -106,7 +106,7 @@ public sealed class MessagingTelemetryTests : TestBase
         MessagingTelemetry.SubscriberInvokeStop(subscriber, invokeMessage.Name, _Method, 400, 480);
     }
 
-    // AE1 (R2 parity): the native emitter records the same semconv instrument names + dimensions.
+    // Parity: the native emitter records the same semconv instrument names + dimensions.
     [Fact]
     public void should_record_expected_instrument_names_when_full_flow()
     {
@@ -266,7 +266,7 @@ public sealed class MessagingTelemetryTests : TestBase
             );
     }
 
-    // AE2 (R4/R5): publish injects traceparent; consume extracts and continues the same trace.
+    // Publish injects traceparent; consume extracts and continues the same trace.
     [Fact]
     public void should_propagate_trace_context_through_headers_when_publish_then_consume()
     {
@@ -281,7 +281,7 @@ public sealed class MessagingTelemetryTests : TestBase
 
         try
         {
-            // Ambient baggage present at publish time must survive the header round-trip (AE2).
+            // Ambient baggage present at publish time must survive the header round-trip.
             Baggage.Current = Baggage.Create(
                 new Dictionary<string, string>(StringComparer.Ordinal) { ["tenant"] = "t-42" }
             );
@@ -314,7 +314,7 @@ public sealed class MessagingTelemetryTests : TestBase
         }
     }
 
-    // AE3 (R7): a custom enricher's tag is present even when the span ends immediately (sync at start).
+    // A custom enricher's tag is present even when the span ends immediately (sync at start).
     [Fact]
     public void should_apply_custom_enricher_tag_synchronously_when_span_starts()
     {
@@ -329,7 +329,7 @@ public sealed class MessagingTelemetryTests : TestBase
         MessagingTelemetry.PublishStop(publish, message, _Broker, 100, 110);
     }
 
-    // AE3 (R7): a throwing enricher is isolated; the operation and later enrichers are unaffected.
+    // A throwing enricher is isolated; the operation and later enrichers are unaffected.
     [Fact]
     public void should_isolate_throwing_enricher_when_span_starts()
     {

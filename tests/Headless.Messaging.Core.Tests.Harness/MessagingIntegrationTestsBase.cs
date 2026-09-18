@@ -49,6 +49,12 @@ namespace Tests;
 public abstract class MessagingIntegrationTestsBase : TestBase
 {
     private ServiceProvider? _serviceProvider;
+
+    // Test-owned: created once per test instance and disposed with it, exactly like a request scope in
+    // production. IBus/IQueue are scoped (they read the scope's IUnitOfWorkManager.Current at publish time), so
+    // Publisher/QueuePublisher/Bus resolve from here rather than from the root ServiceProvider — a root
+    // resolution would silently share one captive instance whose unit-of-work slot is always empty.
+    private AsyncServiceScope _testScope;
     private bool _disposed;
 
     /// <summary>Gets the configured service provider.</summary>
@@ -61,11 +67,11 @@ public abstract class MessagingIntegrationTestsBase : TestBase
     /// <summary>Gets the bootstrapper for starting the messaging system.</summary>
     protected IBootstrapper Bootstrapper => ServiceProvider.GetRequiredService<IBootstrapper>();
 
-    /// <summary>Gets the publisher for sending messages.</summary>
-    protected IBus Publisher => ServiceProvider.GetRequiredService<IBus>();
+    /// <summary>Gets the publisher for sending messages, resolved from the test-owned scope.</summary>
+    protected IBus Publisher => _testScope.ServiceProvider.GetRequiredService<IBus>();
 
-    /// <summary>Gets the queue publisher for sending point-to-point messages.</summary>
-    protected IQueue QueuePublisher => ServiceProvider.GetRequiredService<IQueue>();
+    /// <summary>Gets the queue publisher for sending point-to-point messages, resolved from the test-owned scope.</summary>
+    protected IQueue QueuePublisher => _testScope.ServiceProvider.GetRequiredService<IQueue>();
 
     /// <summary>Gets the data storage for message persistence.</summary>
     protected IDataStorage DataStorage => ServiceProvider.GetRequiredService<IDataStorage>();
@@ -73,8 +79,8 @@ public abstract class MessagingIntegrationTestsBase : TestBase
     /// <summary>Gets the consumer registry for discovering registered consumers.</summary>
     protected IConsumerRegistry ConsumerRegistry => ServiceProvider.GetRequiredService<IConsumerRegistry>();
 
-    /// <summary>Gets the bus for transport-only readiness probes.</summary>
-    protected IBus Bus => ServiceProvider.GetRequiredService<IBus>();
+    /// <summary>Gets the bus for transport-only readiness probes, resolved from the test-owned scope.</summary>
+    protected IBus Bus => _testScope.ServiceProvider.GetRequiredService<IBus>();
 
     /// <summary>Gets the resolved messaging options for prefix-aware assertions.</summary>
     protected MessagingOptions MessagingOptions =>
@@ -321,6 +327,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         ConfigureServices(services);
 
         _serviceProvider = services.BuildServiceProvider();
+        _testScope = _serviceProvider.CreateAsyncScope();
 
         // Bootstrap the messaging system
         await Bootstrapper.BootstrapAsync(AbortToken);
@@ -336,6 +343,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
 
         if (_serviceProvider is not null)
         {
+            await _testScope.DisposeAsync();
             await _serviceProvider.DisposeAsync();
             _serviceProvider = null;
         }

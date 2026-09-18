@@ -23,10 +23,10 @@ using Tests.Helpers;
 namespace Tests;
 
 /// <summary>
-/// Pins the R1 host source end to end through the real catalog pipeline: port-excluded host matching
-/// (AE1), ignored identifiers ending resolution with no store call (AE2/R8), the fail-closed unknown
-/// rejection, the whole-host (custom-domain) override (R9), reading <c>Host</c> and never
-/// <c>X-Forwarded-Host</c> directly (R16), and startup failure on an unparsable template (AE6/R7).
+/// Pins the host source end to end through the real catalog pipeline: port-excluded host matching,
+/// ignored identifiers ending resolution with no store call, the fail-closed unknown
+/// rejection, the whole-host (custom-domain) override, reading <c>Host</c> and never
+/// <c>X-Forwarded-Host</c> directly, and startup failure on an unparsable template.
 /// </summary>
 public sealed class HostTenantIdentifierSourceTests : TestBase
 {
@@ -36,7 +36,7 @@ public sealed class HostTenantIdentifierSourceTests : TestBase
         await using var app = await _CreateAppAsync();
         using var client = HttpTenancyTestHarness.CreateClient(app);
 
-        // AE1: port excluded, matching case-insensitive, capture keeps casing, catalog normalizes.
+        // Port excluded, matching case-insensitive, capture keeps casing, catalog normalizes.
         var tenant = await _GetTenantAsync(client, "ACME.example.com:8443");
 
         tenant.Id.Should().Be("ten_123");
@@ -51,7 +51,7 @@ public sealed class HostTenantIdentifierSourceTests : TestBase
         await using var app = await _CreateAppAsync(store: store, ignoredIdentifiers: ["www"]);
         using var client = HttpTenancyTestHarness.CreateClient(app);
 
-        // AE2: www is an ignored identifier on the CATALOG options (R8 — no source-level list), so
+        // www is an ignored identifier on the CATALOG options (there is no source-level list), so
         // resolution ends as host context; the seeded store must never be consulted.
         var tenant = await _GetTenantAsync(client, "www.example.com");
 
@@ -83,7 +83,7 @@ public sealed class HostTenantIdentifierSourceTests : TestBase
     [Fact]
     public async Task should_resolve_a_whole_host_identifier_under_the_catalog_pattern_override()
     {
-        // R9: the whole-host (custom-domain) form ships only through the catalog-wide override —
+        // The whole-host (custom-domain) form ships only through the catalog-wide override —
         // a bare {tenant} template, MaxIdentifierLength raised, and IdentifierPattern replaced with a
         // hostname-shaped regex defined locally in this test (a shipped shared pattern is
         // deliberately out of scope).
@@ -112,7 +112,7 @@ public sealed class HostTenantIdentifierSourceTests : TestBase
         await using var app = await _CreateAppAsync();
         using var client = HttpTenancyTestHarness.CreateClient(app);
 
-        // R16: forwarded headers are NOT enabled on this host, so X-Forwarded-Host must be ignored —
+        // Forwarded headers are NOT enabled on this host, so X-Forwarded-Host must be ignored —
         // the source reads Request.Host, which still carries the loopback host. It matches no
         // template, so the request proceeds as host context rather than resolving acme.
         using var request = new HttpRequestMessage(HttpMethod.Get, "/tenant");
@@ -130,7 +130,7 @@ public sealed class HostTenantIdentifierSourceTests : TestBase
     [Fact]
     public async Task should_fail_host_startup_when_a_template_is_unparsable()
     {
-        // AE6/R7: two {tenant} tokens — the validator's message (naming the template and the rule)
+        // Two {tenant} tokens — the validator's message (naming the template and the rule)
         // must surface through ValidateOnStart at Build/StartAsync.
         var act = () => _CreateAppAsync(template: "{tenant}.{tenant}.com");
 

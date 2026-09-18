@@ -64,7 +64,7 @@ That shape keeps provider decisions at the composition root:
 | Background job contracts | `Headless.Jobs.Abstractions` | `Headless.Jobs.Core`, `Headless.Jobs.SourceGenerator`, dashboard, EF Core persistence, and a PostgreSQL or SQL Server native claim provider when contention warrants it |
 | Distributed lock contracts | `Headless.DistributedLocks.Abstractions` | `Headless.DistributedLocks.Core` plus in-memory, Redis, PostgreSQL, or SQL Server provider |
 | Cluster membership contracts | `Headless.Coordination.Abstractions` | `Headless.Coordination.Core` plus Redis, PostgreSQL, or SQL Server provider |
-| Transaction-bound side-effect contracts | `Headless.CommitCoordination.Abstractions` | `Headless.CommitCoordination.Core` plus EF Core, PostgreSQL, SQL Server, in-memory, or durable-work package |
+| Transaction-bound side-effect contracts | `Headless.UnitOfWork.Abstractions` | `Headless.UnitOfWork` plus the EF Core, PostgreSQL, or SQL Server provider package |
 | Dynamic settings contracts | `Headless.Settings.Abstractions` | `Headless.Settings.Core` plus EF Core, PostgreSQL, or SQL Server storage |
 | Feature flag contracts | `Headless.Features.Abstractions` | `Headless.Features.Core` plus EF Core, PostgreSQL, or SQL Server storage |
 | Permission contracts | `Headless.Permissions.Abstractions` | `Headless.Permissions.Core` plus EF Core, PostgreSQL, SQL Server, or testing provider |
@@ -401,7 +401,6 @@ Database access utilities for Entity Framework Core and Couchbase — convention
 | Package | Description |
 |---------|-------------|
 | [Headless.EntityFramework](src/Headless.EntityFramework/README.md) | Entity Framework Core utilities |
-| [Headless.EntityFramework.CommitCoordination](src/Headless.EntityFramework.CommitCoordination/README.md) | Opt-in commit coordination for the Headless EF save pipeline |
 | [Headless.EntityFramework.Messaging](src/Headless.EntityFramework.Messaging/README.md) | EF Core outbox dispatcher — atomic integration-event writes on save |
 | [Headless.Couchbase](src/Headless.Couchbase/README.md) | Couchbase data-access utilities |
 
@@ -466,19 +465,17 @@ Cluster membership and liveness tracking — know which nodes are alive across a
 | [Headless.Coordination.Redis](src/Headless.Coordination.Redis/README.md) | Redis membership via Lua scripts and server time |
 | [Headless.Coordination.SqlServer](src/Headless.Coordination.SqlServer/README.md) | SQL Server membership with guarded writes |
 
-### Commit Coordination
+### Unit of Work
 
-Tie side effects to transaction boundaries — buffer work (outbox dispatch, durable jobs) inside a transaction and drain it atomically on commit, discard it on rollback.
+Explicit, scoped unit of work: begin it on the line you choose, do business work, and complete it — outbox dispatch and durable jobs enlisted inside it drain atomically on commit and discard on rollback.
 
 | Package | Description |
 |---------|-------------|
-| [Headless.CommitCoordination.Abstractions](src/Headless.CommitCoordination.Abstractions/README.md) | Commit coordination contracts (provider-free) |
-| [Headless.CommitCoordination.Core](src/Headless.CommitCoordination.Core/README.md) | In-process coordinator, ambient stack, and scope factory |
-| [Headless.CommitCoordination.DurableWork](src/Headless.CommitCoordination.DurableWork/README.md) | Base for durable work buffers writing inside the active transaction |
-| [Headless.CommitCoordination.EntityFramework](src/Headless.CommitCoordination.EntityFramework/README.md) | Bridges EF Core commit/rollback edges to commit coordination |
-| [Headless.CommitCoordination.InMemory](src/Headless.CommitCoordination.InMemory/README.md) | In-process signal source for tests and owner-driven flows |
-| [Headless.CommitCoordination.PostgreSql](src/Headless.CommitCoordination.PostgreSql/README.md) | PostgreSQL commit coordination registration points |
-| [Headless.CommitCoordination.SqlServer](src/Headless.CommitCoordination.SqlServer/README.md) | Correlates SQL Server commit/rollback signals to scopes |
+| [Headless.UnitOfWork.Abstractions](src/Headless.UnitOfWork.Abstractions/README.md) | Scoped unit-of-work contracts: `IUnitOfWorkManager`, `IUnitOfWork`, `IUnitOfWorkResource`, `TransactionEnlistment` (zero dependencies) |
+| [Headless.UnitOfWork](src/Headless.UnitOfWork/README.md) | The scoped manager, engine, and `AddUnitOfWork()` registration |
+| [Headless.UnitOfWork.EntityFramework](src/Headless.UnitOfWork.EntityFramework/README.md) | EF Core provider: `BeginAsync(db)` / `Enlist(db, tx)` / `RunAsync(db, ...)` |
+| [Headless.UnitOfWork.PostgreSql](src/Headless.UnitOfWork.PostgreSql/README.md) | Raw-ADO `NpgsqlConnection` provider with the same shape |
+| [Headless.UnitOfWork.SqlServer](src/Headless.UnitOfWork.SqlServer/README.md) | Raw-ADO `SqlConnection` provider with the same shape |
 
 ### Serialization
 

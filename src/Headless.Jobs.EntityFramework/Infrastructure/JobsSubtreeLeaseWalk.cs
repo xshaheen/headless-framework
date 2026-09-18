@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Headless.Jobs.Infrastructure;
 
 /// <summary>
-/// R12/KTD2: leases the non-timed idle subtrees beneath ALREADY-CLAIMED roots, frontier by frontier, down to
+/// Leases the non-timed idle subtrees beneath ALREADY-CLAIMED roots, frontier by frontier, down to
 /// <c>MaxChainDepth</c>. Shared by the two relational claim paths that must pre-lease a chain — the scheduled tree
 /// claim (<c>EfCoreCasJobsClaimStrategy</c>) and the immediate-dispatch acquire
 /// (<c>BasePersistenceProvider.AcquireImmediateTimeJobsAsync</c>) — because the executor runs a claimed chain by
@@ -38,7 +38,7 @@ internal static class JobsSubtreeLeaseWalk
     /// </para>
     /// </remarks>
     /// <param name="onBeforeFirstLease">
-    /// TEST SEAM (KTD4). Invoked exactly once — after the first frontier's children are discovered but before their
+    /// TEST SEAM. Invoked exactly once — after the first frontier's children are discovered but before their
     /// lease UPDATE — so a test can deterministically invalidate the root's lease (expire it, or reassign its owner)
     /// and drive the <c>EXISTS(root still owned by me, lease unexpired)</c> fence without racing statement latency
     /// against a wall-clock deadline. Always <see langword="null"/> in production; production callers omit it.
@@ -89,7 +89,7 @@ internal static class JobsSubtreeLeaseWalk
     )
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
     {
-        // KTD2: the exact set of claimed ids (root + leased descendants) the caller rebuilds the tree strictly from.
+        // The exact set of claimed ids (root + leased descendants) the caller rebuilds the tree strictly from.
         var claimedIds = new HashSet<Guid> { rootId };
         var frontier = new[] { rootId };
 
@@ -105,7 +105,7 @@ internal static class JobsSubtreeLeaseWalk
 
             var childIds = Array.ConvertAll(children, x => x.Id);
 
-            // KTD4 test seam: fire once, between discovery and the first lease UPDATE. Null (no-op) in production.
+            // Test seam: fire once, between discovery and the first lease UPDATE. Null (no-op) in production.
             if (depth == 1 && onBeforeFirstLease is not null)
             {
                 await onBeforeFirstLease().ConfigureAwait(false);
@@ -144,7 +144,7 @@ internal static class JobsSubtreeLeaseWalk
     )
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
     {
-        // KTD2: accumulate, per root, the exact set of claimed ids (root + leased descendants) so the caller rebuilds
+        // Accumulate, per root, the exact set of claimed ids (root + leased descendants) so the caller rebuilds
         // each tree strictly from it — a node below a non-idle frontier is never leased and must never execute
         // unclaimed.
         var claimedIdsByRoot = new Dictionary<Guid, HashSet<Guid>>(rootIds.Count);
@@ -200,7 +200,7 @@ internal static class JobsSubtreeLeaseWalk
                 }
             }
 
-            // KTD4 test seam: fire once, between discovery and the first lease UPDATE, so a test can invalidate a
+            // Test seam: fire once, between discovery and the first lease UPDATE, so a test can invalidate a
             // root lease and exercise the EXISTS fence below deterministically. Null (and thus a no-op) in production.
             if (depth == 1 && onBeforeFirstLease is not null)
             {
@@ -293,13 +293,13 @@ internal static class JobsSubtreeLeaseWalk
 
     /// <summary>
     /// Leases one root's discovered children, COPYING the root's persisted LockedUntil via a database-evaluated
-    /// subquery (KTD2 invariant 2) — no clock function — so every level shares the root's exact deadline on both
+    /// subquery (the same deadline-copy invariant as the tree claim) — no clock function — so every level shares the root's exact deadline on both
     /// providers. The predicate is fully reasserted inside the UPDATE, never trusting the discovery snapshot:
     /// <list type="bullet">
     /// <item>
     /// <c>Status == Idle &amp;&amp; ExecutionTime == null</c> + parent-linkage — a child rescheduled (given an
     /// ExecutionTime) or re-parented between the discovery SELECT and this UPDATE must NOT be claimed as an immediate
-    /// in-tree continuation, bypassing the timed gate (U5).
+    /// in-tree continuation, bypassing the timed gate.
     /// </item>
     /// <item>
     /// <c>EXISTS(root still owned by THIS claimant with an UNEXPIRED lease, DB clock)</c> — if the frontier walk

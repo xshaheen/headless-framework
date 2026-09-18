@@ -46,7 +46,7 @@ public sealed class OrderPlacedHandler(ILogger<OrderPlacedHandler> logger) : ICo
 
 Use `Headless.Messaging.Bus.Abstractions` for broadcast publisher contracts and `Headless.Messaging.Queue.Abstractions` for point-to-point publisher contracts.
 
-`DeliveryMode.Auto` captures inside a compatible coordination boundary and sends directly when no boundary is active; an active incompatible boundary is rejected. The host default is `Auto`; configure `setup.Options.DefaultDeliveryMode` to change it. `Durable` always persists first. `Direct` bypasses storage and any ambient coordination boundary, and cannot be combined with `Delay` or `ScheduledAt`.
+`DeliveryMode` has two values. `Durable` (default) stores first — inside the caller's active unit of work when its resource is compatible and the message's `TransactionEnlistment` allows it, standalone otherwise — and `Direct` bypasses storage and the unit of work entirely and cannot be combined with `Delay` or `ScheduledAt`. Whether a durable publish enlists is the separate `TransactionEnlistment` axis (`WhenAvailable`, `Required`, `Never`; see [Unit of Work](../../docs/llms/unit-of-work.md)). Precedence for both is per call, then per type (`WithDeliveryMode` / `WithEnlistment`), then `MessagingOptions.DefaultDeliveryMode` / `DefaultEnlistment`. The full guarantee matrix lives in [Delivery Modes](../../docs/llms/messaging.md#delivery-modes).
 
 ## Callbacks
 

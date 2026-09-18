@@ -15,7 +15,7 @@ namespace Tests;
 #pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
 
 /// <summary>
-/// The occupied-instant ACCOUNTING matrix (KTD1), driven over every persisted state a row can be in, against both
+/// The occupied-instant ACCOUNTING matrix, driven over every persisted state a row can be in, against both
 /// paths that read it — materialization and recovery — and against both claim strategies.
 /// </summary>
 /// <remarks>
@@ -374,7 +374,7 @@ public abstract class JobsOccupiedInstantConformanceTests<TFixture>(TFixture fix
     }
 
     /// <summary>
-    /// AE2/R3a. A terminal and a live row coexist at one instant — legal, because the unique index filters to live
+    /// A terminal and a live row coexist at one instant — legal, because the unique index filters to live
     /// rows. Ordering by <c>CreatedAt</c> alone would report the older terminal row and hand the dispatcher an
     /// occurrence id that can never run.
     /// </summary>

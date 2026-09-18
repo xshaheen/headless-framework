@@ -63,7 +63,7 @@ internal sealed partial class IdempotencyMiddleware(
         // see EndpointConventionBuilderExtensions remarks.
         var headerValues = context.Request.Headers[appOptions.HeaderName];
 
-        // R1: missing or whitespace key → pass-through
+        // Missing or whitespace key → pass-through
         if (headerValues.Count == 0)
         {
             await next(context).ConfigureAwait(false);
@@ -81,7 +81,7 @@ internal sealed partial class IdempotencyMiddleware(
         // Now resolve per-endpoint options for everything else.
         var options = _ResolveOptions(context, appOptions);
 
-        // R2: method not opted-in → pass-through
+        // Method not opted-in → pass-through
         if (!options.Methods.Contains(context.Request.Method))
         {
             await next(context).ConfigureAwait(false);

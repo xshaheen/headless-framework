@@ -7,7 +7,7 @@ namespace Tests;
 /// <summary>
 /// Provider-neutral seed input for <see cref="ITenantCatalogStoreFixture.SeedAsync"/>. <see cref="Identifier"/>
 /// is always already-normalized (trimmed, lowercase) — the conformance suite proves stores compare it
-/// ordinally and never re-normalize (R7); normalization-equivalence itself is a catalog-service concern
+/// ordinally and never re-normalize; normalization-equivalence itself is a catalog-service concern
 /// tested in <c>Headless.MultiTenancy.Tests.Unit</c>. <see cref="ExtraProperties"/> values are plain
 /// strings only: that is the lowest common denominator every v1 store can seed natively (the
 /// configuration store's <c>ConfigurationTenantSeed.ExtraProperties</c> is <c>IDictionary&lt;string,string&gt;</c>),

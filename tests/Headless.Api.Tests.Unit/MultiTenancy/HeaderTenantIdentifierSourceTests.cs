@@ -12,11 +12,11 @@ using Microsoft.Extensions.Primitives;
 namespace Tests.MultiTenancy;
 
 /// <summary>
-/// Pins the R3 header source behavior in isolation: exactly one value across the configured names is
+/// Pins the header source behavior in isolation: exactly one value across the configured names is
 /// yielded raw, an absent or whitespace-only value is <see cref="TenantIdentifierSourceResultKind.None"/>,
 /// any second non-blank value (repeated lines or two configured names both present) is
 /// <see cref="TenantIdentifierSourceResultKind.Invalid"/>, and every consult appends the configured
-/// names to the response <c>Vary</c> header regardless of outcome (KTD4). Also pins the KTD3 builder
+/// names to the response <c>Vary</c> header regardless of outcome. Also pins the builder
 /// registration semantics for <c>AddHeaderSource</c>.
 /// </summary>
 public sealed class HeaderTenantIdentifierSourceTests : TestBase
@@ -40,7 +40,7 @@ public sealed class HeaderTenantIdentifierSourceTests : TestBase
     [Fact]
     public void should_return_none_and_still_append_vary_when_the_header_is_absent()
     {
-        // KTD4: a response resolved by a later source (or none) and cached without Vary would be served
+        // A response resolved by a later source (or none) and cached without Vary would be served
         // to a subsequent request carrying a different header value — so Vary is stamped even on None.
         var source = _CreateSource();
         var context = new DefaultHttpContext();
@@ -81,7 +81,7 @@ public sealed class HeaderTenantIdentifierSourceTests : TestBase
     public void should_return_invalid_when_the_header_is_repeated_with_the_same_value()
     {
         // Ambiguity is any second value, not a disagreement: two equal lines are still rejected so the
-        // rule needs no value comparison (KTD4).
+        // rule needs no value comparison.
         var source = _CreateSource();
         var context = new DefaultHttpContext();
         context.Request.Headers[HeaderTenantIdentifierSourceOptions.DefaultHeaderName] = new StringValues([
@@ -171,7 +171,7 @@ public sealed class HeaderTenantIdentifierSourceTests : TestBase
     public void should_pass_a_single_comma_separated_line_through_as_one_value()
     {
         // One header line is one value: the source never splits on commas, so "a,b" reaches the catalog
-        // unchanged and can only ever match a tenant whose identifier literally contains a comma (KTD4).
+        // unchanged and can only ever match a tenant whose identifier literally contains a comma.
         var source = _CreateSource();
         var context = new DefaultHttpContext();
         context.Request.Headers[HeaderTenantIdentifierSourceOptions.DefaultHeaderName] = "a,b";
@@ -230,7 +230,7 @@ public sealed class HeaderTenantIdentifierSourceTests : TestBase
         act.Should().Throw<ArgumentNullException>();
     }
 
-    // --- registration (KTD3: descriptor dedupes, options contributions accumulate) ---
+    // --- registration: descriptor dedupes, options contributions accumulate ---
 
     [Fact]
     public void should_register_one_header_source_descriptor_for_repeat_add_header_source_calls()
@@ -321,7 +321,7 @@ public sealed class HeaderTenantIdentifierSourceTests : TestBase
     public void should_append_the_string_overload_name_after_a_configure_contribution()
     {
         // A configure callback that mutates the default list makes it "touched" — later string
-        // contributions then append rather than replace (KTD3).
+        // contributions then append rather than replace.
         var services = new ServiceCollection();
         var builder = new HeadlessTenantCatalogResolutionBuilder(services);
 

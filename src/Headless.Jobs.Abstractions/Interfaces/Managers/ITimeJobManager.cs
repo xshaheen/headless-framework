@@ -2,6 +2,7 @@
 
 using Headless.Jobs.Entities;
 using Headless.Jobs.Models;
+using Headless.UnitOfWork;
 
 namespace Headless.Jobs.Interfaces.Managers;
 
@@ -9,7 +10,7 @@ namespace Headless.Jobs.Interfaces.Managers;
 /// Application-facing manager for one-shot (time) jobs: enqueue, update, and delete a single job plus their
 /// batch variants. Resolved from DI as <c>ITimeJobManager&lt;TTimeJob&gt;</c>, where
 /// <typeparamref name="TTimeJob"/> is the application's concrete time job entity. The manager routes writes
-/// through the active commit coordinator when one is present (see <c>AddAsync</c>) and otherwise persists
+/// through the scope's active unit of work when one is present (see <c>AddAsync</c>) and otherwise persists
 /// directly via the configured <c>IJobPersistenceProvider</c>.
 /// </summary>
 /// <typeparam name="TTimeJob">The application's concrete time job entity type.</typeparam>
@@ -33,28 +34,29 @@ public interface ITimeJobManager<TTimeJob>
         CancellationToken cancellationToken = default
     );
 
-    /// <summary>Requests cancellation with an explicit required-atomic assertion.</summary>
+    /// <summary>Requests cancellation with an explicit transaction-enlistment override.</summary>
     Task<JobScheduleResult> CancelKeyedAsync(
         JobKeyScope scope,
         JobKey key,
         long expectedGeneration,
-        bool requireAtomicEnlistment,
+        TransactionEnlistment enlistment,
         CancellationToken cancellationToken = default
     );
 
     /// <summary>Enqueues a time job and returns the persisted entity.</summary>
     /// <remarks>
-    /// When a relational commit coordinator is active, the row is written inside the caller's ambient transaction and
-    /// dispatch / scheduler-restart / notify are deferred to post-commit; the returned entity then means the row was
-    /// enlisted into the transaction (it commits with it), not that dispatch ran. With no coordinator (or a coordinated
-    /// scope exposing no relational capability) the row is inserted directly and the side effects run in-band. Any
-    /// failure throws — so a coordinated caller's transaction rolls back rather than committing without the job row.
+    /// When a joinable, compatible unit of work is active in this scope, the row is written inside its transaction
+    /// and dispatch / scheduler-restart / notify are deferred to post-commit; the returned entity then means the row
+    /// was enlisted into the transaction (it commits with it), not that dispatch ran. With no active unit of work (or
+    /// one with no joinable relational resource) the row is inserted directly and the side effects run in-band. Any
+    /// failure throws — so an enlisted caller's unit of work rolls back rather than completing without the job row.
     /// (Update/Delete keep returning <see cref="JobResult{TTimeJob}" />; only the transaction-enlisting Add path throws.)
     /// </remarks>
     /// <exception cref="Headless.Jobs.Exceptions.JobValidatorException">The job failed validation (unknown function).</exception>
     /// <exception cref="InvalidOperationException">
-    /// A relational coordinator is active but its transaction is dead/completed, or the configured persistence provider
-    /// cannot write inside it (a mis-wire).
+    /// <see cref="TransactionEnlistment.Required" /> is resolved with no active unit of work, the active unit of
+    /// work's resource is dead or belongs to another database, or the configured persistence provider cannot write
+    /// inside it (a mis-wire).
     /// </exception>
     Task<TTimeJob> AddAsync(TTimeJob entity, CancellationToken cancellationToken = default);
 
