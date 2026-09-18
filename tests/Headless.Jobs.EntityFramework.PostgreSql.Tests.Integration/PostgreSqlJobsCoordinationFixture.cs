@@ -35,6 +35,8 @@ public sealed class PostgreSqlJobsCoordinationFixture
 
     public string QualifiedCronJobOccurrencesTable => "jobs.\"CronJobOccurrences\"";
 
+    public string QualifyTable(string schema, string table) => $"{schema}.\"{table}\"";
+
     public string UtcNowSqlExpression => "now()";
 
     public string UtcNowOffsetSqlExpression(int seconds) =>
@@ -45,6 +47,8 @@ public sealed class PostgreSqlJobsCoordinationFixture
 
     public string ResetSql =>
         "DROP SCHEMA IF EXISTS jobs CASCADE;"
+        // The custom-schema conformance scenario maps the whole store here, so it must be dropped like any other.
+        + $"DROP SCHEMA IF EXISTS {JobsCoordinationFixtureExtensions.CustomSchemaName} CASCADE;"
         + "DROP SCHEMA IF EXISTS consumer_jobs CASCADE;"
         + "DROP SCHEMA IF EXISTS messaging CASCADE;"
         + "DROP TABLE IF EXISTS jobs_probe;"

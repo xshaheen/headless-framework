@@ -73,6 +73,13 @@ public interface IJobsCoordinationFixture
     /// <summary>Fully-qualified, provider-quoted CronJobOccurrences table (Postgres: <c>jobs."CronJobOccurrences"</c>; SqlServer: <c>[jobs].[CronJobOccurrences]</c>).</summary>
     string QualifiedCronJobOccurrencesTable { get; }
 
+    /// <summary>
+    /// Quotes <paramref name="table" /> in <paramref name="schema" /> the way this backend expects. The
+    /// <c>Qualified*Table</c> members above are fixed to the default schema; this one lets a scenario that moves the
+    /// schema read the tables wherever they actually landed.
+    /// </summary>
+    string QualifyTable(string schema, string table);
+
     /// <summary>Provider SQL expression for "now in UTC" (Postgres: <c>now()</c>; SqlServer: <c>SYSUTCDATETIME()</c>).</summary>
     string UtcNowSqlExpression { get; }
 
@@ -242,23 +249,21 @@ public static class JobsCoordinationFixtureExtensions
             // is driven by the MembershipRecoveryBridge + coordination heartbeat, both of which still run.
             options.DisableBackgroundServices();
             configureJobs?.Invoke(options);
+            options.ConfigureStorage(storage => storage.Schema = schema);
             if (leaseDuration is not null)
             {
                 options.ConfigureScheduler(scheduler => scheduler.LeaseDuration = leaseDuration.Value);
             }
             options.UseEntityFramework(ef =>
             {
-                ef.UseJobsDbContext<TDbContext>(
-                    db =>
+                ef.UseJobsDbContext<TDbContext>(db =>
+                {
+                    fixture.ConfigureStore(db);
+                    if (interceptor is not null)
                     {
-                        fixture.ConfigureStore(db);
-                        if (interceptor is not null)
-                        {
-                            db.AddInterceptors(interceptor);
-                        }
-                    },
-                    schema
-                );
+                        db.AddInterceptors(interceptor);
+                    }
+                });
                 if (useNativeClaims)
                 {
                     fixture.ConfigureClaims(ef);
@@ -337,6 +342,19 @@ public static class JobsCoordinationFixtureExtensions
         return _BuildCoordinatedEnqueueHost<JobsDbContext>(fixture, nodeId, enableTenantPropagation: true);
     }
 
+    /// <summary>
+    /// Builds the coordinated-enqueue host with every Jobs table mapped into <paramref name="schema" /> through the
+    /// feature-owned storage option, so a scenario can assert where the tables actually landed.
+    /// </summary>
+    public static IHost BuildCustomSchemaEnqueueHost(
+        this IJobsCoordinationFixture fixture,
+        string nodeId,
+        string schema
+    )
+    {
+        return _BuildCoordinatedEnqueueHost<CustomSchemaJobsDbContext>(fixture, nodeId, schema: schema);
+    }
+
     private static IHost _BuildCoordinatedEnqueueHost<TDbContext>(
         IJobsCoordinationFixture fixture,
         string nodeId,
@@ -345,7 +363,8 @@ public static class JobsCoordinationFixtureExtensions
         JobsSideEffectsProbe? sideEffectsProbe = null,
         bool enableTenantPropagation = false,
         TimeProvider? timeProvider = null,
-        Action<IServiceCollection>? configureServices = null
+        Action<IServiceCollection>? configureServices = null,
+        string schema = JobsStorageOptions.DefaultSchema
     )
         where TDbContext : JobsDbContext<TimeJobEntity, CronJobEntity>
     {
@@ -369,15 +388,13 @@ public static class JobsCoordinationFixtureExtensions
         builder.Services.AddHeadlessJobs(options =>
         {
             options.DisableBackgroundServices();
+            options.ConfigureStorage(storage => storage.Schema = schema);
             options.UseEntityFramework(ef =>
-                ef.UseJobsDbContext<TDbContext>(
-                    db =>
-                    {
-                        fixture.ConfigureStore(db);
-                        configureOptions?.Invoke(db);
-                    },
-                    schema: "jobs"
-                )
+                ef.UseJobsDbContext<TDbContext>(db =>
+                {
+                    fixture.ConfigureStore(db);
+                    configureOptions?.Invoke(db);
+                })
             );
         });
 
@@ -495,6 +512,43 @@ public static class JobsCoordinationFixtureExtensions
     {
         var table = services.GetRequiredService<IStorageInitializer>().GetPublishedTableName();
         return _CountAsync(fixture, $"SELECT COUNT(*) FROM {table};", cancellationToken);
+    }
+
+    /// <summary>The non-default schema the storage-option conformance scenario maps every Jobs table into.</summary>
+    public const string CustomSchemaName = "jobs_custom";
+
+    /// <summary>
+    /// Whether <paramref name="table" /> exists in <paramref name="schema" />. Asks <c>information_schema</c>, which
+    /// both backends implement, so the scenario can assert where a table landed without provider-specific catalog SQL.
+    /// </summary>
+    public static async Task<bool> TableExistsAsync(
+        this IJobsCoordinationFixture fixture,
+        string schema,
+        string table,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var connection = fixture.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = @schema AND table_name = @table;";
+        AddParameter(command, "@schema", schema);
+        AddParameter(command, "@table", table);
+        var scalar = await command.ExecuteScalarAsync(cancellationToken);
+
+        return Convert.ToInt32(scalar, CultureInfo.InvariantCulture) > 0;
+    }
+
+    /// <summary>Counts rows in an arbitrary schema-qualified table on an independent connection.</summary>
+    public static Task<int> CountRowsAsync(
+        this IJobsCoordinationFixture fixture,
+        string schema,
+        string table,
+        CancellationToken cancellationToken
+    )
+    {
+        return _CountAsync(fixture, $"SELECT COUNT(*) FROM {fixture.QualifyTable(schema, table)};", cancellationToken);
     }
 
     private static async Task<int> _CountAsync(
@@ -965,6 +1019,14 @@ public static class JobsCoordinationFixtureExtensions
         command.Parameters.Add(parameter);
     }
 }
+
+/// <summary>
+/// The context the custom-schema scenario runs on. EF caches one model per context type for the life of the process,
+/// so reusing <see cref="JobsDbContext" /> here would assert against whichever schema an earlier test in the same run
+/// built its model with — the scenario passes alone and fails in a full suite. A private type gives it a private model.
+/// </summary>
+public sealed class CustomSchemaJobsDbContext(DbContextOptions<CustomSchemaJobsDbContext> options)
+    : JobsDbContext<TimeJobEntity, CronJobEntity>(options);
 
 /// <summary>Typed payload registered as a generated-equivalent job-function request by the relational harness.</summary>
 public sealed record CoordinatedFacadeRequest(Guid Id, string Value);

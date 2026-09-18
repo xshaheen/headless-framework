@@ -12,8 +12,9 @@ namespace Headless.Jobs;
 
 /// <summary>
 /// Fluent builder for configuring the Entity Framework Core operational store registered by
-/// <c>UseEntityFramework</c>. Allows selecting the DbContext strategy, connection pool size,
-/// and database schema.
+/// <c>UseEntityFramework</c>. Allows selecting the DbContext strategy and connection pool size.
+/// The schema every Jobs table is mapped into is owned by the feature, not by this provider —
+/// configure it with <c>JobsOptionsBuilder.ConfigureStorage</c>.
 /// </summary>
 /// <typeparam name="TTimeJob">The concrete time job entity type for this application.</typeparam>
 /// <typeparam name="TCronJob">The concrete cron job entity type for this application.</typeparam>
@@ -30,7 +31,6 @@ public class JobsEfCoreOptionBuilder<TTimeJob, TCronJob>
     // that do not go through the native strategy. Null on generic EF (no backend package installed): unkeyed default.
     internal SequentialGuidType? GuidGeneratorKey { get; private set; }
     internal int PoolSize { get; set; } = 1024;
-    internal string Schema { get; set; } = "jobs";
 
     internal void UseClaimStrategy(Type openGenericStrategyType, SequentialGuidType guidGeneratorKey)
     {
@@ -82,15 +82,11 @@ public class JobsEfCoreOptionBuilder<TTimeJob, TCronJob>
     /// <typeparam name="TDbContext">A <c>JobsDbContext</c>-derived context for job-only storage.</typeparam>
     /// <param name="optionsAction">Callback to configure the EF Core <see cref="DbContextOptionsBuilder"/>
     /// (e.g., connection string, provider).</param>
-    /// <param name="schema">Optional database schema override; defaults to <c>"jobs"</c> when <see langword="null"/>.</param>
     public JobsEfCoreOptionBuilder<TTimeJob, TCronJob> UseJobsDbContext<TDbContext>(
-        Action<DbContextOptionsBuilder> optionsAction,
-        string? schema = null
+        Action<DbContextOptionsBuilder> optionsAction
     )
         where TDbContext : JobsDbContext<TTimeJob, TCronJob>
     {
-        Schema = schema ?? Schema;
-
         ServiceBuilder.UseJobsDbContext<TDbContext, TTimeJob, TCronJob>(this, optionsAction);
         return this;
     }
@@ -100,14 +96,6 @@ public class JobsEfCoreOptionBuilder<TTimeJob, TCronJob>
     public JobsEfCoreOptionBuilder<TTimeJob, TCronJob> SetDbContextPoolSize(int poolSize)
     {
         PoolSize = poolSize;
-        return this;
-    }
-
-    /// <summary>Overrides the database schema used for all job tables. Default is <c>"jobs"</c>.</summary>
-    /// <param name="schema">The schema name to use.</param>
-    public JobsEfCoreOptionBuilder<TTimeJob, TCronJob> SetSchema(string schema)
-    {
-        Schema = schema;
         return this;
     }
 }

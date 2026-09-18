@@ -23,6 +23,7 @@ Stored requests may use GZip compression through `UseGZipCompression()`. Decompr
 - **Storage-agnostic recovery planner**: `CronRecoveryPlanner` resolves the whole coalesce decision as a pure value (`CronRecoveryPlan`, `CronRecoveryWindow`, `CronRecoveryRunStep`, `CronRecoveryRunStepKind`, `CronRecoveryResolution`) that every provider — relational, in-memory, or third-party — applies with its own fenced writes. See [Applying a recovery pass](#applying-a-recovery-pass).
 - **`DisableBackgroundServices()`**: suppresses background execution; only the managers are registered (useful for enqueue-only nodes and test projects).
 - **Seeder API**: `UseJobsSeeder(...)` for startup data seeding; `IgnoreSeedDefinedCronJobs()` to skip auto-seeding of attribute-defined cron jobs.
+- **Feature-owned storage naming**: `ConfigureStorage(storage => storage.Schema = "…")` sets the database schema holding every Jobs table (default `"jobs"`). The setting lives here rather than on a store provider's builder, so one value covers every table a provider maps — including non-generic ones like the idempotency reservation table — and cannot be honored by one registration path while another silently keeps the default.
 - **GZip request payloads**: `UseGZipCompression()` compresses serialized request bytes.
 - **Exception handler**: `SetExceptionHandler<THandler>()` registers an `IJobExceptionHandler` singleton.
 - **Node-death policy enforcement**: claim predicate gates lease-expiry re-claim on `OnNodeDeath == Retry`; clock skew cannot re-run `Skip` or `MarkFailed` jobs.
@@ -502,6 +503,9 @@ builder.Services.AddHeadlessJobs(options =>
         scheduler.StartMode = JobsStartMode.Immediate; // or Manual
         scheduler.MaxChainDepth = 10; // default: 10; range 1..JobChain.MaxStructuralDepth (64)
     });
+
+    // Database schema for every Jobs table. Feature-owned, so it applies to whichever store is installed.
+    options.ConfigureStorage(storage => storage.Schema = "jobs"); // default: "jobs"
 
     options.SetExceptionHandler<MyJobExceptionHandler>();
     options.DisableBackgroundServices(); // test / enqueue-only nodes

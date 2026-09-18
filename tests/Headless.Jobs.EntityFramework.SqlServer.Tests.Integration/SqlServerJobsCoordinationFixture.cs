@@ -32,6 +32,8 @@ public sealed class SqlServerJobsCoordinationFixture
 
     public string QualifiedCronJobOccurrencesTable => "[jobs].[CronJobOccurrences]";
 
+    public string QualifyTable(string schema, string table) => $"[{schema}].[{table}]";
+
     public string UtcNowSqlExpression => "SYSUTCDATETIME()";
 
     public string UtcNowOffsetSqlExpression(int seconds) =>
@@ -55,6 +57,10 @@ public sealed class SqlServerJobsCoordinationFixture
         + "DROP TABLE IF EXISTS [jobs].[CronJobs];"
         + "DROP TABLE IF EXISTS [jobs].[ApplicationProbe];"
         + "IF EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'jobs') DROP SCHEMA [jobs];"
+        // The custom-schema conformance scenario maps the whole store into its own schema. SQL Server refuses to drop
+        // a schema that still owns objects, so the tables go first, children before parents, exactly as above.
+        + _CustomSchemaResetSql
+        + _MappedSchemaResetSql
         + "DROP TABLE IF EXISTS [messaging].[InboxAudit];"
         + "DROP TABLE IF EXISTS [messaging].[InboxOperationReceipts];"
         + "DROP TABLE IF EXISTS [messaging].[SchemaState];"
@@ -68,6 +74,30 @@ public sealed class SqlServerJobsCoordinationFixture
         + "DROP TABLE IF EXISTS [coordination_liveness];"
         + "DROP TABLE IF EXISTS [coordination_descriptor];"
         + "DROP TABLE IF EXISTS [coordination_node_generation];";
+
+    private static string _CustomSchemaResetSql
+    {
+        get
+        {
+            var schema = JobsCoordinationFixtureExtensions.CustomSchemaName;
+
+            return $"DROP TABLE IF EXISTS [{schema}].[CronJobOccurrences];"
+                + $"DROP TABLE IF EXISTS [{schema}].[TimeJobIdempotencyReservations];"
+                + $"DROP TABLE IF EXISTS [{schema}].[TimeJobs];"
+                + $"DROP TABLE IF EXISTS [{schema}].[CronJobs];"
+                + $"IF EXISTS (SELECT 1 FROM sys.schemas WHERE name = '{schema}') DROP SCHEMA [{schema}];";
+        }
+    }
+
+    // The renamed-mapping claim test owns its own mapped_jobs cleanup, but this fixture reuses its container: if that
+    // test's teardown is cut short, the leftovers wedge every later run at CREATE TABLE. Drop them defensively here
+    // for the same reason the stale jobs leftovers above are dropped.
+    private const string _MappedSchemaResetSql =
+        "DROP TABLE IF EXISTS [mapped_jobs].[native_cron_occurrences];"
+        + "DROP TABLE IF EXISTS [mapped_jobs].[native_time_jobs];"
+        + "DROP TABLE IF EXISTS [mapped_jobs].[TimeJobIdempotencyReservations];"
+        + "DROP TABLE IF EXISTS [mapped_jobs].[CronJobs];"
+        + "IF EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'mapped_jobs') DROP SCHEMA [mapped_jobs];";
 
     public string CreateProbeTableSql => "DROP TABLE IF EXISTS jobs_probe; CREATE TABLE jobs_probe (id int);";
 

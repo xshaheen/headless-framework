@@ -102,6 +102,26 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     /// <summary>Scheduler options instance, exposed so Core-layer extensions can toggle internal flags.</summary>
     internal SchedulerOptionsBuilder SchedulerOptions { get; }
 
+    /// <summary>
+    /// Storage naming authored on this builder and snapshotted by whichever store provider is installed. Held here
+    /// rather than on a provider builder so every Jobs table resolves its schema from one place.
+    /// </summary>
+    internal JobsStorageOptions StorageOptions { get; } = new();
+
+    /// <summary>
+    /// Applies <paramref name="configure"/> to the shared <see cref="JobsStorageOptions"/>, which names the database
+    /// schema holding every Jobs table.
+    /// </summary>
+    /// <param name="configure">A delegate that mutates the storage options.</param>
+    /// <returns>This builder for method chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="configure"/> is null.</exception>
+    public JobsOptionsBuilder<TTimeJob, TCronJob> ConfigureStorage(Action<JobsStorageOptions> configure)
+    {
+        Argument.IsNotNull(configure);
+        configure(StorageOptions);
+        return this;
+    }
+
     internal JobsOptionsBuilder(JobsExecutionContext tickerExecutionContext, SchedulerOptionsBuilder schedulerOptions)
     {
         _tickerExecutionContext = tickerExecutionContext;

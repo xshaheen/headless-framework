@@ -17,13 +17,12 @@ namespace Headless.Jobs.Configurations;
 internal static class JobsIdempotencyModelConfiguration
 {
     internal const string TableName = "TimeJobIdempotencyReservations";
-    internal const string Schema = JobDbConstants.DefaultSchema;
 
-    internal static void Configure(ModelBuilder builder, string? contractCollation)
+    internal static void Configure(ModelBuilder builder, string schema, string? contractCollation)
     {
         builder.Entity<JobIdempotencyReservationEntity>(entity =>
         {
-            entity.ToTable(TableName, Schema);
+            entity.ToTable(TableName, schema);
             entity.HasKey(row => new
             {
                 row.ScopeKey,

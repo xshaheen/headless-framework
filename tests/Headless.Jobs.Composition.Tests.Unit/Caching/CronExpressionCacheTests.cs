@@ -294,6 +294,7 @@ public sealed class CronExpressionCacheTests : TestBase
             var services = new ServiceCollection()
                 .AddEntityFrameworkSqlite()
                 .AddSingleton(new JobsEfCoreOptionBuilder<TimeJobEntity, CronJobEntity>())
+                .AddSingleton(new JobsStorageOptions())
                 .BuildServiceProvider();
 
             var options = new DbContextOptionsBuilder<JobsDbContext>()

@@ -307,6 +307,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
         using var services = new ServiceCollection()
             .AddEntityFrameworkSqlite()
             .AddSingleton(new JobsEfCoreOptionBuilder<TimeJobEntity, CronJobEntity>())
+            .AddSingleton(new JobsStorageOptions())
             .BuildServiceProvider();
         var options = new DbContextOptionsBuilder<JobsDbContext>()
             .UseSqlite("Data Source=:memory:")

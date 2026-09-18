@@ -7,10 +7,8 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Headless.Jobs.Configurations;
 
-public class CronJobOccurrenceConfigurations<TCronJob>(
-    string schema = JobDbConstants.DefaultSchema,
-    string? contractCollation = null
-) : IEntityTypeConfiguration<CronJobOccurrenceEntity<TCronJob>>
+public class CronJobOccurrenceConfigurations<TCronJob>(string schema, string? contractCollation = null)
+    : IEntityTypeConfiguration<CronJobOccurrenceEntity<TCronJob>>
     where TCronJob : CronJobEntity
 {
     public void Configure(EntityTypeBuilder<CronJobOccurrenceEntity<TCronJob>> builder)

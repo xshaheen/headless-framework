@@ -19,7 +19,7 @@ public class JobsDbContext<TTimeJob, TCronJob> : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        var schema = this.GetService<JobsEfCoreOptionBuilder<TTimeJob, TCronJob>>().Schema;
+        var schema = this.GetService<JobsStorageOptions>().Schema;
 
         var contractCollation = JobsContractCollation.TryResolve(Database.ProviderName);
 
