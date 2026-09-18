@@ -1018,7 +1018,7 @@ public sealed class ResponseHeaderConsumer : IConsume<InvokerTestMessage>
 {
     public ValueTask ConsumeAsync(ConsumeContext<InvokerTestMessage> context, CancellationToken cancellationToken)
     {
-        context.Headers.AddResponseHeader("response-key", "response-value");
+        context.SetResponseHeader("response-key", "response-value");
         return ValueTask.CompletedTask;
     }
 }
@@ -1037,7 +1037,7 @@ public sealed class ResponseBodyAndHeaderConsumer : IConsume<InvokerTestMessage>
     public ValueTask ConsumeAsync(ConsumeContext<InvokerTestMessage> context, CancellationToken cancellationToken)
     {
         context.SetResponse(new InvokerResponse("accepted"));
-        context.Headers.AddResponseHeader("response-key", "response-value");
+        context.SetResponseHeader("response-key", "response-value");
         return ValueTask.CompletedTask;
     }
 }
@@ -1046,7 +1046,7 @@ public sealed class RewriteCallbackConsumer : IConsume<InvokerTestMessage>
 {
     public ValueTask ConsumeAsync(ConsumeContext<InvokerTestMessage> context, CancellationToken cancellationToken)
     {
-        context.Headers.RewriteCallback("callbacks.rewritten");
+        context.SetResponseDestination("callbacks.rewritten");
         context.SetResponse(new InvokerResponse("accepted"));
         return ValueTask.CompletedTask;
     }
@@ -1056,7 +1056,7 @@ public sealed class RemoveCallbackConsumer : IConsume<InvokerTestMessage>
 {
     public ValueTask ConsumeAsync(ConsumeContext<InvokerTestMessage> context, CancellationToken cancellationToken)
     {
-        context.Headers.RemoveCallback();
+        context.SuppressResponse();
         context.SetResponse(new InvokerResponse("accepted"));
         return ValueTask.CompletedTask;
     }

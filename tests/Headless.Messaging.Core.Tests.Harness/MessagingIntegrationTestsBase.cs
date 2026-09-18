@@ -881,7 +881,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         var received = await collector.WaitForCountAsync(1, TimeSpan.FromSeconds(2), AbortToken);
 
         // then
-        received.Should().BeFalse("RemoveCallback should suppress response publication");
+        received.Should().BeFalse("SuppressResponse should suppress response publication");
     }
 
     public virtual async Task should_drop_set_response_when_callback_name_is_absent()

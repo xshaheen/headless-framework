@@ -41,6 +41,12 @@ public record ConsumeContext
 
     internal string? ResponseCallbackName { get; private set; }
 
+    internal IDictionary<string, string?>? ResponseHeaders { get; private set; }
+
+    internal string? ResponseDestination { get; private set; }
+
+    internal bool IsResponseSuppressed { get; private set; }
+
     /// <summary>
     /// Replaces the active cancellation token for downstream middleware and the inner consumer invocation.
     /// </summary>
@@ -91,7 +97,7 @@ public record ConsumeContext
     /// This is the first-class way to chain to a callback that the originating message did not declare.
     /// It targets the reserved <c>Headers.CallbackName</c> through a typed surface so the value is mapped
     /// to <see cref="MessageOptions.CallbackName"/> on the response publish, rather than being
-    /// pushed through <see cref="MessageHeader.AddResponseHeader"/> (which the publish pipeline rejects for
+    /// pushed through <see cref="SetResponseHeader"/> (which the publish pipeline rejects for
     /// reserved keys). The framework does not cap callback hops, so callback chains must be kept acyclic and
     /// bounded by the consumer — a self-referential or cyclic chain produces an unbounded callback storm.
     /// </remarks>
@@ -104,6 +110,58 @@ public record ConsumeContext
         }
 
         ResponseCallbackName = Argument.IsNotNullOrWhiteSpace(callbackName);
+    }
+
+    /// <summary>
+    /// Adds or overwrites a response header that is forwarded to the callback subscriber.
+    /// Call this inside a consumer handler when a callback is present and the consumer
+    /// needs to pass extra metadata back to the publisher.
+    /// </summary>
+    /// <param name="key">The response header key.</param>
+    /// <param name="value">The response header value.</param>
+    /// <exception cref="InvalidOperationException">Thrown when the context is completed.</exception>
+    public void SetResponseHeader(string key, string? value)
+    {
+        if (_isCompleted)
+        {
+            throw new InvalidOperationException("ConsumeContext is read-only after the consumer has completed.");
+        }
+
+        Argument.IsNotNullOrWhiteSpace(key);
+        ResponseHeaders ??= new Dictionary<string, string?>(StringComparer.Ordinal);
+        ResponseHeaders[key] = value;
+    }
+
+    /// <summary>
+    /// Replaces the destination callback message name, redirecting the post-consume callback
+    /// invocation to a different subscriber than the one originally specified by the publisher.
+    /// </summary>
+    /// <param name="messageName">The replacement callback subscriber message name.</param>
+    /// <exception cref="InvalidOperationException">Thrown when the context is completed.</exception>
+    public void SetResponseDestination(string messageName)
+    {
+        if (_isCompleted)
+        {
+            throw new InvalidOperationException("ConsumeContext is read-only after the consumer has completed.");
+        }
+
+        ResponseDestination = Argument.IsNotNullOrWhiteSpace(messageName);
+        IsResponseSuppressed = false;
+    }
+
+    /// <summary>
+    /// Suppresses the response callback, preventing the framework from invoking any callback
+    /// subscriber after the current handler completes.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">Thrown when the context is completed.</exception>
+    public void SuppressResponse()
+    {
+        if (_isCompleted)
+        {
+            throw new InvalidOperationException("ConsumeContext is read-only after the consumer has completed.");
+        }
+
+        IsResponseSuppressed = true;
     }
 
     internal void MarkCompleted()

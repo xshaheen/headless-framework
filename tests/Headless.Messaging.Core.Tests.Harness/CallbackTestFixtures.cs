@@ -128,11 +128,11 @@ public sealed class CallbackRequestConsumer : IConsume<CallbackRequestMessage>
         switch (context.Message.Mode)
         {
             case CallbackRequestMode.Rewrite:
-                context.Headers.RewriteCallback("rewritten-callback-response");
+                context.SetResponseDestination("rewritten-callback-response");
                 context.SetResponse(new RewrittenCallbackResponse(context.Message.Id));
                 break;
             case CallbackRequestMode.Remove:
-                context.Headers.RemoveCallback();
+                context.SuppressResponse();
                 context.SetResponse(new CallbackResponse(context.Message.Id, context.Lane.ToString()));
                 break;
             case CallbackRequestMode.TypedNull:
@@ -351,7 +351,7 @@ public sealed class IsolationRewriteConsumer : IConsume<IsolationRequestMessage>
 {
     public ValueTask ConsumeAsync(ConsumeContext<IsolationRequestMessage> context, CancellationToken cancellationToken)
     {
-        context.Headers.RewriteCallback("isolation-rewritten-callback");
+        context.SetResponseDestination("isolation-rewritten-callback");
         context.SetResponse(new IsolationRewriteResponse(context.Message.Id));
         return ValueTask.CompletedTask;
     }
