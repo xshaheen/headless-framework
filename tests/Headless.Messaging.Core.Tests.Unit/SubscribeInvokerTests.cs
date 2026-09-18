@@ -2,6 +2,7 @@
 
 using System.Reflection;
 using Headless.Messaging;
+using Headless.Messaging.Exceptions;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Testing.Tests;
@@ -169,7 +170,101 @@ public sealed class SubscribeInvokerTests : TestBase
         var act = async () => await invoker.InvokeAsync(context);
 
         // then
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Failed to deserialize message*");
+        await act.Should().ThrowAsync<MessageDeserializationException>().WithMessage("*Failed to deserialize message*");
+    }
+
+    [Fact]
+    public async Task should_throw_message_deserialization_exception_when_unsupported_value_type()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessMessaging(setup =>
+        {
+            setup.Bus.ForMessage<InvokerTestMessage>(message =>
+                message
+                    .Contract("test.messageName")
+                    .Consumer<InvokerTestConsumer>(consumer =>
+                        consumer.StableContract("tests.subscribe-invoker.unsupported-type")
+                    )
+            );
+        });
+
+        await using var provider = services.BuildServiceProvider();
+        var invoker = provider.GetRequiredService<ISubscribeInvoker>();
+
+        var mediumMessage = new MediumMessage
+        {
+            StorageId = Guid.NewGuid(),
+            Origin = new Message(
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    [Headers.MessageId] = Guid.NewGuid().ToString(),
+                    [Headers.MessageName] = "test.messageName",
+                },
+                12345
+            ),
+            Content = string.Empty,
+            Lane = MessageLane.Bus,
+            Added = DateTimeOffset.UtcNow,
+        };
+
+        var descriptor = _CreateDescriptor<InvokerTestMessage>();
+        var context = new ConsumerContext(descriptor, mediumMessage);
+
+        // when
+        var act = async () => await invoker.InvokeAsync(context, AbortToken);
+
+        // then
+        await act.Should()
+            .ThrowAsync<MessageDeserializationException>()
+            .WithMessage("*Unsupported message value type*");
+    }
+
+    [Fact]
+    public async Task should_throw_message_deserialization_exception_when_json_string_deserialization_fails()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessMessaging(setup =>
+        {
+            setup.Bus.ForMessage<InvokerTestMessage>(message =>
+                message
+                    .Contract("test.messageName")
+                    .Consumer<InvokerTestConsumer>(consumer =>
+                        consumer.StableContract("tests.subscribe-invoker.corrupt-json")
+                    )
+            );
+        });
+
+        await using var provider = services.BuildServiceProvider();
+        var invoker = provider.GetRequiredService<ISubscribeInvoker>();
+
+        var mediumMessage = new MediumMessage
+        {
+            StorageId = Guid.NewGuid(),
+            Origin = new Message(
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    [Headers.MessageId] = Guid.NewGuid().ToString(),
+                    [Headers.MessageName] = "test.messageName",
+                },
+                "{ invalid-json-not-parseable }"
+            ),
+            Content = string.Empty,
+            Lane = MessageLane.Bus,
+            Added = DateTimeOffset.UtcNow,
+        };
+
+        var descriptor = _CreateDescriptor<InvokerTestMessage>();
+        var context = new ConsumerContext(descriptor, mediumMessage);
+
+        // when
+        var act = async () => await invoker.InvokeAsync(context, AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<MessageDeserializationException>().WithMessage("*Failed to deserialize message*");
     }
 
     [Fact]
