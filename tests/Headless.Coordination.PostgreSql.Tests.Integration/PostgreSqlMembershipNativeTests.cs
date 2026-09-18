@@ -99,7 +99,7 @@ public sealed class PostgreSqlMembershipNativeTests(PostgreSqlMembershipFixture 
     [Fact]
     public async Task should_succeed_when_multiple_hosts_initialize_concurrently_against_same_schema()
     {
-        // Start from a freshly dropped schema so all five initializers race the same first-time DDL (KTD-5).
+        // Start from a freshly dropped schema so all five initializers race the same first-time DDL.
         await _DropSchemaAsync();
 
         var clusters = Enumerable.Range(0, 5).Select(_ => _Cluster()).ToArray();

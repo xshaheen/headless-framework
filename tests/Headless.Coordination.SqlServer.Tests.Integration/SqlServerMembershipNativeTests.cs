@@ -97,7 +97,7 @@ public sealed class SqlServerMembershipNativeTests(SqlServerMembershipFixture fi
     [Fact]
     public async Task should_succeed_when_multiple_hosts_initialize_concurrently_against_same_schema()
     {
-        // Start from a freshly dropped schema so all five initializers race the same first-time DDL (KTD-5).
+        // Start from a freshly dropped schema so all five initializers race the same first-time DDL.
         await _DropSchemaAsync();
 
         var cluster = _Cluster();

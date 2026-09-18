@@ -562,7 +562,7 @@ public sealed partial class HybridCache
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Re-arm both tiers (KTD-8). L2 carries the authoritative physical cap; L1's own re-arm bounds the new
+        // Re-arm both tiers. L2 carries the authoritative physical cap; L1's own re-arm bounds the new
         // logical deadline by its locally-capped entry metadata, so passing the L2 cap is safe. L2 is best-effort
         // (a remote hiccup must not fail the read); L1 is in-process and effectively infallible.
         if (l2Cache is IFactoryCacheStore l2Store && _IsDistributedCacheCircuitClosed())

@@ -160,7 +160,7 @@ public sealed class RedisCacheFailSafeTests(RedisCacheFixture fixture) : RedisCa
     }
 
     /// <summary>
-    /// KTD-5 — GetAsync on a logically-expired (but physically retained) fail-safe key returns NoValue/miss.
+    /// GetAsync on a logically-expired (but physically retained) fail-safe key returns NoValue/miss.
     /// </summary>
     [Fact]
     public async Task should_return_no_value_from_get_when_entry_is_logically_expired()

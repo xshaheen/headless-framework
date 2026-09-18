@@ -338,7 +338,7 @@ public sealed partial class FactoryCacheCoordinator(
                 }
                 catch
                 {
-                    // Caller cancellation bypasses the filtered catch above (KTD-7: it must propagate untouched);
+                    // Caller cancellation bypasses the filtered catch above (it must propagate untouched);
                     // still dispose the span so it is exported and Activity.Current is restored for the caller.
                     lockActivity?.Dispose();
                     throw;
@@ -434,7 +434,7 @@ public sealed partial class FactoryCacheCoordinator(
             }
             catch
             {
-                // Caller cancellation bypasses the filtered catch above (KTD-7: it must propagate untouched);
+                // Caller cancellation bypasses the filtered catch above (it must propagate untouched);
                 // still dispose the span so it is exported and Activity.Current is restored for the caller.
                 factoryActivity?.Dispose();
                 throw;
@@ -889,12 +889,12 @@ public sealed partial class FactoryCacheCoordinator(
         }
     }
 
-    // Caller cancellation (the caller's own token) must always propagate and never activate fail-safe (KTD-7).
+    // Caller cancellation (the caller's own token) must always propagate and never activate fail-safe.
     // Use token identity, not just IsCancellationRequested, so an OperationCanceledException raised by an
     // unrelated linked/internal token (e.g. a downstream timeout) still activates fail-safe.
     /// <summary>
     /// Returns whether <paramref name="exception"/> represents cancellation of the caller's own token, which must
-    /// always propagate rather than activate fail-safe (KTD-7). An <see cref="OperationCanceledException"/> raised
+    /// always propagate rather than activate fail-safe. An <see cref="OperationCanceledException"/> raised
     /// by an unrelated linked/internal token (for example a downstream timeout) is NOT caller cancellation and
     /// should activate fail-safe / degrade to a miss. Providers composing this engine (e.g. a hybrid store)
     /// should use this predicate for their best-effort catch filters so cancellation semantics stay consistent.

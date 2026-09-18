@@ -11,7 +11,7 @@ namespace Tests;
 
 /// <summary>
 /// Regression coverage for the caller-cancellation span-leak fix in <see cref="FactoryCacheCoordinator"/>
-/// a bare <see langword="catch"/> after the KTD-7 caller-cancellation filter must still dispose
+/// a bare <see langword="catch"/> after the caller-cancellation filter must still dispose
 /// the in-flight <c>cache.factory</c> span so it is exported and <see cref="Activity.Current"/> is never
 /// left pointing at a stopped span past the cancelled call.
 /// </summary>

@@ -159,7 +159,7 @@ public sealed class RedisMembershipConformanceTests(RedisMembershipFixture fixtu
     }
 
     /// <summary>
-    /// Documents the intentional cross-provider divergence (plan KTD-16): at the provider-default
+    /// Documents the intentional cross-provider divergence: at the provider-default
     /// <see cref="RedisCoordinationOptions.RedisKnownNodeRetention"/> (7 days), Redis keeps Dead/Left nodes
     /// in the snapshot for the retention window — consumers filter by <see cref="NodeLivenessState"/> — whereas
     /// the relational providers prune shortly after the dead threshold.
