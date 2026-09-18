@@ -295,6 +295,25 @@ public sealed class MessagingOptions
     public TransactionEnlistment DefaultEnlistment { get; set; } = TransactionEnlistment.WhenAvailable;
 
     /// <summary>
+    /// Gets or sets an optional bound on the received body bytes persisted in a poison-on-arrival
+    /// row's <c>data:</c> URI, measured before base64 encoding. <see langword="null"/> stores the
+    /// whole body unconditionally (legacy behavior). Default is 1 MB.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// At or below the cap the whole body is stored. Past the cap a prefix is stored with a
+    /// <c>truncated</c> marker in the data URI media type; beyond four times the cap the body is
+    /// omitted entirely and only the headers are persisted.
+    /// </para>
+    /// <para>
+    /// Poison rows are built from the received envelope, whose size an external producer controls -
+    /// a size-triggered reject must not amplify an oversized delivery into storage. Truncation is
+    /// lossy by design; replay such rows from the broker, not from storage.
+    /// </para>
+    /// </remarks>
+    public int? MaxPoisonEnvelopeBytes { get; set; } = 1024 * 1024;
+
+    /// <summary>
     /// Gets the global circuit breaker configuration that applies to all consumer groups.
     /// Individual consumers may override specific properties via
     /// <see cref="IConsumerBuilderBase{TConsumer,TBuilder}.WithCircuitBreaker"/>.
@@ -360,6 +379,7 @@ public sealed class MessagingOptions
         target.RequiredInboxCapability = RequiredInboxCapability;
         target.DefaultDeliveryMode = DefaultDeliveryMode;
         target.DefaultEnlistment = DefaultEnlistment;
+        target.MaxPoisonEnvelopeBytes = MaxPoisonEnvelopeBytes;
         _CopyJsonSerializerOptions(JsonSerializerOptions, target.JsonSerializerOptions);
         RetryPolicy.CopyTo(target.RetryPolicy);
         CircuitBreaker.CopyTo(target.CircuitBreaker);
@@ -646,6 +666,10 @@ internal sealed class MessagingOptionsValidator : AbstractValidator<MessagingOpt
         RuleFor(x => x).Custom((_, _) => _ValidateMiddlewareDescriptors(middlewareDescriptorRegistry));
         RuleFor(x => x.OrphanProbeInterval).GreaterThan(TimeSpan.Zero);
         RuleFor(x => x.OrphanProbeBatchSize).InclusiveBetween(1, 100_000);
+        RuleFor(x => x.MaxPoisonEnvelopeBytes)
+            .GreaterThan(0)
+            .When(x => x.MaxPoisonEnvelopeBytes.HasValue)
+            .WithMessage("MaxPoisonEnvelopeBytes must be greater than zero when set.");
     }
 
     private static void _ValidateMiddlewareDescriptors(IMiddlewareDescriptorRegistry? registry)

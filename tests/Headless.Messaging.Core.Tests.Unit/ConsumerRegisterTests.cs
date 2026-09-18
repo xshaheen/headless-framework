@@ -4,6 +4,7 @@ using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
+using Headless.Messaging.Exceptions;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Runtime;
@@ -940,6 +941,608 @@ public sealed class ConsumerRegisterTests : TestBase
         logs.Single(entry => entry.EventId.Id is 4114 or 4115).EventId.Id.Should().Be(4115);
     }
 
+    // --- Receive middleware ring (outcome table) ---------------------------------------------------------
+
+    private sealed record ReceiveRingTestRun(
+        InboxConsumerClient Client,
+        IDispatcher Dispatcher,
+        RecordingDataStorage Storage,
+        Headless.Messaging.Serialization.ISerializer Serializer,
+        ServiceProvider Provider
+    ) : IAsyncDisposable
+    {
+        public async ValueTask DisposeAsync()
+        {
+            await Provider.DisposeAsync();
+        }
+    }
+
+    /// <summary>
+    /// Wraps the real in-memory storage so receive-ring tests can assert on Store* calls without
+    /// reaching into the storage package's internal row types.
+    /// </summary>
+    /// <summary>
+    /// A DispatchProxy over the real in-memory storage that records the receive-path store calls
+    /// (poison rows, runtime subscriptions, inbox admissions) without implementing every
+    /// <c>IDataStorage</c> member by hand.
+    /// </summary>
+    // DispatchProxy requires the proxy type to be non-sealed (it subclasses it at runtime).
+#pragma warning disable CA1852, MA0053 // Cannot seal: DispatchProxy subclasses this type when the proxy is created.
+    private class RecordingDataStorage : DispatchProxy
+    {
+        public Headless.Messaging.Persistence.IDataStorage Inner { get; set; } = null!;
+
+        public List<MediumMessage> ReceivedExceptionRows { get; } = [];
+
+        public List<MediumMessage> ReceivedRows { get; } = [];
+
+        public List<(string Name, string Group, string ConsumerIdentity)> Admissions { get; } = [];
+
+        public List<Message> DispatchedOrigins { get; } = [];
+
+        public static Headless.Messaging.Persistence.IDataStorage For(
+            Headless.Messaging.Persistence.IDataStorage inner,
+            out RecordingDataStorage recorder
+        )
+        {
+            var proxy = Create<Headless.Messaging.Persistence.IDataStorage, RecordingDataStorage>();
+            var typed = (RecordingDataStorage)(object)proxy;
+            typed.Inner = inner;
+            recorder = typed;
+            return proxy;
+        }
+
+        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
+        {
+            var name = targetMethod?.Name ?? "";
+
+            if (
+                string.Equals(
+                    name,
+                    nameof(Headless.Messaging.Persistence.IDataStorage.StoreReceivedExceptionMessageAsync),
+                    StringComparison.Ordinal
+                )
+                && args?.Length == 5
+                && args[2] is MediumMessage poisonRow
+            )
+            {
+                ReceivedExceptionRows.Add(poisonRow);
+            }
+            else if (
+                string.Equals(
+                    name,
+                    nameof(Headless.Messaging.Persistence.IDataStorage.StoreReceivedMessageAsync),
+                    StringComparison.Ordinal
+                )
+                && args?.Length == 4
+                && args[2] is MediumMessage runtimeRow
+            )
+            {
+                ReceivedRows.Add(runtimeRow);
+            }
+            else if (
+                string.Equals(
+                    name,
+                    nameof(Headless.Messaging.Persistence.IDataStorage.AdmitReceivedMessageAsync),
+                    StringComparison.Ordinal
+                ) && args is { Length: >= 3 }
+            )
+            {
+                Admissions.Add(((string)args[0]!, (string)args[1]!, (string)args[2]!));
+            }
+
+            var result = targetMethod!.Invoke(Inner, args);
+
+            return result is Task task ? _Rewrap(task, targetMethod.ReturnType) : result;
+        }
+
+        private static object _Rewrap(Task task, Type returnType)
+        {
+            // Reflection invokes async members as Task/Task<T>; the proxy must hand back the
+            // declaring member's actual shape — ValueTask<T> for every async IDataStorage member.
+            if (returnType.IsGenericType && returnType.GetGenericTypeDefinition() == typeof(ValueTask<>))
+            {
+                // Await the reflected Task<T> through a typed adapter instead of reflecting over
+                // Task.Result, then produce the member's ValueTask<T> return shape.
+                var valueType = returnType.GetGenericArguments()[0];
+                var adapterType = typeof(TaskAwaiterAdapter<>).MakeGenericType(valueType);
+                var adapter = Activator.CreateInstance(adapterType, task)!;
+                var awaitMethod = adapterType.GetMethod(
+                    "AwaitResult",
+                    BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly
+                )!;
+                return awaitMethod.Invoke(adapter, null)!;
+            }
+
+            return task;
+        }
+#pragma warning restore CA1852, MA0053
+    }
+
+    /// <summary>
+    /// Awaits a reflected <c>Task&lt;T&gt;</c> known only at runtime and produces a
+    /// <c>ValueTask&lt;T&gt;</c>, avoiding reflection over <c>Task.Result</c>.
+    /// </summary>
+    private sealed class TaskAwaiterAdapter<T>(Task task)
+    {
+        public async ValueTask<T> AwaitResult()
+        {
+            return await ((Task<T>)task).ConfigureAwait(false);
+        }
+    }
+
+    private sealed class RecordingReceiveMiddleware : IReceiveMiddleware
+    {
+        public Func<ReceiveContext, Func<ValueTask>, ValueTask> Behavior { get; set; } = static (_, next) => next();
+
+        public int Invocations { get; private set; }
+
+        public ValueTask InvokeAsync(ReceiveContext context, Func<ValueTask> next)
+        {
+            Invocations++;
+            return Behavior(context, next);
+        }
+    }
+
+    private async Task<ReceiveRingTestRun> _RunReceiveDeliveryAsync(
+        RecordingReceiveMiddleware? middleware,
+        string messageId,
+        byte[] body,
+        Action<MessagingOptions>? configureOptions = null,
+        Func<FailedInfo, CancellationToken, Task>? onExhausted = null,
+        ICircuitBreakerStateManager? circuitBreaker = null
+    )
+    {
+        await using var client = new InboxConsumerClient();
+        var dispatcher = Substitute.For<IDispatcher>();
+        List<Message> dispatchedOrigins = [];
+        dispatcher
+            .EnqueueToExecute(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<ConsumerExecutorDescriptor>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(callInfo =>
+            {
+                dispatchedOrigins.Add(callInfo.Arg<MediumMessage>().Origin);
+                return ValueTask.CompletedTask;
+            });
+
+        var services = new ServiceCollection();
+        services.AddLogging(builder =>
+        {
+            builder.AddProvider(LoggerProvider);
+            builder.SetMinimumLevel(LogLevel.Debug);
+        });
+
+        var messagingBuilder = services.AddHeadlessMessaging(setup =>
+        {
+            setup.UseInMemory();
+            setup.UseProcessLocalInMemoryStorage();
+            setup.UseConventions(c =>
+            {
+                c.UseApplicationId("messaging-tests");
+                c.UseVersion("v1");
+            });
+            setup.Bus.ForMessage<BootstrapReadyMessage>(message =>
+                message
+                    .Contract("ready-messageName")
+                    .Consumer<BootstrapReadyConsumer>(consumer =>
+                        consumer.StableContract("tests.consumer-register.receive-ring").Group("ready-group")
+                    )
+            );
+            configureOptions?.Invoke(setup.Options);
+            if (onExhausted is not null)
+            {
+                setup.Options.RetryPolicy.OnExhausted = onExhausted;
+            }
+        });
+
+        if (middleware is not null)
+        {
+            messagingBuilder.AddReceiveMiddlewareFor<RecordingReceiveMiddleware, BootstrapReadyMessage>(
+                "ready-group",
+                MessageLane.Bus
+            );
+
+            // The builder's TryAddEnumerable registers a fresh RecordingReceiveMiddleware instance;
+            // replace every IReceiveMiddleware registration with the test's instance so the ring
+            // resolves the one carrying the configured Behavior.
+            for (var i = services.Count - 1; i >= 0; i--)
+            {
+                if (services[i].ServiceType == typeof(IReceiveMiddleware))
+                {
+                    services.RemoveAt(i);
+                }
+            }
+
+            services.AddScoped<IReceiveMiddleware>(_ => middleware);
+        }
+
+        services.AddSingleton(dispatcher);
+        services.AddSingleton<BootstrapReadyConsumer>();
+        if (circuitBreaker is not null)
+        {
+            services.AddSingleton(circuitBreaker);
+        }
+
+        var provider = services.BuildServiceProvider();
+        var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
+
+        if (circuitBreaker is not null)
+        {
+            // StartAsync is never called in this harness, so wire the probe state the same way the
+            // circuit tests do: straight into the field the callback reads.
+            typeof(ConsumerRegister)
+                .GetField(
+                    "_circuitBreakerStateManager",
+                    BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+                )!
+                .SetValue(register, circuitBreaker);
+        }
+
+        var serializer = provider.GetRequiredService<Headless.Messaging.Serialization.ISerializer>();
+        var storage = RecordingDataStorage.For(
+            provider.GetRequiredService<Headless.Messaging.Persistence.IDataStorage>(),
+            out var recorder
+        );
+        _AttachInboxProcessor(provider, register, client, dispatcher, serializer, storage);
+
+        var transport = new TransportMessage(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [Headers.MessageId] = messageId,
+                [Headers.MessageName] = "ready-messageName",
+                [Headers.Group] = "ready-group",
+            },
+            body
+        );
+
+        await client.OnMessageCallback!(transport, null);
+
+        recorder.DispatchedOrigins.AddRange(dispatchedOrigins);
+
+        return new ReceiveRingTestRun(client, dispatcher, recorder, serializer, provider);
+    }
+
+    [Fact]
+    public async Task receive_accept_with_middleware_proceeds_like_zero_middleware_path()
+    {
+        var middleware = new RecordingReceiveMiddleware();
+
+        await using var run = await _RunReceiveDeliveryAsync(middleware, "receive-accept", "{}"u8.ToArray());
+
+        middleware.Invocations.Should().Be(1);
+        run.Client.CommitCount.Should().Be(1);
+        run.Client.RejectCount.Should().Be(0);
+        await run
+            .Dispatcher.Received(1)
+            .EnqueueToExecute(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<ConsumerExecutorDescriptor>(),
+                Arg.Any<CancellationToken>()
+            );
+        run.Storage.Admissions.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task receive_zero_middleware_path_is_unchanged()
+    {
+        await using var run = await _RunReceiveDeliveryAsync(null, "receive-zero", "{}"u8.ToArray());
+
+        run.Client.CommitCount.Should().Be(1);
+        run.Storage.Admissions.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task receive_skip_commits_without_storage_or_exhausted_callback()
+    {
+        var exhaustedFired = false;
+        var middleware = new RecordingReceiveMiddleware
+        {
+            Behavior = (context, _) =>
+            {
+                context.Skip("not-for-this-tenant");
+                return ValueTask.CompletedTask;
+            },
+        };
+        var circuitBreaker = Substitute.For<ICircuitBreakerStateManager>();
+        circuitBreaker.TryAcquireHalfOpenProbe(Arg.Any<string>()).Returns(1L);
+
+        await using var run = await _RunReceiveDeliveryAsync(
+            middleware,
+            "receive-skip",
+            "{}"u8.ToArray(),
+            onExhausted: (_, _) =>
+            {
+                exhaustedFired = true;
+                return Task.CompletedTask;
+            },
+            circuitBreaker: circuitBreaker
+        );
+
+        run.Client.CommitCount.Should().Be(1);
+        run.Client.RejectCount.Should().Be(0);
+        run.Storage.ReceivedExceptionRows.Should().BeEmpty("a skip must not persist any row");
+        exhaustedFired.Should().BeFalse("a skip must not fire OnExhausted");
+        await circuitBreaker
+            .DidNotReceive()
+            .ReportFailureAsync(Arg.Any<string>(), Arg.Any<Exception>(), Arg.Any<CancellationToken>());
+        circuitBreaker.Received(1).ReleaseHalfOpenProbe(Arg.Any<string>(), Arg.Any<long>());
+        await run
+            .Dispatcher.DidNotReceive()
+            .EnqueueToExecute(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<ConsumerExecutorDescriptor>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task receive_explicit_reject_stores_poison_row_and_releases_probe()
+    {
+        FailedInfo? exhausted = null;
+        var cause = new InvalidOperationException("bad envelope");
+        var middleware = new RecordingReceiveMiddleware
+        {
+            Behavior = (context, _) =>
+            {
+                context.Reject("envelope-defect", cause);
+                return ValueTask.CompletedTask;
+            },
+        };
+        var circuitBreaker = Substitute.For<ICircuitBreakerStateManager>();
+        circuitBreaker.TryAcquireHalfOpenProbe(Arg.Any<string>()).Returns(1L);
+
+        await using var run = await _RunReceiveDeliveryAsync(
+            middleware,
+            "receive-reject",
+            "{}"u8.ToArray(),
+            onExhausted: (info, _) =>
+            {
+                exhausted = info;
+                return Task.CompletedTask;
+            },
+            circuitBreaker: circuitBreaker
+        );
+
+        run.Client.CommitCount.Should().Be(1);
+        run.Storage.ReceivedExceptionRows.Should().ContainSingle("reject stores the received-exception row");
+        exhausted.Should().NotBeNull();
+        exhausted!.Exception.Should().BeSameAs(cause, "OnExhausted receives the reject cause");
+        exhausted.StorageId.Should().Be(Guid.Empty);
+        exhausted.RetryCount.Should().Be(0);
+        await circuitBreaker
+            .DidNotReceive()
+            .ReportFailureAsync(Arg.Any<string>(), Arg.Any<Exception>(), Arg.Any<CancellationToken>());
+        circuitBreaker.Received(1).ReleaseHalfOpenProbe(Arg.Any<string>(), Arg.Any<long>());
+    }
+
+    [Fact]
+    public async Task receive_thrown_middleware_exception_reports_breaker_failure()
+    {
+        FailedInfo? exhausted = null;
+        var middleware = new RecordingReceiveMiddleware
+        {
+            Behavior = (_, _) => throw new InvalidOperationException("middleware fault"),
+        };
+        var circuitBreaker = Substitute.For<ICircuitBreakerStateManager>();
+        circuitBreaker.TryAcquireHalfOpenProbe(Arg.Any<string>()).Returns(1L);
+
+        await using var run = await _RunReceiveDeliveryAsync(
+            middleware,
+            "receive-fault",
+            "{}"u8.ToArray(),
+            onExhausted: (info, _) =>
+            {
+                exhausted = info;
+                return Task.CompletedTask;
+            },
+            circuitBreaker: circuitBreaker
+        );
+
+        run.Client.CommitCount.Should().Be(1);
+        run.Storage.ReceivedExceptionRows.Should().ContainSingle();
+        exhausted.Should().NotBeNull();
+        await circuitBreaker
+            .Received(1)
+            .ReportFailureAsync(Arg.Any<string>(), Arg.Any<Exception>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task receive_undeclared_outcome_rejects_naming_the_middleware_type()
+    {
+        FailedInfo? exhausted = null;
+        var middleware = new RecordingReceiveMiddleware { Behavior = (_, _) => ValueTask.CompletedTask };
+
+        await using var run = await _RunReceiveDeliveryAsync(
+            middleware,
+            "receive-undeclared",
+            "{}"u8.ToArray(),
+            onExhausted: (info, _) =>
+            {
+                exhausted = info;
+                return Task.CompletedTask;
+            }
+        );
+
+        run.Client.CommitCount.Should().Be(1);
+        run.Storage.ReceivedExceptionRows.Should().ContainSingle();
+        exhausted.Should().NotBeNull();
+        exhausted!
+            .Exception.Message.Should()
+            .Contain(nameof(RecordingReceiveMiddleware), "the fault must name the middleware type");
+    }
+
+    [Fact]
+    public async Task receive_bound_cancellation_rejects_transport_without_storage()
+    {
+        using var cancelCts = new CancellationTokenSource();
+        var middleware = new RecordingReceiveMiddleware
+        {
+            Behavior = async (context, _) =>
+            {
+                // Adopt the token first so the thrown OCE is bound to the context's active token.
+                context.SetCancellationToken(cancelCts.Token);
+                await cancelCts.CancelAsync();
+                cancelCts.Token.ThrowIfCancellationRequested();
+            },
+        };
+
+        await using var run = await _RunReceiveDeliveryAsync(middleware, "receive-cancel", "{}"u8.ToArray());
+
+        run.Client.RejectCount.Should().Be(1, "bound cancellation must requeue, not commit");
+        run.Client.CommitCount.Should().Be(0);
+        run.Storage.ReceivedExceptionRows.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task receive_foreign_oce_rejects_with_poison_row()
+    {
+        // Bound to an unrelated token: a tokenless OCE would collide with the default context
+        // token and be indistinguishable from a cooperative cancellation.
+        using var foreignCts = new CancellationTokenSource();
+        var middleware = new RecordingReceiveMiddleware
+        {
+            Behavior = (_, _) => throw new OperationCanceledException("foreign", foreignCts.Token),
+        };
+
+        await using var run = await _RunReceiveDeliveryAsync(middleware, "receive-foreign-oce", "{}"u8.ToArray());
+
+        run.Client.CommitCount.Should().Be(1);
+        run.Storage.ReceivedExceptionRows.Should().ContainSingle("a foreign OCE is a middleware fault");
+    }
+
+    [Fact]
+    public async Task receive_post_success_throw_still_accepts_the_delivery()
+    {
+        var middleware = new RecordingReceiveMiddleware
+        {
+            Behavior = async (_, next) =>
+            {
+                await next();
+                throw new InvalidOperationException("post-success fault");
+            },
+        };
+
+        await using var run = await _RunReceiveDeliveryAsync(middleware, "receive-post-success", "{}"u8.ToArray());
+
+        run.Client.CommitCount.Should().Be(1);
+        run.Storage.Admissions.Should().ContainSingle("the accepted delivery is kept");
+        await run
+            .Dispatcher.Received(1)
+            .EnqueueToExecute(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<ConsumerExecutorDescriptor>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task receive_transformed_accept_persists_the_added_header()
+    {
+        var middleware = new RecordingReceiveMiddleware
+        {
+            Behavior = (context, next) =>
+            {
+                context.SetHeader("x-signature-valid", "true");
+                return next();
+            },
+        };
+
+        await using var run = await _RunReceiveDeliveryAsync(middleware, "receive-transform", "{}"u8.ToArray());
+
+        run.Storage.Admissions.Should().ContainSingle();
+        run.Storage.DispatchedOrigins.Should()
+            .ContainSingle()
+            .Which.Headers.Should()
+            .ContainKey("x-signature-valid")
+            .WhoseValue.Should()
+            .Be("true");
+    }
+
+    [Fact]
+    public async Task receive_second_next_invocation_throws_invalid_operation()
+    {
+        Func<ValueTask>? capturedNext = null;
+        var middleware = new RecordingReceiveMiddleware
+        {
+            Behavior = (_, next) =>
+            {
+                capturedNext = next;
+                return next();
+            },
+        };
+
+        await using var run = await _RunReceiveDeliveryAsync(middleware, "receive-double-next", "{}"u8.ToArray());
+
+        run.Client.CommitCount.Should().Be(1, "the first delivery completes normally");
+        capturedNext.Should().NotBeNull();
+        Func<Task> act = async () => await capturedNext!();
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Fact]
+    public async Task receive_invalid_json_body_for_typed_consumer_is_deserialization_poison()
+    {
+        await using var run = await _RunReceiveDeliveryAsync(null, "receive-invalid-json", "{invalid"u8.ToArray());
+
+        run.Client.CommitCount.Should().Be(1);
+        var row = run.Storage.ReceivedExceptionRows.Should().ContainSingle().Subject;
+        row.Origin.Headers[Headers.Exception].Should().Be(nameof(MessageDeserializationException));
+    }
+
+    [Fact]
+    public async Task receive_empty_body_typed_consumer_is_deserialization_poison_untyped_passes()
+    {
+        await using var typed = await _RunReceiveDeliveryAsync(null, "receive-empty-typed", []);
+
+        typed.Client.CommitCount.Should().Be(1);
+        typed
+            .Storage.ReceivedExceptionRows.Should()
+            .ContainSingle()
+            .Which.Origin.Headers[Headers.Exception]
+            .Should()
+            .Be(nameof(MessageDeserializationException));
+    }
+
+    [Fact]
+    public async Task receive_poison_data_uri_respects_the_cap()
+    {
+        // Cap 16 bytes: 8-byte body stores whole; 40-byte body (past cap, <= 4x) truncates with a marker;
+        // 200-byte body (> 4x cap) omits the body entirely.
+        await using var whole = await _RunReceiveDeliveryAsync(
+            null,
+            "poison-whole",
+            "aaaaaaaa"u8.ToArray(),
+            configureOptions: options => options.MaxPoisonEnvelopeBytes = 16
+        );
+
+        var wholeRow = whole.Storage.ReceivedExceptionRows.Should().ContainSingle().Subject;
+        var wholeDataUri = (string?)wholeRow.Origin.Value;
+        wholeDataUri.Should().StartWith("data:UnknownType;base64,").And.NotContain("truncated");
+
+        await using var truncated = await _RunReceiveDeliveryAsync(
+            null,
+            "poison-truncated",
+            new byte[40],
+            configureOptions: options => options.MaxPoisonEnvelopeBytes = 16
+        );
+
+        var truncatedRow = truncated.Storage.ReceivedExceptionRows.Should().ContainSingle().Subject;
+        ((string?)truncatedRow.Origin.Value).Should().StartWith("data:UnknownType;truncated;base64,");
+
+        await using var omitted = await _RunReceiveDeliveryAsync(
+            null,
+            "poison-omitted",
+            new byte[200],
+            configureOptions: options => options.MaxPoisonEnvelopeBytes = 16
+        );
+
+        var omittedRow = omitted.Storage.ReceivedExceptionRows.Should().ContainSingle().Subject;
+        omittedRow.Origin.Value.Should().BeNull("far past the cap the body is omitted entirely");
+    }
+
     private ConsumerRegister _CreateRegister()
     {
         // The register is used after the helper returns; its short-lived provider owns no
@@ -1025,7 +1628,8 @@ public sealed class ConsumerRegisterTests : TestBase
         ConsumerRegister register,
         IConsumerClient client,
         IDispatcher dispatcher,
-        Headless.Messaging.Serialization.ISerializer serializer
+        Headless.Messaging.Serialization.ISerializer serializer,
+        Headless.Messaging.Persistence.IDataStorage? storage = null
     )
     {
         typeof(ConsumerRegister)
@@ -1051,7 +1655,7 @@ public sealed class ConsumerRegisterTests : TestBase
                 ("_selector", provider.GetRequiredService<MethodMatcherCache>()),
                 ("_dispatcher", dispatcher),
                 ("_serializer", serializer),
-                ("_storage", provider.GetRequiredService<Headless.Messaging.Persistence.IDataStorage>()),
+                ("_storage", storage ?? provider.GetRequiredService<Headless.Messaging.Persistence.IDataStorage>()),
             }
         )
         {
