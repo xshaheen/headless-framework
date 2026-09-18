@@ -11,6 +11,16 @@ namespace Headless.Constants;
 [PublicAPI]
 public static partial class StorageIdentifier
 {
+    /// <summary>Returns the identifier pattern and length cap for <paramref name="provider" />.</summary>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="provider" /> is not a defined value.</exception>
+    public static (Regex IdentifierPattern, int IdentifierMaxLength) For(StorageProvider provider) =>
+        provider switch
+        {
+            StorageProvider.PostgreSql => (PostgreSql.IdentifierPattern, PostgreSql.IdentifierMaxLength),
+            StorageProvider.SqlServer => (SqlServer.IdentifierPattern, SqlServer.IdentifierMaxLength),
+            _ => throw new ArgumentOutOfRangeException(nameof(provider), provider, message: null),
+        };
+
     /// <summary>SQL Server identifier rules.</summary>
     public static partial class SqlServer
     {

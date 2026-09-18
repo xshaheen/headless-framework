@@ -16,6 +16,22 @@ namespace FluentValidation;
 public static class HeadlessStorageIdentifierValidators
 {
     /// <summary>
+    /// Validates a schema or table name against the identifier rules of <paramref name="provider" />. Provider
+    /// setups that know their dialect use this one rule; the provider-named helpers below are shorthands for it.
+    /// </summary>
+#nullable disable // keep the builder nullability-agnostic: binds to nullable and non-nullable properties, preserving the caller's nullability
+    public static IRuleBuilderOptions<T, string> IsValidIdentifierFor<T>(
+        this IRuleBuilder<T, string> rule,
+        StorageProvider provider
+    )
+#nullable restore
+    {
+        var (pattern, maxLength) = StorageIdentifier.For(provider);
+
+        return rule.NotEmpty().Matches(pattern).MaximumLength(maxLength);
+    }
+
+    /// <summary>
     /// Validates a PostgreSQL unquoted identifier (schema/table name): leading letter or
     /// underscore, then letters / digits / underscores, capped at NAMEDATALEN - 1 = 63 chars.
     /// </summary>
@@ -23,9 +39,7 @@ public static class HeadlessStorageIdentifierValidators
     public static IRuleBuilderOptions<T, string> IsValidPostgreSqlIdentifier<T>(this IRuleBuilder<T, string> rule)
 #nullable restore
     {
-        return rule.NotEmpty()
-            .Matches(StorageIdentifier.PostgreSql.IdentifierPattern)
-            .MaximumLength(StorageIdentifier.PostgreSql.IdentifierMaxLength);
+        return rule.IsValidIdentifierFor(StorageProvider.PostgreSql);
     }
 
     /// <summary>
@@ -37,9 +51,7 @@ public static class HeadlessStorageIdentifierValidators
     public static IRuleBuilderOptions<T, string> IsValidSqlServerIdentifier<T>(this IRuleBuilder<T, string> rule)
 #nullable restore
     {
-        return rule.NotEmpty()
-            .Matches(StorageIdentifier.SqlServer.IdentifierPattern)
-            .MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
+        return rule.IsValidIdentifierFor(StorageProvider.SqlServer);
     }
 
     /// <summary>
