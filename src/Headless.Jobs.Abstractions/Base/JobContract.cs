@@ -20,6 +20,35 @@ public static class JobContract
 
     internal static string ValidateVersion(string value) => _Validate(value, VersionMaxLength, nameof(value));
 
+    /// <summary>
+    /// Canonical non-null reservation scope: <c>S</c> for system scope and <c>T:{tenant-id}</c> for tenant scope.
+    /// Stored on the reservation row so uniqueness never depends on nullable-column unique-index semantics, which
+    /// differ between PostgreSQL and SQL Server.
+    /// </summary>
+    internal static string CanonicalScopeKey(string? tenantId) => tenantId is null ? "S" : "T:" + tenantId;
+
+    /// <summary>Lower bound of an idempotency window's TTL.</summary>
+    internal static readonly TimeSpan IdempotencyTtlMinimum = TimeSpan.FromSeconds(1);
+
+    /// <summary>Upper bound of an idempotency window's TTL.</summary>
+    internal static readonly TimeSpan IdempotencyTtlMaximum = TimeSpan.FromDays(30);
+
+    /// <summary>
+    /// Validates an idempotency TTL. Called by every public entry that accepts one — option resolution, the
+    /// manager, and both provider kernels — because an out-of-bounds TTL (worst case zero/negative) silently
+    /// disables deduplication instead of failing loudly.
+    /// </summary>
+    internal static void ValidateIdempotencyTtl(TimeSpan ttl)
+    {
+        if (ttl < IdempotencyTtlMinimum || ttl > IdempotencyTtlMaximum)
+        {
+            throw new ArgumentException(
+                $"An idempotency key requires a TTL between {IdempotencyTtlMinimum} and {IdempotencyTtlMaximum}.",
+                nameof(ttl)
+            );
+        }
+    }
+
     private static string _Validate(string value, int maximumLength, string parameterName)
     {
         if (

@@ -29,6 +29,28 @@ internal static class JobsKeyLock
         return _AcquireAsync(context, [identity], cancellationToken);
     }
 
+    /// <summary>
+    /// Acquires the advisory lock for an idempotency reservation identity. Takes the raw canonical parts rather
+    /// than <see cref="JobKey"/>/<see cref="JobKeyScope"/> because the composed identity exceeds their 200-unit
+    /// name bound; length delimiters keep the parts unambiguous and the digest stays under the lock-key limit.
+    /// </summary>
+    internal static Task AcquireIdempotencyAsync(
+        DbContext context,
+        string scopeKey,
+        string function,
+        string contractVersion,
+        string idempotencyKey,
+        CancellationToken cancellationToken
+    )
+    {
+        var identity = string.Create(
+            System.Globalization.CultureInfo.InvariantCulture,
+            $"jobs:idem:{scopeKey.Length}:{scopeKey}{function.Length}:{function}"
+                + $"{contractVersion.Length}:{contractVersion}{idempotencyKey.Length}:{idempotencyKey}"
+        );
+        return _AcquireAsync(context, [identity], cancellationToken);
+    }
+
     internal static async Task AcquireRunsAsync(
         DbContext context,
         IEnumerable<Guid> runIds,

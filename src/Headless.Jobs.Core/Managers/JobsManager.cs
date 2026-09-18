@@ -80,6 +80,19 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         return _AddTimeJobAsync(entity, unitOfWork, cancellationToken);
     }
 
+    // Called only by JobsManagerFacade, which resolves IUnitOfWorkManager.Current and passes it here.
+    internal Task<TTimeJob> AddIdempotentTimeJobAsync(
+        TTimeJob entity,
+        string idempotencyKey,
+        TimeSpan idempotencyTtl,
+        IUnitOfWork? unitOfWork,
+        CancellationToken cancellationToken
+    )
+    {
+        JobIntentFingerprint.RejectOrdinaryMutation(entity);
+        return _AddIdempotentTimeJobAsync(entity, idempotencyKey, idempotencyTtl, unitOfWork, cancellationToken);
+    }
+
     internal Task<JobResult<TCronJob>> UpdateCronJobAsync(TCronJob cronJob, CancellationToken cancellationToken)
     {
         return _UpdateCronJobAsync(cronJob, cancellationToken);
@@ -149,17 +162,42 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         return _DeleteCronJobsBatchAsync(ids, cancellationToken);
     }
 
-    private async Task<TTimeJob> _AddTimeJobAsync(
+    private Task<TTimeJob> _AddTimeJobAsync(
         TTimeJob entity,
+        IUnitOfWork? unitOfWork,
+        CancellationToken cancellationToken
+    ) => _AddTimeJobCoreAsync(entity, unitOfWork, idempotency: null, cancellationToken);
+
+    private Task<TTimeJob> _AddIdempotentTimeJobAsync(
+        TTimeJob entity,
+        string idempotencyKey,
+        TimeSpan idempotencyTtl,
         IUnitOfWork? unitOfWork,
         CancellationToken cancellationToken
     )
     {
+        // Same bounded-string and TTL rules as every other durable Jobs identity; validated here (not only at
+        // option resolution) because the manager is a public surface that receives both values directly.
+        JobContract.ValidateName(idempotencyKey);
+        JobContract.ValidateIdempotencyTtl(idempotencyTtl);
+        return _AddTimeJobCoreAsync(entity, unitOfWork, (idempotencyKey, idempotencyTtl), cancellationToken);
+    }
+
+    private async Task<TTimeJob> _AddTimeJobCoreAsync(
+        TTimeJob entity,
+        IUnitOfWork? unitOfWork,
+        (string Key, TimeSpan Ttl)? idempotency,
+        CancellationToken cancellationToken
+    )
+    {
+        // The idempotent branch is savepoint-wrapped like keyed scheduling, so a savepoint-incapable transaction must
+        // fail at capture, synchronously and before pipeline work, rather than after the schedule pipeline has run
+        // and the unit of work is already retry-prevented.
         var coordinated = _TryCaptureCoordinatedContext(
             unitOfWork,
             JobAtomicity.IsRequired([entity]) ? TransactionEnlistment.Required : entity.Enlistment,
             entity.Function,
-            requireSavepoints: false
+            requireSavepoints: idempotency is not null
         );
         var now = timeProvider.GetUtcNow();
         _StampTimeJobTree(entity, now, assignIds: true);
@@ -190,10 +228,61 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
             var executionTime = entity.ExecutionTime.Value;
 
+            // The idempotent branch runs after the schedule pipeline and tenant resolution (the reservation
+            // identity needs the final tenant scope) but before any write: a hit must not insert a row, arm
+            // dispatch/restart/notify side effects, or emit a second set of enqueue effects.
+            if (idempotency is { } window)
+            {
+                JobIdempotencyEnqueueResult result;
+                if (coordinated is { } writeContext)
+                {
+                    _PrepareCoordinatedWrite(writeContext);
+                    result = await writeContext
+                        .Writer.WriteIdempotentTimeJobAsync(
+                            entity,
+                            window.Key,
+                            window.Ttl,
+                            writeContext.Relational,
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
+                }
+                else
+                {
+                    result = await persistenceProvider
+                        .AddIdempotentTimeJobAsync(entity, window.Key, window.Ttl, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+
+                if (!result.Created)
+                {
+                    // Dedup hit: the reservation owns the first caller's job. Surface its ID through the returned
+                    // entity and arm nothing — the creator's side effects already cover this key. Treat the call
+                    // as persisted so the restore-finally does not scramble the observed entity's tenants.
+                    _logger.IdempotentEnqueueHit(entity.Function, result.JobId);
+                    entity.Id = result.JobId;
+                    persisted = true;
+                    return entity;
+                }
+
+                persisted = true;
+
+                if (coordinated is { } creatorContext)
+                {
+                    // The worker re-reads the clock when it runs the signal: the commit can land much later than
+                    // the enqueue (same rationale as the plain path below).
+                    _SignalOnCommit(creatorContext.UnitOfWork, new TimeJobCommittedSignal(this, entity, executionTime));
+                    return entity;
+                }
+
+                await _RunTimeJobSideEffectsAsync(entity, now, executionTime, cancellationToken).ConfigureAwait(false);
+                return entity;
+            }
+
             if (coordinated is { } context)
             {
                 _PrepareCoordinatedWrite(context);
-                // Write the row inside the caller's transaction; defer dispatch/scheduler/notify to commit (KTD-4). A
+                // Write the row inside the caller's transaction; defer dispatch/scheduler/notify to commit. A
                 // returned entity means the row was enlisted into the transaction (it commits with it), not that the
                 // deferred dispatch ran — a post-commit dispatch failure is recovered by the scheduler's polling sweep.
                 await context
@@ -307,7 +396,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 .ConfigureAwait(false);
 
             // Cron has no immediate-dispatch branch: cache invalidation runs on commit, scheduler-restart + notify go
-            // to the worker (KTD-4). The signal carries the PERSISTED projection, not a pre-persistence guess.
+            // to the worker. The signal carries the PERSISTED projection, not a pre-persistence guess.
             _SignalCronOnCommit(
                 context.UnitOfWork,
                 context.Writer,
@@ -1565,6 +1654,14 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
 internal static partial class JobsManagerTenancyLog
 {
+    [LoggerMessage(
+        EventId = 3235,
+        EventName = "IdempotentEnqueueHit",
+        Level = LogLevel.Debug,
+        Message = "Idempotent enqueue for function '{Function}' observed a live reservation and returned the reserved job {JobId}; no row was inserted."
+    )]
+    public static partial void IdempotentEnqueueHit(this ILogger logger, string function, Guid jobId);
+
     [LoggerMessage(
         EventId = 3223,
         EventName = "JobChainDescendantSystemScope",

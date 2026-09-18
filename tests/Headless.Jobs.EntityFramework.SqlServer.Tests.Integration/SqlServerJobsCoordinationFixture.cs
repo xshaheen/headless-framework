@@ -52,6 +52,7 @@ public sealed class SqlServerJobsCoordinationFixture
         // current Jobs code creates; drop it defensively so a dirty reused container cannot block the schema drop.
         + "DROP TABLE IF EXISTS [jobs].[TimeJobIdempotencyReservations];"
         + "DROP TABLE IF EXISTS [jobs].[TimeJobs];"
+        + "DROP TABLE IF EXISTS [jobs].[TimeJobIdempotencyReservations];"
         + "DROP TABLE IF EXISTS [jobs].[CronJobs];"
         + "DROP TABLE IF EXISTS [jobs].[ApplicationProbe];"
         + "IF EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'jobs') DROP SCHEMA [jobs];"

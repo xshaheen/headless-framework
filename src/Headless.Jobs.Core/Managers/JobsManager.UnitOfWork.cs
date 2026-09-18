@@ -155,7 +155,7 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
     // Registers a coordinated write's post-commit signal. The callback is synchronous: it hands the worker a signal
     // and returns, so dispatch, scheduler restart, and dashboard notification never run on the caller's commit. The
     // row is already durable when the worker runs them, so a dropped or failed signal cannot roll the commit back —
-    // the scheduler's polling sweep is the recovery path (KTD-4).
+    // the scheduler's polling sweep is the recovery path.
     private void _SignalOnCommit(IUnitOfWork unitOfWork, JobsPostCommitSignal signal)
     {
         // The IDisposable unsubscribe handle is intentionally discarded (as in MessageOutboxBuffer): once the row is

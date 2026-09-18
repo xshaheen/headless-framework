@@ -28,6 +28,20 @@ internal sealed class JobsManagerFacade<TTimeJob, TCronJob>(
     Task<TTimeJob> ITimeJobManager<TTimeJob>.AddAsync(TTimeJob entity, CancellationToken cancellationToken) =>
         _core.AddTimeJobAsync(entity, _unitOfWorkManager.Current, cancellationToken);
 
+    Task<TTimeJob> ITimeJobManager<TTimeJob>.AddIdempotentAsync(
+        TTimeJob entity,
+        string idempotencyKey,
+        TimeSpan idempotencyTtl,
+        CancellationToken cancellationToken
+    ) =>
+        _core.AddIdempotentTimeJobAsync(
+            entity,
+            idempotencyKey,
+            idempotencyTtl,
+            _unitOfWorkManager.Current,
+            cancellationToken
+        );
+
     Task<JobResult<TCronJob>> ICronJobManager<TCronJob>.UpdateAsync(
         TCronJob cronJob,
         CancellationToken cancellationToken
