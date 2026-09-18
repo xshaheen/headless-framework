@@ -29,7 +29,7 @@ internal readonly record struct DeliveryDecision(
 }
 
 /// <summary>
-/// Decides the delivery path before any storage or transport effect. The matrix (KD6/KD7):
+/// Decides the delivery path before any storage or transport effect. The matrix:
 /// <list type="bullet">
 /// <item><c>Durable</c> (default): enlists in a compatible active unit of work when
 /// <see cref="TransactionEnlistment"/> allows it; otherwise a standalone durable row. A unit with no joinable

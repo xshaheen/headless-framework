@@ -791,7 +791,7 @@ The always-on `DeadOwnerRecoveryBridge` logs failures under its own category, `H
 2. Otherwise, the ambient `ICurrentTenant.Id`, unless `SuppressAmbientBusinessContext` is enabled.
 3. If neither resolves, the publish wrapper throws `Headless.MultiTenancy.MissingTenantContextException`.
 
-The U2 raw-header checks (`ReservedTenantHeader`, `TenantIdMismatch`) still run first, so flipping `TenantContextRequired` cannot bypass them.
+The raw-header checks (`ReservedTenantHeader`, `TenantIdMismatch`) still run first, so flipping `TenantContextRequired` cannot bypass them.
 
 Root tenancy setup:
 

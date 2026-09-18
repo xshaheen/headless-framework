@@ -154,11 +154,11 @@ public static class SetupApiTenancy
     /// <returns>The same application builder.</returns>
     /// <remarks>
     /// Register this after <c>UseRouting()</c> and before <c>UseAuthentication()</c> — separate from
-    /// <see cref="UseHeadlessTenancy"/>'s post-authentication claim placement (KTD2). This method does
+    /// <see cref="UseHeadlessTenancy"/>'s post-authentication claim placement. This method does
     /// not call <c>UseRouting()</c>, <c>UseAuthentication()</c>, or <c>UseAuthorization()</c>.
     /// Repeated invocations are idempotent. Accessor-only hosts (a catalog store configured via
     /// <c>HeadlessTenancyBuilder.Catalog(...)</c> with no <c>ResolveFromCatalog(...)</c> call) are a
-    /// no-op — resolution middleware never runs for them (R18). Marks the tenant posture runtime marker
+    /// no-op — resolution middleware never runs for them. Marks the tenant posture runtime marker
     /// the startup validator checks (<c>TenantCatalogPosture.ResolutionPipelineRuntimeMarker</c>) only
     /// when at least one <see cref="ITenantIdentifierSource"/> was registered — a resolution-capable
     /// seam with this hook wired but zero sources would otherwise never actually resolve anything.
@@ -187,7 +187,7 @@ public static class SetupApiTenancy
             || !seam.Capabilities.Contains(TenantCatalogPosture.ResolutionCapability, StringComparer.Ordinal)
         )
         {
-            // Not configured, or accessor-only (store configured, resolution never requested) — R18's
+            // Not configured, or accessor-only (store configured, resolution never requested) — this is the
             // explicit accessor-only carve-out. The resolution middleware must never run for these hosts.
             return application;
         }
@@ -268,19 +268,19 @@ public sealed class HeadlessHttpTenancyBuilder
     /// <param name="configure">Optional callback to register <see cref="ITenantIdentifierSource"/>s.</param>
     /// <returns>The same HTTP tenancy builder.</returns>
     /// <remarks>
-    /// Registers <c>TenantCatalogResolutionMiddleware</c> — which enforces R19 mapping integrity for
+    /// Registers <c>TenantCatalogResolutionMiddleware</c> — which enforces mapping integrity for
     /// every identifier-resolved request against the default authentication scheme, independent of
-    /// endpoint metadata or authorization policy — and the R19 post-authorization mapping integrity
+    /// endpoint metadata or authorization policy — and the post-authorization mapping integrity
     /// handler (<c>TenantIdentifierIntegrityHandler</c>) that covers endpoint-scoped
     /// (non-default) authentication schemes, and records the
     /// <see cref="TenantCatalogPosture.ResolutionCapability"/> capability on the
     /// <see cref="TenantCatalogPosture.Seam"/> posture seam — independent of and installed regardless
-    /// of whether <see cref="ResolveFromClaims"/> is also configured (KTD2). A tenant store must be
+    /// of whether <see cref="ResolveFromClaims"/> is also configured. A tenant store must be
     /// configured separately via <c>HeadlessTenancyBuilder.Catalog(...)</c>; otherwise startup
-    /// validation fails (R18). Call <see cref="SetupApiTenancy.UseHeadlessTenantCatalogResolution"/>
+    /// validation fails. Call <see cref="SetupApiTenancy.UseHeadlessTenantCatalogResolution"/>
     /// after <c>UseRouting()</c> and before <c>UseAuthentication()</c> to wire the middleware into the
-    /// pipeline. With zero registered sources resolution silently never activates for any request
-    /// (R5) — register one through <paramref name="configure"/>.
+    /// pipeline. With zero registered sources resolution silently never activates for any request —
+    /// register one through <paramref name="configure"/>.
     /// </remarks>
     public HeadlessHttpTenancyBuilder ResolveFromCatalog(
         Action<HeadlessTenantCatalogResolutionBuilder>? configure = null
@@ -288,11 +288,11 @@ public sealed class HeadlessHttpTenancyBuilder
     {
         // Catalog-only hosts (no ResolveFromClaims()) still need ICurrentTenant/ICurrentTenantAccessor
         // for the middleware's ambient Change(), and IOptions<MultiTenancyOptions> for
-        // TenantIdentifierIntegrityHandler's R19 claim-type read. Idempotent — a host that also calls
+        // TenantIdentifierIntegrityHandler's claim-type read. Idempotent — a host that also calls
         // ResolveFromClaims(...) merely repeats the same TryAdd/AddOptions registrations.
         _builder.ApplicationBuilder.AddHeadlessMultiTenancy();
 
-        // Registers the middleware together with the services its rejection and R19 integrity paths need
+        // Registers the middleware together with the services its rejection and mapping-integrity paths need
         // (IProblemDetailsCreator and its dependencies, IHttpContextAccessor, and
         // TenantIdentifierIntegrityHandler) — they travel with the feature so the low-level
         // AddTenantCatalogResolution()/UseTenantCatalogResolution() pair is equally protected.
@@ -314,7 +314,7 @@ public sealed class HeadlessHttpTenancyBuilder
 /// <summary>Registers <see cref="ITenantIdentifierSource"/>s consulted by pre-auth tenant catalog resolution.</summary>
 /// <remarks>
 /// <para>
-/// Ordering contract (R6): sources are consulted in first-registration order and the first
+/// Ordering contract: sources are consulted in first-registration order and the first
 /// <see cref="TenantIdentifierSourceResultKind.Found"/> result wins. Registering the same source
 /// <strong>type</strong> through <see cref="AddSource{TSource}"/> twice keeps the first registration's
 /// position and adds nothing; instance and delegate registrations always append.
@@ -362,7 +362,7 @@ public sealed class HeadlessTenantCatalogResolutionBuilder
         return this;
     }
 
-    /// <summary>Registers a delegate that reads a raw tenant identifier from the current request (R4).</summary>
+    /// <summary>Registers a delegate that reads a raw tenant identifier from the current request.</summary>
     /// <param name="resolver">
     /// Delegate invoked once per request, in registration order. Returning <see langword="null"/> or a
     /// whitespace-only string means "no identifier from this source" and resolution continues with the next
@@ -386,7 +386,7 @@ public sealed class HeadlessTenantCatalogResolutionBuilder
         return this;
     }
 
-    /// <summary>Registers the built-in host tenant identifier source with one host template (R1).</summary>
+    /// <summary>Registers the built-in host tenant identifier source with one host template.</summary>
     /// <param name="template">
     /// The host template to append to <see cref="HostTenantIdentifierSourceOptions.Templates"/> — for
     /// example <c>{tenant}.example.com</c>, <c>{tenant}.*</c>, or a bare <c>{tenant}</c> for the
@@ -396,9 +396,9 @@ public sealed class HeadlessTenantCatalogResolutionBuilder
     /// <exception cref="ArgumentException"><paramref name="template"/> is <see langword="null"/> or whitespace.</exception>
     /// <remarks>
     /// Appends to the template list rather than replacing it: options contributions accumulate across
-    /// calls while the source descriptor deduplicates (KTD3), so
+    /// calls while the source descriptor deduplicates, so
     /// <c>AddHostSource("{tenant}.a.com").AddHostSource("{tenant}.b.com")</c> yields one source
-    /// matching both, first registration winning on overlap. Templates are validated at startup (R7).
+    /// matching both, first registration winning on overlap. Templates are validated at startup.
     /// </remarks>
     public HeadlessTenantCatalogResolutionBuilder AddHostSource(string template)
     {
@@ -409,14 +409,14 @@ public sealed class HeadlessTenantCatalogResolutionBuilder
         return this;
     }
 
-    /// <summary>Registers the built-in host tenant identifier source, configuring its options (R1).</summary>
+    /// <summary>Registers the built-in host tenant identifier source, configuring its options.</summary>
     /// <param name="configure">Callback to configure <see cref="HostTenantIdentifierSourceOptions"/>.</param>
     /// <returns>The same builder, to allow chaining.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
     /// <remarks>
     /// The callback runs as one additional <c>Configure</c> action per call; repeat registrations of
-    /// the source type keep the first descriptor's position (KTD3). Options are validated at
-    /// startup — an empty template list or an unparsable template fails the host (R7).
+    /// the source type keep the first descriptor's position. Options are validated at
+    /// startup — an empty template list or an unparsable template fails the host.
     /// </remarks>
     public HeadlessTenantCatalogResolutionBuilder AddHostSource(Action<HostTenantIdentifierSourceOptions> configure)
     {
@@ -428,18 +428,18 @@ public sealed class HeadlessTenantCatalogResolutionBuilder
     }
 
     /// <summary>
-    /// Registers the built-in host tenant identifier source, binding its options from configuration (R1).
+    /// Registers the built-in host tenant identifier source, binding its options from configuration.
     /// </summary>
     /// <param name="configuration">
     /// The configuration section holding <see cref="HostTenantIdentifierSourceOptions"/> — for example
     /// <c>Tenant:Host</c> with a <c>Templates</c> array. The bind must yield at least one parseable
-    /// template, or host startup fails (R7).
+    /// template, or host startup fails.
     /// </param>
     /// <returns>The same builder, to allow chaining.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="configuration"/> is <see langword="null"/>.</exception>
     /// <remarks>
     /// Binds as an additional options contribution; repeat registrations of the source type keep the
-    /// first descriptor's position (KTD3).
+    /// first descriptor's position.
     /// </remarks>
     public HeadlessTenantCatalogResolutionBuilder AddHostSource(IConfiguration configuration)
     {
@@ -463,15 +463,15 @@ public sealed class HeadlessTenantCatalogResolutionBuilder
         >(options => options.Configure(configure));
     }
 
-    /// <summary>Registers the built-in route tenant identifier source with the default route value name (R2).</summary>
+    /// <summary>Registers the built-in route tenant identifier source with the default route value name.</summary>
     /// <returns>The same builder, to allow chaining.</returns>
     /// <remarks>
     /// Reads the <c>tenant</c> route value (see
     /// <see cref="RouteTenantIdentifierSourceOptions.DefaultRouteValueName"/>). Repeat registrations of
-    /// the source type deduplicate while options contributions accumulate (KTD3). Requires
+    /// the source type deduplicate while options contributions accumulate. Requires
     /// <see cref="SetupApiTenancy.UseHeadlessTenantCatalogResolution"/> to run after
-    /// <c>UseRouting()</c>, or every request resolves as host context (R10). Every overload also wraps
-    /// the routing <see cref="LinkGenerator"/> once so generated links keep the tenant segment (R13);
+    /// <c>UseRouting()</c>, or every request resolves as host context. Every overload also wraps
+    /// the routing <see cref="LinkGenerator"/> once so generated links keep the tenant segment;
     /// see <see cref="RouteTenantIdentifierSourceOptions.PromoteAmbientRouteValue"/> to opt out.
     /// </remarks>
     public HeadlessTenantCatalogResolutionBuilder AddRouteSource()
@@ -481,16 +481,16 @@ public sealed class HeadlessTenantCatalogResolutionBuilder
         return this;
     }
 
-    /// <summary>Registers the built-in route tenant identifier source with a route value name (R2).</summary>
+    /// <summary>Registers the built-in route tenant identifier source with a route value name.</summary>
     /// <param name="routeValueName">
     /// The route value name to read — for example <c>org</c> for an endpoint mapped at
-    /// <c>/{org}/orders</c>. Must not be blank; validated at startup (R7).
+    /// <c>/{org}/orders</c>. Must not be blank; validated at startup.
     /// </param>
     /// <returns>The same builder, to allow chaining.</returns>
     /// <exception cref="ArgumentException"><paramref name="routeValueName"/> is <see langword="null"/> or whitespace.</exception>
     /// <remarks>
     /// The name is one additional options contribution per call; repeat registrations of the source
-    /// type keep the first descriptor's position and the last name contribution wins (KTD3).
+    /// type keep the first descriptor's position and the last name contribution wins.
     /// </remarks>
     public HeadlessTenantCatalogResolutionBuilder AddRouteSource(string routeValueName)
     {
@@ -501,14 +501,14 @@ public sealed class HeadlessTenantCatalogResolutionBuilder
         return this;
     }
 
-    /// <summary>Registers the built-in route tenant identifier source, configuring its options (R2).</summary>
+    /// <summary>Registers the built-in route tenant identifier source, configuring its options.</summary>
     /// <param name="configure">Callback to configure <see cref="RouteTenantIdentifierSourceOptions"/>.</param>
     /// <returns>The same builder, to allow chaining.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
     /// <remarks>
     /// The callback runs as one additional <c>Configure</c> action per call; repeat registrations of
-    /// the source type keep the first descriptor's position (KTD3). A blank route value name fails
-    /// host startup (R7).
+    /// the source type keep the first descriptor's position. A blank route value name fails
+    /// host startup.
     /// </remarks>
     public HeadlessTenantCatalogResolutionBuilder AddRouteSource(Action<RouteTenantIdentifierSourceOptions> configure)
     {
@@ -520,18 +520,18 @@ public sealed class HeadlessTenantCatalogResolutionBuilder
     }
 
     /// <summary>
-    /// Registers the built-in route tenant identifier source, binding its options from configuration (R2).
+    /// Registers the built-in route tenant identifier source, binding its options from configuration.
     /// </summary>
     /// <param name="configuration">
     /// The configuration section holding <see cref="RouteTenantIdentifierSourceOptions"/> — for
     /// example <c>Tenant:Route</c> with a <c>RouteValueName</c> key. The bound name must not be
-    /// blank, or host startup fails (R7).
+    /// blank, or host startup fails.
     /// </param>
     /// <returns>The same builder, to allow chaining.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="configuration"/> is <see langword="null"/>.</exception>
     /// <remarks>
     /// Binds as an additional options contribution; repeat registrations of the source type keep the
-    /// first descriptor's position (KTD3).
+    /// first descriptor's position.
     /// </remarks>
     public HeadlessTenantCatalogResolutionBuilder AddRouteSource(IConfiguration configuration)
     {
@@ -560,7 +560,7 @@ public sealed class HeadlessTenantCatalogResolutionBuilder
     /// <summary>
     /// Wraps the routing <see cref="LinkGenerator"/> with
     /// <see cref="TenantAmbientRouteValueLinkGenerator"/> exactly once across every
-    /// <c>AddRouteSource</c> call (R13, KTD7).
+    /// <c>AddRouteSource</c> call.
     /// </summary>
     /// <remarks>
     /// The wrap cannot be made conditional on
@@ -601,13 +601,13 @@ public sealed class HeadlessTenantCatalogResolutionBuilder
         }
     }
 
-    /// <summary>Registers the built-in header tenant identifier source with the default header name (R3).</summary>
+    /// <summary>Registers the built-in header tenant identifier source with the default header name.</summary>
     /// <returns>The same builder, to allow chaining.</returns>
     /// <remarks>
     /// Reads the <c>X-Tenant</c> header (see
     /// <see cref="HeaderTenantIdentifierSourceOptions.DefaultHeaderName"/>). Repeat registrations of
-    /// the source type deduplicate while options contributions accumulate (KTD3). A header can only
-    /// select an existing enabled tenant through the catalog and R19 still applies to authenticated
+    /// the source type deduplicate while options contributions accumulate. A header can only
+    /// select an existing enabled tenant through the catalog and mapping-integrity enforcement still applies to authenticated
     /// callers — but it bypasses any perimeter control bound to a tenant's hostname, so register a host
     /// source first where hostnames carry such controls.
     /// </remarks>
@@ -618,16 +618,16 @@ public sealed class HeadlessTenantCatalogResolutionBuilder
         return this;
     }
 
-    /// <summary>Registers the built-in header tenant identifier source with one header name (R3).</summary>
+    /// <summary>Registers the built-in header tenant identifier source with one header name.</summary>
     /// <param name="headerName">
     /// The header name to contribute to <see cref="HeaderTenantIdentifierSourceOptions.HeaderNames"/>.
-    /// Must be an HTTP token (validated at startup, R7).
+    /// Must be an HTTP token (validated at startup).
     /// </param>
     /// <returns>The same builder, to allow chaining.</returns>
     /// <exception cref="ArgumentException"><paramref name="headerName"/> is <see langword="null"/> or whitespace.</exception>
     /// <remarks>
     /// Replaces the list while it is still the untouched default, and appends once it has been
-    /// customized (KTD3): <c>AddHeaderSource("X-Legacy")</c> reads only <c>X-Legacy</c>, while
+    /// customized: <c>AddHeaderSource("X-Legacy")</c> reads only <c>X-Legacy</c>, while
     /// <c>AddHeaderSource("X-Tenant").AddHeaderSource("X-Legacy-Tenant")</c> yields one source reading
     /// both under a single duplicate-detection scope. The default is never silently kept beside a
     /// requested name, so a client cannot select a tenant through a header the operator did not configure.
@@ -641,14 +641,14 @@ public sealed class HeadlessTenantCatalogResolutionBuilder
         return this;
     }
 
-    /// <summary>Registers the built-in header tenant identifier source, configuring its options (R3).</summary>
+    /// <summary>Registers the built-in header tenant identifier source, configuring its options.</summary>
     /// <param name="configure">Callback to configure <see cref="HeaderTenantIdentifierSourceOptions"/>.</param>
     /// <returns>The same builder, to allow chaining.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
     /// <remarks>
     /// The callback runs as one additional <c>Configure</c> action per call; repeat registrations of
-    /// the source type keep the first descriptor's position (KTD3). Options are validated at startup —
-    /// an empty list or a name that is not an HTTP token fails the host (R7).
+    /// the source type keep the first descriptor's position. Options are validated at startup —
+    /// an empty list or a name that is not an HTTP token fails the host.
     /// </remarks>
     public HeadlessTenantCatalogResolutionBuilder AddHeaderSource(Action<HeaderTenantIdentifierSourceOptions> configure)
     {
@@ -660,7 +660,7 @@ public sealed class HeadlessTenantCatalogResolutionBuilder
     }
 
     /// <summary>
-    /// Registers the built-in header tenant identifier source, binding its options from configuration (R3).
+    /// Registers the built-in header tenant identifier source, binding its options from configuration.
     /// </summary>
     /// <param name="configuration">
     /// The configuration section holding <see cref="HeaderTenantIdentifierSourceOptions"/> — for example
@@ -672,7 +672,7 @@ public sealed class HeadlessTenantCatalogResolutionBuilder
     /// <exception cref="ArgumentNullException"><paramref name="configuration"/> is <see langword="null"/>.</exception>
     /// <remarks>
     /// Binds as an additional options contribution; repeat registrations of the source type keep the
-    /// first descriptor's position (KTD3).
+    /// first descriptor's position.
     /// </remarks>
     public HeadlessTenantCatalogResolutionBuilder AddHeaderSource(IConfiguration configuration)
     {
@@ -716,7 +716,7 @@ public sealed class HeadlessTenantCatalogResolutionBuilder
     /// Shared registration core of every built-in source: the validated options type plus one optional
     /// options contribution (a <c>Configure</c> callback or a configuration bind, applied in call order so
     /// contributions accumulate), and the source descriptor with <c>TryAddEnumerable</c> semantics so a
-    /// repeated registration of the same source type keeps its first position (KTD3).
+    /// repeated registration of the same source type keeps its first position.
     /// </summary>
     private void _AddSourceCore<TOptions, TValidator, TSource>(Action<OptionsBuilder<TOptions>>? configure)
         where TOptions : class

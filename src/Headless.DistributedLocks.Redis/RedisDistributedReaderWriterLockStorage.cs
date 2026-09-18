@@ -155,7 +155,7 @@ internal sealed class RedisDistributedReadWriteLockStorage(
 
     /// <summary>
     /// Atomically acquires an exclusive write lease for <paramref name="resource"/> or plants the
-    /// writer-waiting marker when readers are present (writer preference per D8). Uses
+    /// writer-waiting marker when readers are present (writer preference). Uses
     /// <see cref="TryAcquireWriteLockScriptDefinition"/> — a Lua script that prunes expired reader
     /// entries (HGETALL + per-field HDEL), then either sets the writer key to <paramref name="leaseId"/>
     /// when no readers remain, or sets it to <paramref name="waitingId"/> suffixed with

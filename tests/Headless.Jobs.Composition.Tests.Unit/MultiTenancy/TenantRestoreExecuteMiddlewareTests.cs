@@ -138,7 +138,7 @@ public sealed class TenantRestoreExecuteMiddlewareTests : TestBase
     {
         // The schedule side persists an explicit/captured tenant regardless of PropagateTenant, so an explicitly
         // tenanted job MUST run under its tenant even on a host with propagation off — otherwise it silently executes
-        // system-scope and tenant-filtered reads cross the boundary (#278 finding #1).
+        // system-scope and tenant-filtered reads cross the boundary (#278).
         var tenant = new TestCurrentTenant();
         var middleware = _Create(tenant, propagate: false);
         string? observed = null;

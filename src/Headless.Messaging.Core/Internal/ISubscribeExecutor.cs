@@ -316,7 +316,7 @@ internal sealed class SubscribeExecutor(
 
     private async ValueTask _SetSuccessfulState(MediumMessage message, RetryExecutionState? executionState)
     {
-        // R8 — the cancellation token parameter is unused since F30 switched the storage write
+        // The cancellation token parameter is unused since F30 switched the storage write
         // to CancellationToken.None below. The method is private; the parameter is removed
         // outright rather than discarded.
         message.ExpiresAt = timeProvider.GetUtcNow().AddSeconds(_options.SucceedMessageExpiredAfter);

@@ -1963,7 +1963,7 @@ public sealed class HybridCacheTests : TestBase
         var act = async () => await cache.RemoveAllAsync(keys, AbortToken);
 
         // then — the L2 failure propagates to the caller; L1 is cleaned before the rethrow to avoid leaving
-        // stale entries on this node (finding #4 fix). Nothing is published because L2 never confirmed the
+        // stale entries on this node. Nothing is published because L2 never confirmed the
         // removal, and bulk removals are never captured by auto-recovery.
         await act.Should().ThrowAsync<InvalidOperationException>();
 

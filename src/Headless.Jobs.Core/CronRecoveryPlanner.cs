@@ -22,7 +22,7 @@ namespace Headless.Jobs;
 /// <see cref="CronOccurrenceAccounting.IsInstantAccountedFor" /> and
 /// <see cref="CronOccurrenceAccounting.LiveFirstRank" /> over rows the providers project through the SAME selector
 /// that <c>MaterializeCronScheduleOccurrenceAsync</c> uses, so materialization and recovery still resolve one row
-/// identically — a property that was measured broken before it was single-sourced (KTD1c).
+/// identically — a property that was measured broken before it was single-sourced.
 /// </para>
 /// </remarks>
 [PublicAPI]
@@ -114,7 +114,7 @@ public static class CronRecoveryPlanner
             return [];
         }
 
-        // R18 owes the backlog exactly one run; R7 forbids duplicating an instant an executing or terminal row
+        // Coalesce owes the backlog exactly one run, and never duplicates an instant an executing or terminal row
         // already accounts for. Reconciled by walking the missed instants in schedule order and materializing at the
         // FIRST unaccounted-for one — an occupied instant is stepped past, never duplicated, and only a
         // fully-accounted-for backlog produces no run at all.
@@ -133,7 +133,7 @@ public static class CronRecoveryPlanner
                 .ThenBy(x => x.Id)
                 .FirstOrDefault();
 
-            // KTD1: an instant whose rows NONE account for — a seeding migration retired the only one without a
+            // An instant whose rows NONE account for — a seeding migration retired the only one without a
             // replacement — still owes its run, so it is materialized exactly as an empty instant is. Testing
             // accounting rather than mere presence is what keeps recovery and the claim path from disagreeing about
             // the same row. The null test is implied by the accounting one (an empty instant accounts for nothing)

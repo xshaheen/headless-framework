@@ -12,7 +12,7 @@ namespace Tests;
 /// <summary>
 /// Shared implementation behind the PostgreSQL and SqlServer leaf fixtures: schema creation/reset, direct
 /// <see cref="TenantRecord"/> seeding (so duplicate identifiers fail on the real unique-index violation,
-/// per KTD6 — not a simulated check), and a lazily built, cached host that resolves the EF-backed
+/// not a simulated check), and a lazily built, cached host that resolves the EF-backed
 /// <see cref="ITenantStore"/> through the public <c>UseEntityFramework&lt;TContext&gt;</c> registration
 /// path rather than constructing the (internal) store type directly.
 /// </summary>
@@ -63,8 +63,8 @@ internal sealed class TenantCatalogEfFixtureCore(
         foreach (var seed in seeds)
         {
             // One SaveChangesAsync per seed so a duplicate normalized identifier fails precisely on the
-            // colliding row (unique-index violation), leaving prior seeds committed — matching AE10's
-            // "the EF store rejects the second row" wording.
+            // colliding row (unique-index violation), leaving prior seeds committed — matching the
+            // "the EF store rejects the second row" contract.
             await using var db = new TenantCatalogDbContext(DbOptions);
             db.Add(_ToRecord(seed));
             await db.SaveChangesAsync(cancellationToken);

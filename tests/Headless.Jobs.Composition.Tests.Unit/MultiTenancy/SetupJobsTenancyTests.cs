@@ -150,7 +150,7 @@ public sealed class SetupJobsTenancyTests : TestBase
     [Fact]
     public void emits_propagation_error_when_only_the_jobs_accessor_fallback_current_tenant_is_registered()
     {
-        // given — a real Jobs host (KTD1) registers the accessor-backed CurrentTenant fallback whose Id stays
+        // given — a real Jobs host registers the accessor-backed CurrentTenant fallback whose Id stays
         // null. With propagation on but no other seam or consumer override, propagation would be a silent no-op.
         var builder = Host.CreateApplicationBuilder();
         builder.Services.AddLogging();

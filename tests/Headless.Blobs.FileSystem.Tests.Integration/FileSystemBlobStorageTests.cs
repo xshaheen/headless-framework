@@ -29,7 +29,7 @@ public sealed class FileSystemBlobStorageTests : BlobStorageTestsBase
     }
 
     // The file-system backend supports container lifecycle: a top-level container is a directory directly under the
-    // base path. The capability is resolved (constructed), never cast from IBlobStorage (KTD5).
+    // base path. The capability is resolved (constructed), never cast from IBlobStorage.
     protected override IBlobContainerManager GetContainerManager()
     {
         return new FileSystemBlobContainerManager(_Options, new CrossOsNamingNormalizer());

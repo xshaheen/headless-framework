@@ -13,7 +13,7 @@ using Microsoft.Extensions.Time.Testing;
 namespace Tests.Provider;
 
 /// <summary>
-/// The occupied-instant ACCOUNTING matrix (KTD1) for the in-memory provider, over every persisted state a row can be
+/// The occupied-instant ACCOUNTING matrix for the in-memory provider, over every persisted state a row can be
 /// in and against all three paths that read it: materialization, recovery, and the claim path.
 /// </summary>
 /// <remarks>
@@ -276,7 +276,7 @@ public sealed class CronOccupiedInstantMatrixTests : TestBase
     }
 
     /// <summary>
-    /// AE2/R3a. A terminal and a live row coexist at one instant — legal, because the unique index filters to live
+    /// A terminal and a live row coexist at one instant — legal, because the unique index filters to live
     /// rows. Ordering by <c>CreatedAt</c> alone would report the older terminal row and hand the dispatcher an
     /// occurrence id that can never run.
     /// </summary>

@@ -33,7 +33,7 @@ public sealed class HybridCacheTierMetricsTests : TestBase
         await base.DisposeAsyncCore();
     }
 
-    // AE2: a two-tier hybrid cache with a key present only in L2. GetOrAddAsync records requests with
+    // A two-tier hybrid cache with a key present only in L2. GetOrAddAsync records requests with
     // {outcome=miss,tier=l1} and {outcome=hit,tier=l2}, and the factory does not run.
     [Fact]
     public async Task should_attribute_l1_miss_and_l2_hit_per_tier_when_key_is_only_in_l2()

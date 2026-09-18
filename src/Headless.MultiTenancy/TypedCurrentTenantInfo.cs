@@ -6,7 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Headless.MultiTenancy;
 
 /// <summary>
-/// Opt-in typed leaf accessor exposing an app-defined <see cref="TenantInfo"/> subclass view (R10).
+/// Opt-in typed leaf accessor exposing an app-defined <see cref="TenantInfo"/> subclass view.
 /// The only pipeline surface that carries a type parameter — the store SPI, cache, and outcome types
 /// all stay non-generic per this family's extension-tier design.
 /// </summary>
@@ -28,7 +28,7 @@ public interface ICurrentTenantInfo<T>
 /// Default <see cref="ICurrentTenantInfo{T}"/>: downcasts when the base accessor already returned
 /// <typeparamref name="T"/> (the fast path — happens when this call's resolution was a cache miss and
 /// the store returned the subtype directly), otherwise invokes the app-supplied projection delegate,
-/// which may re-hydrate from the store itself (R13) since the cache only ever holds the base shape.
+/// which may re-hydrate from the store itself since the cache only ever holds the base shape.
 /// </summary>
 internal sealed class TypedCurrentTenantInfo<T>(
     ICurrentTenantInfo baseAccessor,
@@ -62,7 +62,7 @@ public static class SetupTypedCurrentTenantInfo
     {
         /// <summary>
         /// Registers <see cref="ICurrentTenantInfo{T}"/>, backed by the base <see cref="ICurrentTenantInfo"/>
-        /// accessor and the supplied projection delegate (R10).
+        /// accessor and the supplied projection delegate.
         /// </summary>
         /// <typeparam name="T">The app-defined <see cref="TenantInfo"/> subclass.</typeparam>
         /// <param name="projection">

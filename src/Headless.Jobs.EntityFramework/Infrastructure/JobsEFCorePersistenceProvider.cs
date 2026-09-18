@@ -623,7 +623,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             .Database.BeginTransactionAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        // R10: the schedule position moves inside the SAME transition that clears the pause and bumps the revision, so
+        // The schedule position moves inside the SAME transition that clears the pause and bumps the revision, so
         // no window exposes a resumed definition still carrying its pre-pause position — which would read as a backlog
         // spanning the entire pause and hand recovery an interval that was deliberately not running.
         //
@@ -750,7 +750,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                 return null;
             }
 
-            // R10: a schedule-changing edit rebases the position in the same transition that bumps the revision, so the
+            // A schedule-changing edit rebases the position in the same transition that bumps the revision, so the
             // old expression's projection never survives the edit. A metadata-only edit leaves both untouched — the
             // schedule did not move, so neither should the position. The provider stamps its own clock first, then
             // supplies that exact persisted anchor to the occurrence factory before this transaction commits.
@@ -771,7 +771,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                             .SetProperty(x => x.Retries, update.Definition.Retries)
                             .SetProperty(x => x.RetryIntervals, update.Definition.RetryIntervals)
                             .SetProperty(x => x.OnNodeDeath, update.Definition.OnNodeDeath)
-                            // R17: the runtime API is the AUTHORITY for these two. The attribute only seeds them at
+                            // The runtime API is the AUTHORITY for these two. The attribute only seeds them at
                             // creation and is never reapplied, so persisting them here is what makes an operator
                             // override survive restarts. They change recovery semantics and therefore bump the same
                             // revision fence used by recovery, without replacing the schedule occurrence.

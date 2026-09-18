@@ -32,7 +32,7 @@ internal interface IInternalJobManager
     /// <summary>
     /// Renews the running job's lease (#316), dispatching to the time or cron occurrence renew by
     /// <see cref="JobExecutionState.Type"/>. Returns the affected row count: <c>0</c> means the lease was
-    /// lost and the caller should cancel the job (cancel-on-loss, U2); a <b>negative</b> value means coordination
+    /// lost and the caller should cancel the job (cancel-on-loss); a <b>negative</b> value means coordination
     /// membership is not currently established (#461) and the caller should skip the tick rather than cancel.
     /// </summary>
     Task<int> RenewLeaseAsync(JobExecutionState context, CancellationToken cancellationToken = default);
@@ -83,13 +83,13 @@ internal interface IInternalJobManager
     Task<string[]> GetActiveOwnerIdsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Reclaims jobs stuck <c>InProgress</c> whose lease lapsed, independent of node death (#316/U3). Runs on the
+    /// Reclaims jobs stuck <c>InProgress</c> whose lease lapsed, independent of node death (#316). Runs on the
     /// fallback cadence so a job stalled on a still-live node is recovered within ≈ one lease TTL.
     /// </summary>
     Task<int> ReclaimStalledResources(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Reconciles the timed chain descendants of one parent that just reached a terminal state (U5/KTD3): releases the
+    /// Reconciles the timed chain descendants of one parent that just reached a terminal state: releases the
     /// children whose run condition matches (re-stamping a past-due child to the store's now) and skips the rest with
     /// their subtrees, then wakes the scheduler for the earliest released time. Invoked per-parent after a terminal
     /// completion — from the executor and the cancellation path — once the terminal write has committed.

@@ -11,10 +11,10 @@ using Microsoft.Extensions.Options;
 namespace Tests.MultiTenancy;
 
 /// <summary>
-/// Pins the R2 route source behavior in isolation: the string route value named by the option
+/// Pins the route source behavior in isolation: the string route value named by the option
 /// (default <c>tenant</c>) is yielded raw and unchanged, and a missing, non-string, or
 /// whitespace-only value yields <see cref="TenantIdentifierSourceResultKind.None"/>. Also pins the
-/// KTD3 builder registration semantics for <c>AddRouteSource</c>.
+/// builder registration semantics for <c>AddRouteSource</c>.
 /// </summary>
 public sealed class RouteTenantIdentifierSourceTests : TestBase
 {
@@ -44,7 +44,7 @@ public sealed class RouteTenantIdentifierSourceTests : TestBase
     public void should_return_none_for_a_non_string_route_value()
     {
         // A route value of another type (a route default bound to int, a Guid constraint) is not an
-        // identifier — the source must not ToString() it into one (R2).
+        // identifier — the source must not ToString() it into one.
         var source = _CreateSource();
         var context = new DefaultHttpContext();
         context.Request.RouteValues["tenant"] = 42;
@@ -75,7 +75,7 @@ public sealed class RouteTenantIdentifierSourceTests : TestBase
         source.GetIdentifier(context).Should().Be(TenantIdentifierSourceResult.None);
     }
 
-    // --- registration (KTD3: descriptor dedupes, options contributions accumulate) ---
+    // --- registration: descriptor dedupes, options contributions accumulate ---
 
     [Fact]
     public void should_register_one_route_source_descriptor_for_repeat_add_route_source_calls()
@@ -108,8 +108,8 @@ public sealed class RouteTenantIdentifierSourceTests : TestBase
     [Fact]
     public void should_apply_the_last_route_value_name_contribution()
     {
-        // Options contributions accumulate in call order even though the descriptor deduplicates
-        // (KTD3) — for the single-valued name that means the last contribution wins.
+        // Options contributions accumulate in call order even though the descriptor deduplicates —
+        // for the single-valued name that means the last contribution wins.
         var services = new ServiceCollection();
         var builder = new HeadlessTenantCatalogResolutionBuilder(services);
 

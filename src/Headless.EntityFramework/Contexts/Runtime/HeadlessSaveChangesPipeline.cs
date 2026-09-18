@@ -75,7 +75,7 @@ public interface IHeadlessSaveChangesPipeline
 /// entities before message-collection sees the final state.
 /// </para>
 /// <para>
-/// Unit of work (KD13/R11): the unit bound to the context by <c>IUnitOfWorkManager.BeginAsync(db)</c> /
+/// Unit of work: the unit bound to the context by <c>IUnitOfWorkManager.BeginAsync(db)</c> /
 /// <c>Enlist(db, tx)</c> is consulted first and the scope's manager second. A bound unit owned by another
 /// scope's manager (a context created through <c>IDbContextFactory&lt;T&gt;</c> owns its own scope) is adopted
 /// into this scope for the save's duration, so domain-event handlers and the outbox dispatcher resolved here

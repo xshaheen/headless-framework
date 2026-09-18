@@ -24,7 +24,7 @@ namespace Tests;
 public abstract class JobsRecoveryConformanceTests<TFixture>(TFixture fixture) : TestBase
     where TFixture : class, IJobsCoordinationFixture
 {
-    /// <summary>AE1: coalesce over a multi-occurrence outage produces one run reporting the earliest missed instant.</summary>
+    /// <summary>Coalesce over a multi-occurrence outage produces one run reporting the earliest missed instant.</summary>
     public virtual async Task coalesce_materializes_one_run_stamped_with_the_earliest_missed_instant()
     {
         var ct = AbortToken;
@@ -70,7 +70,7 @@ public abstract class JobsRecoveryConformanceTests<TFixture>(TFixture fixture) :
             .BeCloseTo(_RecoveryInstant(seeded), TimeSpan.FromMicroseconds(1), "the backlog is never reconsidered");
     }
 
-    /// <summary>AE2: skip produces no run and still carries the watermark to the recovery instant.</summary>
+    /// <summary>Skip produces no run and still carries the watermark to the recovery instant.</summary>
     public virtual async Task skip_materializes_nothing_and_still_advances_the_watermark()
     {
         var ct = AbortToken;
@@ -153,7 +153,7 @@ public abstract class JobsRecoveryConformanceTests<TFixture>(TFixture fixture) :
     }
 
     /// <summary>
-    /// R18 over an occupied earliest instant: an executing or terminal row at the earliest missed instant accounts
+    /// Over an occupied earliest instant: an executing or terminal row at the earliest missed instant accounts
     /// for that instant only. The rest of the backlog still gets its one run, materialized at the next
     /// unaccounted-for missed instant — not abandoned wholesale.
     /// </summary>
@@ -430,7 +430,7 @@ public abstract class JobsRecoveryConformanceTests<TFixture>(TFixture fixture) :
             UpdatedAt = DateTimeOffset.UtcNow,
         };
 
-    /// <summary>AE9: an occurrence another node is executing is left alone and its instant is not duplicated.</summary>
+    /// <summary>An occurrence another node is executing is left alone and its instant is not duplicated.</summary>
     public virtual async Task recovery_leaves_an_executing_occurrence_untouched()
     {
         var ct = AbortToken;
@@ -498,7 +498,7 @@ public abstract class JobsRecoveryConformanceTests<TFixture>(TFixture fixture) :
         );
         var seeded = await fixture.ReadCronSchedulePositionAsync(cronId, ct);
 
-        // Terminal, so the filtered uniqueness index no longer covers it — only R7 prevents a re-run.
+        // Terminal, so the filtered uniqueness index no longer covers it — only the recovery-side completed-occurrence check prevents a re-run.
         await fixture.SeedCronOccurrenceAsync(
             Guid.NewGuid(),
             cronId,

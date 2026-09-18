@@ -5,7 +5,7 @@ using Headless.Jobs.Enums;
 namespace Headless.Jobs.Internal;
 
 /// <summary>
-/// U5/KTD3 timed-descendant gating rules, extracted from the executor's <c>_ShouldRunChild</c> mapping so the
+/// Timed-descendant gating rules, extracted from the executor's <c>_ShouldRunChild</c> mapping so the
 /// claim gate, the release/skip reconcile, and the in-process executor all decide "does the parent's terminal
 /// state satisfy this child's <see cref="RunCondition"/>?" the same way. Relational providers cannot call these
 /// inside a translated query — they re-express the identical predicate in LINQ/SQL — but the in-memory provider,

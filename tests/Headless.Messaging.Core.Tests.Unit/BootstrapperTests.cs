@@ -422,7 +422,7 @@ public sealed class BootstrapperTests : TestBase
     [Fact]
     public async Task should_not_fall_back_to_floor_only_when_storage_lock_disabled_but_membership_is_real()
     {
-        // Recovery is always-on (KTD3): with a real INodeMembership the DeadOwnerRecoveryBridge reclaims
+        // Recovery is always-on: with a real INodeMembership the DeadOwnerRecoveryBridge reclaims
         // dead owners regardless of UseStorageLock, so the bootstrapper must neither warn that recovery is
         // disabled (the removed EventId 92) nor emit the floor-only fallback info (EventId 88).
         var captured = new List<(LogLevel Level, EventId EventId)>();

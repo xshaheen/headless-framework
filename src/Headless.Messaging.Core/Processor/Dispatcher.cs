@@ -667,7 +667,7 @@ internal sealed class Dispatcher
     private void _StartSendingTask()
     {
         // Fire-and-forget the sending loop on the thread pool, but attach a fault continuation so
-        // unobserved exceptions surface in logs AND signal host shutdown (R2). Using `async Task`
+        // unobserved exceptions surface in logs AND signal host shutdown. Using `async Task`
         // (changed from `async ValueTask`) ensures Task.Run picks the unwrapping overload, so the
         // returned Task tracks the loop's lifetime rather than completing the moment the ValueTask
         // struct is returned.
@@ -687,7 +687,7 @@ internal sealed class Dispatcher
 
     private void _StartProcessingTasks()
     {
-        // Fire-and-forget per-thread processing loops; faults are signalled to the host (R2)
+        // Fire-and-forget per-thread processing loops; faults are signalled to the host
         // via _SignalLoopTermination. A dead processing loop would leave ReceivedChannel filling
         // and EnqueueToExecute would block forever, masking the failure from the host.
         _processingTasks =

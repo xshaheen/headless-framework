@@ -12,7 +12,7 @@ namespace Headless.Jobs.Internal;
 internal static class TimeJobSubtreeOperations
 {
     /// <summary>
-    /// KTD2: keeps only the descendants the claim actually leased. The claimed set is prefix-closed (a node is claimed
+    /// Keeps only the descendants the claim actually leased. The claimed set is prefix-closed (a node is claimed
     /// only after its parent chain was), so pruning the hydrated tree to it yields exactly the executable subtree — a
     /// node below a non-idle frontier the claim stopped at (terminalized/running) is dropped rather than executed
     /// unclaimed.

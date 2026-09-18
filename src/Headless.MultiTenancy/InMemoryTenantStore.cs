@@ -9,7 +9,7 @@ namespace Headless.MultiTenancy;
 /// <summary>
 /// In-memory <see cref="ITenantStore"/> for tests and small apps, seeded at construction from
 /// <see cref="InMemoryTenantStoreOptions"/>. Normalizes and validates seed identifiers eagerly:
-/// two seeds whose identifiers normalize to the same value throw immediately (R20), so a
+/// two seeds whose identifiers normalize to the same value throw immediately, so a
 /// misconfigured seed set fails fast rather than surfacing as a silent duplicate.
 /// </summary>
 internal sealed class InMemoryTenantStore : ITenantStore, ITenantDirectory

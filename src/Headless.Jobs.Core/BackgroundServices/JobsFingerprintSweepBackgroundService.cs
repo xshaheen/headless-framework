@@ -14,7 +14,7 @@ namespace Headless.Jobs.BackgroundServices;
 /// string stay byte-identical.
 /// </summary>
 /// <remarks>
-/// <b>Its own service rather than a branch in the scheduler loop (KTD7).</b> It selects on the exact OPPOSITE
+/// <b>Its own service rather than a branch in the scheduler loop.</b> It selects on the exact OPPOSITE
 /// criterion from dispatch: a rule change that moves an occurrence <i>earlier</i> is hidden behind the stale later
 /// projection, so a sweep keyed on due-ness would systematically skip the definitions that most need rebasing. Two
 /// opposed selection criteria in one loop is how one of them ends up quietly subordinated to the other.

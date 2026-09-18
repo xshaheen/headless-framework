@@ -107,7 +107,7 @@ internal sealed class JobsExecutionTaskHandler
         }
         else
         {
-            // KTD8: persisted chains may carry more than the two children the typed builder authors (and R12's deeper
+            // Persisted chains may carry more than the two children the typed builder authors (and the deeper
             // hydration now reaches nodes the old two-level cap never surfaced as executing parents), so the sibling
             // buffers are lists rather than the old fixed 5/6-slot arrays that overflowed past that count.
             var tasksToRunNow = new List<Task>(context.TimeJobChildren.Count + 1);
@@ -132,7 +132,7 @@ internal sealed class JobsExecutionTaskHandler
             // Wait for concurrent tasks (parent + InProgress children)
             await Task.WhenAll(tasksToRunNow).ConfigureAwait(false);
 
-            // KTD7: process deferred children ONLY when the parent reached a genuine terminal status. A parent that lost
+            // Process deferred children ONLY when the parent reached a genuine terminal status. A parent that lost
             // its lease (or hit host shutdown, or was fenced out of completion) returns from _RunContextFunctionAsync
             // WITHOUT a terminal status — the row is left InProgress for the stalled-reclaim sweep. Evaluating children
             // against that non-terminal status would wrongly Skip every OnSuccess/OnFailure child while the parent is
@@ -179,7 +179,7 @@ internal sealed class JobsExecutionTaskHandler
             }
         }
 
-        // U5/KTD3: once the parent's terminal write has COMMITTED and is unfenced (LeaseLost guards a reclaimed row),
+        // Once the parent's terminal write has COMMITTED and is unfenced (LeaseLost guards a reclaimed row),
         // reconcile its TIMED children — excluded from the in-tree hydration and claimed independently — so a matching
         // one is released (past-due re-stamped, scheduler woken) and a non-matching one is skipped with its subtree.
         // Runs AFTER the non-timed deferred children above and is best-effort: the reconcile is a recoverable
@@ -203,7 +203,7 @@ internal sealed class JobsExecutionTaskHandler
         }
     }
 
-    // KTD7: a parent may drive child processing only when it reached a real terminal status. A lease-lost / host-stop /
+    // A parent may drive child processing only when it reached a real terminal status. A lease-lost / host-stop /
     // fenced-out parent returns with the row still non-terminal (InProgress) for the reclaim sweep; treating that as a
     // terminal state would wrongly Skip its whole subtree. LeaseLost is the transient runtime flag the renewal loop
     // raises on loss; a lease-lost row never carries a terminal status, but the flag is checked explicitly for clarity.
@@ -299,7 +299,7 @@ internal sealed class JobsExecutionTaskHandler
 
         // #316 sliding lease: renew this job's lease on a cadence for the whole execution (every retry attempt and
         // backoff wait). A renewal affecting 0 rows means the lease was lost (reclaimed / owner changed /
-        // terminalized); the loop then cancels cancellationTokenSource, cancelling the running job (U1/U2/KTD3).
+        // terminalized); the loop then cancels cancellationTokenSource, cancelling the running job.
         using var renewalCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var renewalTask = _RenewLeaseLoopAsync(context, cancellationRegistration, renewalCts.Token);
         var renewalStopped = false;
@@ -546,7 +546,7 @@ internal sealed class JobsExecutionTaskHandler
                 }
                 else
                 {
-                    // KTD7: fenced terminal write — leave children for reclaim, not local processing.
+                    // Fenced terminal write — leave children for reclaim, not local processing.
                     context.LeaseLost = true;
                 }
 
@@ -685,7 +685,7 @@ internal sealed class JobsExecutionTaskHandler
                         .ConfigureAwait(false);
                     if (cancelAffected == 0)
                     {
-                        // KTD7: fenced terminal write — this Cancelled status was not persisted (the row was
+                        // Fenced terminal write — this Cancelled status was not persisted (the row was
                         // reclaimed). Flag lease loss so the child-processing guard leaves children for reclaim.
                         context.LeaseLost = true;
                     }
@@ -731,7 +731,7 @@ internal sealed class JobsExecutionTaskHandler
                     .ConfigureAwait(false);
                 if (terminateAffected == 0)
                 {
-                    // KTD7: fenced terminal write — this terminal status was not persisted (the row was reclaimed).
+                    // Fenced terminal write — this terminal status was not persisted (the row was reclaimed).
                     // Flag lease loss so the child-processing guard leaves children for reclaim.
                     context.LeaseLost = true;
                 }
@@ -793,7 +793,7 @@ internal sealed class JobsExecutionTaskHandler
                     // double-run that MarkFailed/Skip exist to prevent.
                     _logger.LogJobCompletionFencedAfterSuccess(context.JobId, context.FunctionName);
 
-                    // KTD7: this Succeeded status was never persisted (the durable row is the sweep's, possibly
+                    // This Succeeded status was never persisted (the durable row is the sweep's, possibly
                     // contradictory, terminal). Flag lease loss so the child-processing guard leaves children for
                     // reclaim instead of running them from state that never reached the store.
                     context.LeaseLost = true;
@@ -843,7 +843,7 @@ internal sealed class JobsExecutionTaskHandler
                 }
                 else
                 {
-                    // KTD7: fenced terminal write — this Failed status was not persisted (the row was reclaimed).
+                    // Fenced terminal write — this Failed status was not persisted (the row was reclaimed).
                     // Flag lease loss so the child-processing guard leaves children for reclaim.
                     context.LeaseLost = true;
                 }
@@ -1108,7 +1108,7 @@ internal sealed class JobsExecutionTaskHandler
         CancellationToken renewalLoopToken
     )
     {
-        // #316 sliding-lease renewal loop (U1 renewal + U2 cancel-on-loss). Runs concurrently with the job for its
+        // #316 sliding-lease renewal loop (renews the lease and cancels on loss). Runs concurrently with the job for its
         // whole execution and stops when renewalLoopToken is cancelled by StopRenewalAsync on completion.
         // The lease was freshly stamped when the job was claimed (≈ loop start), so seed the last-confirmed time here:
         // it bounds how long a membership blip may be tolerated before the lease has certainly lapsed (#461).
@@ -1209,7 +1209,7 @@ internal sealed class JobsExecutionTaskHandler
             // Renewal write failed (DB unreachable / transient error). The two preceding catches already consume every
             // OperationCanceledException, so only non-OCE exceptions reach here. We can no longer vouch for the lease —
             // treat it as lost so OnNodeDeath governs correctness (Retry re-runs, MarkFailed/Skip stay terminal). Log
-            // at Warning so a DB-error renewal loss is observable and distinguishable from a programming bug (#463/R2).
+            // at Warning so a DB-error renewal loss is observable and distinguishable from a programming bug (#463).
             _logger.LogJobLeaseRenewalFailed(exception, context.JobId, context.FunctionName);
             return RenewalOutcome.Lost;
         }

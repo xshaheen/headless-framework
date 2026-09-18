@@ -13,7 +13,7 @@ namespace Tests.Diagnostics;
 /// <summary>
 /// Tests for the messaging instrumentation registration surface: built-in enrichers, the
 /// <see cref="MessagingInstrumentationOptions"/> composition/suppression toggles, and the typed
-/// <c>AddMessagingInstrumentation()</c> helpers on the OpenTelemetry provider builders (AE4).
+/// <c>AddMessagingInstrumentation()</c> helpers on the OpenTelemetry provider builders.
 /// </summary>
 public sealed class MessagingInstrumentationTests : TestBase
 {
@@ -148,7 +148,7 @@ public sealed class MessagingInstrumentationTests : TestBase
         options.IncludeTenantIdInMetricTags.Should().BeTrue();
     }
 
-    // --- AE4: typed registration helpers --------------------------------------------------------------------
+    // --- Typed registration helpers --------------------------------------------------------------------
 
     [Fact]
     public void should_expose_headless_messaging_source_name()

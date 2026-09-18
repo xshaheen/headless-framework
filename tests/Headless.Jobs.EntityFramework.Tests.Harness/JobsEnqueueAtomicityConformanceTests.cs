@@ -18,23 +18,23 @@ namespace Tests;
 
 /// <summary>
 /// Cross-provider conformance for atomic job enqueue via commit coordination (separate from the distributed-lock
-/// coordination suite in <c>JobsCoordinationConformanceTests</c>). Proves the EF coordinated-write seam (U2) and the
-/// manager routing (U3/U4) hold identically on every relational backend:
+/// coordination suite in <c>JobsCoordinationConformanceTests</c>). Proves the EF coordinated-write seam and the
+/// manager routing hold identically on every relational backend:
 /// <list type="bullet">
-/// <item>AE1 — a domain write + <c>AddAsync</c> in one enlisted transaction commit together.</item>
-/// <item>AE1 (rollback) — they discard together; the AsyncLocal-capture regression net (a stranded capture would
+/// <item>A domain write + <c>AddAsync</c> in one enlisted transaction commit together.</item>
+/// <item>Rollback — they discard together; the AsyncLocal-capture regression net (a stranded capture would
 /// take the direct path and auto-commit the row, leaving it after the coordinated rollback).</item>
-/// <item>AE2 — two enqueues in one scope both commit.</item>
-/// <item>AE4 — no coordinator → <c>AddAsync</c> inserts directly.</item>
-/// <item>R5 — <c>AddBatchAsync</c> commits / rolls back atomically with the caller's transaction.</item>
-/// <item>R6 — cron <c>AddAsync</c> commits / rolls back atomically.</item>
-/// <item>R13 — <c>IJobScheduler</c> preserves enlisted writes and deferred scheduler wake-ups.</item>
+/// <item>Two enqueues in one scope both commit.</item>
+/// <item>No coordinator → <c>AddAsync</c> inserts directly.</item>
+/// <item><c>AddBatchAsync</c> commits / rolls back atomically with the caller's transaction.</item>
+/// <item>Cron <c>AddAsync</c> commits / rolls back atomically.</item>
+/// <item><c>IJobScheduler</c> preserves enlisted writes and deferred scheduler wake-ups.</item>
 /// <item>Capstone — domain write + outbox publish + job enqueue commit or roll back as one unit.</item>
 /// </list>
 /// Each leaf derives a sealed class with <c>[Collection&lt;TFixture&gt;]</c> and re-declares the methods with
 /// <c>[Fact]</c> so the runner discovers them per provider.
 /// <para>
-/// AE3's fail-loud modes (dead-transaction throw; non-relational fallback) are intentionally <b>not</b> covered
+/// The fail-loud modes (dead-transaction throw; non-relational fallback) are intentionally <b>not</b> covered
 /// here: the real EF/Postgres/SqlServer enlist always captures a non-null transaction and always exposes
 /// <c>IRelationalUnitOfWorkResource</c>, so neither state can arise through the production manager. Reproducing them
 /// would require injecting a fake relational context into a real host, which just relocates the unit test with no
@@ -343,7 +343,7 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
     }
 
     // Two independent AddAsync calls co-commit atomically (count == 2). Cross-call ordering is caller-determined, not
-    // an R3 guarantee; R3 (insertion order within one write) is asserted at the unit level on the seam array.
+    // a guarantee of this seam; insertion order within one write is asserted at the unit level on the seam array.
     public virtual async Task two_enqueues_in_one_scope_both_commit()
     {
         var ct = AbortToken;
@@ -370,7 +370,7 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
         }
     }
 
-    // R5: a batched AddBatchAsync writes every row inside the caller's transaction and commits with it.
+    // A batched AddBatchAsync writes every row inside the caller's transaction and commits with it.
     public virtual async Task batch_enqueue_commits_atomically()
     {
         var ct = AbortToken;
@@ -397,7 +397,7 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
         }
     }
 
-    // R5 (rollback): the whole batch discards with the caller's transaction — no partial commit, no stranded rows.
+    // Rollback: the whole batch discards with the caller's transaction — no partial commit, no stranded rows.
     public virtual async Task batch_enqueue_rolls_back()
     {
         var ct = AbortToken;
@@ -513,7 +513,7 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
         }
     }
 
-    // R6 (batch rollback): the whole cron batch discards with the caller's transaction — no partial commit, no stranded rows.
+    // Batch rollback: the whole cron batch discards with the caller's transaction — no partial commit, no stranded rows.
     public virtual async Task cron_batch_enqueue_rolls_back()
     {
         var ct = AbortToken;

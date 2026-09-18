@@ -28,7 +28,7 @@ namespace Tests;
 
 /// <summary>
 /// Covers the posture contract between catalog identifier resolution and
-/// <c>UseStatusCodesRewriter()</c>: the rewriter is what collapses the R19 authorization-tier mismatch
+/// <c>UseStatusCodesRewriter()</c>: the rewriter is what collapses the authorization-tier claim mismatch
 /// into the generic tenant rejection, so a host that omits it — or registers it downstream of
 /// <c>UseAuthorization()</c>, where the short-circuited evaluation never reaches it — keeps the tenant
 /// enumeration oracle the byte-identical rejection exists to close.
@@ -66,10 +66,10 @@ public sealed class TenantCatalogRewriterPostureTests : TestBase
     }
 
     [Fact]
-    public async Task should_leave_the_r19_mismatch_distinguishable_from_an_unknown_tenant_when_the_rewriter_runs_after_authorization()
+    public async Task should_leave_the_mismatch_distinguishable_from_an_unknown_tenant_when_the_rewriter_runs_after_authorization()
     {
         // A rewriter registered downstream of UseAuthorization() never observes the failed evaluation:
-        // authorization short-circuits before calling next. The R19 mismatch therefore surfaces as the bare
+        // authorization short-circuits before calling next. The claim mismatch therefore surfaces as the bare
         // forbid the scheme produced, while an unknown identifier still gets the generic 404 rejection the
         // resolution middleware writes itself — the two rejections stay distinguishable by status code
         // alone, which is the enumeration oracle. This asserts the exposure as it exists today.
@@ -97,10 +97,10 @@ public sealed class TenantCatalogRewriterPostureTests : TestBase
     }
 
     [Fact]
-    public async Task should_keep_the_r19_mismatch_byte_identical_to_an_unknown_tenant_when_the_rewriter_wraps_authorization()
+    public async Task should_keep_the_mismatch_byte_identical_to_an_unknown_tenant_when_the_rewriter_wraps_authorization()
     {
         // The correctly ordered counterpart, so the assertion above reads as a defect of placement rather
-        // than of the R19 design.
+        // than of the rewriter-ordering design.
         await using var app = _CreateApp(RewriterPlacement.WrappingAuthorization);
         await app.StartAsync(AbortToken);
         using var client = HttpTenancyTestHarness.CreateClient(app);
@@ -167,7 +167,7 @@ public sealed class TenantCatalogRewriterPostureTests : TestBase
         });
 
         // The default scheme deliberately never sees a tenant claim (it reads a header these tests do not
-        // send), so the pre-auth R19 tier finds nothing to compare and the mismatch can only surface
+        // send), so the pre-auth claim-integrity tier finds nothing to compare and the mismatch can only surface
         // through TenantIdentifierIntegrityHandler during authorization — the tier the rewriter serves.
         builder.Services.AddTestAuthentication(registerForbidScheme: true);
         builder

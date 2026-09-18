@@ -6,9 +6,9 @@ using Headless.Constants;
 namespace Headless.MultiTenancy;
 
 /// <summary>
-/// Seed data for the configuration-backed <see cref="ITenantStore"/> (R16), typically bound from a
-/// section such as <c>Headless:MultiTenancy:Tenants</c>. Bound once via the options system at startup
-/// (KTD7): a configuration change after startup does not affect already-resolved tenants — reload
+/// Seed data for the configuration-backed <see cref="ITenantStore"/>, typically bound from a
+/// section such as <c>Headless:MultiTenancy:Tenants</c>. Bound once via the options system at startup:
+/// a configuration change after startup does not affect already-resolved tenants — reload
 /// requires a process restart.
 /// </summary>
 [PublicAPI]
@@ -16,7 +16,7 @@ public sealed class ConfigurationTenantStoreOptions
 {
     /// <summary>
     /// The seeded tenants. Identifiers are normalized (trimmed, lowercased) by the store at startup;
-    /// two seeds whose identifiers normalize to the same value fail startup (R20).
+    /// two seeds whose identifiers normalize to the same value fail startup.
     /// </summary>
     public IList<ConfigurationTenantSeed> Tenants { get; set; } = [];
 }
@@ -25,8 +25,8 @@ public sealed class ConfigurationTenantStoreOptions
 /// A single tenant seed as bound from configuration. A plain, publicly settable shape — rather than
 /// binding <see cref="TenantInfo"/> directly — because <see cref="TenantInfo"/> exposes no
 /// parameterless constructor for the options binder to target. <see cref="ConfigurationTenantStore"/>
-/// converts each bound seed into a <see cref="TenantInfo"/> through its normal validating constructor
-/// (R16: the domain type itself is never constructed through uninitialized-object reflection).
+/// converts each bound seed into a <see cref="TenantInfo"/> through its normal validating constructor —
+/// the domain type itself is never constructed through uninitialized-object reflection.
 /// </summary>
 [PublicAPI]
 public sealed class ConfigurationTenantSeed
@@ -58,8 +58,8 @@ internal sealed class ConfigurationTenantStoreOptionsValidator : AbstractValidat
 {
     // Mirrors TenantCatalogOptions' compiled defaults (MaxIdentifierLength = 63, IdentifierPattern =
     // RegexPatterns.Slug). A seed whose identifier cannot match the framework's default shape could
-    // never be reached by identifier-based resolution (R21 rejects the raw input before any store
-    // lookup), so rejecting it at startup surfaces the dead configuration immediately instead of
+    // never be reached by identifier-based resolution (the default resolution pipeline rejects the raw
+    // input before any store lookup), so rejecting it at startup surfaces the dead configuration immediately instead of
     // silently shipping an unreachable tenant. Apps that configure a custom TenantCatalogOptions
     // shape are responsible for keeping their seed identifiers compatible with it — this store does
     // not cross-reference that option in v1.
@@ -94,7 +94,7 @@ internal sealed class ConfigurationTenantStoreOptionsValidator : AbstractValidat
 
     private const string _DuplicateIdentifierMessage =
         "Two or more seeded tenants normalize to the same identifier. "
-        + "Headless.MultiTenancy configuration store requires unique normalized identifiers (R20).";
+        + "Headless.MultiTenancy configuration store requires unique normalized identifiers.";
 
     private const string _DuplicateIdMessage =
         "Two or more seeded tenants share the same canonical tenant id. "

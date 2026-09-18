@@ -2753,7 +2753,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         after.Content.Should().Be(beforeDeferral!.Content);
     }
 
-    // Pins AE4 / R14 (batch fairness, issue #808): once a full leading batch is deferred, the next
+    // Batch fairness (issue #808): once a full leading batch is deferred, the next
     // pickup must reach a due healthy row instead of reclaiming the same head rows. Storage has no
     // notion of circuit state, so an earlier-due leading batch stands in for the open-circuit group.
     public virtual async Task should_reach_healthy_row_after_deferring_a_full_leading_open_batch()
@@ -3152,7 +3152,7 @@ public abstract partial class DataStorageTestsBase : TestBase
 
     public virtual async Task should_not_reclaim_dead_owner_rows_with_expired_lease()
     {
-        // AE4: the LockedUntil floor — a dead owner's row whose lease has already expired is left
+        // The LockedUntil floor — a dead owner's row whose lease has already expired is left
         // untouched by reclaim (the `LockedUntil > now` clause excludes it); normal lease-expiry
         // pickup recovers it. Reclaim only fast-forwards leases still in the future.
         var storage = GetStorage();
@@ -3393,7 +3393,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         // creates a Failed/NULL row, so subsequent storm writes hit the terminal guard and
         // return false. We assert the row-count invariant and that exception info matches one
         // of the contributors — see the comment in the InMemory provider on upsert semantics).
-        // R10 — pre-warm the thread pool so a CI box with a low default min-thread count does not
+        // Pre-warm the thread pool so a CI box with a low default min-thread count does not
         // starve the workers and produce a false-failure "lock starvation suspected" within the
         // 30s wall-clock budget. Without this, 64 Task.Run callbacks can sit in the global queue
         // for seconds before the threadpool grows.
@@ -3463,7 +3463,7 @@ public abstract partial class DataStorageTestsBase : TestBase
 
     public virtual async Task should_handle_concurrent_first_insert_storm_with_null_and_non_null_group()
     {
-        // R1 regression — guards against the F8-redux duplicate-row bug on the
+        // Guards against the F8-redux duplicate-row bug on the
         // StoreReceivedExceptionMessageAsync path. Two parallel storms exercise both halves of the
         // upsert identity:
         //   - NULL Group: a plain ("MessageId","Group") unique index treats NULLs as distinct, so
@@ -3563,8 +3563,8 @@ public abstract partial class DataStorageTestsBase : TestBase
 
     public virtual async Task should_handle_concurrent_store_received_message_with_same_identity()
     {
-        // R3 regression — StoreReceivedMessageAsync (the non-exception path) must also serialize
-        // through the same identity check that StoreReceivedExceptionMessageAsync uses. Before R3
+        // StoreReceivedMessageAsync (the non-exception path) must also serialize
+        // through the same identity check that StoreReceivedExceptionMessageAsync uses. Previously
         // the InMemory provider's non-exception path performed an unconditional insert + index
         // overwrite, so two concurrent calls with the same (Version, MessageId, Group) produced
         // duplicate rows that both showed up in GetReceivedMessagesOfNeedRetryAsync — running the

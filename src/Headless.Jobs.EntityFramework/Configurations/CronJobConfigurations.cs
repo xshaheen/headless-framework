@@ -87,7 +87,7 @@ public class CronJobConfigurations<TCronJob>(
         // pickup never filters by tenant.
         builder.Property(e => e.TenantId).IsRequired(false).HasMaxLength(JobsTenancyOptions.TenantIdMaxLength);
 
-        // Transient schedule-time authorization flag (KTD2): never a column.
+        // Transient schedule-time authorization flag: never a column.
         builder.Ignore(e => e.IsSystemJob);
 
         // Transient per-call atomic-enlistment requirement: call intent, not definition payload, so never a column

@@ -26,13 +26,13 @@ public sealed class CronRecoveryPolicyProviderTests : TestBase
     private const string _Owner = "node-a@incarnation";
     private static readonly DateTimeOffset _Now = new(2026, 7, 26, 17, 30, 0, TimeSpan.Zero);
 
-    // An hourly definition reconciled through 14:00, recovered at 17:30 — the plan's outage shape.
+    // An hourly definition reconciled through 14:00, recovered at 17:30.
     private static readonly DateTime _Watermark = new(2026, 7, 26, 14, 00, 0, DateTimeKind.Utc);
     private static readonly DateTime _EarliestMissed = new(2026, 7, 26, 15, 00, 0, DateTimeKind.Utc);
     private static readonly DateTime _SecondMissed = new(2026, 7, 26, 16, 00, 0, DateTimeKind.Utc);
     private static readonly DateTime _RecoveredThrough = _Now.UtcDateTime;
 
-    /// <summary>AE1: coalesce over a multi-occurrence outage produces ONE run reporting the earliest missed instant.</summary>
+    /// <summary>Coalesce over a multi-occurrence outage produces ONE run reporting the earliest missed instant.</summary>
     [Fact]
     public async Task should_materialize_exactly_one_run_reporting_the_earliest_missed_instant()
     {
@@ -62,7 +62,7 @@ public sealed class CronRecoveryPolicyProviderTests : TestBase
         stored!.ReconciledThroughUtc.Should().Be(_RecoveredThrough, "the backlog it resolved is never reconsidered");
     }
 
-    /// <summary>AE2: skip over the same outage produces no run and still advances the watermark.</summary>
+    /// <summary>Skip over the same outage produces no run and still advances the watermark.</summary>
     [Fact]
     public async Task should_materialize_nothing_under_skip_and_still_advance_the_watermark()
     {
@@ -83,7 +83,7 @@ public sealed class CronRecoveryPolicyProviderTests : TestBase
         stored.NextDueUtc.Should().BeAfter(_RecoveredThrough);
     }
 
-    /// <summary>AE8: skip transitions an unowned pre-existing occurrence to skipped instead of executing it.</summary>
+    /// <summary>Skip transitions an unowned pre-existing occurrence to skipped instead of executing it.</summary>
     [Fact]
     public async Task should_skip_a_pre_existing_unowned_occurrence_rather_than_execute_it()
     {
@@ -103,7 +103,7 @@ public sealed class CronRecoveryPolicyProviderTests : TestBase
         stored.OwnerId.Should().BeNull();
     }
 
-    /// <summary>AE15: a queued occurrence repurposed by coalesce has its ownership revoked and carries the stamp.</summary>
+    /// <summary>A queued occurrence repurposed by coalesce has its ownership revoked and carries the stamp.</summary>
     [Fact]
     public async Task should_repurpose_a_queued_occurrence_and_revoke_its_ownership()
     {
@@ -132,7 +132,7 @@ public sealed class CronRecoveryPolicyProviderTests : TestBase
         stored.Status.Should().Be(JobStatus.Idle, "released for re-claim rather than left queued to its old owner");
     }
 
-    /// <summary>AE9: an occurrence another node is executing is left alone and not duplicated.</summary>
+    /// <summary>An occurrence another node is executing is left alone and not duplicated.</summary>
     [Fact]
     public async Task should_leave_an_executing_occurrence_alone_and_not_duplicate_its_instant()
     {
@@ -285,7 +285,7 @@ public sealed class CronRecoveryPolicyProviderTests : TestBase
         };
 
     /// <summary>
-    /// R18 over an occupied earliest instant: an executing or terminal row at the earliest missed instant accounts
+    /// Over an occupied earliest instant: an executing or terminal row at the earliest missed instant accounts
     /// for that instant only. The rest of the backlog still gets its one run, materialized at the next
     /// unaccounted-for missed instant — not abandoned wholesale.
     /// </summary>

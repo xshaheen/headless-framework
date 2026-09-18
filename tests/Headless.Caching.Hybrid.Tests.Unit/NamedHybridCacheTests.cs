@@ -22,7 +22,7 @@ public sealed class NamedHybridCacheTests : TestBase
         services.AddSingleton<TimeProvider>(_timeProvider);
         services.AddLogging();
         // HybridCache's DI factory builds its own unit-less IBus over the singleton MessagePublisher
-        // core (KD5); a real in-memory transport is the lightest way to make that resolvable. Direct
+        // core; a real in-memory transport is the lightest way to make that resolvable. Direct
         // delivery (the only mode HybridCache uses) needs a transport but no storage provider, so
         // startup validation — which runs on host start, never triggered here — would not gate this anyway.
         services.AddHeadlessMessaging(setup => setup.UseInMemory());

@@ -95,7 +95,7 @@ internal sealed class FileSystemBlobStorage : IBlobStorage
             Options = FileOptions.Asynchronous,
         };
 
-        // Content-first write order (KTD6): close the content file before writing the sidecar so a crash between
+        // Content-first write order: close the content file before writing the sidecar so a crash between
         // the two leaves a blob with no sidecar (reads back as no metadata) rather than an orphan sidecar.
         var fileStream = new FileStream(fullPath, streamOptions);
 
@@ -349,7 +349,7 @@ internal sealed class FileSystemBlobStorage : IBlobStorage
             return true;
         }
 
-        // Non-atomic copy-then-delete; the sidecar moves with the blob (KTD6/KTD7). The shared helper owns
+        // Non-atomic copy-then-delete; the sidecar moves with the blob. The shared helper owns
         // reject-occupied and the rollback rule: the source delete is two-step (blob file, then sidecar), so a
         // sidecar-second fault can leave the source blob already gone — the destination copy is rolled back only
         // when the source blob is confirmed intact (see MoveViaCopyThenDeleteAsync).
@@ -617,7 +617,7 @@ internal sealed class FileSystemBlobStorage : IBlobStorage
         }
         catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException)
         {
-            // A missing sidecar reads back as no metadata, not an error (KTD6).
+            // A missing sidecar reads back as no metadata, not an error.
             return null;
         }
 

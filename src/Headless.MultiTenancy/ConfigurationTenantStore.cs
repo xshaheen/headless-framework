@@ -8,11 +8,11 @@ namespace Headless.MultiTenancy;
 
 /// <summary>
 /// Configuration-backed <see cref="ITenantStore"/>, bound once at startup from
-/// <see cref="ConfigurationTenantStoreOptions"/> via the options system (R16). The bound
+/// <see cref="ConfigurationTenantStoreOptions"/> via the options system. The bound
 /// <see cref="IOptions{TOptions}"/> snapshot is captured once and never re-read: a configuration
-/// change after startup requires a process restart to take effect — there is no change-token refresh
-/// (KTD7). Normalizes and validates seed identifiers eagerly, mirroring <see cref="InMemoryTenantStore"/>:
-/// two seeds whose identifiers normalize to the same value throw immediately (R20).
+/// change after startup requires a process restart to take effect — there is no change-token refresh.
+/// Normalizes and validates seed identifiers eagerly, mirroring <see cref="InMemoryTenantStore"/>:
+/// two seeds whose identifiers normalize to the same value throw immediately.
 /// </summary>
 internal sealed class ConfigurationTenantStore : ITenantStore, ITenantDirectory
 {
@@ -44,7 +44,7 @@ internal sealed class ConfigurationTenantStore : ITenantStore, ITenantDirectory
                 extraProperties[key] = value;
             }
 
-            // Normal construction through TenantInfo's own validating constructor (R16) — the options
+            // Normal construction through TenantInfo's own validating constructor — the options
             // binder only ever produces the plain ConfigurationTenantSeed shape; the domain type itself
             // is never constructed through reflection over an uninitialized instance.
             var tenant = new TenantInfo(seed.Id, normalizedIdentifier, seed.Name, seed.IsEnabled)

@@ -187,7 +187,7 @@ internal sealed class MessagePublisher(
         }
 
         // A storage with no resolver can join nothing. A resource-less unit then behaves like no unit at all
-        // (KD7) rather than as an incompatible one, so WhenAvailable still writes a standalone durable row.
+        // rather than as an incompatible one, so WhenAvailable still writes a standalone durable row.
         return unitOfWork.Resource is null
             ? DeliveryCoordination.None
             : DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.MissingRelationalCapability);

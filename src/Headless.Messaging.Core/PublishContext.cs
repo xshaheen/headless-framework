@@ -99,7 +99,7 @@ public abstract class PublishContext
     /// Must not be called after the <c>next()</c> delegate has returned.
     /// </summary>
     /// <param name="cancellationToken">The replacement cancellation token.</param>
-    /// <exception cref="InvalidOperationException">Thrown when called after the publish pipeline has completed (R10).</exception>
+    /// <exception cref="InvalidOperationException">Thrown when called after the publish pipeline has completed.</exception>
     public void SetCancellationToken(CancellationToken cancellationToken)
     {
         ThrowIfCompleted();
@@ -112,7 +112,7 @@ public abstract class PublishContext
     /// Must not be called after the <c>next()</c> delegate has returned.
     /// </summary>
     /// <param name="options">The replacement options, or <see langword="null"/> to clear all option overrides.</param>
-    /// <exception cref="InvalidOperationException">Thrown when called after the publish pipeline has completed (R10).</exception>
+    /// <exception cref="InvalidOperationException">Thrown when called after the publish pipeline has completed.</exception>
     public void WithOptions(MessageOptions? options)
     {
         ThrowIfCompleted();
@@ -169,7 +169,7 @@ public abstract class PublishContext
     {
         if (IsCompleted)
         {
-            throw new InvalidOperationException("PublishContext is read-only after next() returned (R10).");
+            throw new InvalidOperationException("PublishContext is read-only after next() returned.");
         }
     }
 }

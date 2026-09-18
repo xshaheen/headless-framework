@@ -14,7 +14,7 @@ namespace Headless.Api.Middlewares;
 
 /// <summary>Resolves the current tenant from the authenticated principal for the lifetime of the HTTP request.</summary>
 /// <remarks>
-/// The R19 mismatch dependencies (<see cref="IProblemDetailsCreator"/>, <see cref="TenantCatalogOptions"/>)
+/// The identifier/claim mismatch dependencies (<see cref="IProblemDetailsCreator"/>, <see cref="TenantCatalogOptions"/>)
 /// are deliberately resolved from <see cref="HttpContext.RequestServices"/> inside the mismatch branch
 /// rather than taken as constructor parameters — this middleware is usable standalone (claim resolution
 /// with no catalog and no <c>Headless.Api.Core</c> base infrastructure registered), and a hard
@@ -63,11 +63,11 @@ internal sealed partial class TenantResolutionMiddleware(
             return;
         }
 
-        // R19 fast path: when catalog identifier resolution already ran for this request, the claim
-        // must canonicalize to the same tenant. Compared against the preserved request feature — never
-        // against ambient ICurrentTenant.Id, which this middleware's own Change() below would otherwise
-        // have overwritten by the time a later check ran. The authoritative check is the post-authorization
-        // TenantIdentifierIntegrityHandler (KTD2); this is a fast-path short-circuit only.
+        // Identifier/claim mismatch fast path: when catalog identifier resolution already ran for this
+        // request, the claim must canonicalize to the same tenant. Compared against the preserved request
+        // feature — never against ambient ICurrentTenant.Id, which this middleware's own Change() below
+        // would otherwise have overwritten by the time a later check ran. The authoritative check is the
+        // post-authorization TenantIdentifierIntegrityHandler; this is a fast-path short-circuit only.
         var resolvedFeature = context.Features.Get<TenantIdentifierResolvedFeature>();
 
         if (resolvedFeature is not null && !string.Equals(resolvedFeature.TenantId, tenantId, StringComparison.Ordinal))
@@ -86,7 +86,7 @@ internal sealed partial class TenantResolutionMiddleware(
             // The claim agrees with the catalog-resolved identifier — the mismatch branch above returned
             // otherwise — and TenantCatalogResolutionMiddleware already opened Change(tenant.Id, tenant.Name)
             // for this request. Opening a nested Change(tenantId) here would replace the whole ambient slot
-            // with TenantInformation(tenantId, null) and drop the catalog-supplied display name (R6).
+            // with TenantInformation(tenantId, null) and drop the catalog-supplied display name.
             await next(context).ConfigureAwait(false);
             return;
         }

@@ -19,7 +19,7 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Jobs.Managers;
 
-// Singleton core (KD5): stateless with respect to unit-of-work coordination. It takes IUnitOfWork? as an explicit
+// Singleton core: stateless with respect to unit-of-work coordination. It takes IUnitOfWork? as an explicit
 // argument on every Add/keyed-schedule path instead of resolving an ambient coordinator itself. The scoped
 // JobsManagerFacade resolves IUnitOfWorkManager.Current and passes it down; Update/Delete never touched coordination
 // and keep their original signatures.
@@ -50,7 +50,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     private readonly JobsPostCommitSignalService _postCommitSignals = Argument.IsNotNull(postCommitSignals);
     private readonly ILogger<JobsManager<TTimeJob, TCronJob>> _logger = Argument.IsNotNull(logger);
 
-    // Read at chain-walk time for the ambient tenant used by the descendant escalation rule (R7). Null in the unit
+    // Read at chain-walk time for the ambient tenant used by the descendant escalation rule. Null in the unit
     // path (no DI registration) and in standalone hosts with no tenancy, where it is treated as no ambient tenant.
     private readonly ICurrentTenant? _currentTenant = currentTenant;
     private readonly bool _rejectCrossTenant = tenancyOptions?.Value.RejectCrossTenantEnqueue ?? false;
@@ -59,7 +59,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     // (JobValidatorException), a dead/completed enlisted unit of work or a mis-wired provider (InvalidOperationException),
     // and persistence faults all propagate. On the enlisted path a propagated failure is the point: it lets the
     // caller's unit of work roll back rather than complete without the job row. Update/Delete are plain CRUD, never
-    // touch coordination, and keep returning JobResult. Called only by JobsManagerFacade (KD5).
+    // touch coordination, and keep returning JobResult. Called only by JobsManagerFacade.
     internal Task<TCronJob> AddCronJobAsync(
         TCronJob entity,
         IUnitOfWork? unitOfWork,
@@ -452,7 +452,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             );
         }
 
-        // Cron stays system scope on the update path too (R8): updates bypass the schedule middleware, and letting a
+        // Cron stays system scope on the update path too: updates bypass the schedule middleware, and letting a
         // tenant through here would produce provider-divergent rows.
         if (cronJob.TenantId is not null)
         {
@@ -913,7 +913,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             if (coordinated is { } context)
             {
                 _PrepareCoordinatedWrite(context);
-                // Route every entity through the seam in insertion order; defer the batch side effects once (KTD-4/R5).
+                // Route every entity through the seam in insertion order; defer the batch side effects once.
                 await context
                     .Writer.WriteTimeJobsAsync([.. entities], context.Relational, cancellationToken)
                     .ConfigureAwait(false);
@@ -1159,7 +1159,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         entity.CausationId ??= parent?.Id.ToString("D");
     }
 
-    // Propagate the middleware-resolved root tenant onto chain descendants before persistence (KTD6). The schedule
+    // Propagate the middleware-resolved root tenant onto chain descendants before persistence. The schedule
     // middleware only sees the BaseJobEntity root; the typed Children live on TimeJobEntity<TTicker> and are unreachable
     // from there, so the resolution rules are re-applied per descendant here: an unset non-system descendant inherits
     // the root's resolved tenant, a pre-set explicit value wins (validated for blank/length), and a descendant marked
@@ -1386,7 +1386,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 continue;
             }
 
-            // Cron stays system scope on the batch update path too (R8); see _UpdateCronJobAsync.
+            // Cron stays system scope on the batch update path too; see _UpdateCronJobAsync.
             if (cronJob.TenantId is not null)
             {
                 errors.Add(new JobValidatorException(JobTenantValidation.CronSystemScopeMessage));

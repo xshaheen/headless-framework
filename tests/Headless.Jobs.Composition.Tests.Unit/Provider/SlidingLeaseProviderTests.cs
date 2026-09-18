@@ -13,9 +13,9 @@ using Microsoft.Extensions.Time.Testing;
 namespace Tests.Provider;
 
 /// <summary>
-/// Deterministic in-memory coverage for the #316 sliding execution lease: renewal (U1), the renewal loss
-/// detector (U2), stalled-job reclaim (U3), the node-death sweep's lease deferral (U4), and the claim→start
-/// ownership recheck (U5). The real transactional behavior is proved cross-provider in the EF harness (U7).
+/// Deterministic in-memory coverage for the #316 sliding execution lease: renewal, the renewal loss
+/// detector, stalled-job reclaim, the node-death sweep's lease deferral, and the claim→start
+/// ownership recheck. The real transactional behavior is proved cross-provider in the EF harness.
 /// </summary>
 public sealed class SlidingLeaseProviderTests : TestBase
 {
@@ -60,7 +60,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
         };
     }
 
-    // ── U1 / U2: renewal is the loss detector ───────────────────────────────────────────────────────────────
+    // ── Renewal is the loss detector ────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public async Task renew_time_job_lease_advances_lease_and_returns_one_for_an_owned_running_row()
@@ -187,7 +187,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
         afterExpiry.Should().ContainSingle().Which.Id.Should().Be(job.Id);
     }
 
-    // ── U3: stalled-job reclaim (lapsed-lease InProgress, per policy) ────────────────────────────────────────
+    // ── Stalled-job reclaim (lapsed-lease InProgress, per policy) ────────────────────────────────────────────
 
     [Fact]
     public async Task queue_timed_out_time_jobs_claims_the_job_tree()
@@ -293,7 +293,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
         (await provider.ReclaimStalledTimeJobsAsync(AbortToken)).Should().Be(0); // already reclaimed -> no-op
     }
 
-    // ── U4: node-death sweep defers InProgress to the lease ──────────────────────────────────────────────────
+    // ── Node-death sweep defers InProgress to the lease ──────────────────────────────────────────────────────
 
     [Fact]
     public async Task dead_node_sweep_leaves_a_valid_lease_inprogress_row_to_the_lease()
@@ -304,7 +304,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
 
         var affected = await provider.ReleaseDeadNodeTimeJobResourcesAsync(_NodeA, AbortToken);
 
-        affected.Should().Be(0); // U3 handles it once the lease lapses
+        affected.Should().Be(0); // the stalled-job reclaim path handles it once the lease lapses
         var row = await provider.GetTimeJobByIdAsync(job.Id, AbortToken);
         row!.Status.Should().Be(JobStatus.InProgress);
         row.OwnerId.Should().Be(_NodeA);
@@ -340,7 +340,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
         (await provider.GetTimeJobByIdAsync(queued.Id, AbortToken))!.OwnerId.Should().BeNull();
     }
 
-    // ── U5: claim→start ownership recheck ────────────────────────────────────────────────────────────────────
+    // ── Claim→start ownership recheck ────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public async Task unified_context_update_does_not_stamp_a_row_reclaimed_by_another_owner()

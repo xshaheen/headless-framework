@@ -22,9 +22,9 @@ using Tests.Helpers;
 namespace Tests;
 
 /// <summary>
-/// Pins the U1 source-contract semantics end to end over a real host: the three-state result loop
-/// (None falls through, Found wins, Invalid rejects before any catalog call — R5), and the KTD3
-/// registration-order semantics across repeated <c>ResolveFromCatalog</c> passes (AE9).
+/// Pins the source-contract semantics end to end over a real host: the three-state result loop
+/// (None falls through, Found wins, Invalid rejects before any catalog call), and the
+/// registration-order semantics across repeated <c>ResolveFromCatalog</c> passes.
 /// </summary>
 public sealed class TenantIdentifierSourceContractTests : TestBase
 {
@@ -57,7 +57,7 @@ public sealed class TenantIdentifierSourceContractTests : TestBase
             .Should()
             .Be(TenancyErrorCodes.IdentifierInvalid);
 
-        // The rejection happens before any catalog call, and later sources never run (R5).
+        // The rejection happens before any catalog call, and later sources never run.
         store.IdentifierLookups.Should().Be(0);
         HeaderStubSource.Consultations.Should().Be(0);
     }
@@ -81,7 +81,7 @@ public sealed class TenantIdentifierSourceContractTests : TestBase
     [Fact]
     public async Task should_keep_the_first_type_registration_position_across_two_resolve_from_catalog_passes()
     {
-        // AE9 shape: a shared library registers StubB first; the app then registers StubA and StubB
+        // A shared library registers StubB first; the app then registers StubA and StubB
         // again. The effective order must stay B, A (first position kept, no duplicate B descriptor),
         // so B is consulted exactly once and StubA never runs.
         OrderFirstStubSource.Consultations = 0;
@@ -90,7 +90,7 @@ public sealed class TenantIdentifierSourceContractTests : TestBase
         {
             // Two ResolveFromCatalog passes share only the service collection: the first models a
             // shared library's registration, the second the app's own. Descriptor insertion order
-            // across both passes is the resolution order (KTD3/AE9).
+            // across both passes is the resolution order.
             http.ResolveFromCatalog(sources => sources.AddSource<OrderSecondStubSource>());
             http.ResolveFromCatalog(sources =>
                 sources.AddSource<OrderFirstStubSource>().AddSource<OrderSecondStubSource>()

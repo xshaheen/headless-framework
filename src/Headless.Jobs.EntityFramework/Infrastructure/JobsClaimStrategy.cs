@@ -194,11 +194,11 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
 {
     private readonly TimeSpan _leaseDuration = optionsBuilder.LeaseDuration;
 
-    // R12/KTD2: the maximum number of nodes on a root-to-leaf path the tree claim leases (root = depth 1). A timed
-    // descendant is a boundary — not descended into, claimed independently (U5).
+    // The maximum number of nodes on a root-to-leaf path the tree claim leases (root = depth 1). A timed
+    // descendant is a boundary — not descended into, claimed independently.
     private readonly int _maxChainDepth = optionsBuilder.MaxChainDepth;
 
-    // KTD4 test seam: when set, invoked once between the root claim and the first descendant lease so a test can
+    // Test seam: when set, invoked once between the root claim and the first descendant lease so a test can
     // deterministically invalidate the root lease and drive the frontier fence. Always null in production.
     internal Func<Task>? OnFrontierBeforeLease { get; set; }
 
@@ -258,7 +258,7 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             timeJob.LockedUntil = claimTimestamps.LockedUntil;
             timeJob.Status = JobStatus.Queued;
 
-            // KTD2: the peek-hydrated tree may include non-idle nodes (and their tails) the claim did not lease;
+            // The peek-hydrated tree may include non-idle nodes (and their tails) the claim did not lease;
             // execute strictly the claimed set so nothing runs unclaimed.
             TimeJobSubtreeOperations.PruneToClaimedSet(timeJob, claimedIds);
 
@@ -282,7 +282,7 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         var context = dbContext.Set<TTimeJob>();
         var now = timeProvider.GetUtcNow();
 
-        // R12/KTD2: flat root load + in-memory rebuild of the non-timed subtree to MaxChainDepth (replaces a fixed-depth
+        // Flat root load + in-memory rebuild of the non-timed subtree to MaxChainDepth (replaces a fixed-depth
         // nested projection).
         // The due-time arm uses the DATABASE clock (EF translates DateTime.UtcNow), matching the lease arm in the
         // same predicate — a node with a fast local clock must not claim jobs before they are due.
@@ -291,7 +291,7 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             .Where(x => x.ExecutionTime != null)
             .WhereCanFallbackClaimUsingDatabaseClock()
             .Where(x => x.ExecutionTime <= DateTime.UtcNow.AddSeconds(-1))
-            // U5/KTD3: the fallback selects timed rows directly (ExecutionTime != null), so a timed descendant is
+            // The fallback selects timed rows directly (ExecutionTime != null), so a timed descendant is
             // gated here too — claimable only once its parent reached its matching terminal state.
             .WhereClaimableUnderParentTerminalGate(context)
             .OrderBy(x => x.ExecutionTime)
@@ -313,7 +313,7 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
 
             var rootId = timeJob.Id;
             var expectedUpdatedAt = timeJob.UpdatedAt;
-            // U5/KTD3: re-assert the parent gate inside the atomic claim, INLINE on the updated row (see
+            // Re-assert the parent gate inside the atomic claim, INLINE on the updated row (see
             // _ClaimTimeJobTreeAsync). The parent-terminal gate remains a subquery by nature (it reads the PARENT
             // row) — that residue races only on a parent's one-way terminal transition, not on same-row ownership.
             var claimedIds = await _ClaimTimeJobTreeAsync(
@@ -345,7 +345,7 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             timeJob.UpdatedAt = claimTimestamps.UpdatedAt;
             timeJob.Status = JobStatus.Queued;
 
-            // KTD2: prune the peek-hydrated tree to the claimed set so a node the claim stopped at never executes.
+            // Prune the peek-hydrated tree to the claimed set so a node the claim stopped at never executes.
             TimeJobSubtreeOperations.PruneToClaimedSet(timeJob, claimedIds);
 
             yield return timeJob;
@@ -491,7 +491,7 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
 
             if (item.NextCronOccurrence is null)
             {
-                // R7/AE10 + KTD1: a row that ACCOUNTS for this instant — including a terminal one the reuse pairing
+                // A row that ACCOUNTS for this instant — including a terminal one the reuse pairing
                 // cannot see (its read is filtered to claimable rows) — means the advance stands. The filtered
                 // unique index blocks duplicates only among live rows, so without this check a completed
                 // resume-created occurrence would be re-materialized and the tick would run twice. The one row that
@@ -625,7 +625,7 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         CancellationToken cancellationToken
     )
     {
-        // R12/KTD2: claim the root and its non-timed descendants down to MaxChainDepth, frontier by frontier. Two
+        // Claim the root and its non-timed descendants down to MaxChainDepth, frontier by frontier. Two
         // DB-clock lease invariants govern this (docs/solutions/design-patterns/atomic-database-clock-relational-lease-claims.md):
         //
         //   (1) The root lease-DEADLINE write runs in AUTOCOMMIT with the DB-clock expression — NEVER inside an
@@ -666,7 +666,7 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             return [];
         }
 
-        // The frontier lease-walk is shared with the immediate-dispatch acquire (JobsSubtreeLeaseWalk) so the KTD2
+        // The frontier lease-walk is shared with the immediate-dispatch acquire (JobsSubtreeLeaseWalk) so the
         // lease-deadline-copy discipline has exactly one relational implementation. This path walks a single root at a
         // time because it claims and yields incrementally; the walk batches across roots for callers that acquire a
         // whole set at once.

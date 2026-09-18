@@ -16,30 +16,30 @@ namespace Headless.Api.Middlewares;
 /// Pre-auth tenant catalog identifier resolution. Consults registered <see cref="ITenantIdentifierSource"/>s
 /// in registration order (the first <see cref="TenantIdentifierSourceResultKind.Found"/> result wins),
 /// resolves through <see cref="ITenantCatalogService"/>, and either sets the ambient tenant and continues,
-/// or short-circuits with a fail-closed <c>ProblemDetails</c> response before the endpoint executes (R6, R11).
+/// or short-circuits with a fail-closed <c>ProblemDetails</c> response before the endpoint executes.
 /// </summary>
 /// <remarks>
 /// Registered through its own pipeline hook — <c>SetupApiTenancy.UseHeadlessTenantCatalogResolution</c> —
 /// separate from the existing post-auth claim hook (<c>UseHeadlessTenancy</c>). Documented ordering
 /// contract: after <c>UseRouting()</c> (so <see cref="SkipTenantResolutionAttribute"/> endpoint metadata
-/// is resolvable and route values exist) and before <c>UseAuthentication()</c> (KTD2). Placing it ahead
+/// is resolvable and route values exist) and before <c>UseAuthentication()</c>. Placing it ahead
 /// of <c>UseRouting()</c> does not disable resolution for sources that read the raw request — rejection
-/// and R19 enforcement stay intact and only the <see cref="SkipTenantResolutionAttribute"/> opt-out is
+/// and identifier/claim-mismatch enforcement stay intact and only the <see cref="SkipTenantResolutionAttribute"/> opt-out is
 /// lost — but a registered <see cref="RouteTenantIdentifierSource"/> finds nothing when misordered,
 /// because route values only exist after routing has matched, so every such request runs as host
-/// context; that misordering is escalated to a once-per-process Error-level event (R10). With zero
+/// context; that misordering is escalated to a once-per-process Error-level event. With zero
 /// registered sources, or when every source returns
 /// <see cref="TenantIdentifierSourceResultKind.None"/>, this middleware no-ops and
-/// the request continues as host context (R5). A source result of
+/// the request continues as host context. A source result of
 /// <see cref="TenantIdentifierSourceResultKind.Invalid"/> (present but ambiguous input) rejects with the
-/// catalog's invalid-identifier outcome before any store call, and later sources never run (R5).
+/// catalog's invalid-identifier outcome before any store call, and later sources never run.
 /// Store or cache infrastructure faults from <see cref="ITenantCatalogService.ResolveAsync"/>
-/// propagate unchanged — they are never mapped to a tenant rejection code (KTD4).
+/// propagate unchanged — they are never mapped to a tenant rejection code.
 /// <see cref="IProblemDetailsCreator"/> is resolved lazily from <see cref="HttpContext.RequestServices"/>
 /// inside the rejection branch only, rather than as a constructor dependency — a host that never rejects
 /// (only ever resolves or no-ops) does not need <c>Headless.Api.Core</c>'s base ProblemDetails
 /// infrastructure registered.
-/// Once an identifier resolves, this middleware also enforces R19 mapping integrity against the default
+/// Once an identifier resolves, this middleware also enforces identifier/claim mapping integrity against the default
 /// authentication scheme for every such request — see <c>_RejectOnClaimMismatchAsync</c> for why that
 /// cannot be left to <c>TenantIdentifierIntegrityHandler</c> alone.
 /// </remarks>
@@ -58,7 +58,7 @@ internal sealed partial class TenantCatalogResolutionMiddleware(
 
     // Evaluated once at construction: whether the registered sources include a route source, whose
     // input only exists after UseRouting() — that misordering silently degrades every request to
-    // host context and is escalated to an Error-level event (R10, KTD5).
+    // host context and is escalated to an Error-level event.
     private readonly bool _hasRouteSource = sources.OfType<RouteTenantIdentifierSource>().Any();
 
     /// <summary>Resolves the tenant identifier for the request and either sets the ambient tenant or rejects it.</summary>
@@ -90,7 +90,7 @@ internal sealed partial class TenantCatalogResolutionMiddleware(
         // The only thing this middleware needs the endpoint for is the SkipTenantResolution opt-out;
         // identifier sources read the raw request and need no routing. A null endpoint therefore means
         // "no opt-out is discoverable", never "do not resolve" — a host that placed this middleware ahead
-        // of UseRouting() still gets unknown and disabled identifiers rejected and still gets R19 mapping
+        // of UseRouting() still gets unknown and disabled identifiers rejected and still gets identifier/claim mapping
         // integrity, and loses only the opt-out (a skip-marked endpoint gets tenant-resolved anyway).
         if (endpoint?.Metadata.GetMetadata<SkipTenantResolutionAttribute>() is not null)
         {
@@ -113,7 +113,7 @@ internal sealed partial class TenantCatalogResolutionMiddleware(
 
             if (result.Kind is TenantIdentifierSourceResultKind.Invalid)
             {
-                // Present but ambiguous (R5): reject with the catalog's invalid-identifier outcome
+                // Present but ambiguous: reject with the catalog's invalid-identifier outcome
                 // BEFORE any catalog call, and never fall through to later sources.
                 var problemDetailsCreator = context.RequestServices.GetRequiredService<IProblemDetailsCreator>();
 
@@ -140,7 +140,7 @@ internal sealed partial class TenantCatalogResolutionMiddleware(
 
         if (identifier is null)
         {
-            // Zero sources registered, or every source returned None — no-op, host context (R5).
+            // Zero sources registered, or every source returned None — no-op, host context.
             await _InvokeNextAsync(context, endpointWasUnresolved).ConfigureAwait(false);
             return;
         }
@@ -157,7 +157,7 @@ internal sealed partial class TenantCatalogResolutionMiddleware(
                 var tenant = outcome.Tenant!;
                 context.Features.Set(new TenantIdentifierResolvedFeature(tenant.Id));
 
-                // The ambient scope opens BEFORE R19 enforcement: _RejectOnClaimMismatchAsync authenticates
+                // The ambient scope opens BEFORE identifier/claim mismatch enforcement: _RejectOnClaimMismatchAsync authenticates
                 // the default scheme, and AuthenticationHandler<TOptions> caches that result for the whole
                 // request — so a host deriving authentication configuration per tenant (signing keys,
                 // issuer, authority) must observe the resolved tenant on that first authenticate call or
@@ -224,7 +224,7 @@ internal sealed partial class TenantCatalogResolutionMiddleware(
     }
 
     /// <summary>
-    /// Unconditional R19 enforcement (KTD2): rejects the request when the default-scheme principal
+    /// Unconditional identifier/claim mismatch enforcement: rejects the request when the default-scheme principal
     /// carries a tenant claim that disagrees with the identifier-resolved tenant. Returns
     /// <see langword="true"/> when the response was written and the pipeline must short-circuit.
     /// </summary>
@@ -238,7 +238,7 @@ internal sealed partial class TenantCatalogResolutionMiddleware(
     /// </para>
     /// <para>
     /// The principal is materialized here rather than read from <see cref="HttpContext.User"/> because
-    /// this middleware is documented to run before <c>UseAuthentication()</c> (KTD2). Authenticating the
+    /// this middleware is documented to run before <c>UseAuthentication()</c>. Authenticating the
     /// default scheme costs nothing extra for hosts that call <c>UseAuthentication()</c>: that middleware
     /// authenticates the same scheme for every request regardless of endpoint metadata, and
     /// <c>AuthenticationHandler&lt;TOptions&gt;</c> caches its result for the lifetime of the request —
@@ -316,7 +316,7 @@ internal sealed partial class TenantCatalogResolutionMiddleware(
         // A registered route source escalates the signal from Warning to Error: unlike the raw-request
         // sources, its input only exists after routing, so a misordered route source is not a lost
         // opt-out but route resolution finding nothing on every request — each one silently running as
-        // host context (R10, KTD5). Both events share this once-per-process guard, so only one fires.
+        // host context. Both events share this once-per-process guard, so only one fires.
         if (_hasRouteSource)
         {
             LogRouteSourceMisorderedError(logger);

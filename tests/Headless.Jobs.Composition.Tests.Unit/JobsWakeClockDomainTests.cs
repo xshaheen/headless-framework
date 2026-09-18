@@ -28,7 +28,7 @@ namespace Tests;
 /// The defect these pin: a store-derived duration folded into a node-domain deadline. On a node whose clock lags the
 /// store by an hour, a 12:30 wake was recorded as 11:30, so a job enqueued for 12:05 looked LATER than the planned
 /// wake and did not interrupt the sleep — it ran late or fell into misfire recovery instead. Fixing only the duration
-/// (U6) or only the seeding (U5) leaves the mismatch reachable, which is why both land together.
+/// or only the seeding leaves the mismatch reachable, which is why both land together.
 /// </remarks>
 public sealed class JobsWakeClockDomainTests : TestBase
 {
@@ -43,7 +43,7 @@ public sealed class JobsWakeClockDomainTests : TestBase
     [Fact]
     public async Task time_job_wake_is_measured_against_the_store_clock_not_a_lagging_node()
     {
-        // R7: the cron projection already carried StoreUtcNow; the time-job peek did not, so its remaining duration
+        // The cron projection already carried StoreUtcNow; the time-job peek did not, so its remaining duration
         // was `executionTime - nodeNow`. A node an hour behind therefore slept an hour and thirty seconds for a job
         // the store considered due in thirty.
         var (manager, provider) = _CreateManager();
@@ -100,7 +100,7 @@ public sealed class JobsWakeClockDomainTests : TestBase
     [Fact]
     public async Task a_due_time_earlier_than_the_planned_wake_interrupts_a_skewed_sleep()
     {
-        // AE6. Store 12:00, node 11:00, sleeping towards 12:30. A job enqueued for 12:05 is 25 minutes earlier than
+        // Store 12:00, node 11:00, sleeping towards 12:30. A job enqueued for 12:05 is 25 minutes earlier than
         // the planned wake and must interrupt it. Under the old node-domain recording the planned wake was 11:30, so
         // 12:05 looked 35 minutes LATER and the sleep ran on.
         await using var rig = SchedulerRig.Sleeping(_StoreNow, _StoreNow.AddMinutes(30));

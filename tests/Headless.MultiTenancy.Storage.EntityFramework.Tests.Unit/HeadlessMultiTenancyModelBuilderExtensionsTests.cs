@@ -74,7 +74,7 @@ public sealed class HeadlessMultiTenancyModelBuilderExtensionsTests
     [Fact]
     public void should_apply_no_collation_on_a_provider_without_a_known_mapping()
     {
-        // given & when - SQLite has no known collation mapping; KTD6 only defines SQL Server/PostgreSQL
+        // given & when - SQLite has no known collation mapping; only SQL Server/PostgreSQL are defined
         using var db = _CreateSqliteContext();
         var entity = _TenantEntity(db);
 
@@ -86,7 +86,7 @@ public sealed class HeadlessMultiTenancyModelBuilderExtensionsTests
     public void should_apply_deterministic_binary_collation_on_sql_server()
     {
         // given & when - SQL Server's default collation is case-insensitive, which would break the
-        // catalog service's ordinal lookup contract (R7); model building needs no live connection.
+        // catalog service's ordinal lookup contract; model building needs no live connection.
         using var db = new SqlServerTenantDbContext(
             new DbContextOptionsBuilder<SqlServerTenantDbContext>()
                 .UseSqlServer(

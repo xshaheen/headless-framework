@@ -36,7 +36,7 @@ internal sealed class JobsFallbackBackgroundService(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        // Fail-stop (R9), mirroring the main scheduler loop: the reclaim sweep applies cluster-wide terminal
+        // Fail-stop, mirroring the main scheduler loop: the reclaim sweep applies cluster-wide terminal
         // transitions (MarkFailed/Skip), so a node that lost coordination membership must stop sweeping other
         // live nodes' rows — under StopMembershipOnly nothing else would stop this loop. On the in-memory path
         // the token is None and never fires.
@@ -82,7 +82,7 @@ internal sealed class JobsFallbackBackgroundService(
                     continue;
                 }
 
-                // #316/U3: reclaim jobs stalled InProgress with a lapsed lease before re-queuing timed-out work, so
+                // #316: reclaim jobs stalled InProgress with a lapsed lease before re-queuing timed-out work, so
                 // a Retry row released to Idle here is picked up by RunTimedOutTickers in the same tick. Closes the
                 // gap where a job wedged on a still-live node is reclaimed by neither the claim predicate nor the
                 // dead-node sweep.
@@ -95,7 +95,7 @@ internal sealed class JobsFallbackBackgroundService(
                 {
                     foreach (var function in functions)
                     {
-                        // U3: attach cached delegates to the whole hydrated tree, not just the grandchild level, so a
+                        // Attach cached delegates to the whole hydrated tree, not just the grandchild level, so a
                         // chain deeper than three levels also executes its tail on the timed-out fallback path.
                         // Runs before the dispatch sort below because it also stamps CachedPriority.
                         JobsExecutionContext.CacheFunctionReferences(function, functionRegistry);

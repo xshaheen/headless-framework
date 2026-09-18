@@ -30,7 +30,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {
-    // R1/KTD1: start-tick of the last stranded-child sweep. long.MinValue means "never run", so the first poll after
+    // Start-tick of the last stranded-child sweep. long.MinValue means "never run", so the first poll after
     // startup always sweeps and a host that starts with an already-stranded child does not wait out an interval.
     private long _lastStrandedSweepTicks = long.MinValue;
 
@@ -55,7 +55,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
 
     private readonly TimeSpan _strandedSweepInterval = schedulerOptions.FallbackIntervalChecker;
 
-    // R1/KTD1: claim the sweep slot at most once per FallbackIntervalChecker. GetNextJobs is the scheduler's hot path
+    // Claim the sweep slot at most once per FallbackIntervalChecker. GetNextJobs is the scheduler's hot path
     // — JobsSchedulerBackgroundService sleeps 1ms whenever work is due — and on the relational providers this backstop
     // runs a candidate scan, so sweeping per poll cost an unbounded scan at up to ~1kHz per node in EVERY deployment,
     // including ones that never enqueue a chain. The stamp is taken BEFORE the sweep (start-to-start spacing), so a
@@ -79,12 +79,12 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
-        // U5/KTD3 safety net: skip (never release) idle timed children whose parent terminalized through a path that
+        // Safety net: skip (never release) idle timed children whose parent terminalized through a path that
         // missed the per-parent / set-based reconcile, so a missed terminalization can never permanently strand a
         // timed child. The skip side never makes a child eligible early, so running it before the peek is safe — it
         // can only remove candidates that must never run. Best-effort: a failure here must NOT block normal
         // scheduling; the fallback loop's set-based reconcile guarantees liveness regardless. Rate-limited to the
-        // fallback cadence (R1/KTD1) — this is a missed-terminalization backstop, so eventual is sufficient.
+        // fallback cadence — this is a missed-terminalization backstop, so eventual is sufficient.
         try
         {
             if (_TryEnterStrandedSweep())
@@ -267,7 +267,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
             ExecutionTime = timeJob.ExecutionTime ?? timeProvider.GetUtcNow().UtcDateTime,
         };
 
-        // The provider already hydrated the tree bounded to MaxChainDepth (U3); recurse the whole thing so a chain
+        // The provider already hydrated the tree bounded to MaxChainDepth; recurse the whole thing so a chain
         // deeper than the grandchild level is executed with each descendant's own RunCondition/RetryCount intact
         // (omitting RetryCount here would reset the retry budget after restart — docs/solutions precedent).
         foreach (var child in timeJob.Children)
@@ -491,7 +491,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
                 // comparison, and resolving it up front is what lets the advances run concurrently without racing on
                 // `storedConsumed`.
                 //
-                // R6: a row already sitting at this instant is REUSED, not duplicated — the atomic advance recognizes
+                // A row already sitting at this instant is REUSED, not duplicated — the atomic advance recognizes
                 // it and hands it back on the dispatch context, while the watermark still moves past the instant
                 // (skipping the advance instead would leave the definition due forever). Marking it consumed here
                 // rather than only after a successful advance is what keeps the fallback append below from emitting
@@ -519,7 +519,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
                     {
                         var candidate = tieGroup[offset + index];
 
-                        // R9: a definition with no position yet — seeded before this field existed, or created by a
+                        // A definition with no position yet — seeded before this field existed, or created by a
                         // path that did not set it — is initialized from the CREATION rule (watermark at the store's
                         // instant) and never from its occurrence history. That is what makes an upgrade unable to
                         // replay a backlog: an unset watermark sorts first and would otherwise look infinitely behind.
@@ -674,7 +674,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
     /// context that will claim it.
     /// </summary>
     /// <remarks>
-    /// The watermark lands on the recovery instant under both policies (R20), so the backlog they resolved is never
+    /// The watermark lands on the recovery instant under both policies, so the backlog they resolved is never
     /// reconsidered. A schedule whose interval is shorter than the wake latency will legitimately re-enter recovery on
     /// the following wake — that is the correct outcome, not a fault.
     /// </remarks>
@@ -807,7 +807,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
                 .ConfigureAwait(false);
         }
 
-        // Deriving a fire time from an expression is tz-database authority and stays here (KTD2); the store owns
+        // Deriving a fire time from an expression is tz-database authority and stays here; the store owns
         // due-ness and the fence, never the derivation.
         //
         // The pending walk above already evaluated this. It stops at the first instant past storeUtcNow, and when its
@@ -1099,7 +1099,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
             logger.LogDurableCancellationNotificationFailed(exception, jobId);
         }
 
-        // U5/KTD3: reconcile the cancelled parent's TIMED children through the same reconcile+wake path as the executor,
+        // Reconcile the cancelled parent's TIMED children through the same reconcile+wake path as the executor,
         // so a released matching child (OnCancelled/OnFailureOrCancelled/OnAnyCompletedStatus) is claimed promptly via
         // RestartIfNeeded instead of waiting for the fallback tick, and non-matching timed children are skipped with
         // their subtree. A running (not-yet-terminal) parent makes this a no-op — the executor reconciles it when it
@@ -1654,7 +1654,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
     {
         await _ReleaseDeadNodeResourcesAsync(instanceIdentifier, cancellationToken).ConfigureAwait(false);
 
-        // U5/KTD3: the dead-node sweep terminalizes parents in bulk (MarkFailed/Skip) and reports only counts, so a
+        // The dead-node sweep terminalizes parents in bulk (MarkFailed/Skip) and reports only counts, so a
         // per-parent reconcile cannot reach them — reconcile every terminal parent's timed children set-based here.
         await _ReconcileAllTerminalTimedChildrenAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -1721,7 +1721,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         // fault surfaces as AggregateException rather than collapsing to the first task's exception.
         var results = await Task.WhenAll(timeJobsTask, cronOccurrencesTask).ConfigureAwait(false);
 
-        // U5/KTD3: the stalled-lease sweep terminalizes parents in bulk (reporting only counts), so reconcile every
+        // The stalled-lease sweep terminalizes parents in bulk (reporting only counts), so reconcile every
         // terminal parent's timed children set-based right after — release matching (re-stamp past-due) / skip
         // non-matching + subtree — mirroring the dead-node path.
         await _ReconcileAllTerminalTimedChildrenAsync(cancellationToken).ConfigureAwait(false);
@@ -1734,7 +1734,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
-        // U5/KTD3 per-parent reconcile, invoked after a parent's terminal write committed (executor / cancellation).
+        // Per-parent reconcile, invoked after a parent's terminal write committed (executor / cancellation).
         await _ApplyTerminalRunConditionsAndWakeAsync(parentId, cancellationToken).ConfigureAwait(false);
     }
 
@@ -1763,7 +1763,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
 
         // Resolve the host scheduler lazily to break the JobsSchedulerBackgroundService (IJobsHostScheduler) ⇄
         // IInternalJobManager constructor cycle. RestartIfNeeded runs only AFTER the releasing transaction committed
-        // (a pre-commit nudge would wake the scheduler into pre-commit state and it would sleep again — KTD3).
+        // (a pre-commit nudge would wake the scheduler into pre-commit state and it would sleep again).
         serviceProvider.GetService<IJobsHostScheduler>()?.RestartIfNeeded(earliestReleasedTime);
     }
 }

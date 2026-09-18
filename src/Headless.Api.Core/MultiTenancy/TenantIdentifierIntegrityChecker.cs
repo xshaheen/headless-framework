@@ -6,11 +6,11 @@ using Headless.MultiTenancy;
 namespace Headless.Api.MultiTenancy;
 
 /// <summary>
-/// The single R19 comparison rule shared by every enforcement point: the pre-auth catalog check in
+/// The single identifier/claim mismatch comparison rule shared by every enforcement point: the pre-auth catalog check in
 /// <c>TenantCatalogResolutionMiddleware</c>, the post-authorization
 /// <see cref="TenantIdentifierIntegrityHandler"/>, and the claim-resolution fast path in
-/// <c>TenantResolutionMiddleware</c>. A principal without a tenant claim is never a mismatch — R19
-/// constrains claim-carrying requests only, and claim-free requests keep the store-free path (R8).
+/// <c>TenantResolutionMiddleware</c>. A principal without a tenant claim is never a mismatch — this check
+/// constrains claim-carrying requests only, and claim-free requests keep the store-free path.
 /// </summary>
 internal static class TenantIdentifierIntegrityChecker
 {

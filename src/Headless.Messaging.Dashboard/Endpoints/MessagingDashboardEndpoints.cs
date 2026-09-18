@@ -470,7 +470,7 @@ public static partial class MessagingDashboardEndpoints
         );
     }
 
-    // Bulk requeue and delete never touch a pending scheduled row (KTD10): an id that matches the
+    // Bulk requeue and delete never touch a pending scheduled row: an id that matches the
     // #888 eligibility predicate is reported as rejected and left untouched, pointing the operator at
     // the audited scheduled-delivery actions instead of the unfenced, unaudited bulk path.
     private const string _PendingScheduledRejectionMessage =
@@ -733,11 +733,11 @@ public static partial class MessagingDashboardEndpoints
     }
 
     /// <summary>
-    /// Shared actor resolver (KTD9) for inbox and scheduled-delivery mutation and query endpoints. An
+    /// Shared actor resolver for inbox and scheduled-delivery mutation and query endpoints. An
     /// unauthenticated principal yields 401 (session ends); an authenticated principal without a usable
     /// actor name (the no-auth <c>anonymous</c> identity or the Host <c>host-user</c> placeholder) yields
     /// 403 with <see cref="DashboardOperatorAuthority.OperatorActorRequiredCode"/> so the dashboard stays
-    /// signed in. The legacy requeue and delete endpoints intentionally do not call this (R13).
+    /// signed in. The legacy requeue and delete endpoints intentionally do not call this.
     /// </summary>
     private static bool _TryResolveOperatorAuthority(
         HttpContext httpContext,

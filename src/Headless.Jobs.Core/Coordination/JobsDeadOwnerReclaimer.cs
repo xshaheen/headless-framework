@@ -31,7 +31,7 @@ internal sealed class JobsDeadOwnerReclaimer(
 
     public async Task ReclaimAsync(IReadOnlyCollection<string> owners, CancellationToken cancellationToken)
     {
-        // KTD6 / IDeadOwnerReclaimer contract: a reclaim racing host shutdown must complete, so the durable batch
+        // IDeadOwnerReclaimer contract: a reclaim racing host shutdown must complete, so the durable batch
         // uses CancellationToken.None and does not re-thread the incoming token (matches MessagingDeadOwnerReclaimer).
         //
         // Intentionally NOT distributed-lock guarded (#267 review): the bridge marks each owner reclaimed *before*

@@ -21,7 +21,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 {
     private const int _MaxFallbackClaimBatchSize = 100;
 
-    // KTD6 publication barrier: while a batch is being installed, every row is parked with this far-future synthetic
+    // Publication barrier: while a batch is being installed, every row is parked with this far-future synthetic
     // lease deadline (plus Status=InProgress + null owner) so EVERY claim/reclaim/reconcile predicate excludes it.
     // Fixed and large so it excludes rows regardless of the configured LeaseDuration; publication is synchronous (no
     // awaits between park and reveal), so no injected clock can advance past it mid-publish.
@@ -55,9 +55,9 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
     private readonly string _ownerId;
     private readonly TimeSpan _leaseDuration;
 
-    // R12/KTD2: the maximum number of nodes on a root-to-leaf path that claim and hydration traverse (root = depth 1).
+    // The maximum number of nodes on a root-to-leaf path that claim and hydration traverse (root = depth 1).
     // A timed descendant (ExecutionTime != null) is a boundary — excluded from the in-tree walk and claimed
-    // independently (U5) — so the walk descends only through non-timed children to this depth.
+    // independently — so the walk descends only through non-timed children to this depth.
     private readonly int _maxChainDepth;
 
     public JobsInMemoryPersistenceProvider(IServiceProvider serviceProvider)
@@ -86,7 +86,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         return string.Equals(ownerId, _ownerId, StringComparison.Ordinal) && status is JobStatus.InProgress;
     }
 
-    // U5/KTD3 claim gate: a timed descendant (ParentId != null AND ExecutionTime != null) with a parent-terminal-gated
+    // Claim gate: a timed descendant (ParentId != null AND ExecutionTime != null) with a parent-terminal-gated
     // run condition is claimable only once its parent reached the MATCHING terminal state. Roots (ParentId == null),
     // non-timed children (ExecutionTime == null, walked in-tree), and InProgress/null-condition timed children stay
     // ungated. Mirrors the EF WhereClaimableUnderParentTerminalGate correlated-subquery predicate; the coherent
@@ -180,7 +180,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                         timeJob.LockedUntil = now.UtcDateTime.Add(_leaseDuration);
                         timeJob.Status = JobStatus.Queued;
 
-                        // KTD2: the peek-hydrated tree may include non-idle nodes (and their tails) the claim did not
+                        // The peek-hydrated tree may include non-idle nodes (and their tails) the claim did not
                         // lease; execute strictly the claimed set so nothing runs unclaimed.
                         TimeJobSubtreeOperations.PruneToClaimedSet(timeJob, claimedIds);
 
@@ -193,9 +193,9 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
     private HashSet<Guid> _ClaimIdleDescendants(Guid rootId, DateTimeOffset now)
     {
-        // R12/KTD2: lease the non-timed in-tree subtree down to MaxChainDepth (root is depth 1) and return the exact
+        // Lease the non-timed in-tree subtree down to MaxChainDepth (root is depth 1) and return the exact
         // set of claimed ids (root + descendants). A timed child is a boundary (not descended into, claimed
-        // independently by U5); a non-idle child (terminalized by a sweep, or running) is ALSO a boundary — the
+        // independently); a non-idle child (terminalized by a sweep, or running) is ALSO a boundary — the
         // frontier stops there so a node below an unclaimable one is never leased and never executed. The caller
         // rebuilds the returned tree strictly from this set.
         var claimed = new HashSet<Guid> { rootId };
@@ -263,7 +263,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 x.ExecutionTime != null
                 && _CanFallbackClaim(x.Status, x.LockedUntil, now)
                 && x.ExecutionTime <= fallbackThreshold
-                && _ParentGateAllowsClaim(x) // U5/KTD3: the fallback claims timed rows directly, so it is gated too
+                && _ParentGateAllowsClaim(x) // The fallback claims timed rows directly, so it is gated too
             ) // Only tasks older than 1 second
             .OrderBy(x => x.ExecutionTime)
             .ThenBy(x => x.Id)
@@ -296,7 +296,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                         var claimedIds = _ClaimIdleDescendants(job.Id, now);
 
                         // Only build the full hierarchy for successfully acquired jobs, pruned to the claimed set
-                        // (KTD2) so a non-idle node the claim stopped at — and its tail — never executes unclaimed.
+                        // so a non-idle node the claim stopped at — and its tail — never executes unclaimed.
                         var hydrated = _ForQueueTimeJobs(updatedTicker);
                         TimeJobSubtreeOperations.PruneToClaimedSet(hydrated, claimedIds);
 
@@ -350,7 +350,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         var now = _timeProvider.GetUtcNow();
         var oneSecondAgo = now.UtcDateTime.AddSeconds(-1);
 
-        // Base query: same filter as EF provider, but over the snapshot. U5/KTD3: a timed descendant surfaces here as
+        // Base query: same filter as EF provider, but over the snapshot. A timed descendant surfaces here as
         // its own candidate (excluded from the in-tree walk), so the parent gate keeps it out until its parent matched.
         var baseQuery = _timeJobs
             .Values.Where(x =>
@@ -477,7 +477,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
                 if (job.Status == JobStatus.Idle)
                 {
-                    // Non-timed children keep the existing cancellation handling. U5/KTD3: the cancelled parent's TIMED
+                    // Non-timed children keep the existing cancellation handling. The cancelled parent's TIMED
                     // children are reconciled by ApplyParentTerminalRunConditionsAsync, driven post-cancellation by the
                     // manager so the released-child scheduler wake is threaded through the same path as the executor/sweep
                     // reconcile (and by the poll-time / sweep reconcile as a backstop).
@@ -592,7 +592,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 or RunCondition.OnFailureOrCancelled
                 or RunCondition.OnAnyCompletedStatus;
 
-    // U5/KTD3: cascade skip-reason for descendants of a timed child whose parent's run condition did not match; the
+    // Cascade skip-reason for descendants of a timed child whose parent's run condition did not match; the
     // direct-child mismatch reason is the shared ChainRunConditionRules.RunConditionMismatchReason.
     private const string _AncestorSkippedReason =
         "Ancestor job was skipped after its parent's run condition did not match.";
@@ -618,7 +618,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         return Task.FromResult(skipped);
     }
 
-    // The set-based release/skip reconcile (KTD3), single-process form. For every IDLE timed child whose parent has
+    // The set-based release/skip reconcile, single-process form. For every IDLE timed child whose parent has
     // reached a terminal state: a MATCHING run condition releases (re-stamping a past-due child to now so the
     // staleness-filtered main peek claims it promptly); a NON-matching one is skipped with its subtree. parentId
     // constrains to one parent (post-terminal, from the executor/cancellation); null reconciles all terminal parents
@@ -735,7 +735,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         {
             if (_timeJobs.TryGetValue(id, out var job))
             {
-                // #316/U5 claim→start ownership recheck: reject another owner and require Queued for the
+                // #316 claim→start ownership recheck: reject another owner and require Queued for the
                 // InProgress transition so a duplicate same-owner scheduler wrapper cannot revalidate a running row.
                 var ownedNonTerminal = _IsOwnedNonTerminal(job.OwnerId, job.Status);
                 var canTransitionToInProgress =
@@ -804,7 +804,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 var claimedIds = _ClaimIdleDescendants(id, now);
                 var hydrated = _ForQueueTimeJobs(updatedTicker);
 
-                // KTD2: the hydrated tree may include nodes the walk stopped at; execute strictly the claimed set.
+                // The hydrated tree may include nodes the walk stopped at; execute strictly the claimed set.
                 TimeJobSubtreeOperations.PruneToClaimedSet(hydrated, claimedIds);
                 acquired.Add(hydrated);
             }
@@ -817,7 +817,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
     {
         // #316 sliding lease (mirror EF RenewTimeJobLeaseAsync): slide LockedUntil forward, fenced on the #5
         // completion-fence shape (still owned + non-terminal). A lost/reclaimed/terminalized row returns 0 ->
-        // cancel-on-loss (U2/KTD3).
+        // cancel-on-loss.
         var now = _timeProvider.GetUtcNow();
 
         if (_timeJobs.TryGetValue(jobId, out var job))
@@ -863,7 +863,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
     public Task<int> ReclaimStalledTimeJobsAsync(CancellationToken cancellationToken = default)
     {
-        // #316/U3 (mirror EF ReclaimStalledTimeJobsAsync): reclaim InProgress rows whose lease lapsed on ANY node, per
+        // #316 (mirror EF ReclaimStalledTimeJobsAsync): reclaim InProgress rows whose lease lapsed on ANY node, per
         // OnNodeDeath. Not owner-scoped — the trigger is a stalled lease, not a declared node death. A healthy
         // renewing job keeps a future LockedUntil and never matches.
         var now = _timeProvider.GetUtcNow();
@@ -1024,7 +1024,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         JobAtomicity.RejectDirect(jobs);
         lock (_keyedOperations)
         {
-            // KTD6 cross-root all-or-nothing (IJobPersistenceProvider.AddTimeJobsAsync contract): the WHOLE call — every
+            // Cross-root all-or-nothing (IJobPersistenceProvider.AddTimeJobsAsync contract): the WHOLE call — every
             // root AND every descendant across ALL chains — is one atomic unit. Phase 1 flattens every subtree and validates
             // ids (unique within this call — whether in the same or another root's subtree — AND absent from stored state);
             // phase 2 commits. A collision anywhere leaves NOTHING from the call visible, so one bad root can never strand a
@@ -1056,7 +1056,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
     private int _AddTickerWithChildren(TTimeJob job, Guid? parentId = null)
     {
         JobIntentFingerprint.RejectOrdinaryMutation(job);
-        // KTD6 all-or-nothing: validate the WHOLE subtree — structure and id uniqueness, both within the subtree and
+        // All-or-nothing: validate the WHOLE subtree — structure and id uniqueness, both within the subtree and
         // against already-stored rows — BEFORE mutating any shared dictionary, so a collision anywhere leaves nothing
         // visible (never a partially-added parent). Flattening also stamps each node's ParentId.
         var flattened = new List<TTimeJob>();
@@ -1330,9 +1330,9 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             return true;
         }
 
-        // Per-policy dead-node transition (#315, #316/U4) — mirrors EF ReleaseDeadNodeTimeJobResourcesAsync. Idle/Queued
+        // Per-policy dead-node transition (#315, #316) — mirrors EF ReleaseDeadNodeTimeJobResourcesAsync. Idle/Queued
         // reclaimed immediately; InProgress arms defer to the lease (LockedUntil <= now) so a still-leased running
-        // job survives a membership blip and is recovered by U3 once its lease lapses.
+        // job survives a membership blip and is recovered by the stalled-lease reclaim once its lease lapses.
         var owned = _timeJobs
             .Values.Where(x => string.Equals(x.OwnerId, instanceIdentifier, StringComparison.Ordinal))
             .ToArray();
@@ -1455,8 +1455,8 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                         updated.ScheduleRevision++;
                         updated.UpdatedAt = now;
 
-                        // R10: the stored projection was derived under the OLD expression. Reset the position to
-                        // the uninitialized sentinel so the next wake re-derives it by the R9 creation rule under
+                        // The stored projection was derived under the OLD expression. Reset the position to
+                        // the uninitialized sentinel so the next wake re-derives it by the creation rule under
                         // the new expression — matching the relational provider's migrate path.
                         updated.ReconciledThroughUtc = default;
                         updated.NextDueUtc = default;
@@ -1504,7 +1504,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 CreatedAt = now,
                 UpdatedAt = now,
                 Request = [],
-                // KTD6: seeded at CREATION only. The update branch above deliberately leaves these alone, so a value
+                // Seeded at CREATION only. The update branch above deliberately leaves these alone, so a value
                 // set later through ICronJobManager survives every redeploy and is an operator override by
                 // construction — which is why no provenance marker is persisted.
                 OnMissedRun = onMissedRun,
@@ -1787,7 +1787,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                     break;
                 }
 
-                // KTD5: clearing the owner is the whole mechanism — the claim path's in-progress transition requires
+                // Clearing the owner is the whole mechanism — the claim path's in-progress transition requires
                 // OwnerId == owner, so the prior owner fails that predicate and drops the row. Unlike the relational
                 // provider no re-check CAS is needed, so no repurpose step is ever lost here: the per-definition lock
                 // already serializes this against every status transition.
@@ -1955,7 +1955,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 return Task.FromResult<CronScheduleAdvanceResult?>(null);
             }
 
-            // KTD2: TimeProvider is the coherent single-process authority for this provider — there is no separate
+            // TimeProvider is the coherent single-process authority for this provider — there is no separate
             // store whose clock could disagree — and it is the deterministic seam FakeTimeProvider drives in tests.
             var storeUtcNow = _timeProvider.GetUtcNow().UtcDateTime;
 
@@ -2194,7 +2194,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             updated.IsPaused = false;
             updated.ScheduleRevision++;
             updated.UpdatedAt = operationTimeUtc;
-            // R10: the position moves with the pause state and revision, so a resumed definition never carries a
+            // The position moves with the pause state and revision, so a resumed definition never carries a
             // pre-pause watermark that would read as a backlog spanning the whole pause.
             updated.ReconciledThroughUtc = scheduleAnchorUtc;
             updated.NextDueUtc = nextOccurrence.ExecutionTime;
@@ -2277,7 +2277,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 definition.CreatedAt = current.CreatedAt;
                 definition.UpdatedAt = operationTimeUtc;
 
-                // R10: rebase the position on a schedule-changing edit so the old expression's projection cannot
+                // Rebase the position on a schedule-changing edit so the old expression's projection cannot
                 // survive it; a metadata-only edit leaves the position exactly where it was. The provider supplies
                 // its clock to the factory while every definition lock is held, so the pair is one atomic transition.
                 CronJobOccurrenceEntity<TCronJob>? replacement = null;
@@ -2568,11 +2568,11 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         return Task.FromResult(occurrence is null ? null! : _CloneCronOccurrence(occurrence));
     }
 
-    // KTD7: cron-occurrence creation is intentionally NOT guarded by a coarse 'jobs.cron-occurrence-creation'
+    // Cron-occurrence creation is intentionally NOT guarded by a coarse 'jobs.cron-occurrence-creation'
     // distributed lock. The durable provider deduplicates first creation by (ExecutionTime, CronJobId) and requeues
     // existing occurrences by id; storage-level dedup is the correctness boundary. A coarse lock would add no
     // correctness and only serialize independent occurrences. Revisit only if evidence shows storage dedup is
-    // insufficient (plan #267 follow-up).
+    // insufficient.
     public async IAsyncEnumerable<CronJobOccurrenceEntity<TCronJob>> QueueCronJobOccurrencesAsync(
         (DateTime Key, JobManagerDispatchContext[] Items) cronJobOccurrences,
         [EnumeratorCancellation] CancellationToken cancellationToken = default
@@ -2606,7 +2606,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                     continue;
                 }
 
-                // R7/AE10 + KTD1: with no reuse row carried, a row that ACCOUNTS for this instant — including a
+                // With no reuse row carried, a row that ACCOUNTS for this instant — including a
                 // terminal one the live filter above ignores — means the advance stands; materializing again would
                 // run the tick twice. The one row that does NOT account is the seeding migration's ReplacementOwed
                 // retirement, whose fire is still owed. Mirrors the relational claim path's occupied-instant guard.
@@ -2785,7 +2785,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
     public Task<int> ReclaimStalledCronJobOccurrencesAsync(CancellationToken cancellationToken = default)
     {
-        // #316/U3 — cron mirror of ReclaimStalledTimeJobsAsync.
+        // #316 — cron mirror of ReclaimStalledTimeJobsAsync.
         var now = _timeProvider.GetUtcNow();
         var affected = 0;
 
@@ -2908,7 +2908,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             {
                 lock (_GetCronDefinitionLock(occurrence.CronJobId))
                 {
-                    // #316/U5 — cron mirror of the strict claim→start ownership recheck.
+                    // #316 — cron mirror of the strict claim→start ownership recheck.
                     var ownedNonTerminal = _IsOwnedNonTerminal(occurrence.OwnerId, occurrence.Status);
                     var canTransitionToInProgress =
                         functionContext.Status != JobStatus.InProgress || occurrence.Status == JobStatus.Queued;
@@ -2956,9 +2956,9 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             return _cronOccurrences.TryUpdate(id, updated, current);
         }
 
-        // Per-policy dead-node transition (#315, #316/U4) — mirrors EF ReleaseDeadNodeOccurrenceResourcesAsync.
+        // Per-policy dead-node transition (#315, #316) — mirrors EF ReleaseDeadNodeOccurrenceResourcesAsync.
         // Idle/Queued reclaimed immediately; InProgress arms defer to the lease (LockedUntil <= now) so a
-        // still-leased running occurrence survives a membership blip and is recovered by U3 once its lease lapses.
+        // still-leased running occurrence survives a membership blip and is recovered by the stalled-lease reclaim once its lease lapses.
         var owned = _cronOccurrences
             .Values.Where(x => string.Equals(x.OwnerId, instanceIdentifier, StringComparison.Ordinal))
             .ToArray();
@@ -3238,9 +3238,9 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
     }
 
     // Mirrors EF Core's flat-load + AttachNonTimedDescendantsAsync hydration but uses an in-memory children index.
-    // R12/KTD2: hydrate the non-timed in-tree subtree down to MaxChainDepth (root = depth 1), carrying the full field
+    // Hydrate the non-timed in-tree subtree down to MaxChainDepth (root = depth 1), carrying the full field
     // set at every level (dropping RetryCount from any level silently resets the retry budget after restart —
-    // docs/solutions precedent). Timed descendants (ExecutionTime != null) stay excluded — U5 claims them independently.
+    // docs/solutions precedent). Timed descendants (ExecutionTime != null) stay excluded — claimed independently.
     private TimeJobEntity _ForQueueTimeJobs(TTimeJob job)
     {
         var root = new TimeJobEntity
@@ -3287,7 +3287,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
         foreach (var childId in directChildren.Keys)
         {
-            // Only children with null ExecutionTime, matching the EF mapping (timed descendants run via U5's gate).
+            // Only children with null ExecutionTime, matching the EF mapping (timed descendants run via the parent gate).
             if (!_timeJobs.TryGetValue(childId, out var ch) || ch.ExecutionTime is not null)
             {
                 continue;
@@ -3362,7 +3362,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
     {
         // Mirror EF WhereCanAcquire: (Status is Idle OR Queued) AND (mine OR never leased OR (lease expired AND
         // OnNodeDeath == Retry)). `now` comes from the injected TimeProvider (application clock, not a DB clock)
-        // for InMemory↔SQL parity. The lease-expiry arm is gated on Retry (KTD5/#315).
+        // for InMemory↔SQL parity. The lease-expiry arm is gated on Retry (#315).
         var now = _timeProvider.GetUtcNow();
 
         return (job.Status == JobStatus.Idle || job.Status == JobStatus.Queued)
@@ -3376,7 +3376,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
     private bool _CanAcquireCronOccurrence(CronJobOccurrenceEntity<TCronJob> occurrence)
     {
         // Mirror EF WhereCanAcquire: (Status is Idle OR Queued) AND (mine OR never leased OR (lease expired AND
-        // OnNodeDeath == Retry)). The lease-expiry arm is gated on Retry (KTD5/#315).
+        // OnNodeDeath == Retry)). The lease-expiry arm is gated on Retry (#315).
         var now = _timeProvider.GetUtcNow();
 
         return _cronJobs.TryGetValue(occurrence.CronJobId, out var definition)
@@ -3546,7 +3546,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             CronJobId = occurrence.CronJobId,
             Status = occurrence.Status,
             RetryCount = occurrence.RetryCount,
-            // R23: the recovery stamp must survive every projection. Dropping it here would silently turn a coalesced
+            // The recovery stamp must survive every projection. Dropping it here would silently turn a coalesced
             // run back into an ordinary one the moment it round-trips — the same defect shape that once reset
             // RetryCount and handed a restarted job a fresh retry budget.
             RecoveredFromUtc = occurrence.RecoveredFromUtc,

@@ -120,8 +120,8 @@ internal sealed class JobsInitializationHostedService(
             await SeedDefinedCronJobsAsync(schedulerOptions, cancellationToken).ConfigureAwait(false);
         }
 
-        // KTD7: each seeder runs inside its own scope. A consumer-supplied seeder commonly resolves the scoped
-        // ITimeJobManager<>/ICronJobManager<>/IJobScheduler facades (KD5); resolving them from this hosted service's
+        // Each seeder runs inside its own scope. A consumer-supplied seeder commonly resolves the scoped
+        // ITimeJobManager<>/ICronJobManager<>/IJobScheduler facades; resolving them from this hosted service's
         // root provider would be a captive-dependency error under ValidateScopes.
         if (options?.TimeSeederAction is not null)
         {
@@ -221,7 +221,7 @@ internal sealed class JobsInitializationHostedService(
         CancellationToken cancellationToken
     )
     {
-        // KTD7: run this seeder in its own scope — matches the TimeSeederAction/CronSeederAction seeders below and
+        // Run this seeder in its own scope — matches the TimeSeederAction/CronSeederAction seeders below and
         // future-proofs against a scoped resolution creeping into this path (IInternalJobManager itself is
         // singleton today).
         await using var scope = serviceProvider.CreateAsyncScope();

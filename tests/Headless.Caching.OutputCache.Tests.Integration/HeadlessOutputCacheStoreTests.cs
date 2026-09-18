@@ -111,7 +111,7 @@ public sealed class HeadlessOutputCacheStoreTests(OutputCacheRedisFixture fixtur
         var store = host.Services.GetRequiredService<IOutputCacheStore>();
         var oversizedTag = new string('x', 70_000); // > 65535 UTF-8 bytes
 
-        // R7: the store delegates tag-limit validation to the engine's write-time choke point rather than
+        // The store delegates tag-limit validation to the engine's write-time choke point rather than
         // re-implementing it.
         var act = async () =>
             await store.SetAsync(

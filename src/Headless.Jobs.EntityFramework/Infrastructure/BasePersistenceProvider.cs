@@ -34,11 +34,11 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
     protected ILogger Logger { get; } = logger;
 
-    // Pickup-lease deadline window: every acquire stamps LockedUntil = now + LeaseDuration (KTD2).
+    // Pickup-lease deadline window: every acquire stamps LockedUntil = now + LeaseDuration.
     protected TimeSpan LeaseDuration { get; } = optionsBuilder.LeaseDuration;
 
-    // R12/KTD2: the maximum number of nodes on a root-to-leaf path that hydration traverses (root = depth 1). A timed
-    // descendant is a boundary — excluded from the in-tree walk, claimed independently (U5).
+    // The maximum number of nodes on a root-to-leaf path that hydration traverses (root = depth 1). A timed
+    // descendant is a boundary — excluded from the in-tree walk, claimed independently.
     protected int MaxChainDepth { get; } = optionsBuilder.MaxChainDepth;
 
     // Runtime owner accessor. Stamp/acquire sites read the current node@incarnation via TryGetStampOwner
@@ -162,7 +162,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
-        // #316/U5 claim→start ownership recheck: all unified writes are fenced by owner and non-terminal state.
+        // #316 claim→start ownership recheck: all unified writes are fenced by owner and non-terminal state.
         // Queued→InProgress additionally requires the row to still be Queued, so duplicate same-owner scheduler
         // wrappers cannot revalidate an already-running row. Run-condition skip writes retain the broader fence.
         if (!OwnerIdentity.TryGetStampOwner(out var owner))
@@ -231,7 +231,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .Where(x => x.ExecutionTime != null)
             .Where(x => x.ExecutionTime >= oneSecondAgo) // Ignore old jobs (fallback handles them)
             .WhereCanAcquireUsingDatabaseClock(owner)
-            // U5/KTD3: a timed descendant surfaces here as its own candidate (excluded from the in-tree walk); the
+            // A timed descendant surfaces here as its own candidate (excluded from the in-tree walk); the
             // parent gate keeps it out of the peek until its parent reached its matching terminal state.
             .WhereClaimableUnderParentTerminalGate(dbContext.Set<TTimeJob>());
 
@@ -276,7 +276,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         // Fetch all jobs within that complete second (this ensures we get all jobs in the same second)
         var maxExecutionTime = minSecond.AddSeconds(1);
 
-        // R12/KTD2: load the flat roots, then rebuild the non-timed in-tree subtree to MaxChainDepth in memory (a
+        // Load the flat roots, then rebuild the non-timed in-tree subtree to MaxChainDepth in memory (a
         // recursive .Select projection is not EF-translatable) instead of a fixed-depth nested projection.
         // Same execution strategy as the minimum-instant read above: this is the second of the two frames a SQL Server
         // deadlock victim was observed on, so wrapping only the first would close the symptom rather than the gap.
@@ -298,7 +298,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         return new EarliestTimeJobs { StoreUtcNow = earliest!.StoreUtcNow, Jobs = jobs };
     }
 
-    // R12/KTD2: projects a prepared time-job query to flat roots and rebuilds their non-timed in-tree subtree to
+    // Projects a prepared time-job query to flat roots and rebuilds their non-timed in-tree subtree to
     // MaxChainDepth in memory (a recursive .Select projection is not EF-translatable). Shared by the peek and
     // immediate-acquire paths; the descendant reload always runs no-tracking against the same dbContext.
     private async Task<TimeJobEntity[]> _LoadWithDescendantsAsync(
@@ -414,7 +414,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
-        // U5/KTD3: _ApplyCancelledParentRunConditionsAsync (in the committed transaction) handled the NON-timed
+        // _ApplyCancelledParentRunConditionsAsync (in the committed transaction) handled the NON-timed
         // children. The cancelled parent's TIMED children are reconciled by ApplyParentTerminalRunConditionsAsync,
         // driven post-cancellation by the manager so the released-child scheduler wake (RestartIfNeeded) is threaded
         // through the same path as the executor/sweep reconcile — and by the poll-time / sweep reconcile as a backstop.
@@ -553,7 +553,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 cancellationToken
             );
 
-    // U5/KTD3: cascade skip-reason for descendants of a timed child whose parent's run condition did not match; the
+    // Cascade skip-reason for descendants of a timed child whose parent's run condition did not match; the
     // direct-child mismatch reason is the shared ChainRunConditionRules.RunConditionMismatchReason.
     private const string _AncestorSkippedReason =
         "Ancestor job was skipped after its parent's run condition did not match.";
@@ -587,7 +587,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         var jobs = dbContext.Set<TTimeJob>();
 
         // Probe for a MISMATCHED stranded candidate BEFORE opening a transaction. This is the poll-time safety net
-        // (R1: now gated to the fallback cadence), and it almost always finds nothing — so the common empty case must
+        // (now gated to the fallback cadence), and it almost always finds nothing — so the common empty case must
         // not open (and hold) a transaction. Probing the MISMATCHED set (not merely "parent is terminal") is what
         // makes the sweep bounded and starvation-free: this path only ever skips, never releases, so a page full of
         // matching (release-side) children — which it never mutates — must not keep re-triggering the reconcile.
@@ -613,14 +613,14 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         return skipped;
     }
 
-    // R2/KTD3/KTD6: the poll-time safety net's BOUNDED skip pass. Selects only the rows it mutates — IDLE gated timed
+    // The poll-time safety net's BOUNDED skip pass. Selects only the rows it mutates — IDLE gated timed
     // children whose parent reached a NON-matching terminal state — ordered and capped at the same batch size as the
     // sibling poll queries. Because every selected row leaves the candidate set once skipped, a large stranded backlog
     // drains monotonically across sweeps, and matching future children (which this path never touches) can never fill
     // the page and starve it. Only the SELECTION is bounded: the subtree cascade below is deliberately UNCAPPED — it
     // skips ANY idle descendant, while the candidate predicate requires ExecutionTime != null, so a half-finished
-    // cascade would strand non-timed descendants under a Skipped ancestor with no path that ever re-selects them
-    // (KTD6). The per-parent reconcile (ApplyParentTerminalRunConditionsAsync) stays exhaustive and unbounded; this
+    // cascade would strand non-timed descendants under a Skipped ancestor with no path that ever re-selects them.
+    // The per-parent reconcile (ApplyParentTerminalRunConditionsAsync) stays exhaustive and unbounded; this
     // bound is the all-parents sweep's alone.
     private static async Task<int> _SkipStrandedTimedChildrenBoundedAsync(
         TDbContext dbContext,
@@ -658,7 +658,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         return skipped;
     }
 
-    // Base predicate for the KTD3 timed-child reconcile: an IDLE, scheduled (ExecutionTime != null), parented timed
+    // Base predicate for the timed-child reconcile: an IDLE, scheduled (ExecutionTime != null), parented timed
     // child whose run condition is parent-terminal-gated. Shared by the reconcile and its pre-transaction probe so the
     // two agree on candidate membership.
     private static IQueryable<TTimeJob> _TimedChildReconcileCandidates(DbSet<TTimeJob> jobs)
@@ -677,14 +677,14 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         );
     }
 
-    // The set-based release/skip reconcile (KTD3). For every IDLE timed child (ExecutionTime != null) with a
+    // The set-based release/skip reconcile. For every IDLE timed child (ExecutionTime != null) with a
     // parent-terminal-gated run condition whose parent has reached a terminal state: a MATCHING run condition releases
     // (a past-due child is re-stamped to the database clock now so the staleness-filtered main peek claims it
     // promptly); a NON-matching one is skipped with its whole subtree. parentId constrains to one parent (per-parent,
     // from the executor/cancellation); null reconciles all terminal parents. This is the RELEASE-and-skip path and is
     // intentionally UNBOUNDED — a terminalizing parent's children must all be reconciled, or the parent's subtree is
-    // left half-settled. The all-parents SKIP-ONLY safety net is bounded separately (SkipStrandedTimedChildrenBounded,
-    // R2/KTD6). Returns the earliest execution time among matching children (for RestartIfNeeded) and the number of
+    // left half-settled. The all-parents SKIP-ONLY safety net is bounded separately (SkipStrandedTimedChildrenBounded).
+    // Returns the earliest execution time among matching children (for RestartIfNeeded) and the number of
     // rows skipped. DB-clock discipline: DateTime.UtcNow is inside the ExecuteUpdate expression tree (translated to the
     // server clock), never a pre-evaluated local.
     private static async Task<(DateTime? Earliest, int Skipped)> _ReconcileParentTerminalTimedChildrenAsync(
@@ -792,10 +792,10 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         // #316 clock-skew: the InProgress lease-deferral arms compare LockedUntil <= now against the DB clock, not the
         // reclaiming node's TimeProvider, so a still-leased running row survives regardless of cross-node skew.
 
-        // KTD6: a NodeLeft reclaim may race host shutdown; the writes must not be torn down mid-statement,
+        // A NodeLeft reclaim may race host shutdown; the writes must not be torn down mid-statement,
         // so they run under CancellationToken.None. The three statements are wrapped in one transaction
-        // (finding 3.1) so a crash between them can't leave a half-reclaimed node — the idempotent reconcile
-        // (U2) re-reclaims a partial node on the next tick, but the transaction removes the transient state.
+        // so a crash between them can't leave a half-reclaimed node — the idempotent reconcile
+        // re-reclaims a partial node on the next tick, but the transaction removes the transient state.
         //
         // The explicit transaction freezes PostgreSQL's `now()` at transaction-open for all three statements. That is
         // SAFE here, and deliberately so: these statements only READ the lease (LockedUntil <= now), RELEASE it
@@ -808,10 +808,10 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .Database.BeginTransactionAsync(CancellationToken.None)
             .ConfigureAwait(false);
 
-        // Per-policy dead-node transition (#315, #316/U4). Idle/Queued never started → reclaimed immediately on node
+        // Per-policy dead-node transition (#315, #316). Idle/Queued never started → reclaimed immediately on node
         // death (fast recovery preserved). InProgress arms defer to the lease (LockedUntil <= now): a busy node's
         // still-leased running jobs survive a membership blip — once the (dead) node stops renewing, the lease lapses
-        // and U3's stalled-reclaim recovers them within ≈ one lease TTL. Retry rows are released to Idle (InProgress
+        // and the stalled-lease reclaim recovers them within ≈ one lease TTL. Retry rows are released to Idle (InProgress
         // is invisible to the claim predicate, so they must be handed back, not left for the lease-expiry arm).
         // Split by attempt state: Idle/Queued rows never invoked user code so their budget is untouched, while an
         // InProgress row is a STARTED attempt lost to node death — it consumes one retry-budget unit, per the
@@ -929,7 +929,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .Set<TTimeJob>()
             .Where(x => ((IEnumerable<Guid>)ids).Contains(x.Id))
             .WhereCanAcquireUsingDatabaseClock(owner)
-            // U5/KTD3: gate the immediate-acquire path too — a timed descendant is claimable only once its parent
+            // Gate the immediate-acquire path too — a timed descendant is claimable only once its parent
             // reached its matching terminal state. Roots (ParentId == null) pass trivially.
             .WhereClaimableUnderParentTerminalGate(dbContext.Set<TTimeJob>())
             .ExecuteUpdateAsync(
@@ -976,7 +976,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ConfigureAwait(false);
 
         // Return the acquired jobs for immediate execution, with the non-timed in-tree subtree to MaxChainDepth
-        // (R12/KTD2: flat root load + in-memory rebuild replaces a fixed-depth nested projection).
+        // (flat root load + in-memory rebuild replaces a fixed-depth nested projection).
         var acquired = await _LoadWithDescendantsAsync(
                 jobs.AsNoTracking().Where(x => ((IEnumerable<Guid>)acquiredRootIds).Contains(x.Id)),
                 dbContext,
@@ -984,7 +984,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             )
             .ConfigureAwait(false);
 
-        // KTD2: the hydrated tree may include nodes the lease walk stopped at; execute strictly the claimed set.
+        // The hydrated tree may include nodes the lease walk stopped at; execute strictly the claimed set.
         foreach (var root in acquired)
         {
             if (claimedIdsByRoot.TryGetValue(root.Id, out var claimedIds))
@@ -1001,7 +1001,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         // #316 sliding lease: slide LockedUntil forward while the job runs. Fenced on WhereOwnedBy (the #5
         // completion-fence shape: still owned + non-terminal), so a row the dead-node/stalled sweep already
         // reclaimed, terminalized, or whose owner changed matches 0 rows — the signal the caller turns into
-        // cancel-on-loss (U2/KTD3). No separate liveness query: this UPDATE is the loss detector.
+        // cancel-on-loss. No separate liveness query: this UPDATE is the loss detector.
         // #461: a NEGATIVE return means coordination membership is not currently established (registration pending
         // or a transient blip) — distinct from 0 (genuinely not owned). The caller skips this renewal tick instead of
         // cancelling, so a momentary membership hiccup doesn't kill a healthy job; if it persists the lease lapses and
@@ -1072,7 +1072,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
     public async Task<int> ReclaimStalledTimeJobsAsync(CancellationToken cancellationToken = default)
     {
-        // #316/U3 gap-closer: reclaim InProgress rows whose lease lapsed (LockedUntil <= now) on ANY node — not
+        // #316 gap-closer: reclaim InProgress rows whose lease lapsed (LockedUntil <= now) on ANY node — not
         // owner-scoped, unlike the dead-node sweep, because the trigger is a stalled lease, not a declared node
         // death. A healthy renewing job keeps a future LockedUntil and never matches. Same per-policy transitions
         // and PR#456 terminal-row hygiene as ReleaseDeadNodeTimeJobResourcesAsync, wrapped in one transaction so a crash
@@ -1089,7 +1089,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
         var set = dbContext.Set<TTimeJob>();
 
-        // The reclaim writes run under CancellationToken.None (mirroring the dead-node sweep, KTD6): a host-stop racing
+        // The reclaim writes run under CancellationToken.None (mirroring the dead-node sweep): a host-stop racing
         // the sweep must not tear down a per-policy transition mid-statement and revert the whole transaction.
         // The Retry arm increments RetryCount: an InProgress row with a lapsed lease represents a STARTED attempt
         // that was lost, and NodeDeathPolicy.Retry documents that such attempts count toward the retry budget.
@@ -1272,10 +1272,10 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         cron.ScheduleRevision++;
                         cron.UpdatedAt = now;
 
-                        // R10: the stored projection was derived under the OLD expression; left standing it keeps
+                        // The stored projection was derived under the OLD expression; left standing it keeps
                         // selecting (or hiding) the definition by the stale schedule — a yearly→minutes edit would
                         // not fire until next year. Reset the position to the uninitialized sentinel so the next
-                        // wake re-derives it by the R9 creation rule under the new expression: anchored at the
+                        // wake re-derives it by the same creation rule under the new expression: anchored at the
                         // store instant, no interval replayed, the edit effective on the next wake — matching the
                         // runtime edit path's observable contract.
                         cron.ReconciledThroughUtc = default;
@@ -1302,7 +1302,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                     CreatedAt = now,
                     UpdatedAt = now,
                     Request = [],
-                    // KTD6: seeded at CREATION only. The expression-changed branch above deliberately leaves these
+                    // Seeded at CREATION only. The expression-changed branch above deliberately leaves these
                     // alone, so a value set later through ICronJobManager survives every redeploy and is an operator
                     // override by construction — which is why no provenance marker is persisted.
                     OnMissedRun = onMissedRun,
@@ -1700,8 +1700,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         // One transaction, unlike the ordinary advance. The occurrence resolution and the watermark move must not
         // interleave: a crash between them would leave the backlog partly resolved with the watermark already past it,
         // and nothing to re-derive the remainder from. Safe here precisely because the recovery instant is a
-        // caller-supplied store instant, so no database-clock expression is frozen at transaction open (KTD1 governs
-        // clock EXPRESSIONS inside transactions, not transactions as such).
+        // caller-supplied store instant, so no database-clock expression is frozen at transaction open (a concern
+        // that applies to clock EXPRESSIONS inside transactions, not transactions as such).
         await using var transaction = await dbContext
             .Database.BeginTransactionAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -1739,9 +1739,9 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
         // Every row in the missed window, whatever its state: the non-terminal ones are the policy's to resolve, and
         // the terminal ones still matter because a terminal row occupying the earliest missed instant means that
-        // instant already ran and must not be materialized a second time (R7).
+        // instant already ran and must not be materialized a second time.
         //
-        // KTD1c: projected through the SHARED accounting selector, the same one MaterializeCronScheduleOccurrenceAsync
+        // Projected through the SHARED accounting selector, the same one MaterializeCronScheduleOccurrenceAsync
         // uses. Reading bare Status here is what let the two paths disagree — recovery treated every non-live row as
         // occupying the instant while the native claim path re-materialized the identical row. It also keeps the raw
         // status out of materialization, so a value written by a newer binary cannot throw here.
@@ -1791,7 +1791,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 break;
             }
 
-            // KTD5: revoking ownership is the whole mechanism. The claim path's in-progress transition already
+            // Revoking ownership is the whole mechanism. The claim path's in-progress transition already
             // requires OwnerId == owner, so a prior owner that was holding this row simply fails that predicate and
             // drops it — no new machinery, and no cost on the normal execution path.
             //
@@ -2053,7 +2053,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             return null;
         }
 
-        // Read the committed values back instead of echoing the request (KTD4), so the caller sees exactly what the
+        // Read the committed values back instead of echoing the request, so the caller sees exactly what the
         // store decided: both providers truncate to their column precision. DateTime.UtcNow in this projection is
         // translated to server time, which is how the store's clock reaches the caller without a scalar clock query
         // and without hijacking UpdatedAt — that column is observational time and stays on the injected TimeProvider.
@@ -2298,16 +2298,16 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         // #316 clock-skew: InProgress lease-deferral arms compare LockedUntil <= now against the DB clock (see
         // ReleaseDeadNodeTimeJobResourcesAsync).
 
-        // See ReleaseDeadNodeTimeJobResourcesAsync: strict WhereOwnedBy (KTD5/R4), one transaction (finding 3.1),
-        // CancellationToken.None for the reclaim writes (KTD6).
+        // See ReleaseDeadNodeTimeJobResourcesAsync: strict WhereOwnedBy, one transaction so a crash between the
+        // writes can't leave a half-reclaimed row, and CancellationToken.None for the reclaim writes.
         await using var transaction = await dbContext
             .Database.BeginTransactionAsync(CancellationToken.None)
             .ConfigureAwait(false);
 
-        // Per-policy dead-node transition (#315, #316/U4) — mirrors ReleaseDeadNodeTimeJobResourcesAsync. Idle/Queued
+        // Per-policy dead-node transition (#315, #316) — mirrors ReleaseDeadNodeTimeJobResourcesAsync. Idle/Queued
         // reclaimed immediately; InProgress arms defer to the lease (LockedUntil <= now) so a still-leased running
-        // occurrence survives a membership blip and is recovered by U3 once its lease lapses. Split by attempt
-        // state: only the started (InProgress) Retry arm consumes a retry-budget unit.
+        // occurrence survives a membership blip and is recovered by the stalled-lease reclaim once its lease lapses.
+        // Split by attempt state: only the started (InProgress) Retry arm consumes a retry-budget unit.
         var releasedNotStarted = await dbContext
             .Set<CronJobOccurrenceEntity<TCronJob>>()
             .WhereOwnedBy(instanceIdentifier)
@@ -2400,7 +2400,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     )
     {
         // #316 sliding lease — mirror of RenewTimeJobLeaseAsync for cron occurrences. WhereOwnedBy fence makes a
-        // lost/reclaimed/terminalized occurrence match 0 rows -> cancel-on-loss (U2/KTD3).
+        // lost/reclaimed/terminalized occurrence match 0 rows -> cancel-on-loss.
         // #461: a NEGATIVE return means coordination membership is not established (see RenewTimeJobLeaseAsync) — the
         // caller skips the renewal tick rather than cancelling.
         if (!OwnerIdentity.TryGetStampOwner(out var owner))
@@ -2433,7 +2433,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
     public async Task<int> ReclaimStalledCronJobOccurrencesAsync(CancellationToken cancellationToken = default)
     {
-        // #316/U3 — cron mirror of ReclaimStalledTimeJobsAsync. Reclaim lapsed-lease InProgress occurrences on any node.
+        // #316 — cron mirror of ReclaimStalledTimeJobsAsync. Reclaim lapsed-lease InProgress occurrences on any node.
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -2446,7 +2446,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
         var set = dbContext.Set<CronJobOccurrenceEntity<TCronJob>>();
 
-        // Reclaim writes under CancellationToken.None (see ReclaimStalledTimeJobsAsync / KTD6). The Retry arm
+        // Reclaim writes under CancellationToken.None (see ReclaimStalledTimeJobsAsync). The Retry arm
         // increments RetryCount — a lapsed-lease InProgress occurrence is a started attempt that was lost, and it
         // consumes one retry-budget unit (see ReclaimStalledTimeJobsAsync for the crash-loop rationale).
         var released = await set.Where(x =>
@@ -2544,11 +2544,10 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ConfigureAwait(false);
     }
 
-    // KTD7: cron-occurrence creation is intentionally NOT guarded by a coarse 'jobs.cron-occurrence-creation'
+    // Cron-occurrence creation is intentionally NOT guarded by a coarse 'jobs.cron-occurrence-creation'
     // distributed lock. First creation is deduplicated by (ExecutionTime, CronJobId); requeues of known occurrences
     // update by id. Storage-level dedup is the correctness boundary here. A coarse lock would only serialize
-    // independent occurrences for no benefit. Revisit only if evidence shows storage dedup is insufficient (see plan
-    // #267 deferred follow-up).
+    // independent occurrences for no benefit. Revisit only if evidence shows storage dedup is insufficient.
     public IAsyncEnumerable<CronJobOccurrenceEntity<TCronJob>> QueueCronJobOccurrencesAsync(
         (DateTime Key, JobManagerDispatchContext[] Items) cronJobOccurrences,
         CancellationToken cancellationToken = default
@@ -2620,7 +2619,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
-        // #316/U5 — cron mirror of UpdateTimeJobsWithUnifiedContextAsync, including the strict Queued→InProgress
+        // #316 — cron mirror of UpdateTimeJobsWithUnifiedContextAsync, including the strict Queued→InProgress
         // transition that rejects duplicate same-owner scheduler wrappers.
         if (!OwnerIdentity.TryGetStampOwner(out var owner))
         {

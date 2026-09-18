@@ -13,12 +13,12 @@ using Microsoft.Extensions.Options;
 namespace Tests.MultiTenancy;
 
 /// <summary>
-/// Pins the R1 host source behavior in isolation: port-excluded host read with casing preserved,
+/// Pins the host source behavior in isolation: port-excluded host read with casing preserved,
 /// one trailing dot stripped, IP literals and hosts over 253 characters rejected before any matcher
-/// runs, first matching template wins, and the KTD2 linear-time guarantee's defense in depth — a
+/// runs, first matching template wins, and the linear-time guarantee's defense in depth — a
 /// <see cref="System.Text.RegularExpressions.RegexMatchTimeoutException"/> maps to
 /// <see cref="TenantIdentifierSourceResultKind.Invalid"/> with a once-per-process warning that names
-/// the template only, never the host (R11, R18). Also pins the KTD3 builder registration semantics
+/// the template only, never the host. Also pins the builder registration semantics
 /// for <c>AddHostSource</c>.
 /// </summary>
 public sealed class HostTenantIdentifierSourceTests : TestBase
@@ -65,7 +65,7 @@ public sealed class HostTenantIdentifierSourceTests : TestBase
     public void should_return_none_for_an_ipv4_host_literal_without_consulting_the_matcher()
     {
         // The bare {tenant} template would otherwise match ANY host, including an IP literal —
-        // returning None proves the IP guard runs before the matcher (R1, AE3).
+        // returning None proves the IP guard runs before the matcher.
         var source = _CreateSource("{tenant}");
         var context = new DefaultHttpContext();
         context.Request.Host = new HostString("10.0.1.5");
@@ -149,15 +149,15 @@ public sealed class HostTenantIdentifierSourceTests : TestBase
         // Test seams, not production settings: a 1-tick match timeout only fires on an input far
         // beyond the 253-character DNS guard, so the host cap is raised too. Together they force
         // RegexMatchTimeoutException through the real GetIdentifier path — the production path pins
-        // RegexPatterns.MatchTimeout and the 253 cap, which makes the timeout unreachable (KTD2's
-        // "defense in depth" catch is what this test exercises).
+        // RegexPatterns.MatchTimeout and the 253 cap, which makes the timeout unreachable in production —
+        // the "defense in depth" catch is what this test exercises.
         var source = new HostTenantIdentifierSource(
             Options.Create(new HostTenantIdentifierSourceOptions { Templates = ["*.{tenant}.example.com"] }),
             logger,
             matchTimeout: TimeSpan.FromTicks(1),
             maxHostLength: int.MaxValue
         );
-        // 'b' labels make the host textually distinct from the template so the R18 assertion below
+        // 'b' labels make the host textually distinct from the template so the assertion below
         // can prove the warning carries the template only, never any host fragment.
         var context = new DefaultHttpContext();
         context.Request.Host = new HostString(string.Join(".", Enumerable.Repeat("b", 50_000)) + ".example.com");
@@ -172,7 +172,7 @@ public sealed class HostTenantIdentifierSourceTests : TestBase
         var entry = logger.Entries[0];
         entry.EventName.Should().Be(TimeoutEventName);
         entry.Message.Should().Contain("*.{tenant}.example.com");
-        entry.Message.Should().NotContain("b.b"); // R18: never the host
+        entry.Message.Should().NotContain("b.b"); // never the host
     }
 
     [Fact]
@@ -201,14 +201,14 @@ public sealed class HostTenantIdentifierSourceTests : TestBase
     [Fact]
     public void should_throw_when_options_carry_an_unparsable_template()
     {
-        // Options validation normally prevents this (R7); constructing the source directly with an
+        // Options validation normally prevents this; constructing the source directly with an
         // invalid template must still fail loudly rather than silently skip the template.
         var act = () => _CreateSource("{tenant}.{tenant}.com");
 
         act.Should().Throw<InvalidOperationException>().WithMessage($"*{TenantIdentifierSourceTemplateText}*");
     }
 
-    // --- registration (KTD3: descriptor dedupes, options contributions accumulate) ---
+    // --- registration: descriptor dedupes, options contributions accumulate ---
 
     [Fact]
     public void should_register_one_host_source_descriptor_holding_every_contributed_template()

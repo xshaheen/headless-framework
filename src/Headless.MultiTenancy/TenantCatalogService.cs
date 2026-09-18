@@ -22,14 +22,14 @@ public interface ITenantCatalogService
     /// </summary>
     /// <param name="identifier">The raw, caller-supplied identifier (for example a hostname label).</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
-    /// <returns>Exactly one <see cref="TenantResolutionOutcome"/> per KTD4's classification.</returns>
+    /// <returns>Exactly one <see cref="TenantResolutionOutcome"/> classifying the result.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="identifier"/> is <see langword="null"/>.</exception>
     Task<TenantResolutionOutcome> ResolveAsync(string identifier, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Loads <see cref="TenantInfo"/> for a canonical tenant id through the same cache the identifier
     /// resolution path uses. Never rejects on a disabled tenant — rejection is a resolution-time concern
-    /// only (R9).
+    /// only.
     /// </summary>
     /// <param name="id">The canonical tenant id.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
@@ -126,8 +126,8 @@ internal sealed class TenantCatalogService(
         CancellationToken cancellationToken
     )
     {
-        // These two flags split the single exception surface of GetOrAddAsync into the three outcomes KTD4
-        // distinguishes: a fault before the factory ran is a cache read fault (degrade to a miss), a fault after
+        // These two flags split the single exception surface of GetOrAddAsync into the three outcomes
+        // distinguished below: a fault before the factory ran is a cache read fault (degrade to a miss), a fault after
         // the store answered is a cache write fault (swallow; the store-derived outcome stands), and a fault
         // between the two is the store's own (propagate unwrapped — never caught here).
         var factoryStarted = false;
@@ -174,7 +174,7 @@ internal sealed class TenantCatalogService(
                 )
                 .ConfigureAwait(false);
         }
-#pragma warning disable CA1031 // The store already answered, so only the cache write (or its option validation) can have faulted: KTD4 keeps the store-derived outcome and issues no second store read. OperationCanceledException is excluded so caller cancellation still propagates.
+#pragma warning disable CA1031 // The store already answered, so only the cache write (or its option validation) can have faulted: this path keeps the store-derived outcome and issues no second store read. OperationCanceledException is excluded so caller cancellation still propagates.
         catch (Exception fault) when (fault is not OperationCanceledException && storeAnswered)
 #pragma warning restore CA1031
         {
@@ -182,7 +182,7 @@ internal sealed class TenantCatalogService(
 
             return freshFromStore;
         }
-#pragma warning disable CA1031 // The factory never ran, so the fault is on the cache read side: KTD4 degrades it to a miss and falls through to the store. OperationCanceledException is excluded so caller cancellation still propagates.
+#pragma warning disable CA1031 // The factory never ran, so the fault is on the cache read side: this path degrades it to a miss and falls through to the store. OperationCanceledException is excluded so caller cancellation still propagates.
         catch (Exception fault) when (fault is not OperationCanceledException && !factoryStarted)
 #pragma warning restore CA1031
         {
@@ -195,8 +195,8 @@ internal sealed class TenantCatalogService(
         if (storeAnswered)
         {
             // The fresh store instance is returned directly (not re-read through the id axis), preserving
-            // subclass identity for the typed accessor's downcast fast path (R10) while the cached copy stays
-            // an isolated base-shape clone (R9's defensive-snapshot contract; KTD5).
+            // subclass identity for the typed accessor's downcast fast path while the cached copy stays
+            // an isolated base-shape clone (a defensive-snapshot contract).
             return freshFromStore;
         }
 
@@ -281,8 +281,8 @@ internal sealed class TenantCatalogService(
         await _CacheTenantInfoAsync(tenant, cancellationToken).ConfigureAwait(false);
 
         // The fresh store instance is returned directly (not the clone written to cache), preserving
-        // subclass identity for the typed accessor's downcast fast path (R10) while the cached copy stays
-        // an isolated base-shape clone (R9's defensive-snapshot contract; KTD5).
+        // subclass identity for the typed accessor's downcast fast path while the cached copy stays
+        // an isolated base-shape clone (the defensive-snapshot contract).
         return tenant;
     }
 
@@ -300,8 +300,8 @@ internal sealed class TenantCatalogService(
 
         if (cached.HasValue)
         {
-            // Cache always holds the base shape only (R13) — always clone before handing it out so a
-            // caller mutating ExtraProperties cannot corrupt the shared cached instance (R9, KTD5).
+            // Cache always holds the base shape only — always clone before handing it out so a
+            // caller mutating ExtraProperties cannot corrupt the shared cached instance.
             return cached.Value is null ? null : _CloneToBaseShape(cached.Value.TenantInfo);
         }
 
@@ -342,7 +342,7 @@ internal sealed class TenantCatalogService(
     }
 
     /// <summary>
-    /// Reads from <paramref name="cache"/>, degrading a read fault to a miss (KTD4) so the caller falls
+    /// Reads from <paramref name="cache"/>, degrading a read fault to a miss so the caller falls
     /// through to the store. <see cref="OperationCanceledException"/> is never a cache fault and always
     /// propagates unchanged.
     /// </summary>
@@ -356,7 +356,7 @@ internal sealed class TenantCatalogService(
         {
             return await cache.GetAsync(cacheKey, cancellationToken).ConfigureAwait(false);
         }
-#pragma warning disable CA1031 // Cache read faults degrade to a miss by design (KTD4); the store is the source of truth and is consulted next. OperationCanceledException is excluded so caller cancellation still propagates.
+#pragma warning disable CA1031 // Cache read faults degrade to a miss by design; the store is the source of truth and is consulted next. OperationCanceledException is excluded so caller cancellation still propagates.
         catch (Exception fault) when (fault is not OperationCanceledException)
 #pragma warning restore CA1031
         {
@@ -367,7 +367,7 @@ internal sealed class TenantCatalogService(
     }
 
     /// <summary>
-    /// Writes to <paramref name="cache"/>, swallowing a write fault (KTD4) so the outcome already derived
+    /// Writes to <paramref name="cache"/>, swallowing a write fault so the outcome already derived
     /// from the store stays unchanged. <see cref="OperationCanceledException"/> always propagates unchanged.
     /// </summary>
     private async Task _TryUpsertCacheAsync<T>(
@@ -382,7 +382,7 @@ internal sealed class TenantCatalogService(
         {
             await cache.UpsertAsync(cacheKey, value, expiration, cancellationToken).ConfigureAwait(false);
         }
-#pragma warning disable CA1031 // Cache write faults must never surface to the caller (KTD4): the store-derived outcome already computed is authoritative regardless of whether the cache write below succeeds. OperationCanceledException is excluded so caller cancellation still propagates.
+#pragma warning disable CA1031 // Cache write faults must never surface to the caller: the store-derived outcome already computed is authoritative regardless of whether the cache write below succeeds. OperationCanceledException is excluded so caller cancellation still propagates.
         catch (Exception fault) when (fault is not OperationCanceledException)
 #pragma warning restore CA1031
         {

@@ -104,7 +104,7 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        // Fail-stop (R9): on local membership loss the owner identity's token fires, so the loop exits cleanly
+        // Fail-stop: on local membership loss the owner identity's token fires, so the loop exits cleanly
         // instead of spinning on a refused stamp. On the in-memory path this token is None and never fires.
         using var membershipLinkedCts = CancellationTokenSource.CreateLinkedTokenSource(
             stoppingToken,

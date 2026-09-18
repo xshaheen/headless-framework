@@ -11,10 +11,10 @@ using Microsoft.Extensions.Options;
 namespace Tests.MultiTenancy;
 
 /// <summary>
-/// Pins the R13 decorator contract in isolation: the ambient tenant route value is promoted into a
+/// Pins the decorator contract in isolation: the ambient tenant route value is promoted into a
 /// COPY of the explicit values only when the explicit values lack it, an explicit value (even
 /// <c>null</c>) always wins, the request's route values back up a <c>null</c> ambient dictionary
-/// (the <c>GetPathByName</c> surface, KTD7), the context-free overloads pass through unchanged,
+/// (the <c>GetPathByName</c> surface), the context-free overloads pass through unchanged,
 /// and <see cref="RouteTenantIdentifierSourceOptions.PromoteAmbientRouteValue"/> is honored at
 /// call time. Also pins the once-only registration through <c>AddRouteSource</c>.
 /// </summary>
@@ -93,7 +93,7 @@ public sealed class TenantAmbientRouteValueLinkGeneratorTests : TestBase
     public void should_promote_from_the_request_route_values_when_ambient_values_are_null()
     {
         // GetPathByName passes ambientValues: null, so the request's own route values are the only
-        // place the tenant segment can be recovered from (U5 spike evidence, KTD7).
+        // place the tenant segment can be recovered from.
         var inner = new RecordingLinkGenerator();
         var generator = _CreateGenerator(inner);
         var context = new DefaultHttpContext();
@@ -245,7 +245,7 @@ public sealed class TenantAmbientRouteValueLinkGeneratorTests : TestBase
         optionsAct.Should().Throw<ArgumentNullException>();
     }
 
-    // --- registration (KTD7: wrap exactly once, regardless of AddRouting()/AddControllers() order) ---
+    // --- registration: wrap exactly once, regardless of AddRouting()/AddControllers() order ---
 
     [Fact]
     public void should_wrap_the_link_generator_once_for_repeat_add_route_source_calls()

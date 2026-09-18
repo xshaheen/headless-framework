@@ -5,7 +5,7 @@ using Headless.Jobs.Enums;
 namespace Headless.Jobs.Infrastructure;
 
 /// <summary>
-/// U5/KTD3: builds the native-SQL fragment of the timed-descendant claim gate for the PostgreSQL and SQL Server
+/// Builds the native-SQL fragment of the timed-descendant claim gate for the PostgreSQL and SQL Server
 /// fallback claims, which select timed rows directly (<c>ExecutionTime IS NOT NULL</c>) and so must keep a timed
 /// descendant out of the claim until its parent reached its matching terminal state. Mirrors the generic-EF
 /// <c>WhereClaimableUnderParentTerminalGate</c> and the in-memory <c>_ParentGateAllowsClaim</c> — the three must

@@ -80,7 +80,7 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
 
     public virtual async Task should_reclaim_dead_owner_published_and_received_rows()
     {
-        // AE2 / R3: a Dead owner's in-flight rows are re-dispatched, not skipped.
+        // A Dead owner's in-flight rows are re-dispatched, not skipped.
         var (_, storage) = await _StartPrimaryStackAsync();
         var dead = await _SeedOwnedRowsAsync(storage, "dead-node", incarnation: 5, _FutureLease());
         var local = Membership.SetIdentity("local-node", incarnation: 1);
@@ -101,7 +101,7 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
 
     public virtual async Task should_not_reclaim_suspected_owner_rows()
     {
-        // AE1 / R2: a Suspected owner is never reclaimed through watch or reconcile.
+        // A Suspected owner is never reclaimed through watch or reconcile.
         var (_, storage) = await _StartPrimaryStackAsync();
         var suspected = await _SeedOwnedRowsAsync(storage, "suspected-node", incarnation: 5, _FutureLease());
         var local = Membership.SetIdentity("local-node", incarnation: 1);
@@ -125,7 +125,7 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
 
     public virtual async Task should_reclaim_once_when_surfaced_by_both_event_and_reconcile()
     {
-        // AE3 / R7: a Dead owner surfaced by both a NodeLeft event and the reconcile is reclaimed (dedup, no thrash).
+        // A Dead owner surfaced by both a NodeLeft event and the reconcile is reclaimed (dedup, no thrash).
         var (_, storage) = await _StartPrimaryStackAsync();
         var dead = await _SeedOwnedRowsAsync(storage, "dead-node", incarnation: 9, _FutureLease());
         var local = Membership.SetIdentity("local-node", incarnation: 1);
@@ -143,7 +143,7 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
 
     public virtual async Task should_fence_a_restarted_incarnation()
     {
-        // AE5 / R12: node@N dead, node@N+1 live (restart) → only the dead incarnation's rows are reclaimed.
+        // node@N dead, node@N+1 live (restart) → only the dead incarnation's rows are reclaimed.
         var (_, storage) = await _StartPrimaryStackAsync();
         var dead = await _SeedOwnedRowsAsync(storage, "restart-node", incarnation: 5, _FutureLease());
         var live = await _SeedOwnedRowsAsync(storage, "restart-node", incarnation: 6, _FutureLease());
@@ -168,7 +168,7 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
 
     public virtual async Task should_recover_aged_out_owner_via_lease_floor()
     {
-        // AE4 / R4: a dead owner that aged out of the snapshot before reclaim still recovers via LockedUntil expiry.
+        // A dead owner that aged out of the snapshot before reclaim still recovers via LockedUntil expiry.
         var (_, storage) = await _StartPrimaryStackAsync();
         // Lease already expired and the owner is absent from the snapshot — the bridge cannot act, only the floor.
         var aged = await _SeedOwnedRowsAsync(storage, "aged-out-node", incarnation: 5, _ExpiredLease());
@@ -188,7 +188,7 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
     public virtual async Task should_reclaim_once_under_two_concurrent_bridges()
     {
         // Concurrency: two bridge hosts reclaiming the same Dead owner → rows reclaimed, no duplicate-thrash error
-        // (the owner-scoped conditional UPDATE is idempotent — KTD3).
+        // (the owner-scoped conditional UPDATE is idempotent).
         var (_, storage) = await _StartPrimaryStackAsync();
         var dead = await _SeedOwnedRowsAsync(storage, "dead-node", incarnation: 5, _FutureLease());
         var local = Membership.SetIdentity("local-node", incarnation: 1);

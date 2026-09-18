@@ -338,7 +338,7 @@ public sealed class InternalJobsManagerTests : TestBase
     }
 
     /// <summary>
-    /// R1/KTD1: the stranded-timed-child safety net is a last-resort backstop, but it sat on the scheduler's hot
+    /// The stranded-timed-child safety net is a last-resort backstop, but it sat on the scheduler's hot
     /// path — <c>GetNextJobs</c> runs it, and the scheduler loop sleeps 1ms whenever work is due, so an unbounded
     /// relational candidate scan ran at up to ~1kHz per node in every deployment. It must run on the fallback
     /// cadence instead, while still running on the first poll after startup so a host that starts with an already

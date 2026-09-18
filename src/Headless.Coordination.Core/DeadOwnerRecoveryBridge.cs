@@ -14,7 +14,7 @@ namespace Headless.Coordination;
 /// Membership events are best-effort acceleration; the periodic reconcile is the authoritative backstop.
 /// Reclaim is idempotent — an in-memory reclaimed-set suppresses duplicate work between the event and
 /// reconcile paths, and each consumer's conditional reclaim makes a repeated reclaim a no-op. Reclaim writes
-/// use <see cref="CancellationToken.None"/> (KTD6) so a reclaim racing host shutdown is not torn mid-write.
+/// use <see cref="CancellationToken.None"/> so a reclaim racing host shutdown is not torn mid-write.
 /// A failed reclaim is logged and removed from the set so the next reconcile tick retries it. The closed
 /// generic gives each consumer a distinct hosted service and a distinct <see cref="ILogger"/> category.
 /// </remarks>
@@ -173,7 +173,7 @@ internal sealed class DeadOwnerRecoveryBridge<TReclaimer>(
 
         try
         {
-            // KTD6: reclaim writes are not cancelled by host shutdown; they must complete to avoid a half-reclaim.
+            // Reclaim writes are not cancelled by host shutdown; they must complete to avoid a half-reclaim.
             await reclaimer.ReclaimAsync(toReclaim, CancellationToken.None).ConfigureAwait(false);
         }
         catch (Exception ex)

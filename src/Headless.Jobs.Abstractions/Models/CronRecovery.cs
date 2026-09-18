@@ -56,9 +56,9 @@ public sealed record CronRecoveryRequest
     /// <summary>
     /// Every missed instant the evaluation walk visited, in schedule order — the first element is
     /// <see cref="EarliestMissedUtc"/>, and the list is bounded by the evaluation ceiling. Coalesce materializes its
-    /// run at the FIRST of these not already accounted for by an executing or terminal occurrence (R7 steps past an
-    /// occupied instant; R18 still owes the backlog a run when later instants were genuinely missed). Transient
-    /// input only — never persisted (KD13).
+    /// run at the FIRST of these not already accounted for by an executing or terminal occurrence — stepping past an
+    /// already-occupied instant while still owing the backlog a run when later instants were genuinely missed.
+    /// Transient input only — never persisted.
     /// </summary>
     public required IReadOnlyList<DateTime> MissedInstantsUtc { get; init; }
 

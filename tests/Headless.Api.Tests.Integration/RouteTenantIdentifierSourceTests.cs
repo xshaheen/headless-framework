@@ -25,13 +25,13 @@ using Tests.Helpers;
 namespace Tests;
 
 /// <summary>
-/// Pins the R2 route source end to end through the real catalog pipeline: the <c>{tenant}</c> route
-/// segment resolving the ambient tenant, ignored identifiers ending resolution with no store call
-/// (R8), the fail-closed unknown rejection with <c>Cache-Control: no-store</c>, and the R10/AE7
-/// misorder escalation — a route source on a middleware placed before <c>UseRouting()</c> finds
+/// Pins the route source end to end through the real catalog pipeline: the <c>{tenant}</c> route
+/// segment resolving the ambient tenant, ignored identifiers ending resolution with no store call,
+/// the fail-closed unknown rejection with <c>Cache-Control: no-store</c>, and the misorder
+/// escalation — a route source on a middleware placed before <c>UseRouting()</c> finds
 /// nothing, every request runs as host context, and the deferred misorder path escalates to the
 /// Error-level <c>HEADLESS_TENANT_CATALOG_ROUTE_SOURCE_MISORDERED</c> event once per process with
-/// no request data (R18).
+/// no request data.
 /// </summary>
 [Collection(TenantCatalogOrderingWarningCollection.Name)]
 public sealed class RouteTenantIdentifierSourceTests : TestBase
@@ -70,7 +70,7 @@ public sealed class RouteTenantIdentifierSourceTests : TestBase
         await using var app = await _CreateAppAsync(store: store, ignoredIdentifiers: ["www"]);
         using var client = HttpTenancyTestHarness.CreateClient(app);
 
-        // R8: www is an ignored identifier on the CATALOG options (no source-level list), so
+        // www is an ignored identifier on the CATALOG options (no source-level list), so
         // resolution ends as host context; the seeded store must never be consulted.
         var tenant = await _GetTenantAsync(client, "/www/orders");
 
@@ -102,10 +102,10 @@ public sealed class RouteTenantIdentifierSourceTests : TestBase
     [Fact]
     public async Task should_emit_the_misorder_error_once_as_host_context_when_placed_before_use_routing()
     {
-        // AE7/R10: routing has not run when the middleware consults its sources, so the route value
+        // Routing has not run when the middleware consults its sources, so the route value
         // is absent, resolution finds nothing, and the endpoint executes as host context. The
         // deferred misorder path escalates to the Error-level dedicated event — once per process
-        // even across two requests — and its message carries no path or route value (R18).
+        // even across two requests — and its message carries no path or route value.
         TenantCatalogResolutionMiddleware.ResetOrderingWarningForTesting();
         using var loggerProvider = new CapturingLoggerProvider();
         await using var app = await _CreateAppAsync(loggerProvider: loggerProvider, applyBeforeUseRouting: true);
@@ -121,8 +121,8 @@ public sealed class RouteTenantIdentifierSourceTests : TestBase
         var entry = loggerProvider.Entries.Should().ContainSingle(e => e.EventId.Name == MisorderedEventName).Subject;
 
         entry.Level.Should().Be(LogLevel.Error);
-        entry.Message.Should().NotContain("acme"); // R18: never the route value
-        entry.Message.Should().NotContain("/acme"); // R18: never the path
+        entry.Message.Should().NotContain("acme"); // never the route value
+        entry.Message.Should().NotContain("/acme"); // never the path
         entry.Message.Should().NotContain("/orders");
 
         loggerProvider.Entries.Should().NotContain(e => e.EventId.Name == OrderingWarningEventName);
@@ -132,7 +132,7 @@ public sealed class RouteTenantIdentifierSourceTests : TestBase
     public async Task should_still_emit_the_ordering_warning_without_a_route_source_when_misordered()
     {
         // The Warning event stays exactly as it was for hosts with no route source; only a registered
-        // route source escalates to the Error event (R10).
+        // route source escalates to the Error event.
         TenantCatalogResolutionMiddleware.ResetOrderingWarningForTesting();
         using var loggerProvider = new CapturingLoggerProvider();
         await using var app = await _CreateAppAsync(

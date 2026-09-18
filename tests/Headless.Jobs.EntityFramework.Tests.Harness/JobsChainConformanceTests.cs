@@ -22,8 +22,8 @@ namespace Tests;
 
 /// <summary>
 /// Provider-neutral conformance for typed <see cref="JobChain"/> runtime semantics on every relational backend
-/// (Postgres, SQL Server). Proves the storage-visible behaviors the native SQL introduced in U4 (deep claim/hydration
-/// via recursive CTEs) and U5 (timed-descendant claim gate + the set-based release/skip reconcile), plus the U2/KTD6
+/// (Postgres, SQL Server). Proves the storage-visible behaviors the native SQL introduced for deep claim/hydration
+/// via recursive CTEs and the timed-descendant claim gate plus the set-based release/skip reconcile, plus the
 /// atomic-persistence contract for the whole tree.
 /// <para>
 /// These scenarios drive the <b>public</b> provider surface (<see cref="IJobPersistenceProvider{TTimeJob,TCronJob}" />
@@ -31,7 +31,7 @@ namespace Tests;
 /// and assert the resulting durable row transitions — the same "storage-visible transitions are the contract" style as
 /// <see cref="JobsCoordinationConformanceTests{TFixture}" /> and <see cref="JobsClaimConformanceTests{TFixture}" />. The
 /// in-process executor recursion and the non-timed run/skip cascade are provider-agnostic C# (the executor is internal)
-/// and are proven in-memory by the U3 unit suite; U7's job is the provider SQL those decisions rest on. A parent's
+/// and are proven in-memory by the unit suite; this harness's job is the provider SQL those decisions rest on. A parent's
 /// terminal state is simulated with a fenced <c>UpdateTimeJobAsync</c> completion (exactly what the executor issues),
 /// then the real provider reconcile is invoked and the durable outcome asserted.
 /// </para>
@@ -43,7 +43,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
 {
     private const string _RunConditionMismatchReason = "Rule RunCondition did not match!";
 
-    // AE1/AE2 (persistence half). A conditional tree flattens onto ParentId/RunCondition rows: Then -> OnSuccess,
+    // Persistence half. A conditional tree flattens onto ParentId/RunCondition rows: Then -> OnSuccess,
     // Catch -> OnFailure, every node persisted atomically, and per-node validation reaches beyond the root.
     public virtual async Task enqueue_persists_conditional_tree_edges()
     {
@@ -130,7 +130,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         }
     }
 
-    // R8/AE1: an append that commits after discovery invalidates the first delete attempt through the NoAction FK.
+    // An append that commits after discovery invalidates the first delete attempt through the NoAction FK.
     // The retry must discard that attempt, rediscover the new depth-three row, and report only the committed count.
     public virtual async Task deleting_a_chain_retries_when_append_commits_after_discovery()
     {
@@ -188,7 +188,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         }
     }
 
-    // R9/AE2: once the delete commits, a stale graph cannot recreate a child whose parent no longer exists.
+    // Once the delete commits, a stale graph cannot recreate a child whose parent no longer exists.
     public virtual async Task appending_to_a_chain_after_delete_fails_without_creating_a_row()
     {
         var ct = AbortToken;
@@ -224,7 +224,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         }
     }
 
-    // R10: a conflict in one tree retries the whole batch, so the committed attempt counts both complete trees once.
+    // A conflict in one tree retries the whole batch, so the committed attempt counts both complete trees once.
     public virtual async Task batch_chain_delete_retries_with_fresh_discovery_and_returns_exact_count()
     {
         var ct = AbortToken;
@@ -411,7 +411,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         }
     }
 
-    // AE7 (provider half). A five-node linear chain plus a failure branch is claimed in one root claim: the recursive
+    // Provider half. A five-node linear chain plus a failure branch is claimed in one root claim: the recursive
     // CTE stamps EVERY descendant beyond the grandchild level with the root's owner + lease, and hydration rebuilds the
     // whole non-timed subtree to the configured depth. A two-level cap would leave the fourth/fifth nodes unstamped.
     public virtual async Task deep_chain_claim_stamps_every_descendant_to_configured_depth()
@@ -463,7 +463,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         }
     }
 
-    // AE6. A chain enqueue that throws after buffering the whole tree rolls back atomically — no partial chain survives.
+    // A chain enqueue that throws after buffering the whole tree rolls back atomically — no partial chain survives.
     public virtual async Task chain_enqueue_rolls_back_atomically_leaving_no_rows()
     {
         var ct = AbortToken;
@@ -504,7 +504,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         }
     }
 
-    // AE8 (gate). A due timed descendant is NOT claimable while its parent is still non-terminal — neither the main
+    // Gate. A due timed descendant is NOT claimable while its parent is still non-terminal — neither the main
     // peek nor the timed-out fallback may surface it. This is the behavior #311 inverts: pre-#311 it fired at its time
     // unconditionally.
     public virtual async Task timed_child_is_not_claimable_while_parent_is_non_terminal()
@@ -545,7 +545,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         }
     }
 
-    // AE1 (realized) + AE8 (release). On parent success the matching timed OnSuccess child is released (a past-due one
+    // Realized + release. On parent success the matching timed OnSuccess child is released (a past-due one
     // re-stamped to now so the staleness-filtered peek claims it promptly), while the non-matching timed OnFailure
     // (Catch) sibling is skipped — the storage-visible form of "root succeeds -> a eligible, b skipped".
     public virtual async Task parent_success_releases_timed_success_child_and_skips_timed_catch_child()
@@ -603,7 +603,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         }
     }
 
-    // AE8 (future). A matching timed child scheduled in the future is released on parent success but NOT re-stamped —
+    // Future. A matching timed child scheduled in the future is released on parent success but NOT re-stamped —
     // it keeps its own execution time (stays Idle until then) and only becomes claimable once that time arrives.
     public virtual async Task future_timed_success_child_waits_for_its_own_time_then_becomes_claimable()
     {
@@ -654,7 +654,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         }
     }
 
-    // AE9 + AE2 (realized) + the poll-time safety net. On parent FAILURE the timed OnSuccess child (and its whole
+    // Realized + the poll-time safety net. On parent FAILURE the timed OnSuccess child (and its whole
     // subtree) is skipped, while the matching timed OnFailure (Catch) child is released. The skip-only safety net skips
     // the non-matching subtree without ever releasing; the per-parent reconcile then releases the matching catch child.
     public virtual async Task parent_failure_skips_timed_success_subtree_and_releases_timed_catch_child()
@@ -691,7 +691,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
             // first. The durable row state below — not "which call did the skip" — is the contract.
             await persistence.SkipStrandedTimedChildrenAsync(ct);
 
-            // AE9: the non-matching OnSuccess timed child and its whole subtree are skipped.
+            // The non-matching OnSuccess timed child and its whole subtree are skipped.
             (await _ReadNodeAsync(successId, ct))
                 .Status.Should()
                 .Be(JobStatus.Skipped);
@@ -715,7 +715,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         }
     }
 
-    // KTD7 (provider level). A chain root claimed by a now-dead node with a lapsed lease is reclaimed to Idle by the
+    // Provider level. A chain root claimed by a now-dead node with a lapsed lease is reclaimed to Idle by the
     // stalled-lease sweep, its still-Idle children are left untouched (never prematurely skipped), and the chain is
     // resumable — the root re-surfaces as a claim candidate.
     public virtual async Task dead_node_reclaim_resumes_chain_without_skipping_children()
@@ -750,7 +750,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
             rootRow.Status.Should().Be(JobStatus.Idle);
             rootRow.OwnerId.Should().BeNull();
 
-            // KTD7 guard at the provider level: reclaim never terminalizes the still-Idle children.
+            // Guard at the provider level: reclaim never terminalizes the still-Idle children.
             (await _ReadNodeAsync(childId, ct))
                 .Status.Should()
                 .Be(JobStatus.Idle);
@@ -803,8 +803,8 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
             rootRow.Status.Should().Be(JobStatus.InProgress);
             rootRow.OwnerId.Should().NotBeNull();
 
-            // Both descendants must carry the SAME owner and the root's EXACT deadline (KTD2 invariant 2: descendants
-            // copy the root's persisted LockedUntil rather than re-reading a per-statement clock).
+            // Both descendants must carry the SAME owner and the root's EXACT deadline: descendants
+            // copy the root's persisted LockedUntil rather than re-reading a per-statement clock.
             var childRow = await _ReadNodeAsync(childId, ct);
             childRow.OwnerId.Should().Be(rootRow.OwnerId, "an unleased child fails the executor's renewal fence");
             childRow.LockedUntil.Should().Be(rootRow.LockedUntil, "descendants share the root's exact lease deadline");
@@ -824,7 +824,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
     }
 
     /// <summary>
-    /// R12/KTD2 (batched multi-root walk). The immediate-dispatch acquire leases the subtrees of EVERY root it
+    /// Batched multi-root walk. The immediate-dispatch acquire leases the subtrees of EVERY root it
     /// acquired in ONE walk — a single discovery SELECT and frontier re-read per depth level serve the whole batch —
     /// so each discovered descendant must be attributed back to the root whose lease it inherits. Two roots of
     /// DIFFERING depth make the attribution observable: the shallow root runs out of children at the level the deep
@@ -881,7 +881,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
                     "the deep root keeps descending after the shallow root leaves the shared frontier"
                 );
 
-            // Every descendant carries ITS OWN root's owner and exact deadline (KTD2 invariant 2), never the sibling
+            // Every descendant carries ITS OWN root's owner and exact deadline, never the sibling
             // root's — the lease UPDATE stays correlated per root even though discovery is batched.
             var rootARow = await _ReadNodeAsync(rootAId, ct);
             var rootBRow = await _ReadNodeAsync(rootBId, ct);
@@ -909,8 +909,8 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
     }
 
     /// <summary>
-    /// R4/KTD4 × the batched walk. One root's ownership fence fails mid-walk (its lease is expired through the KTD4
-    /// seam, between the shared discovery SELECT and the per-root lease UPDATEs) while the other root's still holds.
+    /// The batched walk. One root's ownership fence fails mid-walk (its lease is expired through the seam
+    /// between the shared discovery SELECT and the per-root lease UPDATEs) while the other root's still holds.
     /// The failing root must drop out of the walk with its claimed set bounded to itself and NOT ONE descendant
     /// leased, while the healthy root keeps descending and gets its whole subtree attributed to it. Driven against the
     /// walk directly because the seam sits between two statements inside a single acquire call; the roots are seeded
@@ -995,7 +995,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
     }
 
     /// <summary>
-    /// R2/KTD3/KTD6: the poll-time safety-net sweep bounds its SELECTION at one batch, so a large stranded backlog
+    /// The poll-time safety-net sweep bounds its SELECTION at one batch, so a large stranded backlog
     /// drains monotonically across sweeps — and a full page of MATCHING (release-side) children, which this skip-only
     /// path never mutates, can never fill the page and starve the mismatched rows it must skip. Seeds a backlog wider
     /// than the batch cap (impossible through <see cref="JobChain"/>, which allows only two children per node) and
@@ -1054,7 +1054,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
     }
 
     /// <summary>
-    /// KTD6: the sweep bounds only its SELECTION; the subtree cascade under a skipped mismatched child is UNCAPPED.
+    /// The sweep bounds only its SELECTION; the subtree cascade under a skipped mismatched child is UNCAPPED.
     /// Capping the cascade would strand the non-timed descendants — they are not sweep candidates themselves
     /// (ExecutionTime is null), so no later sweep would ever re-select them — so a single sweep must skip a mismatched
     /// child's whole subtree in one pass.
@@ -1093,11 +1093,11 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
     }
 
     /// <summary>
-    /// R4/KTD4 (CAS frontier fence). The generic-EF tree claim replaced the plan's single claim transaction with
+    /// CAS frontier fence. The generic-EF tree claim replaced a single claim transaction with
     /// fenced autocommit statements: after the root is stamped, each descendant lease UPDATE re-asserts
     /// <c>EXISTS(root still owned by me AND lease unexpired)</c>. If that root ownership is lost mid-walk — the lease
     /// lapses, or another node steals the root — the fence must reject the descendants so no orphaned tail is leased
-    /// (split ownership). Driven by the KTD4 seam so lease loss is a deterministic state change, never a race against
+    /// (split ownership). Driven by the seam between the root claim and the first descendant lease so lease loss is a deterministic state change, never a race against
     /// statement latency. Two cases: (i) the root lease expires; (ii) the root is reassigned to another owner.
     /// </summary>
     public virtual async Task cas_frontier_fence_rejects_descendants_when_root_lease_expires_mid_walk()
@@ -1190,7 +1190,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
     }
 
     /// <summary>
-    /// R4 (root CAS + PruneToClaimedSet). Two owners race the same root through the CAS tree claim. The root's
+    /// Root CAS + PruneToClaimedSet. Two owners race the same root through the CAS tree claim. The root's
     /// optimistic <c>UpdatedAt</c> gate lets exactly one win; the loser's root UPDATE affects zero rows and it claims
     /// nothing — no node is split across owners. Scoped to the root CAS and the claimed-set pruning; the descendant
     /// fence is exercised separately above.
@@ -1241,12 +1241,12 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
     }
 
     /// <summary>
-    /// R4 (native-CTE contention). Two nodes race the same ≥2-node chain root through the fixtures' NORMAL strategy
+    /// Native-CTE contention. Two nodes race the same ≥2-node chain root through the fixtures' NORMAL strategy
     /// selection — i.e. the provider's recursive-CTE claim (<c>PostgreSqlJobsClaimStrategy</c> /
     /// <c>SqlServerJobsClaimStrategy</c>), not the generic-EF frontier. The CTE claim is one atomic statement, so
     /// exactly one node wins the root AND its whole descendant subtree in a single instant; the loser claims nothing,
     /// no node is split across owners, and every claimed descendant carries the winner's EXACT persisted lease
-    /// deadline (KTD2 invariant 2). Two hosts (distinct nodes, shared database) drive it over the public surface.
+    /// deadline. Two hosts (distinct nodes, shared database) drive it over the public surface.
     /// </summary>
     public virtual async Task native_claim_contention_gives_one_owner_the_whole_subtree()
     {
@@ -1303,7 +1303,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
     }
 
     /// <summary>
-    /// U5/KTD3 native-SQL gate parity. Replays the shared gate grid (every <see cref="RunCondition"/> including the
+    /// Native-SQL gate parity. Replays the shared gate grid (every <see cref="RunCondition"/> including the
     /// non-gated ones and <see langword="null"/> × every terminal status plus a non-terminal control) against the
     /// provider's <c>TimedChildGateSql</c>, which is embedded in the native timed-out fallback claim. A past-due timed
     /// child is claimed by that path iff the native SQL gate admits it, so the claimed set must equal the
@@ -1404,7 +1404,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
     }
 
     /// <summary>
-    /// R9. A timed descendant whose parent reached <see cref="JobStatus.Skipped" /> must itself be skipped by the
+    /// A timed descendant whose parent reached <see cref="JobStatus.Skipped" /> must itself be skipped by the
     /// safety net — <c>Skipped</c> is a terminal state that satisfies no run condition, so a gated timed child under a
     /// skipped parent is mismatched and swept, never stranded Idle. This is the storage-visible tail of a non-timed
     /// sibling being skipped: its timed descendant follows it to Skipped.
@@ -1438,7 +1438,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
     }
 
     /// <summary>
-    /// R10/R8. A chain persisted while the depth limit was higher, then claimed under a LOWER
+    /// A chain persisted while the depth limit was higher, then claimed under a LOWER
     /// <c>MaxChainDepth</c> (the default 10 here), truncates: the claim leases root..depth-10 and leaves deeper nodes
     /// Idle rather than erroring. Seeded directly because <c>EnqueueAsync</c> rejects an over-depth chain — this is the
     /// "limit lowered after enqueue" case. Also pins the SqlServer recursive-CTE <c>MAXRECURSION</c> boundary: the

@@ -46,7 +46,7 @@ public sealed class CronOccurrenceInstantView
 }
 
 /// <summary>
-/// The single occupied-instant accounting rule (KTD1), shared by every provider and by both the materialization and
+/// The single occupied-instant accounting rule, shared by every provider and by both the materialization and
 /// the recovery path so the two can never disagree about the same row.
 /// </summary>
 /// <remarks>

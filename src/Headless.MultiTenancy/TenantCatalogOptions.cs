@@ -44,7 +44,7 @@ public sealed class TenantCatalogOptions
     /// <summary>
     /// The shape a normalized identifier must match before any cache or store lookup. Default:
     /// <see cref="RegexPatterns.Slug"/> — lowercase letters, digits, and single hyphens between
-    /// segments (DNS-label form), which matches R21's default shape after normalization.
+    /// segments (DNS-label form), matched after normalization.
     /// A custom pattern must carry a match timeout: this regex runs on unauthenticated pre-auth input,
     /// so <see cref="Regex.InfiniteMatchTimeout"/> is rejected at startup (see the validator).
     /// </summary>

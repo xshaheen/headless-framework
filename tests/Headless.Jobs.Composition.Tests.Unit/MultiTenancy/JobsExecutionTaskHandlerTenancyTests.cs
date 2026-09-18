@@ -76,7 +76,7 @@ public sealed class JobsExecutionTaskHandlerTenancyTests : TestBase
     [Fact]
     public async Task failure_callbacks_observe_the_job_tenant_scope()
     {
-        // #278 finding #9: the exception observer and the exhausted callback run consumer code AFTER the execute
+        // #278: the exception observer and the exhausted callback run consumer code AFTER the execute
         // middleware's tenant scope has unwound (the handler threw, so the middleware disposed the scope before these
         // callbacks fire). Without the handler re-establishing the job's tenant, tenant-aware alerting or a
         // compensating transaction would run system-scope. Drive a failing tenant-tagged job and assert both callbacks

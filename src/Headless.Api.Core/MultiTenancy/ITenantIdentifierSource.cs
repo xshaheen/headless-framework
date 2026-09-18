@@ -18,7 +18,7 @@ namespace Headless.Api.MultiTenancy;
 /// <see cref="TenantIdentifierSourceResult.None"/>; a source whose input is present but ambiguous —
 /// for example a tenant header repeated with two different values — returns
 /// <see cref="TenantIdentifierSourceResult.Invalid"/>, which rejects the request immediately with the
-/// catalog's invalid-identifier outcome before any store call (R5).
+/// catalog's invalid-identifier outcome before any store call.
 /// </remarks>
 [PublicAPI]
 public interface ITenantIdentifierSource

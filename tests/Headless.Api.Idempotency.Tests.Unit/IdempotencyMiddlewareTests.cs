@@ -87,7 +87,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
         await cache.DidNotReceive().GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
-    // ── replay (AE1) ─────────────────────────────────────────────────────────
+    // ── Replay ───────────────────────────────────────────────────────────────
 
     [Fact]
     public async Task should_replay_cached_response_when_fingerprint_matches()
@@ -465,7 +465,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
             );
     }
 
-    // ── mismatch (AE2) ───────────────────────────────────────────────────────
+    // ── Mismatch ─────────────────────────────────────────────────────────────
 
     [Fact]
     public async Task should_return_422_when_fingerprint_mismatches()
@@ -560,7 +560,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
             .UnprocessableEntity(Arg.Any<IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>>>());
     }
 
-    // ── in-flight Reject (AE3) ────────────────────────────────────────────────
+    // ── In-flight Reject ─────────────────────────────────────────────────────────
 
     [Fact]
     public async Task should_return_409_when_record_is_in_flight_and_strategy_is_reject()
@@ -704,7 +704,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
             );
     }
 
-    // ── WaitAndReplay (AE4) ──────────────────────────────────────────────────
+    // ── WaitAndReplay ────────────────────────────────────────────────────────
 
     private IdempotencyMiddleware _CreateMiddlewareWithLock(
         ICache cache,
@@ -1014,7 +1014,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
             );
     }
 
-    // ── U8: oversize body (AE6) ───────────────────────────────────────────────
+    // ── Oversize body ──────────────────────────────────────────────────────────
 
     private static IOptionsMonitor<IdempotencyOptions> _OptionsWithCap(
         int cap,
@@ -1209,7 +1209,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
             );
     }
 
-    // ── U8: default cache predicate integration ───────────────────────────────
+    // ── Default cache predicate integration ───────────────────────────────────
 
     [Fact]
     public async Task should_not_cache_5xx_response_using_default_predicate()
@@ -1257,7 +1257,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
     [Fact]
     public async Task should_cache_422_response_using_default_predicate()
     {
-        // given — no custom predicate, response is 422 (cacheable per AE5)
+        // given — no custom predicate, response is 422 (cacheable under the default status predicate)
         byte[] body = [1, 2, 3];
 
         var cache = Substitute.For<ICache>();

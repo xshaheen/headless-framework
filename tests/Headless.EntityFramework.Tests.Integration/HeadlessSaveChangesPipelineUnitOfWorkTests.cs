@@ -16,7 +16,7 @@ using Tests.Fixture;
 namespace Tests;
 
 /// <summary>
-/// Proves the save pipeline's unit-of-work contract (R11/KD13) against PostgreSQL: a pipeline-owned save enlists
+/// Proves the save pipeline's unit-of-work contract against PostgreSQL: a pipeline-owned save enlists
 /// its own transaction and drains after the commit; a save inside a caller-owned transaction requires the unit
 /// that owns it; a unit bound to a factory-created context is adopted into that context's scope for the save;
 /// and a participant that prevents retry routes the fault out of the execution strategy's replay.

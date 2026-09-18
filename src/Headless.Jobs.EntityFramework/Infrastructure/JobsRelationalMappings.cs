@@ -75,7 +75,7 @@ internal sealed record CronOccurrenceRelationalMapping(
 )
 {
     /// <summary>
-    /// The occupied-instant accounting rule (KTD1) as a SQL predicate over one occurrence row, in the SAME shape the
+    /// The occupied-instant accounting rule as a SQL predicate over one occurrence row, in the SAME shape the
     /// LINQ providers use via <see cref="CronOccurrenceAccounting.InstantViewSelector{TCronJob}" />: a row accounts
     /// for its instant unless it is the one status/disposition pair that owes another fire. The status and
     /// disposition literals are read off <see cref="CronOccurrenceAccounting" /> rather than spelled here, so the
@@ -132,7 +132,7 @@ internal sealed record CronOccurrenceRelationalMapping(
             Column(nameof(CronJobOccurrenceEntity<>.RetryCount)),
             Column(nameof(CronJobOccurrenceEntity<>.CreatedAt)),
             Column(nameof(CronJobOccurrenceEntity<>.UpdatedAt)),
-            // R23: the native claim RETURNs/OUTPUTs this so a claimed row carries its recovery stamp out of the store
+            // The native claim RETURNs/OUTPUTs this so a claimed row carries its recovery stamp out of the store
             // rather than trusting the caller to have supplied it.
             Column(nameof(CronJobOccurrenceEntity<>.RecoveredFromUtc)),
             Column(nameof(CronJobOccurrenceEntity<>.Disposition)),

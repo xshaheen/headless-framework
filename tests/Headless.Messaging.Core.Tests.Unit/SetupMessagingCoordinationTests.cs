@@ -13,7 +13,7 @@ public sealed class SetupMessagingCoordinationTests
     [Fact]
     public void should_register_dead_owner_recovery_bridge_unconditionally()
     {
-        // given — no UseStorageLock, no real INodeMembership: recovery is always-on (KTD3)
+        // given — no UseStorageLock, no real INodeMembership: recovery is always-on
         var services = new ServiceCollection();
 
         // when

@@ -36,7 +36,7 @@ internal static class DistributedLockCoreHelpers
 
     /// <summary>
     /// Suffix appended to a writer's lock id to derive the writer-waiting marker placed in storage
-    /// while readers drain (writer-preference; see D8). Shared by both .NET storage layers and
+    /// while readers drain (writer-preference). Shared by both .NET storage layers and
     /// embedded inline in the matching Lua scripts so any future change keeps the two surfaces in
     /// lockstep.
     /// </summary>
