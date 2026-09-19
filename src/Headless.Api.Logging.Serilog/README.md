@@ -2,51 +2,17 @@
 
 Serilog integration for ASP.NET Core APIs with custom enrichers for request context.
 
-## Problem Solved
+## Why use this package
 
 Enriches Serilog log events with HTTP request context (client IP, user agent, user ID, tenant ID, correlation ID) for better observability and debugging in web applications.
 
-## Key Features
-
-- Custom Serilog enricher middleware
-- Client info enrichment (IP, user agent)
-- Request context enrichment (user, tenant, correlation ID)
-- Integration with `Headless.Logging.Serilog` configuration
-
-## Installation
+## Install
 
 ```bash
 dotnet add package Headless.Api.Logging.Serilog
 ```
 
-## Quick Start
+## Documentation
 
-```csharp
-var builder = WebApplication.CreateBuilder(args);
-
-// Register enrichers
-builder.Services.AddSerilogEnrichers();
-
-var app = builder.Build();
-
-// Use enrichers middleware (place early in pipeline)
-app.UseSerilogEnrichers();
-
-app.Run();
-```
-
-## Configuration
-
-Inherits Serilog configuration from `Headless.Logging.Serilog`. See that package for sink and enricher configuration.
-
-## Dependencies
-
-- `Headless.Api.Abstractions`
-- `Headless.Logging.Serilog`
-- `Serilog.Enrichers.ClientInfo`
-- `Microsoft.AspNetCore.App` (framework reference)
-
-## Side Effects
-
-- Adds middleware to the request pipeline
-- Enriches log context per-request
+- [Headless Framework](https://github.com/xshaheen/headless-framework#readme)
+- [API & Web guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/api.md#headlessapiloggingserilog)

@@ -523,11 +523,7 @@ The PostgreSQL and SQL Server packages are EF optimization extensions, not indep
 
 Contracts, entity types, manager interfaces, and execution primitives for the Jobs system.
 
-### Problem Solved
-
-Provides the shared contracts — `IJobScheduler`, `ITimeJobManager<TTimeJob>`, `ICronJobManager<TCronJob>`, descriptors, entity types, options, enums, exception types, and execution context — that decouple job enqueueing code from any specific Jobs persistence provider or scheduler implementation. Consumer contracts do not depend on `Jobs.EntityFramework`.
-
-### Key Features
+### API and behavior
 
 - **Durable contract identity**: `[JobFunction("invoice.create", ContractVersion = "schema-v2")]` and immutable `JobFunctionDescriptor.ContractVersion` declare the stored request schema. The optional descriptor-constructor version defaults to `JobContract.InitialVersion` (`"1"`). `JobContract` defines a 200 UTF-16-unit function-name bound and a 100-unit version bound; names and versions are nonblank, ordinal, and reject surrounding whitespace, controls, and invalid Unicode without normalization or truncation.
 - **Jobs lineage**: `JobOptions` and `RecurringJobOptions` accept `CorrelationId` and `CausationId`. Persisted entities, `JobExecutionState`, and both execution-context forms carry contract version and Jobs-owned correlation, causation, and tenant metadata. `CronSeedDefinition` includes a trailing version (default `"1"`); consumers that deconstruct it must include that sixth member. Seeding applies that version only to newly created definitions; existing name/version/request tuples require an explicit definition edit. Ordinary time-job and cron-definition edits preserve stored correlation and causation, including when update forms omit them.
@@ -550,7 +546,7 @@ Provides the shared contracts — `IJobScheduler`, `ITimeJobManager<TTimeJob>`, 
 - **Job status**: `JobStatus` enum: `Idle`, `Queued`, `InProgress`, `Succeeded`, `DueDone`, `Failed`, `Cancelled`, `Skipped`.
 - **Occurrence disposition**: `CronOccurrenceDisposition` enum (`Accounted` / `ReplacementOwed` / `Superseded`) and the persisted `CronJobOccurrenceEntity.Disposition` property. This is the sole input to the occupied-instant rule that decides whether an occurrence may be created at a `(CronJobId, ExecutionTime)` pair; `SkippedReason` is display text and is never read for that decision. See "When a row already stands for the instant".
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Jobs.Abstractions
@@ -558,7 +554,7 @@ dotnet add package Headless.Jobs.Abstractions
 
 Pulled in transitively by `Headless.Jobs.Core`. Install directly only when building a library that targets Jobs interfaces without depending on the Core implementation.
 
-### Quick Start
+### Setup and use
 
 ```csharp
 using Headless.Jobs.Base;
@@ -687,13 +683,7 @@ Builders support sequential reuse and copy retry arrays when supplied and on eve
 
 Configure job services in `Headless.Jobs.Core` via `AddHeadlessJobs(...)`. Configure tenancy only through `AddHeadlessTenancy(tenancy => tenancy.Jobs(...))`. `JobsTenancyOptions` exposes the resulting propagation, required-tenant, and cross-tenant rejection flags with no public setters.
 
-### Dependencies
-
-- `Headless.Checks`
-- `Headless.UnitOfWork.Abstractions`
-- `Microsoft.Extensions.DependencyInjection.Abstractions`
-
-### Side Effects
+### Runtime behavior
 
 None.
 
@@ -703,11 +693,7 @@ None.
 
 Core implementation of the Jobs scheduler: in-memory persistence provider, execution task handler, background services, bounded task scheduler, and the `AddHeadlessJobs` DI extension.
 
-### Problem Solved
-
-Provides reliable background job scheduling with cron expressions, delayed execution, custom task scheduling, retry logic, and bounded in-process execution without any external job scheduler dependencies (Hangfire, Quartz, etc.). The in-memory path works standalone; the durable path composes with `Jobs.EntityFramework`.
-
-### Key Features
+### API and behavior
 
 - **Version-checked execution**: the frozen registry remains ordinal and uniquely keyed by function name. A stored version must exactly equal the registered descriptor version before request deserialization or cached delegate invocation. A mismatch logs a diagnostic and returns the job to `Idle` with its lock released, preserving the stored version and retry budget so a compatible node can claim it. Missing functions follow the same release policy. If no node registers the stored version, operators must resolve the registration gap; the first incompatible claimant does not fail the job. Deferred descendants are processed only after a terminal write wins its ownership fence.
 - **Stable causal metadata**: a root time job uses its allocated row ID as correlation unless explicitly supplied. Jobs scheduled from an executing job inherit its correlation and use that parent execution row ID as causation; chain steps use their direct parent row ID. Root cron occurrences allocate correlation from their occurrence ID unless the definition carries explicit or inherited metadata. A parent with no explicit correlation contributes its execution row ID as the causal root. Retries preserve lineage independently of `Activity` traces, and existing tenant checks still apply.
@@ -728,7 +714,7 @@ Provides reliable background job scheduling with cron expressions, delayed execu
 - **Startup mode**: `SchedulerOptionsBuilder.StartMode` (`JobsStartMode.Immediate` default / `JobsStartMode.Manual`).
 - **Tenancy seam**: `HeadlessTenancyBuilder.Jobs(...)` (in `SetupJobsTenancy`) exposes `PropagateTenant()`, `RequireTenantOnEnqueue()`, and `RejectCrossTenantEnqueue()`. The always-registered `TenantPropagationScheduleMiddleware` and `TenantRestoreExecuteMiddleware` capture the tenant at schedule time and restore it around every execution attempt, no-opping until the seam enables `JobsTenancyOptions`. See [Tenant Propagation](#tenant-propagation).
 
-### Design Notes
+### Design constraints
 
 The in-memory pickup lease uses the injected `TimeProvider`. The EF operational store uses the **database clock** for acquisition, renewal, and reclaim. Claim predicates and stamps are translated into the existing SQL statement, avoiding both cross-node clock skew and a separate clock round trip.
 
@@ -766,13 +752,13 @@ Initialize the relational Jobs database from the current EF model before startin
 
 Cron expressions use `RecurringJobOptions.TimeZoneId` when present and otherwise fall back to `SchedulerTimeZone`. Only validated IANA identifiers are accepted. Occurrences remain UTC; a spring-forward occurrence inside an invalid local-time gap is shifted forward by the gap, and an ambiguous fall-back occurrence runs once at the later UTC instant (the standard-time offset).
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Jobs.Core
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 using Headless.Jobs.Base;
@@ -921,18 +907,7 @@ builder.Services.AddHeadlessJobs(options =>
 });
 ```
 
-### Dependencies
-
-- `Headless.Jobs.Abstractions`
-- `Headless.Coordination.Abstractions`
-- `Headless.Coordination.Core`
-- `Headless.DistributedLocks.Abstractions`
-- `Headless.MultiTenancy`
-- `Headless.Extensions`
-- `NCrontab.Signed`
-- `Polly.Core`
-
-### Side Effects
+### Runtime behavior
 
 - Registers `ITimeJobManager<TimeJobEntity>`, `ICronJobManager<CronJobEntity>`, and `IJobScheduler` as **scoped** facades over stateless singleton cores; each call reads the scope's `IUnitOfWorkManager.Current` (see [Unit of Work](unit-of-work.md)). A singleton or hosted service that needs one creates a scope.
 - Registers one non-generic `IJobScheduler` facade bound to the same configured time/cron entity pair.
@@ -947,11 +922,9 @@ builder.Services.AddHeadlessJobs(options =>
 
 Embedded web monitoring UI for `Headless.Jobs` with pluggable authentication and real-time cluster updates.
 
-### Problem Solved
+Read [dashboards.md](dashboards.md) for the shared authentication modes and production security boundary.
 
-Provides operational visibility into the Jobs scheduler — job queues, execution history, live cluster nodes, retry/failure details — without requiring a separate monitoring service. The dashboard is embedded in the host application and mounted under a configurable URL path.
-
-### Key Features
+### API and behavior
 
 - **Contract and lineage visibility**: function descriptors expose `ContractVersion`; time-job, cron-definition, and occurrence views show version, correlation, causation, and tenant fields. Occurrences show their own snapshotted function. Add/update forms submit the selected descriptor version, and request inspection reports an unsupported stored version before attempting deserialization. Live occurrence updates retain the same metadata.
 - **Embedded SPA**: served from the host process, no separate deployment.
@@ -966,7 +939,7 @@ Provides operational visibility into the Jobs scheduler — job queues, executio
 - **Fluent builder**: `SetBasePath(path)`, `SetBackendDomain(domain)`, `SetCorsOrigins(origins)`, `SetCorsPolicy(policy)`.
 - **Pair with OpenTelemetry**: Dashboard for operational triage; the built-in OpenTelemetry instrumentation for trace-level diagnostics.
 
-### Design Notes
+### Design constraints
 
 The dashboard exposes operational endpoints that can create, update, delete, run, cancel, start, stop, and restart jobs. Authentication must be chosen explicitly — if no auth method (including `WithNoAuth()`) is called, the host fails to start, so the dashboard never ships publicly by omission. Treat `WithNoAuth()` as development-only unless the dashboard is isolated behind trusted network controls; production deployments should use `WithHostAuthentication(...)`, `WithBasicAuth(...)`, or `WithApiKey(...)`. No CORS policy is applied by default (same-origin only); use `SetCorsOrigins(...)` when the SPA is served cross-origin.
 
@@ -978,13 +951,13 @@ implementation preserves behavior by projecting through the existing occurrence-
 
 Dashboard API inputs are bounded: paginated queries accept page sizes from 1 through 100, JSON request bodies are limited to 1 MiB, and batch deletion accepts at most 500 IDs. Collection endpoints use the paginated routes.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Jobs.Dashboard
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 using Headless.Jobs;
@@ -1025,14 +998,7 @@ builder
 
 Auth detection is automatic: explicit `WithNoAuth()` → public; basic auth → username/password login UI; API key → bearer token; host auth → delegates to the host's authentication middleware.
 
-### Dependencies
-
-- `Headless.Jobs.Abstractions`
-- `Headless.Jobs.Core`
-- `Headless.Dashboard.Authentication` (shared with `Headless.Messaging.Dashboard`)
-- `Headless.Extensions`
-
-### Side Effects
+### Runtime behavior
 
 - Mounts dashboard HTTP API and SignalR hub under `SetBasePath` path via `IStartupFilter` (no explicit `app.Use…` call needed).
 - Subscribes to `Headless.Coordination` membership events for live-node push updates.
@@ -1045,11 +1011,7 @@ Auth detection is automatic: explicit `WithNoAuth()` → public; basic auth → 
 
 Roslyn incremental source generator that eliminates reflection and manual job registration for the Jobs scheduler.
 
-### Problem Solved
-
-Without the source generator, every job class or method must be manually registered with the Jobs runtime at startup, and job dispatch uses reflection to invoke methods. The source generator scans for `[JobFunction]` attributes at compile time and emits a module initializer that auto-registers all discovered jobs before `Main` runs, with zero reflection at runtime.
-
-### Key Features
+### API and behavior
 
 - **Versioned descriptors**: `JobFunctionAttribute.ContractVersion` (default `"1"`) is emitted into assembly metadata and immutable runtime descriptors. Explicit function name and version remain stable through CLR class/method renames and source/reference reordering. Duplicate function names remain invalid even when their versions differ; versioning does not create a second dispatch registry.
 - **Zero reflection**: all dispatch delegates are generated as strongly-typed lambdas.
@@ -1061,13 +1023,13 @@ Without the source generator, every job class or method must be manually registe
 - **Collision safety**: HF005 rejects duplicate function names and HF011 rejects duplicate typed request mappings within a compilation. Provider construction reports cross-assembly conflicts deterministically.
 - **Rich diagnostics**: compile-time errors for unknown function names, ambiguous constructors, invalid cron expressions, mismatched context types, and ambiguous scheduling identities.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Jobs.SourceGenerator
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 using Headless.Jobs.Base;
@@ -1114,11 +1076,7 @@ No runtime configuration. Attributes are the sole interface. Generated output fi
 
 `[JobFunction]` remains the sole handler discovery model. Requestless descriptors use `RequestType = null`; typed functions are indexed by both durable function name and exact request `Type`. Attribute priority and maximum concurrency remain descriptor metadata, not per-schedule options.
 
-### Dependencies
-
-- `Microsoft.CodeAnalysis.CSharp` (build-time Roslyn API; not a runtime dependency)
-
-### Side Effects
+### Runtime behavior
 
 Emits `JobsInstanceFactory.g.cs` at compile time. The generated file:
 - Contains a `[ModuleInitializer]` that registers job delegates, request-type mappings, and delegate-free descriptors with the Jobs runtime.
@@ -1131,11 +1089,11 @@ Emits `JobsInstanceFactory.g.cs` at compile time. The generated file:
 
 OpenTelemetry instrumentation for `Headless.Jobs` is built into `Headless.Jobs.Core` — activity tracing for the full job execution lifecycle plus structured logging. (The former `Headless.Jobs.OpenTelemetry` satellite package was folded into `Jobs.Core` per the framework OTel conventions; native emission needs no separate package.) Cross-cutting naming, PII, and registration rules for all Headless instrumentation live in [OpenTelemetry instrumentation conventions](../solutions/conventions/opentelemetry-instrumentation-conventions.md).
 
-### Problem Solved
+### Purpose
 
 Provides distributed tracing (OpenTelemetry activities/spans) and structured log events for every Jobs job execution without modifying job code. The default `IJobsInstrumentation` emits activities natively — subscribing the tracing pipeline is the single opt-in, matching Caching/DistributedLocks/Messaging (no implementation swap step).
 
-### Quick Start
+### Setup and use
 
 ```csharp
 using OpenTelemetry.Trace;
@@ -1184,7 +1142,7 @@ Activity tag reference (framework-owned tags are namespaced `headless.job.*` / `
 | `exception.message` | `Connection timeout` |
 | `exception.stacktrace` | stack trace on `job.fail` spans |
 
-### Side Effects
+### Runtime behavior
 
 Registers `OpenTelemetryInstrumentation` as the singleton `IJobsInstrumentation`, replacing the default `LoggerInstrumentation`. No other registrations.
 
@@ -1194,11 +1152,7 @@ Registers `OpenTelemetryInstrumentation` as the singleton `IJobsInstrumentation`
 
 Entity Framework Core persistence provider for `Headless.Jobs` — durable, distributed, multi-node job storage with database-clock lease authority.
 
-### Problem Solved
-
-Provides persistence of time jobs and cron occurrences across restarts and across multiple nodes, using EF Core-mapped tables. Integrates with `Headless.Coordination` for distributed node identity (`node@incarnation`), dead-node recovery, and fail-stop on membership loss.
-
-### Key Features
+### API and behavior
 
 - **Durable contract tuples**: time jobs and cron definitions map required bounded `Function`/`ContractVersion` columns; occurrences additionally persist their own function, version, request bytes, correlation, causation, and nullable tenant. Newly materialized occurrences copy the current definition tuple while holding its write lock; retries and restart reads use the occurrence row. Runtime write converters reject invalid identities.
 - **Application-owned schema**: initialize the Jobs database from the current EF model before starting workers or definition writers. Required bounded contract columns, occurrence-owned tuples, constraints, and indexes are part of that initial schema. Library mappings never mutate the schema automatically.
@@ -1222,7 +1176,7 @@ Provides persistence of time jobs and cron occurrences across restarts and acros
 - **DbContext pool**: configurable via `SetDbContextPoolSize(n)` (default 1024).
 - **Custom schema**: `ConfigureStorage(storage => storage.Schema = "custom_schema")` on the Jobs options builder (default `"jobs"`). The schema is owned by the feature, not by this provider, so one setting moves every Jobs table — the idempotency reservation table included — on the dedicated-context, application-context, and consumer-managed model paths alike. The value is validated at startup against cross-provider identifier rules.
 
-### Design Notes
+### Design constraints
 
 Lease acquisition, renewal, and reclaim on the EF path anchor `LockedUntil` to the **database clock** (`now()` on PostgreSQL, `GETUTCDATE()` on SQL Server), not the node's injected `TimeProvider`. Claims translate the clock expression inside the existing update statement; they do not execute a separate scalar query. In-memory has no database server and uses `TimeProvider`, so EF tests must not assume fake application time controls lease deadlines.
 
@@ -1242,13 +1196,13 @@ Install `Headless.Jobs.EntityFramework.PostgreSql` or `Headless.Jobs.EntityFrame
 
 These packages are EF optimization extensions, not standalone persistence providers. The base package owns the full persistence contract plus provider-neutral mapping definitions and claim-transaction lifecycle primitives; each extension owns provider-specific claim execution, including SQL, parameters, and locking semantics.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Jobs.EntityFramework
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 using Headless.Jobs.DbContextFactory;
@@ -1303,14 +1257,7 @@ builder
     });
 ```
 
-### Dependencies
-
-- `Headless.Jobs.Abstractions`
-- `Headless.Jobs.Core`
-- `Headless.Coordination.Abstractions`
-- `Microsoft.EntityFrameworkCore`
-
-### Side Effects
+### Runtime behavior
 
 - Replaces the in-memory `IJobPersistenceProvider` with `JobsEFCorePersistenceProvider`.
 - Registers `JobsOwnerIdentityAdapter` (overrides the default `DefaultJobsOwnerIdentity`).
@@ -1548,13 +1495,7 @@ The claim predicate's lease-expiry re-claim arm is gated on `OnNodeDeath == Retr
 
 ## Headless.Jobs.EntityFramework.PostgreSql
 
-### Problem Solved
-
-Replaces the portable EF select-and-compare-and-swap pickup path with PostgreSQL-native atomic claim-and-return operations under scheduler contention.
-
-This package composes `Headless.Jobs.EntityFramework` with PostgreSQL claims and an application DbContext setup path. EF continues to own job storage, mapping definitions, recovery, the public persistence contract, and transaction-lifecycle primitives; this package owns PostgreSQL-specific claim execution, including SQL, parameters, and locking behavior.
-
-### Key Features
+### API and behavior
 
 - `UsePostgreSql<TContext>(configureCoordination)` reuses the registered application database and wires Jobs models, native claims, cluster membership, and EF commit coordination.
 
@@ -1566,19 +1507,19 @@ This package composes `Headless.Jobs.EntityFramework` with PostgreSQL claims and
 - Claims the root and two supported descendant levels in one transaction and returns work only after commit.
 - Declares UUIDv7 as the GUID ordering for every PostgreSQL-backed Jobs row, so `UsePostgreSqlClaims()` fixes row-id ordering for the whole EF store rather than for the claim strategy alone.
 
-### Design Notes
+### Design constraints
 
 `SKIP LOCKED` lets concurrent workers move past candidates locked by another claim transaction. The update, descendant stamping, and returned winners share one explicit transaction, so a rolled-back claim exposes no executable work. PostgreSQL 14 or later is the supported baseline; the underlying primitive exists on older releases, but they are outside this package's tested support target.
 
 PostgreSQL compares `uuid` in plain byte order, so UUIDv7's leading timestamp keeps index inserts at the right edge — the same ordering as the framework-wide unkeyed default, which is why generic EF on PostgreSQL loses nothing by not installing this package. The value is declared once here and consumed both by the claim strategy (keyed injection) and by the shared occurrence-materialization path (through the option builder), so no EF write path can drift onto a different generator.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Jobs.EntityFramework.PostgreSql
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 using Headless.Jobs;
@@ -1605,14 +1546,7 @@ Inside `db.ExecuteTransactionAsync(operation, cancellationToken: ct)` (or `await
 
 `UsePostgreSqlClaims()` has no provider-specific options. Configure the `DbContext`, schema, and pool size through the existing Jobs EF builder. Register exactly one native claim provider. Omitting this call keeps the portable EF optimistic-CAS fallback.
 
-### Dependencies
-
-- `Headless.Jobs.EntityFramework`
-- `Headless.UnitOfWork.EntityFramework`
-- `Headless.Coordination.PostgreSql`
-- `Npgsql.EntityFrameworkCore.PostgreSQL`
-
-### Side Effects
+### Runtime behavior
 
 - The application-context convenience method registers the EF Core unit-of-work provider, cluster membership and its initializer, and applies Jobs model configuration.
 
@@ -1624,13 +1558,7 @@ Inside `db.ExecuteTransactionAsync(operation, cancellationToken: ct)` (or `await
 
 ## Headless.Jobs.EntityFramework.SqlServer
 
-### Problem Solved
-
-Replaces the portable EF select-and-compare-and-swap pickup path with SQL Server-native atomic claim-and-output operations under scheduler contention.
-
-This package composes `Headless.Jobs.EntityFramework` with SQL Server claims and an application DbContext setup path. EF continues to own job storage, mapping definitions, recovery, the public persistence contract, and transaction-lifecycle primitives; this package owns SQL Server-specific claim execution, including SQL, parameters, and locking behavior.
-
-### Key Features
+### API and behavior
 
 - `UseSqlServer<TContext>(configureCoordination)` reuses the registered application database and wires Jobs models, native claims, cluster membership, and EF commit coordination.
 
@@ -1643,19 +1571,19 @@ This package composes `Headless.Jobs.EntityFramework` with SQL Server claims and
 - Claims the root and two supported descendant levels in one transaction and returns work only after commit.
 - Declares the SQL Server comb as the GUID ordering for every SQL Server-backed Jobs row, so `UseSqlServerClaims()` fixes row-id ordering for the whole EF store rather than for the claim strategy alone.
 
-### Design Notes
+### Design constraints
 
 SQL Server compares `uniqueidentifier` from its **last** bytes first, while UUIDv7 puts its timestamp in the **first** bytes. The framework's unkeyed Version 7 default is therefore effectively random under this backend's ordering and fragments the clustered primary keys on insert; the comb generator puts its sequential component where SQL Server looks first. `UseSqlServerClaims()` declares that ordering once, and both the claim strategy (keyed injection) and the shared occurrence-materialization path (through the option builder) resolve it — materialization is where most occurrence rows are created, so leaving it on the unkeyed default silently defeats the clustering this package exists to protect.
 
 `READPAST` skips row locks, not page locks. Page locking or lock escalation can therefore block competing claimers even with `ROWLOCK`, which is a preference rather than a guarantee. The package does not change `LOCK_ESCALATION`; operators should measure contention, lock memory, and workload behavior before applying database-level changes. SQL Server 2019 or later and Azure SQL are the supported targets.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Jobs.EntityFramework.SqlServer
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 using Headless.Jobs;
@@ -1682,15 +1610,7 @@ Inside `db.ExecuteTransactionAsync(operation, cancellationToken: ct)` (or `await
 
 `UseSqlServerClaims()` has no provider-specific options. Configure the `DbContext`, schema, and pool size through the existing Jobs EF builder. Register exactly one native claim provider. Omitting this call keeps the portable EF optimistic-CAS fallback. The strategy detects `READ_COMMITTED_SNAPSHOT` and adjusts its locking hints.
 
-### Dependencies
-
-- `Headless.Jobs.EntityFramework`
-- `Headless.UnitOfWork.EntityFramework`
-- `Headless.Coordination.SqlServer`
-- `Microsoft.EntityFrameworkCore.SqlServer`
-- `Polly.Core`
-
-### Side Effects
+### Runtime behavior
 
 - The application-context convenience method registers the EF Core unit-of-work provider, cluster membership and its initializer, and applies Jobs model configuration.
 

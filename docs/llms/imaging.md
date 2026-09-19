@@ -93,11 +93,7 @@ All results derive from `ImageProcessResult<T>` with three states:
 
 Defines the provider-agnostic contracts for image processing operations.
 
-### Problem Solved
-
-Decouples application code from any specific image-processing library. Services that inject `IImageResizer` or `IImageCompressor` have no compile-time dependency on SixLabors.ImageSharp or any other backend.
-
-### Key Features
+### API and behavior
 
 - `IImageResizer` — resize interface: `ResizeAsync(Stream, ImageResizeArgs, CancellationToken)`
 - `IImageCompressor` — compression interface: `CompressAsync(Stream, ImageCompressArgs, CancellationToken)`
@@ -109,13 +105,13 @@ Decouples application code from any specific image-processing library. Services 
 - `ImageProcessState` — `Done`, `Unsupported`, `Failed`
 - `ImageResizeContent<TContent>` — carries `Content`, `MimeType`, `Width`, `Height` for resize results
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Imaging.Abstractions
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 public sealed class ImageService(IImageResizer resizer, IImageCompressor compressor)
@@ -151,11 +147,7 @@ public sealed class ImageService(IImageResizer resizer, IImageCompressor compres
 
 None. This package defines only interfaces and data types — no DI registration, no options.
 
-### Dependencies
-
-None.
-
-### Side Effects
+### Runtime behavior
 
 None.
 
@@ -165,11 +157,7 @@ None.
 
 Orchestration layer that routes image processing calls to registered contributors.
 
-### Problem Solved
-
-Provides the `IImageResizer` and `IImageCompressor` implementations that dispatch to one or more backend contributors, buffers non-seekable streams transparently, and applies the configured default resize mode.
-
-### Key Features
+### API and behavior
 
 - `IImageResizer` — resize entry point resolved from DI; the internal default implementation iterates `IImageResizerContributor` registrations (in reverse order) until one succeeds
 - `IImageCompressor` — compress entry point resolved from DI; the internal default implementation iterates `IImageCompressorContributor` registrations (in reverse order) until one succeeds
@@ -180,17 +168,17 @@ Provides the `IImageResizer` and `IImageCompressor` implementations that dispatc
 - Automatic MemoryStream buffering for non-seekable input streams
 - Options validation via FluentValidation at startup
 
-### Design Notes
+### Design constraints
 
 Contributors are enumerated in reverse order of DI registration. This mirrors the last-in-wins overriding model: a contributor added after `AddImageSharpContributors()` takes precedence over ImageSharp without requiring any removal. A contributor signals non-support by returning `ImageProcessState.Unsupported`; the orchestrator seeks the stream back to the start and tries the next contributor.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Imaging.Core
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 builder
@@ -222,12 +210,7 @@ services.AddImaging((options, sp) => options.DefaultResizeMode = ImageResizeMode
 |---|---|---|---|
 | `DefaultResizeMode` | `ImageResizeMode` | `None` | Applied when `ImageResizeArgs.Mode` is `Default`. `None` means no resize fallback. |
 
-### Dependencies
-
-- `Headless.Imaging.Abstractions`
-- `Headless.Hosting`
-
-### Side Effects
+### Runtime behavior
 
 - Registers `IImageResizer` as singleton (internal default implementation)
 - Registers `IImageCompressor` as singleton (internal default implementation)
@@ -238,11 +221,7 @@ services.AddImaging((options, sp) => options.DefaultResizeMode = ImageResizeMode
 
 SixLabors.ImageSharp-backed contributors for image resizing and compression.
 
-### Problem Solved
-
-Provides the actual image-processing implementation wired into the contributor pipeline. Supports JPEG, PNG, WebP, GIF, BMP, and TIFF for resize; JPEG, PNG, and WebP for compression.
-
-### Key Features
+### API and behavior
 
 - Internal ImageSharp-backed `IImageResizerContributor` (registered by `AddImageSharpContributors`) — resize via `SixLabors.ImageSharp`; supports JPEG, PNG, GIF, BMP, TIFF, WebP
 - Internal ImageSharp-backed `IImageCompressorContributor` (registered by `AddImageSharpContributors`) — compression via configurable `IImageEncoder` per format; supports JPEG, PNG, WebP
@@ -250,17 +229,17 @@ Provides the actual image-processing implementation wired into the contributor p
 - Compression skips output if compressed size exceeds original (returns `Failed`)
 - Format is auto-detected from stream metadata when `args.MimeType` is not provided
 
-### Design Notes
+### Design constraints
 
 `ImageSharpOptions` exposes full `IImageEncoder` instances (`JpegCompressEncoder`, `PngCompressEncoder`, `WebpCompressEncoder`) rather than simple quality integers. This gives callers full control over encoder-specific settings (chroma subsampling, interlacing, filter type, etc.). The `DefaultCompressQuality` property initializes the default JPEG and WebP encoders in the constructor; changing it after construction has no effect unless the encoder instances are also replaced.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Imaging.ImageSharp
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 builder
@@ -307,12 +286,7 @@ builder.AddImageSharpContributors((options, sp) => options.DefaultCompressQualit
 
 Validation (applied at startup): `DefaultCompressQuality` must be between 1 and 100; all three encoder properties must be non-null.
 
-### Dependencies
-
-- `Headless.Imaging.Core`
-- `SixLabors.ImageSharp`
-
-### Side Effects
+### Runtime behavior
 
 - Registers `IImageResizerContributor` as singleton (internal ImageSharp resize contributor)
 - Registers `IImageCompressorContributor` as singleton (internal ImageSharp compress contributor)

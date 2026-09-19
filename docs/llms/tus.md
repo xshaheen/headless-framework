@@ -123,21 +123,17 @@ Register it with `services.AddDistributedLockTusLockProvider()` after registerin
 
 Base package for the TUS stack: protocol-level helpers every deployment needs regardless of storage provider, plus the shared `tusdotnet` dependency.
 
-### Problem Solved
-
-Two gaps every tus deployment hits regardless of store: browsers hide tus response headers cross-origin (without the right `Access-Control-Expose-Headers`, clients cannot read `Location`/`Upload-Offset` and uploads fail immediately), and nothing removes expired uploads (tusdotnet only reports `Upload-Expires`). Also pins the shared `tusdotnet` + `Headless.Hosting` references so all TUS packages align on one version.
-
-### Key Features
+### API and behavior
 
 - `TusCorsDefaults` — the tus 1.0.0 CORS surface as constants: `ExposedHeaders`, `AllowedHeaders`, `AllowedMethods` (includes the PATCH/DELETE that default CORS configs miss)
 - `CorsPolicyBuilder.WithTusHeaders()` — applies all three in one call; origins/credentials stay the caller's decision
 - `AddTusExpiredUploadsCleanup(...)` — registers an internal background hosted service calling `ITusExpirationStore.RemoveExpiredFilesAsync` on an interval (tuned via the public `TusExpiredUploadsCleanupOptions`)
 
-### Design Notes
+### Design constraints
 
 Cleanup targets **incomplete** uploads only — conforming Headless stores never report completed uploads as expired, so the job cannot destroy finished data. It binds to the `ITusExpirationStore` capability interface, not a concrete store; store packages forward the registration (`AddTusAzureStore` does), and manually constructed stores register with `services.AddSingleton<ITusExpirationStore>(store)`. The default 5-minute interval trades reclaim latency against the store scan each pass performs. In multi-node deployments every node runs its own loop against the same store: deletions are idempotent so this is safe, but the scan load multiplies and the logged removal counts are per-node — wrap the pass in a distributed-lock single-flight guard if that matters.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Tus
@@ -145,7 +141,7 @@ dotnet add package Headless.Tus
 
 Pulled in transitively by every `Headless.Tus.*` provider package.
 
-### Quick Start
+### Setup and use
 
 ```csharp
 using Headless.Tus;
@@ -165,12 +161,7 @@ builder.Services.AddTusExpiredUploadsCleanup(); // requires an ITusExpirationSto
 |---|---|---|
 | `Interval` | `5 minutes` | How often expired incomplete uploads are removed. Each pass scans the store's uploads — prefer coarser intervals for large containers. Must be positive. |
 
-### Dependencies
-
-- `tusdotnet`
-- `Headless.Hosting`
-
-### Side Effects
+### Runtime behavior
 
 - `AddTusExpiredUploadsCleanup` registers an internal hosted service and `TimeProvider.System` (TryAdd).
 - `TusCorsDefaults` / `WithTusHeaders` are pure helpers — no registrations.
@@ -181,11 +172,7 @@ builder.Services.AddTusExpiredUploadsCleanup(); // requires an ITusExpirationSto
 
 Azure Blob Storage TUS store implementation.
 
-### Problem Solved
-
-Provides `TusAzureStore`, a complete `ITusStore` implementation that backs resumable uploads with Azure Blob Storage block blobs. Supports all major TUS extensions: Creation, CreationDeferLength, Concatenation, Expiration, Checksum, and Termination.
-
-### Key Features
+### API and behavior
 
 - `TusAzureStore` — full `ITusStore` implementation backed by Azure block blobs; also implements `ITusPipelineStore` for zero-copy `PipeReader`-based ingestion
 - TUS extensions supported:
@@ -200,7 +187,7 @@ Provides `TusAzureStore`, a complete `ITusStore` implementation that backs resum
 - Adaptive chunk sizing: automatic selection between `BlobDefaultChunkSize` (4 MB) and `BlobMaxChunkSize` (16 MB default; up to 100 MB) based on declared upload size
 - Pooled buffer stream splitting via `ArrayPool<byte>` to minimize allocations during PATCH ingestion
 
-### Design Notes
+### Design constraints
 
 **Block blob chunking and checksum deferral.** TUS Checksum verification happens _after_ all PATCH data is staged. `TusAzureStore` stages blocks during `AppendDataAsync` but defers the commit list until `VerifyChecksumAsync` succeeds. The staged block range — a constant-size `token:firstIndex:count` triple that reconstructs the exact block IDs at commit time — and the pre-calculated checksum are written to blob metadata (`tus_last_chunk_blocks`, `tus_last_chunk_checksum`); being constant-size, the tracking cannot approach Azure's 8 KB blob-metadata cap no matter how many blocks one PATCH stages. On success, blocks are committed atomically together with metadata update. On mismatch, blocks are left uncommitted and Azure auto-purges them within 7 days. This means `GetUploadOffsetAsync` reads committed block sizes — not the blob `ContentLength` property — to report accurate offset to resuming clients.
 
@@ -210,13 +197,13 @@ Provides `TusAzureStore`, a complete `ITusStore` implementation that backs resum
 
 **Constructor-time container init.** When `CreateContainerIfNotExists = true`, `_containerClient.CreateIfNotExists(ContainerPublicAccessType)` is called synchronously in the constructor. If the `BlobServiceClient` lacks container-create permission, construction fails.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Tus.Azure
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 using Azure.Storage.Blobs;
@@ -312,13 +299,7 @@ var store = new TusAzureStore(
 
 Chunk size selection logic: uploads < 10 MB use `min(BlobDefaultChunkSize, fileSize)`; uploads 10–100 MB use `BlobDefaultChunkSize`; uploads ≥ 100 MB use `BlobMaxChunkSize`.
 
-### Dependencies
-
-- `Headless.Tus`
-- `Azure.Storage.Blobs`
-- `Microsoft.Extensions.Logging.Abstractions`
-
-### Side Effects
+### Runtime behavior
 
 - Synchronously calls `BlobContainerClient.CreateIfNotExists` during `TusAzureStore` construction when `CreateContainerIfNotExists = true`.
 - DI registration is optional: `TusAzureStore` can be constructed manually or registered via `AddTusAzureStore` (requires a `BlobServiceClient` in DI; container creation still runs synchronously at first resolution when enabled). For cross-node PATCH locking, register `Headless.Tus.DistributedLocks`.
@@ -329,11 +310,7 @@ Chunk size selection logic: uploads < 10 MB use `min(BlobDefaultChunkSize, fileS
 
 Distributed lock-based TUS file lock provider, using `Headless.DistributedLocks` to prevent concurrent PATCH corruption across multiple application instances.
 
-### Problem Solved
-
-The TUS protocol allows only one concurrent PATCH per file. On single-instance deployments, `tusdotnet`'s default in-process locking suffices. On multi-instance deployments (load-balanced or Kubernetes pods), each instance has its own in-process lock table, so two nodes can simultaneously PATCH the same file, producing interleaved blocks and corrupted uploads. `DistributedLockTusLockProvider` uses the framework's `IDistributedLock` to coordinate across nodes.
-
-### Key Features
+### API and behavior
 
 - `DistributedLockTusLockProvider` — `ITusFileLockProvider` backed by `IDistributedLock`
 - `DistributedLockTusFileLock` — `ITusFileLock` that calls `TryAcquireAsync` with zero wait; returns `false` immediately if another node holds the lock (tusdotnet returns `423 Locked` to the client)
@@ -342,13 +319,13 @@ The TUS protocol allows only one concurrent PATCH per file. On single-instance d
 - Single `AddDistributedLockTusLockProvider(resourcePrefix?)` extension on `IServiceCollection`
 - Best-effort mutual exclusion, not fencing: tusdotnet's `ITusFileLock` contract has no hook to observe a lease lost mid-request, so a holder that loses its lease during a backend partition keeps writing until the request ends — the auto-extending lease shrinks that window but cannot eliminate it
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Tus.DistributedLocks
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 using Headless.Tus;
@@ -388,12 +365,7 @@ app.Run();
 
 None beyond registering an `IDistributedLock` provider. The lock acquires with `AcquireTimeout = TimeSpan.Zero` (non-blocking) and `TimeUntilExpires = Timeout.InfiniteTimeSpan` (no expiry while held).
 
-### Dependencies
-
-- `Headless.Tus`
-- `Headless.DistributedLocks.Abstractions`
-
-### Side Effects
+### Runtime behavior
 
 - `AddDistributedLockTusLockProvider()` registers `ITusFileLockProvider` as a singleton (`DistributedLockTusLockProvider`).
 - Requires `IDistributedLock` to be registered in DI before this call.

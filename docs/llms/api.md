@@ -104,11 +104,7 @@ Idempotency is an HTTP-layer concern, not a Mediator pipeline behavior. The midd
 
 Defines core interfaces and contracts for HTTP request context, user identity, web client information, ProblemDetails construction, and absolute-URL building in ASP.NET Core applications.
 
-### Problem Solved
-
-Provides a standardized abstraction layer for accessing request-scoped context (user, tenant, locale, timezone, client info) without coupling application code to ASP.NET Core's `HttpContext` directly.
-
-### Key Features
+### API and behavior
 
 - `IRequestContext` — unified access to request-scoped information (user, tenant, locale, timezone, correlation ID)
 - `IWebClientInfoProvider` — client detection (IP address, user agent, device info)
@@ -119,13 +115,13 @@ Provides a standardized abstraction layer for accessing request-scoped context (
 - Framework constants for HTTP headers and common values
 - `RequireIfMatchAttribute` — portable marker used by MVC and OpenAPI concurrency profiles
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Api.Abstractions
 ```
 
-### Quick Start
+### Setup and use
 
 Inject `IRequestContext` to access request-scoped information:
 
@@ -163,12 +159,7 @@ public sealed class OrderService(IRequestContext context)
 
 No runtime registration is required by this package.
 
-### Dependencies
-
-- `Headless.Core`
-- `Microsoft.AspNetCore.App` (framework reference) — required by `IProblemDetailsCreator` (`ProblemDetails`) and `IAbsoluteUrlFactory` (`HttpContext`)
-
-### Side Effects
+### Runtime behavior
 
 None. This is an abstractions-only package.
 
@@ -178,11 +169,7 @@ None. This is an abstractions-only package.
 
 Building blocks for ASP.NET Core APIs — primitives only. Provides service registration helpers, middleware, problem details, JWT, identity, security headers, and request-context abstractions. `Headless.Api.ServiceDefaults` is the orchestrator that composes these into a single `AddHeadless()` call.
 
-### Problem Solved
-
-Exposes each API primitive individually so teams that need à-la-carte composition can register only what they need (e.g., problem details without the full ServiceDefaults bootstrap, or status-codes rewriting without OpenTelemetry). Also provides the HTTP-layer tenant resolution, tenant authorization, and antiforgery primitives that ServiceDefaults wires together.
-
-### Key Features
+### API and behavior
 
 - `AddHeadlessProblemDetails()` — registers `IProblemDetailsCreator`, `HeadlessApiExceptionHandler`, and the `CustomizeProblemDetails` hook that normalizes every response
 - `AddHeadlessApiResponseCompression()` — Brotli + Gzip at `Fastest` level; extends MIME list with `application/problem+json`, `image/svg+xml`, `image/x-icon`
@@ -200,7 +187,7 @@ Exposes each API primitive individually so teams that need à-la-carte compositi
 - HTTP tenant authorization: `TenantRequirement`, `[AllowMissingTenant]`, `.AllowMissingTenant()`, `[RequireTenant]`, `.RequireTenant()`
 - Diagnostic listeners: `AddHeadlessApiDiagnosticListeners()`, `BadRequestDiagnosticAdapter`, `MiddlewareAnalysisDiagnosticAdapter`
 
-### Design Notes
+### Design constraints
 
 - `IProblemDetailsCreator` factory methods normalize Headless fields (`traceId`, build metadata, `instance`, timestamp) but leave consumer `ProblemDetailsOptions.CustomizeProblemDetails` callbacks to the final response writer. Exception-handler and status-code-rewriter responses run consumer customization once through ASP.NET Core's `IProblemDetailsService`; MVC direct `ObjectResult` responses built from Headless-normalized ProblemDetails are customized once by `Headless.Api.Mvc`.
 - `HeadlessApiExceptionHandler` honors `Accept` quality values when deciding whether to write JSON ProblemDetails. A request that rejects JSON, or explicitly rejects `application/problem+json`, with `q=0` is left for downstream/default handlers instead of receiving a JSON body.
@@ -212,13 +199,13 @@ Exposes each API primitive individually so teams that need à-la-carte compositi
 - `AddRouteSource` (every overload) wraps the routing `LinkGenerator` once so `Url.Action`, `GetPathByAction`, and `GetPathByName` keep the current request's `{tenant}` segment, which ASP.NET Core would otherwise drop (required-value invalidation; the endpoint-name scheme passes no ambient values — only `GetPathByRouteValues` kept it). An explicit `tenant` value always wins; `RouteTenantIdentifierSourceOptions.PromoteAmbientRouteValue = false` opts out per call. A link from a tenant request to an endpoint without a `{tenant}` segment carries the value as a query string (`/plain?tenant=acme`); a link from a request with no tenant segment to a tenant endpoint returns `null` without an explicit value.
 - Every catalog rejection carries `Cache-Control: no-store`, and no tenancy log event carries a raw host, route value, header value, or identifier. The host source reads the post-forwarding `Request.Host`, never `X-Forwarded-Host`; a host template match timeout (practically unreachable with the non-backtracking compiled templates) maps to `Invalid` plus a once-per-process warning naming the template only.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Api.Core
 ```
 
-### Quick Start
+### Setup and use
 
 Composing primitives without ServiceDefaults:
 
@@ -398,22 +385,7 @@ All other exceptions return `false`; the host default or a downstream handler re
 
 `AddBasicSchema()` defaults to the canonical `Basic` authentication scheme and `AddApiKey()` defaults to `ApiKey`. `DynamicAuthenticationSchemeProvider` selects those same canonical names. API keys are read from the configured header by default; query-string keys are routed and accepted only when `ApiKeyAuthenticationSchemeOptions.AllowApiKeyInQueryString` is `true`.
 
-### Dependencies
-
-- `Headless.Api.Abstractions`
-- `Headless.Core`
-- `Headless.MultiTenancy`
-- `Headless.Security.Abstractions`
-- `Headless.Security`
-- `Headless.FluentValidation`
-- `Headless.Hosting`
-- `Asp.Versioning.Http`
-- `DeviceDetector.NET`
-- `FluentValidation`
-- `Microsoft.Extensions.Http.Resilience`
-- `NetEscapades.AspNetCore.SecurityHeaders`
-
-### Side Effects
+### Runtime behavior
 
 - Opt-in surface registration validates options at startup and registers the immutable singleton registry; middleware sets the request feature and activity tag.
 - Registers `HttpContextAccessor` (via `AddHeadlessProblemDetails`)
@@ -432,11 +404,7 @@ All other exceptions return `false`; the host default or a downstream handler re
 
 The one-line bootstrap for Headless APIs. Combines `Headless.Api.Core` primitives with Aspire-style host conventions (OpenTelemetry, OpenAPI, service discovery, HttpClient resilience).
 
-### Problem Solved
-
-Consolidates the entire ASP.NET Core API setup (compression, security headers, problem details, JWT, identity, validation, JSON defaults, OpenTelemetry, OpenAPI, service discovery, HttpClient resilience) into a single `AddHeadless()` call plus `UseHeadless()` / `MapHeadlessEndpoints()` for the pipeline. Antiforgery is opt-in via `options.Antiforgery.Enabled` (cookie-auth apps), with the middleware consumer-owned.
-
-### Key Features
+### API and behavior
 
 - One-call service registration via `AddHeadless()` (covers primitives + Aspire conventions)
 - One-call middleware defaults via `UseHeadless()`
@@ -450,13 +418,13 @@ Consolidates the entire ASP.NET Core API setup (compression, security headers, p
 - ASP.NET Core source-generated input validation
 - Transitively brings in all `Headless.Api.Core` primitives
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Api.ServiceDefaults
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -573,20 +541,7 @@ Surface filtering runs before schema generation and is independent of API Explor
 }
 ```
 
-### Dependencies
-
-- `Headless.Api.Core`
-- `FileSignatures`
-- `Microsoft.AspNetCore.OpenApi`
-- `Microsoft.Extensions.Http.Resilience`
-- `Microsoft.Extensions.ServiceDiscovery`
-- `OpenTelemetry.Exporter.OpenTelemetryProtocol`
-- `OpenTelemetry.Extensions.Hosting`
-- `OpenTelemetry.Instrumentation.AspNetCore`
-- `OpenTelemetry.Instrumentation.Http`
-- `OpenTelemetry.Instrumentation.Runtime`
-
-### Side Effects
+### Runtime behavior
 
 - Enables service-provider validation on startup (`ValidateOnBuild`, `ValidateScopes`).
 - Registers all core primitives from `Headless.Api.Core` including problem details, response compression, JWT, identity, status-code rewriting, and default API conventions.
@@ -605,11 +560,7 @@ Surface filtering runs before schema generation and is independent of API Explor
 
 Extends ASP.NET Core Data Protection to persist encryption keys to blob storage providers.
 
-### Problem Solved
-
-In distributed/containerized environments, ASP.NET Core Data Protection keys must be shared across instances. This package enables key persistence to any `IBlobStorage` implementation (Azure, AWS S3, local filesystem, etc.).
-
-### Key Features
+### API and behavior
 
 - `PersistKeysToBlobStorage()` extension for `IDataProtectionBuilder`
 - Works with any `IBlobStorage` implementation
@@ -621,13 +572,13 @@ In distributed/containerized environments, ASP.NET Core Data Protection keys mus
 - Key-ring reads are bounded to 1 MiB per XML blob, 1,000 blobs, and 16 MiB aggregate XML. DTD processing is prohibited. Exceeding any resource limit aborts the complete key-ring load; malformed XML within the limits is skipped as before.
 - Container ensure runs inside the same retry pipeline as the key upload; terminal write failures surface as `InvalidOperationException` naming the `DataProtection` container, whether a manager was wired, and the remediation (original exception as inner)
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Api.DataProtection
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -670,16 +621,7 @@ Provisioning matrix: **managed** — a manager is registered/keyed/passed, the c
 
 **Write resilience & failure context** — the container ensure runs inside the same retry pipeline as the key upload (transient ensure failures are retried under the same predicate), and a terminal write failure is wrapped in `InvalidOperationException` naming the `DataProtection` container, whether a manager was wired, and the remediation, with the original backend exception as the inner exception (context only — no failure-kind guessing).
 
-### Dependencies
-
-- `Headless.Blobs.Abstractions`
-- `Headless.Checks`
-- `Azure.Extensions.AspNetCore.DataProtection.Blobs`
-- `Microsoft.AspNetCore.DataProtection`
-- `Microsoft.Extensions.Diagnostics.HealthChecks`
-- `Microsoft.Extensions.Hosting.Abstractions`
-
-### Side Effects
+### Runtime behavior
 
 - Configures `KeyManagementOptions.XmlRepository` to use blob storage
 - `ValidateKeyRingAtStartup()` registers an `IHostedLifecycleService` that probes the key ring in `StartingAsync`, before other hosted services start (with `AutoGenerateKeys`, the first key may be created at boot instead of at first use; with `ProbeWritePath`, a sentinel blob is written and deleted each boot)
@@ -691,11 +633,7 @@ Provisioning matrix: **managed** — a manager is registered/keyed/passed, the c
 
 FluentValidation extensions for ASP.NET Core file uploads and reusable Headless API request contracts.
 
-### Problem Solved
-
-Provides reusable, type-safe validators for file uploads and common API request contracts, keeping validation rules out of `Headless.Api.Core` while eliminating repeated boundary-validation boilerplate.
-
-### Key Features
+### API and behavior
 
 - `FileNotEmpty()` — validates file has content
 - `GreaterThanOrEqualTo(bytes)` — minimum file size validation
@@ -707,13 +645,13 @@ Provides reusable, type-safe validators for file uploads and common API request 
 - `PageMetadata()` — validates `PageMetadataRequest` SEO field length and element-count limits
 - Localized error messages (English, Arabic)
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Api.FluentValidation
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 using FileSignatures;
@@ -753,14 +691,7 @@ No configuration required.
 File-validation extensions remain in the `FluentValidation` namespace. Stable file error-code constants and
 localized descriptor factories live in `Headless.FluentValidation.Resources`.
 
-### Dependencies
-
-- `Headless.FluentValidation`
-- `Headless.Api.Core`
-- `FileSignatures`
-- `Microsoft.AspNetCore.App` (framework reference)
-
-### Side Effects
+### Runtime behavior
 
 None.
 
@@ -770,18 +701,7 @@ None.
 
 Stripe-style HTTP idempotency middleware for ASP.NET Core. Cache full HTTP responses (status, allowlisted headers, byte body) on first execution and replay them byte-equivalent on identical retries.
 
-### Problem Solved
-
-Legacy "idempotency as uniqueness guard" (409 on any duplicate key) makes the receipt unrecoverable: a client whose first response was lost on the wire retries with the same key and gets 409 instead of the original 201. This package implements the standard contract (Stripe, AWS, PayPal, Square, IETF `draft-ietf-httpapi-idempotency-key-header`):
-
-- **Same key + same body** → replay original response (status, allowlisted headers, body bytes) with `Idempotent-Replayed: true`
-- **Same key + different body** → 422 Unprocessable Content (`g:idempotency_key_reused`)
-- **Same key, original in-flight** → 409 Conflict (`g:idempotency_in_flight`), or `WaitAndReplay` with a distributed lock
-- **Same key, lock acquisition timed out under `WaitAndReplay`** → 409 Conflict (`g:idempotency_in_flight_timeout`)
-- **`Idempotency-Key` header malformed** (length over 255, control characters, multi-valued) → 400 Bad Request (`g:idempotency_key_malformed`)
-- **New key** → execute fresh
-
-### Key Features
+### API and behavior
 
 - Byte-equivalent replay of cached responses
 - Two in-flight strategies: `InFlightStrategy.Reject` (default, no extra dependencies) and `InFlightStrategy.WaitAndReplay` (requires `IDistributedLock`)
@@ -794,7 +714,7 @@ Legacy "idempotency as uniqueness guard" (409 on any duplicate key) makes the re
 - Startup-time DI validation: `WaitAndReplay` without `IDistributedLock` fails fast with `OptionsValidationException`
 - `IdempotencyErrorCodes` static class: `KeyReused`, `InFlight`, `InFlightTimeout`, `BodyTooLarge`, `KeyMalformed` as `public const string`
 
-### Design Notes
+### Design constraints
 
 The middleware uses a lock-before-insert ordering under `WaitAndReplay`: the winner acquires the distributed lock **before** inserting the `InFlight` sentinel marker. Inserting the marker first creates a window where an arriving loser sees the marker, grabs the lock before the winner, then blocks on the same lock it already holds — leaving the winner unlocked and the loser stuck observing the `InFlight` marker until timeout. Lock-before-insert closes that window.
 
@@ -804,13 +724,13 @@ The middleware uses a lock-before-insert ordering under `WaitAndReplay`: the win
 
 > **Upgrade note.** These two options were previously coupled: the in-memory buffer threshold was derived from `MaxBodySizeForHashing`, so raising `MaxBodySizeForHashing` above the 1 MiB default also raised the memory-vs-disk spill point for free. They are now independent. A deployment that set a non-default `MaxBodySizeForHashing` will, after upgrading, spill request bodies between 1 MiB + 1 byte and its configured `MaxBodySizeForHashing` to a temporary file during buffering (previously they stayed in memory). This is a latency/temp-file characteristic change only — the fingerprint and oversize behavior are unchanged. To preserve the prior in-memory headroom, set `RequestBodyBufferThreshold` explicitly to match the old effective threshold (`MaxBodySizeForHashing` + 1).
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Api.Idempotency
 ```
 
-### Quick Start
+### Setup and use
 
 > A caching provider is a hard prerequisite. This package references `Headless.Caching.Abstractions` only, so the `ICache` the middleware stores and replays responses through comes from `AddHeadlessCaching(...)` with a provider (`UseInMemory` / `UseRedis` / `UseHybrid`). `AddIdempotency` declares it via `Headless.Hosting`'s `RequireRegisteredService<T>`, so a host without one is refused at startup with a `MissingRequiredServiceException` rather than failing on the first idempotent request. Registration order does not matter — the check runs at host start.
 
@@ -869,18 +789,7 @@ app.MapPost("/webhooks", HandleWebhook)
 | `KeyDeriver` | `null` (uses `idem:{tenant}:{userId}:{METHOD}:{path}{?query}:{key}`) | Custom cache-key derivation. |
 | `RequestFingerprint` | `null` (uses SHA-256 of buffered body) | Custom fingerprint computation. Must return non-empty bytes. |
 
-### Dependencies
-
-- `Headless.Api.Abstractions`
-- `Headless.Api.Core`
-- `Headless.Caching.Abstractions` (you supply the implementation: in-memory, Redis, etc.)
-- `Headless.DistributedLocks.Abstractions` (required only when using `InFlightStrategy.WaitAndReplay`)
-- `Headless.Core`
-- `Headless.FluentValidation`
-- `Headless.Hosting`
-- `Microsoft.AspNetCore.App` (framework reference)
-
-### Side Effects
+### Runtime behavior
 
 - Reads `ICurrentTenant.Id` and authenticated `ICurrentUser.UserId` for cache-key composition; when both are absent and no `KeyDeriver` is configured, the middleware passes through without applying idempotency.
 - Buffers the request body via `HttpRequest.EnableBuffering`; bytes beyond `RequestBodyBufferThreshold` spill to a temporary file.
@@ -894,24 +803,20 @@ app.MapPost("/webhooks", HandleWebhook)
 
 Serilog integration for ASP.NET Core APIs with custom enrichers for request context.
 
-### Problem Solved
-
-Enriches Serilog log events with HTTP request context (client IP, user agent, user ID, tenant ID, correlation ID) for better observability and debugging in web applications.
-
-### Key Features
+### API and behavior
 
 - Custom Serilog enricher middleware
 - Client info enrichment (IP, user agent)
 - Request context enrichment (user, tenant, correlation ID)
 - Integration with `Headless.Logging.Serilog` configuration
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Api.Logging.Serilog
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -931,14 +836,7 @@ app.Run();
 
 Inherits Serilog configuration from `Headless.Logging.Serilog`. See that package for sink and enricher configuration.
 
-### Dependencies
-
-- `Headless.Api.Abstractions`
-- `Headless.Logging.Serilog`
-- `Serilog.Enrichers.ClientInfo`
-- `Microsoft.AspNetCore.App` (framework reference)
-
-### Side Effects
+### Runtime behavior
 
 - Adds middleware to the request pipeline
 - Enriches log context per-request
@@ -949,11 +847,7 @@ Inherits Serilog configuration from `Headless.Logging.Serilog`. See that package
 
 Framework integration for ASP.NET Core Minimal APIs with JSON configuration, validation filters, and exception handling.
 
-### Problem Solved
-
-Provides consistent JSON serialization and validation for Minimal API endpoints matching the framework's conventions. Exception-to-ProblemDetails mapping is handled globally by `Headless.Api.Core`'s `HeadlessApiExceptionHandler` (registered via `AddHeadlessProblemDetails()`).
-
-### Key Features
+### API and behavior
 
 - Pre-configured JSON serialization options
 - `MinimalApiValidatorFilter` — FluentValidation integration via `.Validate<T>()` on endpoint builders
@@ -962,13 +856,13 @@ Provides consistent JSON serialization and validation for Minimal API endpoints 
 - API versioning integration
 - Endpoint discovery extensions
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Api.MinimalApi
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -1016,12 +910,7 @@ builder.Services.AddHeadlessMinimalApiEntityTagConcurrency(options =>
 );
 ```
 
-### Dependencies
-
-- `Headless.Api.Core` (and `Headless.Api.ServiceDefaults` if you want the orchestrator)
-- `Asp.Versioning.Http`
-
-### Side Effects
+### Runtime behavior
 
 - `MapApiSurface` adds group route, authorization, and tenancy conventions using the shared surface registry.
 - Configures `JsonOptions` for Minimal APIs
@@ -1034,11 +923,7 @@ builder.Services.AddHeadlessMinimalApiEntityTagConcurrency(options =>
 
 Framework integration for ASP.NET Core MVC/Web API with controllers, filters, JSON configuration, and common utilities.
 
-### Problem Solved
-
-Provides consistent MVC configuration, base controllers, and URL canonicalization for traditional controller-based APIs. Exception-to-ProblemDetails mapping is handled globally by `Headless.Api.Core`'s `HeadlessApiExceptionHandler` (registered via `AddHeadlessProblemDetails()`), so MVC actions get the same response shape as Minimal-API endpoints.
-
-### Key Features
+### API and behavior
 
 - `ApiControllerBase` — base controller with common utilities
 - Environment-based action filters (`BlockInEnvironmentAttribute`, `RequireEnvironmentAttribute`)
@@ -1049,13 +934,13 @@ Provides consistent MVC configuration, base controllers, and URL canonicalizatio
 - API versioning integration with API Explorer
 - Opt-in strong ETag responses and `If-Match` request validation
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Api.Mvc
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -1122,13 +1007,7 @@ Controller/action tenancy metadata takes precedence over surface defaults. Nativ
 
 Other MVC features require no additional configuration.
 
-### Dependencies
-
-- `Headless.Api.Core` (and `Headless.Api.ServiceDefaults` if you want the orchestrator)
-- `Asp.Versioning.Mvc`
-- `Asp.Versioning.Mvc.ApiExplorer`
-
-### Side Effects
+### Runtime behavior
 
 - `AddHeadlessMvcApiSurfaces` registers one MVC options configurator that applies surface defaults during model construction.
 - Configures `MvcOptions` and `JsonOptions` for controllers

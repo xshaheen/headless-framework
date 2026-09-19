@@ -2,96 +2,17 @@
 
 XML sitemap generation utilities for SEO.
 
-## Problem Solved
+## Why use this package
 
 Provides builders and models for generating XML sitemaps and sitemap indexes compliant with the sitemap protocol, supporting localized URLs, images, change frequency, and priority metadata.
 
-## Key Features
-
-- `SitemapUrl` - URL entry with metadata (lastmod, changefreq, priority)
-- `SitemapUrlOptions` - Optional metadata passed to either `SitemapUrl` constructor instead of separate optional constructor parameters
-- `SitemapUrls` - Extension methods to write sitemap URLs to streams
-- `SitemapIndexBuilder` - Sitemap index generation for large sites
-- `SitemapAlternateUrl` - Localized/alternate URL support (hreflang)
-- `SitemapImage` - Image sitemap support
-- `ChangeFrequency` - Standard frequency values (always, hourly, daily, weekly, etc.)
-
-## Installation
+## Install
 
 ```bash
 dotnet add package Headless.Sitemaps
 ```
 
-## Quick Start
+## Documentation
 
-### Basic Sitemap
-
-```csharp
-var urls = new List<SitemapUrl>
-{
-    new(
-        location: new Uri("https://example.com/"),
-        options: new SitemapUrlOptions
-        {
-            LastModified = DateTime.UtcNow,
-            ChangeFrequency = ChangeFrequency.Daily,
-            Priority = 1.0f,
-        }
-    ),
-    new(
-        location: new Uri("https://example.com/about"),
-        options: new SitemapUrlOptions { ChangeFrequency = ChangeFrequency.Monthly, Priority = 0.8f }
-    ),
-};
-
-// Write to stream
-await using var stream = new MemoryStream();
-await urls.WriteToAsync(stream);
-
-// Or auto-split at 50,000 URLs per sitemap
-var streams = await urls.WriteAsync();
-```
-
-### Localized URLs
-
-```csharp
-var urls = new List<SitemapUrl>
-{
-    new(
-        alternateLocations:
-        [
-            new() { Location = new Uri("https://example.com/en/page"), LanguageCode = "en" },
-            new() { Location = new Uri("https://example.com/ar/page"), LanguageCode = "ar" },
-        ],
-        options: new SitemapUrlOptions { LastModified = DateTime.UtcNow }
-    ),
-};
-
-await using var stream = new MemoryStream();
-await urls.WriteToAsync(stream);
-```
-
-### Sitemap Index
-
-```csharp
-var references = new List<SitemapReference>
-{
-    new() { Location = new Uri("https://example.com/sitemap-products.xml"), LastModified = DateTime.UtcNow },
-    new() { Location = new Uri("https://example.com/sitemap-blog.xml"), LastModified = DateTime.UtcNow },
-};
-
-await using var stream = new MemoryStream();
-await references.WriteToAsync(stream);
-```
-
-## Configuration
-
-No configuration required.
-
-## Dependencies
-
-- Headless.Extensions
-
-## Side Effects
-
-None.
+- [Headless Framework](https://github.com/xshaheen/headless-framework#readme)
+- [Utilities guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/utilities.md#headlesssitemaps)

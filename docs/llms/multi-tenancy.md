@@ -1,6 +1,6 @@
 ---
 domain: Multi-Tenancy
-packages: MultiTenancy.Abstractions, MultiTenancy, MultiTenancy.Storage.EntityFramework, Api.Core, Api.ServiceDefaults, Core, Messaging.Core, Jobs.Core, EntityFramework, Permissions.Core
+packages: MultiTenancy.Abstractions, MultiTenancy, MultiTenancy.Storage.EntityFramework
 ---
 
 # Multi-Tenancy
@@ -841,11 +841,7 @@ Tests that assert the normalized 403 `g:tenant_required` ProblemDetails (or any 
 
 ## Headless.MultiTenancy.Abstractions
 
-### Problem Solved
-
-Provides a storage- and host-independent contract surface for reading and scoping the ambient tenant identity, and for looking up tenant metadata by identifier or canonical id, so packages across the framework (EF Core, Jobs, Messaging, Api, Permissions, Settings, Features, ...) can depend on one shared set of tenant types without pulling in an implementation package. Splits into two halves: the tenant-context contracts (`ICurrentTenant` and friends — always relevant) and the tenant-catalog contracts (`ITenantStore` and friends — relevant only to hosts that opt in to catalog resolution; see [Tenant Catalog](#tenant-catalog)).
-
-### Key Features
+### API and behavior
 
 - **Tenant context**:
     - `ICurrentTenant` — reads the ambient tenant id/name for the current async execution scope and scopes a temporary override via `Change(id, name)`
@@ -860,7 +856,7 @@ Provides a storage- and host-independent contract surface for reading and scopin
     - `ICurrentTenantInfo` — reads catalog `TenantInfo` for the ambient tenant (`GetAsync()`); resolves per read, never throws for an absent tenant
     - `TenantResolutionOutcome` / `TenantResolutionKind` — the closed outcome set produced by identifier-based resolution: `Resolved`, `Unknown`, `Disabled`, `Ignored`, `Invalid`. `TenantResolutionKind.None` is the reserved zero value — it marks an uninitialized outcome (a bare `default(TenantResolutionOutcome)`, an auto-valued test double, or a consumer-supplied `ITenantCatalogService` returning it) rather than a sixth resolution outcome; the catalog itself never produces it, and consumers should treat seeing it as a contract violation
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.MultiTenancy.Abstractions
@@ -868,7 +864,7 @@ dotnet add package Headless.MultiTenancy.Abstractions
 
 Most applications receive this package transitively through `Headless.Core` (which implements the tenant-context contracts) or through a seam package (`Headless.Api.Core`, `Headless.Messaging.Core`, `Headless.EntityFramework`, `Headless.MultiTenancy`). Add it directly only when authoring a package that needs these contracts without pulling in an implementation — for example a custom `ITenantStore` over an app-owned tenant aggregate.
 
-### Quick Start
+### Setup and use
 
 ```csharp
 public sealed class OrderService(ICurrentTenant currentTenant)
@@ -895,11 +891,7 @@ public sealed class OrderService(ICurrentTenant currentTenant)
 
 None. This is an abstractions-only package.
 
-### Dependencies
-
-- `Headless.Primitives` (for `TenantInformation` and `ExtraProperties`)
-
-### Side Effects
+### Runtime behavior
 
 None.
 
@@ -907,11 +899,7 @@ None.
 
 ## Headless.MultiTenancy
 
-### Problem Solved
-
-Provides one composition surface for tenant posture across Headless packages while keeping each package in charge of its own behavior. It owns the root builder, shared manifest, and validator contracts, plus the opt-in tenant catalog: a family-owned service that normalizes tenant identifiers, caches read-through lookups, and canonicalizes identifier→id before ambient context is set. It does not itself resolve tenants over HTTP, enforce authorization, propagate messages, or guard EF writes — seam packages (`Headless.Api.Core`, `Headless.Messaging.Core`, `Headless.EntityFramework`) contribute their own fluent extensions on top of this builder, and `Headless.Api.Core` is what turns catalog resolution into an HTTP pipeline behavior.
-
-### Key Features
+### API and behavior
 
 - **Posture composition**:
     - `AddHeadlessTenancy(Action<HeadlessTenancyBuilder> configure)` — root configuration entry point; registers the shared manifest and startup validator, then invokes the configure callback.
@@ -931,7 +919,7 @@ Provides one composition surface for tenant posture across Headless packages whi
     - `TenancyErrorCodes` / `TenancyMessageDescriber` — the `g:tenant_resolution_failed` / `g:tenant_unknown` / `g:tenant_disabled` / `g:tenant_identifier_mismatch` / `g:tenant_identifier_invalid` ProblemDetails codes consumed by `Headless.Api.Core`'s rejection mapping.
     - `TenantCatalogPosture` — shared, non-PII seam/capability constants (`Catalog` seam, `catalog-accessor`/`catalog-resolution` capabilities) that this package and `Headless.Api.Core` both write to and that `TenantCatalogPostureValidator` cross-checks at startup.
 
-### Design Notes
+### Design constraints
 
 - **`HeadlessTenancyStartupValidator`** is registered as an `IHostedLifecycleService` (not a plain `IHostedService`) so `StartingAsync` runs before any other hosted service's `StartAsync`. This ordering guarantees that a misconfigured posture fails the host before background workers or messaging consumers begin processing under the wrong assumptions. The validation itself is synchronous inside `StartingAsync` — the task is only faulted if the host's own startup continuation throws; the validated diagnostics surface as the typed `HeadlessTenancyValidationException` before the task is awaited.
 - **Two independent cache namespaces, one shared expiration.** The catalog caches the identifier→id mapping and the id→`TenantInfo` shape as separate `ICache<T>` item types, both defaulting to `TenantCatalogOptions.CacheExpiration`. A single store hit from an identifier lookup populates both namespaces in one pass. The cache always holds the base `TenantInfo` shape — a subclass returned by an app-owned store is cloned down before caching and re-hydrated (or downcast, when the store returns the subtype directly) on read, so no polymorphic instance is ever serialized into the cache.
@@ -941,7 +929,7 @@ Provides one composition surface for tenant posture across Headless packages whi
 - **`UseStatusCodesRewriter()` is a hard prerequisite of catalog *resolution*.** Mismatch enforcement's second tier (`TenantIdentifierIntegrityHandler`) only fails the authorization evaluation and marks the request; the generic tenant rejection that keeps a mismatch byte-identical to an unknown identifier is written afterwards by `StatusCodesRewriterMiddleware`. A resolution host that never registers it answers a mismatch with a bare authorization failure while an unknown identifier still gets the 404 rejection — a tenant-enumeration oracle — so `TenantCatalogPostureValidator` fails startup with `CATALOG_RESOLUTION_WITHOUT_REWRITER` whenever `catalog-resolution` is recorded without the rewriter's runtime marker. This gate is resolution-scoped, not accessor-scoped like the caching one: an accessor-only host has no tier-2 path to collapse. The marker records presence, not position — the rewriter must also be added to the pipeline *before* `UseAuthorization()` so it wraps it, since a rewriter placed downstream never observes an evaluation that short-circuits.
 - **Exactly-one-storage-provider guard.** `Catalog(...)` reuses the same `GuardSingleStorageProvider` mechanism as `Headless.Settings.Core` — registering zero or more than one of `UseInMemory`/`UseConfiguration`/`UseEntityFramework` in the same `Catalog(...)` callback fails startup immediately rather than silently picking one.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.MultiTenancy
@@ -949,7 +937,7 @@ dotnet add package Headless.MultiTenancy
 
 Most applications receive this package transitively through the seam packages that contribute tenancy extensions (`Headless.Api.Core`, `Headless.Messaging.Core`, `Headless.EntityFramework`). Add it directly only when authoring a custom `IHeadlessTenancyValidator`, a custom seam, or a custom `ITenantStore` without pulling in one of those packages. Add `Headless.MultiTenancy.Storage.EntityFramework` separately for the EF Core-backed catalog store.
 
-### Quick Start
+### Setup and use
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -985,17 +973,7 @@ app.UseAuthorization();
 
 Custom validators implement `IHeadlessTenancyValidator` and register themselves in DI before `AddHeadlessTenancy` is called. `HeadlessTenancyStartupValidator` resolves all `IHeadlessTenancyValidator` registrations from DI via `IEnumerable<IHeadlessTenancyValidator>`.
 
-### Dependencies
-
-- `Headless.Caching.Abstractions` — contracts only. Hosts that call `Catalog(...)` must additionally install a caching provider (`Headless.Caching.InMemory`, `.Redis`, or `.Hybrid`) and register it with `AddHeadlessCaching(...)`.
-- `Headless.Checks`
-- `Headless.Extensions`
-- `Headless.Hosting`
-- `Headless.MultiTenancy.Abstractions`
-- `Microsoft.Extensions.DependencyInjection.Abstractions`
-- `Microsoft.Extensions.Hosting.Abstractions`
-
-### Side Effects
+### Runtime behavior
 
 - Registers a singleton `TenantPostureManifest` via `services.AddSingleton(manifest)`.
 - Registers `HeadlessTenancyStartupValidator` as `IHostedService` (via `TryAddEnumerable`; safe to call multiple times).
@@ -1007,18 +985,14 @@ Custom validators implement `IHeadlessTenancyValidator` and register themselves 
 
 ## Headless.MultiTenancy.Storage.EntityFramework
 
-### Problem Solved
-
-Provides an EF Core-backed `ITenantStore` using the consumer's own `DbContext`, with schema managed through EF migrations — a shipped, convenience-default schema, not a canonical one. Apps with richer requirements can implement `ITenantStore` directly over their own aggregate instead.
-
-### Key Features
+### API and behavior
 
 - `setup.UseEntityFramework<TContext>()` — registers the EF storage provider via `HeadlessTenancyCatalogSetupBuilder`. It also registers a startup gate (`IHostedLifecycleService`) that validates `TContext`'s model was configured through `modelBuilder.AddHeadlessTenancyCatalog(this)`; a `DbContext` missing that call fails host startup with an actionable message instead of failing lazily the first time the catalog resolves a tenant.
 - `modelBuilder.AddHeadlessTenancyCatalog(DbContext context)` — applies the `TenantRecord` entity configuration, reading the active EF Core provider so the unique identifier index can be pinned to a deterministic collation
 - `TenantRecord` — the single-table entity: `Id`, `Identifier`, `NormalizedIdentifier`, `Name`, `IsEnabled`, `ExtraProperties`
 - Unique index on `NormalizedIdentifier`, pinned to a case- and accent-sensitive collation (`Latin1_General_100_BIN2` on SQL Server, `C` on PostgreSQL) so a lookup never matches a row differing only by case — SQL Server's default collation is case-insensitive and would otherwise break the catalog service's ordinal lookup contract
 
-### Design Notes
+### Design constraints
 
 `TenantRecord` derives `NormalizedIdentifier` from `Identifier` itself through `SetIdentifier(...)` — there is no public setter for `NormalizedIdentifier`, so app-seeded rows and identifier rebrands can never carry a stale or hand-written normalized value. The entity deliberately does not implement `IMultiTenant`: the catalog sits outside the EF tenant query filter by construction.
 
@@ -1026,13 +1000,13 @@ This package ships no framework write path — read-only `FindByIdentifierAsync`
 
 Read paths use `IDbContextFactory<TContext>` and `AsNoTracking()`, matching `Headless.Settings.Storage.EntityFramework`.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.MultiTenancy.Storage.EntityFramework
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
@@ -1058,13 +1032,7 @@ builder.AddHeadlessTenancy(tenancy =>
 
 None. This package binds no options of its own — `UseEntityFramework<TContext>()` takes only the `DbContext` type argument. Cache and identifier-shape behavior is controlled by `TenantCatalogOptions` on `Headless.MultiTenancy`'s `Catalog(...)` builder, not by this package.
 
-### Dependencies
-
-- `Headless.MultiTenancy`
-- `Headless.EntityFramework`
-- `Microsoft.EntityFrameworkCore`
-
-### Side Effects
+### Runtime behavior
 
 - Registers `EfTenantStore<TContext>` as a singleton, exposed as both `ITenantStore` and `ITenantDirectory`
 - Registers `TenantCatalogEntityValidationStartupGate<TContext>` as an `IHostedService` (via `TryAddEnumerable`) that validates the model configuration at host startup

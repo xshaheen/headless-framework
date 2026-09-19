@@ -2,155 +2,17 @@
 
 Web-based dashboard for monitoring and managing distributed messaging infrastructure.
 
-## Problem Solved
+## Why use this package
 
 Provides real-time visibility into message processing, failures, retries, and system health through an embedded web UI for operations and troubleshooting.
 
-## Key Features
-
-- **Real-Time Monitoring**: Live message throughput and latency metrics
-- **Message Explorer**: Search, filter, and inspect messages
-- **Failure Management**: View and retry failed messages
-- **Node Discovery**: Multi-instance cluster visibility through async `INodeDiscoveryProvider` operations with optional trailing cancellation tokens; implementations propagate caller-requested cancellation instead of converting it to an empty or not-found result
-- **Provider Capabilities**: The protected metadata endpoint and responsive footer dialog show every registered provider role. Transport cards report delivery lanes and topology, storage cards report delivery lanes and delayed scheduling, and coordination cards report cluster coordination without exposing broker resource names or credentials
-- **Authorized Inbox Generations**: The received view shows bounded outcome, tier, generation, replay provenance, hold, expiry, and routability fields from the authenticated inbox operations projection. It does not project payloads or raw headers.
-- **Performance Metrics**: Consumer processing stats and bottlenecks
-- **5-Mode Auth**: None, Basic, API Key, Host, Custom (shared with Jobs Dashboard)
-- **Scheduled-delivery operator actions**: `GET /api/scheduled` lists pending scheduled deliveries (published rows in `Delayed`/`Queued` with no inline attempt, retry, or persisted retry time, presented as one `Pending` state); `POST /api/scheduled/revoke` and `POST /api/scheduled/dispatch-now` are audited, fenced mutations sharing the inbox operator ledger.
-
-## Design Notes
-
-The dashboard exposes operational endpoints for inspecting, retrying, re-executing, and deleting message records. Its protected `/api/meta` response also projects sanitized registered-provider descriptors; deployment cutover state remains operator-owned and is never inferred by the dashboard. Treat `WithNoAuth()` as development-only unless the dashboard is isolated behind trusted network controls. Production deployments should use `WithHostAuthentication(...)`, `WithBasicAuth(...)`, `WithApiKey(...)`, or `WithCustomAuth(...)`, and should set an explicit CORS policy before exposing the dashboard cross-origin.
-
-Inbox operations are generation-fenced and audited. Terminal identity is retained for 30 days by default or the consumer's `InboxRetention(...)` override. Expiry and purge reset duplicate-suppression identity; force reprocessing creates a linked child generation.
-
-Inbox query and operation JSON uses camelCase properties and named string enum values, such as `"Failed"`, `"Succeeded"`, and `"Queue"`, independently of the host's JSON configuration. Operation requests must send `expectedStatus` as a string; responses use the same format for status, lane, operation type, and outcome, including conflict and not-found results.
-
-Inbox and scheduled-delivery operations share one actor resolver and require an authenticated principal with a stable audit actor. The primary identity's name is used first, then its `NameIdentifier` or `sub` claim, then the authenticated dashboard username. An unauthenticated request returns HTTP 401 and ends the dashboard session. An authenticated principal with no usable name -- the no-auth mode's `anonymous` identity or the Host mode's shared `host-user` placeholder -- returns HTTP 403 with error code `g:operator_actor_required` and a body naming the remedy; the dashboard stays signed in. **Behavior change:** the inbox `host-user` case previously returned 401; it now returns 403, and `WithNoAuth()` deployments can no longer perform any operator action (read-only monitoring is unaffected). ApiKey and Custom identities are accepted as before and attribute actions to the deployment's shared secret identity. Authorization retains the host's claims and role mappings. Operation bodies require a JSON content type; unsupported media types return HTTP 415 and malformed JSON returns HTTP 422.
-
-The legacy `POST /api/published/requeue` and `POST /api/published/delete` bulk endpoints reject any id that matches the pending-scheduled-delivery predicate: each rejected id is reported in the response's `rejected` array alongside a message pointing at the audited `/api/scheduled/revoke` and `/api/scheduled/dispatch-now` actions, and the remaining ids are processed exactly as before. This fencing runs under the host principal, not the operator actor requirement, so it still functions under `WithNoAuth()` for non-pending rows.
-
-## Installation
+## Install
 
 ```bash
 dotnet add package Headless.Messaging.Dashboard
 ```
 
-## Quick Start
+## Documentation
 
-```csharp
-builder.Services.AddHeadlessMessaging(options =>
-{
-    options.Bus.ForMessage<OrderPlaced>(message =>
-        message.Consumer<OrderPlacedConsumer>(consumer =>
-            consumer.ConsumerIdentity("orders.order-placed")
-        )
-    );
-    options.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
-    options.UsePostgreSql("connection_string");
-    options.UseRabbitMq(config);
-
-    options.UseDashboard(dashboard =>
-    {
-        dashboard.WithBasicAuth("admin", "secret123");
-    });
-});
-
-// Access dashboard at: http://localhost:5000/messaging
-```
-
-## Authentication Modes
-
-An authentication mode must be chosen explicitly: if none of the `WithXxx` auth methods below (including `WithNoAuth()`) is called, the host **fails to start**. This is intentional — the dashboard exposes operational message actions and never ships publicly by omission.
-
-### No Authentication (Dev/Testing Only)
-
-```csharp
-options.UseDashboard(dashboard =>
-{
-    dashboard.WithNoAuth();
-});
-```
-
-### Basic Authentication
-
-```csharp
-options.UseDashboard(dashboard =>
-{
-    dashboard.WithBasicAuth("admin", "secret123");
-});
-```
-
-### API Key Authentication
-
-```csharp
-options.UseDashboard(dashboard =>
-{
-    dashboard.WithApiKey("my-secret-api-key");
-});
-```
-
-### Use Host Application's Authentication
-
-```csharp
-options.UseDashboard(dashboard =>
-{
-    dashboard.WithHostAuthentication();
-});
-```
-
-### Use Host Authentication with Custom Policy
-
-```csharp
-options.UseDashboard(dashboard =>
-{
-    dashboard.WithHostAuthentication("DashboardPolicy");
-});
-```
-
-### Custom Authentication
-
-```csharp
-options.UseDashboard(dashboard =>
-{
-    dashboard.WithCustomAuth((token, services) => ValidateToken(token, services));
-});
-```
-
-## Fluent API Methods
-
-- `WithNoAuth()` - Explicitly opt out of authentication (development or trusted-network use only)
-- `WithBasicAuth(username, password)` - Enable username/password authentication
-- `WithApiKey(apiKey)` - Enable API key authentication
-- `WithHostAuthentication(policy?)` - Use your app's existing auth with optional policy
-- `WithCustomAuth(validator)` - Custom authentication with validation function
-- `WithSessionTimeout(minutes)` - Set session timeout (default: 60 minutes)
-- `SetBasePath(path)` - Set dashboard URL path (default: `/messaging`)
-- `SetStatsPollingInterval(ms)` - Stats polling interval (default: 2000ms)
-- `SetCorsOrigins(origins)` - Allow specific cross-origin origins (credentialed); use when the SPA is served cross-origin
-- `SetCorsPolicy(policy)` - Configure a custom CORS policy
-
-## Configuration
-
-| Method | Default | Description |
-|--------|---------|-------------|
-| `SetBasePath` | `/messaging` | URL path for the dashboard |
-| `SetStatsPollingInterval` | `2000` | Stats endpoint polling interval (ms) |
-| `WithNoAuth` | (no default — auth is required) | Explicitly opt out of authentication; development or trusted-network use only |
-| `SetCorsPolicy` / `SetCorsOrigins` | `null` (same-origin only) | CORS policy for cross-origin requests |
-| `WithSessionTimeout` | `60` | Session timeout in minutes |
-
-## Dependencies
-
-- `Headless.Messaging.Core`
-- `Headless.Dashboard.Authentication` (shared auth with Jobs Dashboard)
-- `Consul` (node discovery)
-- `Microsoft.AspNetCore.App` (framework reference)
-
-## Side Effects
-
-- Mounts the embedded web UI and monitoring API through an `IStartupFilter` — no explicit middleware call is required
-- Exposes a web endpoint at the configured path (default: `/messaging`)
-- Periodically polls message storage for statistics
-- Authentication must be configured explicitly (an auth mode, or an explicit `WithNoAuth()` opt-out) or the host fails to start; no CORS policy is applied by default (same-origin only)
-- Registers `MessagingDashboardCache`, the dashboard's own in-process cache. The dashboard does **not** call `AddMemoryCache()`, so it never registers the shared `IMemoryCache` into your container and its entries never compete for your cache's size limit or get dropped by your compaction. It is not a `Headless.Caching` `ICache` because `AddHeadlessCaching` accepts only one call per service collection — registering one here would throw for any consumer that configures caching themselves, or force the caching package on consumers who only wanted a dashboard
+- [Headless Framework](https://github.com/xshaheen/headless-framework#readme)
+- [Messaging guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/messaging.md#headlessmessagingdashboard)

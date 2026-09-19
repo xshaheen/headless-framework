@@ -69,11 +69,7 @@ The `HeadlessDbContextServices` parameter in the constructor carries the scoped 
 
 Entity Framework Core integration for ASP.NET Core Identity with framework EF Core conventions.
 
-### Problem Solved
-
-`IdentityDbContext<>` from `Microsoft.AspNetCore.Identity.EntityFrameworkCore` is a plain DbContext with no awareness of the framework's save pipeline, auditing, soft delete, domain events, or multi-tenancy. This package provides `HeadlessIdentityDbContext<>` — a base class that combines both, so applications can use ASP.NET Core Identity alongside the full framework feature set without duplicate context registrations.
-
-### Key Features
+### API and behavior
 
 - `HeadlessIdentityDbContext<TUser, TRole, TKey, ...>` — base DbContext that extends `IdentityDbContext<>` with the framework EF Core runtime
 - 8-type-parameter form (passkey hard-wired to `IdentityUserPasskey<TKey>`) and 9-type-parameter form (explicit `TUserPasskey`) for .NET 10 passkey-aware stores
@@ -84,7 +80,7 @@ Entity Framework Core integration for ASP.NET Core Identity with framework EF Co
 - `DefaultSchema` abstract member lets each derived context namespace all Identity tables under a custom schema
 - `IdentityOptions.Stores.SchemaVersion` defaulted to `IdentitySchemaVersions.Version3` (passkey table support) — guarded by sentinel so multiple `AddHeadlessDbContext` calls are idempotent
 
-### Design Notes
+### Design constraints
 
 **Identity schema version default.** `AddHeadlessDbContext` configures `IdentityOptions.Stores.SchemaVersion = IdentitySchemaVersions.Version3` exactly once, guarded by `HeadlessIdentityDefaultsSentinel`. Version 3 is the modern Identity model that includes the `AspNetUserPasskeys` table required for WebAuthn/passkey flows. Greenfield applications get this without extra configuration; existing applications that must target version 1 override via `services.Configure<IdentityOptions>(...)` after registration.
 
@@ -92,13 +88,13 @@ Entity Framework Core integration for ASP.NET Core Identity with framework EF Co
 
 **`IDbContextFactory<TDbContext>` scope ownership.** The factory registered by `AddHeadlessDbContext` is `HeadlessDbContextFactory<TDbContext>` — it creates a fresh DI scope per call and transfers ownership to the returned context, which disposes the scope alongside itself. This is the same implementation used by `Headless.EntityFramework` so behavior is at parity.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Identity.Storage.EntityFramework
 ```
 
-### Quick Start
+### Setup and use
 
 #### Define the DbContext
 
@@ -249,12 +245,7 @@ Consumers own the schema migration and the tenant assignment for existing rows:
 
 Existing interface-owned tenant columns gain tenant concurrency-token metadata even outside Identity opt-in, without forced changes to their types, collations, or check constraints. No migration or backfill runs automatically.
 
-### Dependencies
-
-- `Headless.EntityFramework`
-- `Microsoft.AspNetCore.Identity.EntityFrameworkCore`
-
-### Side Effects
+### Runtime behavior
 
 - Calls `services.AddHeadlessDbContextServices()` — registers `HeadlessDbContextServices` (scoped), `IHeadlessSaveChangesPipeline`, `IHeadlessAuditPersistence`, `IAmbientDbTransactionAccessor`, `IAuditChangeCapture`, `ITenantWriteGuardBypass`, `TimeProvider` (`TimeProvider.System`), `ICurrentTenantAccessor`, `ICurrentTenant`, `ICurrentUser`, `ICorrelationIdProvider`, and related singletons.
 - Identity saves route through the same `Headless.EntityFramework` save pipeline as any other `HeadlessDbContext`; when a unit of work is active on the context (or the scope), buffered work (outbox rows, jobs) enlists automatically — see [Unit of Work](unit-of-work.md). No opt-in adapter is needed.

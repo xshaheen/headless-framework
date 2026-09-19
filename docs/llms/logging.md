@@ -47,11 +47,7 @@ builder.Host.UseSerilog(
 ---
 ## Headless.Logging.Serilog
 
-### Problem Solved
-
-Setting up Serilog correctly for ASP.NET Core requires wiring a bootstrap logger (to catch startup failures), then replacing it with a reloadable production logger that reads from `IConfiguration`, applies enrichers, routes levels to separate files, and adjusts the console theme per environment. `SerilogFactory` encodes this two-phase setup as tested, opinionated extension methods so applications get correct defaults without repeating the configuration boilerplate.
-
-### Key Features
+### API and behavior
 
 - `SerilogFactory.CreateBootstrapLoggerConfiguration()` / `ConfigureBootstrapLoggerConfiguration()` — early-startup logger covering console, debug (DEBUG builds), and an async file sink for Fatal/Error/Warning events.
 - `SerilogFactory.CreateReloadableLoggerConfiguration()` / `ConfigureReloadableLoggerConfiguration()` — production logger reading from `Serilog:` config section, enriched with application metadata, wiring three level-specific async file sinks and an environment-aware console sink.
@@ -62,7 +58,7 @@ Setting up Serilog correctly for ASP.NET Core requires wiring a bootstrap logger
 - Debug sink active only in `#DEBUG` builds — no production overhead.
 - Console theme switches automatically: `AnsiConsoleTheme.Code` (Development) vs `ConsoleTheme.None` (other environments).
 
-### Design Notes
+### Design constraints
 
 **Two-phase logger approach**: ASP.NET Core's host-building phase can throw before `IConfiguration` or DI is ready. The bootstrap logger captures those crashes. The reloadable logger replaces it once the host is built and can call `ReadFrom.Services(services)` to pick up any DI-registered sinks or enrichers.
 
@@ -74,13 +70,13 @@ Setting up Serilog correctly for ASP.NET Core requires wiring a bootstrap logger
 
 **`SerilogFactory.OutputTemplate`** is `public const` so custom downstream sinks or formatters can reference the canonical template without duplicating the string.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Logging.Serilog
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 // Program.cs
@@ -159,22 +155,7 @@ Log level changes here take effect at runtime without restart (hot-reload via `R
 | `RetainedFileCountLimit` | `int?` | `5` | How many rolled files to keep per log category; `null` retains all files indefinitely. |
 | `MaxHeaderLength` | `int` | `512` | Reserved; not currently used by the file sinks. |
 
-### Dependencies
-
-- `Headless.Extensions` (project reference — provides `AssemblyInformation`)
-- `Serilog`
-- `Serilog.Enrichers.Environment`
-- `Serilog.Enrichers.Process`
-- `Serilog.Enrichers.Span`
-- `Serilog.Enrichers.Thread`
-- `Serilog.Extensions.Hosting`
-- `Serilog.Settings.Configuration`
-- `Serilog.Sinks.Async`
-- `Serilog.Sinks.Console`
-- `Serilog.Sinks.Debug`
-- `Serilog.Sinks.File`
-
-### Side Effects
+### Runtime behavior
 
 - Creates `Logs/` directory and writes rolling log files (`fatal-.log`, `error-.log`, `warning-.log`) when `WriteToFiles = true` (default).
 - Writes `Logs/bootstrap-.log` for Fatal/Error/Warning events during the bootstrap phase.

@@ -208,7 +208,7 @@ Production readiness is a composition choice, not a global switch.
 - Use in-memory and dev providers for local development, tests, and isolated demos.
 - Prefer named instances when one service talks to several logical stores or senders.
 - Keep provider configuration at the composition root. Do not leak concrete provider clients into business code unless the provider option deliberately exposes an SDK type.
-- Read the package README for each domain you install. It documents dependencies, side effects, setup requirements, and provider limits.
+- Read the relevant [`docs/llms/`](docs/llms/) domain guide for setup, runtime effects, and provider limits. Package READMEs are short NuGet entry points that link to the canonical guide.
 - Test the provider combination you actually run in production whenever behavior depends on storage, transactions, locks, ordering, broker delivery, or cloud service semantics.
 
 ## Versioning and compatibility
@@ -223,20 +223,24 @@ Pay particular attention to release notes covering configuration APIs, provider 
 
 ## Using Headless with AI agents
 
-Add this to your `AGENTS.md` or `CLAUDE.md` so coding agents fetch the right documentation instead of guessing at the API:
+Add this to the root `AGENTS.md` or `CLAUDE.md` that your coding agent loads:
 
 ```markdown
 ## Headless Framework
 
 This project uses [Headless .NET Framework](https://github.com/xshaheen/headless-framework).
 
-When working with Headless packages, fetch the docs index:
-https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/index.md
+For any task touching a `Headless.*` package or `Headless.NET.Sdk*` SDK:
 
-The index lists per-domain docs to fetch as needed.
+1. Resolve the exact package IDs and versions used by this project.
+2. Before planning, editing, or reviewing, read the [Headless agent-docs index](https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/index.md).
+3. Use the index as a router: load every affected domain guide, resolve its links relative to the index URL, and follow its `Agent Rules`.
+4. Match the docs to the installed version by replacing `main` in their URLs with the corresponding Git tag. If no matching docs ref exists, inspect the installed package and report the mismatch.
+
+Package READMEs are discovery pages. Verify APIs against installed packages; do not guess them from memory.
 ```
 
-The index carries the framework's agent rules and links to per-domain documentation under [`docs/llms/`](docs/llms/).
+The copied block stays small because it only routes the agent. The index owns framework-wide rules and links to the canonical domain guides under [`docs/llms/`](docs/llms/).
 
 ## Extending Headless
 
@@ -634,4 +638,4 @@ The canonical package list lives in [`eng/expected-packages.txt`](eng/expected-p
 
 ## Contributing
 
-Issues, feature requests, and pull requests are welcome. Read the README of the package you are changing first — each one documents its dependencies, side effects, and provider limits.
+Issues, feature requests, and pull requests are welcome. Read the package's canonical [`docs/llms/`](docs/llms/) domain guide before changing public behavior; the package README links to that guide.

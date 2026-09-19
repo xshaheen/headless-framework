@@ -136,11 +136,7 @@ Every illegal transition throws with a message naming the remedy — never a bar
 
 Defines the public unit-of-work contracts without provider dependencies: the scoped manager entry point, the unit handle, the resource seams, and the shared `TransactionEnlistment` knob.
 
-### Problem Solved
-
-Consumer packages (`Headless.Messaging.Abstractions`, `Headless.Jobs.Abstractions`) need `IUnitOfWork`, `IUnitOfWorkManager`, and `TransactionEnlistment` without pulling in a concrete manager implementation or any provider. This package is that zero-dependency contract surface.
-
-### Key Features
+### API and behavior
 
 - `IUnitOfWorkManager` (scoped): `Current`, the resource-less `BeginAsync(options?, ct)`, plus the provider primitives — the resource-factory `BeginAsync` (hidden from IntelliSense), observed-mode `Enlist` (hidden), and swap-and-restore `Adopt` (hidden).
 - `IUnitOfWork`: `State`, `Failure`, `Resource`, `OnCompleted(Func<ValueTask>)`, `OnFailed(Func<UnitOfWorkFailure, ValueTask>)`, `GetOrAdd<TState>` (both overloads), `PreventRetry()` / `IsRetryPrevented`, `CompleteAsync(ct)`, idempotent `RollbackAsync()`, dispose both ways.
@@ -149,17 +145,17 @@ Consumer packages (`Headless.Messaging.Abstractions`, `Headless.Jobs.Abstraction
 - `UnitOfWorkOptions`: intentionally empty today; propagation knobs (`RequiresNew`/`Suppress`) land here additively.
 - `TransactionEnlistment { WhenAvailable = 0, Required = 1, Never = 2 }`: see [Guarantee Matrix](#guarantee-matrix).
 
-### Design Notes
+### Design constraints
 
 The manager is scoped by decision: `Current` is a plain field on it, one slot per DI scope, with no `AsyncLocal` anywhere. See [Why scoped, not ambient](#why-scoped-not-ambient). Dispose without `CompleteAsync` is an implicit rollback; `RollbackAsync` is how the owner of an observed-mode transaction reports its own rollback and suppresses the forgotten-completion warning. `OnCompleted` callbacks are process-local fast-path dispatchers, never the durability mechanism — durable delivery comes from rows committed in the transaction plus the consumer's recovery sweep. An `OnCompleted` fault after a successful commit leaves the unit `Completed` (the data is durable); a commit fault transitions to `Failed` before the exception propagates, so a retry cannot double-apply.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.UnitOfWork.Abstractions
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 using Headless.UnitOfWork;
@@ -180,11 +176,7 @@ public sealed class PlaceOrderHandler(IUnitOfWorkManager unitOfWork, AppDbContex
 
 None.
 
-### Dependencies
-
-None.
-
-### Side Effects
+### Runtime behavior
 
 None.
 
@@ -194,11 +186,7 @@ None.
 
 Implements the scoped `UnitOfWorkManager` (one unit-of-work slot per service scope, no `AsyncLocal`), the in-process unit engine with the atomic terminal claim, and `AddUnitOfWork()`.
 
-### Problem Solved
-
-The default, provider-agnostic implementation behind `IUnitOfWorkManager`: nesting, the failure/completion drain, leak detection, and the concurrent-begin latch, none of which any provider package needs to reimplement.
-
-### Key Features
+### API and behavior
 
 - `AddUnitOfWork()`: idempotent `TryAddScoped<IUnitOfWorkManager, UnitOfWorkManager>`; every consumer setup (`AddHeadlessMessaging`, `AddHeadlessJobs`, `AddHeadlessDbContextServices`, the three UnitOfWork provider setups) calls it, so exactly one registration exists regardless of which setup a host invokes first.
 - Synchronous slot claim: the provider-facing `BeginAsync` claims the slot before its first `await`, so a concurrent begin in the same scope fails deterministically; a faulted resource begin releases the slot and propagates as-is.
@@ -207,17 +195,17 @@ The default, provider-agnostic implementation behind `IUnitOfWorkManager`: nesti
 - Leak detection: disposing the manager with an active unit rolls it back, runs `OnFailed` with `ScopeDisposed`, and logs the leak warning; an observed unit disposed un-completed after its transaction finished logs the forgotten-completion warning.
 - `Adopt(unit)` (hidden): swap-and-restore, re-entrant when the slot already holds that unit; used internally by the EF save pipeline (see [The DbContext binding and adoption](#the-dbcontext-binding-and-adoption)).
 
-### Design Notes
+### Design constraints
 
 `CompleteAsync` in owned mode commits the resource, then drains `OnCompleted`, then disposes scope-local state; the terminal claim settles synchronously before the drain, so a racing dispose never rolls committed work back. A synchronous `Dispose` claims synchronously and offloads the rollback and failure drain to the thread pool (a captured `SynchronizationContext` can neither deadlock nor stall the disposing thread); `DisposeAsync` awaits the same path inline. Savepoint-blindness is harmless by construction: a row written inside a rolled-back savepoint vanishes and its stale `OnCompleted` callback no-ops — callbacks are process-local accelerators, and durability is the committed row plus the consumer's recovery sweep.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.UnitOfWork
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 using Headless.UnitOfWork;
@@ -233,14 +221,7 @@ await uow.CompleteAsync(ct);
 
 None.
 
-### Dependencies
-
-- `Headless.Checks`
-- `Headless.UnitOfWork.Abstractions`
-- `Microsoft.Extensions.DependencyInjection.Abstractions`
-- `Microsoft.Extensions.Logging.Abstractions`
-
-### Side Effects
+### Runtime behavior
 
 Registers the scoped `IUnitOfWorkManager`; the manager, engine, and handle types are internal. Repeated calls are idempotent. The manager is scoped — resolving it (or a scoped facade over it) from the root provider under scope validation throws, which is the correct captive-dependency signal.
 
@@ -250,11 +231,7 @@ Registers the scoped `IUnitOfWorkManager`; the manager, engine, and handle types
 
 Gives a plain EF Core `DbContext` the three unit-of-work entry points it needs: an owned begin, an observed enlist, and an execution-strategy-safe block.
 
-### Problem Solved
-
-Application code and framework infrastructure alike (the Headless save pipeline, Jobs' EF operational store) need to begin, enlist, or run a retriable unit of work against a `DbContext` without hand-rolling transaction-begin plus manual enlistment plus a replay-safety filter every time.
-
-### Key Features
+### API and behavior
 
 - `IUnitOfWorkManager.BeginAsync(db, isolation = ReadCommitted, ct)` — owned mode: claims the manager's slot synchronously, rejects a context that already has a transaction (naming `Enlist`), rejects a retrying execution strategy (naming `RunAsync`), begins the transaction eagerly, and records the `DbContext → IUnitOfWork` binding. `CompleteAsync` commits, then drains.
 - `IUnitOfWorkManager.Enlist(db, transaction)` — observed mode for a transaction the caller commits: the unit's verbs are no-ops on the transaction; `CompleteAsync` drains without committing; `RollbackAsync` reports the caller's rollback and suppresses the forgotten-completion warning.
@@ -262,7 +239,7 @@ Application code and framework infrastructure alike (the Headless save pipeline,
 - `DbContextUnitOfWork.Find(db)` — public but hidden from IntelliSense; resolves the active unit bound to a context. The Headless save pipeline (in `Headless.EntityFramework`) consults it before the scope manager, so a factory-created context owning its own scope is still found.
 - `AddEntityFrameworkUnitOfWork()` — idempotent; delegates to `AddUnitOfWork()` and registers nothing else.
 
-### Design Notes
+### Design constraints
 
 **Nesting is join-by-default.** A second `BeginAsync(db)` while a unit is active on the same context returns a child view over the same engine and the *same live resource* — no second transaction is begun. Child registrations transfer to the root on child complete; an abandoned child drops its registrations and aborts the root. A resource-bearing begin under a resource-less root opens an independent nested unit.
 
@@ -272,13 +249,13 @@ Application code and framework infrastructure alike (the Headless save pipeline,
 
 **The binding uses a `ConditionalWeakTable`**, so a pooled context never leaks a stale unit: `Find` returns only a unit that is still `Active`; a terminal unit is ignored and evicted. This package never references `Headless.EntityFramework` (the reference flows the other way), so the provider stays usable by any EF consumer.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.UnitOfWork.EntityFramework
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 using Headless.UnitOfWork;
@@ -324,14 +301,7 @@ await db.ExecuteTransactionAsync(async (context, ct) =>
 
 None.
 
-### Dependencies
-
-- `Headless.Checks`
-- `Headless.UnitOfWork`
-- `Microsoft.EntityFrameworkCore.Relational`
-- `Microsoft.Extensions.DependencyInjection.Abstractions`
-
-### Side Effects
+### Runtime behavior
 
 `AddEntityFrameworkUnitOfWork()` calls the idempotent `AddUnitOfWork()` (scoped `IUnitOfWorkManager`) and registers nothing else — no interceptor, no hosted service, no options. The manager is scoped: resolving it from the root provider under scope validation throws, which is the correct captive-dependency signal.
 
@@ -341,28 +311,24 @@ None.
 
 Runs raw-ADO `NpgsqlConnection` work as a scoped unit of work, so outbox rows and job rows written inside the transaction commit with it, dispatch after it commits, and are discarded when it rolls back.
 
-### Problem Solved
-
-Raw ADO on PostgreSQL has no framework transaction abstraction and no commit interceptor to observe; this package gives it the same `BeginAsync`/`Enlist`/`RunAsync` shape as the EF provider, with the completion made fully explicit where PostgreSQL gives no commit edge to observe.
-
-### Key Features
+### API and behavior
 
 - `IUnitOfWorkManager.BeginAsync(connection, isolation, ct)` — owned mode: begins the transaction on that line (opening the connection when it is closed); `CompleteAsync` commits and drains, `RollbackAsync` or a dispose without completing rolls back.
 - `IUnitOfWorkManager.Enlist(connection, transaction)` — observed mode for a transaction you commit yourself; call `CompleteAsync` after your commit or `RollbackAsync` after your rollback.
 - `IUnitOfWorkManager.RunAsync(connection, operation, isolation, ct)` — begin → operation → complete in one call; a throwing operation rolls back and rethrows its own exception.
 - `AddPostgreSqlUnitOfWork()` — registers the scoped manager (idempotent; there are no provider options).
 
-### Design Notes
+### Design constraints
 
 Npgsql exposes no commit edge, so observed mode is explicit: nothing completes the unit for you. A unit enlisted with `Enlist` and disposed without `CompleteAsync` or `RollbackAsync` after its transaction completed is logged as a forgotten completion — the durable rows are relay-recovered, but the fast-path dispatch was lost. A dispose while the transaction is still open is the normal failure path and logs nothing. There is no execution-strategy retry for raw ADO; that is an EF Core concept (`Headless.UnitOfWork.EntityFramework`).
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.UnitOfWork.PostgreSql
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 using Headless.UnitOfWork;
@@ -396,15 +362,7 @@ await unit.CompleteAsync(ct); // required — nothing completes the unit for you
 
 None.
 
-### Dependencies
-
-- `Headless.Checks`
-- `Headless.UnitOfWork`
-- `Microsoft.Extensions.DependencyInjection.Abstractions`
-- `Microsoft.Extensions.Logging.Abstractions`
-- `Npgsql`
-
-### Side Effects
+### Runtime behavior
 
 Registers the scoped `IUnitOfWorkManager` only.
 
@@ -414,28 +372,24 @@ Registers the scoped `IUnitOfWorkManager` only.
 
 Runs raw-ADO `SqlConnection` work as a scoped unit of work, so outbox rows and job rows written inside the transaction commit with it, dispatch after it commits, and are discarded when it rolls back.
 
-### Problem Solved
-
-Same as `Headless.UnitOfWork.PostgreSql`, for SQL Server: SqlClient has no commit interceptor to observe, so this package gives raw ADO the same `BeginAsync`/`Enlist`/`RunAsync` shape with fully explicit completion.
-
-### Key Features
+### API and behavior
 
 - `IUnitOfWorkManager.BeginAsync(connection, isolation, ct)` — owned mode: begins the transaction on that line (opening the connection when it is closed); `CompleteAsync` commits and drains, `RollbackAsync` or a dispose without completing rolls back.
 - `IUnitOfWorkManager.Enlist(connection, transaction)` — observed mode for a transaction you commit yourself; call `CompleteAsync` after your commit or `RollbackAsync` after your rollback.
 - `IUnitOfWorkManager.RunAsync(connection, operation, isolation, ct)` — begin → operation → complete in one call; a throwing operation rolls back and rethrows its own exception.
 - `AddSqlServerUnitOfWork()` — registers the scoped manager (idempotent; there are no provider options).
 
-### Design Notes
+### Design constraints
 
 SqlClient exposes no commit edge, so observed mode is explicit: nothing completes the unit for you. A unit enlisted with `Enlist` and disposed without `CompleteAsync` or `RollbackAsync` after its transaction completed is logged as a forgotten completion — the durable rows are relay-recovered, but the fast-path dispatch was lost. A dispose while the transaction is still open is the normal failure path and logs nothing. There is no execution-strategy retry for raw ADO; that is an EF Core concept (`Headless.UnitOfWork.EntityFramework`).
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.UnitOfWork.SqlServer
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 using Headless.UnitOfWork;
@@ -469,14 +423,6 @@ await unit.CompleteAsync(ct); // required — nothing completes the unit for you
 
 None.
 
-### Dependencies
-
-- `Headless.Checks`
-- `Headless.UnitOfWork`
-- `Microsoft.Data.SqlClient`
-- `Microsoft.Extensions.DependencyInjection.Abstractions`
-- `Microsoft.Extensions.Logging.Abstractions`
-
-### Side Effects
+### Runtime behavior
 
 Registers the scoped `IUnitOfWorkManager` only.

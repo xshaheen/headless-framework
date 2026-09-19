@@ -119,11 +119,7 @@ SMS sends are not idempotent by default. Re-sending on transient failure can cau
 
 Defines the unified interface and message contract for SMS sending.
 
-### Problem Solved
-
-Provides a provider-agnostic SMS sending API so application code stays decoupled from the underlying gateway (Twilio, AWS SNS, Cequens, etc.). Provider selection is a DI registration concern only.
-
-### Key Features
+### API and behavior
 
 - `ISmsSender` — single-recipient send: `SendAsync(SendSingleSmsRequest, CancellationToken) : ValueTask<SendSingleSmsResponse>`.
 - `IBulkSmsSender` — optional capability for multi-recipient sends: `SendBulkAsync(SendBulkSmsRequest, CancellationToken) : ValueTask<SendBulkSmsResponse>`. Only implemented by providers with native bulk support.
@@ -135,13 +131,13 @@ Provides a provider-agnostic SMS sending API so application code stays decoupled
 - `SendBulkSmsResponse` — per-recipient bulk result; `Results` (one `SmsRecipientResult` each), `AllSucceeded`/`AnySucceeded`, optional `ProviderBatchId`. Built via `FromResults` or `FromAggregate`.
 - Never throws for provider errors — only `OperationCanceledException` and argument-validation exceptions (malformed request) propagate.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Sms.Abstractions
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 public sealed class OtpService(ISmsSender smsSender)
@@ -168,11 +164,7 @@ public sealed class OtpService(ISmsSender smsSender)
 
 No configuration required. This is an abstractions-only package.
 
-### Dependencies
-
-- `Headless.Checks`
-
-### Side Effects
+### Runtime behavior
 
 None. This is an abstractions package. Registration lives in `Headless.Sms.Core`.
 
@@ -182,11 +174,7 @@ None. This is an abstractions package. Registration lives in `Headless.Sms.Core`
 
 Setup builder, registration gates, and the named-sender provider for the SMS abstraction.
 
-### Problem Solved
-
-Owns the unified SMS setup builder (`AddHeadlessSms`) and the `ISmsSenderProvider` implementation, giving every provider one registration grammar (a default slot plus named instances over keyed DI) instead of each package hand-rolling its own `IServiceCollection` extension.
-
-### Key Features
+### API and behavior
 
 - `AddHeadlessSms(Action<HeadlessSmsSetupBuilder>)` — the single provider-agnostic registration entry point, with an at-most-one-default-provider gate and a once-per-collection guard.
 - `HeadlessSmsSetupBuilder` — receives the default `Use*` selection plus `AddNamed(name, …)` named instances; `HeadlessSmsInstanceBuilder` — the per-named-instance builder that providers extend with their `Use*` members.
@@ -194,17 +182,17 @@ Owns the unified SMS setup builder (`AddHeadlessSms`) and the `ISmsSenderProvide
 - `SmsFailureKinds.FromException(Exception)` — the single failure classifier for provider packages; maps BCL transport failures and Polly resilience-pipeline rejections (timeout, open circuit, rate limiter) to `SmsFailureKind.Transient`. Lives in Core (not Abstractions) because it references Polly; providers pass its result to `SendSingleSmsResponse.FromException(exception, kind)`.
 - Deferred registration: provider contributions are queued and run only after the gates pass — the default first, then each named instance — so a setup that fails a gate leaves the `IServiceCollection` unchanged.
 
-### Design Notes
+### Design constraints
 
 The builder carries no shared, cross-provider feature options — it is provider-selection-only; each provider binds its own options inside its `Use*` member. The gate is **per-slot**: it allows at most one default provider (rejecting a second, but permitting zero for a named-only host) while allowing unbounded ordinal-unique named instances, and rejects a repeated `AddHeadlessSms` on the same `IServiceCollection` (a marker service enforces the single-call rule). Providers contribute deferred `Action<IServiceCollection>` registrations (`RegisterDefaultProvider` for the default, `instance.RegisterProvider` for a named instance) rather than implementing a provider interface, keeping the default and named paths symmetric. `ISmsSenderProvider` resolves only named (keyed) senders — the default sender, when configured, is the unkeyed `ISmsSender`, reachable directly and never by name — and `ISmsSenderProvider.RegisteredNames` enumerates the named instances.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Sms.Core
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 // Provider-agnostic registration entry point (a provider package supplies the Use* member):
@@ -222,15 +210,7 @@ var otp = serviceProvider.GetRequiredService<ISmsSenderProvider>().GetSender("ot
 
 No configuration required.
 
-### Dependencies
-
-- `Headless.Sms.Abstractions`
-- `Headless.Checks`
-- `Microsoft.Extensions.DependencyInjection.Abstractions`
-- `Polly.Core`
-- `Polly.RateLimiting`
-
-### Side Effects
+### Runtime behavior
 
 `AddHeadlessSms` registers a provider-registration marker and `ISmsSenderProvider` (keyed-service-backed), then runs the default provider's wiring (the unkeyed `ISmsSender`) when a default is configured, followed by each named instance's wiring (keyed under the instance name). The marker enforces the single-call rule.
 
@@ -240,24 +220,20 @@ No configuration required.
 
 AWS SNS SMS implementation of `ISmsSender`.
 
-### Problem Solved
-
-Provides SMS sending via Amazon Simple Notification Service (SNS), reusing existing AWS SDK credentials and IAM-based access control already present in AWS-hosted applications.
-
-### Key Features
+### API and behavior
 
 - `AwsSnsSmsSender` — `ISmsSender` implementation backed by AWS SNS. Single recipient per send; does not implement `IBulkSmsSender` (SNS publishes to one phone number per call).
 - `SenderId` — alphanumeric sender ID displayed to recipients (support varies by country).
 - `MaxPrice` — optional per-message USD price cap; SNS rejects sends that would exceed it.
 - Accepts any AWS credential source: environment, instance metadata, `appsettings.json` via `AWSOptions`, or explicit `BasicAWSCredentials`.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Sms.Aws
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -313,13 +289,7 @@ builder.Services.AddHeadlessSms(setup =>
 
 AWS credentials are sourced from `AWSOptions` passed to the registration method (or the default credential chain if `null`).
 
-### Dependencies
-
-- `Headless.Sms.Core`
-- `AWSSDK.SimpleNotificationService`
-- `AWSSDK.Extensions.NETCore.Setup`
-
-### Side Effects
+### Runtime behavior
 
 - Default: registers `IAmazonSimpleNotificationService` via `TryAddAWSService` (no-op if already registered) and `ISmsSender` (`AwsSnsSmsSender`) as an unkeyed singleton. No `IBulkSmsSender` — SNS publishes to one recipient per call.
 - Named (`AddNamed(name, i => i.UseAwsSns(…))`): registers a keyed `IAmazonSimpleNotificationService` (built via `AWSOptions.CreateServiceClient<T>` from the supplied options, the ambient `AWSOptions` in DI, `IConfiguration` `AWS:*` via `GetAWSOptions()`, or SDK defaults — mirroring `TryAddAWSService(null)`, which has no keyed overload) and a keyed `ISmsSender`, both under the instance name.
@@ -330,11 +300,7 @@ AWS credentials are sourced from `AWSOptions` passed to the registration method 
 
 Cequens SMS gateway implementation of `ISmsSender`.
 
-### Problem Solved
-
-Provides SMS sending via the Cequens API, a regional MENA gateway that authenticates via JWT token (obtained from API key + username).
-
-### Key Features
+### API and behavior
 
 - `CequensSmsSender` — implements `ISmsSender` (single recipient) and `IBulkSmsSender` (multi-recipient bulk), backed by the Cequens REST API.
 - JWT token-based auth with automatic token acquisition from `TokenEndpoint`.
@@ -343,17 +309,17 @@ Provides SMS sending via the Cequens API, a regional MENA gateway that authentic
 - Standard resilience pipeline with auto-retry **disabled** by default to prevent duplicate SMS.
 - Optional `configureClient` and `configureResilience` hooks for fine-grained HttpClient control.
 
-### Design Notes
+### Design constraints
 
 The HTTP resilience handler is wired with `options.Retry.ShouldHandle = static _ => PredicateResult.False()` — no retries by default. SMS sends are not idempotent, and retrying a failed send without an idempotency key can deliver duplicate messages. Pass `configureResilience` to opt back in if Cequens provides idempotency support for your account. Each instance owns its own JWT token cache (an instance field on the sender), so a named instance never shares a token with the default sender or another name.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Sms.Cequens
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -407,12 +373,7 @@ builder.Services.AddHeadlessSms(setup =>
 | `TokenEndpoint` | `string` | No | `https://apis.cequens.com/auth/v1/tokens` | Override for non-default environments. |
 | `Token` | `string?` | No | `null` | Pre-issued JWT; skips sign-in if set. |
 
-### Dependencies
-
-- `Headless.Sms.Core`
-- `Microsoft.Extensions.Http.Resilience`
-
-### Side Effects
+### Runtime behavior
 
 - Default: registers `ISmsSender` (`CequensSmsSender`) and `IBulkSmsSender` (forwarding to the same instance) as unkeyed singletons, plus a named `HttpClient` (`Headless:CequensSms`) with a standard resilience handler (retry disabled).
 - Named (`AddNamed(name, i => i.UseCequens(…))`): registers a keyed `ISmsSender` and keyed `IBulkSmsSender` (same instance), named options, and a per-name `HttpClient` (`Headless:CequensSms:{name}`) with its own resilience pipeline — so each named sender owns an isolated token cache and never reads another instance's settings.
@@ -423,11 +384,7 @@ builder.Services.AddHeadlessSms(setup =>
 
 Connekio SMS gateway implementation of `ISmsSender`.
 
-### Problem Solved
-
-Provides SMS sending via the Connekio API using basic username/password/accountId authentication, supporting both single-message and batch delivery.
-
-### Key Features
+### API and behavior
 
 - `ConnekioSmsSender` — implements `ISmsSender` (single recipient) and `IBulkSmsSender` (multi-recipient bulk).
 - Separate `SingleSmsEndpoint` (used by `SendAsync`) and `BatchSmsEndpoint` (used by `IBulkSmsSender.SendBulkAsync`).
@@ -435,17 +392,17 @@ Provides SMS sending via the Connekio API using basic username/password/accountI
 - Standard resilience pipeline with auto-retry **disabled** by default.
 - Optional `configureClient` and `configureResilience` hooks.
 
-### Design Notes
+### Design constraints
 
 Retry is disabled by default for the same reason as all HTTP SMS providers: sending the same message twice can cause duplicate delivery. Pass `configureResilience` to opt back in if Connekio assigns idempotency keys for your account tier.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Sms.Connekio
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -501,12 +458,7 @@ builder.Services.AddHeadlessSms(setup =>
 | `SingleSmsEndpoint` | `string` | No | `https://api.connekio.com/sms/single` | Override for non-default environments. |
 | `BatchSmsEndpoint` | `string` | No | `https://api.connekio.com/sms/batch` | Override for non-default environments. |
 
-### Dependencies
-
-- `Headless.Sms.Core`
-- `Microsoft.Extensions.Http.Resilience`
-
-### Side Effects
+### Runtime behavior
 
 - Default: registers `ISmsSender` (`ConnekioSmsSender`) and `IBulkSmsSender` (forwarding to the same instance) as unkeyed singletons, plus a named `HttpClient` (`Headless:ConnekioSms`) with a standard resilience handler (retry disabled).
 - Named (`AddNamed(name, i => i.UseConnekio(…))`): registers a keyed `ISmsSender` and keyed `IBulkSmsSender` (same instance), named options, and a per-name `HttpClient` (`Headless:ConnekioSms:{name}`) with its own resilience pipeline.
@@ -517,23 +469,19 @@ builder.Services.AddHeadlessSms(setup =>
 
 Development SMS implementations that avoid real sends.
 
-### Problem Solved
-
-Provides no-op and file-logging SMS senders for development and test environments, enabling full SMS workflow testing without requiring vendor credentials or sending actual messages.
-
-### Key Features
+### API and behavior
 
 - `DevSmsSender` — implements `ISmsSender` and `IBulkSmsSender`; appends formatted SMS details to a local file for inspection.
 - `NoopSmsSender` — implements `ISmsSender` and `IBulkSmsSender`; silently discards all messages and returns `SendSingleSmsResponse.Succeeded()`.
 - No external dependencies, no HTTP calls, no API credentials needed.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Sms.Dev
 ```
 
-### Quick Start
+### Setup and use
 
 #### File-based logging
 
@@ -572,11 +520,7 @@ builder.Services.AddHeadlessSms(setup =>
 
 No configuration required. The file path is passed directly to `UseDevelopment`.
 
-### Dependencies
-
-- `Headless.Sms.Core`
-
-### Side Effects
+### Runtime behavior
 
 - Default: registers `ISmsSender` and `IBulkSmsSender` (the bulk sender forwards to the same instance) as unkeyed singletons. `DevSmsSender` appends to the specified file on each send; `NoopSmsSender` discards silently.
 - Named (`AddNamed(name, i => i.UseDevelopment(path))` / `i.UseNoop()`): registers the same sender as a keyed `ISmsSender` (and keyed `IBulkSmsSender`) under the instance name.
@@ -587,11 +531,7 @@ No configuration required. The file path is passed directly to `UseDevelopment`.
 
 Infobip global SMS platform implementation of `ISmsSender`.
 
-### Problem Solved
-
-Provides SMS sending via Infobip's REST API, a global messaging platform with delivery reporting and per-account regional base paths.
-
-### Key Features
+### API and behavior
 
 - `InfobipSmsSender` — implements `ISmsSender` (single recipient) and `IBulkSmsSender` (multi-recipient bulk, with per-recipient message ids), backed by the Infobip REST API.
 - API key authentication via HTTP `Authorization` header.
@@ -600,13 +540,13 @@ Provides SMS sending via Infobip's REST API, a global messaging platform with de
 - Standard resilience pipeline with auto-retry **disabled** by default.
 - Optional `configureClient` and `configureResilience` hooks.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Sms.Infobip
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -655,12 +595,7 @@ builder.Services.AddHeadlessSms(setup =>
 | `BasePath` | `string` | Yes | Account-specific Infobip base URL (must be HTTPS). |
 | `Sender` | `string` | Yes | Sender name or number shown to recipients. |
 
-### Dependencies
-
-- `Headless.Sms.Core`
-- `Microsoft.Extensions.Http.Resilience`
-
-### Side Effects
+### Runtime behavior
 
 - Default: registers `ISmsSender` (`InfobipSmsSender`) and `IBulkSmsSender` (forwarding to the same instance) as unkeyed singletons, plus a named `HttpClient` (`Headless:InfobipSms`) with a standard resilience handler (retry disabled).
 - Named (`AddNamed(name, i => i.UseInfobip(…))`): registers a keyed `ISmsSender` and keyed `IBulkSmsSender` (same instance), named options, and a per-name `HttpClient` (`Headless:InfobipSms:{name}`) with its own resilience pipeline.
@@ -671,11 +606,7 @@ builder.Services.AddHeadlessSms(setup =>
 
 Twilio SMS implementation of `ISmsSender`.
 
-### Problem Solved
-
-Provides SMS sending via Twilio's REST API, the most widely supported international SMS platform, with configurable sender number and optional per-message price cap.
-
-### Key Features
+### API and behavior
 
 - `TwilioSmsSender` — `ISmsSender` implementation using `ITwilioRestClient`. Single recipient per send; does not implement `IBulkSmsSender` (Twilio creates one message per recipient).
 - `Sid` + `AuthToken` — Twilio account credentials.
@@ -686,13 +617,13 @@ Provides SMS sending via Twilio's REST API, the most widely supported internatio
 - Optional `configureClient` and `configureResilience` hooks.
 - Cancellation is honored up to the point of dispatch only: the Twilio SDK (7.x) does not accept a `CancellationToken` on its send path, so an already-cancelled token throws before the call, but cancellation mid-flight cannot interrupt the in-progress request.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Sms.Twilio
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -747,13 +678,7 @@ builder.Services.AddHeadlessSms(setup =>
 | `Region` | `string?` | No | Twilio region for data residency (e.g. `au1`, `ie1`). |
 | `Edge` | `string?` | No | Twilio edge node (e.g. `sydney`, `dublin`). |
 
-### Dependencies
-
-- `Headless.Sms.Core`
-- `Twilio`
-- `Microsoft.Extensions.Http.Resilience`
-
-### Side Effects
+### Runtime behavior
 
 - Default: registers `ITwilioRestClient` via `TryAddSingleton` (a host-supplied client wins), `ISmsSender` (`TwilioSmsSender`) as an unkeyed singleton, and a named `HttpClient` (`Headless:TwilioSms`) with a standard resilience handler (retry disabled). No `IBulkSmsSender` — Twilio creates one message per recipient.
 - Named (`AddNamed(name, i => i.UseTwilio(…))`): registers a keyed `ITwilioRestClient` (built from that name's options and per-name HttpClient), a keyed `ISmsSender`, named options, and a per-name `HttpClient` (`Headless:TwilioSms:{name}`) with its own resilience pipeline.
@@ -764,11 +689,7 @@ builder.Services.AddHeadlessSms(setup =>
 
 VictoryLink SMS gateway implementation of `ISmsSender`.
 
-### Problem Solved
-
-Provides SMS sending via the VictoryLink API, a regional gateway serving the Middle East market with username/password authentication.
-
-### Key Features
+### API and behavior
 
 - `VictoryLinkSmsSender` — implements `ISmsSender` (single recipient) and `IBulkSmsSender` (multi-recipient bulk), backed by the VictoryLink REST API.
 - Username + password authentication.
@@ -777,13 +698,13 @@ Provides SMS sending via the VictoryLink API, a regional gateway serving the Mid
 - Standard resilience pipeline with auto-retry **disabled** by default.
 - Optional `configureClient` and `configureResilience` hooks.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Sms.VictoryLink
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -834,12 +755,7 @@ builder.Services.AddHeadlessSms(setup =>
 | `Sender` | `string` | Yes | — | Sender name shown to recipients. |
 | `Endpoint` | `string` | No | VictoryLink production URL | Override for non-default environments. |
 
-### Dependencies
-
-- `Headless.Sms.Core`
-- `Microsoft.Extensions.Http.Resilience`
-
-### Side Effects
+### Runtime behavior
 
 - Default: registers `ISmsSender` (`VictoryLinkSmsSender`) and `IBulkSmsSender` (forwarding to the same instance) as unkeyed singletons, plus a named `HttpClient` (`Headless:VictoryLinkSms`) with a standard resilience handler (retry disabled).
 - Named (`AddNamed(name, i => i.UseVictoryLink(…))`): registers a keyed `ISmsSender` and keyed `IBulkSmsSender` (same instance), named options, and a per-name `HttpClient` (`Headless:VictoryLinkSms:{name}`) with its own resilience pipeline.
@@ -850,11 +766,7 @@ builder.Services.AddHeadlessSms(setup =>
 
 Vodafone Egypt enterprise SMS gateway implementation of `ISmsSender`.
 
-### Problem Solved
-
-Provides SMS sending via the Vodafone Egypt enterprise messaging API, which uses a shared-secret (`SecureHash`) authentication model alongside account credentials.
-
-### Key Features
+### API and behavior
 
 - `VodafoneSmsSender` — implements `ISmsSender` (single recipient) and `IBulkSmsSender` (multi-recipient bulk), backed by the Vodafone Egypt REST API.
 - Account credentials: `AccountId` + `Password` + `SecureHash`.
@@ -862,17 +774,17 @@ Provides SMS sending via the Vodafone Egypt enterprise messaging API, which uses
 - Standard resilience pipeline with auto-retry **disabled** by default.
 - Optional `configureClient` and `configureResilience` hooks.
 
-### Design Notes
+### Design constraints
 
 Vodafone Egypt's API requires a `SecureHash` in addition to account credentials — this is not an OAuth2 or JWT flow. The hash is issued by Vodafone at account provisioning and must be stored as a secret. Do not confuse this provider with a generic Vodafone API; the endpoint defaults to `https://e3len.vodafone.com.eg/web2sms/sms/submit/`.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Sms.Vodafone
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -926,12 +838,7 @@ builder.Services.AddHeadlessSms(setup =>
 | `Sender` | `string` | Yes | — | Sender name shown to recipients. |
 | `SendSmsEndpoint` | `string` | No | `https://e3len.vodafone.com.eg/web2sms/sms/submit/` | Override for non-default environments. |
 
-### Dependencies
-
-- `Headless.Sms.Core`
-- `Microsoft.Extensions.Http.Resilience`
-
-### Side Effects
+### Runtime behavior
 
 - Default: registers `ISmsSender` (`VodafoneSmsSender`) and `IBulkSmsSender` (forwarding to the same instance) as unkeyed singletons, plus a named `HttpClient` (`Headless:VodafoneSms`) with a standard resilience handler (retry disabled).
 - Named (`AddNamed(name, i => i.UseVodafone(…))`): registers a keyed `ISmsSender` and keyed `IBulkSmsSender` (same instance), named options, and a per-name `HttpClient` (`Headless:VodafoneSms:{name}`) with its own resilience pipeline.

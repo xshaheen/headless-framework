@@ -8,7 +8,7 @@ This repository is a modular .NET 10 framework, not a single application. Change
 
 - Small fixes can go straight to a pull request.
 - For larger changes, open an issue first so package boundaries and API shape can be agreed before implementation.
-- Search existing issues, package READMEs, and `docs/llms/` before proposing new abstractions or providers.
+- Search existing issues and the relevant `docs/llms/` domain guide before proposing new abstractions or providers. Package READMEs only route to those guides.
 - Treat public APIs as NuGet contracts. Prefer clean breaking changes only when the issue or PR explains the trade-off.
 
 ## Local Setup
@@ -64,8 +64,9 @@ When multiple providers share a behavior contract, prefer a shared `*.Tests.Harn
 - Run the narrowest relevant test first, then widen to `make test-unit` or `make test` when the change warrants it.
 - Run `make format-check` before submitting C# changes.
 - Update XML docs for public API changes.
-- Update package `README.md` files under `src/Headless.*/` when package behavior, options, or setup changes.
-- Keep `README.md`, `docs/llms/index.md`, and domain docs under `docs/llms/` in sync when you change public guidance.
+- Update the owning `docs/llms/` domain guide when package behavior, options, or setup changes.
+- Update a package `README.md` only when its purpose, name, installation command, or canonical links change.
+- Update `README.md` or `docs/llms/index.md` only when framework-level guidance or routing changes.
 
 ## Pull Requests
 

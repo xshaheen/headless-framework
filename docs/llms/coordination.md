@@ -60,11 +60,7 @@ Coordination is fencing-safe, fail-stop, and fail-closed when backed by an autho
 
 ## Headless.Coordination.Abstractions
 
-### Problem Solved
-
-Defines the public coordination contract: node identity, liveness snapshots, membership operations, events, options, and exceptions.
-
-### Key Features
+### API and behavior
 
 - `NodeIdentity`, `NodeId`, and `NodeIncarnation`.
 - `INodeMembership` for register, heartbeat, leave, live reads, snapshot reads, and event watch.
@@ -74,19 +70,19 @@ Defines the public coordination contract: node identity, liveness snapshots, mem
 - `IDeadOwnerReclaimer` — the per-domain reclaim sink driven by the shared dead-owner recovery bridge (carries `ReconcileInterval` and `ReclaimAsync(owners, ct)`, where `owners` is a single owner from the event path or the whole dead set from a reconcile tick so a consumer can collapse the reclaim into one batched write); implemented by each consumer (Jobs, Messaging).
 - `CoordinationOptions` for thresholds, cluster name, node id, role, metadata, and membership-loss behavior.
 
-### Design Notes
+### Design constraints
 
 The abstraction is a liveness substrate, not an ownership store. Consumers own their domain rows and stamp `NodeIdentity`.
 
 `HeartbeatAsync()` returns `false` when the local incarnation has been superseded or is terminal. Callers must stop ownership-sensitive work and re-register rather than attempting to resurrect that identity.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Coordination.Abstractions
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 public sealed class Worker(INodeMembership membership)
@@ -103,11 +99,7 @@ public sealed class Worker(INodeMembership membership)
 
 Configure through provider setup plus `CoordinationOptions`.
 
-### Dependencies
-
-- `Headless.Checks`
-
-### Side Effects
+### Runtime behavior
 
 None.
 
@@ -115,18 +107,14 @@ None.
 
 ## Headless.Coordination.Core
 
-### Problem Solved
-
-Implements the provider-agnostic membership engine over an `IMembershipStore`.
-
-### Key Features
+### API and behavior
 
 - An internal membership service implements `INodeMembership` (consumers resolve `INodeMembership`).
 - Background heartbeat service derives lifecycle events from authoritative snapshots, leaves gracefully on host shutdown under a bounded timeout, and stops beating once local membership is lost.
 - Bounded per-subscriber event channels isolate slow consumers from heartbeats.
 - Default node-id provider resolves configured id, Kubernetes pod identity, hostname, then generated id.
 
-### Design Notes
+### Design constraints
 
 `RegisterAsync` durably establishes both the cold descriptor and an initial store-clock liveness entry in one guarded write, so a node is `Alive` (and its role/metadata are visible) immediately after register — without waiting for the first heartbeat. The background loop owns every subsequent beat. Registration is incarnation-guarded: a stale or superseded incarnation establishes no liveness.
 
@@ -136,13 +124,13 @@ An incarnation is terminal once it leaves, reaches `DeadThreshold`, or its retai
 
 Core also hosts the shared dead-owner recovery bridge — a generic `BackgroundService` parameterized by an `IDeadOwnerReclaimer` that reclaims dead-incarnation resources on `NodeLeft` events plus a periodic `Dead`-only snapshot reconcile (idempotent dedup, `CancellationToken.None` writes). It is internal infrastructure consumed by registering a closed generic from the owning assembly (Jobs, Messaging) via `InternalsVisibleTo`; each closed type yields a distinct hosted service and logger category. Coordination.Core does not register it — the consuming feature does.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Coordination.Core
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 services.AddCoordinationCore<MyMembershipStore>(options =>
@@ -171,19 +159,7 @@ services.AddHeadlessCoordination(setup =>
 
 Coordination owns the setting so the membership tables land in the same schema whichever relational provider backs them; the provider package contributes only the dialect rules the schema is validated against on startup (PostgreSQL's 63-character unquoted-identifier rules, SQL Server's 128-character regular-identifier rules). Redis ignores the option entirely. The trade-off: a schema name valid on one provider can be rejected on the other, and that failure surfaces at startup rather than at first write.
 
-### Dependencies
-
-- `Headless.Coordination.Abstractions`
-- `Headless.Checks`
-- `Headless.Core`
-- `Headless.Extensions`
-- `Headless.Hosting`
-- `FluentValidation`
-- `Microsoft.Extensions.Configuration.Abstractions`
-- `Microsoft.Extensions.Hosting.Abstractions`
-- `Microsoft.Extensions.Logging.Abstractions`
-
-### Side Effects
+### Runtime behavior
 
 Registers `TimeProvider.System`, framework GUID generator defaults, `INodeIdProvider`, `INodeMembership`, `IMembershipEventSource`, and the heartbeat hosted service.
 
@@ -191,27 +167,23 @@ Registers `TimeProvider.System`, framework GUID generator defaults, `INodeIdProv
 
 ## Headless.Coordination.Core.Database
 
-### Problem Solved
-
-Provides the shared relational substrate used by native SQL providers.
-
-### Key Features
+### API and behavior
 
 - Base store algorithm hooks for cluster-scoped relational providers.
 - Provider-owned physical identifiers: PostgreSQL uses snake_case; SQL Server uses PascalCase.
 - Initializer contract for provider-specific race-safe DDL.
 
-### Design Notes
+### Design constraints
 
 Provider SQL and physical identifiers remain in the native packages. This package centralizes operation order without forcing PostgreSQL and SQL Server into one naming convention.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Coordination.Core.Database
 ```
 
-### Quick Start
+### Setup and use
 
 This package is used by provider packages; applications normally install PostgreSQL or SQL Server providers directly.
 
@@ -219,12 +191,7 @@ This package is used by provider packages; applications normally install Postgre
 
 None.
 
-### Dependencies
-
-- `Headless.Coordination.Core`
-- `Headless.Hosting`
-
-### Side Effects
+### Runtime behavior
 
 None.
 
@@ -232,28 +199,24 @@ None.
 
 ## Headless.Coordination.PostgreSql
 
-### Problem Solved
-
-Stores membership in PostgreSQL with the primary connection and server statement time.
-
-### Key Features
+### API and behavior
 
 - Atomic incarnation allocation with `INSERT ... ON CONFLICT ... RETURNING`.
 - Heartbeat guard rejects stale, impossible, dead, gracefully left, and pruned incarnations.
 - Liveness classification uses `clock_timestamp()`.
 - DDL initialization uses PostgreSQL advisory locks.
 
-### Design Notes
+### Design constraints
 
 Use `clock_timestamp()`, not transaction-start time, for liveness. Operational reads join the generation table so superseded incarnations are not live candidates.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Coordination.PostgreSql
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 services.AddHeadlessCoordination(setup =>
@@ -277,13 +240,7 @@ Configure shared `CoordinationOptions` with `setup.Configure(...)`. Configure `P
 
 The schema is not a provider option: set it with `setup.ConfigureStorage(storage => storage.Schema = "…")` (default `"coordination"`). The initializer creates that schema when absent and every statement names its tables as `"schema"."table"`, so the provider no longer depends on `search_path`. The provider validates the schema against PostgreSQL's unquoted-identifier rules at startup.
 
-### Dependencies
-
-- `Headless.Coordination.Core.Database`
-- `Headless.Hosting`
-- `Npgsql`
-
-### Side Effects
+### Runtime behavior
 
 Registers the core membership services, PostgreSQL membership store, storage initializer, and initializer hosted service. Creates snake_case tables and columns. Requires PostgreSQL DDL permission when initialization runs on startup.
 
@@ -291,11 +248,7 @@ Registers the core membership services, PostgreSQL membership store, storage ini
 
 ## Headless.Coordination.Redis
 
-### Problem Solved
-
-Stores membership in Redis using Lua scripts and Redis server time.
-
-### Key Features
+### API and behavior
 
 - Incarnation allocation uses persistent `INCR` counters.
 - Heartbeat/read/leave/cleanup scripts use Redis `TIME`.
@@ -305,7 +258,7 @@ Stores membership in Redis using Lua scripts and Redis server time.
 - `:known` also mirrors current node generations so snapshot reads do not issue one `GET` per member.
 - Generation counters are not purged by default.
 
-### Design Notes
+### Design constraints
 
 Redis keys use a cluster hash tag around `ClusterName`. The durable `:gen:<node-id>` counters carry no TTL, so an `allkeys-*` `maxmemory-policy` can evict a live node's counter under memory pressure. The next heartbeat then fails the generation guard, the node treats its own membership as lost, and under the default `MembershipLostBehavior.StopApplication` the host is asked to stop — a silent eviction surfaces as a spurious shutdown. Run coordination against a Redis instance or logical database configured with `noeviction` or a `volatile-*` policy; coordination keys carry no TTL, so `volatile-*` never evicts them.
 
@@ -313,13 +266,13 @@ Redis keys use a cluster hash tag around `ClusterName`. The durable `:gen:<node-
 
 **Dead/Left retention divergence (intentional).** Redis retains Dead and Left descriptors in the `:known` hash for `RedisKnownNodeRetention` (default 7 days), so `GetLivenessSnapshotAsync` keeps surfacing them with `State = Dead` until that window elapses — consumers must filter by `NodeLivenessState`. The relational providers instead prune shortly after `DeadThreshold + DeadRetentionWindow` (tens of seconds). This is a documented behavioral difference, not a defaulting bug: lower `RedisKnownNodeRetention` to align Redis with relational pruning.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Coordination.Redis
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 services.AddSingleton<IConnectionMultiplexer>(multiplexer);
@@ -343,14 +296,7 @@ services.AddHeadlessCoordination(setup =>
 
 Configure shared `CoordinationOptions` with `setup.Configure(...)`. Configure `RedisCleanupInterval` and `RedisKnownNodeRetention` with `setup.UseRedis(...)`. `RedisKnownNodeRetention` is treated as at least `DeadThreshold + DeadRetentionWindow`.
 
-### Dependencies
-
-- `Headless.Coordination.Core`
-- `Headless.Hosting`
-- `Headless.Redis`
-- `StackExchange.Redis`
-
-### Side Effects
+### Runtime behavior
 
 Registers the core membership services, Redis membership store, keyed Lua script loader, script initializer hosted service, and cleanup hosted service. Requires an `IConnectionMultiplexer` registration.
 
@@ -358,11 +304,7 @@ Registers the core membership services, Redis membership store, keyed Lua script
 
 ## Headless.Coordination.SqlServer
 
-### Problem Solved
-
-Stores membership in SQL Server with guarded update/insert statements and server UTC time.
-
-### Key Features
+### API and behavior
 
 - Atomic incarnation allocation under `UPDLOCK, HOLDLOCK`.
 - Heartbeat guard rejects stale, impossible, dead, gracefully left, and pruned incarnations.
@@ -370,19 +312,19 @@ Stores membership in SQL Server with guarded update/insert statements and server
 - Guarded membership writes retry SQL Server deadlock victim error `1205` with a bounded jittered Polly policy.
 - DDL initialization uses `sp_getapplock`.
 
-### Design Notes
+### Design constraints
 
 The provider intentionally avoids `MERGE`. Explicit locking keeps the generation guard and liveness row update readable and testable.
 
 Membership writes intentionally keep `SERIALIZABLE` transactions plus generation-first `UPDLOCK, HOLDLOCK` access. Under a large concurrent startup, SQL Server can still choose one writer as deadlock victim (`1205`); the provider retries the whole rolled-back transaction. This retry is SQL Server-specific and does not apply to PostgreSQL or Redis providers, whose membership write paths use different concurrency primitives.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Coordination.SqlServer
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 services.AddHeadlessCoordination(setup =>
@@ -406,13 +348,6 @@ Configure shared `CoordinationOptions` with `setup.Configure(...)`. Configure `C
 
 The schema is not a provider option: set it with `setup.ConfigureStorage(storage => storage.Schema = "…")`. The default is the feature name `"coordination"`, not `dbo` — the initializer creates the schema when absent. The provider validates the schema against SQL Server's regular-identifier rules at startup.
 
-### Dependencies
-
-- `Headless.Coordination.Core.Database`
-- `Headless.Hosting`
-- `Microsoft.Data.SqlClient`
-- `Polly.Core`
-
-### Side Effects
+### Runtime behavior
 
 Registers the core membership services, SQL Server membership store, storage initializer, and initializer hosted service. Creates PascalCase tables and columns. Requires SQL Server DDL permission when initialization runs on startup.

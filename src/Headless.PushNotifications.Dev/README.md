@@ -2,49 +2,17 @@
 
 No-op push notification provider for local development and testing.
 
-## Problem Solved
+## Why use this package
 
 Prevents real notifications from being sent during development or test runs. Uses the same `IPushNotificationService` interface as production so no application code changes are needed when switching environments.
 
-## Key Features
-
-- Silent `IPushNotificationService` implementation (`NoopPushNotificationService`)
-- No network calls or external dependencies
-- Always returns `Success` responses with a generated GUID as the message id
-- Never validates input or throws (inert for any caller, including invalid client identifiers or empty titles)
-- Selectable as the default (`setup.UseNoop()`) or as a named instance (`setup.AddNamed("name", i => i.UseNoop())`)
-
-## Installation
+## Install
 
 ```bash
 dotnet add package Headless.PushNotifications.Dev
 ```
 
-## Quick Start
+## Documentation
 
-```csharp
-var builder = WebApplication.CreateBuilder(args);
-
-if (builder.Environment.IsDevelopment())
-{
-    builder.Services.AddHeadlessPushNotifications(setup => setup.UseNoop());
-}
-else
-{
-    builder.Services.AddHeadlessPushNotifications(setup =>
-        setup.UseFirebase(builder.Configuration.GetSection("Firebase"))
-    );
-}
-```
-
-## Configuration
-
-None. No options or configuration keys.
-
-## Dependencies
-
-- `Headless.PushNotifications.Core`
-
-## Side Effects
-
-- Registers `IPushNotificationService` as singleton (`NoopPushNotificationService`) for the default, or a keyed singleton under the instance name for a named instance
+- [Headless Framework](https://github.com/xshaheen/headless-framework#readme)
+- [Push Notifications guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/push-notifications.md#headlesspushnotificationsdev)

@@ -144,11 +144,7 @@ Pick one provider per store (default or named) based on where the bytes must liv
 
 Defines the unified interfaces and value types for blob/file storage operations across all providers.
 
-### Problem Solved
-
-Application code needs a single, provider-agnostic API for file storage so it can switch between cloud providers, local storage, or test fakes without change. This package defines `IBlobStorage`, the `BlobLocation` address type, and the supporting contracts; it carries no implementation and no DI registrations.
-
-### Key Features
+### API and behavior
 
 - `IBlobStorage` — data-plane interface covering upload, download (`OpenReadStreamAsync`), copy, move (non-atomic, reject-occupied — never overwrites an existing destination), delete, exists, info, token-based listing (`ListAsync`), and bulk upload/delete.
 - `BlobLocation` — validated `(Container, Path)` address value type; constructor enforces path security and offers `params ReadOnlySpan<string>` segment overloads, including a segments-only form whose first element is the container.
@@ -161,13 +157,13 @@ Application code needs a single, provider-agnostic API for file storage so it ca
 - `BlobStorageExtensions` — `GetBlobsAsync` streaming + glob filter, `GetBlobsListAsync` materializer, and `UploadContentAsync`/`GetBlobContentAsync` (text + JSON) convenience helpers.
 - Consistent metadata typing: `IReadOnlyDictionary<string, string>?` with non-null values.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Blobs.Abstractions
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 public sealed class FileService(IBlobStorage storage)
@@ -247,12 +243,7 @@ public sealed class StorageService(
 
 None. This is an abstractions-only package.
 
-### Dependencies
-
-- `Headless.Extensions`
-- `Headless.Serializer.Json`
-
-### Side Effects
+### Runtime behavior
 
 None. This is an abstractions package.
 
@@ -262,11 +253,7 @@ None. This is an abstractions package.
 
 Unified setup builder for composing one or more named blob stores in a single DI container.
 
-### Problem Solved
-
-A single application often needs several blob stores at once — images on one backend, documents on another, scratch files on a third — and sometimes two instances of the same provider (a production and a staging bucket). Registering providers directly only yields one `IBlobStorage`; a second registration silently shadows the first. This package adds `AddHeadlessBlobs(...)`, a single entry point that composes an optional default plus any number of independently-configured named stores, each resolvable by name.
-
-### Key Features
+### API and behavior
 
 - `AddHeadlessBlobs(Action<HeadlessBlobsSetupBuilder>)` — single registration entry point for all blob stores.
 - Optional default store (at most one), injectable as plain `IBlobStorage`.
@@ -275,14 +262,14 @@ A single application often needs several blob stores at once — images on one b
 - Keyed `IBlobStorage` resolution via `[FromKeyedServices("name")]` or `GetRequiredKeyedService<IBlobStorage>("name")`.
 - Deferred, gate-validated registration: a misconfigured setup (duplicate default, duplicate name, zero providers for a named store) throws before mutating the service collection.
 
-### Design Notes
+### Design constraints
 
 - Each provider package contributes `Use{Provider}` extension members on `HeadlessBlobsSetupBuilder` (default) and `HeadlessBlobInstanceBuilder` (named). Named stores register as keyed `IBlobStorage` services, never touching the default (unkeyed) registration, so a named-only configuration leaves plain `IBlobStorage` unregistered.
 - Each store is fully isolated: its own named options, its own provider client, and its own `IBlobNamingNormalizer`. Ambient services (`IMimeTypeProvider`, `TimeProvider`) are shared across stores.
 - Two capabilities are surfaced differently, on purpose. Presigned support is a per-store cast: for named stores, AWS, Azure, and CloudflareR2 also register a keyed `IPresignedUrlBlobStorage` forward; for the default store, feature-detect by casting (`storage is IPresignedUrlBlobStorage`). Container management is a **separate** registration resolved from DI: AWS, Azure, FileSystem, Redis, and SSH register a default + keyed `IBlobContainerManager`, while CloudflareR2 registers none (so `GetKeyedService<IBlobContainerManager>` returns null for an R2 store) — this is why it cannot be an `is`-cast from the shared AWS storage type.
 - `IBlobStorageProvider.RegisteredNames` contains only **named** instance names; the default/unnamed store is excluded. Use it to validate an externally-supplied name before calling `GetStorage` rather than probe-and-catch.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Blobs.Core
@@ -290,7 +277,7 @@ dotnet add package Headless.Blobs.Core
 
 Add at least one provider package (`Headless.Blobs.Aws`, `Headless.Blobs.Azure`, `Headless.Blobs.CloudflareR2`, `Headless.Blobs.FileSystem`, `Headless.Blobs.Redis`, or `Headless.Blobs.SshNet`).
 
-### Quick Start
+### Setup and use
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -361,12 +348,7 @@ public sealed class PresignedService([FromKeyedServices("docs")] IPresignedUrlBl
 
 No options of its own. Each store's options are configured through its provider's `Use{Provider}` overloads (`Action<TOptions>`, `IConfiguration`, or `Action<TOptions, IServiceProvider>`).
 
-### Dependencies
-
-- `Headless.Blobs.Abstractions`
-- `Headless.Extensions`
-
-### Side Effects
+### Runtime behavior
 
 - Registers `IBlobStorageProvider` as singleton (backed by the container's keyed `IBlobStorage` registrations).
 - Registers a called-once marker that rejects a second `AddHeadlessBlobs` call on the same service collection.
@@ -380,11 +362,7 @@ No options of its own. Each store's options are configured through its provider'
 
 AWS S3 implementation of `IBlobStorage` for storing files in Amazon S3.
 
-### Problem Solved
-
-Provides integration with AWS S3 for blob storage using the unified `IBlobStorage` abstraction, with per-store S3 client construction, presigned URL support, and an opt-in bucket-lifecycle capability.
-
-### Key Features
+### API and behavior
 
 - Full `IBlobStorage` implementation for AWS S3, routed through the shared resolve seam.
 - Bulk upload/delete with optimized batching, returning identity-carrying `BlobBulkResult` lists.
@@ -395,13 +373,13 @@ Provides integration with AWS S3 for blob storage using the unified `IBlobStorag
 - Bucket lifecycle via a dedicated `AwsBlobContainerManager` resolved from DI (`EnsureContainerAsync` keeps a per-instance ensured-bucket cache). `UploadAsync` no longer auto-creates a missing bucket — that is an error.
 - Per-store `IAmazonS3` constructed via `S3ClientFactory`; optional `AWSOptions` to override the SDK credential/region chain.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Blobs.Aws
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -474,16 +452,7 @@ options.DisablePayloadSigning = false;
 options.MaxBulkParallelism = 10;
 ```
 
-### Dependencies
-
-- `Headless.Blobs.Abstractions`
-- `Headless.Blobs.Core`
-- `Headless.Core`
-- `Headless.Hosting`
-- `AWSSDK.S3`
-- `AWSSDK.Extensions.NETCore.Setup`
-
-### Side Effects
+### Runtime behavior
 
 Registered via `AddHeadlessBlobs(b => b.UseAws(...))` or `AddNamed("name", i => i.UseAws(...))`:
 
@@ -496,11 +465,7 @@ Registered via `AddHeadlessBlobs(b => b.UseAws(...))` or `AddNamed("name", i => 
 
 Azure Blob Storage implementation of `IBlobStorage` for storing files in Azure.
 
-### Problem Solved
-
-Provides integration with Azure Blob Storage using the unified `IBlobStorage` abstraction, with `BlobServiceClient` resolution from DI or a per-store factory, presigned SAS URL support, and an opt-in container-lifecycle capability.
-
-### Key Features
+### API and behavior
 
 - Full `IBlobStorage` implementation for Azure Blob Storage, routed through the shared resolve seam.
 - Bulk operations with the Azure Batch API, returning identity-carrying `BlobBulkResult` lists.
@@ -511,13 +476,13 @@ Provides integration with Azure Blob Storage using the unified `IBlobStorage` ab
 - Non-seekable upload streams pass through (no buffering).
 - Per-store `BlobServiceClient` from an optional `clientFactory`; falls back to the ambient `BlobServiceClient` from DI.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Blobs.Azure
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -559,17 +524,7 @@ When no `clientFactory` is supplied, the `BlobServiceClient` must be registered 
 }
 ```
 
-### Dependencies
-
-- `Headless.Blobs.Abstractions`
-- `Headless.Blobs.Core`
-- `Headless.Core`
-- `Headless.Hosting`
-- `Azure.Storage.Blobs`
-- `Azure.Storage.Blobs.Batch`
-- `Microsoft.Extensions.Azure`
-
-### Side Effects
+### Runtime behavior
 
 Registered via `AddHeadlessBlobs(b => b.UseAzure(...))` or `AddNamed("name", i => i.UseAzure(...))`:
 
@@ -583,11 +538,7 @@ Registered via `AddHeadlessBlobs(b => b.UseAzure(...))` or `AddNamed("name", i =
 
 Cloudflare R2 implementation of `IBlobStorage`, running R2 as a private, S3-compatible blob backend on the reused AWS S3 engine.
 
-### Problem Solved
-
-R2 speaks the S3 API but cannot use the AWS provider as-is: the endpoint, path-style addressing, and AWS SDK v4 checksum defaults need R2-specific configuration, and R2 has no ACL concept. This package configures an R2-tuned `IAmazonS3` via `R2ClientFactory` and reuses `AwsBlobStorage`, making R2 a drop-in, cost-saving S3 replacement.
-
-### Key Features
+### API and behavior
 
 - Full `IBlobStorage` implementation for Cloudflare R2 (reuses the AWS S3 engine and its resolve seam, native-token paging, and bulk results).
 - Presigned download/upload URLs over a `BlobLocation` via `IPresignedUrlBlobStorage` (named stores only — feature-detect via cast for the default store).
@@ -596,19 +547,19 @@ R2 speaks the S3 API but cannot use the AWS provider as-is: the endpoint, path-s
 - Jurisdiction-aware endpoints (default, EU, FedRAMP).
 - R2-safe defaults applied per named instance (`AwsBlobStorageOptions`): `CannedAcl = null`, `UseChunkEncoding = false`, `DisablePayloadSigning = true`.
 
-### Design Notes
+### Design constraints
 
 - **No container-manager capability.** R2's object-scoped tokens cannot create or manage buckets, so the package deliberately registers **no** `IBlobContainerManager` — `GetService`/`GetKeyedService<IBlobContainerManager>` honestly returns `null` for an R2 store. This is exactly why container management is a separately-resolved DI service rather than an `is`-cast from the shared `AwsBlobStorage` type: the cast could not distinguish AWS (capable) from R2 (not). Provision buckets out of band (IaC/dashboard). `UploadAsync` to a missing bucket is an error.
 - **No ACLs / public access.** `CannedAcl` is `null`. Use presigned URLs for time-limited private access; public serving (custom domains / `r2.dev`) is out of scope.
 - **Single PUT is capped at ~5 GiB**, the same as S3.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Blobs.CloudflareR2
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -669,16 +620,7 @@ if (storage is IPresignedUrlBlobStorage presigned)
 
 Bind with `blobs.UseCloudflareR2(builder.Configuration.GetSection("R2"))`.
 
-### Dependencies
-
-- `Headless.Blobs.Aws` (the reused S3 engine)
-- `Headless.Blobs.Abstractions`
-- `Headless.Blobs.Core`
-- `Headless.Core`
-- `Headless.Hosting`
-- `AWSSDK.S3`
-
-### Side Effects
+### Runtime behavior
 
 Registered via `AddHeadlessBlobs(b => b.UseCloudflareR2(...))` or `AddNamed("name", i => i.UseCloudflareR2(...))`:
 
@@ -691,11 +633,7 @@ Registered via `AddHeadlessBlobs(b => b.UseCloudflareR2(...))` or `AddNamed("nam
 
 Local file system implementation of `IBlobStorage` for development and on-premises scenarios.
 
-### Problem Solved
-
-Provides local file system storage using the unified `IBlobStorage` abstraction, for development, testing, and on-premises deployments without cloud dependencies.
-
-### Key Features
+### API and behavior
 
 - Full `IBlobStorage` implementation using the local file system, routed through the shared resolve seam.
 - Container mapping to directories under a configured base path.
@@ -704,19 +642,19 @@ Provides local file system storage using the unified `IBlobStorage` abstraction,
 - Container lifecycle via `FileSystemBlobContainerManager` resolved from DI (`EnsureContainerAsync` creates the root directory).
 - No external service dependencies; cross-platform path handling.
 
-### Design Notes
+### Design constraints
 
 - **Universal metadata via sidecars.** The file system has no native blob-metadata concept, so metadata is persisted in a companion `.hlmeta` file written content-first after the blob. A missing sidecar reads as empty metadata, so reads stay safe across a crash window, but the pair is **non-atomic**. Sidecars are filtered from every listing/exists/count/delete result and never surface as blobs; a blob key ending in `.hlmeta` is rejected at `BlobLocation` construction. Deleting or moving a blob deletes/moves its sidecar, so re-uploading the same key without metadata returns no stale metadata.
 - **Emulated paging tier.** `ListAsync` re-scans the directory sorted by key and resumes after the start-after-key token. The token is serializable and survives a request boundary, but stability is weaker than S3/Azure under concurrent writes (a blob inserted before the resume point can be skipped or repeated), and every page re-walks the whole container — full enumeration costs O(n²/pageSize) directory I/O, the price of a stateless token (same tier as SFTP). Memory stays bounded to O(pageSize) per call.
 - **Path-dir creation, not container creation.** `UploadAsync` creates the intermediate directories needed to write the blob, but a missing top-level container is still an error unless created via `EnsureContainerAsync`. Non-seekable upload streams are written straight to disk (no buffering).
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Blobs.FileSystem
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -746,14 +684,7 @@ builder.Services.AddHeadlessBlobs(blobs =>
 options.BaseDirectoryPath = "/path/to/storage"; // required; the root directory for all containers
 ```
 
-### Dependencies
-
-- `Headless.Blobs.Abstractions`
-- `Headless.Blobs.Core`
-- `Headless.Core`
-- `Headless.Hosting`
-
-### Side Effects
+### Runtime behavior
 
 Registered via `AddHeadlessBlobs(b => b.UseFileSystem(...))` or `AddNamed("name", i => i.UseFileSystem(...))`:
 
@@ -767,11 +698,7 @@ Registered via `AddHeadlessBlobs(b => b.UseFileSystem(...))` or `AddNamed("name"
 
 Redis implementation of `IBlobStorage` for storing small, ephemeral blobs in Redis.
 
-### Problem Solved
-
-Provides high-speed blob storage for small files using Redis, for temporary files, cache data, or session-related binary content. Not a general-purpose store — the 10 MB default limit and Redis memory model make it unsuitable for large files.
-
-### Key Features
+### API and behavior
 
 - Full `IBlobStorage` implementation using Redis, routed through the shared resolve seam.
 - Automatic key expiration support.
@@ -779,19 +706,19 @@ Provides high-speed blob storage for small files using Redis, for temporary file
 - `HSCAN`-cursor paging: `ListAsync` wraps the native cursor in the shared opaque envelope as the token.
 - Container lifecycle via `RedisBlobContainerManager` resolved from DI (`EnsureContainerAsync` is a no-op; Redis has no container concept).
 
-### Design Notes
+### Design constraints
 
 - Designed for small, ephemeral blobs (cache data, session files, temporary uploads). The default `MaxBlobSizeBytes` is 10 MB to prevent memory exhaustion; uploads above the cap are rejected, and non-seekable streams are buffered to memory under the same cap. For large files, use Azure Blob Storage or S3.
 - **`HSCAN`-cursor paging tier.** `ListAsync` wraps the native `HSCAN` cursor in the shared opaque envelope as the continuation token, and rejects a decoded-but-non-numeric cursor with the same `ArgumentException` as a malformed envelope (HSCAN cursors are unsigned integers, so a foreign token is provably invalid here). The order is non-lexicographic and the same blob may surface more than once across a rehash — callers iterating to completion must tolerate duplicates. An ordered (sort-based) token is a deferred follow-up if a consumer needs stable order.
 - **No real container.** `EnsureContainerAsync` is a no-op, `ContainerExistsAsync` is true when any key exists under the container prefix, and `DeleteContainerAsync` clears the prefix's keys.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Blobs.Redis
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -812,16 +739,7 @@ builder.Services.AddHeadlessBlobs(blobs =>
 | `MaxBlobSizeBytes` | 10 MB | Maximum blob size in bytes. Set to `0` to disable the limit. |
 | `MaxBulkParallelism` | 10 | Maximum parallelism for bulk operations. |
 
-### Dependencies
-
-- `Headless.Blobs.Abstractions`
-- `Headless.Blobs.Core`
-- `Headless.Core`
-- `Headless.Hosting`
-- `Polly.Core`
-- `StackExchange.Redis`
-
-### Side Effects
+### Runtime behavior
 
 Registered via `AddHeadlessBlobs(b => b.UseRedis(...))` or `AddNamed("name", i => i.UseRedis(...))`:
 
@@ -835,11 +753,7 @@ Registered via `AddHeadlessBlobs(b => b.UseRedis(...))` or `AddNamed("name", i =
 
 SFTP/SSH implementation of `IBlobStorage` for storing files on remote servers via SFTP.
 
-### Problem Solved
-
-Provides blob storage via SFTP/SSH for scenarios requiring file transfer to remote servers, legacy system integration, or secure file exchange with systems that do not expose a cloud API.
-
-### Key Features
+### API and behavior
 
 - Full `IBlobStorage` implementation using SFTP, routed through the shared resolve seam.
 - SSH key and password authentication.
@@ -848,20 +762,20 @@ Provides blob storage via SFTP/SSH for scenarios requiring file transfer to remo
 - Container lifecycle via `SshBlobContainerManager` resolved from DI (`EnsureContainerAsync` is a validated `mkdir -p`).
 - Connection pooling via an internal SFTP client pool; each store owns its own pool.
 
-### Design Notes
+### Design constraints
 
 - **Universal metadata via sidecars.** SFTP has no native blob-metadata concept, so metadata is persisted in a companion `.hlmeta` file written content-first after the blob — a second round-trip per metadata-bearing write/read. A missing sidecar reads as empty metadata; the pair is **non-atomic**. Sidecars are filtered from every listing/exists/count/delete result; a blob key ending in `.hlmeta` is rejected at `BlobLocation` construction. Deleting or moving a blob deletes/moves its sidecar.
 - **Non-atomic `Move`.** `MoveAsync` is copy-then-delete with best-effort destination rollback; the sidecar moves with the blob. There is no atomic server-side rename.
 - **Emulated paging tier + validated directory creation.** `ListAsync` re-scans recursively, sorted by key, resuming after the start-after-key token (weaker stability under concurrent writes). `EnsureContainerAsync` and the upload/move retry paths validate and normalize every path segment through the resolve seam, so created directories match where uploads are written. Non-seekable upload streams pass through to the SFTP write stream unbuffered.
 - **Connection-pool lifetime is a caller responsibility (documented, not policed).** Each store owns an internal SFTP connection pool bounded to `MaxPoolSize`. `OpenReadStreamAsync` hands a pooled SFTP client to the returned stream, so the slot is reclaimed only when the caller disposes the `BlobDownloadResult` — an undisposed result leaks a slot, and after `MaxPoolSize` leaks the pool is exhausted. The pool has **no acquire timeout by design**: a saturated pool applies backpressure and blocks until a slot frees or the operation's `CancellationToken` cancels. Consumers must dispose download results promptly (`OpenReadStreamAsync` is `[MustDisposeResource]`), size `MaxPoolSize` for peak concurrency, and always pass a cancellation token. The framework intentionally does not add a finalizer safety-net or elastic overflow — the same "consumer owns the boundary" stance applied to cache-key lengths and message payload sizes.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Blobs.SshNet
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -896,15 +810,7 @@ builder.Services.AddHeadlessBlobs(blobs =>
 );
 ```
 
-### Dependencies
-
-- `Headless.Blobs.Abstractions`
-- `Headless.Blobs.Core`
-- `Headless.Hosting`
-- `Headless.Serializer.Json`
-- `SSH.NET`
-
-### Side Effects
+### Runtime behavior
 
 Registered via `AddHeadlessBlobs(b => b.UseSsh(...))` or `AddNamed("name", i => i.UseSsh(...))`:
 

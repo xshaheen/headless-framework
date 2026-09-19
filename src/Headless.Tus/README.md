@@ -4,7 +4,7 @@ Base package for the Headless TUS (resumable upload) stack: the shared `tusdotne
 the protocol-level pieces every tus deployment needs regardless of storage provider — CORS defaults
 for browser clients and the expired-uploads cleanup job.
 
-## Problem Solved
+## Why use this package
 
 Two gaps every tus deployment hits regardless of which store it uses:
 
@@ -18,77 +18,13 @@ Two gaps every tus deployment hits regardless of which store it uses:
 The package also pins the shared `tusdotnet` + `Headless.Hosting` references so every TUS provider
 package aligns on one version.
 
-## Key Features
-
-- `TusCorsDefaults` — the tus 1.0.0 CORS surface as constants: `ExposedHeaders` (a superset of
-  tusdotnet's `CorsHelper.GetExposedHeaders()`, adding the `Upload-Defer-Length` that HEAD responses
-  carry), `AllowedHeaders` (request headers a client sends — no upstream equivalent), and
-  `AllowedMethods` (includes the PATCH/DELETE that default CORS configs miss)
-- `CorsPolicyBuilder.WithTusHeaders()` — applies all three in one call; origins and credentials stay
-  the caller's decision
-- `services.AddTusExpiredUploadsCleanup(...)` — registers an internal background hosted service
-  that periodically calls `ITusExpirationStore.RemoveExpiredFilesAsync` (expired **incomplete**
-  uploads only; completed uploads are never touched); tuned via the public
-  `TusExpiredUploadsCleanupOptions`
-
-## Design Notes
-
-**Cleanup targets incomplete uploads only.** The TUS Expiration extension covers unfinished
-uploads; conforming Headless stores never report completed uploads as expired, so the job cannot
-destroy finished data. The first pass runs immediately at startup (reclaiming uploads that
-expired while the app was down), then every interval; the default 5-minute interval balances
-reclaim latency against the store scan each pass performs — the expiration *window* itself is
-configured on `DefaultTusConfiguration.Expiration`, not here. In multi-node deployments every
-node runs its own loop against the same store: deletions are idempotent so this is safe, but the
-scan load multiplies and the logged removal counts are per-node — wrap the pass in a
-distributed-lock single-flight guard if that matters.
-
-**Store discovery via `ITusExpirationStore`.** The cleanup job binds to the tusdotnet capability
-interface, not a concrete store. Headless store packages forward the registration (for example
-`AddTusAzureStore`), so `AddTusExpiredUploadsCleanup()` composes with any of them; a manually
-constructed store is registered with `services.AddSingleton<ITusExpirationStore>(store)`.
-
-## Installation
+## Install
 
 ```bash
 dotnet add package Headless.Tus
 ```
 
-Pulled in transitively by every `Headless.Tus.*` provider package.
+## Documentation
 
-## Quick Start
-
-```csharp
-using Headless.Tus;
-
-// CORS for a browser tus client on another origin (SPA dev server, CDN frontend):
-builder.Services.AddCors(options =>
-    options.AddPolicy("tus", policy =>
-        policy.WithOrigins("https://app.example.com").WithTusHeaders()));
-
-// Remove expired incomplete uploads every 5 minutes (requires an ITusExpirationStore,
-// e.g. registered by Headless.Tus.Azure's AddTusAzureStore):
-builder.Services.AddTusExpiredUploadsCleanup();
-
-var app = builder.Build();
-app.UseCors("tus");
-```
-
-## Configuration
-
-`TusExpiredUploadsCleanupOptions`:
-
-| Option | Default | Notes |
-|---|---|---|
-| `Interval` | `5 minutes` | How often expired incomplete uploads are removed. Each pass scans the store's uploads — prefer coarser intervals for containers with many uploads. Must be positive. |
-
-## Dependencies
-
-- `tusdotnet`
-- `Headless.Hosting`
-
-## Side Effects
-
-- `AddTusExpiredUploadsCleanup` registers an internal hosted service and
-  `TimeProvider.System` (TryAdd).
-- No other DI registrations; `TusCorsDefaults` / `WithTusHeaders` are pure helpers.
+- [Headless Framework](https://github.com/xshaheen/headless-framework#readme)
+- [TUS (Resumable Uploads) guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/tus.md#headlesstus)

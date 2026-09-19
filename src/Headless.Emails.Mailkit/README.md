@@ -2,102 +2,17 @@
 
 SMTP implementation of the email abstraction using MailKit with connection pooling.
 
-## Problem Solved
+## Why use this package
 
 Provides email sending via standard SMTP protocol using MailKit, supporting any SMTP server (Gmail, Outlook, SendGrid, on-premises, etc.) with connection pooling to amortize reconnect cost.
 
-## Key Features
-
-- Full `IEmailSender` implementation using MailKit
-- SMTP connection pool (`ObjectPool<SmtpClient>`) — connections are retained and reused across sends
-- SSL/TLS support: `SecureSocketOptions.StartTls` (default), `SslOnConnect`, `None`, `Auto`
-- Optional authentication (username + password); anonymous SMTP when credentials are omitted
-- Three `UseMailkit` overloads: `IConfiguration`, `Action<MailkitSmtpOptions>`, `Action<MailkitSmtpOptions, IServiceProvider>`
-- `SmtpCommandException`, `SmtpProtocolException`, `AuthenticationException`, and connect/TLS/transport faults (`IOException`, socket errors, TLS handshake failures, connect timeouts) are all caught and returned as `Failed()` responses (auth failures additionally logged at critical level; transport faults logged PII-safe by type name); only the caller's own cancellation and argument validation propagate. On success the SMTP server's final response is surfaced as `ProviderMessageId`
-
-## Design Notes
-
-The pool (`MaxPoolSize`, default 10) amortizes TCP connect + TLS handshake across concurrent sends. Each `SmtpClient` is reconnected (and authenticated if credentials are set) lazily when retrieved from the pool in a disconnected or unauthenticated state; the connect/authenticate phase is bounded by `Timeout` (which otherwise governs only read/write). The entire connect/authenticate/send sequence is wrapped so every fault is returned as a failed `SendSingleEmailResponse` per the `IEmailSender` return-not-throw contract: SMTP command/protocol errors, authentication failures (`AuthenticationException`, additionally logged at critical level because they represent configuration errors rather than transient delivery failures), and connect/TLS/transport faults (`IOException`, socket errors, TLS handshake failures). Cancellation is disambiguated by the caller's token: only the caller's own cancellation (`catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)`) propagates, while a connect-timeout cancellation — the timeout-linked CTS fires but the caller's token is not cancelled — is returned as a failure. A client left connected-but-unauthenticated by an auth failure is disposed on return instead of being pooled, so it is never reused with authentication skipped; a later send re-authenticates.
-
-## Installation
+## Install
 
 ```bash
 dotnet add package Headless.Emails.Mailkit
 ```
 
-## Quick Start
+## Documentation
 
-```csharp
-var builder = WebApplication.CreateBuilder(args);
-
-// Option 1: from configuration section
-builder.Services.AddHeadlessEmails(setup => setup.UseMailkit(builder.Configuration.GetSection("Smtp")));
-
-// Option 2: action
-builder.Services.AddHeadlessEmails(setup =>
-    setup.UseMailkit(options =>
-    {
-        options.Server = "smtp.example.com";
-        options.Port = 587;
-        options.User = "user@example.com";
-        options.Password = "securepassword";
-        options.SocketOptions = SecureSocketOptions.StartTls;
-    })
-);
-
-// Option 3: action with IServiceProvider
-builder.Services.AddHeadlessEmails(setup =>
-    setup.UseMailkit(
-        (options, sp) =>
-        {
-            var cfg = sp.GetRequiredService<IConfiguration>();
-            options.Server = cfg["Smtp:Server"]!;
-            options.Port = int.Parse(cfg["Smtp:Port"]!);
-        }
-    )
-);
-
-// Named instance — each named SMTP sender owns an isolated connection pool (keyed "marketing"):
-builder.Services.AddHeadlessEmails(setup =>
-{
-    setup.UseMailkit(builder.Configuration.GetSection("Smtp")); // default (optional)
-    setup.AddNamed("marketing", i => i.UseMailkit(builder.Configuration.GetSection("MarketingSmtp")));
-});
-```
-
-## Configuration
-
-```json
-{
-    "Smtp": {
-        "Server": "smtp.example.com",
-        "Port": 587,
-        "User": "user@example.com",
-        "Password": "securepassword",
-        "SocketOptions": "StartTls"
-    }
-}
-```
-
-`MailkitSmtpOptions` properties:
-
-| Property | Default | Description |
-|---|---|---|
-| `Server` | *(required)* | SMTP server hostname |
-| `Port` | `587` | SMTP port |
-| `User` | `null` | Authentication username; omit for anonymous SMTP |
-| `Password` | `null` | Authentication password; use user-secrets or key vault in production |
-| `SocketOptions` | `StartTls` | `SecureSocketOptions`: `None`, `Auto`, `StartTls`, `StartTlsWhenAvailable`, `SslOnConnect` |
-| `Timeout` | `30s` | Connect/authenticate and per-read/write timeout |
-| `MaxPoolSize` | `10` | Max pooled SMTP connections; `0` retains at most one (the pool always keeps a fast-path slot) |
-
-## Dependencies
-
-- `Headless.Emails.Core`
-- `Headless.Hosting` (options binding + FluentValidation via `Configure<TOptions, TValidator>`)
-- `MailKit`
-
-## Side Effects
-
-- Default: registers `IPooledObjectPolicy<SmtpClient>`, `ObjectPool<SmtpClient>`, and `IEmailSender` as unkeyed singletons
-- Named (`AddNamed(name, i => i.UseMailkit(…))`): registers a keyed policy, pool, and `IEmailSender` plus named options under the instance name, so each named SMTP sender owns an isolated pool and never reads another instance's settings
+- [Headless Framework](https://github.com/xshaheen/headless-framework#readme)
+- [Email guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/emails.md#headlessemailsmailkit)

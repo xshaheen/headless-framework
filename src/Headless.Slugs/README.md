@@ -2,89 +2,17 @@
 
 URL-friendly slug generation from text.
 
-## Problem Solved
+## Why use this package
 
 Converts arbitrary text into URL-safe slugs with proper Unicode normalization, configurable separators, character replacements, and length limits for SEO-friendly URLs.
 
-## Key Features
-
-- `Slug.Create()` - Static slug generation method
-- Unicode normalization (NFC/NFD)
-- Configurable separator character
-- Character replacement rules
-- Maximum length enforcement
-- Case transformation options
-- Handles non-ASCII characters properly
-
-## Installation
+## Install
 
 ```bash
 dotnet add package Headless.Slugs
 ```
 
-## Quick Start
+## Documentation
 
-### Basic Usage
-
-```csharp
-var slug = Slug.Create("Hello World!");
-
-// Result: "hello-world"
-
-var slug2 = Slug.Create("مرحبا بالعالم");
-// Result: "مرحبا-بالعالم"
-```
-
-### Custom Options
-
-```csharp
-var options = new SlugOptions
-{
-    Separator = "_",
-    MaximumLength = 50,
-    CasingTransformation = CasingTransformation.ToLowerCase,
-    CanEndWithSeparator = false,
-};
-
-var slug = Slug.Create("Long Title That Needs Truncation", options);
-```
-
-### Character Replacements
-
-`Replacements` accepts any `IReadOnlyDictionary<string, string>` and replaces the default set entirely;
-the assigned dictionary is frozen internally (ordinal comparison) for lookup performance.
-
-```csharp
-var options = new SlugOptions
-{
-    Replacements = new Dictionary<string, string>(StringComparer.Ordinal)
-    {
-        ["&"] = "and",
-        ["@"] = "at",
-        ["+"] = "plus",
-    },
-};
-
-var slug = Slug.Create("Tom & Jerry @ Home", options);
-// Result: "tom-and-jerry-at-home"
-```
-
-## Configuration
-
-```csharp
-var options = new SlugOptions
-{
-    Separator = "-", // Default: "-"
-    MaximumLength = 100, // Default: 80
-    CanEndWithSeparator = false, // Default: false
-    CasingTransformation = CasingTransformation.ToLowerCase,
-};
-```
-
-## Dependencies
-
-None.
-
-## Side Effects
-
-None.
+- [Headless Framework](https://github.com/xshaheen/headless-framework#readme)
+- [Utilities guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/utilities.md#headlessslugs)

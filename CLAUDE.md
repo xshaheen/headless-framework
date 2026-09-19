@@ -56,8 +56,8 @@ Adding a second or later provider-integration project for one feature means extr
 Before writing any general-purpose utility — a string, collection, date, IO, or reflection helper, a result or error type, a guard, a domain primitive or value object, pagination, a constant, a validator — check [docs/llms/extensions.md](docs/llms/extensions.md). `Headless.Extensions` is the framework's base library and almost certainly already ships it.
 
 - Search by capability, not by package name. These types span several `Headless.*` namespaces (`Headless.Primitives`, `Headless.Collections`, `Headless.Threading`, `Headless.IO`), and many are extension methods that surface on BCL types in `System.*`.
-- Read the type's **Design Notes** before using it, not just to confirm it exists. They carry the non-obvious behavior: `Currency` `*` and `/` take a `decimal` scalar, `KeyedAsyncLock`'s timeout overload returns `null` instead of throwing, `ParallelForEachAsync` does not preserve order.
-- If the helper genuinely does not exist, add it to `Headless.Extensions` or the matching foundational package rather than duplicating it locally, then update `docs/llms/extensions.md` and the package README per [docs/authoring/AUTHORING.md](docs/authoring/AUTHORING.md).
+- Read the type's **Design constraints** before using it, not just to confirm it exists. They carry the non-obvious behavior: `Currency` `*` and `/` take a `decimal` scalar, `KeyedAsyncLock`'s timeout overload returns `null` instead of throwing, `ParallelForEachAsync` does not preserve order.
+- If the helper genuinely does not exist, add it to `Headless.Extensions` or the matching foundational package rather than duplicating it locally, then update `docs/llms/extensions.md` per [docs/authoring/AUTHORING.md](docs/authoring/AUTHORING.md). Update the package README only when the package's purpose or name changes.
 
 ### New projects
 
@@ -77,8 +77,8 @@ Then attach the project to [headless-framework.slnx](headless-framework.slnx). T
 ## Documentation
 
 - `docs/solutions/` is the searchable store of past fixes, conventions, and decisions, filed by category (`api`, `concurrency`, `conventions`, `messaging`, and more) with YAML frontmatter (`module`, `tags`, `problem_type`). Search it before implementing, debugging, or deciding in an area it covers.
-- `docs/llms/` is the consumer-facing contract: how an application that uses the framework wires and calls each domain. [docs/llms/index.md](docs/llms/index.md) lists every domain file plus the package catalog, and a per-domain file is `docs/llms/<domain>.md`. Read a domain's file before integrating with that domain from another package, rather than reading its source. These docs are not pure API reference — they explain the concepts, trade-offs, and provider decisions.
-- Those domain files, `docs/llms/index.md`, and `src/Headless.<Package>/README.md` must stay in lockstep. Read [docs/authoring/AUTHORING.md](docs/authoring/AUTHORING.md) before editing any of the three; it owns the templates, drift checks, and lifecycle.
+- `docs/llms/` is the canonical consumer contract: how an application chooses, wires, and calls each domain. [docs/llms/index.md](docs/llms/index.md) is a small task router; each `docs/llms/<domain>.md` file owns that domain's concepts, trade-offs, setup, and provider behavior. Read the relevant domain guide before integrating with it.
+- Package READMEs are deliberately small NuGet landing pages: why the package exists, how to install it, and links to the root README and canonical domain guide. Do not copy setup or API reference into them. Read [docs/authoring/AUTHORING.md](docs/authoring/AUTHORING.md) before editing the index, a domain guide, or a package README.
 - `CONCEPTS.md` holds the shared domain vocabulary: entities, named processes, and status concepts that carry a project-specific meaning.
 - **Docs sync trigger.** A change under `src/Headless.*` needs a docs update when the public API surface changes, a package is added, renamed, or removed, consumer-visible behavior changes (defaults, ordering, retry, cancellation, threading), or a configuration option is added or removed. Internal refactors and perf-only, test-only, or formatting changes do not.
 

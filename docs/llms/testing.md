@@ -1,6 +1,6 @@
 ---
 domain: Testing
-packages: Testing, Testing.AspNetCore, Testing.Testcontainers, Messaging.Testing
+packages: Testing, Testing.AspNetCore, Testing.Testcontainers
 ---
 
 # Testing
@@ -41,11 +41,7 @@ Typical unit test inherits from `TestBase`, which provides `Logger`, `Faker`, an
 
 Core testing utilities and base classes for xUnit tests.
 
-### Problem Solved
-
-Provides reusable test infrastructure including base classes, retry attributes, test ordering, fake helpers, and assertion extensions for consistent, reliable testing across the framework.
-
-### Key Features
+### API and behavior
 
 - `TestBase` - Abstract base class with lifecycle, logging, and Faker
 - `RetryFactAttribute` / `RetryTheoryAttribute` - Automatic test retry on failure
@@ -55,13 +51,13 @@ Provides reusable test infrastructure including base classes, retry attributes, 
 - `AddTestTimeProvider()` - Replaces the container's `TimeProvider` with a `FakeTimeProvider` and returns it
 - Assertion extensions for async operations
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Testing
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 public sealed class OrderServiceTests : TestBase
@@ -94,7 +90,7 @@ public sealed class OrderServiceTests : TestBase
 }
 ```
 
-### Quick Start
+### Setup and use
 
 #### Test Lifecycle
 
@@ -141,13 +137,7 @@ timeProvider.SetUtcNow(new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero));
 
 No configuration required.
 
-### Dependencies
-
-- `xunit.v3`
-- `Bogus`
-- `Microsoft.Extensions.Logging`
-
-### Side Effects
+### Runtime behavior
 
 None.
 ---
@@ -155,11 +145,7 @@ None.
 
 ASP.NET Core integration-test host wrapper with controllable time, DI-scope helpers, readiness polling, database reset, and messaging-harness reset.
 
-### Problem Solved
-
-`WebApplicationFactory<TProgram>` is the standard ASP.NET integration-test host, but it leaves the consumer to wire deterministic time, scoped DI execution with a principal, database reset, readiness polling, and messaging-harness teardown by hand. `HeadlessTestServer<TProgram>` owns the WAF lifecycle and exposes those helpers as a single surface, so every integration suite starts from the same deterministic baseline.
-
-### Key Features
+### API and behavior
 
 - `HeadlessTestServer<TProgram>` -- owns the `WebApplicationFactory<TProgram>` and lifts its surface to a deterministic-by-default API.
 - Replaces the host's `TimeProvider` with a `FakeTimeProvider` so tests control the app clock end-to-end.
@@ -172,7 +158,7 @@ ASP.NET Core integration-test host wrapper with controllable time, DI-scope help
   connection between attempts.
 - `ResetMessagingHarnessAsync()` waits for the `MessagingTestHarness`'s in-flight publish and consume work, then clears its observation buffers and in-memory storage between tests.
 
-### Design Notes
+### Design constraints
 
 Respawn 7 does not expose cancellation tokens for its internal database commands. Headless closes
 the active reset connection when cancellation is requested and keeps the reset gate held until
@@ -184,13 +170,13 @@ The built-in retry set covers `DbException`, `IOException`, `SocketException`, a
 wrap one of those types. Use `AdditionalTransientExceptionFilter` for a provider-specific transient
 shape such as a bare `InvalidOperationException`; deterministic exceptions fail immediately.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Testing.AspNetCore
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 [CollectionDefinition(nameof(IntegrationTestCollection))]
@@ -237,7 +223,7 @@ public abstract class IntegrationTestBase(TestFixture fixture) : TestBase
 }
 ```
 
-### Quick Start
+### Setup and use
 
 #### Deferred Initialization
 
@@ -362,13 +348,7 @@ The same caveat applies to other databases with sub-tick storage precision (MySQ
 | `ConnectionProvider` | `Func<IServiceProvider, DbConnection>?` | `null` | **Required** when using `ResetDatabaseAsync()`. Factory for an unopened `DbConnection` to the test database. |
 | `AdditionalTransientExceptionFilter` | `Func<Exception, bool>?` | `null` | Adds provider-specific transient exception shapes to the built-in database and transport retry set. |
 
-### Dependencies
-
-- `Headless.Testing`
-- `Microsoft.AspNetCore.Mvc.Testing`
-- `Microsoft.Extensions.Time.Testing`
-
-### Side Effects
+### Runtime behavior
 
 - Starts the application host under test for the lifetime of the fixture.
 - Replaces `TimeProvider` in DI with a deterministic `FakeTimeProvider`.
@@ -378,11 +358,7 @@ The same caveat applies to other databases with sub-tick storage precision (MySQ
 
 Testcontainers fixtures for integration testing.
 
-### Problem Solved
-
-Provides pre-configured Testcontainers fixtures for common infrastructure (Redis, databases) enabling reliable integration tests with real dependencies running in Docker.
-
-### Key Features
+### API and behavior
 
 - `TestImages` — single source of truth for all container image tags (pinned, no `:latest`)
 - Shared `ContainerFixture` subclasses for every backing service used in the framework:
@@ -398,7 +374,7 @@ Provides pre-configured Testcontainers fixtures for common infrastructure (Redis
 - `TestContextMessageSink` — xUnit v3 diagnostic-message forwarder
 - Automatic container lifecycle management via `Testcontainers.Xunit`
 
-### Design Notes
+### Design constraints
 
 #### Why pin image tags
 
@@ -410,13 +386,13 @@ The fixtures create their containers with Testcontainers reuse enabled, except `
 
 Because a reused container keeps state between runs, tests must be idempotent across runs: use drop-before-create (`DROP TABLE IF EXISTS` / `IF OBJECT_ID(...) IS NOT NULL DROP ...`) or guarded create (`CREATE ... IF NOT EXISTS`) rather than assuming a clean database. Each integration project reuses its own container, keyed by the test assembly name, so projects never share state.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Testing.Testcontainers
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 public sealed class CacheIntegrationTests : IClassFixture<HeadlessRedisFixture>
@@ -450,96 +426,12 @@ public sealed class CacheIntegrationTests : IClassFixture<HeadlessRedisFixture>
 
 No configuration required. Containers use sensible defaults.
 
-### Dependencies
-
-- `Headless.Testing`
-- `Testcontainers`
-- `Testcontainers.Kafka`
-- `Testcontainers.Pulsar`
-- `Testcontainers.Redis`
-- `Testcontainers.Xunit`
-
-### Side Effects
+### Runtime behavior
 
 - Starts Docker containers during test execution
 - Containers are stopped after tests complete; with reuse enabled on the host they are kept stopped for the next run to reattach
 ---
-## Headless.Messaging.Testing
 
-Transport-level test harness for asserting on published, consumed, faulted, and exhausted messages without binding tests to a specific broker.
+## Messaging test harness
 
-### Problem Solved
-
-Asserting on messaging by querying the outbox table covers only messages that flow through the outbox -- direct publishes bypass it and leave assertions blind. `MessagingTestHarness` records every message at the transport boundary, including typed `IBusTransport` and `IQueueTransport` sends, so tests can wait on and assert against outboxed and direct-published messages through one API.
-
-### Key Features
-
-- `MessagingTestHarness` records messages at the bus/queue transport layer (covers outbox + direct publish).
-- `WaitForPublished<T>(...)`, `WaitForConsumed<T>(...)`, `WaitForFaulted<T>(...)`, `WaitForExhausted<T>(...)` block until a match arrives or the configured timeout elapses (`MessageObservationTimeoutException`).
-- `WaitForPublished<T>(MessageLane.Bus)` and `WaitForPublished<T>(MessageLane.Queue)` distinguish identical payloads sent through bus and queue paths.
-- Predicate overloads for filtering by payload shape.
-- `Published`, `Consumed`, `Faulted`, `Exhausted` collections for non-blocking assertions.
-- `ResetAsync()` for clean test isolation — waits for in-flight store-first work (not for a delayed publish that is not yet due on the host `TimeProvider`), then clears observations and in-memory storage; integrates with `HeadlessTestServer.ResetMessagingHarnessAsync()`.
-
-### Installation
-
-```bash
-dotnet add package Headless.Messaging.Testing
-```
-
-### Quick Start
-
-```csharp
-// Setup (typically inside a collection fixture)
-services.AddMessagingTestHarness();
-
-// In a test
-var harness = App.Services.GetRequiredService<MessagingTestHarness>();
-
-// Execute the action that should publish a message...
-await sut.HandleAsync(input, AbortToken);
-
-// Wait for a specific message type, optionally filtered by predicate
-var recorded = await harness.WaitForPublished<UserCreatedMessage>(
-    m => m.UserId == userId,
-    cancellationToken: AbortToken
-);
-
-var message = (UserCreatedMessage)recorded.Message;
-message.UserId.Should().Be(userId);
-```
-
-### Quick Start
-
-#### Choosing the Right Wait Method
-
-| Method | Use when |
-|--------|----------|
-| `WaitForPublished<T>(...)` | Asserting a publish-side effect |
-| `WaitForConsumed<T>(...)` | Asserting a consumer ran and finished without faulting |
-| `WaitForFaulted<T>(...)` | Asserting a consumer error path |
-| `WaitForExhausted<T>(...)` | Asserting retry exhaustion / DLQ routing |
-
-Each method has a no-predicate overload (matches by type only) and a predicate overload (matches by type + payload shape). All four return a `RecordedMessage` whose `.Message` is the deserialized payload.
-
-#### Why Not Query the Outbox Directly
-
-A common reflex is to assert by selecting from the outbox table (`outbox.published` or the configured equivalent). That only works when the producer goes through the outbox pipeline. Code paths that call `IBus` directly -- system messages, retries that opt out of the outbox, framework internals -- never write a row there. `MessagingTestHarness` records at the transport boundary, so the assertion is single-source-of-truth regardless of how the message was produced.
-
-#### Isolation Between Tests
-
-Call `await harness.ResetAsync()` (or `await App.ResetMessagingHarnessAsync()` when using `HeadlessTestServer`) from your fixture's `ResetStateAsync()` so observations from one test do not leak into the next. Both wait for in-flight store-first work to settle — a default publish returns once its row is stored, and the send and the consumer run afterwards on dispatcher threads — then drop the accumulated `Published` / `Consumed` / `Faulted` / `Exhausted` collections and the in-memory storage rows without re-creating the transport decorators. A publish that is not yet due is clock-parked and is not awaited: it is stored as `Queued` when due within a minute and as `Delayed` beyond that, the dispatcher holds it either way, and it publishes when due on the host `TimeProvider` (a `Queued` row counts as in flight only once it is due on that clock), so a shared harness should not carry pending delays across tests, or should advance a `FakeTimeProvider` past them before resetting. Tests that observe asynchronous publish-then-consume flows should rely on the `WaitFor*` APIs rather than reading the collections immediately, since transport and consume observations can arrive on background processing threads. A message the transport handed to a consumer just before the reset still runs afterwards, but the reset does not wait for it and its `Consumed` or `Faulted` observation is not recorded, so it cannot leak into the next test.
-
-### Configuration
-
-None. `MessagingTestHarness` has no configuration class or options object. The only tuneable is the per-call `timeout` parameter on `WaitFor*` methods; when omitted it defaults to `MessagingTestHarness.DefaultTimeout` (5 seconds). Transport parallelism is intentionally disabled by the harness (`EnablePublishParallelSend = false`, `EnableSubscriberParallelExecute = false`) to guarantee deterministic single-threaded test execution — this is a fixed internal choice and cannot be overridden.
-
-### Dependencies
-
-- `Headless.UnitOfWork` — the scoped `IUnitOfWorkManager` the harness registers internally so `RunInUnitOfWorkAsync` can begin a resource-less unit of work for the action it runs
-- `Headless.Messaging.Abstractions`
-- `Headless.Messaging.Core`
-
-### Side Effects
-
-- Decorates configured `ITransport`, `IBusTransport`, and `IQueueTransport` services with recording wrappers. Tests using the harness should register `UseInMemory()` and `UseInMemoryStorage()` unless they intentionally supply a custom in-process transport.
+`Headless.Messaging.Testing` is documented in [messaging.md](messaging.md#headlessmessagingtesting) because its delivery, unit-of-work, and observation semantics depend on the Messaging runtime. Use that package for transport-boundary assertions; use the packages in this guide for the shared xUnit and integration-test infrastructure.

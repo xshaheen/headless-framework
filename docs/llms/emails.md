@@ -106,11 +106,7 @@ builder.Services.AddHeadlessEmails(setup =>
 
 Defines the unified interface for sending emails across different providers (Azure Communication Services, AWS SES, SMTP/MailKit, development).
 
-### Problem Solved
-
-Provides a provider-agnostic email sending API for switching email providers without changing application code.
-
-### Key Features
+### API and behavior
 
 - `IEmailSender` — core interface with a single `SendAsync(SendSingleEmailRequest, CancellationToken)` method returning `ValueTask<SendSingleEmailResponse>`
 - `IEmailSenderProvider` — resolves named senders by name: `GetSender(name)` (throws when unregistered) and `GetSenderOrNull(name)`, plus `RegisteredNames` (`IReadOnlySet<string>`) listing the registered named instances (the default is excluded) so an externally supplied name can be validated before resolving. Backed by the container's keyed `IEmailSender` registrations
@@ -120,13 +116,13 @@ Provides a provider-agnostic email sending API for switching email providers wit
 - `EmailRequestAttachment` — sealed record: `Name` + `File` (`ReadOnlyMemory<byte>`) + optional `ContentType`
 - `SendSingleEmailResponse` — closed result type with `Success` bool, nullable `ProviderMessageId` (the backend's message id on success), and nullable `FailureError` string (non-null on failure); built via `Succeeded`, `Failed`, or `FromException`
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Emails.Abstractions
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 public sealed class NotificationService(IEmailSender emailSender)
@@ -159,11 +155,7 @@ public sealed class NotificationService(IEmailSender emailSender)
 
 No configuration required. This is an abstractions-only package.
 
-### Dependencies
-
-None.
-
-### Side Effects
+### Runtime behavior
 
 None.
 
@@ -173,11 +165,7 @@ None.
 
 Setup builder, MimeKit integration, and shared utilities for email implementations.
 
-### Problem Solved
-
-Owns the unified email setup builder (`AddHeadlessEmails`) plus shared conversion logic that bridges the framework email contracts with MimeKit, eliminating duplication across the provider implementations.
-
-### Key Features
+### API and behavior
 
 - `AddHeadlessEmails(Action<HeadlessEmailsSetupBuilder>)` — the single provider-agnostic registration entry point, with an at-most-one-default-provider gate
 - `HeadlessEmailsSetupBuilder` — receives the optional default `Use*` selection plus `AddNamed(name, …)` named instances; `HeadlessEmailInstanceBuilder` — the per-named-instance builder that providers extend with their `Use*` members
@@ -187,17 +175,17 @@ Owns the unified email setup builder (`AddHeadlessEmails`) plus shared conversio
 - `MapToMailboxAddress()` — maps an `EmailRequestAddress` to a MimeKit `MailboxAddress` (internal)
 - Full address mapping (From, To, Cc, Bcc), body building (text + HTML via `BodyBuilder`), and attachment streaming
 
-### Design Notes
+### Design constraints
 
 The builder carries no shared, cross-provider feature options — it is provider-selection-only; each provider binds its own options inside its `Use*` member. The gate is **per-slot**: it allows at most one default provider (rejecting a second, but permitting zero for a named-only host) while allowing unbounded uniquely-named instances, and rejects a repeated `AddHeadlessEmails` on the same `IServiceCollection`. Providers contribute deferred `Action<IServiceCollection>` registrations (`RegisterDefaultProvider` for the default, `instance.RegisterProvider` for a named instance) rather than implementing a provider interface, keeping the default and named paths symmetric. The MimeKit converter returns a `MimeMessage` that callers dispose; the implementation disposes the message if an exception occurs during construction, preventing a resource leak.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Emails.Core
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 // Provider-agnostic registration entry point (a provider package supplies the Use* member):
@@ -218,15 +206,7 @@ var contentType = EmailAttachmentContentType.Resolve("invoice.pdf"); // "applica
 
 No configuration required.
 
-### Dependencies
-
-- `Headless.Emails.Abstractions`
-- `Headless.Checks`
-- `Headless.Extensions`
-- `MailKit`
-- `Microsoft.Extensions.DependencyInjection.Abstractions`
-
-### Side Effects
+### Runtime behavior
 
 `AddHeadlessEmails` registers a provider-registration marker and `IEmailSenderProvider` (keyed-service-backed), then runs the default provider's wiring (the unkeyed `IEmailSender`) when a default is configured, followed by each named instance's wiring (keyed under the instance name). The marker enforces the single-call rule.
 
@@ -236,11 +216,7 @@ No configuration required.
 
 AWS SES (Simple Email Service) v2 implementation of the email sending abstraction.
 
-### Problem Solved
-
-Provides email sending via AWS SES v2 using the unified `IEmailSender` abstraction, ideal for production deployments on AWS.
-
-### Key Features
+### API and behavior
 
 - Full `IEmailSender` implementation using AWS SES v2 (`AWSSDK.SimpleEmailV2`)
 - Simple sends (no attachments) use the SES structured API path — no MIME serialization
@@ -251,13 +227,13 @@ Provides email sending via AWS SES v2 using the unified `IEmailSender` abstracti
 - Non-PII logging on failures (SES error code, HTTP status, request/message id — never the exception message, which can embed a rejected address, and never recipient/sender addresses)
 - Strongly-typed SES event tracking contracts (`Headless.Emails.Aws.Tracking`) for delivery/bounce/complaint/open/click/etc. notifications (see [Email Event Tracking](#email-event-tracking))
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Emails.Aws
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -344,14 +320,7 @@ Available types: `EmailTrackingNotification`, `MailDetails` (`EmailHeader`, `Ema
 
 Credentials are resolved from the standard AWS credential chain (environment variables, `~/.aws/credentials`, IAM role) when not passed explicitly.
 
-### Dependencies
-
-- `Headless.Emails.Core`
-- `Headless.Extensions`
-- `AWSSDK.SimpleEmailV2`
-- `AWSSDK.Extensions.NETCore.Setup`
-
-### Side Effects
+### Runtime behavior
 
 - Default: registers `IAmazonSimpleEmailServiceV2` via `TryAddAWSService` (no-op if already registered) and `IEmailSender` as an unkeyed singleton
 - Named (`AddNamed(name, i => i.UseAwsSes(…))`): registers a keyed `IAmazonSimpleEmailServiceV2` (built from the supplied options, the ambient `AWSOptions` in DI, or `IConfiguration` (`AWS:*` via `GetAWSOptions()`) — mirroring `TryAddAWSService(null)` — using `AWSOptions.CreateServiceClient<T>`, since `TryAddAWSService` has no keyed overload) and a keyed `IEmailSender`, both under the instance name
@@ -362,11 +331,7 @@ Credentials are resolved from the standard AWS credential chain (environment var
 
 Azure Communication Services (ACS) Email implementation of the email sending abstraction.
 
-### Problem Solved
-
-Provides email sending via Azure Communication Services using the unified `IEmailSender` abstraction — the intended cloud-email backend for Azure-hosted consumers, with managed-identity support.
-
-### Key Features
+### API and behavior
 
 - Full `IEmailSender` implementation over `Azure.Communication.Email`
 - Three authentication modes: connection string, endpoint + access key, and endpoint + managed-identity `TokenCredential`
@@ -375,19 +340,19 @@ Provides email sending via Azure Communication Services using the unified `IEmai
 - Both a thrown `RequestFailedException` and a completed-but-failed terminal status map to `SendSingleEmailResponse.Failed(...)`; a `Succeeded` status carries the ACS operation id as `ProviderMessageId`
 - Non-PII logging on failure (operation id, status, error code — no recipient/sender addresses)
 
-### Design Notes
+### Design constraints
 
 The send uses `EmailClient.SendAsync(WaitUntil.Completed, …)`, so the call blocks until ACS reaches a terminal state — matching the contract's "accepted for delivery" success semantics. ACS can complete a long-running send with a non-`Succeeded` status **without throwing**, so the sender inspects `operation.Value.Status` and treats any terminal non-`Succeeded` state as a failure (an exception-only check would report rejected mail as delivered). Only `Succeeded` returns `Succeeded(operation.Id)` (the operation id becomes the `ProviderMessageId`); unrelated exceptions (cancellation, argument errors) propagate.
 
 The package depends on `Azure.Core` (not `Azure.Identity`): supply your own `DefaultAzureCredential` through the delegate overload to keep the dependency surface narrow. The `IConfiguration` overload binds only the connection-string and endpoint + access-key modes. ACS's `senderAddress` is a bare string, so the sender's display name is not honored. No custom retry loop is added — `Azure.Core`'s pipeline already retries 429/5xx honoring `Retry-After`. The sender domain must be verified and linked in the Communication Services resource; managed-domain send limits are low (5/min; custom domains 30/min).
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Emails.Azure
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -440,13 +405,7 @@ builder.Services.AddHeadlessEmails(setup =>
 | `AccessKey` | `string?` | Resource access key (access-key mode) |
 | `TokenCredential` | `TokenCredential?` | Managed-identity credential (delegate overload only — not bindable from configuration) |
 
-### Dependencies
-
-- `Headless.Emails.Abstractions`
-- `Headless.Emails.Core`
-- `Azure.Communication.Email`
-
-### Side Effects
+### Runtime behavior
 
 - Default: binds and validates `AzureCommunicationEmailOptions` (exactly one auth mode required), and registers `EmailClient` and `IEmailSender` as unkeyed singletons
 - Named (`AddNamed(name, i => i.UseAzure(…))`): binds named options and registers a keyed `EmailClient` (constructed from the named auth mode) and a keyed `IEmailSender`, both under the instance name
@@ -457,23 +416,19 @@ builder.Services.AddHeadlessEmails(setup =>
 
 Development email implementations for local testing and debugging.
 
-### Problem Solved
-
-Provides safe email implementations for development and testing that do not send real emails, preventing accidental sends and enabling easy inspection of email content locally.
-
-### Key Features
+### API and behavior
 
 - `DevEmailSender` — writes full email content to a local file; appends with a `--------------------` separator per message; prefers `MessageText` over `MessageHtml` for readability. Writes are serialized so concurrent sends do not interleave, and a body-less request throws `InvalidOperationException` (same `EnsureHasBody()` guard as the real providers)
 - `NoopEmailSender` — silently discards all emails, always returns `Succeeded()` (never validates — the explicit "disable email" sender)
 - No network calls, no external dependencies beyond the abstractions and core packages
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Emails.Dev
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -513,12 +468,7 @@ Hello World!
 
 `UseNoop()` — no parameters. Useful in test projects where you want `IEmailSender` resolved but do not want file I/O.
 
-### Dependencies
-
-- `Headless.Emails.Abstractions`
-- `Headless.Emails.Core`
-
-### Side Effects
+### Runtime behavior
 
 - `UseDevelopment` registers `IEmailSender` as singleton (instance of `DevEmailSender`); appends to the specified file on each `SendAsync` call
 - `UseNoop` registers `IEmailSender` as singleton (instance of `NoopEmailSender`); no I/O
@@ -530,11 +480,7 @@ Hello World!
 
 SMTP implementation of the email abstraction using MailKit with connection pooling.
 
-### Problem Solved
-
-Provides email sending via standard SMTP protocol using MailKit, supporting any SMTP server (Gmail, Outlook, SendGrid, on-premises, etc.) with connection pooling to amortize reconnect cost.
-
-### Key Features
+### API and behavior
 
 - Full `IEmailSender` implementation using MailKit
 - SMTP connection pool (`ObjectPool<SmtpClient>`) — connections are retained and reused across sends
@@ -543,17 +489,17 @@ Provides email sending via standard SMTP protocol using MailKit, supporting any 
 - Three `UseMailkit` overloads: `IConfiguration`, `Action<MailkitSmtpOptions>`, `Action<MailkitSmtpOptions, IServiceProvider>`
 - `SmtpCommandException`, `SmtpProtocolException`, `AuthenticationException`, and connect/TLS/transport faults (`IOException`, socket errors, TLS handshake failures, connect timeouts) are all caught and returned as `Failed()` responses (auth failures additionally logged at critical level; transport faults logged PII-safe by type name); only the caller's own cancellation and argument validation propagate. On success the SMTP server's final response is surfaced as `ProviderMessageId`
 
-### Design Notes
+### Design constraints
 
 The pool (`MaxPoolSize`, default 10) amortizes TCP connect + TLS handshake across concurrent sends. Each `SmtpClient` is reconnected (and authenticated if credentials are set) lazily when retrieved from the pool in a disconnected or unauthenticated state; the connect/authenticate phase is bounded by `Timeout`. The entire connect/authenticate/send sequence is wrapped so every fault is returned as a failed `SendSingleEmailResponse` per the `IEmailSender` return-not-throw contract: SMTP command/protocol errors, authentication failures (`AuthenticationException`, additionally logged at critical level because they represent configuration errors rather than transient delivery failures), and connect/TLS/transport faults (`IOException`, socket errors, TLS handshake failures). Cancellation is disambiguated by inspecting the caller's token: only the caller's own cancellation (`catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)`) propagates, while a connect-timeout cancellation — where the timeout-linked CTS fires but the caller's token is not cancelled — is returned as a failure. A client left connected-but-unauthenticated by an auth failure is disposed on return instead of being pooled, so it is never reused with authentication skipped; a later send re-authenticates.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Emails.Mailkit
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -619,12 +565,7 @@ builder.Services.AddHeadlessEmails(setup =>
 | `Timeout` | `30s` | Per-connection timeout |
 | `MaxPoolSize` | `10` | Max pooled SMTP connections; `0` retains at most one (the pool always keeps a fast-path slot) |
 
-### Dependencies
-
-- `Headless.Emails.Core`
-- `MailKit`
-
-### Side Effects
+### Runtime behavior
 
 - Default: registers `IPooledObjectPolicy<SmtpClient>`, `ObjectPool<SmtpClient>`, and `IEmailSender` as unkeyed singletons
 - Named (`AddNamed(name, i => i.UseMailkit(…))`): registers a keyed policy, pool, and `IEmailSender` plus named options under the instance name, so each named SMTP sender owns an isolated pool and never reads another instance's settings

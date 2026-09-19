@@ -298,11 +298,7 @@ Use InMemory when all contenders are inside one process. Use Redis when you oper
 
 Defines public distributed-lock contracts.
 
-### Problem Solved
-
-Lets application and domain code depend on lock interfaces without referencing a concrete storage backend.
-
-### Key Features
+### API and behavior
 
 - `IDistributedLock` with single-resource `TryAcquireAsync(...)` / `AcquireAsync(...)` and multi-resource `TryAcquireAllAsync(...)` / `AcquireAllAsync(...)` extensions over `IEnumerable<string>`.
 - `IDistributedReadWriteLock` with `AcquireReadLockAsync(...)`, `TryAcquireReadLockAsync(...)`, `AcquireWriteLockAsync(...)`, and `TryAcquireWriteLockAsync(...)`, plus composite `TryAcquireAllAsync(...)` / `AcquireAllAsync(...)` over a mixed `IEnumerable<DistributedReadWriteLockRequest>` set and the uniform-mode sugar `TryAcquireAllReadAsync(...)` / `AcquireAllReadAsync(...)` / `TryAcquireAllWriteAsync(...)` / `AcquireAllWriteAsync(...)`.
@@ -314,7 +310,7 @@ Lets application and domain code depend on lock interfaces without referencing a
 - `LockAcquisitionTimeoutException`, `LockHandleLostException`, and `DistributedLockException` for lock-specific failures.
 - `GetLeaseIdAsync(resource)`, `GetLockInfoAsync(resource)`, `ListActiveLocksAsync()`, `GetActiveLocksCountAsync()`, `GetExpirationAsync(resource)` for operational inspection and monitoring. `GetLeaseIdAsync` does not renew a lease; monitored holders should use `LostToken` or `ThrowIfLost()` for lease-loss observation. Inspection `LeaseId` values may be null when the backend can observe the locked resource but not the current holder identity, and provider-wide list/count results are limited to what the backend can enumerate.
 
-### Design Notes
+### Design constraints
 
 - `AcquireAsync(...)` is a throwing convenience over `TryAcquireAsync(...)`. It does not provide stronger safety guarantees.
 - Multi-resource acquisition validates, deduplicates, and ordinal-sorts the complete input before the first provider call, then applies one acquire timeout across the canonical set. A zero timeout gives every canonical resource one non-blocking attempt. Partial acquisition is compensated by exhaustive reverse-order release and disposal; it is not transactional. The same coordinator backs all three primitives.
@@ -330,13 +326,13 @@ Lets application and domain code depend on lock interfaces without referencing a
 - `LostToken` reports **loss only**, never ordinary teardown. An explicit `ReleaseAsync()` or dispose stops the monitor (or, for connection-scoped providers, drops the connection watch) without cancelling the token, so callbacks registered on it do not fire on the success path of an `await using`. Every provider owes this; it is pinned by the cross-provider conformance suite.
 - `TimeUntilExpires = null` uses the provider default. Built-in providers use a finite 20-minute default, so `null` is valid with `LockMonitoringMode.AutoExtend`; `Timeout.InfiniteTimeSpan` is not.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.DistributedLocks.Abstractions
 ```
 
-### Quick Start
+### Setup and use
 
 The multi-resource extension signatures are `Task<IDistributedLease?> TryAcquireAllAsync(IEnumerable<string> resources, DistributedLockAcquireOptions? options = null, CancellationToken cancellationToken = default)` and `Task<IDistributedLease> AcquireAllAsync(IEnumerable<string> resources, DistributedLockAcquireOptions? options = null, CancellationToken cancellationToken = default)`.
 
@@ -396,12 +392,7 @@ await using var slots = await semaphoreProvider.AcquireAllAsync(
 
 None.
 
-### Dependencies
-
-- `Headless.Checks`
-- `Headless.Extensions`
-
-### Side Effects
+### Runtime behavior
 
 None.
 
@@ -411,11 +402,7 @@ None.
 
 Provides the `DistributedLock` implementation and setup extensions.
 
-### Problem Solved
-
-Implements lock acquisition, renewal, release, inspection, timeout handling, and optional messaging wake-ups over an `IDistributedLockStorage`.
-
-### Key Features
+### API and behavior
 
 - `DistributedLock` implements `IDistributedLock`.
 - `DistributedReadWriteLock` implements `IDistributedReadWriteLock`.
@@ -428,20 +415,20 @@ Implements lock acquisition, renewal, release, inspection, timeout handling, and
 - `AddHeadlessDistributedLocks(...)` auto-registers the optional `DistributedLockReleased` consumer descriptor.
 - `IDistributedLocksOptionsExtension` is the setup-time hook used by provider packages to wire supported primitives.
 
-### Design Notes
+### Design constraints
 
 - `IBus` is optional. When present, release notifications use `DeliveryMode.Direct` as best-effort wake-up hints; without it, waiters fall back to polling backoff and a warning is logged once when the provider is constructed.
 - When messaging is present, the release consumer is drained at messaging startup whether `AddHeadlessDistributedLocks(...)` runs before or after `AddHeadlessMessaging(...)`; without messaging, waiters fall back to polling.
 - `TryAcquireAsync(..., new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero })` performs a single storage attempt with an internal safety deadline. If that deadline fires (lock-store stall, caller token never cancels), the acquire still returns `null` but emits the `TryOnceSafetyDeadlineFired` log event (`EventId = 24`, Warning) and tags the failure metric `reason=stalled`, distinguishing a stall from routine contention (`reason=contended`). Applies to mutex, reader-writer, and semaphore non-blocking acquires.
 - Lease monitors drain before dispose-time release, so monitoring does not add release retry latency during shutdown.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.DistributedLocks.Core
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 builder.Services.AddHeadlessDistributedLocks(setup =>
@@ -517,15 +504,7 @@ await using var lease = await lockProvider.AcquireAsync(
 
 `Headless.Messaging.Core`'s retry processor is the canonical in-repo consumer of this mode. Each retry-pickup tick acquires its coarse pickup lock with `AcquireTimeout = TimeSpan.Zero` (non-blocking try-once), a finite lease window equal to the current polling interval, and `LockMonitoringMode.AutoExtend` so a pickup that outruns the initial TTL keeps the lease without manual per-tick renewal. It treats `LostToken` as a pickup boundary, not a dispatch-cancellation token: a lost lease blocks new pickup but never aborts in-flight dispatch, which stays governed by the per-row `LockedUntil` lease (the correctness primitive). See [Distributed Lock Integration](messaging.md#distributed-lock-integration) for the retry-lock EventIds and the full correctness-vs-coordination split.
 
-### Dependencies
-
-- `Headless.DistributedLocks.Abstractions`
-- `Headless.Core`
-- `Headless.Hosting`
-- `Headless.Messaging.Abstractions`
-- `Headless.Messaging.Core`
-
-### Side Effects
+### Runtime behavior
 
 - Registers exactly one provider selected by the `AddHeadlessDistributedLocks(...)` builder.
 - Redis and InMemory providers register `IDistributedLock`, `IDistributedReadWriteLock`, and `IDistributedSemaphoreProvider`.
@@ -539,11 +518,7 @@ await using var lease = await lockProvider.AcquireAsync(
 
 Shared connection-scoped engine contracts for database-backed distributed locks.
 
-### Problem Solved
-
-Lets database providers map session-scoped or transaction-scoped lock primitives onto the standard distributed-lock abstractions without adding ADO.NET-specific machinery to Redis or cache providers.
-
-### Key Features
+### API and behavior
 
 - Internal `IConnectionScopedLockStorage` seam for non-blocking session-held lock acquisition and release.
 - Internal `ConnectionScopedDistributedLock` engine implements `IDistributedLock` over connection-scoped storage.
@@ -552,7 +527,7 @@ Lets database providers map session-scoped or transaction-scoped lock primitives
 - Internal `IReleaseSignal` seam provides the wake-up hook for provider push notifications plus polling fallback.
 - The engine and seams are internal implementation shared with the first-party PostgreSQL and SQL Server providers via `InternalsVisibleTo` (mirroring `Headless.Coordination.Core.Database`); a custom backend implements the public `IDistributedLock` / `IDistributedReadWriteLock` abstractions directly.
 
-### Design Notes
+### Design constraints
 
 - Connection-scoped locks have no TTL and no GC finalizer reclaim. `RenewAsync(...)` is a no-op success, `GetExpirationAsync(...)` returns `null`, and the lock is released only when the handle is disposed (or `ReleaseAsync()` is called). The provider holds a strong reference to the engine handle for its lifetime, so an abandoned handle leaks its connection and lock until the provider is disposed. Always `await using` the handle. See [Connection-Scoped Locks](#connection-scoped-locks-database-engine).
 - Handle loss is backed by an active `ConnectionMonitor`, not just the connection's `StateChange` event: monitored handles (`CanObserveLoss == true`) run a periodic bounded-timeout server-side probe so a silent half-open connection cancels `LostToken` instead of going unnoticed until the next query. `Monitoring = None` skips that active probe and leaves `LostToken` at `CancellationToken.None`.
@@ -560,13 +535,13 @@ Lets database providers map session-scoped or transaction-scoped lock primitives
 - Reader-writer locks do not issue fencing tokens; `FencingToken` is `null` for read and write handles.
 - A composite acquisition (`AcquireAllAsync(...)` / `TryAcquireAllAsync(...)`, mutex or reader-writer) over N resources **pins N database connections for the whole duration of the hold**. Connection-scoped locks live only while their session does, so there is no TTL-backed lease that could hold a resource without a live connection — every child of the composite keeps one. Multiplexing does not remove this: contended children fall back to dedicated connections by design. Size the connection pool for the largest composite the application forms, and prefer small sets. This is an operational cost of the connection-scoped model, not a defect.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.DistributedLocks.Core.Database
 ```
 
-### Quick Start
+### Setup and use
 
 Use a concrete provider such as `Headless.DistributedLocks.PostgreSql`; application code normally does not register `Core.Database` directly.
 
@@ -574,14 +549,7 @@ Use a concrete provider such as `Headless.DistributedLocks.PostgreSql`; applicat
 
 None directly. Concrete providers own options and storage configuration.
 
-### Dependencies
-
-- `Headless.DistributedLocks.Abstractions`
-- `Headless.DistributedLocks.Core`
-- `Headless.Core`
-- `Headless.Hosting`
-
-### Side Effects
+### Runtime behavior
 
 None by itself. Concrete providers register the public lock providers.
 
@@ -591,30 +559,26 @@ None by itself. Concrete providers register the public lock providers.
 
 In-process storage and setup helpers for distributed-lock abstractions.
 
-### Problem Solved
-
-Provides a no-infrastructure backend for code that depends on `IDistributedLock`, `IDistributedReadWriteLock`, or `IDistributedSemaphoreProvider` in tests, local development, and single-instance applications.
-
-### Key Features
+### API and behavior
 
 - Internal `InMemoryDistributedLockStorage`, `InMemoryDistributedReadWriteLockStorage`, and `InMemoryDistributedSemaphoreStorage` back the three primitives; `UseInMemory()` is the only registration surface.
 - `UseInMemory()` registers in-process mutex, reader-writer lock, and semaphore providers through `AddHeadlessDistributedLocks(...)`.
 - Uses injected `TimeProvider` for deterministic TTL behavior.
 - Mutex compare-and-swap preserves the existing absolute expiration when `ReplaceIfEqualAsync(..., newTtl: null)` is used.
 
-### Design Notes
+### Design constraints
 
 This package is process-local. It does not coordinate across app instances, machines, containers, or processes. Use it when one process owns all contenders, or when tests need a real provider without Redis. Fencing tokens are monotonic inside the process lifetime only.
 
 Reader-writer lease ids must not contain `:` because that character is reserved for the writer-waiting marker suffix; ids containing it are rejected.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.DistributedLocks.InMemory
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 builder.Services.AddHeadlessDistributedLocks(setup =>
@@ -634,11 +598,7 @@ No InMemory-specific options. Configure `DistributedLockOptions`.
 
 Reader-writer and semaphore TTL checks use the registered `TimeProvider`, so tests can register a fake clock and advance leases deterministically. `LostToken` is `CancellationToken.None` unless monitoring is enabled through `DistributedLockAcquireOptions`.
 
-### Dependencies
-
-- `Headless.DistributedLocks.Core`
-
-### Side Effects
+### Runtime behavior
 
 - Registers `IDistributedLock`, `IDistributedReadWriteLock`, and `IDistributedSemaphoreProvider` through `Headless.DistributedLocks.Core`.
 - Registers process-local singleton storage instances for all three primitives.
@@ -649,11 +609,7 @@ Reader-writer and semaphore TTL checks use the registered `TimeProvider`, so tes
 
 PostgreSQL advisory-lock provider for mutex and reader-writer distributed locks.
 
-### Problem Solved
-
-Coordinates work across nodes using PostgreSQL advisory locks, with no Redis dependency and with transaction-coupled locking available for data mutations already protected by a PostgreSQL transaction.
-
-### Key Features
+### API and behavior
 
 - `UsePostgreSql(...)` registers `IDistributedLock` and `IDistributedReadWriteLock` through `AddHeadlessDistributedLocks(...)`.
 - `PostgreSqlAdvisoryLockKey` maps strings, `long`, and `(int, int)` keys onto PostgreSQL advisory key spaces.
@@ -662,7 +618,7 @@ Coordinates work across nodes using PostgreSQL advisory locks, with no Redis dep
 - Mutex handles receive durable sequence-backed `FencingToken` values.
 - `PostgreSqlDistributedLock.AcquireWithTransactionAsync(...)` and `TryAcquireWithTransactionAsync(...)` use transaction-scoped `pg_advisory_xact_lock`.
 
-### Design Notes
+### Design constraints
 
 - Standard provider locks are session-scoped: they require a stable backend session from acquire through release. Use direct PostgreSQL connections or PgBouncer session pooling.
 - Under PgBouncer transaction or statement pooling, use the transaction-coupled static API with a caller-owned `NpgsqlTransaction`; do not use session-scoped handles.
@@ -674,13 +630,13 @@ Coordinates work across nodes using PostgreSQL advisory locks, with no Redis dep
 - The provider multiplexes uncontended advisory locks on distinct keys onto a shared physical connection and falls back to a dedicated connection on contention or advisory-key collision. This lowers connection usage in the common case without changing lock semantics — but it does not reduce a composite's hold-time connection count, since contended children take dedicated connections by design.
 - Connection-death detection for an idle lock holder is active: monitored handles (`LostToken`) run a periodic bounded-timeout server-side probe whose command timeout catches silently-dropped half-open connections that Npgsql's `StateChange` event alone would miss until the next operation. TCP keepalive is complementary, not redundant: when the provider builds its own data source from `ConnectionString` it defaults `KeepAlive` (30s, see `PostgreSqlDistributedLockOptions.KeepAlive`) unless the connection string already sets one, surfacing dead sockets faster at the transport layer. If you inject your own `DataSource`, set `Keepalive` on it yourself for the tightest detection window; the active monitor still operates regardless.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.DistributedLocks.PostgreSql
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 builder.Services.AddHeadlessDistributedLocks(setup =>
@@ -741,14 +697,7 @@ services.AddHeadlessDistributedLocks(setup =>
 
 The default is the feature name `"locks"`. Earlier versions of this provider had no schema setting at all and created `headless_distributed_locks_fence` unqualified, so it landed wherever `search_path` pointed; it is now created inside the configured schema (which the provider creates when absent) and read back as `"schema"."headless_distributed_locks_fence"`. The provider validates the schema against PostgreSQL's unquoted-identifier rules at startup.
 
-### Dependencies
-
-- `Headless.DistributedLocks.Core.Database`
-- `Headless.DistributedLocks.Core`
-- `Headless.Hosting`
-- `Npgsql`
-
-### Side Effects
+### Runtime behavior
 
 - Registers `IDistributedLock` as singleton.
 - Registers `IDistributedReadWriteLock` as singleton.
@@ -760,11 +709,7 @@ The default is the feature name `"locks"`. Earlier versions of this provider had
 
 Redis-backed storage and setup helpers for distributed locks, reader-writer locks, and semaphores.
 
-### Problem Solved
-
-Stores lock records directly in Redis with atomic acquire, replace, release, reader-writer transitions, semaphore slots, and fencing-token issuance.
-
-### Key Features
+### API and behavior
 
 - `RedisDistributedLockStorage` implements `IDistributedLockStorage`.
 - `RedisDistributedReadWriteLockStorage` implements `IDistributedReadWriteLockStorage`.
@@ -773,13 +718,13 @@ Stores lock records directly in Redis with atomic acquire, replace, release, rea
 - Uses `HeadlessRedisScriptsLoader` for atomic Lua script operations.
 - Mutex compare-and-swap uses Redis `KEEPTTL`, preserving the existing expiration when `ReplaceIfEqualAsync(..., newTtl: null)` is used.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.DistributedLocks.Redis
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect("localhost:6379"));
@@ -804,15 +749,7 @@ Redis mutex storage maps each logical lock name to an internal hash-tagged lock 
 
 Reader-writer storage creates `{resource}:writer` (string holding the active writer id or the `:_WRITERWAITING`-suffixed marker) and `{resource}:readers` (HASH of `leaseId → expiry-epoch-ms`) Redis keys internally. Resource names containing `{` or `}` are rejected so the storage-owned Redis cluster hash-tag remains deterministic. The marker TTL is governed by `DistributedLockOptions.WriterWaitingMarkerTtl` (default 30s, validated `0 < ttl <= 5 min`).
 
-### Dependencies
-
-- `Headless.DistributedLocks.Core`
-- `Headless.Hosting`
-- `Headless.Redis`
-- `StackExchange.Redis`
-- Redis server **6.2+** (semaphore lease extension uses grow-only `ZADD GT`, which never shortens a live holder's TTL).
-
-### Side Effects
+### Runtime behavior
 
 - Registers a keyed `HeadlessRedisScriptsLoader` bound to the app's `IConnectionMultiplexer`.
 - Registers hosted `IInitializer` warmup for Redis mutex, reader-writer, and semaphore scripts.
@@ -824,11 +761,7 @@ Reader-writer storage creates `{resource}:writer` (string holding the active wri
 
 SQL Server `sp_getapplock` provider for mutex and reader-writer distributed locks.
 
-### Problem Solved
-
-Coordinates work across nodes using SQL Server application locks, with transaction-coupled locking available for data mutations already protected by a SQL Server transaction.
-
-### Key Features
+### API and behavior
 
 - `UseSqlServer(...)` registers `IDistributedLock` and `IDistributedReadWriteLock` through `AddHeadlessDistributedLocks(...)`.
 - Session-scoped mutex locks use `sp_getapplock` with `@LockMode = 'Exclusive'` and release with `sp_releaseapplock`.
@@ -837,7 +770,7 @@ Coordinates work across nodes using SQL Server application locks, with transacti
 - `SqlServerDistributedLock.AcquireWithTransactionAsync(...)` and `TryAcquireWithTransactionAsync(...)` use transaction-owned application locks.
 - Resource names longer than SQL Server's 255-character `@Resource` limit are encoded as `sha256:<lowercase-hex>`.
 
-### Design Notes
+### Design constraints
 
 - Standard provider locks are session-scoped: the holding `SqlConnection` must stay open until release. Do not return that connection to arbitrary pooling code while the lock is held.
 - The session-scoped provider does **not** block inside SQL Server: every acquire attempt issues `sp_getapplock` with a zero `@LockTimeout` (one non-blocking try), so a contended acquire is paced by the provider's own retry loop at the jittered ~100ms polling cadence until the acquire timeout elapses. The loop is driven by the in-process polling release signal, which wakes a same-process waiter immediately when the holder releases; SQL Server offers no cheap cross-process release channel, so waiters in other processes are served by the polling fallback. (Server-side blocking applies only to the transaction-coupled API below, which passes a real acquire timeout to `@LockTimeout`.)
@@ -849,13 +782,13 @@ Coordinates work across nodes using SQL Server application locks, with transacti
 - SQL Server does not provide an N-holder semaphore here; use Redis semaphores or a future persistent slot-table design when N-holder concurrency is required. Because there is no semaphore here, **semaphore composites do not apply to this provider**. Mutex and reader-writer composites do.
 - A composite acquisition over N resources **pins N connections for the whole duration of the hold**, because session-scoped locks live only while their `SqlConnection` does and no TTL-backed lease can hold a resource without one. Size the connection pool for the largest composite the application forms. See [Connection-Scoped Locks](#connection-scoped-locks-database-engine).
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.DistributedLocks.SqlServer
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 builder.Services.AddHeadlessDistributedLocks(setup =>
@@ -911,14 +844,7 @@ services.AddHeadlessDistributedLocks(setup =>
 
 The default is the feature name `"locks"`, not `dbo`; the initializer creates the schema when absent. The provider validates it against SQL Server's regular-identifier rules at startup.
 
-### Dependencies
-
-- `Headless.DistributedLocks.Core.Database`
-- `Headless.DistributedLocks.Core`
-- `Headless.Hosting`
-- `Microsoft.Data.SqlClient`
-
-### Side Effects
+### Runtime behavior
 
 - Registers `IDistributedLock` as singleton.
 - Registers `IDistributedReadWriteLock` as singleton.

@@ -38,11 +38,7 @@ CAPTCHA verification (Google reCAPTCHA v2/v3, Cloudflare Turnstile) moved out of
 
 Extension library for FluentValidation providing additional validators and utilities.
 
-### Problem Solved
-
-Provides a comprehensive suite of common validators (phone numbers, national IDs, URLs, pagination) and standardized error handling, eliminating the need to rewrite common validation logic across projects.
-
-### Key Features
+### API and behavior
 
 - Phone number validation (international, country-specific, mobile-only) via `libphonenumber-csharp`
 - Egyptian National ID validation with checksum verification
@@ -56,13 +52,13 @@ Provides a comprehensive suite of common validators (phone numbers, national IDs
 - `ErrorDescriptor` integration for structured API responses
 - Automatic camelCase property path normalization
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.FluentValidation
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 using FluentValidation;
@@ -79,7 +75,7 @@ public sealed class UserValidator : AbstractValidator<User>
 }
 ```
 
-### Quick Start
+### Setup and use
 
 #### Phone Number Validation
 
@@ -129,13 +125,7 @@ var errors = result.Errors.ToErrorDescriptors(); // IReadOnlyDictionary<string, 
 
 No configuration required.
 
-### Dependencies
-
-- `FluentValidation`
-- `libphonenumber-csharp`
-- `Headless.Extensions`
-
-### Side Effects
+### Runtime behavior
 
 None.
 ---
@@ -143,11 +133,7 @@ None.
 
 Roslyn source generator for creating strongly-typed domain primitives.
 
-### Problem Solved
-
-Automatically generates boilerplate code for domain primitives including constructors, equality, comparison, JSON serialization, Entity Framework value converters, TypeConverters, and OpenAPI schema mappings.
-
-### Key Features
+### API and behavior
 
 - Roslyn incremental source generator
 - Emits unique `HF1000`-series diagnostics for invalid primitive declarations; legacy `AL` diagnostic IDs are no longer emitted.
@@ -161,7 +147,7 @@ Automatically generates boilerplate code for domain primitives including constru
   - Dapper type handlers
   - NSwag/Swashbuckle schema mappings
 
-### Design Notes
+### Design constraints
 
 Primitive generator diagnostics use the framework-wide `HF` prefix. Existing suppressions for legacy `AL` IDs must move to the corresponding `HF` ID. The former duplicate `AL1012` is split: date-format validation uses `HF1012`, while numeric-operation validation uses `HF1013`.
 
@@ -178,13 +164,13 @@ Primitive generator diagnostics use the framework-wide `HF` prefix. Existing sup
 | `HF1016` | Warning | A primitive wrapping a reference type should be a reference type. |
 | `HF1021` | Warning | Primitive validation throws an incompatible exception type. |
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Generator.Primitives
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 // Define your primitive
@@ -229,12 +215,7 @@ modelBuilder.Entity<User>().Property(u => u.Email).HasConversion<EmailValueConve
 </PropertyGroup>
 ```
 
-### Dependencies
-
-- `Headless.Generator.Primitives.Abstractions`
-- `Microsoft.CodeAnalysis.CSharp` (compile-time only)
-
-### Side Effects
+### Runtime behavior
 
 - Generates source files at compile time
 - No runtime dependencies added
@@ -243,11 +224,7 @@ modelBuilder.Entity<User>().Property(u => u.Email).HasConversion<EmailValueConve
 
 Abstractions and attributes for the domain primitives source generator.
 
-### Problem Solved
-
-Provides the runtime contracts and attributes needed to define strongly-typed domain primitives that work with the source generator, ensuring type safety and domain constraints at compile time.
-
-### Key Features
+### API and behavior
 
 - `IPrimitive<T>` - Core interface for domain primitives
 - `PrimitiveValidationResult` - Validation result model
@@ -258,13 +235,13 @@ Provides the runtime contracts and attributes needed to define strongly-typed do
   - `UnderlyingPrimitiveTypeAttribute` - Specify underlying type
 - Helper extensions for DateOnly, XML serialization
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Generator.Primitives.Abstractions
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 using Headless.Generator.Primitives;
@@ -301,11 +278,7 @@ public readonly partial struct Quantity : IPrimitive<int>
 
 No configuration required. This is an abstractions-only package.
 
-### Dependencies
-
-None.
-
-### Side Effects
+### Runtime behavior
 
 None.
 ---
@@ -313,11 +286,7 @@ None.
 
 Core hosting utilities and extensions for ASP.NET Core applications.
 
-### Problem Solved
-
-Provides essential DI extensions, configuration helpers, options validation, and seeder infrastructure to reduce boilerplate in application startup and configuration.
-
-### Key Features
+### API and behavior
 
 - DI extensions: `AddIf`, `AddIfElse`, `AddOrReplace*`, `Unregister<T>`
 - Required-service declarations (`RequireRegisteredService<T>`) that fail the host at startup instead of at first use
@@ -329,13 +298,13 @@ Provides essential DI extensions, configuration helpers, options validation, and
 - Hosted service management
 - Background startup processes can expose readiness signals so dependent flows can wait for initialization completion.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Hosting
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -353,7 +322,7 @@ builder.Services.Configure<MyOptions, MyOptionsValidator>(builder.Configuration.
 builder.Services.AddOrReplaceSingleton<IMyService, BetterMyService>();
 ```
 
-### Quick Start
+### Setup and use
 
 #### Conditional Service Registration
 
@@ -422,13 +391,7 @@ services.RequireRegisteredService<ICache<SettingValueCacheItem>>(
 
 No configuration required.
 
-### Dependencies
-
-- `Headless.FluentValidation`
-- `Microsoft.Extensions.Hosting`
-- `Microsoft.Extensions.Options`
-
-### Side Effects
+### Runtime behavior
 
 None directly. Utilities for managing service registration.
 ---
@@ -436,11 +399,7 @@ None directly. Utilities for managing service registration.
 
 NetTopologySuite extensions for geospatial operations and SQL Server geography compatibility.
 
-### Problem Solved
-
-Provides geometry manipulation utilities, precision handling, and SQL Server geography sanitization, solving common issues with geometry validity, coordinate orientation, and precision when working with geospatial data.
-
-### Key Features
+### API and behavior
 
 - Geometry precision reduction and management
 - Permissive geometry operations (intersection, union, difference)
@@ -451,13 +410,13 @@ Provides geometry manipulation utilities, precision handling, and SQL Server geo
 - Feature collection conversion
 - Collision-resistant `HeadlessGeometryExtensions` holder in the `NetTopologySuite.Geometries` namespace; ordinary extension-call syntax remains unchanged
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.NetTopologySuite
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 using Headless.NetTopologySuite.Constants;
@@ -490,7 +449,7 @@ Extension-call syntax is unchanged after the holder rename. Code that referenced
 var sanitized = HeadlessGeometryExtensions.SanitizeForSqlGeography(polygon);
 ```
 
-### Quick Start
+### Setup and use
 
 #### Permissive Operations
 
@@ -510,13 +469,7 @@ var fixed = polygon.EnsureIsOrientedCounterClockwise();
 
 No configuration required.
 
-### Dependencies
-
-- `NetTopologySuite`
-- `NetTopologySuite.IO.GeoJSON4STJ`
-- `Headless.Extensions`
-
-### Side Effects
+### Runtime behavior
 
 None.
 ---
@@ -524,30 +477,26 @@ None.
 
 Redis utilities and Lua script management for StackExchange.Redis.
 
-### Problem Solved
-
-Provides Redis helper extensions plus definition-first Lua script loading/execution for StackExchange.Redis. Scripts are loaded on demand by default; provider packages can warm their own script bundles through hosted initializers.
-
-### Key Features
+### API and behavior
 
 - `HeadlessConnectionMultiplexerExtensions` - Helper extensions for Redis connections; `CountAllKeysAsync` accepts an optional trailing `CancellationToken`, checks it before endpoint discovery and between endpoint queries, and cannot interrupt an in-flight `DBSIZE` because StackExchange.Redis exposes no cancellation for that command
 - `RedisScriptDefinition` - Base type for named Lua script definitions
 - `HeadlessRedisScriptsLoader` - Generic Lua script loader and evaluator
 - Repository integration tests retain an internal destructive `FlushAllAsync` helper; it is not part of the package's supported public API
 
-#### Design Notes
+#### Design constraints
 
 `Headless.Redis` owns script definitions and generic loading only. Provider packages own script grouping, hosted warmup, typed parameters, and result decoding so consumers load only the script definitions they need.
 
 Each concrete `RedisScriptDefinition` type is a singleton contract. Reuse the exposed `Instance` member; the loader rejects multiple instances of the same concrete type because it caches loaded scripts by definition type.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Redis
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -558,7 +507,7 @@ var scriptsLoader = new HeadlessRedisScriptsLoader(redis);
 await scriptsLoader.LoadAsync([IncrementWithExpireScriptDefinition.Instance]);
 ```
 
-### Quick Start
+### Setup and use
 
 #### Script Execution
 
@@ -580,11 +529,7 @@ var result = await scriptsLoader.EvaluateAsync(
 
 No configuration required.
 
-### Dependencies
-
-- `StackExchange.Redis`
-
-### Side Effects
+### Runtime behavior
 
 None.
 ---
@@ -592,11 +537,7 @@ None.
 
 XML sitemap generation utilities for SEO.
 
-### Problem Solved
-
-Provides builders and models for generating XML sitemaps and sitemap indexes compliant with the sitemap protocol, supporting localized URLs, images, change frequency, and priority metadata.
-
-### Key Features
+### API and behavior
 
 - `SitemapUrl` - URL entry with metadata (lastmod, changefreq, priority)
 - `SitemapUrlOptions` - Optional metadata passed to either `SitemapUrl` constructor instead of separate optional constructor parameters
@@ -606,13 +547,13 @@ Provides builders and models for generating XML sitemaps and sitemap indexes com
 - `SitemapImage` - Image sitemap support
 - `ChangeFrequency` - Standard frequency values (always, hourly, daily, weekly, etc.)
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Sitemaps
 ```
 
-### Quick Start
+### Setup and use
 
 #### Basic Sitemap
 
@@ -678,11 +619,7 @@ await references.WriteToAsync(stream);
 
 No configuration required.
 
-### Dependencies
-
-- Headless.Extensions
-
-### Side Effects
+### Runtime behavior
 
 None.
 ---
@@ -690,11 +627,7 @@ None.
 
 URL-friendly slug generation from text.
 
-### Problem Solved
-
-Converts arbitrary text into URL-safe slugs with proper Unicode normalization, configurable separators, character replacements, and length limits for SEO-friendly URLs.
-
-### Key Features
+### API and behavior
 
 - `Slug.Create()` - Static slug generation method
 - Unicode normalization (NFC/NFD)
@@ -704,13 +637,13 @@ Converts arbitrary text into URL-safe slugs with proper Unicode normalization, c
 - Case transformation options
 - Handles non-ASCII characters properly
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Slugs
 ```
 
-### Quick Start
+### Setup and use
 
 #### Basic Usage
 
@@ -769,10 +702,6 @@ var options = new SlugOptions
 };
 ```
 
-### Dependencies
-
-None.
-
-### Side Effects
+### Runtime behavior
 
 None.

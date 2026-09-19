@@ -2,58 +2,17 @@
 
 NSwag operation filter that injects OData query parameters into the OpenAPI spec for endpoints that support OData queries.
 
-## Problem Solved
+## Why use this package
 
 When ASP.NET Core OData endpoints accept `ODataQueryOptions` or carry `[EnableQuery]`, NSwag does not automatically document the OData query string parameters. This package detects those endpoints and injects the seven standard OData parameters into their OpenAPI operation objects.
 
-## Key Features
-
-- `ODataOperationProcessor : IOperationProcessor` — detects endpoints via `ODataQueryOptions` parameter type or `[EnableQuery]` attribute and injects seven OData parameters: `$select`, `$expand`, `$filter`, `$search`, `$top`, `$skip`, `$orderby`
-- The raw `ODataQueryOptions` parameter is removed from the operation so it does not appear as an undocumented parameter alongside the injected ones
-- Detection works on both the method and the declaring controller type for `[EnableQuery]`
-
-## Installation
+## Install
 
 ```bash
 dotnet add package Headless.OpenApi.Nswag.OData
 ```
 
-## Quick Start
+## Documentation
 
-```csharp
-builder.Services.AddNswagOpenApi(
-    setupHeadlessAction: null,
-    setupGeneratorActions: settings =>
-    {
-        settings.OperationProcessors.Add(new ODataOperationProcessor());
-    }
-);
-```
-
-With access to the service provider:
-
-```csharp
-builder.Services.AddNswagOpenApi(
-    setupHeadlessAction: options =>
-    {
-        options.AddBearerSecurity = true;
-    },
-    setupGeneratorActions: (settings, serviceProvider) =>
-    {
-        settings.OperationProcessors.Add(new ODataOperationProcessor());
-    }
-);
-```
-
-## Configuration
-
-None.
-
-## Dependencies
-
-- `Headless.OpenApi.Nswag`
-- `Microsoft.AspNetCore.OData`
-
-## Side Effects
-
-None. `ODataOperationProcessor` is instantiated and registered manually inside `setupGeneratorActions`; no DI registrations are made.
+- [Headless Framework](https://github.com/xshaheen/headless-framework#readme)
+- [OpenAPI guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/openapi.md#headlessopenapinswagodata)

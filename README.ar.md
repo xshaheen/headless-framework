@@ -241,7 +241,7 @@ Headless.<Feature>.Testing       -> test helpers, where the domain has them
 - الـ in-memory والـ dev providers للتطوير والـ tests والـ demos المعزولة.
 - استخدم named instances لو الخدمة بتتعامل مع أكتر من store أو أكتر من sender.
 - خلّي الـ configuration بتاعة الـ provider في الـ composition root، ومتسرّبش أنواعه لكود الـ business، إلا لو الـ option بيعرض نوع من الـ SDK عن قصد.
-- اقرا الـ README بتاع كل package بتركّبها. كل واحدة بتوضّح الـ dependencies والـ side effects ومتطلبات الـ setup وحدود الـ provider.
+- اقرا domain guide المناسبة في [`docs/llms/`](docs/llms/) عشان الـ setup والـ runtime effects وحدود الـ provider. الـ package READMEs مداخل قصيرة على NuGet وبتوصّل للـ guide الأساسية.
 - اختبر بنفس مجموعة الـ providers اللي هتشغّلها في الـ production، طول ما السلوك بيعتمد على الـ storage أو الـ transactions أو الـ locks أو الـ ordering أو تسليم الـ broker أو خصائص خدمة cloud.
 
 ## الإصدارات والتوافق
@@ -256,7 +256,7 @@ Headless.<Feature>.Testing       -> test helpers, where the domain has them
 
 ## استخدام Headless مع وكلاء الـ AI
 
-ضيف المقطع دا في `AGENTS.md` أو `CLAUDE.md` عشان الـ coding agents تجيب الـ docs الصح بدل ما تخمّن الـ API:
+ضيف المقطع دا في root `AGENTS.md` أو `CLAUDE.md` اللي الـ coding agent بيحمّله:
 
 </div>
 
@@ -265,15 +265,19 @@ Headless.<Feature>.Testing       -> test helpers, where the domain has them
 
 This project uses [Headless .NET Framework](https://github.com/xshaheen/headless-framework).
 
-When working with Headless packages, fetch the docs index:
-https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/index.md
+For any task touching a `Headless.*` package or `Headless.NET.Sdk*` SDK:
 
-The index lists per-domain docs to fetch as needed.
+1. Resolve the exact package IDs and versions used by this project.
+2. Before planning, editing, or reviewing, read the [Headless agent-docs index](https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/index.md).
+3. Use the index as a router: load every affected domain guide, resolve its links relative to the index URL, and follow its `Agent Rules`.
+4. Match the docs to the installed version by replacing `main` in their URLs with the corresponding Git tag. If no matching docs ref exists, inspect the installed package and report the mismatch.
+
+Package READMEs are discovery pages. Verify APIs against installed packages; do not guess them from memory.
 ```
 
 <div dir="rtl" align="right">
 
-الـ index فيه الـ rules بتاعة الـ framework للـ agents، وlinks لتوثيق كل domain تحت [`docs/llms/`](docs/llms/).
+المقطع المنسوخ صغير لأنه router بس. الـ index هو اللي بيملك rules الـ framework العامة والـ links للـ canonical domain guides تحت [`docs/llms/`](docs/llms/).
 
 ## توسيع Headless
 
@@ -675,6 +679,6 @@ Base classes وbuilders وfixtures وتكامل Testcontainers لـ integration 
 
 ## المساهمة
 
-المساهمات مرحّب بيها: issues، أو feature requests، أو pull requests. اقرا الأول الـ README بتاع الـ package اللي بتشتغل عليها؛ كل واحدة بتوضّح الـ dependencies والـ side effects وحدود الـ provider.
+المساهمات مرحّب بيها: issues، أو feature requests، أو pull requests. قبل ما تغيّر public behavior، اقرا domain guide الأساسية للـ package في [`docs/llms/`](docs/llms/)؛ والـ package README فيها link مباشر للـ guide.
 
 </div>

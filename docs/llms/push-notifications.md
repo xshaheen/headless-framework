@@ -106,11 +106,7 @@ The `Unregistered` state is not a failure in the FCM model — it is a signal to
 
 Defines the unified interface and contract types for push notification services.
 
-### Problem Solved
-
-Provides a provider-agnostic push notification API so application code never depends on a specific backend. Switching from the dev no-op to Firebase for production requires only a DI registration change.
-
-### Key Features
+### API and behavior
 
 - `IPushNotificationService` — core sending interface:
   - `SendToDeviceAsync(clientToken, request, ct)` — single-device delivery
@@ -121,13 +117,13 @@ Provides a provider-agnostic push notification API so application code never dep
 - `PushNotificationResponseStatus` enum — `Success`, `Failure`, `Unregistered`
 - `BatchPushNotificationResponse` — multicast aggregate: `SuccessCount`, `FailureCount`, `Responses` (one per token)
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.PushNotifications.Abstractions
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 public sealed class NotificationService(IPushNotificationService pushService, ILogger<NotificationService> logger)
@@ -182,11 +178,7 @@ To route to a named instance, take a dependency on `IPushNotificationServiceProv
 
 None. This is an abstractions-only package.
 
-### Dependencies
-
-- `Headless.Checks`
-
-### Side Effects
+### Runtime behavior
 
 None. This package defines only interfaces and contracts.
 ---
@@ -194,28 +186,24 @@ None. This package defines only interfaces and contracts.
 
 Setup builder, registration gates, and the named-service provider for the push-notifications abstraction.
 
-### Problem Solved
-
-Owns the unified push-notifications setup builder (`AddHeadlessPushNotifications`) and the `IPushNotificationServiceProvider` implementation, giving every provider one registration grammar (a default slot plus named instances over keyed DI) instead of each package hand-rolling its own `IServiceCollection` extension.
-
-### Key Features
+### API and behavior
 
 - `AddHeadlessPushNotifications(Action<HeadlessPushNotificationsSetupBuilder>)` — the single provider-agnostic registration entry point, with an at-most-one-default-provider gate and a once-per-collection guard.
 - `HeadlessPushNotificationsSetupBuilder` — receives the optional default `Use*` selection plus `AddNamed(name, …)` named instances; `HeadlessPushNotificationsInstanceBuilder` — the per-named-instance builder that providers extend with their `Use*` members.
 - `IPushNotificationServiceProvider` — registered automatically by the gate (keyed-service-backed via `KeyedServicePushNotificationServiceProvider`); resolves named services by name and exposes `RegisteredNames` (the registered named instances, default excluded) for validating a name before resolving.
 - Deferred registration: provider contributions are queued and run only after the gates pass — the default first, then each named instance — so a setup that fails a gate leaves the `IServiceCollection` unchanged.
 
-### Design Notes
+### Design constraints
 
 The builder carries no shared, cross-provider feature options — it is provider-selection-only; each provider binds its own options inside its `Use*` member. The gate is **per-slot**: it allows at most one default provider (rejecting a second, but permitting zero for a named-only host) while allowing unbounded ordinal-unique named instances, and rejects a repeated `AddHeadlessPushNotifications` on the same `IServiceCollection` (a marker service enforces the single-call rule). Providers contribute deferred `Action<IServiceCollection>` registrations (`RegisterDefaultProvider` for the default, `instance.RegisterProvider` for a named instance) rather than implementing a provider interface, keeping the default and named paths symmetric. `IPushNotificationServiceProvider` resolves only named (keyed) services — the default service, when configured, is the unkeyed `IPushNotificationService`, reachable directly and never by name — and `IPushNotificationServiceProvider.RegisteredNames` enumerates the named instances.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.PushNotifications.Core
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 // Provider-agnostic registration entry point (a provider package supplies the Use* member):
@@ -233,13 +221,7 @@ var driver = serviceProvider.GetRequiredService<IPushNotificationServiceProvider
 
 No configuration required.
 
-### Dependencies
-
-- `Headless.PushNotifications.Abstractions`
-- `Headless.Checks`
-- `Microsoft.Extensions.DependencyInjection.Abstractions`
-
-### Side Effects
+### Runtime behavior
 
 `AddHeadlessPushNotifications` registers a provider-registration marker and `IPushNotificationServiceProvider` (keyed-service-backed), then runs the default provider's wiring (the unkeyed `IPushNotificationService`) when a default is configured, followed by each named instance's wiring (keyed under the instance name). The marker enforces the single-call rule.
 ---
@@ -247,11 +229,7 @@ No configuration required.
 
 No-op push notification provider for local development and testing.
 
-### Problem Solved
-
-Prevents real notifications from being sent during development or test runs. Uses the same `IPushNotificationService` interface as production so no application code changes are needed when switching environments.
-
-### Key Features
+### API and behavior
 
 - Silent `IPushNotificationService` implementation (`NoopPushNotificationService`)
 - No network calls or external dependencies
@@ -259,13 +237,13 @@ Prevents real notifications from being sent during development or test runs. Use
 - Never validates input or throws (inert for any caller, including invalid tokens or empty titles)
 - Selectable as the default (`setup.UseNoop()`) or as a named instance (`setup.AddNamed("name", i => i.UseNoop())`)
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.PushNotifications.Dev
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -286,11 +264,7 @@ else
 
 None. No options or configuration keys.
 
-### Dependencies
-
-- `Headless.PushNotifications.Core`
-
-### Side Effects
+### Runtime behavior
 
 - Registers `IPushNotificationService` as singleton (`NoopPushNotificationService`) for the default, or a keyed singleton under the instance name for a named instance
 ---
@@ -298,11 +272,7 @@ None. No options or configuration keys.
 
 Firebase Cloud Messaging (FCM) implementation of `IPushNotificationService` for production push notifications.
 
-### Problem Solved
-
-Delivers push notifications to Android (FCM), iOS (via FCM-to-APNs bridge), and Web clients using the FCM v1 API. Handles multicast batching, transient-error retry with exponential backoff, and per-token outcome mapping behind the `IPushNotificationService` interface.
-
-### Key Features
+### API and behavior
 
 - FCM-backed `IPushNotificationService` implementation (`FcmPushNotificationService`)
 - Selectable as the default (`setup.UseFirebase(…)`) or as a named instance (`setup.AddNamed("name", i => i.UseFirebase(…))`), each isolating its own options, retry pipeline, and `FirebaseApp`
@@ -315,7 +285,7 @@ Delivers push notifications to Android (FCM), iOS (via FCM-to-APNs bridge), and 
 - Structured logging and OpenTelemetry Activity events on retry
 - Options validated at startup via FluentValidation
 
-### Design Notes
+### Design constraints
 
 The Firebase Admin SDK `FirebaseApp` is created **lazily on the first send**, not at DI registration time. This means:
 - Registration has no observable side effects (no credentials are loaded, no HTTP calls are made).
@@ -326,13 +296,13 @@ Each named instance reads its own options snapshot (`IOptionsMonitor<FirebaseOpt
 
 Android messages are sent with `Priority.High`; iOS messages include an APNs badge count of 1. These are hardcoded defaults — the `data` payload provides the only customization surface exposed by this abstraction.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.PushNotifications.Firebase
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -452,15 +422,7 @@ builder.Services.AddHeadlessPushNotifications(setup =>
 - Jitter: ±25% (when `UseJitter = true`)
 - Retry pipeline key: `"Headless:FcmRetry"` for the default, `"Headless:FcmRetry:{name}"` per named instance (registered via Polly's `AddResiliencePipeline`)
 
-### Dependencies
-
-- `Headless.PushNotifications.Core`
-- `Headless.Hosting`
-- `FirebaseAdmin`
-- `Microsoft.Extensions.Http.Resilience`
-- `Polly.Core`
-
-### Side Effects
+### Runtime behavior
 
 - Registers `IPushNotificationService` as singleton (`FcmPushNotificationService`) for the default, or a keyed singleton under the instance name for a named instance
 - Registers a `ResiliencePipeline` named `"Headless:FcmRetry"` (default) or `"Headless:FcmRetry:{name}"` (per named instance) via Polly

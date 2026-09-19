@@ -291,7 +291,7 @@ To swap providers, change one line (`setup.UseSqlServer(...)`); nothing else mov
 - [Messaging keyed-DI lock isolation](messaging-keyed-di-lock-isolation.md) — `TryAdd*` shadowing trap applies to multi-feature storage hosts and to captcha's per-provider HttpClient/language-provider keying
 - [Named-instance keyed-provider registration](named-instance-keyed-provider-registration.md) — the per-instance implementation recipe (named-options + keyed-factory + per-instance dependencies) layered on this builder contract; used by Blobs
 - [HTTP-stub cross-provider conformance harness](../best-practices/http-stub-conformance-harness.md) — how the per-slot captcha providers are conformance-tested without a reachable backend
-- [Transport wrapper drift and doc sync](../messaging/transport-wrapper-drift-and-doc-sync.md) — greenfield rename rationale and the per-package README sync chore that follows refactors of this shape
+- [Transport wrapper drift and doc sync](../messaging/transport-wrapper-drift-and-doc-sync.md) — greenfield rename rationale and the canonical domain-guide update that follows refactors of this shape
 - Source-of-truth brainstorm and plan (on branch `xshaheen/refactor-storage-initialization-unification`):
   - `docs/brainstorms/2026-05-24-storage-initialization-unification-requirements.md`
   - `docs/plans/2026-05-24-001-refactor-storage-initialization-unification-plan.md`

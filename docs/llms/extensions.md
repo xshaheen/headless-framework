@@ -70,11 +70,7 @@ The package builds on `TimeProvider` so time is injectable and testable. `FixedT
 
 The framework's base utility library: extension methods, domain primitives, value objects, the result pattern, and common helpers referenced by nearly every other `Headless.*` package.
 
-### Problem Solved
-
-Eliminates repetitive utility code — result/error modeling, strongly-typed domain values, parallel and keyed-async helpers, stream and file IO, reflection, validation, and a large catalog of constants — by providing one battle-tested, dependency-light base library so each downstream package does not re-implement the same primitives.
-
-### Key Features
+### API and behavior
 
 - **Result pattern** — `ApiResult` / `ApiResult<T>` with built-in error factories (`NotFound`, `Conflict`, `ValidationFailed`, `Forbidden`, `Unauthorized`); `Result<TValue, TError>` / `Result<TError>` for custom error types; the `ApiResultError` record hierarchy (`NotFoundError`, `UnauthorizedError`, `ForbiddenError`, `ConflictError`, `ValidationError`, `AggregateError`); `ErrorDescriptor` for structured, severity-tagged API errors; `Match`/`Map`/`Bind` combinators with `…Async` overloads.
 - **Domain primitives** (source-generated, with JSON + TypeConverter support) — `UserId`, `AccountId`, `MoneyAmount` (decimal amount, banker's rounding), `Month` (1–12), `PhoneNumber` (libphonenumber-backed, digits-only canonicalization).
@@ -91,7 +87,7 @@ Eliminates repetitive utility code — result/error modeling, strongly-typed dom
 - **Time** — `FixedTimezoneTimeProvider`, `ChangeableTimezoneTimeProvider`, and date/time/number/string extension methods on BCL types.
 - **Claims, HTTP, text, misc.** — `HeadlessClaimsPrincipalExtensions` (claim read/write), `BasicAuthenticationValue`, `HeadlessHttpStatusCodeExtensions`, `LookupNormalizer`, `IgnoreCaseStringComparer`, `DebounceExtensions`, `IpAddressHelper`, `XmlHelper` (XXE-safe XML well-formedness checks — `IsValidXml` / `IsValidXmlAsync` — plus encode/decode), `DisposableFactory` (callback disposables; state-taking `Create<TState>(state, static s => …)` overloads for allocation-sensitive paths), `OsHelper`.
 
-### Design Notes
+### Design constraints
 
 - **`Money` scaling is scalar-only.** `operator *` and `operator /` take a `decimal` factor and round the result to 2 decimal places with `MidpointRounding.ToEven`; there is no `Money × Money` multiply. `operator +` / `operator -` require matching currency codes and throw otherwise. Comparison operators exist against both `Money` and `decimal`, and `Money` is a total order (mixed-code lists sort by code then amount). This shape prevents the nonsensical "money squared" result and keeps rounding centralized.
 - **`Money` ≠ `MoneyAmount`.** `MoneyAmount` is a source-generated `IPrimitive<decimal>` with no currency code; `GetRounded()` rounds to 2 dp using banker's rounding. Use `Money` when an amount must travel with its code. Do not treat `MoneyAmount` as currency-aware.
@@ -110,13 +106,13 @@ Eliminates repetitive utility code — result/error modeling, strongly-typed dom
 - **`EgyptianNationalIdValidator` decodes the century digit and validates a real date.** The leading digit maps `2 → 1900s`, `3 → 2000s` (any other value fails), and the extracted year/month/day are validated through `DateOnly` so impossible dates (e.g. 30 February) are rejected; the governorate code maps through an ordinal `FrozenDictionary`.
 - **`XmlHelper` parses with an XXE-hardened reader.** `IsValidXml` / `IsValidXmlAsync` (both a `string` and a `Stream` overload) validate well-formedness through a shared `XmlReaderSettings` with `DtdProcessing.Ignore` and `XmlResolver = null`, so inline DTDs are skipped and entity-expansion (billion-laughs) and external-entity (XXE) payloads are never processed. Malformed input returns `false` rather than throwing, so the check is safe on untrusted input.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Extensions
 ```
 
-### Quick Start
+### Setup and use
 
 #### Result pattern
 
@@ -228,26 +224,7 @@ if (EgyptianNationalIdValidator.IsValid("29901011234567")
 
 None. This package has no options and no DI registration; reference its types and call its extension methods directly.
 
-### Dependencies
-
-- `Headless.Checks`
-- `Headless.Primitives` (re-exported; see its section below)
-- `Headless.Urls` (re-exported; see its section below)
-- `Headless.Generator.Primitives` (source generator; analyzer-only)
-- `Headless.Generator.Primitives.Abstractions`
-- `CommunityToolkit.HighPerformance`
-- `Humanizer.Core`
-- `libphonenumber-csharp`
-- `Microsoft.Bcl.TimeProvider`
-- `MimeTypes` (build-time content; backs `MimeTypeProvider`)
-- `morelinq`
-- `Nito.AsyncEx`
-- `Nito.Disposables`
-- `Polly.Core`
-- `System.Reactive`
-- `TimeZoneConverter`
-
-### Side Effects
+### Runtime behavior
 
 None. No DI registrations, hosted services, or process-level effects — it is a pure utility library.
 
@@ -255,11 +232,7 @@ None. No DI registrations, hosted services, or process-level effects — it is a
 
 ## Headless.Primitives
 
-### Problem Solved
-
-Domain code that passes raw `Guid`, `decimal`, or `(double, double)`, or throws-and-catches for expected failures, loses intent and permits invalid states. `Headless.Primitives` supplies the framework's shared value model: a result pattern for expected failures, validated value objects that cannot hold invalid data, and consistent paging and error shapes.
-
-### Key Features
+### API and behavior
 
 - Result pattern: `ApiResult`, `ApiResult<T>`, `Result<TValue, TError>`, `Result<TError>`, the `ApiResultError` hierarchy, `ErrorDescriptor`, `ApiResultErrorBuilder`.
 - Source-generated domain primitives: `UserId`, `AccountId`, `MoneyAmount`, `Month`, `PhoneNumber` (implement `IPrimitive<T>`).
@@ -267,17 +240,17 @@ Domain code that passes raw `Guid`, `decimal`, or `(double, double)`, or throws-
 - Paging: `IndexPage<T>`, `IndexPageRequest`, `ContinuationPage<T>`, `ContinuationPageRequest`, `PageMetadata`, `OrderBy`, `IHasOrderByRequest` / `IHasMultiOrderByRequest`.
 - Misc: `ExtraProperties` / `IHasExtraProperties`, `Locales` / `LocaleAttribute`, `AsyncEvent<T>`, `NameValue` / `NameValue<T>`, `File` / `Image`, `TenantInformation`.
 
-### Design Notes
+### Design constraints
 
 Split out of `Headless.Extensions` so a consumer can depend on the value model without the full base library; `Headless.Extensions` keeps a `ProjectReference`, so these types stay transitively available. The built-in result factories preserve exception-path data: conflict accepts one or many `ErrorDescriptor` values, authorization accepts descriptors, not-found accepts string/Guid/int/long keys, and validation accepts a field-keyed descriptor map. `ErrorDescriptor` accepts one or more `(Key, Value)` tuples or a `ReadOnlySpan<(string Key, object? Value)>`, pre-sizes a case-insensitive parameter bag, and snapshots the input. Direct tuples use `params ReadOnlySpan<...>`, allowing the compiler to avoid a temporary parameter array; use `WithParam` for incrementally discovered values. String-only validation uses `ApiResultErrorCodes.ValidationFailed`, and error collections are snapshotted. A default `ApiResult` / `ApiResult<T>` is uninitialized (neither success nor failure); try-accessors return false and branch operations throw. `OrderBy(string Property, bool Ascending = true)` defaults to **ascending**. The `…Async` `Map`/`Bind`/`Match` combinators include cancellation-aware overloads whose delegates receive the caller's token.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Primitives
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 using Headless.Primitives;
@@ -311,14 +284,7 @@ var descending = new OrderBy("CreatedAt", Ascending: false);
 
 None. Types are constructed directly; no DI registration or options.
 
-### Dependencies
-
-- `Headless.Checks`
-- `Headless.Generator.Primitives.Abstractions`
-- `Headless.Generator.Primitives` (source generator; analyzer-only)
-- `libphonenumber-csharp`
-
-### Side Effects
+### Runtime behavior
 
 None. No DI registrations or ambient state.
 
@@ -326,28 +292,24 @@ None. No DI registrations or ambient state.
 
 ## Headless.Urls
 
-### Problem Solved
-
-Assembling and editing URLs with string concatenation is error-prone — double slashes, missing encoding, duplicated query parameters, fragile parsing. `Headless.Urls` provides a mutable `Url` builder and an ordered, multi-value `QueryParamCollection` that compose and edit path segments, query parameters, and fragments without hand-rolled encoding.
-
-### Key Features
+### API and behavior
 
 - `Url` mutable builder with `Scheme` / `Host` / `Path` / `Query` / `Fragment` accessors.
 - `Url.Parse` / `Url.ParseQueryParams` / `Url.ParsePathSegments` parsing entry points.
 - `AppendPathSegment(s)`, `SetQueryParam` / `AppendQueryParam` / `RemoveQueryParam` with `NullValueHandling` control.
 - `QueryParamCollection` — ordered, duplicate-preserving query-parameter store.
 
-### Design Notes
+### Design constraints
 
 Derived from [Flurl](https://github.com/tmenier/Flurl)'s `Flurl.Url` API (MIT); attributed in the package's `THIRD-PARTY-NOTICES.md`. Packaged separately from `Headless.Extensions` so URL-only consumers do not pull the base library. `NullValueHandling` has explicit backing values (`NameOnly = 0`, `Remove = 1`, `Ignore = 2`) that must not be reordered.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Urls
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 using Headless.Urls;
@@ -365,10 +327,6 @@ string result = url.ToString();
 
 None. `Url` is constructed directly; no DI registration or options.
 
-### Dependencies
-
-- `Headless.Checks`
-
-### Side Effects
+### Runtime behavior
 
 None. Pure value/builder types with no DI registration or ambient state.

@@ -2,125 +2,17 @@
 
 Framework integration for ASP.NET Core MVC/Web API with controllers, filters, JSON configuration, and common utilities.
 
-## Problem Solved
+## Why use this package
 
 Provides consistent MVC configuration, base controllers, and URL canonicalization for traditional controller-based APIs. Exception-to-ProblemDetails mapping is handled globally by `Headless.Api.Core`'s `HeadlessApiExceptionHandler` (registered via `AddHeadlessProblemDetails()`), so MVC actions get the same response shape as Minimal-API endpoints.
 
-## Key Features
-
-- `ApiControllerBase` - Base controller with common utilities
-- Environment-based action filters (`BlockInEnvironmentAttribute`, `RequireEnvironmentAttribute`)
-- URL canonicalization middleware (`RedirectToCanonicalUrlRule`, registered via `UseRedirectToCanonicalUrl()`)
-- Pre-configured JSON and MVC options
-- Direct MVC `ObjectResult` responses carrying Headless-normalized `ProblemDetails` run `ProblemDetailsOptions.CustomizeProblemDetails` once before serialization
-- `ApiResult<T>.ToActionResult(...)` / `ApiResult.ToActionResult(...)` — maps expected failures to the same
-  ProblemDetails shapes as `HeadlessApiExceptionHandler`
-- API versioning integration with API Explorer
-- Opt-in strong ETag responses and `If-Match` request validation
-
-## Installation
+## Install
 
 ```bash
 dotnet add package Headless.Api.Mvc
 ```
 
-## Quick Start
+## Documentation
 
-```csharp
-var builder = WebApplication.CreateBuilder(args);
-
-builder.AddHeadless().ConfigureMvc();
-builder.Services.AddControllers();
-builder.Services.AddHeadlessMvcEntityTagConcurrency();
-
-var app = builder.Build();
-
-app.MapControllers();
-app.Run();
-```
-
-### Controller Example
-
-```csharp
-[ApiController]
-[Route("api/[controller]")]
-public sealed class OrdersController(IOrderService service, IProblemDetailsCreator problems) : ControllerBase
-{
-    [HttpGet("{id:int}")]
-    public async Task<ActionResult<Order>> GetAsync(int id, CancellationToken ct)
-    {
-        var result = await service.GetAsync(id, ct).ConfigureAwait(false);
-        return result.ToActionResult(this, problems);
-    }
-}
-```
-
-### ETag concurrency
-
-`AddHeadlessMvcEntityTagConcurrency()` adds an `ETag` response field when a successful MVC `ObjectResult` implements `IHasEntityTag`. Mark a write action with `[RequireIfMatch]` to require exactly one strong entity tag. The parsed value is available through scoped `IIfMatchContext`.
-
-```csharp
-[HttpPut("{id:guid}")]
-[RequireIfMatch]
-public Task<OrderDto> Update(
-    Guid id,
-    UpdateOrder request,
-    [FromServices] IIfMatchContext ifMatch,
-    CancellationToken ct
-) => service.Update(id, request, ifMatch.EntityTag!, ct);
-```
-
-Missing preconditions return 428 with `g:if_match_required`; malformed, weak, wildcard, or multiple tags return 400 with `g:if_match_invalid`. EF concurrency failures continue to return 409 with `g:concurrency_failure`.
-
-If every conditional write in the API uses a specific representation format, configure one validator instead of adding another MVC filter:
-
-```csharp
-builder.Services.AddHeadlessMvcEntityTagConcurrency(options =>
-    options.IfMatchValidator = static tag => tag.TryGetUInt32(out _)
-);
-```
-
-The same option is available from `AddHeadlessMinimalApiEntityTagConcurrency(...)`.
-
-`EntityTag` identifies the HTTP representation rather than the database row. Keep the persistence version provider-native—`uint` mapped to PostgreSQL `xmin`, or `byte[]` mapped to SQL Server `rowversion`—then use `EntityTag.FromUInt32(...)` or `EntityTag.FromBytes(...)` at the response boundary. Implement `GetEntityTag()` on the response DTO; because it is a method, the metadata is not added to the JSON body.
-
-### URL Canonicalization
-
-`RedirectToCanonicalUrlRule` answers non-canonical GET requests with a 301 to a single canonical URL: a trailing slash appended or stripped per `RouteOptions.AppendTrailingSlash`, path and query string lower-cased per `RouteOptions.LowercaseUrls`. `ConfigureHeadlessDefaultApi()` sets those to `false` / `true` respectively.
-
-Register it **after `UseRouting()`**:
-
-```csharp
-app.UseRouting();
-app.UseRedirectToCanonicalUrl(); // or: UseRedirectToCanonicalUrl(appendTrailingSlash: false, lowercaseUrls: true)
-```
-
-Two attributes opt an endpoint out, and both are read from endpoint metadata, which exists only once routing has matched the request:
-
-- `[NoTrailingSlash]` — stops the rule from appending a trailing slash. (The same attribute is a resource filter that 404s trailing-slash requests.)
-- `[NoLowercaseQueryString]` — preserves query-string casing for case-sensitive tokens such as OAuth `state`/`code` values or signed URLs.
-
-Requests with no routed endpoint are left untouched. Registered before `UseRouting()` — or for a URL that matches no endpoint — the rule performs no canonicalization at all rather than redirecting past an opt-out it cannot see, and logs a one-time `HEADLESS_CANONICAL_URL_ENDPOINT_UNAVAILABLE` warning naming the ordering requirement.
-
-## Configuration
-
-### API surfaces
-
-Register `AddHeadlessMvcApiSurfaces()` alongside `AddControllers()` and `AddHeadlessApiSurface(...)`. Mark controllers with `[ApiSurface("portal")]`. The convention adds the registry's prefix, named authorization policy, and tenancy defaults to their actions.
-
-Controller/action tenancy metadata takes precedence over surface defaults. Native authorization remains additive, and `[AllowAnonymous]` bypasses it. `RequireTenant` metadata needs the policy and services described in `Headless.Api.Core`. Unknown surface names fail MVC model construction. Controllers with a configured prefix must use relative controller and action routes; absolute templates are rejected because they escape that prefix. Existing `ApiExplorerSettings.GroupName` values are preserved for versioning. Repeated integration registration adds only one convention configurator.
-
-Other MVC features require no additional configuration.
-
-## Dependencies
-
-- `Headless.Api.Core`
-- `Asp.Versioning.Mvc`
-- `Asp.Versioning.Mvc.ApiExplorer`
-
-## Side Effects
-
-- `AddHeadlessMvcApiSurfaces` registers one MVC options configurator that applies surface defaults during model construction.
-- Configures `MvcOptions` and `JsonOptions` for controllers
-- Adds a result filter that applies ProblemDetails customization to Headless-generated MVC object results
-- When opted in, adds a result filter that emits ETags for `IHasEntityTag` responses
+- [Headless Framework](https://github.com/xshaheen/headless-framework#readme)
+- [API & Web guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/api.md#headlessapimvc)

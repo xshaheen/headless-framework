@@ -75,7 +75,7 @@ services.AddHeadlessMessaging(setup =>
 - **Never write framework metadata through provider hatches**. For publish options, use typed properties; raw `Headers.TenantId` is accepted only by the tenant-integrity path and should not be authored directly.
 - **Treat provider hatches as physical broker routing/configuration**. Producer-side hatches live on `IBusMessageBuilder<TMessage>` and/or `IQueueMessageBuilder<TMessage>` according to the selected provider capability; consumer-side hatches live on the matching lane consumer builder only when that provider exposes consumer settings.
 - **Kafka, RabbitMQ, and NATS currently expose consumer-side hatches**. AWS and Azure Service Bus currently expose producer-side hatches only.
-- **Keep `docs/llms/messaging.md` and package READMEs aligned** when public messaging behavior changes.
+- **Keep this canonical guide aligned with public messaging behavior.** Package READMEs remain small discovery pages and do not mirror this reference.
 
 ## Core Concepts
 
@@ -285,11 +285,7 @@ Table names are not configurable; each provider creates its own fixed set inside
 
 ## Headless.Messaging.Abstractions
 
-### Problem Solved
-
-Defines shared messaging contracts and envelope types used by all bus, queue, core, and provider packages.
-
-### Key Features
+### API and behavior
 
 - `PublishReceipt` carries the resolved wire `MessageId` and nullable durable `StorageId`. Direct delivery returns no storage handle. Middleware suppression before terminal publication returns both values null. A receipt enlisted in the caller's active unit of work remains subject to that unit's completion or rollback and never implies consumer completion.
 - `IConsume<TMessage>` consumer contract.
@@ -300,17 +296,17 @@ Defines shared messaging contracts and envelope types used by all bus, queue, co
 - `MessageHeader`, `Headers`, `TransportMessage`, and broker address primitives.
 - Common transport pause/resume and retry/backoff abstractions.
 
-### Design Notes
+### Design constraints
 
 Headers are not a free-form control plane. Framework-owned headers are reserved because transports, storage, tenancy, retry, and diagnostics depend on their integrity.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Messaging.Abstractions
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 public sealed class OrderPlacedConsumer : IConsume<OrderPlaced>
@@ -328,21 +324,13 @@ public sealed class OrderPlacedConsumer : IConsume<OrderPlaced>
 
 None.
 
-### Dependencies
-
-None.
-
-### Side Effects
+### Runtime behavior
 
 None.
 
 ## Headless.Messaging.Bus.Abstractions
 
-### Problem Solved
-
-Gives application code a compile-time bus surface for publish/subscribe delivery where every matching subscriber group receives its own copy of a message.
-
-### Key Features
+### API and behavior
 
 - `PublishReceipt` carries the resolved wire `MessageId` and nullable durable `StorageId`. Direct delivery returns no storage handle. Middleware suppression before terminal publication returns both values null. A receipt enlisted in the caller's active unit of work remains subject to that unit's completion or rollback and never implies consumer completion.
 - `IBus` is the only bus publisher; an unset `PublishOptions.DeliveryMode` inherits the per-type `WithDeliveryMode` policy, then `MessagingOptions.DefaultDeliveryMode`, which defaults to `Durable`. Explicit modes override both.
@@ -351,13 +339,13 @@ Gives application code a compile-time bus surface for publish/subscribe delivery
 - `PublishOptionsBuilder` and the `BusExtensions.PublishAsync` callback author canonical options snapshots without a Core dependency.
 - Every bus publish carries `MessageLane.Bus` through storage, tracing, dashboard projections, and consume context.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Messaging.Bus.Abstractions
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 using Headless.Messaging;
@@ -396,21 +384,13 @@ Builders support sequential reuse, not concurrent mutation. Header input is copi
 
 None in this package. Runtime wiring is provided by `Headless.Messaging.Core` plus bus transport and storage providers.
 
-### Dependencies
-
-- `Headless.Messaging.Abstractions`
-
-### Side Effects
+### Runtime behavior
 
 None. This package registers no services.
 
 ## Headless.Messaging.Queue.Abstractions
 
-### Problem Solved
-
-Gives application code a compile-time queue surface for work-queue delivery where exactly one competing worker handles each message.
-
-### Key Features
+### API and behavior
 
 - `PublishReceipt` carries the resolved wire `MessageId` and nullable durable `StorageId`. Direct delivery returns no storage handle. Middleware suppression before terminal publication returns both values null. A receipt enlisted in the caller's active unit of work remains subject to that unit's completion or rollback and never implies consumer completion.
 - `IQueue` is the only queue publisher; an unset `QueueOptions.DeliveryMode` inherits the per-type `WithDeliveryMode` policy, then `MessagingOptions.DefaultDeliveryMode`, which defaults to `Durable`. Explicit modes override both.
@@ -419,13 +399,13 @@ Gives application code a compile-time queue surface for work-queue delivery wher
 - `QueueOptionsBuilder` and the `QueueExtensions.EnqueueAsync` callback author canonical options snapshots without a Core dependency.
 - Every queue enqueue carries `MessageLane.Queue` through storage, tracing, dashboard projections, and consume context.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Messaging.Queue.Abstractions
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 using Headless.Messaging;
@@ -464,21 +444,13 @@ Builders support sequential reuse, not concurrent mutation. Header input is copi
 
 None in this package. Runtime wiring is provided by `Headless.Messaging.Core` plus queue transport and storage providers.
 
-### Dependencies
-
-- `Headless.Messaging.Abstractions`
-
-### Side Effects
+### Runtime behavior
 
 None. This package registers no services.
 
 ## Headless.Messaging.Core
 
-### Problem Solved
-
-Wires messaging into dependency injection: registration, publishing, dispatch, middleware, retry, storage, outbox, circuit breaker, runtime subscriptions, and monitoring.
-
-### Key Features
+### API and behavior
 
 - `PublishReceipt` carries the resolved wire `MessageId` and nullable durable `StorageId`. Direct delivery returns no storage handle. Middleware suppression before terminal publication returns both values null. A receipt enlisted in the caller's active unit of work remains subject to that unit's completion or rollback and never implies consumer completion.
 - `services.AddHeadlessMessaging(setup => ...)`.
@@ -501,7 +473,7 @@ Wires messaging into dependency injection: registration, publishing, dispatch, m
 - Direct publishing bypasses storage and the caller's active unit of work, while delayed delivery is always durable.
 - Durable publishes enlisted in the caller's active unit of work call `IUnitOfWork.PreventRetry()` before the write, requiring a fresh unit of work after transaction failure. The EF integration-event bridge exempts only captured occurrences that its save pipeline retains for replay.
 
-### Design Notes
+### Design constraints
 
 Core owns logical metadata and provider-independent correctness. Provider packages own broker-specific values and limits. `CorrelationFrom(...)` is a universal logical knob; partition keys, routing keys, subject shards, and message group ids are provider hatches because their semantics differ.
 
@@ -517,7 +489,7 @@ The public consumer startup contracts accept trailing optional cancellation toke
 
 The blessed cross-package SPI (the contracts that storage providers, transports, and dashboards resolve or implement) lives in the public `Headless.Messaging.Runtime` namespace: `IProcessingServer` (implement to attach a long-running unit to the bootstrap sequence) and `IConsumerServiceSelector` / `MethodMatcherCache` (inspect the resolved consumer topology). The `TransportNaming` (`WildcardToRegex`, `Normalize`) and `RuntimeTypeInspection` (`IsComplexType`, `DeclaresFieldOfType`) helpers in the same namespace are `internal` and shared with the first-party transports via `InternalsVisibleTo` — they are not part of the NuGet contract. These types were previously exposed under `Headless.Messaging.Internal`; that namespace now holds only genuine implementation detail. The monitoring status is a typed enum — `StatusName` (in `Headless.Messaging.Monitoring`, next to `MessageView`/`MessageQuery`) — so `MessageView.StatusName` and the `MessageQuery.StatusName` filter are compile-time safe. Storage providers persist and compare the enum member names verbatim as strings, so the SQL column contract is unchanged, and the dashboard serializes the status by name to keep the SPA wire shape stable.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Messaging.Core
@@ -525,7 +497,7 @@ dotnet add package Headless.Messaging.InMemory
 dotnet add package Headless.Messaging.Storage.InMemory
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 services.AddHeadlessMessaging(setup =>
@@ -559,7 +531,7 @@ Orphans have no automatic expiry or terminalization. An orphan with no live exec
 
 One generalized ledger backs both inbox and scheduled-delivery operator actions: the receipt and audit tables carry a `TargetKind` discriminator (`Inbox`, default; `ScheduledDelivery`), a nullable incarnation/expected-status pair, and nullable published-row snapshot columns (message name, message id, lane, expected due instant). The schema ships fresh with the generalized ledger shape (greenfield — no prior schema versions exist). The `MessagingOperationType` enum gained `Revoke` and `DispatchNow`, enrolling scheduled-delivery operations under the same retention cutoffs below without a new collector category.
 
-Revoking a scheduled row is the same fenced delete `IMessageRevoker.RevokeAsync` performs, plus a receipt and audit written in the same transaction; the row stays deleted either way, and revocation is never a visible status -- the ledger is the only trace once the row is gone. Dispatch-now moves a pending row's due instant to the provider clock; some node's delayed processor claims it on its next pass, typically within about a minute, so a dashboard-only host with no dispatcher cannot promise that latency. Neither action creates, reschedules, or replays a delivery -- see `IScheduledDeliveryOperationsApi` in Core's Key Features for the request/outcome contract, and use Jobs for a keyed, replaceable, or transactional deadline instead.
+Revoking a scheduled row is the same fenced delete `IMessageRevoker.RevokeAsync` performs, plus a receipt and audit written in the same transaction; the row stays deleted either way, and revocation is never a visible status -- the ledger is the only trace once the row is gone. Dispatch-now moves a pending row's due instant to the provider clock; some node's delayed processor claims it on its next pass, typically within about a minute, so a dashboard-only host with no dispatcher cannot promise that latency. Neither action creates, reschedules, or replays a delivery -- see the `Headless.Messaging.Core` package section for the `IScheduledDeliveryOperationsApi` request/outcome contract, and use Jobs for a keyed, replaceable, or transactional deadline instead.
 
 Operation history has separate retention from inbox generations, now covering both target kinds under the same four windows. Configure these positive minimum residence durations through `setup.Options`:
 
@@ -599,11 +571,7 @@ The collector obtains one fixed provider-clock history cutoff snapshot per invoc
 - Register middleware through `MessagingBuilder.AddBusPublishMiddleware<T>()`, `AddReceiveMiddleware<T>()`, `AddBusConsumeMiddleware<T>()`, `AddPublishMiddlewareFor<TMiddleware,TMessage>()`, `AddReceiveMiddlewareFor<TMiddleware,TMessage>(groupName, lane)`, and `AddConsumeMiddlewareFor<TMiddleware,TMessage>(groupName, lane)`.
 - Runtime subscriptions attach handlers after startup through `IRuntimeSubscriber`.
 
-### Dependencies
-
-`Headless.Messaging.Abstractions`, `Headless.Messaging.Bus.Abstractions`, `Headless.Messaging.Queue.Abstractions`, `Headless.Coordination.Abstractions`, `Headless.Coordination.Core`, `Headless.Hosting`, `Headless.MultiTenancy`, `Headless.Checks`, `Headless.UnitOfWork`, `Polly.Core`. (`Headless.Coordination.Core` hosts the shared `DeadOwnerRecoveryBridge`; `Headless.MultiTenancy` — which itself references `Headless.MultiTenancy.Abstractions` — brings in `MissingTenantContextException` and the other tenant-propagation contract types; `Headless.UnitOfWork` supplies `IUnitOfWorkManager`, resolved by the scoped `IBus`/`IQueue` facade to decide enlistment. `AddHeadlessMessaging` calls `AddUnitOfWork()`, which is idempotent.)
-
-### Side Effects
+### Runtime behavior
 
 Registers messaging services, hosted processors, publishers, consumers, storage abstractions, runtime registries, middleware registries, keyed messaging lock defaults, and the always-on `DeadOwnerRecoveryBridge<MessagingDeadOwnerReclaimer>` hosted service.
 
@@ -1091,16 +1059,7 @@ await retryMonitor.ResetBackpressureAsync(cancellationToken);
 
 The circuit breaker operates per-process only. There is no cross-instance coordination — each application instance maintains its own circuit state. In a multi-replica deployment, one instance may have an open circuit while others remain closed.
 
-## Dependencies
-
-- `Headless.Messaging.Abstractions`
-- `Headless.Extensions`
-- `Headless.Checks`
-- `Headless.MultiTenancy`
-- Transport package (RabbitMQ, Kafka, etc.)
-- Storage package (PostgreSql, SqlServer, etc.)
-
-## Side Effects
+## Messaging runtime effects
 
 - Starts background hosted service for message processing
 - Creates database tables for outbox storage (via storage provider)
@@ -1112,11 +1071,9 @@ The circuit breaker operates per-process only. There is no cross-instance coordi
 
 Web-based dashboard for monitoring and managing distributed messaging infrastructure.
 
-### Problem Solved
+Read [dashboards.md](dashboards.md) for the shared authentication modes and production security boundary.
 
-Provides real-time visibility into message processing, failures, retries, and system health through an embedded web UI for operations and troubleshooting.
-
-### Key Features
+### API and behavior
 
 - **Real-Time Monitoring**: Live message throughput and latency metrics
 - **Message Explorer**: Search, filter, and inspect messages
@@ -1125,9 +1082,9 @@ Provides real-time visibility into message processing, failures, retries, and sy
 - **Provider Capabilities**: The protected metadata endpoint and responsive footer dialog show every registered provider role. Transport cards report delivery lanes and topology, storage cards report delivery lanes and delayed scheduling, and coordination cards report cluster coordination without exposing physical resource names or credentials
 - **Performance Metrics**: Consumer processing stats and bottlenecks
 - **Five authentication modes** (shared with the Jobs Dashboard via `Headless.Dashboard.Authentication`): none, Basic, API key, host-app auth, custom.
-- **Scheduled-delivery operator actions**: `GET /api/scheduled` lists pending scheduled deliveries (published rows in `Delayed`/`Queued` with no inline attempt, retry, or persisted retry time, presented as one `Pending` state); `POST /api/scheduled/revoke` and `POST /api/scheduled/dispatch-now` are audited, fenced mutations sharing the inbox operator ledger. These are operator actions on an existing schedule, not a way to create, reschedule, or replay one — see Core's Key Features for the storage-side contract.
+- **Scheduled-delivery operator actions**: `GET /api/scheduled` lists pending scheduled deliveries (published rows in `Delayed`/`Queued` with no inline attempt, retry, or persisted retry time, presented as one `Pending` state); `POST /api/scheduled/revoke` and `POST /api/scheduled/dispatch-now` are audited, fenced mutations sharing the inbox operator ledger. These are operator actions on an existing schedule, not a way to create, reschedule, or replay one — see the `Headless.Messaging.Core` package section for the storage-side contract.
 
-### Design Notes
+### Design constraints
 
 The dashboard exposes operational endpoints for inspecting, retrying, re-executing, and deleting message records. Its protected `/api/meta` response also projects sanitized registered-provider descriptors; deployment state remains operator-owned and is never inferred by the dashboard. Treat `WithNoAuth()` as development-only unless the dashboard is isolated behind trusted network controls. Production deployments should use `WithHostAuthentication(...)`, `WithBasicAuth(...)`, `WithApiKey(...)`, or `WithCustomAuth(...)`, and should set an explicit CORS policy before exposing the dashboard cross-origin.
 
@@ -1137,13 +1094,13 @@ Inbox and scheduled-delivery operations share one actor resolver and require an 
 
 The legacy `POST /api/published/requeue` and `POST /api/published/delete` bulk endpoints reject any id that matches the pending-scheduled-delivery predicate: each rejected id is reported in the response's `rejected` array alongside a message pointing at the audited `/api/scheduled/revoke` and `/api/scheduled/dispatch-now` actions, and the remaining ids are processed exactly as before. This fencing runs under the host principal, not the operator actor requirement, so it still functions under `WithNoAuth()` for non-pending rows.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Messaging.Dashboard
 ```
 
-### Quick Start
+### Setup and use
 
 The dashboard is enabled on the `MessagingSetupBuilder` via `UseDashboard(...)`; it does not need an explicit `app.Use...` call:
 
@@ -1171,14 +1128,7 @@ Configured through `MessagingDashboardOptionsBuilder` inside `UseDashboard(...)`
 | `SetStatsPollingInterval(ms)` | `2000` | `/stats` endpoint polling interval. |
 | `SetCorsPolicy(builder)` | none | CORS policy for cross-origin access. |
 
-### Dependencies
-
-- `Headless.Messaging.Core`
-- `Headless.Dashboard.Authentication`
-- `Consul`
-- `Microsoft.AspNetCore.App` (framework reference)
-
-### Side Effects
+### Runtime behavior
 
 Mounts the embedded web UI and monitoring API through an `IStartupFilter` (no explicit middleware call required), and registers dashboard and node-discovery services.
 
@@ -1186,22 +1136,18 @@ Node lookups (30s), node counts (60s, 20s on discovery failure) and the metrics 
 
 ## Headless.Messaging.Dashboard.K8s
 
-### Problem Solved
-
-Enables automatic discovery and monitoring of messaging nodes in Kubernetes clusters by querying Services for multi-instance dashboard visibility.
-
-### Key Features
+### API and behavior
 
 - Kubernetes Service discovery restricted to the configured namespace.
 - `UseK8sDiscovery(...)` extension.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Messaging.Dashboard.K8s
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 services.AddHeadlessMessaging(setup => setup.UseK8sDiscovery());
@@ -1216,12 +1162,7 @@ Configure `K8sDiscoveryOptions` through `UseK8sDiscovery(...)`:
 
 The dashboard stores the selected Service name rather than a client-composed endpoint. The server resolves that name in the configured namespace and reuses the list's visibility and port-label rules before forwarding. Invalid, hidden, cross-namespace, and stale selections are cleared.
 
-### Dependencies
-
-- `Headless.Messaging.Dashboard`
-- `KubernetesClient`
-
-### Side Effects
+### Runtime behavior
 
 - Registers a Kubernetes-backed node discovery provider.
 - Queries the Kubernetes API for Services in the configured namespace.
@@ -1229,11 +1170,11 @@ The dashboard stores the selected Service name rather than a client-composed end
 
 ## OpenTelemetry (native, in Headless.Messaging.Core)
 
-### Problem Solved
+### Purpose
 
 Spans and metrics for messaging publish, persist, consume, and subscriber-invoke flows are emitted **natively** from `Headless.Messaging.Core` via BCL `System.Diagnostics` `ActivitySource`/`Meter` primitives. There is **no** separate `Headless.Messaging.OpenTelemetry` satellite package (removed) and no `DiagnosticSource` bridge — Core references only the 80 KB, dependency-free `OpenTelemetry.Api` (for W3C context propagation and the typed provider-builder helpers), never the SDK. Any consumer subscribes: an OpenTelemetry exporter, a raw `ActivityListener`/`MeterListener`, Application Insights, or `dotnet-counters`. Cross-cutting naming, PII, and registration rules for all Headless instrumentation live in [OpenTelemetry instrumentation conventions](../solutions/conventions/opentelemetry-instrumentation-conventions.md).
 
-### Key Features
+### API and behavior
 
 - The Meter/ActivitySource is named `Headless.Messaging` — exposed as the `public const string MessagingDiagnostics.SourceName`.
 - Typed `AddMessagingInstrumentation()` extensions on both `TracerProviderBuilder` (namespace `OpenTelemetry.Trace`) and `MeterProviderBuilder` (namespace `OpenTelemetry.Metrics`) — thin `AddSource`/`AddMeter` wrappers over the const. Subscribing by name is equally supported.
@@ -1242,7 +1183,7 @@ Spans and metrics for messaging publish, persist, consume, and subscriber-invoke
 - W3C `traceparent` + baggage are injected on publish headers and extracted on consume — **always on whenever any messaging telemetry is enabled**, no toggle. A metrics-only service (meter subscribed, no trace listener) — or a sampled-out publish — **relays** the incoming/ambient parent context verbatim onto outgoing messages instead of dropping it, so trace continuity survives non-tracing hops; a consumed message's context flows to publishes made from its handler even without a span. A fully unobserved host (no listeners at all) pays nothing and forwards nothing. The framework never fabricates a root: relay happens only when a parent actually exists. The app's OpenTelemetry setup must assign `Propagators.DefaultTextMapPropagator` (the standard `AddOpenTelemetry().WithTracing()` does this).
 - `IActivityTagEnricher` extension point, invoked **synchronously at span start** (`void Enrich(Activity activity, in MessagingEnrichmentContext context)`), with per-enricher exception isolation.
 
-### Design Notes
+### Design constraints
 
 - Delivery mode tags use lowercase values on spans and metrics. `headless.messaging.delivery.requested` and `headless.messaging.delivery.resolved` now only ever emit `durable` or `direct` — that removed `DeliveryMode` member never appears as a requested or resolved value. Queries and alerts must use `direct` for `DeliveryMode.Direct`. The former `transport_direct`, `auto`, and "coordinated" values have no compatibility alias.
 - Metrics are always registered; **subscribing a meter is the toggle** — there is no `EnableMetrics` flag. Emission is near-free when unobserved (`ActivitySource.HasListeners()` / `Counter.Enabled` early-outs).
@@ -1258,7 +1199,7 @@ Spans and metrics for messaging publish, persist, consume, and subscriber-invoke
 | `headless.messaging.retry_count` | built-in `RetryCountTagEnricher` (subscriber-invoke) | `setup.Instrumentation.SuppressRetryCountTag` |
 | custom tags | your `IActivityTagEnricher` | `setup.Instrumentation.AddEnricher(...)` |
 
-### Quick Start
+### Setup and use
 
 ```csharp
 // 1. Register enrichers / suppression on the messaging setup builder (optional).
@@ -1298,11 +1239,7 @@ Framework span attributes: `headless.messaging.intent` (`bus`/`queue`), `headles
 
 ## Headless.Messaging.Aws
 
-### Problem Solved
-
-Provides AWS SNS bus transport and AWS SQS queue transport.
-
-### Key Features
+### API and behavior
 
 - `setup.UseAws(...)`.
 - SNS topics for bus publishing.
@@ -1311,19 +1248,19 @@ Provides AWS SNS bus transport and AWS SQS queue transport.
 - Producer hatch: `UseAws(aws => aws.MessageGroupId(message => ...))`.
 - Consumer startup honors host cancellation through SNS/SQS provisioning and subscription.
 
-### Design Notes
+### Design constraints
 
 `MessageGroupId(...)` is producer-side only because it is stamped while publishing. The provider maps it to native FIFO `MessageGroupId`; it is not a custom message attribute. Values longer than 128 characters are rejected.
 
 Malformed SNS transport envelopes are terminally deleted after sanitized logging. Handler rejection remains a normal visibility-timeout retry and can use an external SQS redrive policy.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Messaging.Aws
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 setup.UseAws(options =>
@@ -1351,21 +1288,13 @@ All SQS Queue sends encode the complete header dictionary, including null, deliv
 
 Configure AWS region, service URLs, and credentials through `AmazonSqsMessagingOptions`.
 
-### Dependencies
-
-AWS SNS/SQS SDK packages, `Headless.Messaging.Core`.
-
-### Side Effects
+### Runtime behavior
 
 Registers SNS/SQS clients, bus/queue transports, and AWS consumer client services.
 
 ## Headless.Messaging.AzureServiceBus
 
-### Problem Solved
-
-Provides Azure Service Bus topic and queue transports.
-
-### Key Features
+### API and behavior
 
 - `setup.UseAzureServiceBus(...)`.
 - Topic and queue transport support.
@@ -1374,7 +1303,7 @@ Provides Azure Service Bus topic and queue transports.
 - Consumer startup honors host cancellation through client, topology, and processor setup.
 - Shared connection: bus and queue publishing and consumer processors share one `ServiceBusClient` (one AMQP connection) per namespace with per-destination cached senders and a shared administration client; senders are drained before the client on shutdown, and consumers stop their processors without touching the shared client.
 
-### Design Notes
+### Design constraints
 
 `PartitionKey(...)` is producer-side only and limited to 128 characters. When sessions are enabled, Azure Service Bus requires `PartitionKey` to equal `SessionId`; the message builder rejects mismatches.
 
@@ -1382,13 +1311,13 @@ Headless disables Azure SDK auto-complete internally and settles messages explic
 
 Structurally malformed envelopes, including envelopes with missing or invalid required Messaging headers, are terminally completed after sanitized logging to prevent poison redelivery. Retryable handler or custom-header hook failures are not classified as terminal malformed failures; they remain unsettled or are abandoned according to the runtime failure path.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Messaging.AzureServiceBus
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 setup.UseAzureServiceBus(options => options.ConnectionString = connectionString);
@@ -1410,21 +1339,13 @@ Azure Service Bus declares immutable Bus and Queue capabilities with independent
 
 Configure connection string or namespace, retry/client settings, queue/topic behavior, session support, and SQL filters through `AzureServiceBusMessagingOptions`. Authentication is an either/or contract: supply either `ConnectionString` or both `Namespace` and `TokenCredential` — both are nullable (`string?`) and the validator enforces that exactly one mode is configured at start. Processor settlement is not configurable; Headless disables Azure SDK auto-complete and completes or abandons messages explicitly.
 
-### Dependencies
-
-Azure.Messaging.ServiceBus, `Headless.Messaging.Core`.
-
-### Side Effects
+### Runtime behavior
 
 Registers a shared client pool (one `ServiceBusClient` per namespace, shared by the bus and queue transports and every consumer client, plus a shared administration client), transports, consumer client factory, and producer descriptor services.
 
 ## Headless.Messaging.InMemory
 
-### Problem Solved
-
-Provides in-process bus and queue transport for local development and tests.
-
-### Key Features
+### API and behavior
 
 - `setup.UseInMemory()`.
 - In-process bus and queue delivery.
@@ -1432,13 +1353,13 @@ Provides in-process bus and queue transport for local development and tests.
 - No external broker.
 - Consumer startup implements the same host-cancellable contract as broker-backed providers.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Messaging.InMemory
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 setup.UseInMemory();
@@ -1450,21 +1371,13 @@ The in-memory transport declares no native routing-affinity mapping. `RequireRou
 
 None.
 
-### Dependencies
-
-`Headless.Messaging.Core`.
-
-### Side Effects
+### Runtime behavior
 
 Registers in-memory transports and consumer client factory. Messages are lost when the process exits.
 
 ## Headless.Messaging.Storage.InMemory
 
-### Problem Solved
-
-Provides in-process messaging storage for local development and tests.
-
-### Key Features
+### API and behavior
 
 - `IMessageRevocationStorage` atomically deletes a scheduled row before reservation, fenced by storage version, terminal status, and retry state. Claimed but unreserved rows remain revocable; deleted rows cannot be restored by reservation or shutdown flush.
 - `setup.UseInMemoryStorage()`.
@@ -1473,13 +1386,13 @@ Provides in-process messaging storage for local development and tests.
 
 InMemoryStorage uses its injected `TimeProvider` for both application-scheduled `NextRetryAt` and authoritative lease ownership. It implements the same duration-based lease SPI and returns the persisted `(LockedUntil, Owner)` identity. Delayed scheduling atomically transitions and leases each per-message winner before returning a deterministic bounded batch. Circuit-open received retries atomically advance `NextRetryAt` and clear only the exact live `(lane, Owner, LockedUntil)` lease generation under the per-row lock. Retry pickup claims due rows in `NextRetryAt` order, as the relational providers do, so an earlier-scheduled row is never starved by a later one once `RetryBatchSize` bounds the batch. Rows sharing an identical `NextRetryAt` fall back to a deterministic per-provider tie-break, which no fairness guarantee depends on.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Messaging.Storage.InMemory
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 setup.UseInMemoryStorage();
@@ -1493,21 +1406,13 @@ Known orphans use a separate bounded probe batch and recover only when the exact
 
 History retention uses the shared `MessagingOptions` defaults: cleanup receipts/audits 7 days each, operator receipts 30 days, and operator audits 90 days. All four are positive configurable minimum residence durations. Audit references can extend receipt lifetime; deleting history does not release holds. The injected `TimeProvider` controls history age. State is process-local and is lost on restart. This history also covers scheduled-delivery operator actions (revoke, dispatch-now) under the shared `TargetKind` ledger; record shapes changed accordingly. See [Core configuration](#configuration-3) for probe settings, replay limits, rollout effects, and collector pacing.
 
-### Dependencies
-
-`Headless.Messaging.Core`.
-
-### Side Effects
+### Runtime behavior
 
 Registers in-memory storage and monitoring services. State is lost when the process exits.
 
 ## Headless.Messaging.Kafka
 
-### Problem Solved
-
-Provides Kafka Queue-lane transport for partitioned, consumer-group processing.
-
-### Key Features
+### API and behavior
 
 - `setup.UseKafka(...)`.
 - Kafka topic auto-creation support.
@@ -1515,17 +1420,17 @@ Provides Kafka Queue-lane transport for partitioned, consumer-group processing.
 - Consumer hatch: `consumer.UseKafka(kafka => kafka.IsolationLevel(IsolationLevel.ReadCommitted))`.
 - Consumer startup honors host cancellation while creating topics and subscriptions.
 
-### Design Notes
+### Design constraints
 
 Kafka supports only the Queue lane in this package. Bus registration is rejected during startup capability validation before provider creation, provisioning, or storage side effects. `PartitionBy(...)` maps to the Kafka key. The framework does not impose a Kafka key length cap; broker/client configuration owns practical limits. Delivery remains at-least-once; consumers must dedupe by business key or message id. A publish succeeds only when Kafka reports `Persisted`; `PossiblyPersisted` is retried and can therefore produce duplicates. When consumer concurrency is greater than one, successful handlers can finish out of order, but Kafka commits advance only to the lowest offset still in flight for that partition; a completed high offset does not commit past lower in-flight offsets. Offsets the broker never hands to the application — transaction control records, aborted batches under `read_committed`, compaction holes, and tombstones — do not hold that watermark back, because ordered per-partition delivery proves they can never arrive later. Rebalances invalidate tracked offsets for revoked or lost partitions so late handlers cannot commit or seek partitions now owned by another consumer. Malformed transport envelopes are terminally logged and their offsets join the same per-partition completion watermark, bounding poison replay without skipping lower in-flight messages.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Messaging.Kafka
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 setup.UseKafka(options => options.Servers = "localhost:9092");
@@ -1546,21 +1451,13 @@ setup.Queue.ForMessage<OrderPlaced>(message =>
 
 Configure bootstrap servers, main Kafka config, topic options, custom headers, and retriable error codes through `KafkaMessagingOptions`. `RetriableErrorCodes` / `DefaultRetriableErrorCodes` are `int` values of Confluent's `ErrorCode` enum (not the native enum type), so configuring retries needs no compile-time `Confluent.Kafka` reference; the framework casts back to `ErrorCode` internally.
 
-### Dependencies
-
-Confluent.Kafka, `Headless.Messaging.Core`.
-
-### Side Effects
+### Runtime behavior
 
 Registers Kafka transports, connection pool, consumer factory, and provider-specific message/consumer config support.
 
 ## Headless.Messaging.Nats
 
-### Problem Solved
-
-Provides a NATS JetStream transport for Headless messaging so applications can publish and consume durable messages with subject-based routing, JetStream acknowledgements, and provider-specific shard subjects while keeping the core messaging API provider-neutral.
-
-### Key Features
+### API and behavior
 
 - `setup.UseNats(...)`.
 - JetStream stream provisioning modes and durable consumers.
@@ -1568,7 +1465,7 @@ Provides a NATS JetStream transport for Headless messaging so applications can p
 - Consumer hatch: `consumer.UseNats(nats => nats.Sharded())`.
 - Consumer startup honors host cancellation while connecting and provisioning JetStream topology, while preserving configured topology timeouts.
 
-### Design Notes
+### Design constraints
 
 `SubjectShard(...)` appends one safe subject token to the logical message name. It rejects `.`, `*`, `>`, whitespace, and control characters so payload values cannot change the subject hierarchy or wildcard behavior.
 
@@ -1583,13 +1480,13 @@ Bus publishes to `headless.bus.{logical-name}` with interest-retained streams an
 `NatsMessagingOptions.StreamProvisioning` decides what consumer startup does about that stream. `Verify` (the default) creates a missing stream but throws with the divergent fields rather than writing to one that already exists; `Reconcile` updates fields JetStream accepts in place, reports immutable divergence instead of sending an update the server rejects, and `Disabled` neither creates nor modifies. The default changed because the old flag's `true` silently overwrote the storage class, replicas, and limits of a stream provisioned with the NATS CLI, Terraform, or a Kubernetes operator on every startup.
 
 The comparison covers only fields the provider or the `StreamOptions` callback actually asserts — a field neither set is never compared, since the server defaults it and diffing it would report drift against every existing stream. Subjects compare asymmetrically: extra subjects on the live stream (from sibling consumer groups or an earlier deployment) are ignored, while a subject this client requires that the stream does not cover is a divergence, because JetStream delivers zero messages and reports no error to a filter that matches nothing. Deployments where several consumer groups share one normalized stream and each contributes subjects therefore need `Reconcile`, or a stream provisioned with full subject coverage. Divergence on a field JetStream refuses to change on a live stream — storage type is the clearest case — is reported with a recreate-or-migrate remedy instead of a mode-switch suggestion that would fail at the server.
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Messaging.Nats
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 setup.UseNats(options => options.Servers = "nats://localhost:4222");
@@ -1609,21 +1506,13 @@ The current NATS subjects and stream topology do not provide the provider-neutra
 
 Configure NATS servers, credentials, stream behavior, durable names, and connection settings through `NatsMessagingOptions`.
 
-### Dependencies
-
-NATS client packages, `Headless.Messaging.Core`.
-
-### Side Effects
+### Runtime behavior
 
 Registers NATS connection pool, transports, consumer factory, and stream initialization behavior.
 
 ## Headless.Messaging.Pulsar
 
-### Problem Solved
-
-Provides Apache Pulsar transport support.
-
-### Key Features
+### API and behavior
 
 - `setup.UsePulsar(...)`.
 - Pulsar bus and queue transport support.
@@ -1631,17 +1520,17 @@ Provides Apache Pulsar transport support.
 - Configurable negative-ack redelivery with a one-minute default and a validated 100-millisecond minimum.
 - Consumer startup honors host cancellation while acquiring the client and subscribing, while preserving configured timeouts.
 
-### Design Notes
+### Design constraints
 
 Bus topics insert `headless-bus-` before the local topic name and use one lane-qualified subscription per logical subscriber group. Queue topics insert `headless-queue-` and use one owned `headless-queue` subscription per physical topic. Replicas within a subscription compete; distinct Bus groups each receive one copy. Malformed transport envelopes are terminally acknowledged so they cannot create negative-ack redelivery storms.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Messaging.Pulsar
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 setup.UsePulsar(options => options.ServiceUrl = "pulsar://localhost:6650");
@@ -1661,38 +1550,30 @@ setup.Bus.ForMessage<OrderPlaced>(message =>
 
 Configure service URL, authentication, TLS, and negative-ack redelivery through `PulsarMessagingOptions`. `NegativeAckRedeliveryDelay` defaults to one minute and must be at least 100 milliseconds; smaller values fail startup validation instead of being silently clamped by Pulsar.Client.
 
-### Dependencies
-
-`Pulsar.Client`, `Headless.Messaging.Core`.
-
-### Side Effects
+### Runtime behavior
 
 Registers Pulsar connection factory, transports, and consumer client factory.
 
 ## Headless.Messaging.RabbitMq
 
-### Problem Solved
-
-Provides RabbitMQ exchange and queue transport support.
-
-### Key Features
+### API and behavior
 
 - `setup.UseRabbitMq(...)`.
 - Bus exchange and queue delivery.
 - Consumer hatch: `consumer.UseRabbitMq(rabbit => rabbit.PrefetchCount(...))`.
 - Consumer startup threads host cancellation through connection, channel, exchange, queue, and binding operations.
 
-### Design Notes
+### Design constraints
 
 RabbitMQ exposes consumer-side QoS through `PrefetchCount(...)`. For base exchange `myapp.events`, Bus uses the `myapp.events.bus` topic exchange, `bus.{logical-name}` routing keys, and `bus.{subscriber-group}` queues; Queue uses the `myapp.events.queue` direct exchange, `queue.{logical-name}` routing keys, and `queue.{logical-name}` queues. When `PublishConfirms` is enabled, publish completion awaits the broker acknowledgement or negative acknowledgement. Malformed transport envelopes are terminally rejected without requeue while ordinary handler rejection remains retryable.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Messaging.RabbitMq
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 setup.UseRabbitMq(options =>
@@ -1716,21 +1597,13 @@ The current RabbitMQ exchange and binding topology does not provide the provider
 
 Configure host, credentials, exchange, queue arguments, QoS defaults, and custom headers through `RabbitMqMessagingOptions`. `UserName` and `Password` are `required` and must be set explicitly; the validator rejects the RabbitMQ default `guest`/`guest` credentials for production safety.
 
-### Dependencies
-
-RabbitMQ.Client, `Headless.Messaging.Core`.
-
-### Side Effects
+### Runtime behavior
 
 Registers RabbitMQ connection/channel pool, bus/queue transport, consumer client factory, and provider-specific config support.
 
 ## Headless.Messaging.Redis
 
-### Problem Solved
-
-Provides durable Bus and Queue delivery over Redis Streams with lane isolation and consumer-group competition.
-
-### Key Features
+### API and behavior
 
 - `setup.UseRedis(...)`.
 - One Bus copy per logical subscriber group, with replicas competing inside the group.
@@ -1738,13 +1611,13 @@ Provides durable Bus and Queue delivery over Redis Streams with lane isolation a
 - Lane-qualified stream keys, acknowledgements, pending-entry claim, and terminal poison handling.
 - Streams consumer startup honors host cancellation through connection, provisioning, and subscription.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Messaging.Redis
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 setup.UseRedis(options => options.Configuration = "localhost:6379");
@@ -1758,21 +1631,13 @@ The current Redis Streams topology does not provide the provider-neutral routing
 
 Configure Redis connection and Stream behavior through `RedisMessagingOptions`.
 
-### Dependencies
-
-StackExchange.Redis, `Headless.Messaging.Core`.
-
-### Side Effects
+### Runtime behavior
 
 Registers Redis transports, consumers, and Redis connection services.
 
 ## Headless.Messaging.Storage.PostgreSql
 
-### Problem Solved
-
-Provides PostgreSQL durable storage for messaging publish/receive state, retries, monitoring, and outbox behavior.
-
-### Key Features
+### API and behavior
 
 - `IMessageRevocationStorage` atomically deletes a scheduled row before reservation, fenced by storage version, terminal status, and retry state. Claimed but unreserved rows remain revocable; deleted rows cannot be restored by reservation or shutdown flush.
 - `setup.UsePostgreSql(...)` — connection string, `IConfiguration` binding, `Action<PostgreSqlOptions>`, or `Action<PostgreSqlOptions, IServiceProvider>`.
@@ -1783,13 +1648,13 @@ Provides PostgreSQL durable storage for messaging publish/receive state, retries
 
 Fresh dispatch, retry pickup, and delayed scheduling atomically compare and stamp ownership from one PostgreSQL clock snapshot. Delayed scheduling uses ordered `FOR UPDATE SKIP LOCKED` claiming, commits the transition to `Queued`, and only then returns winner messages for local enqueue. Circuit-open received retries atomically advance `NextRetryAt` and clear only the exact live `(lane, Owner, LockedUntil)` lease generation using PostgreSQL's authoritative clock and null-safe owner matching.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Messaging.Storage.PostgreSql
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 setup.UsePostgreSql(builder.Configuration.GetConnectionString("Messaging")!);
@@ -1807,11 +1672,7 @@ History retention uses the shared `MessagingOptions` defaults: cleanup receipts/
 - **`pg_trgm` on managed PostgreSQL**: dashboard content (ILIKE) search uses GIN trigram indexes that need the `pg_trgm` extension. The initializer runs `CREATE EXTENSION IF NOT EXISTS pg_trgm` best-effort **outside** the schema transaction. On managed PostgreSQL (AWS RDS, Azure, Neon, Supabase) the app role usually lacks `CREATE EXTENSION`; it logs a warning, **skips the trigram content indexes**, and continues — write/retry paths are unaffected, only dashboard content search is disabled until a DBA pre-installs `pg_trgm`. (Previously `CREATE EXTENSION` ran as the first statement of the schema transaction, so a permission error rolled back the entire schema batch and left messaging dead at startup.)
 - **Bootstrap indexes**: fresh schemas directly create `("StatusName","Added")` indexes for dashboard timelines/statistics and a partial `("Version","ExpiresAt") WHERE "StatusName" = 'Queued'` index for delayed-message scheduling. The initializer is schema bootstrap, not a migration runner, so it does not alter legacy columns or drop superseded indexes.
 
-### Dependencies
-
-Npgsql, `Headless.Messaging.Core`.
-
-### Side Effects
+### Runtime behavior
 
 Registers PostgreSQL storage, monitoring API, and storage initializer. It does not register EF Core or `Headless.UnitOfWork`.
 
@@ -1825,11 +1686,7 @@ EF execution-strategy retries are allowed only before handler entry. After entry
 
 ## Headless.Messaging.Storage.SqlServer
 
-### Problem Solved
-
-Provides SQL Server durable storage for messaging publish/receive state, retries, monitoring, and outbox behavior.
-
-### Key Features
+### API and behavior
 
 - `IMessageRevocationStorage` atomically deletes a scheduled row before reservation, fenced by storage version, terminal status, and retry state. Claimed but unreserved rows remain revocable; deleted rows cannot be restored by reservation or shutdown flush.
 - `setup.UseSqlServer(...)` — connection string, `IConfiguration` binding, `Action<SqlServerOptions>`, or `Action<SqlServerOptions, IServiceProvider>`.
@@ -1840,13 +1697,13 @@ Provides SQL Server durable storage for messaging publish/receive state, retries
 
 Fresh dispatch, retry pickup, and delayed scheduling atomically compare and stamp ownership from one SQL Server clock snapshot. Delayed scheduling uses ordered `UPDLOCK, READPAST` claiming, commits the transition to `Queued`, and only then returns winner messages for local enqueue. Circuit-open received retries atomically advance `NextRetryAt` and clear only the exact live `(lane, Owner, LockedUntil)` lease generation using SQL Server's authoritative clock and null-safe owner matching.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Messaging.Storage.SqlServer
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 setup.UseSqlServer(builder.Configuration.GetConnectionString("Messaging")!);
@@ -1864,11 +1721,7 @@ Fresh schemas directly create `([StatusName],[Added])` indexes for dashboard tim
 
 - **`DdlCommandTimeout`** (`TimeSpan?`, default `null`): timeout for schema-init DDL that grows with table size. That covers the history-table index builds on `InboxOperationReceipts` and `InboxAudit`, plus the `sp_getapplock` wait that serializes initializers. It is separate from the OLTP `MessagingOptions.CommandTimeout` (~30s) because upgraded schemas already hold an unbounded history backlog. The builds run offline, since `ONLINE = ON` depends on the edition, and block writes to that history table until they finish. Each index is its own command, run while the initializer lock is held. Inbox readiness is published only after the builds finish, so peer replicas wait instead of failing. `null` and `TimeSpan.Zero` mean **no timeout**. A negative value is rejected at validation time.
 
-### Dependencies
-
-Microsoft.Data.SqlClient, `Headless.Messaging.Core`.
-
-### Side Effects
+### Runtime behavior
 
 Registers SQL Server storage, monitoring API, and storage initializer. It does not register EF Core or `Headless.UnitOfWork`.
 
@@ -1882,11 +1735,7 @@ EF execution-strategy retries are allowed only before handler entry. After entry
 
 ## Headless.Messaging.Testing
 
-### Problem Solved
-
-Provides test harness utilities for observing messaging behavior without coupling tests to provider internals.
-
-### Key Features
+### API and behavior
 
 - `MessagingTestHarness` records messages at the bus/queue transport layer.
 - `WaitForPublished<T>(...)`, `WaitForConsumed<T>(...)`, `WaitForFaulted<T>(...)`, and `WaitForExhausted<T>(...)` block until a match arrives or the timeout elapses.
@@ -1897,7 +1746,7 @@ Provides test harness utilities for observing messaging behavior without couplin
 - `ResetAsync()` drains in-flight publish and consume work before clearing a shared harness.
 - `TestConsumer<T>` captures messages without custom handler logic.
 
-### Design Notes
+### Design constraints
 
 Use the testing package for application tests that need to assert published messages or consumed messages. Provider conformance still belongs in provider-specific or shared harness tests.
 
@@ -1905,13 +1754,13 @@ The harness does not weaken delivery: `MessagingOptions.DefaultDeliveryMode` sta
 
 Two consequences of running on in-memory storage. First, the in-memory transport hands a message to its consumer inside the send, before the sending thread records `Published`; the harness's consume decorator therefore waits for the message's `Published` record before running the consumer, so for any one message `Published` is always observable before `Consumed` or `Faulted`, and `harness.Published` is safe to read after `WaitForConsumed`. Second, `harness.Publisher` and `harness.Queue` resolve from a harness-owned scope that carries no active unit of work, so their publishes are always autonomous durable writes — a type registered `WithEnlistment(TransactionEnlistment.Required)` throws when published through them directly, exactly like production with no active unit of work. Exercise a `Required` type by resolving `IBus`/`IQueue` inside `harness.RunInUnitOfWorkAsync(...)` instead, from the delegate's own scope provider, so the resolved facade sees the unit of work the harness began.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Messaging.Testing
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 services.AddMessagingTestHarness();
@@ -1938,14 +1787,7 @@ recorded.ResolvedDeliveryMode.Should().Be(DeliveryMode.Durable);
 
 None. `MessagingTestHarness` has no configuration class or options object. The per-call `timeout` parameter controls how long `WaitFor*` methods and `ResetAsync` wait; when omitted it defaults to `MessagingTestHarness.DefaultTimeout`.
 
-### Dependencies
-
-- `Headless.UnitOfWork` — the harness registers the unit-of-work manager itself (`AddUnitOfWork()`, idempotent) so `RunInUnitOfWorkAsync` can begin one regardless of registration order with the host's `AddHeadlessMessaging(...)` call
-- `Headless.Messaging.Core`
-- `Headless.Messaging.InMemory`
-- `Headless.Messaging.Storage.InMemory`
-
-### Side Effects
+### Runtime behavior
 
 - `CreateAsync(...)` builds and owns a test `ServiceProvider`; dispose the harness after each test.
 - `AddMessagingTestHarness()` decorates the host's existing messaging registrations with recording wrappers; call it after `AddHeadlessMessaging(...)`.

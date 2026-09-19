@@ -130,7 +130,7 @@ services.AddSingleton<IBinarySerializer>(new MessagePackBinarySerializer(options
 ## Related
 
 - `docs/plans/2026-06-16-001-feat-zero-copy-buffer-cache-plan.md` — the zero-copy cache plan whose DIM-overload approach was abandoned; this contract redesign is the chosen follow-through ("do not re-implement the DIM overloads").
-- `docs/llms/serialization.md` and the `Headless.Serializer.*` package READMEs — consumer-facing docs for the contract, overload selection, and the `untrustedData` decision.
+- `docs/llms/serialization.md` — canonical consumer guidance for the contract, overload selection, and the `untrustedData` decision; package READMEs link to it.
 - `docs/llms/caching.md` — the `IBufferCache` / `RedisCacheEntryFrame` design; `byte[]` is the cache's native wire format (stored verbatim, never serialized), architecturally independent of this serializer buffer path.
 - `docs/solutions/architecture-patterns/unified-provider-setup-builder-pattern.md` — governs the open follow-up to add `Add{Feature}` DI registration extensions for the serializer packages (single-backend -> plain `Add{Feature}` on `IServiceCollection`, not the multi-provider builder shape).
 - PR #534 (`perf(serializer)!: buffer-first ISerializer`).

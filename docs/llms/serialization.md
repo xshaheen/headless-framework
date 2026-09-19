@@ -99,11 +99,7 @@ Both providers can coexist — register `IJsonSerializer` and `IBinarySerializer
 
 Defines unified interfaces and extension methods for serialization and deserialization.
 
-### Problem Solved
-
-Provides provider-agnostic serialization contracts for both text (JSON) and binary formats, enabling consistent serialization patterns across application layers without coupling to a specific implementation.
-
-### Key Features
+### API and behavior
 
 - `ISerializer` — core buffer-first interface: `Serialize<T>`/`Serialize` write to an `IBufferWriter<byte>`; `Deserialize<T>`/`Deserialize` read from a `ReadOnlyMemory<byte>` or `ReadOnlySequence<byte>`
 - `ITextSerializer` — marker interface for text-format implementations
@@ -117,17 +113,17 @@ Provides provider-agnostic serialization contracts for both text (JSON) and bina
   - `SerializeToString<T>(T?)` — serialize to string (UTF-8 for text, Base64 for binary), null-safe
   - `Serialize<T>(T, Stream)` / `Serialize(object?, Stream)` — serialize to a stream
 
-### Design Notes
+### Design constraints
 
 The contract is **buffer-first, not Stream-first**. `IBufferWriter<byte>` and `ReadOnlyMemory<byte>` / `ReadOnlySequence<byte>` are the primitives both backends expose with the fewest copies (`System.Text.Json` via `Utf8JsonWriter`/`Utf8JsonReader`, MessagePack natively) — so a `SerializeToBytes` no longer pays for a `MemoryStream` plus its `ToArray()` copy, and a byte-array deserialize is read in place. `byte[]`, `string`, and `Stream` are provided as extension adapters because they are convenient at call sites, not because they are the fast path. When you already hold a contiguous buffer (a `byte[]`, a cache value segment), call the `ReadOnlyMemory<byte>` overload directly to avoid the adapter hop.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Serializer.Abstractions
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 // Depend only on the abstraction in domain/application code:
@@ -148,11 +144,7 @@ public sealed class DataService(IJsonSerializer serializer)
 
 None. Abstractions-only package.
 
-### Dependencies
-
-None.
-
-### Side Effects
+### Runtime behavior
 
 None.
 
@@ -161,11 +153,7 @@ None.
 
 System.Text.Json implementation of `IJsonSerializer` with opinionated defaults and a rich built-in converter library.
 
-### Problem Solved
-
-Provides JSON serialization via System.Text.Json with a battle-tested default configuration (camelCase, enum strings, cycle-safe, nullable-aware) and a set of reusable converters for common edge cases — all wired through the `IJsonSerializer` abstraction.
-
-### Key Features
+### API and behavior
 
 - `SystemJsonSerializer` — `IJsonSerializer` implementation; accepts an optional `IJsonOptionsProvider`
 - `IJsonOptionsProvider` / `DefaultJsonOptionsProvider` — injectable options split into separate serialize and deserialize `JsonSerializerOptions`
@@ -193,7 +181,7 @@ Provides JSON serialization via System.Text.Json with a battle-tested default co
   - `JsonPropertiesModifiers<TClass>.CreateIncludeNonPublicPropertiesModifyAction` — enable non-public setter deserialization
 - `ToObjectExtensions.To<T>(this object?, JsonSerializerOptions?)` (namespace `Headless.Serializer`) — extension on `object?` that converts via `Convert.ChangeType`, `TypeDescriptor`, enum parse, or STJ deserialization depending on the input type. Requires `using Headless.Serializer;`
 
-### Design Notes
+### Design constraints
 
 `SystemJsonSerializer` is annotated `[RequiresUnreferencedCode]` and `[RequiresDynamicCode]` because it uses reflection-based STJ APIs. This means it is **not AOT-safe** out of the box. The annotation propagates to call sites — you will see trim warnings in NativeAOT or PublishTrimmed builds. For AOT scenarios, write a source-generated `IJsonSerializer` wrapper using `JsonSerializerContext` and register it instead.
 
@@ -203,13 +191,13 @@ The three `JsonConstants` presets (`DefaultWebJsonOptions`, `DefaultInternalJson
 
 `SystemJsonSerializer` implements the buffer-first `ISerializer` contract over `System.Text.Json`'s lowest-allocation surface, with no intermediate `byte[]` or `Stream`. Writes go through a `Utf8JsonWriter` constructed over the caller's `IBufferWriter<byte>`; reads use `JsonSerializer.Deserialize(span)` for the contiguous `ReadOnlyMemory<byte>` path and a `Utf8JsonReader` for the `ReadOnlySequence<byte>` path. A pre-built `Utf8JsonWriter`/`Utf8JsonReader` governs its **own** formatting and reading rules independently of the `JsonSerializerOptions`, so the serializer derives them from the options — the writer inherits `WriteIndented`, `Encoder`, `IndentCharacter`/`IndentSize`, `NewLine`, and `MaxDepth`; the sequence reader inherits `AllowTrailingCommas`, `ReadCommentHandling`, and `MaxDepth`. Without that copy, indentation/escaping and the configured depth limit would be silently dropped on the buffer path. The sequence/`Stream` path also rejects trailing non-whitespace after the top-level value, matching the contiguous span/`byte[]` path, so a corrupt `"{...}<garbage>"` payload cannot deserialize silently. `byte[]`, `string`, and `Stream` remain available as `SerializerExtensions` adapters.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Serializer.Json
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 // Minimal registration — uses DefaultWebJsonOptions for both serialize and deserialize:
@@ -256,11 +244,7 @@ var modifier = JsonPropertiesModifiers<MyModel>.CreateIgnorePropertyModifyAction
 // Pass via SystemJsonTypeInfoResolver -> JsonSerializerModifiersOptions -> JsonSerializerOptions.TypeInfoResolver
 ```
 
-### Dependencies
-
-- `Headless.Serializer.Abstractions`
-
-### Side Effects
+### Runtime behavior
 
 None. Registration is fully explicit.
 
@@ -269,11 +253,7 @@ None. Registration is fully explicit.
 
 MessagePack binary serialization implementation of `IBinarySerializer`.
 
-### Problem Solved
-
-Provides compact binary serialization for high-throughput scenarios (cache entries, internal message envelopes) where JSON text overhead is a bottleneck. Contractless by default — no `[MessagePackObject]` or `[Key]` attributes required.
-
-### Key Features
+### API and behavior
 
 - `MessagePackBinarySerializer` — `IBinarySerializer` implementation
 - Contractless by default: uses `ContractlessStandardResolver`, so plain POCOs serialize without any attributes
@@ -282,17 +262,17 @@ Provides compact binary serialization for high-throughput scenarios (cache entri
 - Built-in LZ4 compression available via `WithCompression(MessagePackCompression.Lz4BlockArray)`
 - Full `ISerializer` surface via MessagePack's native buffer APIs — `Serialize(IBufferWriter<byte>)`, `Deserialize(ReadOnlyMemory<byte>)` / `Deserialize(in ReadOnlySequence<byte>)` — avoiding the buffer-copy overhead of its `Stream` overloads
 
-### Design Notes
+### Design constraints
 
 The parameterless constructor uses `MessagePackSecurity.UntrustedData` so default deserialization is safe for cross-service caches, external message producers, and other payloads outside the current process trust boundary. For trusted payloads where the MessagePack-CSharp fast path is intentional, construct with `untrustedData: false` or supply custom `MessagePackSerializerOptions` with the desired `Security`. When you pass options, the serializer uses them verbatim and you own the security level.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Serializer.MessagePack
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 // Default: contractless, no compression, MessagePackSecurity.UntrustedData:
@@ -334,11 +314,6 @@ var options = MessagePackSerializerOptions
 var serializer = new MessagePackBinarySerializer(untrustedData: true);
 ```
 
-### Dependencies
-
-- `Headless.Serializer.Abstractions`
-- `MessagePack`
-
-### Side Effects
+### Runtime behavior
 
 None. Registration is fully explicit.

@@ -12,7 +12,8 @@ A transport package adapts one broker to the core runtime. In this repo, the pac
 - `MyBrokerConsumerClientFactory : IConsumerClientFactory`
 - `MyBrokerConsumerClient : IConsumerClient`
 - broker-specific pools, factories, or helpers when connection reuse matters
-- a package `README.md` covering broker-specific setup and limitations
+- a package `README.md` explaining why the provider exists and linking to the canonical Messaging guide
+- a `docs/llms/messaging.md` package section covering broker-specific setup and limitations
 
 The core runtime already owns serialization, outbox behavior, retries, delayed publishing, consumer invocation, circuit breaking, and diagnostics orchestration. The transport package should not reimplement those policies.
 

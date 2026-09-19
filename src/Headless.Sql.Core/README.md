@@ -2,37 +2,17 @@
 
 Default implementation package for provider-agnostic SQL helpers.
 
-## Problem Solved
+## Why use this package
 
 Keeps `Headless.Sql.Abstractions` limited to interfaces while providing a reusable scoped ambient connection implementation for unit-of-work patterns.
 
-## Key Features
-
-- `DefaultSqlCurrentConnection` — concrete thread-safe implementation of `ISqlCurrentConnection` backed by `AsyncLock`.
-- Lazily opens one connection per scope and reuses it until disposal.
-- Reopens the underlying connection if it is observed closed.
-
-## Installation
+## Install
 
 ```bash
 dotnet add package Headless.Sql.Core
 ```
 
-## Quick Start
+## Documentation
 
-```csharp
-builder.Services.AddScoped<ISqlCurrentConnection, DefaultSqlCurrentConnection>();
-```
-
-## Configuration
-
-There is no options object. Register `DefaultSqlCurrentConnection` explicitly as a scoped `ISqlCurrentConnection`; it is intended to represent one ambient SQL connection per request or unit-of-work scope. Then register one provider-specific `ISqlConnectionFactory` from `Headless.Sql.PostgreSql`, `Headless.Sql.SqlServer`, or `Headless.Sql.Sqlite`.
-
-## Dependencies
-
-- `Headless.Sql.Abstractions`
-- `Nito.AsyncEx`
-
-## Side Effects
-
-None. Register services explicitly.
+- [Headless Framework](https://github.com/xshaheen/headless-framework#readme)
+- [SQL guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/sql.md#headlesssqlcore)

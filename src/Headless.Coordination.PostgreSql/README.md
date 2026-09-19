@@ -2,57 +2,17 @@
 
 Stores coordination membership in PostgreSQL with server-clock liveness.
 
-## Problem Solved
+## Why use this package
 
 Provides an authoritative PostgreSQL membership provider for multi-instance apps that already depend on a PostgreSQL primary.
 
-## Key Features
-
-- Atomic incarnation allocation with `INSERT ... ON CONFLICT ... RETURNING`.
-- Heartbeat guard rejects stale, impossible, dead, gracefully left, and pruned incarnations.
-- Liveness classification uses `clock_timestamp()`.
-- DDL initialization uses PostgreSQL advisory locks.
-
-## Design Notes
-
-Operational reads join the generation table so superseded incarnations are not live candidates. Consumers must use the primary/write path for failover-driving reads.
-
-## Installation
+## Install
 
 ```bash
 dotnet add package Headless.Coordination.PostgreSql
 ```
 
-## Quick Start
+## Documentation
 
-```csharp
-services.AddHeadlessCoordination(setup =>
-{
-    setup.Configure(options =>
-    {
-        options.ClusterName = "orders";
-        options.ConfiguredNodeId = "orders-worker-0";
-    });
-
-    setup.UsePostgreSql(options =>
-    {
-        options.ConnectionString = connectionString;
-    });
-});
-```
-
-## Configuration
-
-Configure shared `CoordinationOptions` with `setup.Configure(...)`. Configure `PostgreSqlCoordinationOptions.ConnectionString`, optional `DataSource`, `CommandTimeout`, and `InitializeOnStartup` with `setup.UsePostgreSql(...)`.
-
-The schema is not a provider option: set it with `setup.ConfigureStorage(storage => storage.Schema = "…")` (default `"coordination"`). The initializer creates that schema when absent and every statement names its tables as `"schema"."table"`, so the provider no longer depends on `search_path`. The provider validates the schema against PostgreSQL's unquoted-identifier rules at startup.
-
-## Dependencies
-
-- `Headless.Coordination.Core.Database`
-- `Headless.Hosting`
-- `Npgsql`
-
-## Side Effects
-
-Registers the core membership services, PostgreSQL membership store, storage initializer, and initializer hosted service. Creates snake_case tables and columns. Requires PostgreSQL DDL permission when initialization runs on startup.
+- [Headless Framework](https://github.com/xshaheen/headless-framework#readme)
+- [Coordination guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/coordination.md#headlesscoordinationpostgresql)

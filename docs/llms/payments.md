@@ -59,11 +59,7 @@ Register via:
 
 Paymob Accept integration for cash-in (payment collection) operations.
 
-### Problem Solved
-
-Provides a typed client for the Paymob Accept payment gateway, supporting multiple collection channels (cards via iframe, mobile wallets, kiosk, cash collection) with HMAC validation for secure callback verification.
-
-### Key Features
+### API and behavior
 
 - `IPaymobCashInBroker` — main payment operations interface:
   - `CreateIntentionAsync` — v2 Payment Intentions API; returns `ClientSecret` for frontend use
@@ -80,7 +76,7 @@ Provides a typed client for the Paymob Accept payment gateway, supporting multip
 - `CashInBillingData` — requires first name, last name, phone number, and email in its constructor; optional address and shipping values are init-only properties that default to `"NA"`
 - `PaymobCashInException` — thrown on non-success HTTP responses from Paymob
 
-### Design Notes
+### Design constraints
 
 `IPaymobCashInBroker` is registered as scoped (not singleton) because it takes a typed `HttpClient`. `IPaymobCashInAuthenticator` is singleton and holds the cached auth token; the broker calls the authenticator on each request. Options changes invalidate the cached token automatically via `IOptionsMonitor<PaymobCashInOptions>`.
 
@@ -90,13 +86,13 @@ The package adds `AddStandardResilienceHandler()` to the named HTTP client autom
 
 All Paymob URL options require HTTPS for external hosts. HTTP is accepted only for loopback development/test servers, and URLs containing userinfo are rejected, so API credentials and payment tokens cannot be configured for remote plaintext transport.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Payments.Paymob.CashIn
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -214,12 +210,7 @@ public IActionResult HandleCallback([FromBody] CashInCallbackTransaction transac
 | `VoidRefundUrl` | No | `https://accept.paymob.com/api/acceptance/void_refund/void` | Void endpoint. |
 | `IframeBaseUrl` | No | `https://accept.paymob.com/api/acceptance/iframes` | Card iframe base URL. |
 
-### Dependencies
-
-- `Headless.Extensions`
-- `Microsoft.Extensions.Http.Resilience`
-
-### Side Effects
+### Runtime behavior
 
 - Registers `IPaymobCashInAuthenticator` as singleton
 - Registers `IPaymobCashInBroker` as scoped with typed `HttpClient`
@@ -231,11 +222,7 @@ public IActionResult HandleCallback([FromBody] CashInCallbackTransaction transac
 
 Paymob integration for cash-out (disbursement) operations.
 
-### Problem Solved
-
-Provides a typed client for the Paymob disbursement API, enabling payouts to bank accounts (via IBAN or card number), Egyptian mobile wallets (Vodafone, Etisalat, Orange), bank wallets, and Aman cash pickup.
-
-### Key Features
+### API and behavior
 
 - `IPaymobCashOutBroker` — disbursement operations interface:
   - `DisburseAsync(request)` — execute disbursement, returns `CashOutTransaction`
@@ -257,7 +244,7 @@ Provides a typed client for the Paymob disbursement API, enabling payouts to ban
 - `CashOutGetTransactionsResponse` — paginated transaction inquiry result (`Count`, `Next`, `Previous`, `Results`)
 - `PaymobCashOutException` — thrown on non-success HTTP responses
 
-### Design Notes
+### Design constraints
 
 `IPaymobCashOutBroker` is registered as scoped with a typed `HttpClient`. The broker method is `DisburseAsync(...)` (standard async naming). `IPaymobCashOutAuthenticator` is singleton and caches the Bearer token; on options change, the cached token is invalidated automatically.
 
@@ -267,13 +254,13 @@ The CashOut authentication uses OAuth2 password grant, unlike CashIn's proprieta
 
 `ApiBaseUrl` requires HTTPS for external hosts. HTTP is accepted only for loopback development/test servers, and URLs containing userinfo are rejected, so OAuth credentials cannot be configured for remote plaintext transport.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Payments.Paymob.CashOut
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -357,14 +344,7 @@ var result = await broker.DisburseAsync(request, cancellationToken);
 | `ClientSecret` | Yes | — | OAuth2 Basic auth client secret. |
 | `TokenRefreshBuffer` | No | `00:10:00` | Token cache duration (max 60 min). |
 
-### Dependencies
-
-- `Headless.Extensions`
-- `Headless.Http`
-- `Headless.Urls`
-- `Microsoft.Extensions.Http.Resilience`
-
-### Side Effects
+### Runtime behavior
 
 - Registers `IPaymobCashOutAuthenticator` as singleton
 - Registers `IPaymobCashOutBroker` as scoped with typed `HttpClient`
@@ -376,11 +356,7 @@ var result = await broker.DisburseAsync(request, cancellationToken);
 
 Higher-level service layer for Paymob CashIn and CashOut with typed per-channel request/response models, automatic error mapping, and fees calculation.
 
-### Problem Solved
-
-`IPaymobCashInBroker` and `IPaymobCashOutBroker` expose the raw Paymob API surface; using them directly requires understanding the legacy order/payment-key flow, channel-specific field combinations, and raw status codes. This package provides domain-facing services (`IPaymobCashInService`, `ICashOutService`) that handle the orchestration internally and expose typed, per-channel request/response records. It also provides `IPaymobCashInFeesCalculator` for computing Paymob processing fees without making network calls.
-
-### Key Features
+### API and behavior
 
 - `IPaymobCashInService` — typed cash-in flows:
   - `StartAsync(PaymobCardCashInRequest)` → `PaymobCardCashInResponse` (IframeSrc, PaymentKey, OrderId, Expiration)
@@ -402,13 +378,13 @@ Higher-level service layer for Paymob CashIn and CashOut with typed per-channel 
 - `PaymobTransactionResponseCodes` — constants for card response codes (0 = approved, etc.)
 - `PaymobRiskDeclineCodes` — constants for Paymob FMS risk decline codes (111–301)
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Payments.Paymob.Services
 ```
 
-### Quick Start
+### Setup and use
 
 Register the underlying brokers first, then register the service layer with `AddPaymobServices`:
 
@@ -506,12 +482,6 @@ public sealed class PayoutService(ICashOutService cashOut)
 
 No additional configuration beyond `Headless.Payments.Paymob.CashIn` and `Headless.Payments.Paymob.CashOut`. `PaymobCashInFeesCalculator` accepts constructor parameters for fee rates — pass the values Paymob has configured for your merchant account.
 
-### Dependencies
-
-- `Headless.Payments.Paymob.CashIn`
-- `Headless.Payments.Paymob.CashOut`
-- `Headless.Primitives`
-
-### Side Effects
+### Runtime behavior
 
 `AddPaymobServices()` registers `IPaymobCashInService` and `ICashOutService` as **scoped** (they depend on the scoped brokers) and `IPaymobCashInFeesCalculator` as a **singleton** with Paymob's default fee structure. All three use `TryAdd`, so pre-existing registrations are preserved. It does not register the brokers — call `AddPaymobCashIn` and `AddPaymobCashOut` first.

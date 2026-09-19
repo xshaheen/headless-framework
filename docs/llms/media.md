@@ -62,23 +62,19 @@ The providers **do not dispose** the stream passed to `GetTextAsync`. The caller
 
 Defines the interface for extracting text from media files for indexing.
 
-### Problem Solved
-
-Provides a single, format-agnostic contract (`IMediaFileTextProvider`) for extracting textual content from document streams. Application code depends on this interface only; concrete format implementations are provided by `Headless.Media.Indexing` or custom implementations.
-
-### Key Features
+### API and behavior
 
 - `IMediaFileTextProvider` — single-method interface: `Task<string> GetTextAsync(Stream fileStream, CancellationToken cancellationToken = default)`
 - `IMediaFileTextProviderResolver` — `GetProvider(string fileExtensionOrMimeType)` returns the provider for a format, or `null` when unsupported
 - Stream-based API keeps format-parsing details out of application code
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Media.Indexing.Abstractions
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 // Application service depending only on the abstraction
@@ -106,11 +102,7 @@ public sealed class DocumentIndexer(IMediaFileTextProviderResolver resolver)
 
 None. This is an abstractions-only package with no configuration.
 
-### Dependencies
-
-None.
-
-### Side Effects
+### Runtime behavior
 
 None.
 
@@ -120,11 +112,7 @@ None.
 
 Concrete text extraction implementations for PDF, Word (.docx), and PowerPoint (.pptx) documents.
 
-### Problem Solved
-
-Provides text extraction from common document formats for full-text search indexing, using `PdfPig` for PDFs and `DocumentFormat.OpenXml` for Office formats.
-
-### Key Features
+### API and behavior
 
 - `PdfMediaFileTextProvider` — PDF text extraction via PdfPig; handles non-seekable streams transparently by buffering to `MemoryStream`
 - `WordDocumentMediaFileTextProvider` — DOCX body text extraction via Open XML (paragraphs from `MainDocumentPart`)
@@ -133,7 +121,7 @@ Provides text extraction from common document formats for full-text search index
 - `SetupMediaIndexing.AddMediaIndexing()` — registers the three providers plus the resolver in one call
 - Stream-based API — providers do not dispose the caller's stream
 
-### Design Notes
+### Design constraints
 
 **PdfPig instead of iText**: PDF extraction uses [PdfPig](https://github.com/UglyToad/PdfPig) (`UglyToad.PdfPig`), an MIT-licensed pure .NET PDF reader. iText7 is AGPL-licensed, which imposes copyleft obligations on commercial applications; PdfPig avoids that constraint at no functional cost for text-extraction use cases.
 
@@ -141,13 +129,13 @@ Provides text extraction from common document formats for full-text search index
 
 **Synchronous Open XML wrappers**: `WordDocumentMediaFileTextProvider` and `PresentationDocumentMediaFileTextProvider` call synchronous Open XML APIs internally and return `Task.FromResult(...)`. The `async`-shaped signature satisfies the interface contract without adding overhead for formats that have no async parsing path.
 
-### Installation
+### Install
 
 ```bash
 dotnet add package Headless.Media.Indexing
 ```
 
-### Quick Start
+### Setup and use
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -184,13 +172,6 @@ public sealed class SearchIndexer(IMediaFileTextProviderResolver resolver)
 
 None. Providers have no configuration options; they are stateless singletons.
 
-### Dependencies
-
-- `Headless.Media.Indexing.Abstractions`
-- `Headless.Hosting`
-- `PdfPig` (PDF extraction)
-- `DocumentFormat.OpenXml` (Word and PowerPoint extraction)
-
-### Side Effects
+### Runtime behavior
 
 `AddMediaIndexing()` registers `PdfMediaFileTextProvider`, `WordDocumentMediaFileTextProvider`, and `PresentationDocumentMediaFileTextProvider` as singletons (each also as an `IMediaFileTextProvider` enumerable entry) plus `IMediaFileTextProviderResolver`, all via `TryAdd` / `TryAddEnumerable`.
