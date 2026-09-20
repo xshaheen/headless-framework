@@ -16,8 +16,9 @@ internal sealed class Bus : IBus
     private readonly IUnitOfWorkManager? _unitOfWorkManager;
 
     /// <summary>
-    /// The scoped DI-registered constructor: reads this scope's active unit of work at publish time so a
-    /// durable publish enlists in it when <see cref="TransactionEnlistment"/> allows.
+    /// The scoped DI-registered constructor: reads this scope's active unit of work at publish time only so a
+    /// publish against a unit the storage cannot join is refused rather than silently written standalone. This
+    /// surface never coordinates.
     /// </summary>
     internal Bus(MessagePublisher publisher, IUnitOfWorkManager unitOfWorkManager)
     {
@@ -28,8 +29,8 @@ internal sealed class Bus : IBus
     /// <summary>
     /// Unit-less construction for framework-internal singletons (<c>HybridCache</c>, the distributed lock
     /// primitives) that must publish without participating in any caller's unit of work. Every publish from
-    /// this instance sees no active unit, so <see cref="TransactionEnlistment.Required"/> would always throw —
-    /// these callers always request <see cref="DeliveryMode.Direct"/> explicitly, which never enlists.
+    /// this instance sees no active unit; these callers always request <see cref="DeliveryMode.Direct"/>
+    /// explicitly, which bypasses coordination entirely.
     /// </summary>
     internal Bus(MessagePublisher publisher)
     {
@@ -79,6 +80,7 @@ internal sealed class Bus : IBus
             contentObj,
             options,
             _unitOfWorkManager?.Current,
+            requireCoordination: false,
             cancellationToken
         );
     }

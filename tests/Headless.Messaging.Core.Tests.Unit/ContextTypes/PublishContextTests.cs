@@ -324,30 +324,41 @@ public sealed class PublishContextTests : TestBase
         context.IsTransactional.Should().Be(expectedTransactional);
     }
 
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public void should_reject_required_enlistment_without_an_active_unit_of_work_during_public_construction(
-        bool viaHostDefault
-    )
+    [Fact]
+    public void should_reject_required_coordination_without_an_active_unit_of_work_during_public_construction()
     {
         var act = () =>
             new PublishContext<OrderPlaced>(
                 new OrderPlaced("order-1"),
                 MessageLane.Bus,
-                viaHostDefault ? null : new PublishOptions { Enlistment = TransactionEnlistment.Required },
+                new PublishOptions(),
                 defaultDeliveryMode: DeliveryMode.Durable,
                 now: DateTimeOffset.UnixEpoch,
                 isTransactional: false,
-                defaultEnlistment: viaHostDefault
-                    ? TransactionEnlistment.Required
-                    : TransactionEnlistment.WhenAvailable,
+                requireCoordination: true,
                 cancellationToken: AbortToken
             );
 
         act.Should()
             .Throw<InvalidOperationException>()
-            .WithMessage("*requires an active unit of work*TransactionEnlistment.Required*");
+            .WithMessage("*requires an active unit of work*none was supplied*");
+    }
+
+    [Fact]
+    public void should_resolve_the_coordinated_path_when_coordination_is_required_and_a_unit_is_active()
+    {
+        var context = new PublishContext<OrderPlaced>(
+            new OrderPlaced("order-1"),
+            MessageLane.Bus,
+            new PublishOptions(),
+            defaultDeliveryMode: DeliveryMode.Durable,
+            now: DateTimeOffset.UnixEpoch,
+            isTransactional: true,
+            requireCoordination: true,
+            cancellationToken: AbortToken
+        );
+
+        context.IsTransactional.Should().BeTrue();
     }
 
     [Fact]
@@ -513,7 +524,7 @@ public sealed class PublishContextTests : TestBase
         var decision = DeliveryDecisionResolver.Resolve(
             MessageLane.Bus,
             options.DeliveryMode ?? DeliveryMode.Durable,
-            options.Enlistment ?? TransactionEnlistment.WhenAvailable,
+            requireCoordination: false,
             options.Delay,
             DeliveryCoordination.None,
             DateTimeOffset.UnixEpoch

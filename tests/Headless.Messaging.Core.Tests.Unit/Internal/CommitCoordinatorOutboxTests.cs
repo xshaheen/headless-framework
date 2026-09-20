@@ -55,7 +55,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
         var decision = DeliveryDecisionResolver.Resolve(
             MessageLane.Bus,
             DeliveryMode.Durable,
-            TransactionEnlistment.WhenAvailable,
+            requireCoordination: false,
             delay: null,
             DeliveryCoordination.Compatible(unitOfWork, transaction),
             TimeProvider.System.GetUtcNow()
@@ -104,7 +104,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
             var decision = DeliveryDecisionResolver.Resolve(
                 lane,
                 DeliveryMode.Durable,
-                TransactionEnlistment.WhenAvailable,
+                requireCoordination: false,
                 delay: null,
                 DeliveryCoordination.Compatible(unitOfWork, transaction),
                 TimeProvider.System.GetUtcNow()
@@ -130,7 +130,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
             DeliveryDecisionResolver.Resolve(
                 MessageLane.Bus,
                 DeliveryMode.Durable,
-                TransactionEnlistment.WhenAvailable,
+                requireCoordination: false,
                 delay: null,
                 coordination,
                 TimeProvider.System.GetUtcNow()
@@ -153,7 +153,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
         var decision = DeliveryDecisionResolver.Resolve(
             MessageLane.Bus,
             DeliveryMode.Durable,
-            TransactionEnlistment.Required,
+            requireCoordination: true,
             delay: null,
             DeliveryCoordination.Compatible(unitOfWork, transaction: null),
             TimeProvider.System.GetUtcNow()
@@ -220,7 +220,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
         var decision = DeliveryDecisionResolver.Resolve(
             MessageLane.Bus,
             DeliveryMode.Durable,
-            TransactionEnlistment.WhenAvailable,
+            requireCoordination: false,
             delay: null,
             DeliveryCoordination.None,
             TimeProvider.System.GetUtcNow()
@@ -259,7 +259,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
         var decision = DeliveryDecisionResolver.Resolve(
             MessageLane.Bus,
             DeliveryMode.Durable,
-            TransactionEnlistment.WhenAvailable,
+            requireCoordination: false,
             TimeSpan.FromMinutes(30),
             DeliveryCoordination.Compatible(unitOfWork, transaction),
             now

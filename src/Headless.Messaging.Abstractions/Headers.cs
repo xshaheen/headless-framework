@@ -129,12 +129,13 @@ public static class Headers
     public const string ResolvedDeliveryMode = "headless-delivery-resolved";
 
     /// <summary>
-    /// Transaction enlistment requested by the caller (per call, per type, or the host default) before the
-    /// unit-of-work decision. Values are stable <c>TransactionEnlistment</c> names (<c>WhenAvailable</c>,
-    /// <c>Required</c>, <c>Never</c>). This header is framework-owned and cannot be overridden.
-    /// Value: "headless-enlistment-requested"
+    /// Whether the framework wrote this message inside the caller's unit-of-work transaction, so that it is
+    /// discarded when that transaction rolls back. Values are the lowercase literals <c>"true"</c> and
+    /// <c>"false"</c>. An absent header means the question was never recorded, not <c>"false"</c>.
+    /// This header is framework-owned and cannot be overridden.
+    /// Value: "headless-delivery-coordinated"
     /// </summary>
-    public const string RequestedEnlistment = "headless-enlistment-requested";
+    public const string DeliveryCoordinated = "headless-delivery-coordinated";
 
     /// <summary>
     /// Exception information if the message processing failed.

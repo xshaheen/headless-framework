@@ -81,7 +81,54 @@ public sealed class PublishedMessageEndpointTests : TestBase
         payload["lane"].GetString().Should().Be(nameof(MessageLane.Bus));
         payload["requestedDeliveryMode"].ValueKind.Should().Be(JsonValueKind.Null);
         payload["resolvedDeliveryMode"].GetString().Should().Be(nameof(DeliveryMode.Durable));
-        payload["requestedEnlistment"].ValueKind.Should().Be(JsonValueKind.Null);
+        // A row stored before the coordination header existed records no answer, so the detail response must
+        // report it as unknown. Coercing it to false would assert something the row never carried.
+        payload["isCoordinated"].ValueKind.Should().Be(JsonValueKind.Null);
+        payload.Should().NotContainKey("requestedEnlistment");
+    }
+
+    [Theory]
+    [InlineData("true", JsonValueKind.True)]
+    [InlineData("false", JsonValueKind.False)]
+    public async Task should_report_recorded_coordination_when_published_message_details(
+        string headerValue,
+        JsonValueKind expected
+    )
+    {
+        // given
+        var messageId = Guid.Parse("11111111-1111-1111-1111-111111111124");
+        var message = new MediumMessage
+        {
+            StorageId = messageId,
+            Content = "{\"key\":\"value\"}",
+            Lane = MessageLane.Bus,
+            Origin = new Message(
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    [Headers.MessageId] = "logical-pub-124",
+                    [Headers.MessageName] = "orders.created",
+                    [Headers.DeliveryCoordinated] = headerValue,
+                },
+                new { Data = "test" }
+            ),
+        };
+
+        _monitoringApi
+            .GetPublishedMessageAsync(messageId, Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<MediumMessage?>(message));
+        _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
+
+        await using var app = _CreateTestApp(_dataStorage);
+        await app.StartAsync(AbortToken);
+        using var client = app.GetTestClient();
+
+        // when
+        var response = await client.GetAsync($"/api/published/message/{messageId}", AbortToken);
+
+        // then
+        var payload = await response.Content.ReadFromJsonAsync<Dictionary<string, JsonElement>>(AbortToken);
+        payload.Should().ContainKey("isCoordinated");
+        payload["isCoordinated"].ValueKind.Should().Be(expected);
     }
 
     [Fact]
@@ -120,7 +167,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
                     Lane = MessageLane.Queue,
                     RequestedDeliveryMode = DeliveryMode.Direct,
                     ResolvedDeliveryMode = DeliveryMode.Durable,
-                    RequestedEnlistment = Headless.UnitOfWork.TransactionEnlistment.Required,
+                    IsCoordinated = true,
                     Content = "{\"key\":\"value\"}",
                     Added = new DateTimeOffset(2026, 03, 24, 10, 00, 00, TimeSpan.Zero),
                     Retries = 2,
@@ -169,10 +216,8 @@ public sealed class PublishedMessageEndpointTests : TestBase
         item.GetProperty("lane").GetString().Should().Be(nameof(MessageLane.Queue));
         item.GetProperty("requestedDeliveryMode").GetString().Should().Be(nameof(DeliveryMode.Direct));
         item.GetProperty("resolvedDeliveryMode").GetString().Should().Be(nameof(DeliveryMode.Durable));
-        item.GetProperty("requestedEnlistment")
-            .GetString()
-            .Should()
-            .Be(nameof(Headless.UnitOfWork.TransactionEnlistment.Required));
+        item.GetProperty("isCoordinated").GetBoolean().Should().BeTrue();
+        item.TryGetProperty("requestedEnlistment", out _).Should().BeFalse();
         await _monitoringApi
             .Received(1)
             .GetMessagesAsync(
@@ -185,6 +230,58 @@ public sealed class PublishedMessageEndpointTests : TestBase
                 ),
                 Arg.Any<CancellationToken>()
             );
+    }
+
+    [Fact]
+    public async Task should_keep_unrecorded_coordination_distinct_from_false_when_published_list()
+    {
+        // given: one row that never recorded the answer beside one that recorded "not coordinated".
+        var result = new IndexPage<MessageView>(
+            [
+                _RowWithCoordination(Guid.Parse("11111111-1111-1111-1111-111111111001"), isCoordinated: null),
+                _RowWithCoordination(Guid.Parse("11111111-1111-1111-1111-111111111002"), isCoordinated: false),
+            ],
+            index: 1,
+            size: 20,
+            totalItems: 2
+        );
+
+        _monitoringApi
+            .GetMessagesAsync(Arg.Any<MessageQuery>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(result));
+        _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
+
+        await using var app = _CreateTestApp(_dataStorage);
+        await app.StartAsync(AbortToken);
+        using var client = app.GetTestClient();
+
+        // when
+        var response = await client.GetAsync("/api/published/Succeeded", AbortToken);
+
+        // then
+        var payload = await response.Content.ReadFromJsonAsync<Dictionary<string, JsonElement>>(AbortToken);
+        payload.Should().ContainKey("items");
+        var items = payload["items"].EnumerateArray().ToList();
+        items.Should().HaveCount(2);
+        items[0].GetProperty("isCoordinated").ValueKind.Should().Be(JsonValueKind.Null);
+        items[1].GetProperty("isCoordinated").ValueKind.Should().Be(JsonValueKind.False);
+    }
+
+    private static MessageView _RowWithCoordination(Guid storageId, bool? isCoordinated)
+    {
+        return new MessageView
+        {
+            StorageId = storageId,
+            MessageId = storageId.ToString("D"),
+            Version = "v1",
+            Name = "orders.created",
+            Lane = MessageLane.Bus,
+            ResolvedDeliveryMode = DeliveryMode.Durable,
+            IsCoordinated = isCoordinated,
+            Content = "{}",
+            Added = new DateTimeOffset(2026, 03, 24, 10, 00, 00, TimeSpan.Zero),
+            StatusName = StatusName.Succeeded,
+        };
     }
 
     [Fact]

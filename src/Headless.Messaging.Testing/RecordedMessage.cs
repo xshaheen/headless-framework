@@ -63,9 +63,9 @@ public sealed record RecordedMessage
     public DeliveryMode? RequestedDeliveryMode { get; init; }
 
     /// <summary>
-    /// The mode the framework actually executed. <see cref="Headless.UnitOfWork.TransactionEnlistment"/> is a
-    /// separate axis from <see cref="DeliveryMode"/> — enlisting in an active unit of work does not change the
-    /// recorded delivery mode. The harness keeps the production default, so a plain publish records
+    /// The mode the framework actually executed. Transaction coordination is a separate axis from
+    /// <see cref="DeliveryMode"/> — writing inside an active unit of work does not change the recorded
+    /// delivery mode. The harness keeps the production default, so a plain publish records
     /// <c>Durable</c> here (store-first, dispatched from storage) and only an explicit
     /// <see cref="DeliveryMode.Direct"/> publish records <c>Direct</c>. <see langword="null"/> when the headers
     /// carry no delivery metadata.
@@ -73,11 +73,11 @@ public sealed record RecordedMessage
     public DeliveryMode? ResolvedDeliveryMode { get; init; }
 
     /// <summary>
-    /// The <see cref="Headless.UnitOfWork.TransactionEnlistment"/> the publish asked for (per call, per type, or
-    /// the host default) as stamped in the <c>headless-enlistment-requested</c> header. <see langword="null"/> when
-    /// the headers carry no delivery metadata.
+    /// Whether the framework wrote this message inside the caller's unit-of-work transaction, as stamped in the
+    /// <c>headless-delivery-coordinated</c> header. <see langword="null"/> when the headers record no answer,
+    /// which means unknown rather than "not coordinated".
     /// </summary>
-    public Headless.UnitOfWork.TransactionEnlistment? RequestedEnlistment { get; init; }
+    public bool? IsCoordinated { get; init; }
 
     /// <summary>
     /// UTC wall-clock time when the observation was recorded — publish acknowledgment
@@ -119,7 +119,7 @@ public sealed record RecordedMessage
             Lane = lane,
             RequestedDeliveryMode = delivery.RequestedDeliveryMode,
             ResolvedDeliveryMode = delivery.ResolvedDeliveryMode,
-            RequestedEnlistment = delivery.RequestedEnlistment,
+            IsCoordinated = delivery.IsCoordinated,
             Timestamp = timestamp,
             Exception = exception,
         };

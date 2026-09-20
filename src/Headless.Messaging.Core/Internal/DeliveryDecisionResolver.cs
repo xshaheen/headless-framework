@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
-using Headless.UnitOfWork;
 
 namespace Headless.Messaging.Internal;
 
@@ -15,7 +14,6 @@ internal enum DeliveryPath
 internal readonly record struct DeliveryDecision(
     DeliveryMode RequestedMode,
     DeliveryMode ResolvedMode,
-    TransactionEnlistment Enlistment,
     DeliveryPath Path,
     TimeSpan? Delay,
     DateTimeOffset? PublishAt,
@@ -29,25 +27,25 @@ internal readonly record struct DeliveryDecision(
 }
 
 /// <summary>
-/// Decides the delivery path before any storage or transport effect. The matrix:
+/// Decides the delivery path before any storage or transport effect. <c>requireCoordination</c> is the receiver's
+/// own guarantee, not a caller preference: the outbox surface always requires it and the autonomous surface never
+/// does. The matrix:
 /// <list type="bullet">
-/// <item><c>Durable</c> (default): enlists in a compatible active unit of work when
-/// <see cref="TransactionEnlistment"/> allows it; otherwise a standalone durable row. A unit with no joinable
-/// resource behaves like no unit at all.</item>
-/// <item><c>Direct</c>: transport now, bypassing storage and coordination checks entirely; rejects any
-/// schedule and <see cref="TransactionEnlistment.Required"/>.</item>
+/// <item><c>Durable</c> (default): writes the row inside a compatible active unit of work's transaction, and a
+/// standalone durable row when no unit is supplied.</item>
+/// <item><c>Direct</c>: transport now, bypassing storage and coordination checks entirely; rejects any schedule
+/// and any coordination requirement.</item>
 /// </list>
-/// <see cref="TransactionEnlistment.Required"/> with no compatible unit of work throws before any effect;
-/// <see cref="TransactionEnlistment.Never"/> always writes standalone, even against an incompatible resource;
-/// an incompatible resource otherwise throws regardless of <see cref="TransactionEnlistment.WhenAvailable"/> or
-/// <see cref="TransactionEnlistment.Required"/>.
+/// A unit the storage cannot join throws whether or not coordination was required, because silently writing
+/// outside a transaction the caller believes it is in is the failure this refuses to produce. Requiring
+/// coordination with no unit at all also throws, before any effect.
 /// </summary>
 internal static class DeliveryDecisionResolver
 {
     internal static DeliveryDecision Resolve(
         MessageLane lane,
         DeliveryMode requestedMode,
-        TransactionEnlistment enlistment,
+        bool requireCoordination,
         TimeSpan? delay,
         DeliveryCoordination coordination,
         DateTimeOffset now,
@@ -58,7 +56,7 @@ internal static class DeliveryDecisionResolver
         Resolve(
             lane,
             requestedMode,
-            enlistment,
+            requireCoordination,
             delay,
             coordination.Status,
             now,
@@ -69,11 +67,11 @@ internal static class DeliveryDecisionResolver
         );
 
     // Manually constructed middleware contexts need delivery semantics without live transaction resources.
-    // messageName is the declared message type's name; it only sharpens the Required-with-no-unit message.
+    // messageName is the declared message type's name; it only sharpens the coordination failure messages.
     internal static DeliveryDecision Resolve(
         MessageLane lane,
         DeliveryMode requestedMode,
-        TransactionEnlistment enlistment,
+        bool requireCoordination,
         TimeSpan? delay,
         DeliveryCoordinationStatus coordinationStatus,
         DateTimeOffset now,
@@ -100,22 +98,6 @@ internal static class DeliveryDecisionResolver
         }
 
         if (
-            enlistment
-            is not (
-                TransactionEnlistment.WhenAvailable
-                or TransactionEnlistment.Required
-                or TransactionEnlistment.Never
-            )
-        )
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(enlistment),
-                enlistment,
-                "A defined transaction enlistment is required."
-            );
-        }
-
-        if (
             coordinationStatus
             is not (
                 DeliveryCoordinationStatus.None
@@ -131,16 +113,15 @@ internal static class DeliveryDecisionResolver
             );
         }
 
-        if (requestedMode is DeliveryMode.Direct && enlistment is TransactionEnlistment.Required)
+        if (requestedMode is DeliveryMode.Direct && requireCoordination)
         {
             throw new InvalidOperationException(
-                "Direct delivery cannot require an active unit of work (TransactionEnlistment.Required); durable delivery is required to enlist."
+                "Direct delivery cannot be coordinated with a unit of work; durable delivery is required to write inside its transaction."
             );
         }
 
         // Direct bypasses storage and coordination compatibility entirely; every durable request is fenced here,
         // before the capability gate, storage, or transport can run.
-        var effectiveStatus = coordinationStatus;
         if (requestedMode is not DeliveryMode.Direct)
         {
             if (!storageSupported)
@@ -150,25 +131,20 @@ internal static class DeliveryDecisionResolver
                 );
             }
 
-            if (enlistment is TransactionEnlistment.Never)
+            if (coordinationStatus is DeliveryCoordinationStatus.Incompatible)
             {
-                // Never enlists, regardless of what is active — including an incompatible resource.
-                effectiveStatus = DeliveryCoordinationStatus.None;
+                // Refused whether or not coordination was required: a unit is active and the storage cannot join
+                // it, so a standalone row would survive a rollback the caller expects to discard it.
+                throw new InvalidOperationException(_DescribeMismatch(coordination.Mismatch, messageName));
             }
-            else if (effectiveStatus is DeliveryCoordinationStatus.Incompatible)
-            {
-                throw new InvalidOperationException(
-                    $"The active unit of work's transaction belongs to another database or has already completed ({coordination.Mismatch}), "
-                        + "so publishing cannot enlist. Use the same database with an open transaction, or TransactionEnlistment.Never for this call."
-                );
-            }
-            else if (effectiveStatus is DeliveryCoordinationStatus.None && enlistment is TransactionEnlistment.Required)
+
+            if (coordinationStatus is DeliveryCoordinationStatus.None && requireCoordination)
             {
                 var subject = messageName is null ? "Publishing" : $"Publishing '{messageName}'";
 
                 throw new InvalidOperationException(
-                    $"{subject} requires an active unit of work (TransactionEnlistment.Required) but none is active in this scope. "
-                        + "Begin one with IUnitOfWorkManager.BeginAsync before publishing, or register the message with TransactionEnlistment.WhenAvailable."
+                    $"{subject} through the unit-of-work outbox requires an active unit of work, but none was supplied. "
+                        + "Begin one with IUnitOfWorkManager.BeginAsync before publishing, or publish through the autonomous bus."
                 );
             }
         }
@@ -220,24 +196,53 @@ internal static class DeliveryDecisionResolver
         var path = requestedMode switch
         {
             DeliveryMode.Direct => DeliveryPath.Direct,
-            DeliveryMode.Durable when effectiveStatus is DeliveryCoordinationStatus.Compatible =>
+            DeliveryMode.Durable when coordinationStatus is DeliveryCoordinationStatus.Compatible =>
                 DeliveryPath.DurableCoordinated,
             DeliveryMode.Durable => DeliveryPath.DurableStandalone,
             _ => throw new UnreachableException(),
         };
 
         // Requested and resolved modes are equal today (no mode is ever rewritten by the matrix), but they are
-        // two public headers and two dashboard columns: keep both so a future enlistment-driven resolution can
+        // two public headers and two dashboard columns: keep both so a future coordination-driven resolution can
         // diverge them without changing the wire shape.
         return new DeliveryDecision(
             requestedMode,
             requestedMode,
-            enlistment,
             path,
             delay,
             publishAt,
             coordination,
             scheduledAt?.ToUniversalTime()
         );
+    }
+
+    // The advice has to match the mismatch. A unit that exposes no relational resource is still a unit, so
+    // telling its caller to begin one is advice they already followed; they need to hear that the unit they
+    // opened has nothing for the messaging storage to write into.
+    private static string _DescribeMismatch(DeliveryCoordinationMismatch mismatch, string? messageName)
+    {
+        var subject = messageName is null ? "Publishing" : $"Publishing '{messageName}'";
+
+        var (detail, advice) = mismatch switch
+        {
+            DeliveryCoordinationMismatch.MissingRelationalCapability => (
+                "the active unit of work exposes no relational resource for the messaging storage to write into",
+                "Begin the unit of work over a relational resource for the messaging database, or publish without coordination."
+            ),
+            DeliveryCoordinationMismatch.TransactionCompleted => (
+                "the active unit of work's transaction has already committed or rolled back",
+                "Publish before the unit of work completes, or publish without coordination."
+            ),
+            DeliveryCoordinationMismatch.Database => (
+                "the active unit of work's transaction belongs to another database",
+                "Use the same database with an open transaction, or publish without coordination."
+            ),
+            _ => (
+                "the active unit of work's transaction belongs to another storage provider",
+                "Use the same database with an open transaction, or publish without coordination."
+            ),
+        };
+
+        return $"{subject} cannot join the active unit of work ({mismatch}): {detail}. {advice}";
     }
 }

@@ -2,7 +2,6 @@
 
 using System.Runtime.InteropServices;
 using Headless.Messaging.Serialization;
-using Headless.UnitOfWork;
 
 namespace Headless.Messaging.Internal;
 
@@ -10,30 +9,33 @@ namespace Headless.Messaging.Internal;
 internal readonly record struct DeliveryMetadataValues(
     DeliveryMode? RequestedDeliveryMode,
     DeliveryMode? ResolvedDeliveryMode,
-    TransactionEnlistment? RequestedEnlistment = null
+    bool? IsCoordinated = null
 );
 
 internal static class DeliveryMetadata
 {
+    private const string _True = "true";
+    private const string _False = "false";
+
     internal static void Stamp(IDictionary<string, string?> headers, in DeliveryDecision decision)
     {
         headers[Headers.RequestedDeliveryMode] = decision.RequestedMode.ToString("G");
         headers[Headers.ResolvedDeliveryMode] = decision.ResolvedMode.ToString("G");
-        headers[Headers.RequestedEnlistment] = decision.Enlistment.ToString("G");
+        headers[Headers.DeliveryCoordinated] = decision.IsTransactional ? _True : _False;
     }
 
     internal static DeliveryMetadataValues Read(IDictionary<string, string?> headers)
     {
         var hasRequested = headers.TryGetValue(Headers.RequestedDeliveryMode, out var requestedValue);
         var hasResolved = headers.TryGetValue(Headers.ResolvedDeliveryMode, out var resolvedValue);
-        var hasEnlistment = headers.TryGetValue(Headers.RequestedEnlistment, out var enlistmentValue);
+        var hasCoordinated = headers.TryGetValue(Headers.DeliveryCoordinated, out var coordinatedValue);
 
-        if (!hasRequested && !hasResolved && !hasEnlistment)
+        if (!hasRequested && !hasResolved && !hasCoordinated)
         {
             return default;
         }
 
-        return new(_Parse(requestedValue), _Parse(resolvedValue), _ParseEnlistment(enlistmentValue));
+        return new(_Parse(requestedValue), _Parse(resolvedValue), _ParseCoordinated(coordinatedValue));
     }
 
     internal static DeliveryMetadataValues ReadStoredHeaders(IDictionary<string, string?> headers)
@@ -41,7 +43,7 @@ internal static class DeliveryMetadata
         var hasMetadata =
             headers.ContainsKey(Headers.RequestedDeliveryMode)
             || headers.ContainsKey(Headers.ResolvedDeliveryMode)
-            || headers.ContainsKey(Headers.RequestedEnlistment);
+            || headers.ContainsKey(Headers.DeliveryCoordinated);
 
         return hasMetadata
             ? Read(headers)
@@ -83,18 +85,16 @@ internal static class DeliveryMetadata
         return null;
     }
 
-    // Same exact-name rule as the delivery modes: an unknown or customer-controlled value projects as "not recorded".
-    private static TransactionEnlistment? _ParseEnlistment(string? value)
+    // Same exact-value rule as the delivery modes: an absent, unknown, or customer-controlled value projects as
+    // "not recorded". A row that predates this header must read as unknown, never as false — reporting it as
+    // "not coordinated" asserts an answer the row never carried.
+    private static bool? _ParseCoordinated(string? value)
     {
-        if (
-            value is not null
-            && Enum.TryParse<TransactionEnlistment>(value, ignoreCase: false, out var enlistment)
-            && Enum.IsDefined(enlistment)
-        )
+        if (string.Equals(value, _True, StringComparison.Ordinal))
         {
-            return enlistment;
+            return true;
         }
 
-        return null;
+        return string.Equals(value, _False, StringComparison.Ordinal) ? false : null;
     }
 }

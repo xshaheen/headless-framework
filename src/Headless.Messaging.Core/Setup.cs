@@ -238,7 +238,6 @@ public static class SetupMessaging
                 sp.GetService<MessagingTelemetry>(),
                 options.TransportPublishTimeout,
                 sp.GetRequiredService<IOptions<MessagingOptions>>().Value.DefaultDeliveryMode,
-                sp.GetRequiredService<IOptions<MessagingOptions>>().Value.DefaultEnlistment,
                 sp.GetServices<MessageRegistration>()
             );
         });

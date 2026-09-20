@@ -19,7 +19,6 @@ internal sealed class MessagePublisher(
     MessagingTelemetry? telemetry = null,
     TimeSpan? transportPublishTimeout = null,
     DeliveryMode defaultDeliveryMode = DeliveryMode.Durable,
-    TransactionEnlistment defaultEnlistment = TransactionEnlistment.WhenAvailable,
     IEnumerable<MessageRegistration>? registrations = null
 )
 {
@@ -38,14 +37,6 @@ internal sealed class MessagePublisher(
             static registration => registration.DeliveryMode!.Value
         );
 
-    private readonly FrozenDictionary<(Type MessageType, MessageLane Lane), TransactionEnlistment> _enlistmentPolicies =
-        (registrations ?? [])
-            .Where(static registration => registration.Enlistment is not null)
-            .ToFrozenDictionary(
-                static registration => (registration.MessageType, registration.Lane),
-                static registration => registration.Enlistment!.Value
-            );
-
     // Cached once: passing a method group as Func<long> allocates a fresh delegate on every publish,
     // because the compiler only caches method-group conversions for static methods.
     private readonly Func<long> _nowUnixTimeMilliseconds = () => timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
@@ -55,34 +46,33 @@ internal sealed class MessagePublisher(
         T? content,
         MessageOptions? options,
         IUnitOfWork? unitOfWork,
+        bool requireCoordination,
         CancellationToken cancellationToken
     )
     {
         var coordination = _ResolveCoordination(unitOfWork);
-        // Precedence is per call, then the policy registered for the declared type on this lane, then the host
-        // default. The declared type (not the runtime content type) is the key so a callback response that names
-        // its MessageType resolves the same policy the registration declared.
         var declaredMessageType = options?.MessageType ?? typeof(T);
-        var requestedMode =
-            options?.DeliveryMode
-            ?? (
-                _deliveryPolicies.TryGetValue((declaredMessageType, lane), out var typePolicy)
-                    ? typePolicy
-                    : defaultDeliveryMode
-            );
-        var requestedEnlistment =
-            options?.Enlistment
-            ?? (
-                _enlistmentPolicies.TryGetValue((declaredMessageType, lane), out var enlistmentPolicy)
-                    ? enlistmentPolicy
-                    : defaultEnlistment
-            );
+        // An enlisted publish has no mode to resolve: durable capture is the mechanism it enlists through, so
+        // the mode is Durable by construction and none of the three autonomous inputs may reach this path. A
+        // type pinned Direct would otherwise turn every coordinated publish of that type into a refusal.
+        //
+        // Otherwise precedence is per call, then the policy registered for the declared type on this lane, then
+        // the host default. The declared type (not the runtime content type) is the key so a callback response
+        // that names its MessageType resolves the same policy the registration declared.
+        var requestedMode = requireCoordination
+            ? DeliveryMode.Durable
+            : MessageOptionsDelivery.GetDeliveryMode(options)
+                ?? (
+                    _deliveryPolicies.TryGetValue((declaredMessageType, lane), out var typePolicy)
+                        ? typePolicy
+                        : defaultDeliveryMode
+                );
         // Storage support is a resolver input, not a pipeline probe: the outbox writer is registered unconditionally
         // and throws when storage is missing, so a durable request on a storage-less host is refused here first.
         var decision = DeliveryDecisionResolver.Resolve(
             lane,
             requestedMode,
-            requestedEnlistment,
+            requireCoordination,
             options?.Delay,
             coordination,
             timeProvider.GetUtcNow(),

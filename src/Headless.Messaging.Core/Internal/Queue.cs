@@ -16,8 +16,9 @@ internal sealed class Queue : IQueue
     private readonly IUnitOfWorkManager? _unitOfWorkManager;
 
     /// <summary>
-    /// The scoped DI-registered constructor: reads this scope's active unit of work at publish time so a
-    /// durable enqueue enlists in it when <see cref="TransactionEnlistment"/> allows.
+    /// The scoped DI-registered constructor: reads this scope's active unit of work at publish time only so an
+    /// enqueue against a unit the storage cannot join is refused rather than silently written standalone. This
+    /// surface never coordinates.
     /// </summary>
     internal Queue(MessagePublisher publisher, IUnitOfWorkManager unitOfWorkManager)
     {
@@ -77,6 +78,7 @@ internal sealed class Queue : IQueue
             contentObj,
             options,
             _unitOfWorkManager?.Current,
+            requireCoordination: false,
             cancellationToken
         );
     }

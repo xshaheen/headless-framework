@@ -177,7 +177,7 @@ public sealed class InMemoryDataStorageCoordinationTests : TestBase
         var decision = DeliveryDecisionResolver.Resolve(
             MessageLane.Bus,
             DeliveryMode.Durable,
-            TransactionEnlistment.Required,
+            requireCoordination: true,
             delay,
             _Resolver(storage).Resolve(unitOfWork),
             TimeProvider.System.GetUtcNow()

@@ -3,7 +3,6 @@
 using BenchmarkDotNet.Attributes;
 using Headless.Messaging.Benchmarks.Support;
 using Headless.Messaging.Internal;
-using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Messaging.Benchmarks.Scenarios;
@@ -45,7 +44,7 @@ public class PublishDispatchBenchmarks
         _decision = DeliveryDecisionResolver.Resolve(
             MessageLane.Bus,
             _options.DeliveryMode ?? DeliveryMode.Direct,
-            _options.Enlistment ?? TransactionEnlistment.WhenAvailable,
+            requireCoordination: false,
             _options.Delay,
             DeliveryCoordination.None,
             DateTimeOffset.UnixEpoch

@@ -1,17 +1,17 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.UnitOfWork;
-
 namespace Headless.Messaging;
 
 /// <summary>
-/// Shared base for outbound message option records. Carries the delivery mode and intent-agnostic metadata fields
-/// (message name, identifiers, tenancy, headers, callback) that every send path accepts.
+/// Shared base for outbound message option records. Carries the intent-agnostic metadata fields
+/// (message name, identifiers, tenancy, headers, delay, scheduling, callback) that every send path accepts.
 /// </summary>
 /// <remarks>
 /// <para>
 /// Bus and queue publisher interfaces accept records derived from this base. Each derived record adds the
-/// lane-specific publishing options while the invoked publisher verb remains the only lane authority.
+/// options its own surface can honor while the invoked publisher verb remains the only lane authority: the
+/// autonomous records carry a delivery mode, and the outbox records carry none because reaching the outbox
+/// already selects durable capture.
 /// </para>
 /// <para>
 /// This type is a record so middleware can mutate a single property via a <c>with</c> expression
@@ -39,23 +39,10 @@ public abstract record MessageOptions
     /// </summary>
     public const int TenantIdMaxLength = 200;
 
-    /// <summary>
-    /// Gets the per-call delivery override. Null inherits the host default, which is <see cref="DeliveryMode.Durable"/>
-    /// unless <c>MessagingOptions.DefaultDeliveryMode</c> selects another mode.
-    /// </summary>
-    public DeliveryMode? DeliveryMode { get; init; }
-
-    /// <summary>
-    /// Gets the per-call transaction-enlistment override for durable delivery. Null inherits the per-type
-    /// registration, then the host default (<see cref="TransactionEnlistment.WhenAvailable"/> unless
-    /// configured otherwise). Ignored with <see cref="Messaging.DeliveryMode.Direct"/>, which never enlists.
-    /// </summary>
-    public TransactionEnlistment? Enlistment { get; init; }
-
     /// <summary>Gets the relative delay applied before the durably captured message is dispatched.</summary>
     /// <remarks>
     /// A delay requires durable capture: it is honored with <see cref="DeliveryMode.Durable"/>, and rejected
-    /// before any side effect with <see cref="DeliveryMode.Direct"/>.
+    /// before any side effect when an autonomous send selects <see cref="DeliveryMode.Direct"/>.
     /// </remarks>
     public TimeSpan? Delay { get; init; }
 
@@ -63,8 +50,8 @@ public abstract record MessageOptions
     /// <remarks>
     /// <para>
     /// This is the absolute spelling of <see cref="Delay"/> and carries the same contract: it requires durable
-    /// capture, so it is honored with <see cref="DeliveryMode.Durable"/> and rejected with
-    /// <see cref="DeliveryMode.Direct"/>. Setting both this and <see cref="Delay"/> on the same call is
+    /// capture, so it is honored with <see cref="DeliveryMode.Durable"/> and rejected when an autonomous send
+    /// selects <see cref="DeliveryMode.Direct"/>. Setting both this and <see cref="Delay"/> on the same call is
     /// rejected before any side effect.
     /// </para>
     /// <para>
@@ -182,9 +169,7 @@ public abstract record MessageOptions
             return false;
         }
 
-        return DeliveryMode == other.DeliveryMode
-            && Enlistment == other.Enlistment
-            && Nullable.Equals(Delay, other.Delay)
+        return Nullable.Equals(Delay, other.Delay)
             && Nullable.Equals(ScheduledAt, other.ScheduledAt)
             && string.Equals(MessageName, other.MessageName, StringComparison.Ordinal)
             && string.Equals(ContractVersion, other.ContractVersion, StringComparison.Ordinal)
@@ -208,8 +193,6 @@ public abstract record MessageOptions
     public override int GetHashCode()
     {
         var hash = new HashCode();
-        hash.Add(DeliveryMode);
-        hash.Add(Enlistment);
         hash.Add(Delay);
         hash.Add(ScheduledAt);
         hash.Add(MessageName, StringComparer.Ordinal);

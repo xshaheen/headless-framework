@@ -3,7 +3,6 @@
 using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.Testing.Tests;
-using Headless.UnitOfWork;
 
 namespace Tests.Internal;
 
@@ -11,7 +10,7 @@ namespace Tests.Internal;
 /// <see cref="DeliveryDecisionResolver"/> validates its inputs against inline member lists instead of
 /// <c>Enum.IsDefined</c>, because it runs on every publish. That trade buys speed at the price of a silent
 /// coupling: a newly added member is accepted by the rest of the pipeline but throws here. These tests fail
-/// as soon as one of the three enums grows, and name the guard that has to grow with it.
+/// as soon as one of the enums grows, and name the guard that has to grow with it.
 /// </summary>
 public sealed class DeliveryEnumArityTests : TestBase
 {
@@ -38,13 +37,19 @@ public sealed class DeliveryEnumArityTests : TestBase
     }
 
     [Fact]
-    public void should_pin_transaction_enlistment_members_to_the_resolver_guard()
+    public void should_pin_delivery_coordination_mismatch_members_to_the_refusal_message()
     {
-        Enum.GetValues<TransactionEnlistment>()
+        Enum.GetValues<DeliveryCoordinationMismatch>()
             .Should()
             .Equal(
-                [TransactionEnlistment.WhenAvailable, TransactionEnlistment.Required, TransactionEnlistment.Never],
-                "DeliveryDecisionResolver.Resolve rejects anything outside `enlistment is (WhenAvailable or Required or Never)` — widen that guard before this list"
+                [
+                    DeliveryCoordinationMismatch.None,
+                    DeliveryCoordinationMismatch.MissingRelationalCapability,
+                    DeliveryCoordinationMismatch.StorageProvider,
+                    DeliveryCoordinationMismatch.Database,
+                    DeliveryCoordinationMismatch.TransactionCompleted,
+                ],
+                "DeliveryDecisionResolver._DescribeMismatch writes a per-reason detail and remedy; a new member would silently inherit the storage-provider wording"
             );
     }
 

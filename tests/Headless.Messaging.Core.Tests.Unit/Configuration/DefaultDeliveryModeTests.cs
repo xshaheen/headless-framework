@@ -7,7 +7,6 @@ using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Registration;
 using Headless.Testing.Tests;
-using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -74,49 +73,6 @@ public sealed class DefaultDeliveryModeTests : TestBase
         }
 
         await _AssertStoredCountAsync(provider, lane, explicitMode == DeliveryMode.Durable ? 1 : 0);
-    }
-
-    [Theory]
-    [InlineData(MessageLane.Bus, true)]
-    [InlineData(MessageLane.Bus, false)]
-    [InlineData(MessageLane.Queue, true)]
-    [InlineData(MessageLane.Queue, false)]
-    public async Task should_reject_required_enlistment_outside_a_unit_of_work_before_any_effect(
-        MessageLane lane,
-        bool viaHostDefault
-    )
-    {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddHeadlessMessaging(setup =>
-        {
-            setup.UseInMemory();
-            setup.UseInMemoryStorage();
-            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
-            setup.Options.DefaultEnlistment = viaHostDefault
-                ? TransactionEnlistment.Required
-                : TransactionEnlistment.WhenAvailable;
-            setup.Bus.ForMessage<TestMessage>(message => message.Contract("test.default-mode"));
-            setup.Queue.ForMessage<TestMessage>(message => message.Contract("test.default-mode"));
-        });
-        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
-        var message = new TestMessage("required");
-        TransactionEnlistment? explicitEnlistment = viaHostDefault ? null : TransactionEnlistment.Required;
-
-        await using var scope = provider.CreateAsyncScope();
-        var act = () =>
-            lane == MessageLane.Bus
-                ? scope
-                    .ServiceProvider.GetRequiredService<IBus>()
-                    .PublishAsync(message, new PublishOptions { Enlistment = explicitEnlistment }, AbortToken)
-                : scope
-                    .ServiceProvider.GetRequiredService<IQueue>()
-                    .EnqueueAsync(message, new QueueOptions { Enlistment = explicitEnlistment }, AbortToken);
-
-        await act.Should()
-            .ThrowAsync<InvalidOperationException>()
-            .WithMessage("*requires an active unit of work*TransactionEnlistment.Required*");
-        await _AssertStoredCountAsync(provider, lane, 0);
     }
 
     [Fact]
@@ -244,34 +200,6 @@ public sealed class DefaultDeliveryModeTests : TestBase
         await act.Should()
             .ThrowAsync<InvalidOperationException>()
             .WithMessage("*Direct delivery cannot specify a delay*");
-        await _AssertStoredCountAsync(provider, lane, 0);
-    }
-
-    [Theory]
-    [InlineData(MessageLane.Bus)]
-    [InlineData(MessageLane.Queue)]
-    public async Task should_reject_a_type_registered_required_enlistment_outside_a_unit_of_work_before_any_effect(
-        MessageLane lane
-    )
-    {
-        await using var provider = _CreateProvider(
-            DeliveryMode.Durable,
-            setup =>
-            {
-                setup.Bus.ForMessage<TestMessage>(message =>
-                    message.Contract("test.default-mode").WithEnlistment(TransactionEnlistment.Required)
-                );
-                setup.Queue.ForMessage<TestMessage>(message =>
-                    message.Contract("test.default-mode").WithEnlistment(TransactionEnlistment.Required)
-                );
-            }
-        );
-
-        var act = () => _PublishAsync(provider, lane, new TestMessage("coordinated"), explicitMode: null);
-
-        await act.Should()
-            .ThrowAsync<InvalidOperationException>()
-            .WithMessage("*requires an active unit of work*TransactionEnlistment.Required*");
         await _AssertStoredCountAsync(provider, lane, 0);
     }
 

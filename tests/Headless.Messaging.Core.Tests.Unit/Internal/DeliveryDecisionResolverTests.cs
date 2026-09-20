@@ -3,7 +3,6 @@
 using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.Testing.Tests;
-using Headless.UnitOfWork;
 
 namespace Tests.Internal;
 
@@ -19,39 +18,26 @@ public sealed class DeliveryDecisionResolverTests : TestBase
     private const int _StandalonePath = (int)DeliveryPath.DurableStandalone;
     private const int _CoordinatedPath = (int)DeliveryPath.DurableCoordinated;
 
-    // Every resolving cell of the (DeliveryMode x TransactionEnlistment x coordination state) matrix, for both
+    // Every resolving cell of the (DeliveryMode x requireCoordination x coordination state) matrix, for both
     // lanes:
-    // | Mode    | Enlistment    | Compatible unit | No unit            | Incompatible unit  |
-    // | Durable | WhenAvailable | coordinated      | standalone         | throw              |
-    // | Durable | Required      | coordinated      | throw              | throw              |
-    // | Durable | Never         | standalone        | standalone         | standalone         |
-    // | Direct  | WhenAvailable | direct            | direct             | direct             |
-    // | Direct  | Never         | direct            | direct             | direct             |
-    public static TheoryData<MessageLane, DeliveryMode, TransactionEnlistment, int, int> ResolvingCells
+    // | Mode    | Coordination required | Compatible unit | No unit    | Incompatible unit |
+    // | Durable | no                    | coordinated     | standalone | throw             |
+    // | Durable | yes                   | coordinated     | throw      | throw             |
+    // | Direct  | no                    | direct          | direct     | direct            |
+    // | Direct  | yes                   | throw           | throw      | throw             |
+    public static TheoryData<MessageLane, DeliveryMode, bool, int, int> ResolvingCells
     {
         get
         {
-            var data = new TheoryData<MessageLane, DeliveryMode, TransactionEnlistment, int, int>();
+            var data = new TheoryData<MessageLane, DeliveryMode, bool, int, int>();
             foreach (var lane in new[] { MessageLane.Bus, MessageLane.Queue })
             {
-                data.Add(lane, DeliveryMode.Durable, TransactionEnlistment.WhenAvailable, _None, _StandalonePath);
-                data.Add(
-                    lane,
-                    DeliveryMode.Durable,
-                    TransactionEnlistment.WhenAvailable,
-                    _Compatible,
-                    _CoordinatedPath
-                );
-                data.Add(lane, DeliveryMode.Durable, TransactionEnlistment.Required, _Compatible, _CoordinatedPath);
-                data.Add(lane, DeliveryMode.Durable, TransactionEnlistment.Never, _None, _StandalonePath);
-                data.Add(lane, DeliveryMode.Durable, TransactionEnlistment.Never, _Compatible, _StandalonePath);
-                data.Add(lane, DeliveryMode.Durable, TransactionEnlistment.Never, _Incompatible, _StandalonePath);
-                data.Add(lane, DeliveryMode.Direct, TransactionEnlistment.WhenAvailable, _None, _DirectPath);
-                data.Add(lane, DeliveryMode.Direct, TransactionEnlistment.WhenAvailable, _Compatible, _DirectPath);
-                data.Add(lane, DeliveryMode.Direct, TransactionEnlistment.WhenAvailable, _Incompatible, _DirectPath);
-                data.Add(lane, DeliveryMode.Direct, TransactionEnlistment.Never, _None, _DirectPath);
-                data.Add(lane, DeliveryMode.Direct, TransactionEnlistment.Never, _Compatible, _DirectPath);
-                data.Add(lane, DeliveryMode.Direct, TransactionEnlistment.Never, _Incompatible, _DirectPath);
+                data.Add(lane, DeliveryMode.Durable, false, _None, _StandalonePath);
+                data.Add(lane, DeliveryMode.Durable, false, _Compatible, _CoordinatedPath);
+                data.Add(lane, DeliveryMode.Durable, true, _Compatible, _CoordinatedPath);
+                data.Add(lane, DeliveryMode.Direct, false, _None, _DirectPath);
+                data.Add(lane, DeliveryMode.Direct, false, _Compatible, _DirectPath);
+                data.Add(lane, DeliveryMode.Direct, false, _Incompatible, _DirectPath);
             }
 
             return data;
@@ -59,55 +45,25 @@ public sealed class DeliveryDecisionResolverTests : TestBase
     }
 
     // Every rejecting cell of the matrix, for both lanes.
-    public static TheoryData<MessageLane, DeliveryMode, TransactionEnlistment, int, string> RejectingCells
+    public static TheoryData<MessageLane, DeliveryMode, bool, int, string> RejectingCells
     {
         get
         {
-            var data = new TheoryData<MessageLane, DeliveryMode, TransactionEnlistment, int, string>();
+            var data = new TheoryData<MessageLane, DeliveryMode, bool, int, string>();
             foreach (var lane in new[] { MessageLane.Bus, MessageLane.Queue })
             {
+                data.Add(lane, DeliveryMode.Durable, false, _Incompatible, "*cannot join the active unit of work*");
+                data.Add(lane, DeliveryMode.Durable, true, _Incompatible, "*cannot join the active unit of work*");
                 data.Add(
                     lane,
                     DeliveryMode.Durable,
-                    TransactionEnlistment.WhenAvailable,
-                    _Incompatible,
-                    "*belongs to another database*"
-                );
-                data.Add(
-                    lane,
-                    DeliveryMode.Durable,
-                    TransactionEnlistment.Required,
+                    true,
                     _None,
-                    "*requires an active unit of work*TransactionEnlistment.Required*"
+                    "*requires an active unit of work*none was supplied*"
                 );
-                data.Add(
-                    lane,
-                    DeliveryMode.Durable,
-                    TransactionEnlistment.Required,
-                    _Incompatible,
-                    "*belongs to another database*"
-                );
-                data.Add(
-                    lane,
-                    DeliveryMode.Direct,
-                    TransactionEnlistment.Required,
-                    _None,
-                    "*Direct delivery cannot require an active unit of work*"
-                );
-                data.Add(
-                    lane,
-                    DeliveryMode.Direct,
-                    TransactionEnlistment.Required,
-                    _Compatible,
-                    "*Direct delivery cannot require an active unit of work*"
-                );
-                data.Add(
-                    lane,
-                    DeliveryMode.Direct,
-                    TransactionEnlistment.Required,
-                    _Incompatible,
-                    "*Direct delivery cannot require an active unit of work*"
-                );
+                data.Add(lane, DeliveryMode.Direct, true, _None, "*Direct delivery cannot be coordinated*");
+                data.Add(lane, DeliveryMode.Direct, true, _Compatible, "*Direct delivery cannot be coordinated*");
+                data.Add(lane, DeliveryMode.Direct, true, _Incompatible, "*Direct delivery cannot be coordinated*");
             }
 
             return data;
@@ -119,7 +75,7 @@ public sealed class DeliveryDecisionResolverTests : TestBase
     public void should_resolve_every_resolving_cell_of_the_delivery_matrix(
         MessageLane lane,
         DeliveryMode requestedMode,
-        TransactionEnlistment enlistment,
+        bool requireCoordination,
         int status,
         int path
     )
@@ -129,7 +85,7 @@ public sealed class DeliveryDecisionResolverTests : TestBase
         var decision = DeliveryDecisionResolver.Resolve(
             lane,
             requestedMode,
-            enlistment,
+            requireCoordination,
             delay: null,
             coordination,
             _Now
@@ -137,7 +93,6 @@ public sealed class DeliveryDecisionResolverTests : TestBase
 
         decision.RequestedMode.Should().Be(requestedMode);
         decision.ResolvedMode.Should().Be(requestedMode);
-        decision.Enlistment.Should().Be(enlistment);
         decision.Path.Should().Be((DeliveryPath)path);
         decision.IsTransactional.Should().Be(path == _CoordinatedPath);
         decision.Delay.Should().BeNull();
@@ -150,7 +105,7 @@ public sealed class DeliveryDecisionResolverTests : TestBase
     public void should_reject_every_rejecting_cell_of_the_delivery_matrix(
         MessageLane lane,
         DeliveryMode requestedMode,
-        TransactionEnlistment enlistment,
+        bool requireCoordination,
         int status,
         string messagePattern
     )
@@ -158,44 +113,42 @@ public sealed class DeliveryDecisionResolverTests : TestBase
         var coordination = _Coordination(status);
 
         var act = () =>
-            DeliveryDecisionResolver.Resolve(lane, requestedMode, enlistment, delay: null, coordination, _Now);
+            DeliveryDecisionResolver.Resolve(lane, requestedMode, requireCoordination, delay: null, coordination, _Now);
 
         act.Should().Throw<InvalidOperationException>().WithMessage(messagePattern);
     }
 
     [Fact]
-    public void should_name_the_message_type_when_required_enlistment_finds_no_unit_of_work()
+    public void should_name_the_message_type_when_coordination_is_required_and_no_unit_of_work_was_supplied()
     {
         // Acceptance Example B of the unit-of-work plan: an operator reading the failure must see which message
-        // type asked for enlistment, matching the Jobs sibling that names the function.
+        // type asked for coordination, matching the Jobs sibling that names the function.
         var act = () =>
             DeliveryDecisionResolver.Resolve(
                 MessageLane.Bus,
                 DeliveryMode.Durable,
-                TransactionEnlistment.Required,
+                requireCoordination: true,
                 delay: null,
                 _Coordination(_None),
                 _Now,
                 messageName: "OrderPlaced"
             );
 
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage("Publishing 'OrderPlaced' requires an active unit of work (TransactionEnlistment.Required)*");
+        act.Should().Throw<InvalidOperationException>().WithMessage("Publishing 'OrderPlaced' *");
     }
 
     [Theory]
-    [InlineData(TransactionEnlistment.WhenAvailable, _None, _StandalonePath)]
-    [InlineData(TransactionEnlistment.WhenAvailable, _Compatible, _CoordinatedPath)]
-    [InlineData(TransactionEnlistment.Required, _Compatible, _CoordinatedPath)]
-    public void should_preserve_a_delay_on_every_durable_path(TransactionEnlistment enlistment, int status, int path)
+    [InlineData(false, _None, _StandalonePath)]
+    [InlineData(false, _Compatible, _CoordinatedPath)]
+    [InlineData(true, _Compatible, _CoordinatedPath)]
+    public void should_preserve_a_delay_on_every_durable_path(bool requireCoordination, int status, int path)
     {
         var delay = TimeSpan.FromMinutes(1);
 
         var decision = DeliveryDecisionResolver.Resolve(
             MessageLane.Queue,
             DeliveryMode.Durable,
-            enlistment,
+            requireCoordination,
             delay,
             _Coordination(status),
             _Now
@@ -208,16 +161,16 @@ public sealed class DeliveryDecisionResolverTests : TestBase
     }
 
     [Theory]
-    [InlineData(TransactionEnlistment.Required, _None)]
-    [InlineData(TransactionEnlistment.Required, _Incompatible)]
-    [InlineData(TransactionEnlistment.WhenAvailable, _Incompatible)]
-    public void should_reject_a_delayed_publish_on_a_rejecting_cell(TransactionEnlistment enlistment, int status)
+    [InlineData(true, _None)]
+    [InlineData(true, _Incompatible)]
+    [InlineData(false, _Incompatible)]
+    public void should_reject_a_delayed_publish_on_a_rejecting_cell(bool requireCoordination, int status)
     {
         var act = () =>
             DeliveryDecisionResolver.Resolve(
                 MessageLane.Bus,
                 DeliveryMode.Durable,
-                enlistment,
+                requireCoordination,
                 TimeSpan.FromMinutes(1),
                 _Coordination(status),
                 _Now
@@ -227,11 +180,11 @@ public sealed class DeliveryDecisionResolverTests : TestBase
     }
 
     [Theory]
-    [InlineData(TransactionEnlistment.WhenAvailable, _None)]
-    [InlineData(TransactionEnlistment.WhenAvailable, _Compatible)]
-    [InlineData(TransactionEnlistment.Required, _Compatible)]
+    [InlineData(false, _None)]
+    [InlineData(false, _Compatible)]
+    [InlineData(true, _Compatible)]
     public void should_reject_durable_delivery_when_the_lane_has_no_storage_support(
-        TransactionEnlistment enlistment,
+        bool requireCoordination,
         int status
     )
     {
@@ -239,7 +192,7 @@ public sealed class DeliveryDecisionResolverTests : TestBase
             DeliveryDecisionResolver.Resolve(
                 MessageLane.Bus,
                 DeliveryMode.Durable,
-                enlistment,
+                requireCoordination,
                 delay: null,
                 _Coordination(status),
                 _Now,
@@ -258,7 +211,7 @@ public sealed class DeliveryDecisionResolverTests : TestBase
         var decision = DeliveryDecisionResolver.Resolve(
             MessageLane.Queue,
             DeliveryMode.Direct,
-            TransactionEnlistment.WhenAvailable,
+            requireCoordination: false,
             delay: null,
             _Coordination(status),
             _Now,
@@ -269,25 +222,10 @@ public sealed class DeliveryDecisionResolverTests : TestBase
         decision.Path.Should().Be(DeliveryPath.Direct);
     }
 
-    [Fact]
-    public void should_write_standalone_when_never_enlist_against_an_incompatible_unit()
-    {
-        var coordination = DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.Database);
-
-        var decision = DeliveryDecisionResolver.Resolve(
-            MessageLane.Bus,
-            DeliveryMode.Durable,
-            TransactionEnlistment.Never,
-            delay: null,
-            coordination,
-            _Now
-        );
-
-        decision.Path.Should().Be(DeliveryPath.DurableStandalone);
-    }
-
-    [Fact]
-    public void should_report_the_mismatch_reason_for_an_incompatible_unit()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void should_report_the_mismatch_reason_for_an_incompatible_unit(bool requireCoordination)
     {
         var coordination = DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.Database);
 
@@ -295,7 +233,7 @@ public sealed class DeliveryDecisionResolverTests : TestBase
             DeliveryDecisionResolver.Resolve(
                 MessageLane.Bus,
                 DeliveryMode.Durable,
-                TransactionEnlistment.WhenAvailable,
+                requireCoordination,
                 null,
                 coordination,
                 _Now
@@ -305,35 +243,42 @@ public sealed class DeliveryDecisionResolverTests : TestBase
     }
 
     [Fact]
+    public void should_name_the_missing_relational_resource_instead_of_advising_a_begin_when_the_unit_has_none()
+    {
+        // The defect this closes: a developer who already called BeginAsync was told to call BeginAsync. The unit
+        // exists — it simply exposes no relational resource for the messaging storage to write into.
+        var coordination = DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.MissingRelationalCapability);
+
+        var act = () =>
+            DeliveryDecisionResolver.Resolve(
+                MessageLane.Bus,
+                DeliveryMode.Durable,
+                requireCoordination: true,
+                delay: null,
+                coordination,
+                _Now,
+                messageName: "OrderPlaced"
+            );
+
+        var message = act.Should().Throw<InvalidOperationException>().Which.Message;
+        message.Should().Contain("relational resource");
+        message.Should().NotContain("BeginAsync");
+    }
+
+    [Fact]
     public void should_reject_an_undefined_delivery_mode()
     {
         var act = () =>
             DeliveryDecisionResolver.Resolve(
                 MessageLane.Bus,
                 (DeliveryMode)99,
-                TransactionEnlistment.WhenAvailable,
+                requireCoordination: false,
                 null,
                 DeliveryCoordination.None,
                 _Now
             );
 
         act.Should().Throw<ArgumentOutOfRangeException>().WithParameterName("requestedMode");
-    }
-
-    [Fact]
-    public void should_reject_an_undefined_transaction_enlistment()
-    {
-        var act = () =>
-            DeliveryDecisionResolver.Resolve(
-                MessageLane.Bus,
-                DeliveryMode.Durable,
-                (TransactionEnlistment)99,
-                null,
-                DeliveryCoordination.None,
-                _Now
-            );
-
-        act.Should().Throw<ArgumentOutOfRangeException>().WithParameterName("enlistment");
     }
 
     [Theory]
@@ -345,7 +290,7 @@ public sealed class DeliveryDecisionResolverTests : TestBase
             DeliveryDecisionResolver.Resolve(
                 MessageLane.Queue,
                 DeliveryMode.Durable,
-                TransactionEnlistment.WhenAvailable,
+                requireCoordination: false,
                 TimeSpan.FromTicks(ticks),
                 DeliveryCoordination.None,
                 _Now
@@ -361,7 +306,7 @@ public sealed class DeliveryDecisionResolverTests : TestBase
             DeliveryDecisionResolver.Resolve(
                 MessageLane.Queue,
                 DeliveryMode.Durable,
-                TransactionEnlistment.WhenAvailable,
+                requireCoordination: false,
                 TimeSpan.MaxValue,
                 DeliveryCoordination.None,
                 _Now
@@ -377,7 +322,7 @@ public sealed class DeliveryDecisionResolverTests : TestBase
             DeliveryDecisionResolver.Resolve(
                 MessageLane.Bus,
                 DeliveryMode.Direct,
-                TransactionEnlistment.WhenAvailable,
+                requireCoordination: false,
                 TimeSpan.FromSeconds(1),
                 DeliveryCoordination.None,
                 _Now
@@ -394,7 +339,7 @@ public sealed class DeliveryDecisionResolverTests : TestBase
         var decision = DeliveryDecisionResolver.Resolve(
             MessageLane.Bus,
             DeliveryMode.Durable,
-            TransactionEnlistment.WhenAvailable,
+            requireCoordination: false,
             delay: null,
             DeliveryCoordination.None,
             _Now,
@@ -413,7 +358,7 @@ public sealed class DeliveryDecisionResolverTests : TestBase
         var decision = DeliveryDecisionResolver.Resolve(
             MessageLane.Bus,
             DeliveryMode.Durable,
-            TransactionEnlistment.WhenAvailable,
+            requireCoordination: false,
             null,
             DeliveryCoordination.None,
             _Now,
@@ -431,7 +376,7 @@ public sealed class DeliveryDecisionResolverTests : TestBase
             DeliveryDecisionResolver.Resolve(
                 MessageLane.Bus,
                 DeliveryMode.Durable,
-                TransactionEnlistment.WhenAvailable,
+                requireCoordination: false,
                 TimeSpan.FromMinutes(5),
                 DeliveryCoordination.None,
                 _Now,
@@ -449,7 +394,7 @@ public sealed class DeliveryDecisionResolverTests : TestBase
         var decision = DeliveryDecisionResolver.Resolve(
             MessageLane.Bus,
             DeliveryMode.Durable,
-            TransactionEnlistment.WhenAvailable,
+            requireCoordination: false,
             delay: null,
             DeliveryCoordination.None,
             _Now,
@@ -467,7 +412,7 @@ public sealed class DeliveryDecisionResolverTests : TestBase
         var decision = DeliveryDecisionResolver.Resolve(
             MessageLane.Bus,
             DeliveryMode.Durable,
-            TransactionEnlistment.WhenAvailable,
+            requireCoordination: false,
             delay: null,
             DeliveryCoordination.None,
             _Now,
@@ -485,7 +430,7 @@ public sealed class DeliveryDecisionResolverTests : TestBase
             DeliveryDecisionResolver.Resolve(
                 MessageLane.Bus,
                 DeliveryMode.Direct,
-                TransactionEnlistment.WhenAvailable,
+                requireCoordination: false,
                 delay: null,
                 DeliveryCoordination.None,
                 _Now,
@@ -503,7 +448,7 @@ public sealed class DeliveryDecisionResolverTests : TestBase
         var decision = DeliveryDecisionResolver.Resolve(
             MessageLane.Bus,
             DeliveryMode.Durable,
-            TransactionEnlistment.WhenAvailable,
+            requireCoordination: true,
             delay: null,
             coordination,
             _Now,
