@@ -85,8 +85,16 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
         }
         context.Relational.Validate();
         context.Writer.ValidateContext(context.Relational, context.RequireSavepoints);
-        // Jobs writes use a separate context; an owned business save cannot recreate them after rollback.
-        context.UnitOfWork.PreventRetry();
+
+        // Jobs writes use a separate context, so a replay cannot restore them from the retained tracker; they have
+        // to be re-run. Replay re-runs the block that owns the unit: an owned unit (BeginAsync / RunAsync) is the
+        // caller's block, which schedules again, so it stays replayable. An observed unit belongs to someone
+        // else's commit edge — the EF save pipeline enlisting its own save — which replays without re-running the
+        // domain-event handler that scheduled, so that write must end replay before it lands.
+        if (!context.Relational.IsOwned)
+        {
+            context.UnitOfWork.PreventRetry();
+        }
     }
 
     // Defensive snapshot mirroring the pre-existing capture: re-validates connection/transaction identity and

@@ -65,6 +65,45 @@ public sealed partial class OutboxBridgeIntegrationTests
         (await _CountOrdersAsync()).Should().Be(1);
     }
 
+    [Fact]
+    public async Task should_replay_a_run_async_block_whose_enlisted_publish_preceded_a_transient_failure()
+    {
+        // The counterpart to the pipeline-owned case above: RunAsync owns the unit, so a replay re-runs the whole
+        // block — the publish included — and the enlisted write must not end replay. The first attempt's row rolls
+        // back with its transaction; the second attempt writes it again, once.
+        var key = $"run-async-replay-{Guid.NewGuid():N}";
+        var attempts = 0;
+        await using var provider = await _BuildProviderAsync(configureDbContext: options =>
+            options.ReplaceService<IExecutionStrategyFactory, RetryOnceStrategyFactory>()
+        );
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<BridgeTestDbContext>();
+        var unitOfWorkManager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+        var order = new OrderEntity { Name = key };
+
+        await unitOfWorkManager.RunAsync(
+            db,
+            async (unit, ct) =>
+            {
+                attempts++;
+                db.Orders.Add(order);
+                await unit.Outbox.PublishAsync(new OrderShipped(key), ct);
+
+                if (attempts == 1)
+                {
+                    throw new TransientOutboxException();
+                }
+
+                await db.SaveChangesAsync(ct);
+            },
+            cancellationToken: AbortToken
+        );
+
+        attempts.Should().Be(2, "the enlisted publish left the owned unit replayable");
+        (await _CountPublishedContainingAsync(key)).Should().Be(1);
+        (await _CountOrdersAsync()).Should().Be(1);
+    }
+
     private sealed class DirectPublishRetryEvidence
     {
         public string Key { get; } = $"direct-publish-{Guid.NewGuid():N}";

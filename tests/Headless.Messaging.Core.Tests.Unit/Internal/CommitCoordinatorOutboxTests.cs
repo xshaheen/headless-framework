@@ -190,10 +190,10 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
     {
         await using var unitOfWork = new FakeUnitOfWork();
         await using var dispatcher = new RecordingCommittedDispatcher();
-        var buffer = new MessageOutboxBuffer(unitOfWork, dispatcher);
+        var buffer = new MessageOutboxBuffer(dispatcher);
         var message = _BuildMessage();
         message.ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(30);
-        buffer.Add(message);
+        buffer.Add(unitOfWork, message);
 
         await unitOfWork.CompleteAsync(AbortToken);
 

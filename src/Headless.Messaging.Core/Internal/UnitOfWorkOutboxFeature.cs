@@ -10,9 +10,9 @@ namespace Headless.Messaging.Internal;
 /// handle and coordination required, so the durable row joins that unit's transaction or the call throws.
 /// </summary>
 /// <remarks>
-/// One instance is cached per unit of work and shared by every handle over it, so it holds no handle of its own
-/// — a child view can complete while the unit stays active, and a captured child would be dead for the root's
-/// later publishes.
+/// A singleton resolved from the unit's scope, so it holds no handle of its own: the caller's handle arrives as
+/// an argument, and the outbox writer's first registration on it is what refuses a handle that can no longer
+/// carry work — before any storage effect.
 /// </remarks>
 internal sealed class UnitOfWorkOutboxFeature(MessagePublisher publisher) : IUnitOfWorkOutbox
 {
@@ -23,7 +23,7 @@ internal sealed class UnitOfWorkOutboxFeature(MessagePublisher publisher) : IUni
         CancellationToken cancellationToken = default
     )
     {
-        _EnsureUsable(unitOfWork);
+        Argument.IsNotNull(unitOfWork);
 
         return publisher.PublishAsync(
             MessageLane.Bus,
@@ -42,7 +42,7 @@ internal sealed class UnitOfWorkOutboxFeature(MessagePublisher publisher) : IUni
         CancellationToken cancellationToken = default
     )
     {
-        _EnsureUsable(unitOfWork);
+        Argument.IsNotNull(unitOfWork);
 
         return publisher.PublishAsync(
             MessageLane.Queue,
@@ -52,16 +52,5 @@ internal sealed class UnitOfWorkOutboxFeature(MessagePublisher publisher) : IUni
             requireCoordination: true,
             cancellationToken
         );
-    }
-
-    private static void _EnsureUsable(IUnitOfWork unitOfWork)
-    {
-        Argument.IsNotNull(unitOfWork);
-
-        // Per publish, and asked of the handle rather than of the unit: a binding can be held in a local past
-        // its own view's completion, and State forwards to the root, so a completed child still reports Active.
-        // The check has to run before the write, because the writer stores the row before attaching the buffer
-        // that dispatches it — a late refusal would leave a stored row nothing ever sends.
-        unitOfWork.ThrowIfUnusable();
     }
 }

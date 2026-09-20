@@ -143,11 +143,17 @@ internal sealed class MessagePublisher(
                     if (
                         decision.Path is DeliveryPath.DurableCoordinated
                         && options?.IsRetainedForTransactionReplay is not true
+                        && decision.Coordination.UnitOfWork!.Resource is { IsOwned: false }
                     )
                     {
-                        // A completed domain occurrence is not rerun after rollback. Its direct outbox writes
-                        // cannot be recovered from EF's retained state, so mark before attempting storage.
-                        decision.Coordination.UnitOfWork!.PreventRetry();
+                        // Replay re-runs the block that owns the unit. In owned mode (BeginAsync / RunAsync) that
+                        // block is the caller's, and it re-runs this publish with everything else, so the unit
+                        // stays replayable. In observed mode someone else owns the commit edge — the EF save
+                        // pipeline enlisting its own save — and replays it without re-running the domain-event
+                        // handlers that published, so a row written here would be lost with the rolled-back
+                        // attempt: mark before attempting storage. The save pipeline's own integration events are
+                        // exempt because it re-publishes them on a replayed attempt.
+                        decision.Coordination.UnitOfWork.PreventRetry();
                     }
 
                     var storageId = await writer.WriteAsync(request, decision, ct).ConfigureAwait(false);

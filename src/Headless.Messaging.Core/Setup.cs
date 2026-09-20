@@ -247,9 +247,12 @@ public static class SetupMessaging
         services.TryAddSingleton<IBus>(sp => new Bus(sp.GetRequiredService<MessagePublisher>()));
         services.TryAddSingleton<IQueue>(sp => new Queue(sp.GetRequiredService<MessagePublisher>()));
 
-        // The other half of that split: unit.Outbox resolves through this provider, so a publish reached from a
-        // unit of work always enlists in it and refuses when the storage cannot join.
-        services.AddUnitOfWorkFeature<UnitOfWorkOutboxFeatureProvider>();
+        // The other half of that split: unit.Outbox resolves this feature from the unit's scope, so a publish
+        // reached from a unit of work always enlists in it and refuses when the storage cannot join. A singleton
+        // like the publisher it wraps; the unit it enlists in arrives as an argument on every call.
+        services.TryAddSingleton<IUnitOfWorkOutbox>(sp => new UnitOfWorkOutboxFeature(
+            sp.GetRequiredService<MessagePublisher>()
+        ));
 
         // Register options with values that were set during AddHeadlessMessaging configuration.
         // Don't re-register setupAction as it contains consumer registration logic that

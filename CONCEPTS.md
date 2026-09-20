@@ -123,8 +123,8 @@ Use Jobs for keyed, replaceable, tenant-scoped, or transactional business deadli
 
 ### Enlisted outbox
 The publish surface reached from a unit of work as `unit.Outbox` (contract in
-`Headless.Messaging.UnitOfWork`, implementation in `Headless.Messaging.Core`, attached to the unit as
-a [unit-of-work feature](#unit-local-state)). Every publish through it writes its durable row inside
+`Headless.Messaging.UnitOfWork`, implementation in `Headless.Messaging.Core`, resolved from the unit
+as a [unit-of-work feature](#unit-local-state)). Every publish through it writes its durable row inside
 that unit's transaction: the row becomes visible when the unit completes and is discarded when it
 rolls back. It refuses rather than degrades — when the configured storage cannot join the given unit
 the call throws before any storage or transport effect, instead of writing a standalone row. Its
@@ -235,21 +235,18 @@ created atomically, disposed after the terminal outcome on commit and rollback a
 per-transaction buffers or the retry-prevention marker (`PreventRetry()` / `IsRetryPrevented`);
 application code must not use it as an arbitrary service-locator bag.
 
-The sanctioned framework-owned use is the **unit-of-work feature**: a bridge package registers an
-`IUnitOfWorkFeatureProvider` with `services.AddUnitOfWorkFeature<TProvider>()`, and
-`IUnitOfWork.GetFeature<TFeature>()` resolves that capability lazily on first use and caches it on
-the unit for the unit's lifetime — the same once-per-unit, disposed-on-either-outcome contract as
-`GetOrAdd`, keyed by the declared feature type, with at most one provider per type in a host. It is
-how a capability reaches a unit of work whose packages know nothing about it — the [enlisted
-outbox](#enlisted-outbox) is the one first-party case — and the factory always receives the unit's
-root handle, never a nested view.
+Distinct from a **unit-of-work feature**: a service implementing the `IUnitOfWorkFeature` marker
+that `IUnitOfWork.GetFeature<TFeature>()` resolves from the scope owning the unit's manager. A
+feature is not unit-local — nothing is created or cached per unit, and every handle over a unit
+resolves the same instance — which is how a capability reaches a unit of work whose packages know
+nothing about it; the [enlisted outbox](#enlisted-outbox) is the one first-party case.
 
 ### Handle liveness
 
 A nested view forwards `State` to the unit it views, so a view that has already completed still
-reports `Active` while the unit stays open. `IUnitOfWork.ThrowIfUnusable()` is the view-aware
-question — can *this* handle still carry work — and is what registrations and enlisted publishes
-check, per call, instead of comparing `State`.
+reports `Active` while the unit stays open. Registrations answer for the view instead: `OnCompleted`,
+`OnFailed`, and `GetOrAdd` on a completed view throw, which is how an enlisted publish refuses a dead
+handle before any row is stored.
 
 ## Startup validation
 

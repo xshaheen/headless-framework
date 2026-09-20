@@ -9,6 +9,7 @@ using Headless.Jobs.Interfaces.Managers;
 using Headless.Messaging;
 using Headless.Messaging.Persistence;
 using Headless.Testing.Tests;
+using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
@@ -163,13 +164,9 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
                 async (scopedServices, connection, transaction, innerCt) =>
                 {
                     var manager = scopedServices.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
-                    var publisher = scopedServices.GetRequiredService<IBus>();
+                    var unitOfWork = _CurrentUnitOfWork(scopedServices);
                     await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, innerCt);
-                    await publisher.PublishAsync(
-                        new CapstoneMessage(job.Id),
-                        new PublishOptions { DeliveryMode = DeliveryMode.Durable },
-                        innerCt
-                    );
+                    await unitOfWork.Outbox.PublishAsync(new CapstoneMessage(job.Id), innerCt);
                     await manager.AddAsync(job, innerCt);
                 },
                 ct
@@ -201,13 +198,11 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
                     async (scopedServices, connection, transaction, innerCt) =>
                     {
                         var manager = scopedServices.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
-                        var publisher = scopedServices.GetRequiredService<IBus>();
+                        var unitOfWork = _CurrentUnitOfWork(scopedServices);
                         await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, innerCt);
-                        await publisher.PublishAsync(
-                            new CapstoneMessage(job.Id),
-                            new PublishOptions { DeliveryMode = DeliveryMode.Durable },
-                            innerCt
-                        );
+                        // The enlisted surface: an IBus publish would write a standalone row that survives the
+                        // rollback this test forces, which is exactly the non-atomic outcome it guards against.
+                        await unitOfWork.Outbox.PublishAsync(new CapstoneMessage(job.Id), innerCt);
                         await manager.AddAsync(job, innerCt);
                         throw sentinel;
                     },
@@ -567,6 +562,12 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
 
         return host;
     }
+
+    // The fixture's coordinated transaction is the scope's current unit of work; the enlisted publish needs the
+    // handle, not the ambient state the publisher no longer reads.
+    private static IUnitOfWork _CurrentUnitOfWork(IServiceProvider scopedServices) =>
+        scopedServices.GetRequiredService<IUnitOfWorkManager>().Current
+        ?? throw new InvalidOperationException("The coordinated transaction fixture must have a unit of work current.");
 
     private static TimeJobEntity _TimeJob()
     {

@@ -316,26 +316,6 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
     }
 
     [Fact]
-    public async Task unit_of_work_probe_forwards_the_feature_seam_to_the_unit_it_wraps()
-    {
-        // The probe is a forwarding decorator over a real unit. Answering the feature seam for itself would
-        // compile and then hide the wrapped unit's liveness from everything these tests drive through it.
-        var sut = _CreateSut(CoordinatorMode.NonRelational, withWriter: true);
-        var probe = sut.Coordinator!;
-
-        probe.GetFeature<object>().Should().BeNull();
-        var whileActive = probe.ThrowIfUnusable;
-        whileActive.Should().NotThrow();
-
-        await probe.CommitAsync();
-
-        var afterCommit = probe.ThrowIfUnusable;
-        afterCommit.Should().Throw<InvalidOperationException>();
-        var resolveAfterCommit = () => probe.GetFeature<object>();
-        resolveAfterCommit.Should().Throw<InvalidOperationException>();
-    }
-
-    [Fact]
     public async Task time_job_dead_transaction_throws_and_persists_nothing()
     {
         var sut = _CreateSut(CoordinatorMode.DeadRelational, withWriter: true);
@@ -547,6 +527,25 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
                 Arg.Any<CronSchedulePositionSeeder>(),
                 Arg.Any<CancellationToken>()
             );
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task time_job_coordinated_write_ends_replay_only_in_an_observed_mode_unit(bool observed)
+    {
+        // Replay re-runs the block that owns the unit. An owned unit (BeginAsync / RunAsync) is the caller's block,
+        // which schedules again, so the job write leaves it replayable. An observed unit is the EF save pipeline's
+        // own save, which replays without re-running the domain-event handler that scheduled; the row lives in a
+        // separate context that the retained tracker cannot restore, so that write must end replay.
+        var sut = _CreateSut(
+            observed ? CoordinatorMode.ObservedRelational : CoordinatorMode.LiveRelational,
+            withWriter: true
+        );
+
+        await sut.Time.AddAsync(_FutureTimeJob(), AbortToken);
+
+        sut.Coordinator!.IsRetryPrevented.Should().Be(observed);
     }
 
     [Fact]
@@ -1357,6 +1356,10 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         // An owned unit of work whose resource's connection reports Closed — the "incompatible/dead resource"
         // case, which the guarantee matrix says throws regardless of TransactionEnlistment (except Never).
         DeadRelational,
+
+        // An observed-mode unit of work over a live transaction someone else commits — the shape the EF save
+        // pipeline enlists its own save in.
+        ObservedRelational,
     }
 
     private Sut _CreateSut(
@@ -1430,6 +1433,10 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
                         cancellationToken: default
                     )
                 )
+            ),
+            CoordinatorMode.ObservedRelational => new UnitOfWorkProbe(
+                unitOfWorkServices,
+                unitOfWorkManager.Enlist(new FakeRelationalResource(_LiveTransaction(), isOwned: false))
             ),
             CoordinatorMode.DeadRelational => new UnitOfWorkProbe(
                 unitOfWorkServices,
@@ -1697,13 +1704,14 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         public override void Rollback() => throw new NotSupportedException();
     }
 
-    private sealed class FakeRelationalResource(DbTransaction transaction) : IRelationalUnitOfWorkResource
+    private sealed class FakeRelationalResource(DbTransaction transaction, bool isOwned = true)
+        : IRelationalUnitOfWorkResource
     {
         public DbConnection Connection => Transaction.Connection!;
 
         public DbTransaction Transaction { get; } = transaction;
 
-        public bool IsOwned => true;
+        public bool IsOwned => isOwned;
 
         public bool IsTransactionCompleted => false;
 
@@ -1758,12 +1766,8 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         public TState GetOrAdd<TState, TArg>(TArg arg, Func<IUnitOfWork, TArg, TState> factory)
             where TState : class => inner.GetOrAdd(arg, factory);
 
-        // Forwarded explicitly, like every other member: a default interface implementation would compile here
-        // and silently answer for the probe instead of the real unit it wraps.
         public TFeature? GetFeature<TFeature>()
-            where TFeature : class => inner.GetFeature<TFeature>();
-
-        public void ThrowIfUnusable() => inner.ThrowIfUnusable();
+            where TFeature : class, IUnitOfWorkFeature => inner.GetFeature<TFeature>();
 
         public void PreventRetry() => inner.PreventRetry();
 

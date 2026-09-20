@@ -1,13 +1,15 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.ComponentModel;
 using Headless.UnitOfWork;
 
 namespace Headless.Messaging;
 
 /// <summary>
-/// The enlisted publish capability attached to a unit of work by the messaging registration, and the contract
-/// behind <c>unit.Outbox</c>. Reached through <see cref="IUnitOfWork.GetFeature{TFeature}" />; implemented in
-/// <c>Headless.Messaging.Core</c>.
+/// Plumbing behind <c>unit.Outbox</c>: the enlisted publish feature <c>AddHeadlessMessaging</c> registers, which a
+/// unit of work resolves through <see cref="IUnitOfWork.GetFeature{TFeature}" />. Application code publishes
+/// through the <see cref="UnitOfWorkOutbox" /> binding that <c>unit.Outbox</c> returns, which supplies the unit;
+/// this interface is public only so the unit-of-work packages can hand it out without referencing messaging.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -22,10 +24,9 @@ namespace Headless.Messaging;
 /// storages join only a same-database relational resource.
 /// </para>
 /// <para>
-/// The capability is cached on the unit and holds no view of it, so the caller's own handle travels as an
-/// argument on every call: a child view can complete while the unit stays active, and the implementation checks
-/// that handle's liveness per publish rather than once. Callers reach this through the <c>unit.Outbox</c>
-/// accessor, which binds the capability to the handle it was read from.
+/// A singleton that holds no unit: the caller's own handle travels as an argument on every call, and the outbox
+/// writer's first registration on that handle is what refuses one that can no longer carry work — a completed
+/// nested view, a terminal unit — before any storage effect.
 /// </para>
 /// <para>
 /// A publish written through this accessor forfeits execution-strategy replay for the rest of the unit: the
@@ -35,7 +36,8 @@ namespace Headless.Messaging;
 /// </para>
 /// </remarks>
 [PublicAPI]
-public interface IUnitOfWorkOutbox
+[EditorBrowsable(EditorBrowsableState.Never)]
+public interface IUnitOfWorkOutbox : IUnitOfWorkFeature
 {
     /// <summary>
     /// Publishes a broadcast (bus lane) message inside <paramref name="unitOfWork" />'s transaction.
@@ -48,8 +50,8 @@ public interface IUnitOfWorkOutbox
     /// <returns>A receipt with the resolved message identity and the durable row handle.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="unitOfWork" /> is <see langword="null" />.</exception>
     /// <exception cref="InvalidOperationException">
-    /// The handle can no longer carry work (it completed, or the unit reached a terminal state), or the storage
-    /// cannot join the unit.
+    /// The handle can no longer carry work (a nested view that completed, or a unit in a terminal state), or the
+    /// storage cannot join the unit.
     /// </exception>
     /// <exception cref="ObjectDisposedException">The handle was disposed.</exception>
     Task<PublishReceipt> PublishAsync<T>(
@@ -70,8 +72,8 @@ public interface IUnitOfWorkOutbox
     /// <returns>A receipt with the resolved message identity and the durable row handle.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="unitOfWork" /> is <see langword="null" />.</exception>
     /// <exception cref="InvalidOperationException">
-    /// The handle can no longer carry work (it completed, or the unit reached a terminal state), or the storage
-    /// cannot join the unit.
+    /// The handle can no longer carry work (a nested view that completed, or a unit in a terminal state), or the
+    /// storage cannot join the unit.
     /// </exception>
     /// <exception cref="ObjectDisposedException">The handle was disposed.</exception>
     Task<PublishReceipt> EnqueueAsync<T>(

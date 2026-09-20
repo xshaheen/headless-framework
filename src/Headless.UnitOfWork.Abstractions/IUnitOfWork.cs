@@ -22,11 +22,11 @@ namespace Headless.UnitOfWork;
 /// transaction reports its own rollback. A dispose after a terminal state is a no-op.
 /// </para>
 /// <para>
-/// Registrations (<see cref="OnCompleted" />, <see cref="OnFailed" />, <see cref="GetOrAdd{TState}" />,
-/// <see cref="GetFeature{TFeature}" />) are
-/// accepted only while the unit is <see cref="UnitOfWorkState.Active" />; after the terminal state they throw
-/// <see cref="InvalidOperationException" />. Every member throws <see cref="ObjectDisposedException" /> after
-/// the handle is disposed.
+/// Registrations (<see cref="OnCompleted" />, <see cref="OnFailed" />, <see cref="GetOrAdd{TState}" />) are
+/// accepted only while <i>this handle</i> can still carry work: the unit is
+/// <see cref="UnitOfWorkState.Active" /> and, for a nested view, the view itself has not completed. Otherwise
+/// they throw <see cref="InvalidOperationException" />. Every member throws <see cref="ObjectDisposedException" />
+/// after the handle is disposed.
 /// </para>
 /// </remarks>
 [PublicAPI]
@@ -116,37 +116,20 @@ public interface IUnitOfWork : IDisposable, IAsyncDisposable
         where TState : class;
 
     /// <summary>
-    /// Gets the capability of type <typeparamref name="TFeature" /> attached to this unit by a registered
-    /// <see cref="IUnitOfWorkFeatureProvider" />, or <see langword="null" /> when no provider claims that type.
+    /// Gets the <see cref="IUnitOfWorkFeature" /> service of type <typeparamref name="TFeature" /> registered in
+    /// the scope that owns this unit's manager, or <see langword="null" /> when the host registered none.
     /// </summary>
     /// <remarks>
-    /// The capability is created once per unit, on first resolution, and cached on the unit itself: every
-    /// later resolution — through this handle or through a nested view over the same unit — returns that one
-    /// instance, and it is disposed with the unit when it implements <see cref="IAsyncDisposable" /> or
-    /// <see cref="IDisposable" />. Resolving is a registration: it is accepted only while <i>this</i> handle
-    /// can still carry work (see <see cref="ThrowIfUnusable" />).
+    /// A lookup, not a registration: the feature is an ordinary container service, nothing is created or cached
+    /// per unit, and a nested view resolves the same instance as its root. The feature receives the handle it is
+    /// used with as an argument per call, so it is the call — not this lookup — that answers for the handle's
+    /// liveness.
     /// </remarks>
-    /// <typeparam name="TFeature">The capability type, as declared by its provider.</typeparam>
-    /// <returns>The capability, or <see langword="null" /> when no provider is registered for it.</returns>
-    /// <exception cref="InvalidOperationException">This handle can no longer carry work.</exception>
+    /// <typeparam name="TFeature">The feature's service type; it opts in through <see cref="IUnitOfWorkFeature" />.</typeparam>
+    /// <returns>The feature, or <see langword="null" /> when none is registered.</returns>
     /// <exception cref="ObjectDisposedException">This handle was disposed.</exception>
     TFeature? GetFeature<TFeature>()
-        where TFeature : class;
-
-    /// <summary>
-    /// Throws when <i>this</i> handle can no longer carry work; returns silently when it can.
-    /// </summary>
-    /// <remarks>
-    /// Each handle answers for itself, which is what distinguishes this from <see cref="State" />: a nested
-    /// view reports the state of the unit it views, so a view that has already completed still reports
-    /// <see cref="UnitOfWorkState.Active" /> while the unit it completed into stays open. Call this — not a
-    /// <see cref="State" /> comparison — before attaching work to the handle a caller was given.
-    /// </remarks>
-    /// <exception cref="InvalidOperationException">
-    /// This handle already completed, or the unit reached a terminal state.
-    /// </exception>
-    /// <exception cref="ObjectDisposedException">This handle was disposed.</exception>
-    void ThrowIfUnusable();
+        where TFeature : class, IUnitOfWorkFeature;
 
     /// <summary>
     /// Marks this unit as not safely replayable, so an owning execution strategy (for example EF Core's

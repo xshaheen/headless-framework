@@ -26,22 +26,9 @@ internal sealed partial class UnitOfWork(IUnitOfWorkResource? resource, ILogger?
     private List<FailedRegistration> _failedCallbacks = [];
     private int _state;
     private int _retryPrevented;
-    private IUnitOfWork? _rootView;
 
     /// <summary>The current lifecycle state; the terminal claim is the only writer.</summary>
     internal UnitOfWorkState State => (UnitOfWorkState)Volatile.Read(ref _state);
-
-    /// <summary>
-    /// The root handle over this engine: the one view whose lifetime is the unit's own, and therefore the view
-    /// handed to a feature factory. A child view must never be captured there — it can complete while the root
-    /// stays active, which would leave the cached feature holding a view that can no longer carry work.
-    /// </summary>
-    internal IUnitOfWork RootView =>
-        Volatile.Read(ref _rootView)
-        ?? throw new InvalidOperationException("The unit of work has no root handle attached.");
-
-    /// <summary>Attaches the root handle; called once, by the handle's constructor.</summary>
-    internal void AttachRootView(IUnitOfWork view) => Volatile.Write(ref _rootView, view);
 
     /// <summary>The failure that terminated the unit, or <see langword="null" /> until then.</summary>
     internal UnitOfWorkFailure? Failure { get; private set; }

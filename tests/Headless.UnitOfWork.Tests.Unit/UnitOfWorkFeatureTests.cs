@@ -6,30 +6,32 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
+/// <summary>
+/// <c>GetFeature</c> is a lookup into the scope that owns the unit's manager, gated by the
+/// <see cref="IUnitOfWorkFeature" /> marker: nothing is created or cached per unit, every handle over a unit sees the
+/// same instance, and a completed nested view refuses registrations while still resolving features.
+/// </summary>
 public sealed class UnitOfWorkFeatureTests : TestBase
 {
     [Fact]
-    public async Task should_return_the_same_feature_instance_for_repeated_resolutions_on_one_unit()
+    public async Task should_resolve_the_registered_feature_from_the_units_scope()
     {
-        var provider = new ProbeFeatureProvider();
-        await using var manager = new UnitOfWorkManager(logger: null, [provider]);
+        await using var provider = _BuildProvider(services => services.AddSingleton<ProbeFeature>());
+        using var scope = provider.CreateScope();
+        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
         await using var unit = await manager.BeginAsync(cancellationToken: AbortToken);
 
-        var first = unit.GetFeature<ProbeFeature>();
-        var second = unit.GetFeature<ProbeFeature>();
+        var feature = unit.GetFeature<ProbeFeature>();
 
-        first.Should().NotBeNull();
-        second.Should().BeSameAs(first);
-        provider.CreateCount.Should().Be(1);
+        feature.Should().BeSameAs(scope.ServiceProvider.GetRequiredService<ProbeFeature>());
     }
 
     [Fact]
-    public async Task should_cache_one_feature_on_the_root_when_a_child_view_resolves_it_first()
+    public async Task should_resolve_the_same_instance_through_a_child_view_and_the_root()
     {
-        // The hazard: a child-first construction that captured the child view would keep it after the child
-        // completed, so the cached feature would hold a view that can no longer carry work.
-        var provider = new ProbeFeatureProvider();
-        await using var manager = new UnitOfWorkManager(logger: null, [provider]);
+        await using var provider = _BuildProvider(services => services.AddSingleton<ProbeFeature>());
+        using var scope = provider.CreateScope();
+        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
         await using var root = await manager.BeginAsync(cancellationToken: AbortToken);
         var child = await manager.BeginAsync(cancellationToken: AbortToken);
 
@@ -38,194 +40,82 @@ public sealed class UnitOfWorkFeatureTests : TestBase
         var fromRoot = root.GetFeature<ProbeFeature>();
 
         fromRoot.Should().BeSameAs(fromChild);
-        provider.CreateCount.Should().Be(1);
-        fromChild!.Unit.Should().NotBeSameAs(child);
-        fromChild.Unit.Should().BeSameAs(root);
-
-        var stillUsable = fromChild.Unit.ThrowIfUnusable;
-        stillUsable.Should().NotThrow();
     }
 
     [Fact]
-    public async Task should_throw_when_a_feature_is_resolved_on_a_completed_unit()
+    public async Task should_return_null_when_no_feature_of_that_type_is_registered()
     {
-        var provider = new ProbeFeatureProvider();
-        await using var manager = new UnitOfWorkManager(logger: null, [provider]);
-        await using var unit = await manager.BeginAsync(cancellationToken: AbortToken);
-
-        await unit.CompleteAsync(AbortToken);
-
-        var resolve = () => unit.GetFeature<ProbeFeature>();
-
-        resolve
-            .Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage("*registrations are accepted only while it is Active.*");
-        provider.CreateCount.Should().Be(0);
-    }
-
-    [Fact]
-    public async Task should_throw_when_a_feature_is_resolved_on_a_rolled_back_unit()
-    {
-        var provider = new ProbeFeatureProvider();
-        await using var manager = new UnitOfWorkManager(logger: null, [provider]);
-        await using var unit = await manager.BeginAsync(cancellationToken: AbortToken);
-
-        await unit.RollbackAsync();
-
-        var resolve = () => unit.GetFeature<ProbeFeature>();
-
-        resolve.Should().Throw<InvalidOperationException>();
-    }
-
-    [Fact]
-    public async Task should_return_null_when_no_provider_is_registered_for_the_feature()
-    {
-        await using var manager = new UnitOfWorkManager();
+        await using var provider = _BuildProvider(static _ => { });
+        using var scope = provider.CreateScope();
+        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
         await using var unit = await manager.BeginAsync(cancellationToken: AbortToken);
 
         unit.GetFeature<ProbeFeature>().Should().BeNull();
     }
 
     [Fact]
-    public async Task should_return_null_for_an_unclaimed_feature_when_another_provider_is_registered()
+    public async Task should_return_null_when_the_manager_was_constructed_outside_dependency_injection()
     {
-        var provider = new ProbeFeatureProvider();
-        await using var manager = new UnitOfWorkManager(logger: null, [provider]);
+        // Tests construct the manager directly; with no scope to resolve from, no feature exists.
+        using var manager = new UnitOfWorkManager();
         await using var unit = await manager.BeginAsync(cancellationToken: AbortToken);
 
-        unit.GetFeature<OtherFeature>().Should().BeNull();
-        provider.CreateCount.Should().Be(0);
+        unit.GetFeature<ProbeFeature>().Should().BeNull();
     }
 
     [Fact]
-    public async Task should_dispose_the_feature_after_the_unit_completes()
+    public async Task should_still_resolve_a_feature_on_a_completed_child_view_but_refuse_its_registrations()
     {
-        var provider = new ProbeFeatureProvider();
-        await using var manager = new UnitOfWorkManager(logger: null, [provider]);
-        await using var unit = await manager.BeginAsync(cancellationToken: AbortToken);
-        var feature = unit.GetFeature<ProbeFeature>();
-
-        await unit.CompleteAsync(AbortToken);
-
-        feature!.DisposeCount.Should().Be(1);
-    }
-
-    [Fact]
-    public async Task should_dispose_the_feature_after_the_unit_rolls_back()
-    {
-        var provider = new ProbeFeatureProvider();
-        await using var manager = new UnitOfWorkManager(logger: null, [provider]);
-        await using var unit = await manager.BeginAsync(cancellationToken: AbortToken);
-        var feature = unit.GetFeature<ProbeFeature>();
-
-        await unit.RollbackAsync();
-
-        feature!.DisposeCount.Should().Be(1);
-    }
-
-    [Fact]
-    public async Task should_report_a_completed_child_view_as_unusable_while_the_root_stays_usable()
-    {
-        await using var manager = new UnitOfWorkManager();
+        // Resolving is a lookup, so it stays available; attaching work is a registration, and the view that
+        // completed can no longer carry one even though the root — and therefore State — is still Active.
+        await using var provider = _BuildProvider(services => services.AddSingleton<ProbeFeature>());
+        using var scope = provider.CreateScope();
+        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
         await using var root = await manager.BeginAsync(cancellationToken: AbortToken);
         var child = await manager.BeginAsync(cancellationToken: AbortToken);
-
         await child.CompleteAsync(AbortToken);
+        child.State.Should().Be(UnitOfWorkState.Active, "the view forwards the still-open root's state");
 
-        // State forwards to the root, so it cannot answer this: the child is terminal, the root is not.
-        child.State.Should().Be(UnitOfWorkState.Active);
+        child.GetFeature<ProbeFeature>().Should().NotBeNull();
 
-        var childUsable = child.ThrowIfUnusable;
-        childUsable.Should().Throw<InvalidOperationException>();
+        var onCompleted = () => child.OnCompleted(static () => ValueTask.CompletedTask);
+        var onFailed = () => child.OnFailed(static _ => ValueTask.CompletedTask);
+        var getOrAdd = () => child.GetOrAdd(static _ => new object());
+        var getOrAddWithArg = () => child.GetOrAdd(1, static (_, _) => new object());
+        const string expected = "*nested unit of work has already completed*";
+        onCompleted.Should().Throw<InvalidOperationException>().WithMessage(expected);
+        onFailed.Should().Throw<InvalidOperationException>().WithMessage(expected);
+        getOrAdd.Should().Throw<InvalidOperationException>().WithMessage(expected);
+        getOrAddWithArg.Should().Throw<InvalidOperationException>().WithMessage(expected);
 
-        var rootUsable = root.ThrowIfUnusable;
-        rootUsable.Should().NotThrow();
+        // The root is untouched by the child's refusal.
+        var rootRegistration = () => root.OnCompleted(static () => ValueTask.CompletedTask);
+        rootRegistration.Should().NotThrow();
     }
 
     [Fact]
-    public async Task should_throw_when_a_feature_is_resolved_on_a_completed_child_view()
+    public async Task should_throw_object_disposed_when_resolving_on_a_disposed_handle()
     {
-        var provider = new ProbeFeatureProvider();
-        await using var manager = new UnitOfWorkManager(logger: null, [provider]);
-        await using var root = await manager.BeginAsync(cancellationToken: AbortToken);
-        var child = await manager.BeginAsync(cancellationToken: AbortToken);
-
-        await child.CompleteAsync(AbortToken);
-
-        var resolve = () => child.GetFeature<ProbeFeature>();
-
-        resolve.Should().Throw<InvalidOperationException>();
-        provider.CreateCount.Should().Be(0);
-        root.GetFeature<ProbeFeature>().Should().NotBeNull();
-    }
-
-    [Fact]
-    public async Task should_report_a_disposed_handle_as_unusable()
-    {
-        await using var manager = new UnitOfWorkManager();
+        await using var provider = _BuildProvider(services => services.AddSingleton<ProbeFeature>());
+        using var scope = provider.CreateScope();
+        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
         var unit = await manager.BeginAsync(cancellationToken: AbortToken);
-
         await unit.DisposeAsync();
 
-        var usable = unit.ThrowIfUnusable;
-        usable.Should().Throw<ObjectDisposedException>();
+        var act = () => unit.GetFeature<ProbeFeature>();
+
+        act.Should().Throw<ObjectDisposedException>();
     }
 
-    [Fact]
-    public void should_throw_when_two_providers_claim_the_same_feature()
-    {
-        var construct = () =>
-            new UnitOfWorkManager(logger: null, [new ProbeFeatureProvider(), new ProbeFeatureProvider()]);
-
-        construct.Should().Throw<InvalidOperationException>().WithMessage("*ProbeFeature*");
-    }
-
-    [Fact]
-    public async Task should_resolve_a_registered_feature_through_dependency_injection()
+    private static ServiceProvider _BuildProvider(Action<IServiceCollection> configure)
     {
         var services = new ServiceCollection();
+        services.AddUnitOfWork();
+        configure(services);
 
-        services.AddUnitOfWorkFeature<ProbeFeatureProvider>();
-        services.AddUnitOfWorkFeature<ProbeFeatureProvider>();
-
-        services.Count(d => d.ServiceType == typeof(IUnitOfWorkFeatureProvider)).Should().Be(1);
-
-        await using var root = services.BuildServiceProvider();
-        using var scope = root.CreateScope();
-        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
-        await using var unit = await manager.BeginAsync(cancellationToken: AbortToken);
-
-        var feature = unit.GetFeature<ProbeFeature>();
-
-        feature.Should().NotBeNull();
-        feature!.Unit.Should().BeSameAs(unit);
+        return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
     }
 }
 
-/// <summary>A capability a bridge package would attach; records the unit its factory was handed.</summary>
-internal sealed class ProbeFeature(IUnitOfWork unit) : IDisposable
-{
-    public IUnitOfWork Unit { get; } = unit;
-
-    public int DisposeCount { get; private set; }
-
-    public void Dispose() => DisposeCount++;
-}
-
-/// <summary>A feature type nothing registers a provider for.</summary>
-internal sealed class OtherFeature;
-
-internal sealed class ProbeFeatureProvider : IUnitOfWorkFeatureProvider
-{
-    public int CreateCount { get; private set; }
-
-    public Type FeatureType => typeof(ProbeFeature);
-
-    public object Create(IUnitOfWork unitOfWork)
-    {
-        CreateCount++;
-
-        return new ProbeFeature(unitOfWork);
-    }
-}
+/// <summary>A feature a bridge package would register; the marker is what lets a unit hand it out.</summary>
+internal sealed class ProbeFeature : IUnitOfWorkFeature;

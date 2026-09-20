@@ -345,6 +345,41 @@ public sealed class MessagePublisherDeliveryTests : TestBase
     }
 
     [Theory]
+    [InlineData(true, false, false)]
+    [InlineData(false, false, true)]
+    [InlineData(false, true, false)]
+    public async Task should_end_replay_only_for_an_enlisted_publish_into_an_observed_mode_unit(
+        bool owned,
+        bool retainedForReplay,
+        bool expectRetryPrevented
+    )
+    {
+        // Replay re-runs the block that owns the unit. An owned unit (BeginAsync / RunAsync) is the caller's own
+        // block, which re-runs this publish, so it stays replayable. An observed unit belongs to someone else's
+        // commit edge — the EF save pipeline's own save — which replays without re-running the handler that
+        // published, so the write must end replay; the pipeline's own retained integration events are exempt.
+        var resource = Substitute.For<IRelationalUnitOfWorkResource>();
+        resource.IsOwned.Returns(owned);
+        await using var fakeUnitOfWork = new FakeUnitOfWork { Resource = resource };
+        await using var transaction = Substitute.For<System.Data.Common.DbTransaction>();
+        var resolver = Substitute.For<IDeliveryCoordinationResolver>();
+        resolver.Resolve(fakeUnitOfWork).Returns(DeliveryCoordination.Compatible(fakeUnitOfWork, transaction));
+        await using var harness = _CreateHarness(coordinationResolver: () => resolver);
+        _CaptureStoredMessage(harness.Storage);
+
+        await harness.Publisher.PublishAsync(
+            MessageLane.Bus,
+            new DeliveryMessage("replay"),
+            new OutboxPublishOptions { IsRetainedForTransactionReplay = retainedForReplay },
+            fakeUnitOfWork,
+            requireCoordination: true,
+            AbortToken
+        );
+
+        fakeUnitOfWork.IsRetryPrevented.Should().Be(expectRetryPrevented);
+    }
+
+    [Theory]
     [InlineData(MessageLane.Bus)]
     [InlineData(MessageLane.Queue)]
     public async Task should_coordinate_with_a_resource_less_unit_when_the_storage_joins_it(MessageLane lane)

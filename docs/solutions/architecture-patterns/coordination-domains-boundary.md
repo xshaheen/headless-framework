@@ -36,7 +36,7 @@ solves a different problem. Pick by the question you are answering:
 |---|---|---|
 | **DistributedLocks** | **Mutual exclusion** — at most one worker in a critical section across processes | `IDistributedLock`, `IDistributedSemaphore`, `IDistributedReadWriteLock`, `IDistributedLease` |
 | **Coordination** | **Cluster membership / node liveness** — which nodes are alive, who owns what, reclaim a dead owner's work | `INodeMembership`, `INodeIdProvider`, `IDeadOwnerReclaimer`, `NodeLivenessState`, `MembershipLostBehavior` |
-| **UnitOfWork** | **Transaction outcome orchestration** — enlist durable outbox/job writes in the caller's transaction and defer dispatch/notifications until it commits | `IUnitOfWorkManager`, `IUnitOfWork`, `IUnitOfWorkResource`, `IRelationalUnitOfWorkResource`, `IUnitOfWorkFeatureProvider`, and `TransactionEnlistment` (Jobs' knob; Messaging enlists by calling `unit.Outbox` instead) |
+| **UnitOfWork** | **Transaction outcome orchestration** — enlist durable outbox/job writes in the caller's transaction and defer dispatch/notifications until it commits | `IUnitOfWorkManager`, `IUnitOfWork`, `IUnitOfWorkResource`, `IRelationalUnitOfWorkResource`, `IUnitOfWorkFeature`, and `TransactionEnlistment` (Jobs' knob; Messaging enlists by calling `unit.Outbox` instead) |
 
 ### Quick disambiguation
 

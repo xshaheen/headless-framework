@@ -14,12 +14,13 @@ namespace Headless.UnitOfWork;
 /// on scope disposal. Created by DI through <c>AddUnitOfWork()</c>; tests construct it directly.
 /// </summary>
 /// <param name="logger">Logger for the leak warning and the forgotten-completion warning.</param>
-/// <param name="featureProviders">
-/// The feature providers registered in this scope, read once into a lookup; empty in a host that registers none.
+/// <param name="services">
+/// The scope's own provider, which <see cref="IUnitOfWork.GetFeature{TFeature}" /> resolves features from;
+/// <see langword="null" /> outside DI, where no feature resolves.
 /// </param>
 internal sealed partial class UnitOfWorkManager(
     ILogger<UnitOfWorkManager>? logger = null,
-    IEnumerable<IUnitOfWorkFeatureProvider>? featureProviders = null
+    IServiceProvider? services = null
 ) : IUnitOfWorkManager, IDisposable, IAsyncDisposable
 {
     private const string _ConcurrentBeginMessage =
@@ -39,11 +40,6 @@ internal sealed partial class UnitOfWorkManager(
 
     private readonly Lock _gate = new();
     private readonly List<Frame> _frames = []; // bottom .. top; the top frame is the innermost unit.
-
-    // Read once per scope, not per GetFeature call: the registrations cannot change over a manager's life.
-    private readonly Dictionary<Type, IUnitOfWorkFeatureProvider> _featureProviders = _BuildFeatureProviders(
-        featureProviders
-    );
     private bool _beginning;
     private bool _disposed;
 
@@ -271,58 +267,12 @@ internal sealed partial class UnitOfWorkManager(
     }
 
     /// <summary>
-    /// Resolves the capability <typeparamref name="TFeature" /> on <paramref name="unit" />, creating it once
-    /// per unit through the provider that claims the type. The calling view has already answered for its own
-    /// liveness, so this only sees the unit.
+    /// Resolves the feature <typeparamref name="TFeature" /> from the scope that owns this manager. A plain
+    /// service lookup: nothing is created or cached per unit, so every handle over a unit — root or nested view —
+    /// sees the same instance, and a manager constructed outside DI resolves nothing.
     /// </summary>
-    internal TFeature? GetFeature<TFeature>(Internal.UnitOfWork unit)
-        where TFeature : class
-    {
-        if (!_featureProviders.TryGetValue(typeof(TFeature), out var provider))
-        {
-            return null;
-        }
-
-        // The root view, never the caller's: a child view can complete while the unit stays active, and this
-        // instance is cached on the unit for the rest of its life.
-        return unit.GetOrAdd(
-            unit.RootView,
-            provider,
-            static (rootView, featureProvider) =>
-                featureProvider.Create(rootView) as TFeature
-                ?? throw new InvalidOperationException(
-                    $"The unit-of-work feature provider '{featureProvider.GetType().Name}' did not return an instance of '{typeof(TFeature).Name}'."
-                )
-        );
-    }
-
-    private static Dictionary<Type, IUnitOfWorkFeatureProvider> _BuildFeatureProviders(
-        IEnumerable<IUnitOfWorkFeatureProvider>? providers
-    )
-    {
-        if (providers is null)
-        {
-            return [];
-        }
-
-        Dictionary<Type, IUnitOfWorkFeatureProvider> map = [];
-
-        foreach (var provider in providers)
-        {
-            // Two providers for one feature is a host misconfiguration with no defensible winner: whichever the
-            // enumeration happened to yield first would silently decide the unit's behavior.
-            if (map.TryGetValue(provider.FeatureType, out var existing))
-            {
-                throw new InvalidOperationException(
-                    $"Two unit-of-work feature providers claim the feature '{provider.FeatureType.Name}': '{existing.GetType().Name}' and '{provider.GetType().Name}'. Register each feature once."
-                );
-            }
-
-            map.Add(provider.FeatureType, provider);
-        }
-
-        return map;
-    }
+    internal TFeature? GetFeature<TFeature>()
+        where TFeature : class, IUnitOfWorkFeature => services?.GetService(typeof(TFeature)) as TFeature;
 
     /// <summary>Completes a root or nested unit: claim, commit (owned), drain, pop.</summary>
     internal async ValueTask CompleteRootAsync(Internal.UnitOfWork unit, CancellationToken cancellationToken)

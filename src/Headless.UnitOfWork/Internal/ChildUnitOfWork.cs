@@ -39,7 +39,7 @@ internal sealed class ChildUnitOfWork(Internal.UnitOfWork root, UnitOfWorkManage
 
     public IDisposable OnCompleted(Func<ValueTask> work)
     {
-        _ThrowIfDisposed();
+        _ThrowIfNotUsable();
 
         var registration = (Internal.UnitOfWork.CompletedRegistration)root.OnCompleted(work);
 
@@ -53,7 +53,7 @@ internal sealed class ChildUnitOfWork(Internal.UnitOfWork root, UnitOfWorkManage
 
     public IDisposable OnFailed(Func<UnitOfWorkFailure, ValueTask> work)
     {
-        _ThrowIfDisposed();
+        _ThrowIfNotUsable();
 
         var registration = (Internal.UnitOfWork.FailedRegistration)root.OnFailed(work);
 
@@ -68,7 +68,7 @@ internal sealed class ChildUnitOfWork(Internal.UnitOfWork root, UnitOfWorkManage
     public TState GetOrAdd<TState>(Func<IUnitOfWork, TState> factory)
         where TState : class
     {
-        _ThrowIfDisposed();
+        _ThrowIfNotUsable();
 
         return root.GetOrAdd(this, factory);
     }
@@ -76,26 +76,23 @@ internal sealed class ChildUnitOfWork(Internal.UnitOfWork root, UnitOfWorkManage
     public TState GetOrAdd<TState, TArg>(TArg arg, Func<IUnitOfWork, TArg, TState> factory)
         where TState : class
     {
-        _ThrowIfDisposed();
+        _ThrowIfNotUsable();
 
         return root.GetOrAdd(this, arg, factory);
     }
 
     public TFeature? GetFeature<TFeature>()
-        where TFeature : class
+        where TFeature : class, IUnitOfWorkFeature
     {
-        ThrowIfUnusable();
+        _ThrowIfDisposed();
 
-        // The feature is cached on the root engine and handed the root view: this child can complete while the
-        // unit stays open, and the one cached instance must outlive it.
-        return manager.GetFeature<TFeature>(root);
+        return manager.GetFeature<TFeature>();
     }
 
-    /// <summary>
-    /// Answers for the view, not the unit: <see cref="State" /> forwards to the root, so a view that has
-    /// already completed still reports <see cref="UnitOfWorkState.Active" /> while the root is open.
-    /// </summary>
-    public void ThrowIfUnusable()
+    // A registration answers for the view, not the unit: State forwards to the root, so a view that has already
+    // completed still reads Active while the root is open, and work attached through it would land on a unit
+    // this caller believes it has finished with. The root's own terminal check runs inside the forwarded call.
+    private void _ThrowIfNotUsable()
     {
         _ThrowIfDisposed();
 
@@ -105,8 +102,6 @@ internal sealed class ChildUnitOfWork(Internal.UnitOfWork root, UnitOfWorkManage
                 "This nested unit of work has already completed. Use the unit of work it was begun under, or begin a new one."
             );
         }
-
-        root.ThrowIfNotActive();
     }
 
     public void PreventRetry() => root.PreventRetry();

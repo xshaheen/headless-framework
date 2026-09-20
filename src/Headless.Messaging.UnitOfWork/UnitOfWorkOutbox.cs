@@ -5,20 +5,19 @@ using Headless.UnitOfWork;
 namespace Headless.Messaging;
 
 /// <summary>
-/// One unit-of-work handle bound to the messaging outbox capability, returned by <c>unit.Outbox</c>. Publishing
+/// One unit-of-work handle bound to the messaging outbox feature, returned by <c>unit.Outbox</c>. Publishing
 /// through it writes the durable row inside that unit's transaction, so a rollback discards the message.
 /// </summary>
 /// <remarks>
-/// The binding is a value, not a resource: it holds the capability cached on the unit plus the handle it was
-/// read from, and owns nothing to dispose. Taking it is free, so read <c>unit.Outbox</c> at the call site rather
-/// than storing it — a retained binding whose handle has since completed throws on its next publish, because
-/// liveness is checked per publish, not when the binding is taken.
+/// A small binding created on each read of <c>unit.Outbox</c>; it owns nothing to dispose. Read it at the call
+/// site rather than storing it: the handle's liveness is checked when a publish runs, not when the binding is
+/// taken, so a retained binding whose nested view has since completed throws on its next publish.
 /// </remarks>
 [PublicAPI]
-public readonly record struct UnitOfWorkOutbox
+public sealed class UnitOfWorkOutbox
 {
-    private readonly IUnitOfWorkOutbox? _outbox;
-    private readonly IUnitOfWork? _unitOfWork;
+    private readonly IUnitOfWorkOutbox _outbox;
+    private readonly IUnitOfWork _unitOfWork;
 
     internal UnitOfWorkOutbox(IUnitOfWorkOutbox outbox, IUnitOfWork unitOfWork)
     {
@@ -32,8 +31,7 @@ public readonly record struct UnitOfWorkOutbox
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A receipt with the resolved message identity and the durable row handle.</returns>
     /// <exception cref="InvalidOperationException">
-    /// The bound handle can no longer carry work, the storage cannot join the unit, or this binding is the
-    /// default value rather than one taken from <c>unit.Outbox</c>.
+    /// The bound handle can no longer carry work, or the storage cannot join the unit.
     /// </exception>
     /// <exception cref="ObjectDisposedException">The bound handle was disposed.</exception>
     public Task<PublishReceipt> PublishAsync<T>(T? contentObj, CancellationToken cancellationToken = default)
@@ -48,8 +46,7 @@ public readonly record struct UnitOfWorkOutbox
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A receipt with the resolved message identity and the durable row handle.</returns>
     /// <exception cref="InvalidOperationException">
-    /// The bound handle can no longer carry work, the storage cannot join the unit, or this binding is the
-    /// default value rather than one taken from <c>unit.Outbox</c>.
+    /// The bound handle can no longer carry work, or the storage cannot join the unit.
     /// </exception>
     /// <exception cref="ObjectDisposedException">The bound handle was disposed.</exception>
     public Task<PublishReceipt> PublishAsync<T>(
@@ -58,9 +55,7 @@ public readonly record struct UnitOfWorkOutbox
         CancellationToken cancellationToken = default
     )
     {
-        var (outbox, unitOfWork) = _Unwrap();
-
-        return outbox.PublishAsync(unitOfWork, contentObj, options, cancellationToken);
+        return _outbox.PublishAsync(_unitOfWork, contentObj, options, cancellationToken);
     }
 
     /// <summary>Enqueues a point-to-point (queue lane) message inside the bound unit's transaction.</summary>
@@ -69,8 +64,7 @@ public readonly record struct UnitOfWorkOutbox
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A receipt with the resolved message identity and the durable row handle.</returns>
     /// <exception cref="InvalidOperationException">
-    /// The bound handle can no longer carry work, the storage cannot join the unit, or this binding is the
-    /// default value rather than one taken from <c>unit.Outbox</c>.
+    /// The bound handle can no longer carry work, or the storage cannot join the unit.
     /// </exception>
     /// <exception cref="ObjectDisposedException">The bound handle was disposed.</exception>
     public Task<PublishReceipt> EnqueueAsync<T>(T? contentObj, CancellationToken cancellationToken = default)
@@ -85,8 +79,7 @@ public readonly record struct UnitOfWorkOutbox
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A receipt with the resolved message identity and the durable row handle.</returns>
     /// <exception cref="InvalidOperationException">
-    /// The bound handle can no longer carry work, the storage cannot join the unit, or this binding is the
-    /// default value rather than one taken from <c>unit.Outbox</c>.
+    /// The bound handle can no longer carry work, or the storage cannot join the unit.
     /// </exception>
     /// <exception cref="ObjectDisposedException">The bound handle was disposed.</exception>
     public Task<PublishReceipt> EnqueueAsync<T>(
@@ -95,22 +88,6 @@ public readonly record struct UnitOfWorkOutbox
         CancellationToken cancellationToken = default
     )
     {
-        var (outbox, unitOfWork) = _Unwrap();
-
-        return outbox.EnqueueAsync(unitOfWork, contentObj, options, cancellationToken);
-    }
-
-    // A struct cannot forbid its own default value, and a default binding would otherwise fail with a null
-    // dereference far from the mistake that produced it.
-    private (IUnitOfWorkOutbox Outbox, IUnitOfWork UnitOfWork) _Unwrap()
-    {
-        if (_outbox is null || _unitOfWork is null)
-        {
-            throw new InvalidOperationException(
-                "This outbox binding is the default value. Read it from the unit of work you are publishing in, as 'unit.Outbox'."
-            );
-        }
-
-        return (_outbox, _unitOfWork);
+        return _outbox.EnqueueAsync(_unitOfWork, contentObj, options, cancellationToken);
     }
 }
