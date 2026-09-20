@@ -240,7 +240,9 @@ public sealed class UnitOfWorkOutboxTests : TestBase
     {
         var services = new ServiceCollection();
         services.AddLogging();
+#pragma warning disable CA2000 // Ownership passes to the container on the AddSingleton below; it disposes the instance with the provider.
         var dispatcher = new RecordingCommittedDispatcher();
+#pragma warning restore CA2000
         // Registered before AddHeadlessMessaging so it wins the TryAddSingleton: the committed-dispatch hand-off
         // is what distinguishes "buffered on the unit" from "written and dispatched immediately".
         services.AddSingleton<IDispatcher>(dispatcher);

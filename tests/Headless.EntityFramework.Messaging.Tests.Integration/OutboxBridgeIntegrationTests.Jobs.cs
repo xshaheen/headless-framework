@@ -134,7 +134,7 @@ public sealed partial class OutboxBridgeIntegrationTests
         // The second consumer receives the exact deserialized durable outbox envelope. Broker delivery is covered
         // by transport conformance; this test owns application, occurrence, consumer, and deadline composition.
         var stored = published.Single(row =>
-            string.Equals(row.Message.Headers[Headers.MessageName], "aaaorders.shipped", StringComparison.Ordinal)
+            string.Equals(row.Message.Headers[Headers.MessageName], "orders.shipped", StringComparison.Ordinal)
         );
 
         deadline.FailAfterWrite = true;
