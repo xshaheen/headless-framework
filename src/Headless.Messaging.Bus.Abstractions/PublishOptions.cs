@@ -9,7 +9,7 @@ namespace Headless.Messaging;
 /// <remarks>
 /// <para>
 /// Accepted by <see cref="IBus"/>, which publishes autonomously and never joins the caller's transaction, so
-/// <see cref="DeliveryMode"/> is a free choice here. <see cref="OutboxPublishOptions"/> is the counterpart for
+/// <see cref="DeliveryMode"/> is a free choice here. <see cref="OutboxOptions"/> is the counterpart for
 /// an enlisted publish and carries no mode.
 /// </para>
 /// <para>

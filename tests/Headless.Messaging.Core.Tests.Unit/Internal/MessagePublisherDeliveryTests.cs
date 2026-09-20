@@ -370,7 +370,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         await harness.Publisher.PublishAsync(
             MessageLane.Bus,
             new DeliveryMessage("replay"),
-            new OutboxPublishOptions { IsRetainedForTransactionReplay = retainedForReplay },
+            new OutboxOptions { IsRetainedForTransactionReplay = retainedForReplay },
             fakeUnitOfWork,
             requireCoordination: true,
             AbortToken

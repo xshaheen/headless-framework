@@ -475,20 +475,6 @@
           "Headless.Messaging.Abstractions": "[1.0.0, )"
         }
       },
-      "headless.messaging.queue.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Messaging.Abstractions": "[1.0.0, )"
-        }
-      },
-      "headless.messaging.unitofwork": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
-          "Headless.Messaging.Queue.Abstractions": "[1.0.0, )",
-          "Headless.UnitOfWork.Abstractions": "[1.0.0, )"
-        }
-      },
       "headless.multitenancy": {
         "type": "Project",
         "dependencies": {

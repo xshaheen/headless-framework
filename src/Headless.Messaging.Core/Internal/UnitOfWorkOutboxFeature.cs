@@ -19,7 +19,7 @@ internal sealed class UnitOfWorkOutboxFeature(MessagePublisher publisher) : IUni
     public Task<PublishReceipt> PublishAsync<T>(
         IUnitOfWork unitOfWork,
         T? contentObj,
-        OutboxPublishOptions? options,
+        OutboxOptions? options,
         CancellationToken cancellationToken = default
     )
     {
@@ -38,7 +38,7 @@ internal sealed class UnitOfWorkOutboxFeature(MessagePublisher publisher) : IUni
     public Task<PublishReceipt> EnqueueAsync<T>(
         IUnitOfWork unitOfWork,
         T? contentObj,
-        OutboxQueueOptions? options,
+        OutboxOptions? options,
         CancellationToken cancellationToken = default
     )
     {

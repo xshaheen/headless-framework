@@ -51,7 +51,7 @@ public sealed class UnitOfWorkOutbox
     /// <exception cref="ObjectDisposedException">The bound handle was disposed.</exception>
     public Task<PublishReceipt> PublishAsync<T>(
         T? contentObj,
-        OutboxPublishOptions? options,
+        OutboxOptions? options,
         CancellationToken cancellationToken = default
     )
     {
@@ -84,7 +84,7 @@ public sealed class UnitOfWorkOutbox
     /// <exception cref="ObjectDisposedException">The bound handle was disposed.</exception>
     public Task<PublishReceipt> EnqueueAsync<T>(
         T? contentObj,
-        OutboxQueueOptions? options,
+        OutboxOptions? options,
         CancellationToken cancellationToken = default
     )
     {

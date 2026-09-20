@@ -17,7 +17,7 @@ internal sealed class IntegrationEventPublishInvokerCache
 {
     private readonly ConcurrentDictionary<
         Type,
-        Func<UnitOfWorkOutbox, object, OutboxPublishOptions, CancellationToken, Task>
+        Func<UnitOfWorkOutbox, object, OutboxOptions, CancellationToken, Task>
     > _invokers = new();
 
     // The three-parameter overload: the two-parameter one takes no options, and the enqueue pair belongs to the
@@ -28,23 +28,19 @@ internal sealed class IntegrationEventPublishInvokerCache
         .Single(m =>
             m is { Name: nameof(UnitOfWorkOutbox.PublishAsync), IsGenericMethodDefinition: true }
             && m.GetParameters() is [_, { ParameterType: var optionsType }, _]
-            && optionsType == typeof(OutboxPublishOptions)
+            && optionsType == typeof(OutboxOptions)
         );
 
-    public Func<UnitOfWorkOutbox, object, OutboxPublishOptions, CancellationToken, Task> GetPublishInvoker(
-        Type eventType
-    )
+    public Func<UnitOfWorkOutbox, object, OutboxOptions, CancellationToken, Task> GetPublishInvoker(Type eventType)
     {
         return _invokers.GetOrAdd(eventType, _CreateInvoker);
     }
 
-    private static Func<UnitOfWorkOutbox, object, OutboxPublishOptions, CancellationToken, Task> _CreateInvoker(
-        Type eventType
-    )
+    private static Func<UnitOfWorkOutbox, object, OutboxOptions, CancellationToken, Task> _CreateInvoker(Type eventType)
     {
         var outbox = Expression.Parameter(typeof(UnitOfWorkOutbox), "outbox");
         var integrationEvent = Expression.Parameter(typeof(object), "integrationEvent");
-        var options = Expression.Parameter(typeof(OutboxPublishOptions), "options");
+        var options = Expression.Parameter(typeof(OutboxOptions), "options");
         var cancellationToken = Expression.Parameter(typeof(CancellationToken), "cancellationToken");
 
         // Keep concrete contract resolution while supplying the emission snapshot for each individual publish.
@@ -57,7 +53,7 @@ internal sealed class IntegrationEventPublishInvokerCache
         );
 
         return Expression
-            .Lambda<Func<UnitOfWorkOutbox, object, OutboxPublishOptions, CancellationToken, Task>>(
+            .Lambda<Func<UnitOfWorkOutbox, object, OutboxOptions, CancellationToken, Task>>(
                 call,
                 outbox,
                 integrationEvent,

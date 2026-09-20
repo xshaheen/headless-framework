@@ -10,7 +10,7 @@ namespace Headless.Messaging;
 /// <para>
 /// Accepted by <see cref="IQueue"/>, which enqueues autonomously and never joins the caller's transaction. The
 /// invoked queue verb fixes the Queue lane; <see cref="DeliveryMode"/> controls durability independently.
-/// <see cref="OutboxQueueOptions"/> is the counterpart for an enlisted enqueue and carries no mode.
+/// <see cref="OutboxOptions"/> is the counterpart for an enlisted enqueue and carries no mode.
 /// </para>
 /// <para>
 /// This type is a record so middleware can mutate a single property via a <c>with</c> expression

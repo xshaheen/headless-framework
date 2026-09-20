@@ -46,14 +46,14 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
         public List<(
             Type GenericType,
             object? Payload,
-            OutboxPublishOptions? Options,
+            OutboxOptions? Options,
             IUnitOfWork UnitOfWork
         )> Published { get; } = [];
 
         public Task<PublishReceipt> PublishAsync<T>(
             IUnitOfWork unitOfWork,
             T? contentObj,
-            OutboxPublishOptions? options,
+            OutboxOptions? options,
             CancellationToken cancellationToken = default
         )
         {
@@ -64,7 +64,7 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
         public Task<PublishReceipt> EnqueueAsync<T>(
             IUnitOfWork unitOfWork,
             T? contentObj,
-            OutboxQueueOptions? options,
+            OutboxOptions? options,
             CancellationToken cancellationToken = default
         )
         {
@@ -77,7 +77,7 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
         public Task<PublishReceipt> PublishAsync<T>(
             IUnitOfWork unitOfWork,
             T? contentObj,
-            OutboxPublishOptions? options,
+            OutboxOptions? options,
             CancellationToken cancellationToken = default
         )
         {
@@ -87,7 +87,7 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
         public Task<PublishReceipt> EnqueueAsync<T>(
             IUnitOfWork unitOfWork,
             T? contentObj,
-            OutboxQueueOptions? options,
+            OutboxOptions? options,
             CancellationToken cancellationToken = default
         )
         {
@@ -111,7 +111,7 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
 
         // when
         var invoke = cache.GetPublishInvoker(integrationEvent.GetType());
-        await invoke(unitOfWork.Outbox, integrationEvent, new OutboxPublishOptions(), AbortToken);
+        await invoke(unitOfWork.Outbox, integrationEvent, new OutboxOptions(), AbortToken);
 
         // then — the concrete generic overload ran, and the binding carried the publishing handle with it
         outbox.Published.Should().ContainSingle();
@@ -145,8 +145,8 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
         object second = new PaymentCaptured("payment");
 
         // when
-        await cache.GetPublishInvoker(first.GetType())(binding, first, new OutboxPublishOptions(), AbortToken);
-        await cache.GetPublishInvoker(second.GetType())(binding, second, new OutboxPublishOptions(), AbortToken);
+        await cache.GetPublishInvoker(first.GetType())(binding, first, new OutboxOptions(), AbortToken);
+        await cache.GetPublishInvoker(second.GetType())(binding, second, new OutboxOptions(), AbortToken);
 
         // then
         outbox.Published.Select(x => x.GenericType).Should().Equal(typeof(OrderPlaced), typeof(PaymentCaptured));
@@ -209,7 +209,7 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
                 .Published[i]
                 .Options.Should()
                 .BeEquivalentTo(
-                    new OutboxPublishOptions
+                    new OutboxOptions
                     {
                         MessageId = events[i].EventId,
                         CorrelationId = events[i].CorrelationId,

@@ -1,6 +1,6 @@
 ---
 domain: Messaging
-packages: Messaging.Abstractions, Messaging.Bus.Abstractions, Messaging.Queue.Abstractions, Messaging.UnitOfWork, Messaging.Core, Messaging.Dashboard, Messaging.Dashboard.K8s, Messaging.Aws, Messaging.AzureServiceBus, Messaging.InMemory, Messaging.Storage.InMemory, Messaging.Kafka, Messaging.Nats, Messaging.Pulsar, Messaging.RabbitMq, Messaging.Redis, Messaging.Storage.PostgreSql, Messaging.Storage.PostgreSql.EntityFramework, Messaging.Storage.SqlServer, Messaging.Storage.SqlServer.EntityFramework, Messaging.Testing
+packages: Messaging.Abstractions, Messaging.Bus.Abstractions, Messaging.Queue.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging.Dashboard.K8s, Messaging.Aws, Messaging.AzureServiceBus, Messaging.InMemory, Messaging.Storage.InMemory, Messaging.Kafka, Messaging.Nats, Messaging.Pulsar, Messaging.RabbitMq, Messaging.Redis, Messaging.Storage.PostgreSql, Messaging.Storage.PostgreSql.EntityFramework, Messaging.Storage.SqlServer, Messaging.Storage.SqlServer.EntityFramework, Messaging.Testing
 ---
 
 # Messaging
@@ -45,7 +45,7 @@ services.AddHeadlessMessaging(setup =>
 - **Runtime handlers are first-class**: Use `IRuntimeSubscriber` for ephemeral broker-attached delegates. They share scoped DI, middleware, diagnostics, retry, and correlation semantics with class handlers.
 - **The publisher verb selects the lane**: Use `IBus.PublishAsync` for broadcast Bus delivery and `IQueue.EnqueueAsync` for point-to-point Queue delivery.
 - **Use typed routing affinity**: set `RoutingAffinityKey`; reserve `headless-routing-affinity-key`. Validate registered route support from frozen capabilities before startup effects, and typed/native conflicts before durable writes. Provider session/FIFO topology still requires broker evidence.
-- **The receiver decides enlistment; the mode decides durability**: `IBus`/`IQueue` are autonomous — their rows are standalone and survive the caller's rollback, whatever unit of work is active. `unit.Outbox` (from `Headless.Messaging.UnitOfWork`) is enlisted — its row is written inside that unit's transaction and discarded with it. Pick by which one you call; no option, per-type policy, or host default moves a publish between them. `DeliveryMode` (`Durable` default, `Direct`) applies to the autonomous surface only and is set per call (`PublishOptions.DeliveryMode` / `QueueOptions.DeliveryMode`), per type (`WithDeliveryMode`), or per host (`MessagingOptions.DefaultDeliveryMode`); `Direct` bypasses storage and rejects `Delay`/`ScheduledAt`. An enlisted publish is durable by construction and consults none of the three. See [Delivery Modes](#delivery-modes).
+- **The receiver decides enlistment; the mode decides durability**: `IBus`/`IQueue` are autonomous — their rows are standalone and survive the caller's rollback, whatever unit of work is active. `unit.Outbox` is enlisted — its row is written inside that unit's transaction and discarded with it. Pick by which one you call; no option, per-type policy, or host default moves a publish between them. `DeliveryMode` (`Durable` default, `Direct`) applies to the autonomous surface only and is set per call (`PublishOptions.DeliveryMode` / `QueueOptions.DeliveryMode`), per type (`WithDeliveryMode`), or per host (`MessagingOptions.DefaultDeliveryMode`); `Direct` bypasses storage and rejects `Delay`/`ScheduledAt`. An enlisted publish is durable by construction and consults none of the three. See [Delivery Modes](#delivery-modes).
 - **Provider behavior is capability-gated**: immutable transport, storage, and coordination descriptors declare lanes, delayed scheduling, and physical lane-topology support. Bootstrap freezes and validates them before readiness or resolving provider implementations; direct and outbox calls reject unsupported combinations before middleware, storage writes, client creation, or transport I/O. Raw transport DI registration is not capability evidence.
 - **Durable inbox guarantees fail closed**: durable consumers require `MessagingOptions.RequiredInboxCapability`, which defaults to `Transactional`. Selecting `DurableDedupeOnly` is an explicit opt-down when duplicate suppression may commit separately from application state; selecting `ProcessLocal` is reserved for process-local development storage. Bootstrap validates the declared storage tier before subscription creation or retry pickup.
 - **The lane discriminator remains wire-compatible**: public/runtime APIs use `MessageLane`, while storage columns use the `IntentType` name and the `headless-intent` header retains its stable literal and `0`/`1` values. Retry drainers dispatch Bus rows through `IBusTransport` and Queue rows through `IQueueTransport`. A persisted row whose value has no matching capability fails terminally; undefined values never default to Bus.
@@ -110,11 +110,11 @@ Two independent questions, answered by two different things. **Durability** — 
 | `unit.Outbox` (always durable) | row inside that unit's transaction, dispatched after commit, discarded on rollback | **throws** before any effect | not reachable — the unit is the receiver |
 
 - **Precedence (`DeliveryMode`)**: per-call `PublishOptions.DeliveryMode` / `QueueOptions.DeliveryMode`, then the per-type policy registered with `WithDeliveryMode(...)` on `setup.Bus.ForMessage<T>(...)` / `setup.Queue.ForMessage<T>(...)`, then `MessagingOptions.DefaultDeliveryMode` (`Durable`). `Direct` bypasses storage and rejects a per-call `Delay` or `ScheduledAt`, because scheduling requires storage.
-- **An enlisted publish consults none of that.** `OutboxPublishOptions` and `OutboxQueueOptions` carry no delivery mode, and the resolver fixes the mode to `Durable` before reading the per-type policy or the host default — durable capture is the mechanism the row joins the transaction through. This is deliberate: under the previous model a type pinned `Direct` with `WithDeliveryMode` made every coordinated publish of that type fail, because `Direct` and enlistment are contradictory. Delay and schedule still work, and `Direct` delivery combined with a coordination requirement throws ("Direct delivery cannot be coordinated with a unit of work; durable delivery is required to write inside its transaction") — a state only framework-internal callers can construct.
+- **An enlisted publish consults none of that.** `OutboxOptions` carries no delivery mode, and the resolver fixes the mode to `Durable` before reading the per-type policy or the host default — durable capture is the mechanism the row joins the transaction through. This is deliberate: under the previous model a type pinned `Direct` with `WithDeliveryMode` made every coordinated publish of that type fail, because `Direct` and enlistment are contradictory. Delay and schedule still work, and `Direct` delivery combined with a coordination requirement throws ("Direct delivery cannot be coordinated with a unit of work; durable delivery is required to write inside its transaction") — a state only framework-internal callers can construct.
 - **Whether a storage can join a unit is the storage's own answer.** The relational storages join only an `IRelationalUnitOfWorkResource` whose transaction is live and on the same database. In-memory storage joins any active unit, including a resource-less one opened with `IUnitOfWorkManager.BeginAsync()` (test hosts), through its buffered-promotion seam. A relational storage against a resource-less unit, a unit on another database, a completed transaction, or another provider's resource cannot join, and an enlisted publish throws naming the mismatch: `Publishing 'OrderPlaced' cannot join the active unit of work ({Mismatch}): {detail}. {advice}` — for example "the active unit of work exposes no relational resource for the messaging storage to write into. Begin the unit of work over a relational resource for the messaging database, or publish without coordination."
 - **The refusal belongs to the enlisted surface only.** `IBus`/`IQueue` hand the publisher no unit at all, so there is nothing for a storage to reject: a durable autonomous publish always writes standalone, including inside a unit of work whose transaction the storage could have joined. The mismatch throw above is reachable only through `unit.Outbox`.
 - **There is no startup gate for enlistment**; the failure is always a per-call refusal. `IUnitOfWorkManager` always exists (`AddUnitOfWork()` is idempotent and is called by `AddHeadlessMessaging`, `AddHeadlessJobs`, `AddHeadlessDbContextServices`, and the three `Headless.UnitOfWork.*` provider setups). The only startup validation in this area is unchanged: durable consumers still require `MessagingOptions.RequiredInboxCapability` (default `Transactional`) from the configured storage.
-- **Migration note — the "never publish outside a transaction" guardrail is gone.** A host that set `MessagingOptions.DefaultEnlistment = TransactionEnlistment.Required`, or registered a type `WithEnlistment(TransactionEnlistment.Required)`, used it to make an un-enlisted publish fail loudly. Both members are deleted, so that host gets a compile error, not a silent behavior change. Nothing replaces it as a host-wide setting: the guarantee is now structural per call site. Reading `unit.Outbox.PublishAsync(...)` proves enlistment at the line, and an `IBus.PublishAsync` in code that must be transactional is a review finding rather than a runtime throw. Where a build-time guard is wanted, ban the `IBus`/`IQueue` *types* in the transactional assembly rather than the package reference: `Headless.Messaging.UnitOfWork` references both abstraction packages, so those types are on the compile surface of anything that uses the outbox. With `Microsoft.CodeAnalysis.BannedApiAnalyzers` referenced, a `BannedSymbols.txt` added as an `AdditionalFiles` item in that project needs exactly these two lines:
+- **Migration note — the "never publish outside a transaction" guardrail is gone.** A host that set `MessagingOptions.DefaultEnlistment = TransactionEnlistment.Required`, or registered a type `WithEnlistment(TransactionEnlistment.Required)`, used it to make an un-enlisted publish fail loudly. Both members are deleted, so that host gets a compile error, not a silent behavior change. Nothing replaces it as a host-wide setting: the guarantee is now structural per call site. Reading `unit.Outbox.PublishAsync(...)` proves enlistment at the line, and an `IBus.PublishAsync` in code that must be transactional is a review finding rather than a runtime throw. Where a build-time guard is wanted, ban the `IBus`/`IQueue` *types* in the transactional assembly rather than the package reference: the lane abstractions are on the compile surface of anything that references Messaging. With `Microsoft.CodeAnalysis.BannedApiAnalyzers` referenced, a `BannedSymbols.txt` added as an `AdditionalFiles` item in that project needs exactly these two lines:
 
   ```text
   T:Headless.Messaging.IBus;Publish through unit.Outbox in this assembly — IBus never joins the transaction.
@@ -300,8 +300,10 @@ Table names are not configurable; each provider creates its own fixed set inside
 - `IConsume<TMessage>` consumer contract.
 - `MessageOptions` base options, including headers, correlation, mutually exclusive `Delay` and `ScheduledAt`, message id, message type, and tenant id.
 - `IMessageRevoker` deletes a scheduled row by `PublishReceipt.StorageId` before its first dispatch reservation. It returns `Revoked`, `NotFound`, or `AttemptReserved`, retains no audit record, and is not tenant-scoped. Use Jobs for keyed, replaceable, tenant-scoped, or transactional deadlines.
+- The enlisted publish contract lives here too: `IUnitOfWorkOutbox`, the `UnitOfWorkOutbox` binding, `OutboxOptions`, and the `unit.Outbox` accessor (an extension property on `IUnitOfWork`, in the `Headless.UnitOfWork` namespace, so holding the unit is enough to reach it). The accessor resolves the singleton `IUnitOfWorkOutbox` feature from the unit's scope and returns a small binding of it to the handle it was read from; the binding owns nothing to dispose. `IUnitOfWorkOutbox` itself is plumbing — hidden from IntelliSense, public only so the unit-of-work packages can hand it out — and application code uses the binding. The implementation ships in `Headless.Messaging.Core` and is registered by `AddHeadlessMessaging`; `unit.Outbox` throws an `InvalidOperationException` naming `AddHeadlessMessaging` when the host registered no messaging.
+- `unit.Outbox.PublishAsync` sends on the bus lane and `unit.Outbox.EnqueueAsync` on the queue lane; both take one `OutboxOptions` record, because the verb is the lane authority and the record carries no delivery mode — durable capture is the mechanism the publish enlists through, so the per-call mode, the per-type `WithDeliveryMode` policy, and the host default are all bypassed on this surface. The durable row is written inside the unit's transaction: visible when the unit completes, discarded when it rolls back — the difference from `IBus` and `IQueue`, whose rows are written standalone and survive the caller's rollback. It refuses rather than degrades: when the storage cannot join the given unit the call throws before any storage or transport effect, and which units a storage can join is the storage's own answer (the in-memory storage joins a resource-less unit through its buffer, the relational storages join only a same-database relational resource). Liveness is checked per publish against the handle the binding was taken from, before any storage effect: the outbox writer's first act is a registration on that handle, which a completed nested view refuses even while the root — and therefore `State` — is still `Active`. A publish into a unit you own (`BeginAsync`, `RunAsync`) leaves it replayable; a publish into an observed-mode unit — the `HeadlessDbContext` save pipeline's own save, from a domain-event handler — calls `IUnitOfWork.PreventRetry()` before writing. See [Delivery Modes](#delivery-modes).
 - `MessageOptions.SuppressAmbientBusinessContext` preserves captured business metadata by disabling ambient correlation, causation, and tenant defaults. It defaults to `false`; explicit options, registered contract/selector resolution, and diagnostic trace propagation remain unchanged. Required tenancy still rejects a null explicit tenant when suppression is enabled.
-- `DeliveryMode` has two values and belongs to the autonomous surface only. `Durable` (default) stores the row first and the relay dispatches it; `Direct` bypasses storage and cannot be combined with `Delay` or `ScheduledAt`. Precedence is per call (`PublishOptions.DeliveryMode` / `QueueOptions.DeliveryMode`), then per type (`WithDeliveryMode`), then `MessagingOptions.DefaultDeliveryMode`. `MessageOptions`, the shared base, carries no mode and no enlistment: the derived outbox records add neither, because an enlisted publish is durable by construction. See [Delivery Modes](#delivery-modes).
+- `DeliveryMode` has two values and belongs to the autonomous surface only. `Durable` (default) stores the row first and the relay dispatches it; `Direct` bypasses storage and cannot be combined with `Delay` or `ScheduledAt`. Precedence is per call (`PublishOptions.DeliveryMode` / `QueueOptions.DeliveryMode`), then per type (`WithDeliveryMode`), then `MessagingOptions.DefaultDeliveryMode`. `MessageOptions`, the shared base, carries no mode and no enlistment: `OutboxOptions` adds neither, because an enlisted publish is durable by construction. See [Delivery Modes](#delivery-modes).
 - `MessageHeader`, `Headers`, `TransportMessage`, and broker address primitives.
 - Common transport pause/resume and retry/backoff abstractions.
 
@@ -342,9 +344,9 @@ None.
 ### API and behavior
 
 - `PublishReceipt` carries the resolved wire `MessageId` and nullable durable `StorageId`. Direct delivery returns no storage handle. Middleware suppression before terminal publication returns both values null. A receipt enlisted in the caller's active unit of work remains subject to that unit's completion or rollback and never implies consumer completion.
-- `IBus` is the autonomous bus publisher — a singleton that never joins a caller's unit of work. An unset `PublishOptions.DeliveryMode` inherits the per-type `WithDeliveryMode` policy, then `MessagingOptions.DefaultDeliveryMode`, which defaults to `Durable`. Explicit modes override both. For a publish that must live inside the caller's transaction, use `unit.Outbox` from [`Headless.Messaging.UnitOfWork`](#headlessmessagingunitofwork).
+- `IBus` is the autonomous bus publisher — a singleton that never joins a caller's unit of work. An unset `PublishOptions.DeliveryMode` inherits the per-type `WithDeliveryMode` policy, then `MessagingOptions.DefaultDeliveryMode`, which defaults to `Durable`. Explicit modes override both. For a publish that must live inside the caller's transaction, use `unit.Outbox` (see [Headless.Messaging.Abstractions](#headlessmessagingabstractions)).
 - Durable delivery persists messages first, then drains them through the configured bus transport.
-- `PublishOptions.Delay` or `PublishOptions.ScheduledAt` schedules durable bus delivery. Supply one scheduling form. `Direct` rejects either form; `OutboxPublishOptions` accepts both.
+- `PublishOptions.Delay` or `PublishOptions.ScheduledAt` schedules durable bus delivery. Supply one scheduling form. `Direct` rejects either form; `OutboxOptions` accepts both.
 - `PublishOptionsBuilder` and the `BusExtensions.PublishAsync` callback author canonical options snapshots without a Core dependency.
 - Every bus publish carries `MessageLane.Bus` through storage, tracing, dashboard projections, and consume context.
 
@@ -402,9 +404,9 @@ None. This package registers no services.
 ### API and behavior
 
 - `PublishReceipt` carries the resolved wire `MessageId` and nullable durable `StorageId`. Direct delivery returns no storage handle. Middleware suppression before terminal publication returns both values null. A receipt enlisted in the caller's active unit of work remains subject to that unit's completion or rollback and never implies consumer completion.
-- `IQueue` is the autonomous queue publisher — a singleton that never joins a caller's unit of work. An unset `QueueOptions.DeliveryMode` inherits the per-type `WithDeliveryMode` policy, then `MessagingOptions.DefaultDeliveryMode`, which defaults to `Durable`. Explicit modes override both. For an enqueue that must live inside the caller's transaction, use `unit.Outbox` from [`Headless.Messaging.UnitOfWork`](#headlessmessagingunitofwork).
+- `IQueue` is the autonomous queue publisher — a singleton that never joins a caller's unit of work. An unset `QueueOptions.DeliveryMode` inherits the per-type `WithDeliveryMode` policy, then `MessagingOptions.DefaultDeliveryMode`, which defaults to `Durable`. Explicit modes override both. For an enqueue that must live inside the caller's transaction, use `unit.Outbox` (see [Headless.Messaging.Abstractions](#headlessmessagingabstractions)).
 - Durable delivery persists messages first, then drains them through the configured queue transport.
-- `QueueOptions.Delay` or `QueueOptions.ScheduledAt` schedules durable queue delivery. Supply one scheduling form. `Direct` rejects either form; `OutboxQueueOptions` accepts both.
+- `QueueOptions.Delay` or `QueueOptions.ScheduledAt` schedules durable queue delivery. Supply one scheduling form. `Direct` rejects either form; `OutboxOptions` accepts both.
 - `QueueOptionsBuilder` and the `QueueExtensions.EnqueueAsync` callback author canonical options snapshots without a Core dependency.
 - Every queue enqueue carries `MessageLane.Queue` through storage, tracing, dashboard projections, and consume context.
 
@@ -456,60 +458,6 @@ None in this package. Runtime wiring is provided by `Headless.Messaging.Core` pl
 ### Runtime behavior
 
 None. This package registers no services.
-
-## Headless.Messaging.UnitOfWork
-
-Declares the enlisted publish contract — `IUnitOfWorkOutbox`, the `UnitOfWorkOutbox` binding, and the `unit.Outbox` accessor — for code that publishes inside a transaction and cannot reference `Headless.Messaging.Core`.
-
-### API and behavior
-
-- `unit.Outbox` is an extension property on `IUnitOfWork`, in the `Headless.UnitOfWork` namespace, so holding the unit is enough to reach it. It resolves the singleton `IUnitOfWorkOutbox` feature from the unit's scope and returns a small `UnitOfWorkOutbox` binding of it to the handle it was read from; the binding owns nothing to dispose. `IUnitOfWorkOutbox` itself is plumbing — hidden from IntelliSense, public only so the unit-of-work packages can hand it out — and application code uses the binding.
-- `PublishAsync` sends on the bus lane and `EnqueueAsync` on the queue lane, taking `OutboxPublishOptions` and `OutboxQueueOptions`. Neither record carries a delivery mode: durable capture is the mechanism the publish enlists through, so the per-call mode, the per-type `WithDeliveryMode` policy, and the host default are all bypassed on this surface.
-- The durable row is written inside the unit's transaction. It becomes visible when the unit completes and is discarded when it rolls back — the difference from `IBus` and `IQueue`, whose rows are written standalone and survive the caller's rollback.
-- It refuses rather than degrades. When the storage cannot join the given unit the call throws before any storage or transport effect. Which units a storage can join is the storage's own answer: the in-memory storage joins a resource-less unit through its buffer, the relational storages join only a same-database relational resource.
-- Liveness is checked per publish against the handle the binding was taken from, not against the unit, and before any storage effect: the outbox writer's first act is a registration on that handle, which a completed nested view refuses even while the root — and therefore `State` — is still `Active`. A binding taken from a nested unit and used after that nested unit completed throws with nothing stored.
-- `unit.Outbox` throws an `InvalidOperationException` naming `AddHeadlessMessaging` when the host registered no messaging.
-- A publish into a unit you own (`BeginAsync`, `RunAsync`) leaves it replayable: a strategy replay re-runs your block, publish included. A publish into an observed-mode unit — the `HeadlessDbContext` save pipeline's own save, from a domain-event handler — calls `IUnitOfWork.PreventRetry()` before writing, because that save replays without re-running the handler. See [Delivery Modes](#delivery-modes).
-
-### Install
-
-```bash
-dotnet add package Headless.Messaging.UnitOfWork
-```
-
-The implementation lives in `Headless.Messaging.Core` and is registered by `AddHeadlessMessaging`. Reference this package directly only in a project that publishes enlisted messages without referencing Core.
-
-### Setup and use
-
-```csharp
-using Headless.Messaging;
-using Headless.UnitOfWork;
-
-public sealed class PlaceOrder(IUnitOfWorkManager unitOfWorkManager, OrderStore orders)
-{
-    public async Task HandleAsync(Order order, CancellationToken cancellationToken)
-    {
-        await using var unit = await unitOfWorkManager.BeginAsync(cancellationToken: cancellationToken);
-
-        await orders.InsertAsync(order, cancellationToken);
-        await unit.Outbox.PublishAsync(new OrderPlaced(order.Id), cancellationToken);
-
-        await unit.CompleteAsync(cancellationToken);
-    }
-}
-
-public sealed record OrderPlaced(Guid OrderId);
-```
-
-The message is stored with the order and dispatched after the commit. Disposing without `CompleteAsync`, or calling `RollbackAsync`, leaves no row.
-
-### Configuration
-
-None in this package. Runtime wiring comes from `Headless.Messaging.Core` plus a transport and a storage provider.
-
-### Runtime behavior
-
-None. This package registers no services; `AddHeadlessMessaging` registers the singleton `IUnitOfWorkOutbox` that the accessor resolves.
 
 ## Headless.Messaging.Core
 

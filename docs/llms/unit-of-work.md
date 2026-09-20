@@ -22,7 +22,7 @@ Pick a provider by what owns the transaction:
 
 The two participant domains reach a unit of work differently, and the difference is visible at the call site:
 
-- **Messaging enlists through the unit, never through the publisher.** `IBus` and `IQueue` are autonomous singletons: they never read `IUnitOfWorkManager.Current`, and a publish through them writes a standalone durable row that survives the caller's rollback. To write a message inside the transaction, publish through the unit itself — `unit.Outbox.PublishAsync(...)` / `unit.Outbox.EnqueueAsync(...)`, an accessor that `Headless.Messaging.UnitOfWork` adds to `IUnitOfWork`. That surface always enlists and refuses, before any effect, when the configured storage cannot join the unit. See [messaging.md § Delivery Modes](messaging.md#delivery-modes).
+- **Messaging enlists through the unit, never through the publisher.** `IBus` and `IQueue` are autonomous singletons: they never read `IUnitOfWorkManager.Current`, and a publish through them writes a standalone durable row that survives the caller's rollback. To write a message inside the transaction, publish through the unit itself — `unit.Outbox.PublishAsync(...)` / `unit.Outbox.EnqueueAsync(...)`, an accessor that `Headless.Messaging.Abstractions` adds to `IUnitOfWork`. That surface always enlists and refuses, before any effect, when the configured storage cannot join the unit. See [messaging.md § Delivery Modes](messaging.md#delivery-modes).
 - **Jobs enlists through its scoped managers.** `ITimeJobManager<>`, `ICronJobManager<>`, and `IJobScheduler` are scoped facades that read `IUnitOfWorkManager.Current` at call time and enlist according to `TransactionEnlistment` — no extra parameter. See [Guarantee Matrix](#guarantee-matrix) for when a job write enlists, writes autonomously, or throws.
 
 See [Choosing a Provider](#choosing-a-provider) for the package-selection table.
@@ -97,7 +97,7 @@ A bridge package can expose behavior on a unit of work that the unit-of-work pac
 - A lookup, not a registration: nothing is created or cached per unit, a nested view resolves the same instance as its root, and a completed view still resolves it. A feature therefore holds no unit; the handle it is used with arrives as an argument per call, and that call's first registration on the handle is what answers for the handle's liveness.
 - `GetFeature` throws `ObjectDisposedException` on a disposed handle and nothing else. A manager constructed outside DI resolves no features.
 
-The one first-party feature today is Messaging's enlisted outbox: `AddHeadlessMessaging` registers the singleton `IUnitOfWorkOutbox`, and `Headless.Messaging.UnitOfWork` surfaces it as the `unit.Outbox` accessor.
+The one first-party feature today is Messaging's enlisted outbox: `AddHeadlessMessaging` registers the singleton `IUnitOfWorkOutbox`, and `Headless.Messaging.Abstractions` surfaces it as the `unit.Outbox` accessor.
 
 ### Handle liveness: registrations answer for the view
 
@@ -185,7 +185,7 @@ dotnet add package Headless.UnitOfWork.Abstractions
 
 ```csharp
 using Headless.UnitOfWork;  // IUnitOfWorkManager and the unit.Outbox accessor
-// using Headless.Messaging; // only when you pass OutboxPublishOptions / OutboxQueueOptions
+// using Headless.Messaging; // only when you pass OutboxOptions
 
 public sealed class PlaceOrderHandler(IUnitOfWorkManager unitOfWorkManager, AppDbContext db)
 {
@@ -199,7 +199,7 @@ public sealed class PlaceOrderHandler(IUnitOfWorkManager unitOfWorkManager, AppD
 }
 ```
 
-`unit.Outbox` comes from `Headless.Messaging.UnitOfWork` (the implementation ships in `Headless.Messaging.Core` and is registered by `AddHeadlessMessaging`). Publishing the same message through an injected `IBus` instead would store a standalone row that outlives a rollback of this unit.
+`unit.Outbox` comes from `Headless.Messaging.Abstractions` (the implementation ships in `Headless.Messaging.Core` and is registered by `AddHeadlessMessaging`). Publishing the same message through an injected `IBus` instead would store a standalone row that outlives a rollback of this unit.
 
 ### Configuration
 

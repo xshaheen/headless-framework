@@ -74,7 +74,7 @@ public abstract class PublishContext
     /// <summary>
     /// Gets the current publish options for this operation.
     /// Autonomous bus and queue operations use <see cref="PublishOptions"/> and <see cref="QueueOptions"/>;
-    /// enlisted operations use <see cref="OutboxPublishOptions"/> and <see cref="OutboxQueueOptions"/> respectively.
+    /// enlisted operations use <see cref="OutboxOptions"/> on both lanes.
     /// </summary>
     public MessageOptions? Options => OptionsCore;
 
@@ -292,7 +292,7 @@ public sealed class PublishContext<TMessage> : PublishContext, ICompletablePubli
     /// <summary>
     /// Gets or sets the current publish options before the inner publisher runs.
     /// Autonomous bus and queue operations use <see cref="PublishOptions"/> and <see cref="QueueOptions"/>;
-    /// enlisted operations use <see cref="OutboxPublishOptions"/> and <see cref="OutboxQueueOptions"/> respectively.
+    /// enlisted operations use <see cref="OutboxOptions"/> on both lanes.
     /// </summary>
     public new MessageOptions? Options
     {

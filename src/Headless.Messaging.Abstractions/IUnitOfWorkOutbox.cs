@@ -14,8 +14,8 @@ namespace Headless.Messaging;
 /// <remarks>
 /// <para>
 /// Every publish here writes its durable row inside the given unit's transaction: the row becomes visible when
-/// the unit completes, and a rollback discards it. This is the whole difference from <see cref="IBus" /> and
-/// <see cref="IQueue" />, which are autonomous and whose rows survive the caller's rollback.
+/// the unit completes, and a rollback discards it. This is the whole difference from <c>IBus</c> and
+/// <c>IQueue</c>, which are autonomous and whose rows survive the caller's rollback.
 /// </para>
 /// <para>
 /// It refuses rather than degrades: when the storage cannot join the given unit, the call throws before any
@@ -57,7 +57,7 @@ public interface IUnitOfWorkOutbox : IUnitOfWorkFeature
     Task<PublishReceipt> PublishAsync<T>(
         IUnitOfWork unitOfWork,
         T? contentObj,
-        OutboxPublishOptions? options,
+        OutboxOptions? options,
         CancellationToken cancellationToken = default
     );
 
@@ -79,7 +79,7 @@ public interface IUnitOfWorkOutbox : IUnitOfWorkFeature
     Task<PublishReceipt> EnqueueAsync<T>(
         IUnitOfWork unitOfWork,
         T? contentObj,
-        OutboxQueueOptions? options,
+        OutboxOptions? options,
         CancellationToken cancellationToken = default
     );
 }

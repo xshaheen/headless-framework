@@ -46,7 +46,7 @@ internal sealed class OutboxIntegrationEventDispatcher(
         {
             cancellationToken.ThrowIfCancellationRequested();
             var context = integrationEvent;
-            var options = new OutboxPublishOptions
+            var options = new OutboxOptions
             {
                 MessageId = context.EventId,
                 CorrelationId = context.CorrelationId,

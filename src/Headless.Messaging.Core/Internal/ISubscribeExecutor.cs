@@ -772,7 +772,7 @@ internal sealed class SubscribeExecutor(
                     await unitOfWork
                         .Outbox.PublishAsync(
                             ret.Result,
-                            new OutboxPublishOptions
+                            new OutboxOptions
                             {
                                 MessageName = ret.CallbackName,
                                 Headers = ret.CallbackHeader,
