@@ -55,9 +55,9 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     private readonly MessageObservationStore _store;
     private readonly bool _ownsSp;
 
-    // Owned by the harness, not by ServiceProvider: Publisher/Queue resolve scoped services (IBus/IQueue carry
-    // the scope's IUnitOfWorkManager) from this dedicated scope so they never enlist in a unit of work, and so a
-    // ValidateScopes host does not reject the harness's own convenience accessors as a captive-dependency error.
+    // Owned by the harness, not by ServiceProvider: the convenience accessors below resolve through this
+    // dedicated scope so that genuinely scoped services reached via GetRequiredService are disposed with the
+    // harness rather than living on the root provider.
     // Disposed with the harness regardless of who owns ServiceProvider.
     private readonly AsyncServiceScope _harnessScope;
 
@@ -98,9 +98,9 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         // Shared setup: observation store, decorators, options
         ConfigureServices(services);
 
-        // ValidateScopes: IBus/IQueue are scoped (they read the scope's IUnitOfWorkManager.Current at publish
-        // time), so an accidental root resolution — in the harness or in caller code — fails fast instead of
-        // silently sharing a captive singleton instance across scopes.
+        // ValidateScopes mirrors what a host does in Development, so a scoped dependency captured by a singleton
+        // — in the harness or in caller code — fails fast here rather than silently resolving against the root
+        // provider and outliving the scope it was meant to belong to.
         var sp = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 
         // Bootstrap without hosted-service infrastructure
@@ -597,8 +597,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
 
     /// <summary>
     /// Resolves an arbitrary service from the harness-owned scope (see <see cref="Publisher"/>), so a scoped
-    /// service such as <see cref="IBus"/> or <see cref="IQueue"/> resolves without a
-    /// <c>ValidateScopes</c> captive-dependency error and carries no unit of work.
+    /// service resolves against a real scope instead of the root provider and is disposed with the harness.
     /// </summary>
     public T GetRequiredService<T>()
         where T : notnull

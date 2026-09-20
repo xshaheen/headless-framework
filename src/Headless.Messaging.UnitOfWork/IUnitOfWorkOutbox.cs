@@ -28,8 +28,10 @@ namespace Headless.Messaging;
 /// accessor, which binds the capability to the handle it was read from.
 /// </para>
 /// <para>
-/// An enlisted publish forfeits execution-strategy replay for the rest of the unit: the durable row is written
-/// outside the change tracker, so a retrying strategy cannot re-run the unit without duplicating it.
+/// A publish written through this accessor forfeits execution-strategy replay for the rest of the unit: the
+/// durable row is written outside the change tracker, so a retrying strategy cannot re-run the unit without
+/// duplicating it. Integration events the save pipeline emits are exempt, because it re-publishes them on a
+/// replayed attempt; a unit that mixes both is no longer retriable, since the direct publish marks it.
 /// </para>
 /// </remarks>
 [PublicAPI]

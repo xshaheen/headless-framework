@@ -103,7 +103,7 @@ The full save-transaction order within a `HeadlessDbContext` pipeline-owned tran
 `HeadlessDbContext` supports domain-driven design aggregate patterns:
 
 - Entities implementing `IDomainEventEmitter` can emit plain payloads that are collected and published via `IDomainEventDispatcher` inside the save transaction. Handlers that enlist further changes into the same `SaveChanges` are supported because publication precedes the business save.
-- Entities implementing `IIntegrationEventEmitter` can emit integration payloads objects that are enqueued to the transactional outbox via `IHeadlessOutboxDispatcher`. Each event is routed through durable `IBus.PublishAsync<TConcrete>` using a cached compiled delegate (one per runtime event type) for allocation efficiency.
+- Entities implementing `IIntegrationEventEmitter` can emit integration payloads objects that are enqueued to the transactional outbox via `IHeadlessOutboxDispatcher`. Each event is routed through the active unit of work's enlisted outbox (`unit.Outbox.PublishAsync<TConcrete>`) using a cached compiled delegate (one per runtime event type) for allocation efficiency.
 - Both tiers are opt-in: neither `IDomainEventDispatcher` nor `IHeadlessOutboxDispatcher` is registered by default. The runtime guard fires only when events are actually emitted against a missing tier — zero false positives at startup.
 
 ### Outbox-within-save-transaction bridge
@@ -111,7 +111,7 @@ The full save-transaction order within a `HeadlessDbContext` pipeline-owned tran
 `Headless.EntityFramework.Messaging` is the seam that keeps `Headless.EntityFramework` free of any messaging dependency while still guaranteeing atomic outbox writes:
 
 1. The save pipeline makes its transaction the scope's current unit of work before any dispatch runs: it enlists its own transaction (`IUnitOfWorkManager.Enlist(db, transaction)`, observed mode — the pipeline commits) or adopts a unit the caller already began with `BeginAsync(db)`. `OutboxIntegrationEventDispatcher` requires this: with no resource-bearing unit current in the scope it throws before touching the bus, rather than dispatching non-atomically.
-2. The `OutboxIntegrationEventDispatcher` publishes each integration event to `IBus.PublishAsync<T>` with `DeliveryMode.Durable`. `IBus` is scoped and reads `IUnitOfWorkManager.Current` itself, so the outbox writer buffers the rows inside the unit's transaction — not sent to the broker in-band.
+2. The `OutboxIntegrationEventDispatcher` publishes each integration event through that unit's `Outbox` (`OutboxPublishOptions`, always durable), so the outbox writer buffers the row inside the unit's transaction — not sent to the broker in-band. It deliberately does not use `IBus`: that publisher is autonomous, and its rows would survive the save's rollback.
 3. `IUnitOfWork.CompleteAsync` drains the buffered dispatch after the transaction commits; a rollback (explicit, abandoned, or scope-disposed) discards it.
 
 On a transactional messaging consume path, the same compatible local transaction also owns the current fenced inbox completion. This atomic boundary covers enlisted EF state and captured durable Bus/Queue rows, not handler entry, `Direct`, or external effects.
@@ -489,17 +489,17 @@ Bridge package that supplies the real `IHeadlessOutboxDispatcher` for EF integra
 
 - Transactional outbox enlistment in the EF save transaction, so outbox rows commit atomically with the business data
 - Preserves each `EventContext<object>` snapshot: `EventId` becomes Messaging `MessageId`; correlation, immediate causation, and tenant remain the values captured at emission
-- Routes each concrete integration payload to durable `IBus.PublishAsync<TConcrete>` through a cached compiled invoker (`IntegrationEventPublishInvokerCache`) — one compiled delegate per runtime event type for allocation efficiency
+- Routes each concrete integration payload to the active unit of work's `Outbox.PublishAsync<TConcrete>` through a cached compiled invoker (`IntegrationEventPublishInvokerCache`) — one compiled delegate per runtime event type for allocation efficiency
 - Both sync (`Dispatch`) and async (`DispatchAsync`) save paths via `OutboxIntegrationEventDispatcher`
 - `.AddIntegrationEventOutbox()` builder extension on `IHeadlessDbContextBuilder`
 
 ### Design constraints
 
-- **Unit-of-work enlistment.** The save pipeline makes its transaction the scope's current unit of work (enlisting its own transaction, or adopting one the caller began with `BeginAsync(db)`) before this dispatcher runs. The dispatcher requires a resource-bearing unit and throws before touching the bus otherwise; the scoped `IBus` reads `IUnitOfWorkManager.Current` itself, so the outbox writer buffers the rows inside the unit's transaction — not sent to the broker in-band. `IUnitOfWork.CompleteAsync` drains the buffered dispatch after commit; any rollback discards it. Outbox rows commit atomically with the business data.
+- **Unit-of-work enlistment.** The save pipeline makes its transaction the scope's current unit of work (enlisting its own transaction, or adopting one the caller began with `BeginAsync(db)`) before this dispatcher runs. The dispatcher requires a resource-bearing unit and throws before publishing otherwise; it then publishes through that unit's `Outbox`, so the outbox writer buffers the rows inside the unit's transaction — not sent to the broker in-band. `IUnitOfWork.CompleteAsync` drains the buffered dispatch after commit; any rollback discards it. Outbox rows commit atomically with the business data.
 - **Occurrence forwarding.** The bridge forwards captured integration occurrences and publishes their concrete payloads through Messaging's existing contract name/version resolver. Application handlers derive new facts with new occurrence IDs and the immediate Domain parent as causation; forwarding an existing occurrence keeps its ID. There is no Domain durable-contract registry.
 - **Captured absence.** Each durable publish sets `SuppressAmbientBusinessContext = true`, so a captured root cause or system tenant cannot be replaced by unrelated consume/tenant state at save time. `TenantContextRequired = true` still rejects a captured null tenant. Diagnostic trace propagation and registered Messaging contracts remain independent.
 - **Save and recovery.** Persistence retry within a pipeline-owned save reuses the captured IDs and completed local drain. Each successful caller-owned save clears only its saved batch; outer commit persists all staged batches, while a known outer rollback requires a fresh context and aggregate graph. An unknown commit result requires durable outcome verification or application idempotency before replay. Broker delivery and external effects remain at-least-once.
-- **Direct handler publishes.** A domain handler's enlisted `IBus` write prevents execution-strategy retry (`IUnitOfWork.PreventRetry()`) because the completed occurrence will not run again to restore its rolled-back outbox row. After failure, use a fresh context and aggregate graph. Captured integration events remain replayable through this bridge.
+- **Direct handler publishes.** A domain handler's own `unit.Outbox` write prevents execution-strategy retry (`IUnitOfWork.PreventRetry()`) because the completed occurrence will not run again to restore its rolled-back outbox row. After failure, use a fresh context and aggregate graph. Captured integration events remain replayable through this bridge.
 - **Custom dispatchers.** Both `IHeadlessOutboxDispatcher` methods receive `IReadOnlyList<EventContext<object>>`. Serialize `context.Payload` while preserving `context.EventId`, correlation, causation, and tenant; dispatch never recaptures identity.
 - **Post-commit delivery.** `IUnitOfWork.CompleteAsync` triggers the buffered dispatch after commit; the background relay also sweeps committed rows independently for crash recovery. On PostgreSQL the relay is the primary latency-bounded path. Pick the outbox storage provider on `AddHeadlessMessaging` with that trade-off in mind.
 - **Dependency isolation.** This bridge stays the only messaging-aware seam between the two domains. It references `Headless.UnitOfWork.EntityFramework` for the enlistment contract, while the core `Headless.EntityFramework` package remains independent of messaging.
@@ -536,7 +536,7 @@ None. (Configured via `AddHeadlessMessaging`.)
 
 ### Runtime behavior
 
-- Registers `IHeadlessOutboxDispatcher` as scoped (`TryAdd`) — `OutboxIntegrationEventDispatcher` (injects the scoped `IBus` and `IUnitOfWorkManager`)
+- Registers `IHeadlessOutboxDispatcher` as scoped (`TryAdd`) — `OutboxIntegrationEventDispatcher` (injects the scoped `IUnitOfWorkManager` and publishes through the current unit's `Outbox`)
 - Registers `IntegrationEventPublishInvokerCache` as singleton (`TryAdd`)
 
 ---

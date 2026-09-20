@@ -446,6 +446,7 @@ Message bus موزّع بـ transactional outbox، وretries، وdelayed deliver
 | [Headless.Messaging.Abstractions](src/Headless.Messaging.Abstractions/README.md) | الـ interfaces والـ contracts الأساسية بتاعة الـ messaging |
 | [Headless.Messaging.Bus.Abstractions](src/Headless.Messaging.Bus.Abstractions/README.md) | الـ contracts بتاعة الـ publisher بنمط pub/sub |
 | [Headless.Messaging.Queue.Abstractions](src/Headless.Messaging.Queue.Abstractions/README.md) | الـ contracts بتاعة الـ publisher بنمط point-to-point |
+| [Headless.Messaging.UnitOfWork](src/Headless.Messaging.UnitOfWork/README.md) | الـ contract بتاع الـ enlisted publish اللي بتوصله من الـ unit of work نفسها |
 | [Headless.Messaging.Core](src/Headless.Messaging.Core/README.md) | الـ runtime engine: outbox، وretries، وdelayed delivery، وorchestration للـ consumers |
 | [Headless.Messaging.Dashboard](src/Headless.Messaging.Dashboard/README.md) | Web UI لمتابعة الـ messages والـ failures وحالة النظام |
 | [Headless.Messaging.Dashboard.K8s](src/Headless.Messaging.Dashboard.K8s/README.md) | اكتشاف الـ nodes أوتوماتيك جوه Kubernetes |
@@ -576,7 +577,7 @@ Unit of work صريح وscoped: تبدأه في السطر اللي تختاره
 
 | Package | الوصف |
 |---------|-------|
-| [Headless.UnitOfWork.Abstractions](src/Headless.UnitOfWork.Abstractions/README.md) | الـ contracts بتاعة الـ scoped unit of work: `IUnitOfWorkManager`، `IUnitOfWork`، `IUnitOfWorkResource`، `TransactionEnlistment` (من غير dependencies) |
+| [Headless.UnitOfWork.Abstractions](src/Headless.UnitOfWork.Abstractions/README.md) | الـ contracts بتاعة الـ scoped unit of work: `IUnitOfWorkManager`، `IUnitOfWork`، `IUnitOfWorkResource`، `IUnitOfWorkFeatureProvider`، `TransactionEnlistment` (من غير dependencies) |
 | [Headless.UnitOfWork](src/Headless.UnitOfWork/README.md) | الـ manager والـ engine وتسجيل `AddUnitOfWork()` |
 | [Headless.UnitOfWork.EntityFramework](src/Headless.UnitOfWork.EntityFramework/README.md) | Provider للـ EF Core: `BeginAsync(db)` / `Enlist(db, tx)` / `RunAsync(db, ...)` |
 | [Headless.UnitOfWork.PostgreSql](src/Headless.UnitOfWork.PostgreSql/README.md) | Provider لـ `NpgsqlConnection` بالـ ADO الخام، بنفس الشكل |

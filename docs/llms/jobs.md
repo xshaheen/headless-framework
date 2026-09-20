@@ -174,7 +174,7 @@ The durable operational store (EF provider) uses `Headless.Coordination` for:
 
 The host `ConfigureDefaults` enlistment requirement applies only to one-shot jobs, including keyed jobs and chain nodes. Recurring definitions ignore that host default while inheriting retry and node-death defaults. An explicit `TransactionEnlistment.Required` policy configured by request type or descriptor, or `RecurringJobOptions.Enlistment = TransactionEnlistment.Required` on the call, requires the definition write to enlist in a compatible active unit of work with a joinable relational resource: a missing or incompatible resource fails before persistence, and a compatible transaction carries the definition row (and its store-anchored schedule position) to commit or rollback with the caller. Neither one-shot nor recurring calls can weaken a host or function requirement (composition is strictest-wins: `Required` > `WhenAvailable` > `Never`). Startup seeding of attribute-defined cron definitions (`[JobFunction]` cron expressions, through `IInternalJobManager`) does not consult these policies: it runs before any application transaction exists and definitions are idempotent, so it stays exempt.
 
-The guarantee, by `TransactionEnlistment` and unit-of-work state, is the Jobs counterpart of the Messaging durable-delivery matrix — the same `TransactionEnlistment` enum drives both (see [Guarantee Matrix](unit-of-work.md#guarantee-matrix) and [Delivery Modes](messaging.md#delivery-modes)). Every throw happens before scheduling middleware, persistence, or side effects:
+The guarantee, by `TransactionEnlistment` and unit-of-work state, is unchanged and is now the only consumer of that enum. Messaging used to resolve the same enum with the same matrix; it no longer does — enlistment there is chosen by the receiver (`IBus`/`IQueue` publish autonomously, `unit.Outbox` publishes inside the transaction), and Messaging's per-call, per-type, and host enlistment settings are deleted. `TransactionEnlistment` itself still lives in `Headless.UnitOfWork.Abstractions` and still means exactly what it means here (see [Guarantee Matrix](unit-of-work.md#guarantee-matrix); the Messaging counterpart is [Delivery Modes](messaging.md#delivery-modes)). Every throw happens before scheduling middleware, persistence, or side effects:
 
 | `Enlistment` | Active unit of work, joinable compatible resource | No unit of work, or one with no joinable resource | Unit of work with an incompatible resource |
 |---|---|---|---|
@@ -197,7 +197,8 @@ await unitOfWorkManager.RunAsync(
     {
         db.Set<Order>().Add(order);
         await db.SaveChangesAsync(ct);
-        await bus.PublishAsync(new OrderPlaced(order.Id), ct);
+        // unit.Outbox, not an injected IBus: the autonomous publisher would leave a row behind on rollback.
+        await unit.Outbox.PublishAsync(new OrderPlaced(order.Id), ct);
         await jobScheduler.ScheduleAsync(new OrderReminderRequest(order.Id), reminderDueAt, ct);
     },
     cancellationToken: cancellationToken
@@ -205,6 +206,8 @@ await unitOfWorkManager.RunAsync(
 // Application row, durable message, and job row commit or roll back together.
 // IUnitOfWorkManager.RunAsync(db, ...) (Headless.UnitOfWork.EntityFramework) is the only way to open the
 // transaction; the same call works for a HeadlessDbContext and a plain DbContext.
+// Both the enlisted publish and the enlisted job write call PreventRetry(), so the block stops being
+// replayable from whichever runs first; a retriable failure before them still replays the whole block.
 ```
 
 **Footguns:**
@@ -1543,7 +1546,7 @@ This convenience API targets the standard `TimeJobEntity` / `CronJobEntity` stor
 
 Cluster identity is explicit. This call selects one PostgreSQL coordination provider with its default storage options, including coordination-table initialization at startup. Do not also register `AddHeadlessCoordination`: duplicate provider configuration fails. For a separately configured coordination store, custom provider options/data source/authentication callbacks, custom Jobs entities, dedicated Jobs context, schema/pool settings, or a custom model customizer, use the existing `UseEntityFramework(ef => ...)` path and configure those integrations explicitly. The optional `modelConfiguration: ConfigurationType.IgnoreModelCustomizer` argument retains an application-owned model customizer; the application must then add the Jobs mappings itself.
 
-Inside `unitOfWorkManager.RunAsync(db, operation, cancellationToken: ct)` (or `await using var uow = await unitOfWorkManager.BeginAsync(db, ct)`), application writes, same-database durable Messaging publishes, and job schedules share the transaction. Configure Messaging transport/storage separately. `TransactionEnlistment.Required` rejects scheduling outside a compatible unit of work; it does not begin one. External message delivery and job execution happen after durable acceptance and remain at-least-once.
+Inside `unitOfWorkManager.RunAsync(db, operation, cancellationToken: ct)` (or `await using var unit = await unitOfWorkManager.BeginAsync(db, ct)`), application writes, same-database Messaging publishes made through `unit.Outbox`, and job schedules share the transaction — an `IBus`/`IQueue` publish in the same block does not. Configure Messaging transport/storage separately. `TransactionEnlistment.Required` rejects scheduling outside a compatible unit of work; it does not begin one. External message delivery and job execution happen after durable acceptance and remain at-least-once.
 
 `UsePostgreSqlClaims()` has no provider-specific options. Configure the `DbContext`, schema, and pool size through the existing Jobs EF builder. Register exactly one native claim provider. Omitting this call keeps the portable EF optimistic-CAS fallback.
 
@@ -1607,7 +1610,7 @@ This convenience API targets the standard `TimeJobEntity` / `CronJobEntity` stor
 
 Cluster identity is explicit. This call selects one SQL Server coordination provider with its default storage options, including coordination-table initialization at startup. Do not also register `AddHeadlessCoordination`: duplicate provider configuration fails. For a separately configured coordination store, custom provider options/data source/authentication callbacks, custom Jobs entities, dedicated Jobs context, schema/pool settings, or a custom model customizer, use the existing `UseEntityFramework(ef => ...)` path and configure those integrations explicitly. The optional `modelConfiguration: ConfigurationType.IgnoreModelCustomizer` argument retains an application-owned model customizer; the application must then add the Jobs mappings itself.
 
-Inside `unitOfWorkManager.RunAsync(db, operation, cancellationToken: ct)` (or `await using var uow = await unitOfWorkManager.BeginAsync(db, ct)`), application writes, same-database durable Messaging publishes, and job schedules share the transaction. Configure Messaging transport/storage separately. `TransactionEnlistment.Required` rejects scheduling outside a compatible unit of work; it does not begin one. External message delivery and job execution happen after durable acceptance and remain at-least-once.
+Inside `unitOfWorkManager.RunAsync(db, operation, cancellationToken: ct)` (or `await using var unit = await unitOfWorkManager.BeginAsync(db, ct)`), application writes, same-database Messaging publishes made through `unit.Outbox`, and job schedules share the transaction — an `IBus`/`IQueue` publish in the same block does not. Configure Messaging transport/storage separately. `TransactionEnlistment.Required` rejects scheduling outside a compatible unit of work; it does not begin one. External message delivery and job execution happen after durable acceptance and remain at-least-once.
 
 `UseSqlServerClaims()` has no provider-specific options. Configure the `DbContext`, schema, and pool size through the existing Jobs EF builder. Register exactly one native claim provider. Omitting this call keeps the portable EF optimistic-CAS fallback. The strategy detects `READ_COMMITTED_SNAPSHOT` and adjusts its locking hints.
 

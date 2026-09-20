@@ -1,7 +1,7 @@
 ---
 title: Coordination Domains Boundary — Locks vs Membership vs Unit of Work
 date: 2026-06-21
-last_updated: 2026-09-17
+last_updated: 2026-09-20
 category: architecture-patterns
 module: headless-coordination
 problem_type: architecture_pattern
@@ -36,7 +36,7 @@ solves a different problem. Pick by the question you are answering:
 |---|---|---|
 | **DistributedLocks** | **Mutual exclusion** — at most one worker in a critical section across processes | `IDistributedLock`, `IDistributedSemaphore`, `IDistributedReadWriteLock`, `IDistributedLease` |
 | **Coordination** | **Cluster membership / node liveness** — which nodes are alive, who owns what, reclaim a dead owner's work | `INodeMembership`, `INodeIdProvider`, `IDeadOwnerReclaimer`, `NodeLivenessState`, `MembershipLostBehavior` |
-| **UnitOfWork** | **Transaction outcome orchestration** — enlist durable outbox/job writes in the caller's transaction and defer dispatch/notifications until it commits | `IUnitOfWorkManager`, `IUnitOfWork`, `IUnitOfWorkResource`, `IRelationalUnitOfWorkResource`, `TransactionEnlistment` |
+| **UnitOfWork** | **Transaction outcome orchestration** — enlist durable outbox/job writes in the caller's transaction and defer dispatch/notifications until it commits | `IUnitOfWorkManager`, `IUnitOfWork`, `IUnitOfWorkResource`, `IRelationalUnitOfWorkResource`, `IUnitOfWorkFeatureProvider`, and `TransactionEnlistment` (Jobs' knob; Messaging enlists by calling `unit.Outbox` instead) |
 
 ### Quick disambiguation
 
@@ -58,6 +58,11 @@ connection and transaction before scheduling middleware. The Jobs-owned writer e
 immediately; only restart/notification acceleration waits for commit. Keyed results are provisional until
 the caller outcome, and operation savepoints protect replacement retirement plus insertion together.
 Missing or incompatible capabilities fail before middleware.
+
+`TransactionEnlistment` is Jobs-only now. Messaging once resolved the same enum with the same
+matrix; it makes the same choice structurally instead, by which publisher the call site uses
+(`IBus`/`IQueue` are autonomous, `unit.Outbox` writes inside the caller's transaction). The Jobs
+semantics above are untouched by that change.
 
 A Messaging transport delay is a delivery setting, not this transaction capability. Distributed locks
 and membership also cannot make an application update and a Jobs row atomic. See

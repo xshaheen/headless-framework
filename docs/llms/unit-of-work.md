@@ -9,7 +9,7 @@ packages: UnitOfWork.Abstractions, UnitOfWork, UnitOfWork.EntityFramework, UnitO
 
 ## Orientation
 
-An application developer opens a unit of work on the line they choose, does business work, publishes messages and enqueues jobs through the services they already inject, and completes it; everything inside is atomic with the transaction and dispatches after commit. The entry point is `IUnitOfWorkManager` (scoped), resolved like any other scoped service. Its `Current` property is a plain field — not an `AsyncLocal` — so there is no capture-before-first-await discipline to get wrong: whatever is resolved from the same DI scope sees the same `Current`, regardless of when during an `async` method the unit was begun.
+An application developer opens a unit of work on the line they choose, does business work, publishes messages through the unit and enqueues jobs through the managers they already inject, and completes it; everything enlisted inside is atomic with the transaction and dispatches after commit. The entry point is `IUnitOfWorkManager` (scoped), resolved like any other scoped service. Its `Current` property is a plain field — not an `AsyncLocal` — so there is no capture-before-first-await discipline to get wrong: whatever is resolved from the same DI scope sees the same `Current`, regardless of when during an `async` method the unit was begun.
 
 `IUnitOfWorkManager.BeginAsync(...)` opens a resource-less coordination window; provider packages add resource-bearing overloads — `BeginAsync(db, ...)` for EF Core, `BeginAsync(connection, ...)` for raw ADO — that begin the transaction on that line (**owned mode**) and return an `IUnitOfWork` handle. `IUnitOfWork.CompleteAsync` commits the resource, then drains registered post-commit work in order; disposing without completing is an implicit rollback. `Enlist(resource, transaction)` is the advanced seam for code that already owns its commit edge (the Headless save pipeline, the messaging inbox runners) — **observed mode** — where the caller commits the transaction itself and `CompleteAsync` only drains.
 
@@ -20,11 +20,17 @@ Pick a provider by what owns the transaction:
 - Raw ADO on SQL Server → `Headless.UnitOfWork.SqlServer`.
 - No relational resource at all (a script spanning several independent saves, a test harness) → the resource-less core member on `Headless.UnitOfWork` itself.
 
-Messaging (`IBus`/`IQueue`) and Jobs (`ITimeJobManager<>`/`ICronJobManager<>`/`IJobScheduler`) are scoped facades over stateless singleton cores; they read `IUnitOfWorkManager.Current` at call time and enlist automatically when a compatible unit is active — no extra parameter, no explicit wiring. See [Choosing a Provider](#choosing-a-provider) for the package-selection table and [Guarantee Matrix](#guarantee-matrix) for exactly when a publish or a job write enlists versus writes autonomously versus throws.
+The two participant domains reach a unit of work differently, and the difference is visible at the call site:
+
+- **Messaging enlists through the unit, never through the publisher.** `IBus` and `IQueue` are autonomous singletons: they never read `IUnitOfWorkManager.Current`, and a publish through them writes a standalone durable row that survives the caller's rollback. To write a message inside the transaction, publish through the unit itself — `unit.Outbox.PublishAsync(...)` / `unit.Outbox.EnqueueAsync(...)`, an accessor that `Headless.Messaging.UnitOfWork` adds to `IUnitOfWork`. That surface always enlists and refuses, before any effect, when the configured storage cannot join the unit. See [messaging.md § Delivery Modes](messaging.md#delivery-modes).
+- **Jobs enlists through its scoped managers.** `ITimeJobManager<>`, `ICronJobManager<>`, and `IJobScheduler` are scoped facades that read `IUnitOfWorkManager.Current` at call time and enlist according to `TransactionEnlistment` — no extra parameter. See [Guarantee Matrix](#guarantee-matrix) for when a job write enlists, writes autonomously, or throws.
+
+See [Choosing a Provider](#choosing-a-provider) for the package-selection table.
 
 ## Agent Rules
 
-- Resolve `IUnitOfWorkManager` (or a scoped facade over it — `IBus`, `IQueue`, a job manager) from a DI scope, never from the root provider. A scope models one operation; a singleton or hosted service that needs one of these creates its own scope (`IServiceScopeFactory.CreateScope()`). A host with `ValidateScopes` enabled turns a captive resolution into a startup-time error — the correct signal, not a bug to work around.
+- Resolve `IUnitOfWorkManager` (or a scoped facade over it — a job manager) from a DI scope, never from the root provider. A scope models one operation; a singleton or hosted service that needs one creates its own scope (`IServiceScopeFactory.CreateScope()`). A host with `ValidateScopes` enabled turns a captive resolution into a startup-time error — the correct signal, not a bug to work around. `IBus` and `IQueue` are **not** in this set: they are autonomous singletons, so a singleton may inject them directly, and doing so buys no enlistment.
+- To publish a message inside the transaction, call `unit.Outbox` on the handle you hold — not `IBus`/`IQueue` from any scope. Read the accessor at the call site rather than storing the binding: liveness is checked per publish against the handle it was read from, so a retained binding whose handle has since completed throws on its next use.
 - Open the unit of work explicitly, on the line you choose. Nothing in this framework opens one on your behalf — no mediator behavior, no endpoint filter, no consumer-runtime wrapper. If a handler needs one, call `unitOfWorkManager.BeginAsync(...)` or `unitOfWorkManager.RunAsync(...)` yourself.
 - There is no capture-before-first-await rule. Unlike the ambient design this replaced (see [Core Concepts § Why scoped, not ambient](#why-scoped-not-ambient)), `Current` is a plain field on a scoped object — begin it wherever is convenient in an `async` method; everything resolved from the same scope sees it.
 - One resource per scope. Beginning again on the *same* resource while a unit is active joins it (returns a child handle); a *different* resource while a resource-bearing unit is active throws. Run unrelated transactional work in its own scope, not nested calls on the same manager.
@@ -33,7 +39,10 @@ Messaging (`IBus`/`IQueue`) and Jobs (`ITimeJobManager<>`/`ICronJobManager<>`/`I
 - Use `OnFailed` only to release a non-transactional resource reserved in anticipation of commit (a lock, a reservation) — not as a substitute for a proper rollback-safe design. Its faults are logged, never propagated.
 - The manager is the only receiver that opens a unit of work. `BeginAsync`, `Enlist`, and `RunAsync` are extension members on `IUnitOfWorkManager`; no context, connection, or helper type carries a second spelling, and none of them take a `services:` parameter. Do not resolve `IServiceProvider` and thread it through a "coordinated transaction" helper — that pattern is gone.
 - Under a retrying EF execution strategy, `BeginAsync(db)` throws by design — a user-initiated transaction cannot survive a strategy replay. Use `unitOfWorkManager.RunAsync(db, ...)`, which runs begin → operation → complete *inside* the strategy and only lets a failure replay before the commit has started.
-- Banned: reading `TransactionEnlistment` on a call and manually branching on whether a transaction is present. The framework's guarantee matrix (below) already encodes every combination and throws with a message naming the fix; hand-rolled branching duplicates and can drift from it.
+- An enlisted write you make ends replay for the rest of the block. An enlisted publish (`unit.Outbox`) and an enlisted Jobs write both call `IUnitOfWork.PreventRetry()` before writing, because their rows live outside EF's change tracker and a replay would duplicate them. Inside `RunAsync(db, …)`, only a failure raised *before* the first such write replays; after it the fault is surfaced outside the strategy. Order the block so the retry-worthy work comes first, and reconcile an ambiguous post-commit fault with a durable idempotency key instead of retrying blind. The single exemption is framework-internal and not reachable from application code: the EF integration-event dispatcher marks the occurrences its save pipeline can re-publish, so a `HeadlessDbContext` save whose only enlisted publishes are entity-emitted integration events stays retriable.
+- Banned: reading Jobs' `TransactionEnlistment` on a call and manually branching on whether a transaction is present. The framework's guarantee matrix (below) already encodes every combination and throws with a message naming the fix; hand-rolled branching duplicates and can drift from it.
+- Do not compare `IUnitOfWork.State` to decide whether a handle can still carry work. A nested view forwards `State` to the unit it views, so a view that has already completed still reports `Active` while the root stays open. Call `ThrowIfUnusable()` — each handle answers for itself.
+- `GetFeature<TFeature>()` is a bridge-package seam, not an application API. Use the typed accessor a bridge ships (`unit.Outbox`), and register a capability with `services.AddUnitOfWorkFeature<TProvider>()` only when writing such a bridge.
 
 ## Core Concepts
 
@@ -45,7 +54,9 @@ Messaging (`IBus`/`IQueue`) and Jobs (`ITimeJobManager<>`/`ICronJobManager<>`/`I
 
 The design this replaced pushed a scope onto an `AsyncLocal` stack; because `AsyncLocal` mutations made inside an `async` callee do not flow back to the caller (`ExecutionContext` is copy-on-write and restored on return), the ambient design needed every provider to open its scope **synchronously, in the caller's own stack frame** — a discipline enforced only by comments and XML prose, and one that produced a real, hard-to-see bug: an `async` enlist helper set the ambient scope correctly inside itself, but the caller read `Current` back as `null`, silently turning a transactional outbox write into a non-atomic one while the happy-path test stayed green (`docs/solutions/logic-errors/asynclocal-ambient-scope-stranded-across-await.md`). A scoped manager has no such failure mode: `Current` is a field on an object every consumer in the scope already resolves through DI, so there is nothing to strand across an await. This mirrors precedent: MassTransit's `ScopedConsumeContextProvider` and Wolverine's `ScopedMessageContextHolder` (adopted specifically to fix the same class of ambient-propagation bug, GH-2583/GH-3001) both moved from `AsyncLocal` to a scoped field for the same reason.
 
-The cost of this design is explicit: a singleton or a hosted service that needs `IUnitOfWorkManager` or a scoped facade over it (`IBus`, `IQueue`, a job manager) must create its own scope. Resolving one from the root container under `ValidateScopes` throws — by design, this is the framework surfacing a captive-dependency mistake rather than silently handing back a root-scoped instance.
+The cost of this design is explicit: a singleton or a hosted service that needs `IUnitOfWorkManager` or a scoped facade over it (a job manager) must create its own scope. Resolving one from the root container under `ValidateScopes` throws — by design, this is the framework surfacing a captive-dependency mistake rather than silently handing back a root-scoped instance.
+
+Messaging's publishers are deliberately outside that cost. `IBus` and `IQueue` hold no scope-bound state, so they are singletons a framework singleton can depend on directly; enlistment moved to the unit-of-work outbox, reached from the unit rather than from the publisher. A singleton that needs to publish therefore needs no scope at all, and creating one would not make its publish transactional.
 
 ### Owned vs observed mode
 
@@ -79,21 +90,38 @@ Beginning a unit of work while one is already active in the scope does not alway
 
 `RollbackAsync()` is idempotent and legal in both modes: in owned mode it rolls the resource back; in observed mode it records that the caller's own transaction rolled back (and, like `CompleteAsync`, suppresses the forgotten-completion warning). A commit fault transitions the unit to `Failed` *before* the exception propagates, so a second `CompleteAsync` throws the "already failed" message rather than attempting to re-commit — this is the fix for a class of bug where a caller retries a commit whose outcome is actually unknown.
 
-### `TransactionEnlistment` and the guarantee matrix
+### Typed capabilities on a unit (`GetFeature`)
 
-`TransactionEnlistment { WhenAvailable = 0 (default), Required = 1, Never = 2 }`, in `Headless.UnitOfWork.Abstractions`, is the one shared knob Messaging and Jobs both resolve with the same precedence: **per call > per type/function > host default**. It replaced two separate, differently-shaped flags — a Messaging delivery-mode value that forced enlistment and a Jobs boolean atomic-enlistment flag — with one enum and one guarantee matrix for both domains.
+A bridge package can attach behavior to a unit of work that neither the unit-of-work packages nor the bridge's own domain has to know about, without either side referencing the other. It implements `IUnitOfWorkFeatureProvider` (a `FeatureType` plus a `Create(IUnitOfWork)` factory) and registers it with `services.AddUnitOfWorkFeature<TProvider>()`; the scoped manager reads the registrations once, and `IUnitOfWork.GetFeature<TFeature>()` resolves the capability lazily off the unit, returning `null` when no provider claims the type.
+
+Contract worth knowing before writing one:
+
+- The capability is created **once per unit**, under the unit's lock, and cached on the unit for its whole life. A factory that registers `OnCompleted` on construction therefore registers exactly once. If it implements `IAsyncDisposable`/`IDisposable`, it is disposed with the unit on both terminal outcomes.
+- `Create` receives the unit's **root** handle, never a nested view — a view could complete while the unit stays open, leaving a cached capability holding a handle that can no longer carry work. A capability that needs the caller's own view takes it as an argument per call instead, which is exactly what `IUnitOfWorkOutbox` does.
+- Resolving is a registration: `GetFeature` calls `ThrowIfUnusable()` on the handle it is called on, so it is rejected after that handle completes.
+- At most one provider may claim a given `FeatureType` in a host; a second one fails when the scope's manager is created, with a message naming both providers. `AddUnitOfWorkFeature<TProvider>()` is idempotent per provider type and calls the idempotent `AddUnitOfWork()` itself.
+
+The one first-party capability today is Messaging's enlisted outbox: `AddHeadlessMessaging` registers the provider, and `Headless.Messaging.UnitOfWork` surfaces it as the `unit.Outbox` accessor.
+
+### Handle liveness: `ThrowIfUnusable()` vs `State`
+
+`State` is the *unit's* lifecycle, and a nested view forwards it to the unit it views. A child view that has already completed therefore still reports `Active`, because the unit it completed into is still open — reading `State` to decide whether work can be attached to a handle gives the wrong answer for exactly that case. `ThrowIfUnusable()` asks the handle about itself: it throws `InvalidOperationException` when this handle already completed or the unit reached a terminal state, and `ObjectDisposedException` after the handle was disposed. Call it (or an API that calls it, such as `GetFeature` or an enlisted publish) before attaching work to a handle a caller was given.
+
+### `TransactionEnlistment` and the Jobs guarantee matrix
+
+`TransactionEnlistment { WhenAvailable = 0 (default), Required = 1, Never = 2 }`, in `Headless.UnitOfWork.Abstractions`, states how eagerly a **Jobs** write requires an active unit of work, resolved **per call > per function > host default**. It is Jobs-only. Messaging once shared it; enlistment there is now the receiver (`IBus`/`IQueue` versus `unit.Outbox`), so nothing in Messaging reads this enum, and `MessagingOptions.DefaultEnlistment`, the per-type `WithEnlistment(...)` policy, and the per-call `MessageOptions.Enlistment` are deleted. The enum itself stays, unchanged, for Jobs.
 
 #### Guarantee Matrix
 
-| `TransactionEnlistment` | Active unit of work, joinable compatible resource | No unit of work, or a unit with no joinable resource | Unit of work with an incompatible resource |
+| `TransactionEnlistment` (Jobs) | Active unit of work, joinable compatible resource | No unit of work, or a unit with no joinable resource | Unit of work with an incompatible resource |
 |---|---|---|---|
-| `WhenAvailable` (default) | Row/write happens on the unit's transaction; dispatch/scheduler-restart/notification deferred to after commit | Autonomous durable write; the relay/poller dispatches it | Throws |
+| `WhenAvailable` (default) | Write happens on the unit's transaction; dispatch/scheduler-restart/notification deferred to after commit | Autonomous durable write; the poller picks it up | Throws |
 | `Required` | Same as above | Throws | Throws |
 | `Never` | Autonomous — never enlists, even though a resource is active | Autonomous | Autonomous — never inspects the resource |
 
-"No joinable resource" behaves exactly like "no unit of work" — a resource-less `BeginAsync()` gives Messaging's in-memory storage something to join through its buffered-promotion seam, but a relational storage or a Jobs write needs a *relational* resource on the *same database* to enlist into. An incompatible resource (a different database, a closed or completed transaction) throws for every value except `Never`, regardless of `WhenAvailable` or `Required` — the framework never silently downgrades a requested enlistment.
+A Jobs write needs a *relational* resource on the *same database* to enlist into, so a resource-less unit counts as "no joinable resource" and behaves like no unit of work. An incompatible resource (a different database, a closed or completed transaction) throws for both `WhenAvailable` and `Required` — the framework never silently downgrades a requested enlistment. Composition across host/function/call tiers is strictest-wins (`Required` > `WhenAvailable` > `Never`); see `jobs.md`.
 
-For Messaging, `DeliveryMode.Direct` bypasses storage and coordination entirely and implies `Never` (it still rejects `Delay`/`ScheduledAt`); see `messaging.md#delivery-modes`. For Jobs, composition across host/function/call tiers is strictest-wins (`Required` > `WhenAvailable` > `Never`); see `jobs.md`.
+Messaging's counterpart is not a matrix over this enum: an enlisted publish is refused whenever the configured storage cannot join the given unit, and an autonomous publish never consults a unit at all. See `messaging.md#delivery-modes`.
 
 ### Message catalogue
 
@@ -105,7 +133,9 @@ Every illegal transition throws with a message naming the remedy — never a bar
 | `BeginAsync(db)` under a retrying execution strategy | EF's own text, plus: `Use IUnitOfWorkManager.RunAsync(db, …) to run the unit of work as a retriable block.` |
 | `CompleteAsync` after `Completed` | `The unit of work has already completed. Begin a new unit of work for further work.` |
 | `CompleteAsync` after `Failed` | `The unit of work has already failed ({Reason}) and cannot be completed. Begin a new unit of work.` |
-| `OnCompleted`/`OnFailed`/`GetOrAdd` after a terminal state | `The unit of work is {State}; registrations are accepted only while it is Active.` |
+| `OnCompleted`/`OnFailed`/`GetOrAdd`/`GetFeature`/`ThrowIfUnusable` after a terminal state | `The unit of work is {State}; registrations are accepted only while it is Active.` |
+| `ThrowIfUnusable` (so also `GetFeature` or an enlisted publish) on a nested view that already completed | `This nested unit of work has already completed. Use the unit of work it was begun under, or begin a new one.` |
+| Two `IUnitOfWorkFeatureProvider` registrations claiming one feature type | `Two unit-of-work feature providers claim the feature '{Feature}': '{First}' and '{Second}'. Register each feature once.` |
 | A member call after dispose | `ObjectDisposedException("UnitOfWork")` |
 | A second `BeginAsync`/`Enlist` on a *different* resource | `A unit of work is already active on another resource in this scope. Complete it first, or run the second operation in its own service scope (IServiceScopeFactory.CreateScope()).` |
 | `BeginAsync`/`Enlist` while another begin is in flight in the same scope | `Another unit of work is being begun concurrently in this scope. Await the first BeginAsync before beginning again, or run parallel work in separate service scopes.` |
@@ -113,9 +143,10 @@ Every illegal transition throws with a message naming the remedy — never a bar
 | Root `CompleteAsync` while a child is still active | `A nested unit of work begun in this scope is still active. Complete or dispose it before completing the root.` |
 | Root `CompleteAsync` after a child was abandoned | `A nested unit of work was disposed without completing, so the root cannot complete; the transaction is rolled back.` |
 | A caller-owned transaction saved with integration events but no unit bound to the context (or a resource-less bound unit) | `SaveChanges ran inside a caller-owned transaction that no unit of work owns, so integration events and jobs would dispatch non-atomically. Begin the unit of work on this context (IUnitOfWorkManager.BeginAsync(db)) before beginning the transaction, or enlist the transaction with Enlist(db, transaction).` |
-| Publishing with `TransactionEnlistment.Required` and no active unit of work | `Publishing '{MessageType}' requires an active unit of work (TransactionEnlistment.Required) but none is active in this scope. Begin one with IUnitOfWorkManager.BeginAsync before publishing, or register the message with TransactionEnlistment.WhenAvailable.` |
+| `unit.Outbox` in a host that never called `AddHeadlessMessaging` | `No messaging outbox is registered for this unit of work. Call AddHeadlessMessaging during startup to register it.` |
+| Publishing through a `default(UnitOfWorkOutbox)` binding instead of one read from a unit | `This outbox binding is the default value. Read it from the unit of work you are publishing in, as 'unit.Outbox'.` |
+| An enlisted publish into a unit the messaging storage cannot join | `Publishing '{MessageType}' cannot join the active unit of work ({Mismatch}): {detail}. {advice}` — for example `… (MissingRelationalCapability): the active unit of work exposes no relational resource for the messaging storage to write into. Begin the unit of work over a relational resource for the messaging database, or publish without coordination.` |
 | Scheduling a job with `TransactionEnlistment.Required` and no active unit of work | `Scheduling '{Function}' requires an active unit of work (TransactionEnlistment.Required) but none is active in this scope. Begin one with IUnitOfWorkManager.BeginAsync, or register the function with TransactionEnlistment.WhenAvailable.` |
-| An incompatible or completed resource (Messaging) | `The active unit of work's transaction belongs to another database or has already completed ({Mismatch}), so publishing cannot enlist. Use the same database with an open transaction, or TransactionEnlistment.Never for this call.` |
 | An incompatible or dead resource (Jobs) | `The active unit of work's transaction belongs to another database or is no longer live (closed, completed, or changed), so the Jobs write cannot enlist. Use the same database, or TransactionEnlistment.Never for this call.` |
 | A relational unit of work active, but the configured Jobs provider can't write inside it | `An active unit of work has a joinable relational resource but the configured job persistence provider does not support coordinated writes. The coordinated-enqueue path requires the EF Core operational store (UseEntityFramework).` |
 | Scope disposed with a unit still active | `A unit of work begun with BeginAsync was still active when its service scope was disposed; it was rolled back. Complete or dispose every unit of work before the scope ends.` (warning, `OnFailed` runs with `Reason = ScopeDisposed`) |
@@ -128,22 +159,23 @@ Every illegal transition throws with a message naming the remedy — never a bar
 | `Headless.UnitOfWork.EntityFramework` | EF Core owns the transaction (`DbContext`). | The unit of work is raw ADO. | `BeginAsync(db)` cannot run under a retrying execution strategy — use `RunAsync(db, …)` there. Never references `Headless.EntityFramework` (the dependency flows the other way), so it stays usable by any EF consumer. |
 | `Headless.UnitOfWork.PostgreSql` | Raw `NpgsqlConnection` transactions. | EF owns the transaction (use the EF provider). | No commit edge to observe: observed mode is fully explicit — the caller must call `CompleteAsync`/`RollbackAsync` itself, or a forgotten completion is logged. No execution-strategy retry (a raw-ADO concept has none). |
 | `Headless.UnitOfWork.SqlServer` | Raw `SqlConnection` transactions. | EF owns the transaction (use the EF provider). | Same explicit-completion contract as PostgreSQL. |
-| The resource-less core (`Headless.UnitOfWork`, no provider) | A script spanning several independent transactional saves that should still share one commit-drain edge; a test harness. | Any case that needs a joinable relational resource — a resource-less unit only lets a *relational* provider join by opening an *independent nested unit*, not by sharing the same transaction. | Nothing enlists directly on it; each resource-bearing operation underneath opens and commits its own transaction. |
+| The resource-less core (`Headless.UnitOfWork`, no provider) | A script spanning several independent transactional saves that should still share one commit-drain edge; a test harness. | Any case that needs a joinable relational resource — a resource-less unit only lets a *relational* provider join by opening an *independent nested unit*, not by sharing the same transaction. | No relational write enlists directly on it; each resource-bearing operation underneath opens and commits its own transaction. Messaging's in-memory storage is the one participant that can join it, through its buffer — which is what the test harness relies on. |
 
 ---
 
 ## Headless.UnitOfWork.Abstractions
 
-Defines the public unit-of-work contracts without provider dependencies: the scoped manager entry point, the unit handle, the resource seams, and the shared `TransactionEnlistment` knob.
+Defines the public unit-of-work contracts without provider dependencies: the scoped manager entry point, the unit handle, the resource seams, the bridge-package feature seam, and Jobs' `TransactionEnlistment` knob.
 
 ### API and behavior
 
 - `IUnitOfWorkManager` (scoped): `Current`, the resource-less `BeginAsync(options?, ct)`, plus the provider primitives — the resource-factory `BeginAsync` (hidden from IntelliSense), observed-mode `Enlist` (hidden), and swap-and-restore `Adopt` (hidden).
-- `IUnitOfWork`: `State`, `Failure`, `Resource`, `OnCompleted(Func<ValueTask>)`, `OnFailed(Func<UnitOfWorkFailure, ValueTask>)`, `GetOrAdd<TState>` (both overloads), `PreventRetry()` / `IsRetryPrevented`, `CompleteAsync(ct)`, idempotent `RollbackAsync()`, dispose both ways.
+- `IUnitOfWork`: `State`, `Failure`, `Resource`, `OnCompleted(Func<ValueTask>)`, `OnFailed(Func<UnitOfWorkFailure, ValueTask>)`, `GetOrAdd<TState>` (both overloads), `GetFeature<TFeature>()`, `ThrowIfUnusable()`, `PreventRetry()` / `IsRetryPrevented`, `CompleteAsync(ct)`, idempotent `RollbackAsync()`, dispose both ways.
+- `IUnitOfWorkFeatureProvider` (`FeatureType`, `Create(IUnitOfWork)`): the bridge seam behind `GetFeature`. See [Typed capabilities on a unit](#typed-capabilities-on-a-unit-getfeature).
 - `IUnitOfWorkResource` (`IsOwned`, `IsTransactionCompleted`, `CommitAsync`, `RollbackAsync`) and `IRelationalUnitOfWorkResource` (`Connection`, `Transaction`, non-null while active).
 - `UnitOfWorkState` (`Active = 0`, `Completed = 1`, `Failed = 2`); `UnitOfWorkFailure` with `UnitOfWorkFailureReason` (`Unspecified`, `RolledBack`, `Abandoned`, `Faulted`, `ScopeDisposed`, `ChildAbandoned`).
 - `UnitOfWorkOptions`: intentionally empty today; propagation knobs (`RequiresNew`/`Suppress`) land here additively.
-- `TransactionEnlistment { WhenAvailable = 0, Required = 1, Never = 2 }`: see [Guarantee Matrix](#guarantee-matrix).
+- `TransactionEnlistment { WhenAvailable = 0, Required = 1, Never = 2 }`: Jobs only. See [Guarantee Matrix](#guarantee-matrix).
 
 ### Design constraints
 
@@ -158,19 +190,22 @@ dotnet add package Headless.UnitOfWork.Abstractions
 ### Setup and use
 
 ```csharp
-using Headless.UnitOfWork;
+using Headless.UnitOfWork;  // IUnitOfWorkManager and the unit.Outbox accessor
+// using Headless.Messaging; // only when you pass OutboxPublishOptions / OutboxQueueOptions
 
-public sealed class PlaceOrderHandler(IUnitOfWorkManager unitOfWork, AppDbContext db, IBus bus)
+public sealed class PlaceOrderHandler(IUnitOfWorkManager unitOfWorkManager, AppDbContext db)
 {
     public async Task<Result<OrderId>> Handle(PlaceOrder cmd, CancellationToken ct)
     {
-        await using var uow = await unitOfWork.BeginAsync(cancellationToken: ct); // or BeginAsync(db, ct) from the EF provider
-        await bus.PublishAsync(new OrderPlaced(orderId), ct);                    // joins the active unit
-        await uow.CompleteAsync(ct);                                             // commit, then dispatch
+        await using var unit = await unitOfWorkManager.BeginAsync(cancellationToken: ct); // or BeginAsync(db, ct) from the EF provider
+        await unit.Outbox.PublishAsync(new OrderPlaced(orderId), ct);                     // row inside this unit's transaction
+        await unit.CompleteAsync(ct);                                                     // commit, then dispatch
         return Result.Ok(orderId);
     }
 }
 ```
+
+`unit.Outbox` comes from `Headless.Messaging.UnitOfWork` (the implementation ships in `Headless.Messaging.Core` and is registered by `AddHeadlessMessaging`). Publishing the same message through an injected `IBus` instead would store a standalone row that outlives a rollback of this unit.
 
 ### Configuration
 
@@ -189,6 +224,7 @@ Implements the scoped `UnitOfWorkManager` (one unit-of-work slot per service sco
 ### API and behavior
 
 - `AddUnitOfWork()`: idempotent `TryAddScoped<IUnitOfWorkManager, UnitOfWorkManager>`; every consumer setup (`AddHeadlessMessaging`, `AddHeadlessJobs`, `AddHeadlessDbContextServices`, the three UnitOfWork provider setups) calls it, so exactly one registration exists regardless of which setup a host invokes first.
+- `AddUnitOfWorkFeature<TProvider>()`: calls `AddUnitOfWork()`, then adds `TProvider` to the scoped `IUnitOfWorkFeatureProvider` set (idempotent per provider type, via `TryAddEnumerable`). The manager reads that set once per scope into a type-keyed lookup and rejects two providers claiming one feature; `AddHeadlessMessaging` uses this to contribute the enlisted outbox.
 - Synchronous slot claim: the provider-facing `BeginAsync` claims the slot before its first `await`, so a concurrent begin in the same scope fails deterministically; a faulted resource begin releases the slot and propagates as-is.
 - Join-by-default nesting (see [Nesting](#nesting-join-by-default)): same resource → child view; resource-less root + resource-bearing begin → independent nested unit; different resource → the catalogued throw. A root refuses `CompleteAsync` while a child is active and after a child was abandoned.
 - `OnFailed` drain (log-and-continue) on rollback, abandon, scope dispose, commit fault, and child abandon; `RollbackAsync` idempotent; a commit fault transitions to `Failed` before the exception propagates.
@@ -265,26 +301,28 @@ services.AddDbContext<MyDbContext>(options => options.UseNpgsql(connectionString
 services.AddEntityFrameworkUnitOfWork();
 
 // Owned mode: the transaction begins on this line; CompleteAsync commits and drains.
-await using var unitOfWork = await unitOfWorkManager.BeginAsync(db, cancellationToken: ct);
+await using var unit = await unitOfWorkManager.BeginAsync(db, cancellationToken: ct);
 db.Orders.Add(order);
 await db.SaveChangesAsync(ct);
-unitOfWork.OnCompleted(async () => await bus.PublishAsync(new OrderPlaced(order.Id), ct));
-await unitOfWork.CompleteAsync(ct);
+await unit.Outbox.PublishAsync(new OrderPlaced(order.Id), ct); // row in this transaction, dispatched after commit
+await unit.CompleteAsync(ct);
 
 // Retrying strategy configured? Run the unit as a retriable block instead:
 await unitOfWorkManager.RunAsync(
     db,
-    async (unitOfWork, ct) =>
+    async (unit, ct) =>
     {
         db.Orders.Add(order);
         await db.SaveChangesAsync(ct);
-        unitOfWork.OnCompleted(async () => await bus.PublishAsync(new OrderPlaced(order.Id), ct));
+        await unit.Outbox.PublishAsync(new OrderPlaced(order.Id), ct);
     },
     cancellationToken: ct
 );
 ```
 
 The same two shapes apply to a `HeadlessDbContext` and a `HeadlessIdentityDbContext` (in `Headless.EntityFramework`) and to a plain `DbContext` alike: the receiver is always the scoped `IUnitOfWorkManager`, never the context.
+
+One consequence of the enlisted publish inside `RunAsync`: it calls `PreventRetry()` on the unit, so the block stops being replayable from that line onward. A retriable failure raised *before* the publish replays the whole block with a fresh transaction and a fresh unit; one raised after it is surfaced outside the strategy. Put the publishes last when the earlier work is the part worth retrying. `unit.OnCompleted(async () => await bus.PublishAsync(…))` remains the alternative when a message is a post-commit notification that must not be atomic with the write — it keeps replay, and its message is lost if the process dies before the callback runs.
 
 ### Configuration
 
@@ -325,15 +363,15 @@ using Npgsql;
 
 services.AddPostgreSqlUnitOfWork();
 
-// unitOfWork is the scoped IUnitOfWorkManager; bus is the scoped IBus facade.
-await using var unit = await unitOfWork.BeginAsync(connection, cancellationToken: ct);
+// unitOfWorkManager is the scoped IUnitOfWorkManager.
+await using var unit = await unitOfWorkManager.BeginAsync(connection, cancellationToken: ct);
 var relational = (IRelationalUnitOfWorkResource)unit.Resource!;
 await using (var command = new NpgsqlCommand("INSERT INTO orders (id) VALUES (@id)", connection, (NpgsqlTransaction)relational.Transaction))
 {
     command.Parameters.AddWithValue("id", orderId);
     await command.ExecuteNonQueryAsync(ct);
 }
-await bus.PublishAsync(new OrderPlaced(orderId), ct);
+await unit.Outbox.PublishAsync(new OrderPlaced(orderId), ct); // enlisted; an injected IBus would not be
 await unit.CompleteAsync(ct);
 ```
 
@@ -341,8 +379,8 @@ Observed mode, for a transaction you own:
 
 ```csharp
 await using var tx = await connection.BeginTransactionAsync(ct);
-await using var unit = unitOfWork.Enlist(connection, tx);
-// ... raw-ADO work + publishes ...
+await using var unit = unitOfWorkManager.Enlist(connection, tx);
+// ... raw-ADO work + unit.Outbox publishes ...
 await tx.CommitAsync(ct);
 await unit.CompleteAsync(ct); // required — nothing completes the unit for you
 ```
@@ -386,15 +424,15 @@ using Microsoft.Data.SqlClient;
 
 services.AddSqlServerUnitOfWork();
 
-// unitOfWork is the scoped IUnitOfWorkManager; bus is the scoped IBus facade.
-await using var unit = await unitOfWork.BeginAsync(connection, cancellationToken: ct);
+// unitOfWorkManager is the scoped IUnitOfWorkManager.
+await using var unit = await unitOfWorkManager.BeginAsync(connection, cancellationToken: ct);
 var relational = (IRelationalUnitOfWorkResource)unit.Resource!;
 await using (var command = new SqlCommand("INSERT INTO orders (id) VALUES (@id)", connection, (SqlTransaction)relational.Transaction))
 {
     command.Parameters.AddWithValue("@id", orderId);
     await command.ExecuteNonQueryAsync(ct);
 }
-await bus.PublishAsync(new OrderPlaced(orderId), ct);
+await unit.Outbox.PublishAsync(new OrderPlaced(orderId), ct); // enlisted; an injected IBus would not be
 await unit.CompleteAsync(ct);
 ```
 
@@ -402,8 +440,8 @@ Observed mode, for a transaction you own:
 
 ```csharp
 await using var tx = (SqlTransaction)await connection.BeginTransactionAsync(ct);
-await using var unit = unitOfWork.Enlist(connection, tx);
-// ... raw-ADO work + publishes ...
+await using var unit = unitOfWorkManager.Enlist(connection, tx);
+// ... raw-ADO work + unit.Outbox publishes ...
 await tx.CommitAsync(ct);
 await unit.CompleteAsync(ct); // required — nothing completes the unit for you
 ```

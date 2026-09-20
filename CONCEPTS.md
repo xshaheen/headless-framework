@@ -103,12 +103,14 @@ remains the request's origin metadata; the declared callback contract selects ty
 the concrete response type remains payload metadata.
 
 ### Delivery mode
-The delivery choices on publish/enqueue are `Durable` and `Direct`. Precedence is per call
-(`MessageOptions.DeliveryMode`), then per message type (`WithDeliveryMode(...)` on the lane
-registration), then the host `MessagingOptions.DefaultDeliveryMode`, which defaults to `Durable`.
-No mode sends directly by omission. Whether a durable publish enlists in the caller's active
-transaction is a separate axis, `TransactionEnlistment` (see [Unit of Work](#unit-of-work) below);
-`Direct` bypasses storage and enlistment entirely, even inside an active unit of work.
+The delivery choices on an autonomous publish/enqueue are `Durable` and `Direct`. Precedence is per
+call (`PublishOptions.DeliveryMode` / `QueueOptions.DeliveryMode`), then per message type
+(`WithDeliveryMode(...)` on the lane registration), then the host
+`MessagingOptions.DefaultDeliveryMode`, which defaults to `Durable`. No mode sends directly by
+omission. Whether the durable row lands inside the caller's transaction is not an option at all: it
+is decided by the receiver — `IBus`/`IQueue` never enlist, the [enlisted outbox](#enlisted-outbox)
+always does. The outbox records carry no mode, because durable capture is how that surface joins
+the transaction.
 
 Telemetry reports the requested and resolved mode as `durable` / `direct` only.
 Both verbs return `PublishReceipt`; durable delivery includes a `StorageId`, while direct delivery does not.
@@ -118,6 +120,17 @@ revocation through `IMessageRevoker` retains no audit record. The dashboard's au
 revoke performs the identical fenced delete but also writes a receipt and audit in the same
 transaction — the two paths delete the same row the same way; only the evidence differs.
 Use Jobs for keyed, replaceable, tenant-scoped, or transactional business deadlines.
+
+### Enlisted outbox
+The publish surface reached from a unit of work as `unit.Outbox` (contract in
+`Headless.Messaging.UnitOfWork`, implementation in `Headless.Messaging.Core`, attached to the unit as
+a [unit-of-work feature](#unit-local-state)). Every publish through it writes its durable row inside
+that unit's transaction: the row becomes visible when the unit completes and is discarded when it
+rolls back. It refuses rather than degrades — when the configured storage cannot join the given unit
+the call throws before any storage or transport effect, instead of writing a standalone row. Its
+counterpart is the autonomous pair `IBus`/`IQueue`, whose rows survive the caller's rollback.
+Whether a stored row was written this way is recorded on the row as a nullable
+`IsCoordinated`/`headless-delivery-coordinated` fact, where absent means unrecorded, not "no".
 
 ### Operator ledger
 One generalized receipt-and-audit ledger, shared by the inbox operator surface and the
@@ -174,29 +187,37 @@ resource-bearing begin under a resource-less root opens an independent nested un
 ### Unit-of-work manager
 
 The scoped `IUnitOfWorkManager` is the single entry point application code interacts with — one
-unit-of-work slot per DI scope. Resolving it (or a scoped facade over it, such as `IBus`/`IQueue`)
+unit-of-work slot per DI scope. Resolving it (or a scoped facade over it, such as a Jobs manager)
 from the root provider is a captive-dependency error that scope validation reports; a singleton or
-hosted service that needs one creates its own scope. On the manager's own disposal, any still-active
+hosted service that needs one creates its own scope. Messaging's `IBus`/`IQueue` are not such
+facades: they are autonomous singletons that never read the manager, so a singleton injects them
+directly and a publish that must be transactional goes through the [enlisted
+outbox](#enlisted-outbox) instead. On the manager's own disposal, any still-active
 unit of work is rolled back, its `OnFailed` callbacks run with `Reason = ScopeDisposed`, and a
 leak warning is logged — a stranded unit of work is never silent.
 
 ### Transaction enlistment
 
-The axis a participant (a published message, an enqueued job) uses to state how eagerly it requires
-an active unit of work: `TransactionEnlistment { WhenAvailable, Required, Never }`. Precedence is
-per call, then per type/function, then the host default. The guarantee matrix:
+The axis a **Jobs** write (a one-shot deadline, a keyed job, a chain node, a recurring definition)
+uses to state how eagerly it requires an active unit of work:
+`TransactionEnlistment { WhenAvailable, Required, Never }`, surfaced as `JobOptions.Enlistment` and
+`RecurringJobOptions.Enlistment`. Precedence is per call, then per function, then the host default;
+composition across those tiers is strictest-wins. The guarantee matrix:
 
 | Enlistment | Active unit of work, joinable compatible resource | No unit of work, or one with no joinable resource | Unit of work with incompatible resource |
 |---|---|---|---|
-| `WhenAvailable` (default) | enlist in the transaction, dispatch/signal after commit | autonomous durable write, relay/poller recovers it | throw |
+| `WhenAvailable` (default) | enlist in the transaction, dispatch/signal after commit | autonomous durable write, poller recovers it | throw |
 | `Required` | same | throw | throw |
 | `Never` | autonomous | autonomous | autonomous |
 
 `Required` is checked at the call itself and throws before any effect when no active unit of work is
 compatible — there is no separate startup gate, because the scoped manager always exists
-(`AddUnitOfWork()` is idempotent and called by every consumer package's setup). Messaging's
-`MessageOptions.Enlistment` and Jobs' `JobOptions.Enlistment` / `RecurringJobOptions.Enlistment` are
-the two consumer mappings of this matrix to an outcome.
+(`AddUnitOfWork()` is idempotent and called by every consumer package's setup).
+
+The enum is Jobs-only. Messaging once shared it, with the same matrix and the same precedence; it
+now expresses the same intent structurally, by which publisher is called — see [Enlisted
+outbox](#enlisted-outbox) — so no Messaging option, per-type policy, or host default selects
+enlistment any more.
 
 ### Unit-of-work resource
 
@@ -211,8 +232,24 @@ caller commits it.
 
 Typed state owned by one unit of work through `GetOrAdd<TState>`: at most one instance per type,
 created atomically, disposed after the terminal outcome on commit and rollback alike. Used for
-per-transaction buffers or the retry-prevention marker (`PreventRetry()` / `IsRetryPrevented`); it
-must not be used as an arbitrary service-locator bag.
+per-transaction buffers or the retry-prevention marker (`PreventRetry()` / `IsRetryPrevented`);
+application code must not use it as an arbitrary service-locator bag.
+
+The sanctioned framework-owned use is the **unit-of-work feature**: a bridge package registers an
+`IUnitOfWorkFeatureProvider` with `services.AddUnitOfWorkFeature<TProvider>()`, and
+`IUnitOfWork.GetFeature<TFeature>()` resolves that capability lazily on first use and caches it on
+the unit for the unit's lifetime — the same once-per-unit, disposed-on-either-outcome contract as
+`GetOrAdd`, keyed by the declared feature type, with at most one provider per type in a host. It is
+how a capability reaches a unit of work whose packages know nothing about it — the [enlisted
+outbox](#enlisted-outbox) is the one first-party case — and the factory always receives the unit's
+root handle, never a nested view.
+
+### Handle liveness
+
+A nested view forwards `State` to the unit it views, so a view that has already completed still
+reports `Active` while the unit stays open. `IUnitOfWork.ThrowIfUnusable()` is the view-aware
+question — can *this* handle still carry work — and is what registrations and enlisted publishes
+check, per call, instead of comparing `State`.
 
 ## Startup validation
 
