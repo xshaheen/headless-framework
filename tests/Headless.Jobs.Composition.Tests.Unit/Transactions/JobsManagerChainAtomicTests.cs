@@ -32,10 +32,11 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
             }
         );
         var sut = _CreateSut(nonRelational ? CoordinatorMode.NonRelational : CoordinatorMode.None, withWriter: true);
+        var refusal = _RefusalFor(nonRelational);
         var (facade, chain) = _ChainFacade(sut, requiredNode);
 
         var enqueue = () => facade.EnqueueAsync(chain, AbortToken);
-        await enqueue.Should().ThrowAsync<InvalidOperationException>().WithMessage("*requires an active unit of work*");
+        await enqueue.Should().ThrowAsync<InvalidOperationException>().WithMessage(refusal);
 
         middlewareCalls.Should().Be(0);
         await sut
@@ -128,5 +129,5 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
     private static TransactionEnlistment _Enlistment(string? requiredNode, string candidate) =>
         string.Equals(requiredNode, candidate, StringComparison.Ordinal)
             ? TransactionEnlistment.Required
-            : TransactionEnlistment.WhenAvailable;
+            : TransactionEnlistment.Optional;
 }

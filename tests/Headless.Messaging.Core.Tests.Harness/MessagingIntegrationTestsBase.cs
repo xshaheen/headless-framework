@@ -51,9 +51,8 @@ public abstract class MessagingIntegrationTestsBase : TestBase
     private ServiceProvider? _serviceProvider;
 
     // Test-owned: created once per test instance and disposed with it, exactly like a request scope in
-    // production. IBus/IQueue are scoped (they read the scope's IUnitOfWorkManager.Current at publish time), so
-    // Publisher/QueuePublisher/Bus resolve from here rather than from the root ServiceProvider — a root
-    // resolution would silently share one captive instance whose unit-of-work slot is always empty.
+    // production, so scoped services the tests resolve (consumers, contexts) are disposed with the test rather
+    // than leaking from the root ServiceProvider.
     private AsyncServiceScope _testScope;
     private bool _disposed;
 

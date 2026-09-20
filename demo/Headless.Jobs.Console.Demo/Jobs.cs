@@ -20,17 +20,12 @@ public static class ConsoleSampleJobs
     }
 }
 
-// Hosted service that schedules a single job on startup. IJobScheduler is scoped (it reads the scope's
-// IUnitOfWorkManager.Current), so a hosted service — which lives for the app's lifetime, not one operation —
-// creates its own scope per run rather than injecting the scoped service into its own (effectively singleton)
-// constructor.
-public class SampleScheduler(IServiceScopeFactory scopeFactory) : IHostedService
+// Hosted service that schedules a single job on startup. The injected IJobScheduler is the autonomous
+// receiver — a singleton that writes outside any unit of work — which is exactly what a startup schedule wants.
+public class SampleScheduler(IJobScheduler scheduler) : IHostedService
 {
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        await using var scope = scopeFactory.CreateAsyncScope();
-        var scheduler = scope.ServiceProvider.GetRequiredService<IJobScheduler>();
-
         Guid jobId;
         try
         {

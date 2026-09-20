@@ -31,10 +31,4 @@ public enum UnitOfWorkFailureReason
 
     /// <summary>The resource's commit (or the completion drain's resource interaction) faulted.</summary>
     Faulted = 3,
-
-    /// <summary>The unit was still active when its owning service scope disposed; the manager rolled it back.</summary>
-    ScopeDisposed = 4,
-
-    /// <summary>A child unit was abandoned, aborting this (root) unit.</summary>
-    ChildAbandoned = 5,
 }

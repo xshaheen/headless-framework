@@ -72,7 +72,7 @@ builder.Services.AddHeadlessMessaging(setup =>
 });
 
 // The EF-storage path (setup.UseEntityFramework<AppDbContext>() above) already enlists the transactional outbox
-// through the scoped IUnitOfWorkManager that AddHeadlessMessaging registers, so the /coordinated/ef,
+// through the scoped IUnitOfWorkFactory that AddHeadlessMessaging registers, so the /coordinated/ef,
 // /coordinated/rollback, and /coordinated/delay endpoints need no extra wiring. These two calls declare the
 // providers this demo enlists through: the EF Core helpers (RunAsync(db, …)) and the SqlServer ADO helpers
 // (BeginAsync(connection), Enlist(connection, transaction), RunAsync(connection, …)) used by /coordinated/adonet.

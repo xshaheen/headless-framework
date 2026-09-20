@@ -85,11 +85,11 @@ public sealed class OutboxIntegrationEventDispatcherAtomicityTests : TestBase
     [Fact]
     public async Task should_leave_no_durable_row_when_the_save_rolls_back()
     {
-        // given — the save pipeline's transaction is the scope's current unit of work
+        // given — the unit the save pipeline would hand over, standing in for its transaction
         await using var harness = await _CreateHarnessAsync();
         await using var scope = harness.ServiceProvider.CreateAsyncScope();
         var unitOfWork = await scope
-            .ServiceProvider.GetRequiredService<IUnitOfWorkManager>()
+            .ServiceProvider.GetRequiredService<IUnitOfWorkFactory>()
             .BeginAsync(
                 _ => ValueTask.FromResult<IUnitOfWorkResource>(new NonRelationalResource()),
                 options: null,
@@ -101,7 +101,11 @@ public sealed class OutboxIntegrationEventDispatcherAtomicityTests : TestBase
         {
             await scope
                 .ServiceProvider.GetRequiredService<IHeadlessOutboxDispatcher>()
-                .DispatchAsync([EventContext.Capture<object>(new OutboxOrderPlaced("rolled-back"))], AbortToken);
+                .DispatchAsync(
+                    unitOfWork,
+                    [EventContext.Capture<object>(new OutboxOrderPlaced("rolled-back"))],
+                    AbortToken
+                );
 
             // Still nothing durable: the row waits on the unit until it commits.
             (await _DurableRowCountAsync(harness))
@@ -125,7 +129,7 @@ public sealed class OutboxIntegrationEventDispatcherAtomicityTests : TestBase
         await using var harness = await _CreateHarnessAsync();
         await using var scope = harness.ServiceProvider.CreateAsyncScope();
         var unitOfWork = await scope
-            .ServiceProvider.GetRequiredService<IUnitOfWorkManager>()
+            .ServiceProvider.GetRequiredService<IUnitOfWorkFactory>()
             .BeginAsync(
                 _ => ValueTask.FromResult<IUnitOfWorkResource>(new NonRelationalResource()),
                 options: null,
@@ -138,6 +142,7 @@ public sealed class OutboxIntegrationEventDispatcherAtomicityTests : TestBase
             await scope
                 .ServiceProvider.GetRequiredService<IHeadlessOutboxDispatcher>()
                 .DispatchAsync(
+                    unitOfWork,
                     [
                         EventContext.Capture<object>(new OutboxOrderPlaced("committed-1")),
                         EventContext.Capture<object>(new OutboxOrderPlaced("committed-2")),

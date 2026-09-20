@@ -36,13 +36,13 @@ public sealed class HeadlessIdentityDbContextTransactionTests : TestBase
         // given
         await using var scope = _fixture.ServiceProvider.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<TestIdentityDbContext>();
-        var unitOfWorkManager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+        var unitOfWorkFactory = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
         var entity = new HarnessTestEntity { Name = "unit-of-work", TenantId = "T1" };
 
         // when — RunAsync begins a unit of work on the Identity context, runs the operation, and completes.
         // The inner save resolves the unit through the `IHeadlessDbContext` seam, not the concrete
         // `HeadlessDbContext`, which is what this test pins.
-        await unitOfWorkManager.RunAsync(
+        await unitOfWorkFactory.RunAsync(
             db,
             async (unitOfWork, ct) =>
             {

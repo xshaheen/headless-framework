@@ -1,6 +1,7 @@
 using Headless.AuditLog;
 using Headless.Domain;
 using Headless.EntityFramework;
+using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -40,6 +41,7 @@ public sealed class ThrowingPublishAuditTestDbContext(
 public sealed class ThrowingHeadlessMessageDispatcher : IHeadlessOutboxDispatcher
 {
     public Task DispatchAsync(
+        IUnitOfWork unitOfWork,
         IReadOnlyList<EventContext<object>> integrationEvents,
         CancellationToken cancellationToken = default
     )
@@ -47,7 +49,7 @@ public sealed class ThrowingHeadlessMessageDispatcher : IHeadlessOutboxDispatche
         throw new InvalidOperationException(_PublishFailureMessage);
     }
 
-    public void Dispatch(IReadOnlyList<EventContext<object>> integrationEvents)
+    public void Dispatch(IUnitOfWork unitOfWork, IReadOnlyList<EventContext<object>> integrationEvents)
     {
         throw new InvalidOperationException(_PublishFailureMessage);
     }

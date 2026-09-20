@@ -9,6 +9,7 @@ using Headless.EntityFramework.Contexts.Processors;
 using Headless.EntityFramework.Contexts.Runtime;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;
+using Headless.UnitOfWork;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -876,6 +877,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
         }
 
         public Task DispatchAsync(
+            IUnitOfWork unitOfWork,
             IReadOnlyList<EventContext<object>> integrationEvents,
             CancellationToken cancellationToken = default
         )
@@ -885,7 +887,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
             return Task.CompletedTask;
         }
 
-        public void Dispatch(IReadOnlyList<EventContext<object>> integrationEvents)
+        public void Dispatch(IUnitOfWork unitOfWork, IReadOnlyList<EventContext<object>> integrationEvents)
         {
             OnDistributed?.Invoke();
             DistributedEmitters.AddRange(integrationEvents.Select(occurrence => occurrence.Payload));

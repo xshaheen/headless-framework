@@ -13,7 +13,7 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {
-    // Called only by JobsManagerFacade, which resolves IUnitOfWorkManager.Current and passes it here.
+    // Called only by JobsManagerFacade, which passes the unit it was bound with (null for the autonomous receiver).
     internal async Task<JobScheduleResult> ScheduleKeyedTimeJobAsync(
         JobKey key,
         TTimeJob entity,
@@ -60,7 +60,7 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
         return _CompleteKeyedOperation(result, coordinated);
     }
 
-    // Called only by JobsManagerFacade, which resolves IUnitOfWorkManager.Current and passes it here.
+    // Called only by JobsManagerFacade, which passes the unit it was bound with (null for the autonomous receiver).
     internal Task<JobScheduleResult> CancelKeyedTimeJobAsync(
         JobKeyScope scope,
         JobKey key,

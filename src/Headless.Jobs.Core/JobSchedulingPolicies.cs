@@ -72,7 +72,7 @@ internal sealed class JobSchedulingPolicies
                 Retries = call?.Retries,
                 RetryIntervals = call?.RetryIntervals,
                 OnNodeDeath = call?.OnNodeDeath,
-                Enlistment = call?.Enlistment ?? TransactionEnlistment.WhenAvailable,
+                Enlistment = call?.Enlistment ?? TransactionEnlistment.Optional,
             },
             // Recurring definitions take the enlistment from the call or the function policy only: the host default
             // describes one-shot deadlines, and a definition is usually created at bootstrap, outside any transaction.
@@ -105,27 +105,22 @@ internal sealed class JobSchedulingPolicies
     }
 
     // Strictest-wins composition across call > function policy > host default: TransactionEnlistment.Required from
-    // ANY tier wins outright (an explicit Never elsewhere never downgrades it); otherwise an explicit Never from any
-    // tier wins over the WhenAvailable default; otherwise WhenAvailable. A null tier (call/function not configured,
-    // or the host default excluded for recurring definitions) contributes nothing.
+    // ANY tier wins outright; otherwise Optional. A null tier (call/function not configured, or the host default
+    // excluded for recurring definitions) contributes nothing.
     internal static TransactionEnlistment ComposeEnlistment(params ReadOnlySpan<TransactionEnlistment?> tiers) =>
         _ComposeEnlistmentCore(tiers);
 
     private static TransactionEnlistment _ComposeEnlistmentCore(ReadOnlySpan<TransactionEnlistment?> tiers)
     {
-        var sawNever = false;
         foreach (var tier in tiers)
         {
             if (tier == TransactionEnlistment.Required)
             {
                 return TransactionEnlistment.Required;
             }
-            if (tier == TransactionEnlistment.Never)
-            {
-                sawNever = true;
-            }
         }
-        return sawNever ? TransactionEnlistment.Never : TransactionEnlistment.WhenAvailable;
+
+        return TransactionEnlistment.Optional;
     }
 
     internal static JobOptions Snapshot(JobOptions options)

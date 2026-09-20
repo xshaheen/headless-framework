@@ -369,13 +369,9 @@ public sealed class JobsTenancyChainPropagationTests : TestBase
             tenancyOptions: Options.Create(new JobsTenancyOptions { RejectCrossTenantEnqueue = rejectCrossTenant })
         );
 
-        // These scenarios exercise ambient-tenant validation on the Add path with no active unit of work, so the
-        // facade's IUnitOfWorkManager reports no Current — the "no unit of work" branch of the guarantee matrix.
-        var unitOfWorkManager = new ServiceCollection().AddUnitOfWork().BuildServiceProvider();
-        var facade = new JobsManagerFacade<TimeJobEntity, CronJobEntity>(
-            manager,
-            unitOfWorkManager.GetRequiredService<IUnitOfWorkManager>()
-        );
+        // These scenarios exercise ambient-tenant validation on the Add path through the autonomous facade (no
+        // unit) — the "no unit of work" branch of the guarantee matrix.
+        var facade = new JobsManagerFacade<TimeJobEntity, CronJobEntity>(manager);
 
         return (facade, persistence);
     }

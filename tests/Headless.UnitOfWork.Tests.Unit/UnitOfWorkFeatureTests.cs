@@ -7,130 +7,64 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Tests;
 
 /// <summary>
-/// <c>GetFeature</c> is a lookup into the scope that owns the unit's manager, gated by the
-/// <see cref="IUnitOfWorkFeature" /> marker: nothing is created or cached per unit, every handle over a unit sees the
-/// same instance, and a completed nested view refuses registrations while still resolving features.
+/// <c>GetFeature</c> is a lookup into the host container, gated by the <see cref="IUnitOfWorkFeature" /> marker:
+/// nothing is created or cached per unit, every unit sees the same singleton instance, and a scoped registration
+/// is refused under scope validation rather than resolved from the root.
 /// </summary>
 public sealed class UnitOfWorkFeatureTests : TestBase
 {
     [Fact]
-    public async Task should_resolve_the_registered_feature_from_the_units_scope()
+    public async Task should_resolve_the_registered_singleton_feature()
     {
         await using var provider = _BuildProvider(services => services.AddSingleton<ProbeFeature>());
-        using var scope = provider.CreateScope();
-        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
-        await using var unit = await manager.BeginAsync(cancellationToken: AbortToken);
+        var factory = provider.GetRequiredService<IUnitOfWorkFactory>();
+        await using var first = await factory.BeginAsync(cancellationToken: AbortToken);
+        await using var second = await factory.BeginAsync(cancellationToken: AbortToken);
 
-        var feature = unit.GetFeature<ProbeFeature>();
-
-        feature.Should().BeSameAs(scope.ServiceProvider.GetRequiredService<ProbeFeature>());
+        first.GetFeature<ProbeFeature>().Should().BeSameAs(provider.GetRequiredService<ProbeFeature>());
+        second.GetFeature<ProbeFeature>().Should().BeSameAs(first.GetFeature<ProbeFeature>());
     }
 
     [Fact]
-    public async Task should_resolve_the_same_instance_through_a_child_view_and_the_root()
+    public async Task should_refuse_a_scoped_feature_under_scope_validation()
     {
-        await using var provider = _BuildProvider(services => services.AddSingleton<ProbeFeature>());
-        using var scope = provider.CreateScope();
-        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
-        await using var root = await manager.BeginAsync(cancellationToken: AbortToken);
-        var child = await manager.BeginAsync(cancellationToken: AbortToken);
-
-        var fromChild = child.GetFeature<ProbeFeature>();
-        await child.CompleteAsync(AbortToken);
-        var fromRoot = root.GetFeature<ProbeFeature>();
-
-        fromRoot.Should().BeSameAs(fromChild);
-    }
-
-    [Fact]
-    public async Task should_keep_the_roots_feature_usable_after_an_adopting_scope_is_disposed()
-    {
+        // A feature is a singleton by contract: the factory resolves from the root, so a scoped registration is
+        // a captive-dependency error that scope validation reports instead of a silently root-resolved instance.
         await using var provider = _BuildProvider(services => services.AddScoped<ScopedProbeFeature>());
-        using var owningScope = provider.CreateScope();
-        var owner = owningScope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
-        await using var root = await owner.BeginAsync(cancellationToken: AbortToken);
-        ScopedProbeFeature adoptedFeature;
+        var factory = provider.GetRequiredService<IUnitOfWorkFactory>();
+        await using var unit = await factory.BeginAsync(cancellationToken: AbortToken);
 
-        using (var adoptingScope = provider.CreateScope())
-        {
-            var adopter = adoptingScope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
-            using var adoption = adopter.Adopt(root);
-            await using var child = await adopter.BeginAsync(cancellationToken: AbortToken);
-            adoptedFeature = child.GetFeature<ScopedProbeFeature>()!;
-            adoptedFeature.Touch();
-            await child.CompleteAsync(AbortToken);
-        }
+        var act = () => unit.GetFeature<ScopedProbeFeature>();
 
-        adoptedFeature.IsDisposed.Should().BeTrue();
-        root.State.Should().Be(UnitOfWorkState.Active);
-
-        // Resolve from the root only after the shorter-lived scope ends: a root-level cache must not retain
-        // the adopting scope's disposed service merely because the child performed the first lookup.
-        var rootFeature = root.GetFeature<ScopedProbeFeature>()!;
-        rootFeature.Should().BeSameAs(owningScope.ServiceProvider.GetRequiredService<ScopedProbeFeature>());
-        var useFeature = rootFeature.Touch;
-        useFeature.Should().NotThrow();
-        await root.CompleteAsync(AbortToken);
+        act.Should().Throw<InvalidOperationException>().WithMessage("*scoped*root*");
     }
 
     [Fact]
     public async Task should_return_null_when_no_feature_of_that_type_is_registered()
     {
         await using var provider = _BuildProvider(static _ => { });
-        using var scope = provider.CreateScope();
-        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
-        await using var unit = await manager.BeginAsync(cancellationToken: AbortToken);
+        var factory = provider.GetRequiredService<IUnitOfWorkFactory>();
+        await using var unit = await factory.BeginAsync(cancellationToken: AbortToken);
 
         unit.GetFeature<ProbeFeature>().Should().BeNull();
     }
 
     [Fact]
-    public async Task should_return_null_when_the_manager_was_constructed_outside_dependency_injection()
+    public async Task should_return_null_when_the_factory_was_constructed_outside_dependency_injection()
     {
-        // Tests construct the manager directly; with no scope to resolve from, no feature exists.
-        using var manager = new UnitOfWorkManager();
-        await using var unit = await manager.BeginAsync(cancellationToken: AbortToken);
+        // Tests construct the factory directly; with no container to resolve from, no feature exists.
+        var factory = new UnitOfWorkFactory();
+        await using var unit = await factory.BeginAsync(cancellationToken: AbortToken);
 
         unit.GetFeature<ProbeFeature>().Should().BeNull();
-    }
-
-    [Fact]
-    public async Task should_still_resolve_a_feature_on_a_completed_child_view_but_refuse_its_registrations()
-    {
-        // Resolving is a lookup, so it stays available; attaching work is a registration, and the view that
-        // completed can no longer carry one even though the root — and therefore State — is still Active.
-        await using var provider = _BuildProvider(services => services.AddSingleton<ProbeFeature>());
-        using var scope = provider.CreateScope();
-        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
-        await using var root = await manager.BeginAsync(cancellationToken: AbortToken);
-        var child = await manager.BeginAsync(cancellationToken: AbortToken);
-        await child.CompleteAsync(AbortToken);
-        child.State.Should().Be(UnitOfWorkState.Active, "the view forwards the still-open root's state");
-
-        child.GetFeature<ProbeFeature>().Should().NotBeNull();
-
-        var onCompleted = () => child.OnCompleted(static () => ValueTask.CompletedTask);
-        var onFailed = () => child.OnFailed(static _ => ValueTask.CompletedTask);
-        var getOrAdd = () => child.GetOrAdd(static _ => new object());
-        var getOrAddWithArg = () => child.GetOrAdd(1, static (_, _) => new object());
-        const string expected = "*nested unit of work has already completed*";
-        onCompleted.Should().Throw<InvalidOperationException>().WithMessage(expected);
-        onFailed.Should().Throw<InvalidOperationException>().WithMessage(expected);
-        getOrAdd.Should().Throw<InvalidOperationException>().WithMessage(expected);
-        getOrAddWithArg.Should().Throw<InvalidOperationException>().WithMessage(expected);
-
-        // The root is untouched by the child's refusal.
-        var rootRegistration = () => root.OnCompleted(static () => ValueTask.CompletedTask);
-        rootRegistration.Should().NotThrow();
     }
 
     [Fact]
     public async Task should_throw_object_disposed_when_resolving_on_a_disposed_handle()
     {
         await using var provider = _BuildProvider(services => services.AddSingleton<ProbeFeature>());
-        using var scope = provider.CreateScope();
-        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
-        var unit = await manager.BeginAsync(cancellationToken: AbortToken);
+        var factory = provider.GetRequiredService<IUnitOfWorkFactory>();
+        var unit = await factory.BeginAsync(cancellationToken: AbortToken);
         await unit.DisposeAsync();
 
         var act = () => unit.GetFeature<ProbeFeature>();

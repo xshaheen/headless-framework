@@ -14,23 +14,27 @@ using Microsoft.Extensions.Logging;
 namespace Headless.UnitOfWork;
 
 /// <summary>
-/// EF Core entry points for the scoped unit of work: <c>BeginAsync(db)</c> (owned mode — the unit begins
-/// the transaction eagerly and owns commit), <c>Enlist(db, transaction)</c> (observed mode — the caller
-/// commits), and <c>RunAsync(db, …)</c> (execution-strategy-safe block). Every misuse fails with a message
-/// that names the remedy.
+/// EF Core entry points for the unit of work: <c>BeginAsync(db)</c> (owned mode — the unit begins the
+/// transaction eagerly and owns commit), <c>Enlist(db, transaction)</c> (observed mode — the caller commits),
+/// and <c>RunAsync(db, …)</c> (execution-strategy-safe block). Every misuse fails with a message that names the
+/// remedy.
 /// </summary>
 /// <remarks>
-/// The context binding is recorded on begin/enlist so a context whose scope has no manager (a
-/// <c>IDbContextFactory&lt;T&gt;</c>-created context) is still resolvable by the save pipeline; the binding
-/// hides terminal units automatically.
+/// Begin and enlist bind the unit to the context, which is how the save pipeline, a domain-event handler, and
+/// anything else holding the context reach the unit that owns its transaction (<see cref="DbContextUnitOfWork.UnitOfWork" />).
+/// The binding hides terminal units automatically. A context that already carries a live unit refuses a second
+/// begin: there is no ambient unit to join, so the callee is handed the unit instead.
 /// </remarks>
 [PublicAPI]
-public static class UnitOfWorkManagerEntityFrameworkExtensions
+public static class UnitOfWorkFactoryEntityFrameworkExtensions
 {
     private const string _ExistingTransactionMessage =
-        "The DbContext already has an active transaction. Begin the unit of work before beginning the transaction, or call IUnitOfWorkManager.Enlist(db, transaction) for a transaction you commit yourself.";
+        "The DbContext already has an active transaction. Begin the unit of work before beginning the transaction, or call IUnitOfWorkFactory.Enlist(db, transaction) for a transaction you commit yourself.";
 
-    extension(IUnitOfWorkManager manager)
+    private const string _AlreadyBoundMessage =
+        "This DbContext already carries an active unit of work. Pass that unit to the code that needs it (read it with db.UnitOfWork()) instead of beginning a second one on the same context.";
+
+    extension(IUnitOfWorkFactory factory)
     {
         /// <summary>
         /// Begins an owned unit of work on <paramref name="db" />: the transaction is started on this line
@@ -41,8 +45,9 @@ public static class UnitOfWorkManagerEntityFrameworkExtensions
         /// <param name="cancellationToken">Propagates the caller's cancellation to the transaction begin.</param>
         /// <returns>The begun unit of work; the caller completes or disposes it.</returns>
         /// <exception cref="InvalidOperationException">
-        /// The context already has an active transaction (use <c>Enlist</c> instead), or the configured
-        /// execution strategy retries (use <c>RunAsync</c> instead).
+        /// The context already carries an active unit of work (pass it instead), already has an active
+        /// transaction (use <c>Enlist</c> instead), or the configured execution strategy retries (use
+        /// <c>RunAsync</c> instead).
         /// </exception>
         public ValueTask<IUnitOfWork> BeginAsync(
             DbContext db,
@@ -50,7 +55,7 @@ public static class UnitOfWorkManagerEntityFrameworkExtensions
             CancellationToken cancellationToken = default
         )
         {
-            return _BeginAsync(manager, db, isolation, rejectRetryingStrategy: true, cancellationToken);
+            return _BeginAsync(factory, db, isolation, rejectRetryingStrategy: true, cancellationToken);
         }
 
         /// <summary>
@@ -66,7 +71,12 @@ public static class UnitOfWorkManagerEntityFrameworkExtensions
             Argument.IsNotNull(db);
             Argument.IsNotNull(transaction);
 
-            var unit = manager.Enlist(new EfUnitOfWorkResource(db, transaction, owned: false));
+            if (DbContextUnitOfWorkBinding.TryGet(db, out _))
+            {
+                throw new InvalidOperationException(_AlreadyBoundMessage);
+            }
+
+            var unit = factory.Enlist(new EfUnitOfWorkResource(db, transaction, owned: false));
 
             DbContextUnitOfWorkBinding.Bind(db, unit);
 
@@ -95,7 +105,7 @@ public static class UnitOfWorkManagerEntityFrameworkExtensions
             Argument.IsNotNull(operation);
 
             return _RunCoreAsync(
-                manager,
+                factory,
                 db,
                 async (unitOfWork, ct) =>
                 {
@@ -127,12 +137,12 @@ public static class UnitOfWorkManagerEntityFrameworkExtensions
         {
             Argument.IsNotNull(operation);
 
-            return _RunCoreAsync(manager, db, operation, isolation, cancellationToken);
+            return _RunCoreAsync(factory, db, operation, isolation, cancellationToken);
         }
     }
 
     private static async ValueTask<IUnitOfWork> _BeginAsync(
-        IUnitOfWorkManager manager,
+        IUnitOfWorkFactory factory,
         DbContext db,
         IsolationLevel isolation,
         bool rejectRetryingStrategy,
@@ -141,26 +151,15 @@ public static class UnitOfWorkManagerEntityFrameworkExtensions
     {
         Argument.IsNotNull(db);
 
-        // The manager claims its slot synchronously (the hidden provider primitive), so a concurrent begin
-        // in the same scope fails deterministically; the transaction checks and the begin run inside the
-        // factory, and a fault there releases the slot and propagates as-is.
-        var joined = false;
-        var unit = await manager
+        var unit = await factory
             .BeginAsync(
                 async ct =>
                 {
-                    // Join: a second begin while this scope's active unit already owns this context's
-                    // transaction returns the live resource (the manager's identity comparison then opens a
-                    // child view) — never a second transaction on the same context.
-                    if (
-                        manager.Current?.Resource is EfUnitOfWorkResource active
-                        && DbContextUnitOfWorkBinding.TryGet(db, out var boundUnit)
-                        && ReferenceEquals(boundUnit.Resource, active)
-                    )
+                    // A context already carrying a live unit is refused, not joined: with no ambient unit there
+                    // is nothing to join, and a second transaction on the same context is never the answer.
+                    if (DbContextUnitOfWorkBinding.TryGet(db, out _))
                     {
-                        joined = true;
-
-                        return active;
+                        throw new InvalidOperationException(_AlreadyBoundMessage);
                     }
 
                     if (db.Database.CurrentTransaction is not null)
@@ -177,7 +176,7 @@ public static class UnitOfWorkManagerEntityFrameworkExtensions
                             throw new InvalidOperationException(
                                 $"The configured execution strategy '{strategy.GetType().FullName}' does not support user-initiated transactions. "
                                     + "Use the execution strategy returned by 'Database.CreateExecutionStrategy()' to execute all the operations in the transaction as a retriable unit."
-                                    + " Use IUnitOfWorkManager.RunAsync(db, …) to run the unit of work as a retriable block."
+                                    + " Use IUnitOfWorkFactory.RunAsync(db, …) to run the unit of work as a retriable block."
                             );
                         }
                     }
@@ -191,18 +190,13 @@ public static class UnitOfWorkManagerEntityFrameworkExtensions
             )
             .ConfigureAwait(false);
 
-        // A joined begin returns a child view; the context stays bound to the root handle so the save pipeline
-        // keeps resolving the unit that owns the transaction after the child completes.
-        if (!joined)
-        {
-            DbContextUnitOfWorkBinding.Bind(db, unit);
-        }
+        DbContextUnitOfWorkBinding.Bind(db, unit);
 
         return unit;
     }
 
     private static async Task<TResult> _RunCoreAsync<TResult>(
-        IUnitOfWorkManager manager,
+        IUnitOfWorkFactory factory,
         DbContext db,
         Func<IUnitOfWork, CancellationToken, Task<TResult>> operation,
         IsolationLevel isolation,
@@ -211,8 +205,8 @@ public static class UnitOfWorkManagerEntityFrameworkExtensions
     {
         Argument.IsNotNull(db);
 
-        var logger = UnitOfWorkRunner.LoggerFor(manager);
-        var state = (Manager: manager, Operation: operation, Isolation: isolation, Context: db, Logger: logger);
+        var logger = UnitOfWorkRunner.LoggerFor(factory);
+        var state = (Factory: factory, Operation: operation, Isolation: isolation, Context: db, Logger: logger);
 
         var (result, error) = await db
             .Database.CreateExecutionStrategy()
@@ -229,7 +223,7 @@ public static class UnitOfWorkManagerEntityFrameworkExtensions
                         // Retries are legal here: this begin runs inside the strategy, so the retrying check
                         // is suppressed and a transient failure replays with a fresh unit and transaction.
                         unitOfWork = await _BeginAsync(
-                                state.Manager,
+                                state.Factory,
                                 state.Context,
                                 state.Isolation,
                                 rejectRetryingStrategy: false,

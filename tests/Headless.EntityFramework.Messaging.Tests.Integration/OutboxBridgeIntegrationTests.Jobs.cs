@@ -72,10 +72,7 @@ public sealed partial class OutboxBridgeIntegrationTests
                     new JobOptions { Enlistment = TransactionEnlistment.Required },
                     AbortToken
                 );
-        await schedule
-            .Should()
-            .ThrowAsync<InvalidOperationException>()
-            .WithMessage("*requires an active unit of work*");
+        await schedule.Should().ThrowAsync<InvalidOperationException>().WithMessage("*requires a unit of work*");
         (await _ReadDeadlineRowsAsync(provider, marker)).Should().BeEmpty();
         (await _ReadPublishedAsync(provider, marker)).Should().ContainSingle();
     }
@@ -281,16 +278,15 @@ public sealed partial class OutboxBridgeIntegrationTests
 
     private sealed class DeadlineConsumer(
         BridgeTestDbContext db,
-        IUnitOfWorkManager unitOfWorkManager,
-        IJobScheduler scheduler,
+        IUnitOfWorkFactory unitOfWorkFactory,
         DeadlineEvidence evidence
     ) : IConsume<OrderShipped>
     {
         public async ValueTask ConsumeAsync(ConsumeContext<OrderShipped> context, CancellationToken cancellationToken)
         {
-            await unitOfWorkManager.RunAsync(
+            await unitOfWorkFactory.RunAsync(
                 db,
-                async (_, token) =>
+                async (unitOfWork, token) =>
                 {
                     if (!await db.DeadlineReceipts.AnyAsync(row => row.Id == context.MessageId, token))
                     {
@@ -298,7 +294,7 @@ public sealed partial class OutboxBridgeIntegrationTests
                         await db.SaveChangesAsync(token);
                     }
                     evidence.Results.Add(
-                        await scheduler.ScheduleKeyedAsync(
+                        await unitOfWork.Jobs.ScheduleKeyedAsync(
                             new JobKey(context.MessageId),
                             DeadlineRegistration.Descriptor,
                             evidence.Due,

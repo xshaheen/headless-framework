@@ -17,15 +17,8 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
 
     private sealed record PaymentCaptured(string UniqueId);
 
-    // A resource-bearing unit of work current in the scope models the save pipeline having enlisted its
-    // transaction (or the caller's BeginAsync(db) unit being active).
-    private static IUnitOfWorkManager _ManagerWith(IUnitOfWork? current)
-    {
-        var manager = Substitute.For<IUnitOfWorkManager>();
-        manager.Current.Returns(current);
-        return manager;
-    }
-
+    // A resource-bearing unit models the save pipeline having enlisted its transaction (or the caller's
+    // BeginAsync(db) unit) and handed it to the dispatcher.
     private static IUnitOfWork _ResourceBearingUnitOfWork(IUnitOfWorkOutbox? outbox = null)
     {
         var unitOfWork = Substitute.For<IUnitOfWork>();
@@ -160,32 +153,27 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
     public async Task should_be_noop_for_empty_event_list_when_dispatch_async()
     {
         // given — an empty list must short-circuit without publishing anything, and without consulting the
-        // unit of work (no manager set up: Current is null).
+        // unit's resource: a resource-less unit would otherwise be refused.
         var outbox = new RecordingOutbox();
-        var dispatcher = new OutboxIntegrationEventDispatcher(
-            _ManagerWith(current: null),
-            new IntegrationEventPublishInvokerCache()
-        );
+        var unitOfWork = _ResourceLessUnitOfWork();
+        var dispatcher = new OutboxIntegrationEventDispatcher(new IntegrationEventPublishInvokerCache());
 
         // when
-        await dispatcher.DispatchAsync([], AbortToken);
+        await dispatcher.DispatchAsync(unitOfWork, [], AbortToken);
 
         // then
         outbox.Published.Should().BeEmpty();
     }
 
     [Fact]
-    public async Task should_publish_all_events_through_the_current_units_outbox_when_dispatch_async()
+    public async Task should_publish_all_events_through_the_given_units_outbox_when_dispatch_async()
     {
-        // given — the pipeline enlisted its transaction, so a resource-bearing unit is current and its outbox
+        // given — the pipeline enlisted its transaction and handed over a resource-bearing unit whose outbox
         // places the rows inside that unit's transaction. The dispatcher only fans the events out to that
         // outbox; it does not touch the transaction.
         var outbox = new RecordingOutbox();
         var unitOfWork = _ResourceBearingUnitOfWork(outbox);
-        var dispatcher = new OutboxIntegrationEventDispatcher(
-            _ManagerWith(unitOfWork),
-            new IntegrationEventPublishInvokerCache()
-        );
+        var dispatcher = new OutboxIntegrationEventDispatcher(new IntegrationEventPublishInvokerCache());
         IReadOnlyList<EventContext<object>> events =
         [
             new(new OrderPlaced("order-1"), "occurrence-1", "root-1", "parent-1", "tenant-1"),
@@ -193,7 +181,7 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
         ];
 
         // when
-        await dispatcher.DispatchAsync(events, AbortToken);
+        await dispatcher.DispatchAsync(unitOfWork, events, AbortToken);
 
         // then
         outbox.Published.Should().HaveCount(2);
@@ -202,7 +190,7 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
         for (var i = 0; i < events.Count; i++)
         {
             outbox.Published[i].Payload.Should().BeSameAs(events[i].Payload);
-            // Every publish enlists in the unit the manager reported as current.
+            // Every publish enlists in the unit the pipeline handed over.
             outbox.Published[i].UnitOfWork.Should().BeSameAs(unitOfWork);
             // Compare the public publish contract; record equality also includes internal transaction replay state.
             outbox
@@ -225,14 +213,12 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
     public async Task should_propagate_publish_failure_when_dispatch_async()
     {
         // given
-        var dispatcher = new OutboxIntegrationEventDispatcher(
-            _ManagerWith(_ResourceBearingUnitOfWork(new ThrowingOutbox())),
-            new IntegrationEventPublishInvokerCache()
-        );
+        var unitOfWork = _ResourceBearingUnitOfWork(new ThrowingOutbox());
+        var dispatcher = new OutboxIntegrationEventDispatcher(new IntegrationEventPublishInvokerCache());
         IReadOnlyList<EventContext<object>> events = [EventContext.Capture<object>(new OrderPlaced("order-1"))];
 
         // when
-        var act = async () => await dispatcher.DispatchAsync(events, AbortToken);
+        var act = async () => await dispatcher.DispatchAsync(unitOfWork, events, AbortToken);
 
         // then
         (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("Publish failed");
@@ -244,16 +230,14 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
         // given — a pre-cancelled token with a non-empty event list. The per-event loop trips
         // ThrowIfCancellationRequested on the first iteration, so nothing is published.
         var outbox = new RecordingOutbox();
-        var dispatcher = new OutboxIntegrationEventDispatcher(
-            _ManagerWith(_ResourceBearingUnitOfWork(outbox)),
-            new IntegrationEventPublishInvokerCache()
-        );
+        var unitOfWork = _ResourceBearingUnitOfWork(outbox);
+        var dispatcher = new OutboxIntegrationEventDispatcher(new IntegrationEventPublishInvokerCache());
         IReadOnlyList<EventContext<object>> events = [EventContext.Capture<object>(new OrderPlaced("order-1"))];
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
         // when
-        var act = async () => await dispatcher.DispatchAsync(events, cts.Token);
+        var act = async () => await dispatcher.DispatchAsync(unitOfWork, events, cts.Token);
 
         // then
         await act.Should().ThrowAsync<OperationCanceledException>();
@@ -265,14 +249,12 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
     {
         // given
         var outbox = new RecordingOutbox();
-        var dispatcher = new OutboxIntegrationEventDispatcher(
-            _ManagerWith(_ResourceBearingUnitOfWork(outbox)),
-            new IntegrationEventPublishInvokerCache()
-        );
+        var unitOfWork = _ResourceBearingUnitOfWork(outbox);
+        var dispatcher = new OutboxIntegrationEventDispatcher(new IntegrationEventPublishInvokerCache());
         IReadOnlyList<EventContext<object>> events = [EventContext.Capture<object>(new OrderPlaced("order-1"))];
 
         // when
-        dispatcher.Dispatch(events);
+        dispatcher.Dispatch(unitOfWork, events);
 
         // then
         outbox.Published.Should().ContainSingle();
@@ -280,22 +262,18 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
     }
 
     [Fact]
-    public async Task should_fail_loud_when_dispatch_async_without_a_unit_of_work()
+    public async Task should_reject_a_null_unit_of_work_when_dispatch_async()
     {
-        // given — integration events emitted while saving inside a caller-managed transaction that no unit of
-        // work owns: dispatching would be non-atomic. The dispatcher must fail loud, naming the remedy, instead
-        // of shipping a message a caller rollback can no longer recall.
-        var dispatcher = new OutboxIntegrationEventDispatcher(
-            _ManagerWith(current: null),
-            new IntegrationEventPublishInvokerCache()
-        );
+        // given — the unit is a required argument now that nothing ambient can stand in for it; the save
+        // pipeline refuses a caller-managed transaction without a unit before it ever reaches the dispatcher.
+        var dispatcher = new OutboxIntegrationEventDispatcher(new IntegrationEventPublishInvokerCache());
         IReadOnlyList<EventContext<object>> events = [EventContext.Capture<object>(new OrderPlaced("order-1"))];
 
         // when
-        var act = async () => await dispatcher.DispatchAsync(events, AbortToken);
+        var act = async () => await dispatcher.DispatchAsync(null!, events, AbortToken);
 
-        // then — fails loud and publishes nothing
-        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*IUnitOfWorkManager.BeginAsync(db)*");
+        // then
+        await act.Should().ThrowAsync<ArgumentNullException>();
     }
 
     [Fact]
@@ -303,17 +281,15 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
     {
         // given — a resource-less unit (BeginAsync() with no db) coordinates nothing transactional, so an outbox
         // write under it would still be autonomous; the guard is on the resource, not on the unit's presence.
-        var dispatcher = new OutboxIntegrationEventDispatcher(
-            _ManagerWith(_ResourceLessUnitOfWork()),
-            new IntegrationEventPublishInvokerCache()
-        );
+        var unitOfWork = _ResourceLessUnitOfWork();
+        var dispatcher = new OutboxIntegrationEventDispatcher(new IntegrationEventPublishInvokerCache());
         IReadOnlyList<EventContext<object>> events = [EventContext.Capture<object>(new OrderPlaced("order-1"))];
 
         // when
-        var act = async () => await dispatcher.DispatchAsync(events, AbortToken);
+        var act = async () => await dispatcher.DispatchAsync(unitOfWork, events, AbortToken);
 
         // then
-        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*IUnitOfWorkManager.BeginAsync(db)*");
+        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*IUnitOfWorkFactory.BeginAsync(db)*");
     }
 
     #endregion
@@ -372,7 +348,10 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
 
         // then
         dispatcher.Should().BeOfType<OutboxIntegrationEventDispatcher>();
-        services.Single(d => d.ServiceType == typeof(IUnitOfWorkManager)).Lifetime.Should().Be(ServiceLifetime.Scoped);
+        services
+            .Single(d => d.ServiceType == typeof(IUnitOfWorkFactory))
+            .Lifetime.Should()
+            .Be(ServiceLifetime.Singleton);
     }
 
     #endregion

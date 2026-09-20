@@ -49,11 +49,11 @@ public sealed class SubscribeExecutorCallbackPublishTests : TestBase
     }
 
     /// <summary>
-    /// Stands in for the EF inbox runners: it opens the attempt scope's unit of work around the handler, so
+    /// Stands in for the EF inbox runners: it opens a unit of work around the handler and hands it over, so
     /// whatever the handler publishes through that unit joins the attempt's transaction. Rolling back models a
     /// commit that never landed (a stale fence, a failed commit) after the handler already published.
     /// </summary>
-    private sealed class FakeInboxTransactionRunner(IUnitOfWorkManager unitOfWorkManager) : IInboxTransactionRunner
+    private sealed class FakeInboxTransactionRunner(IUnitOfWorkFactory unitOfWorkFactory) : IInboxTransactionRunner
     {
         public bool RollbackAfterHandler { get; set; }
 
@@ -61,17 +61,17 @@ public sealed class SubscribeExecutorCallbackPublishTests : TestBase
 
         public async Task ExecuteAsync(
             MediumMessage message,
-            Func<CancellationToken, Task> handler,
+            Func<IUnitOfWork, CancellationToken, Task> handler,
             CancellationToken cancellationToken
         )
         {
-            await using var unitOfWork = await unitOfWorkManager.BeginAsync(
+            await using var unitOfWork = await unitOfWorkFactory.BeginAsync(
                 _ => ValueTask.FromResult<IUnitOfWorkResource>(new NonRelationalResource()),
                 options: null,
                 cancellationToken
             );
 
-            await handler(cancellationToken).ConfigureAwait(false);
+            await handler(unitOfWork, cancellationToken).ConfigureAwait(false);
             HandlerCompleted = true;
 
             if (RollbackAfterHandler)
@@ -281,7 +281,7 @@ public sealed class SubscribeExecutorCallbackPublishTests : TestBase
         FakeInboxTransactionRunner? runner = null;
         await using var host = _BuildMessagingHost(services =>
             services.AddScoped<IInboxTransactionRunner>(sp =>
-                runner = new FakeInboxTransactionRunner(sp.GetRequiredService<IUnitOfWorkManager>())
+                runner = new FakeInboxTransactionRunner(sp.GetRequiredService<IUnitOfWorkFactory>())
                 {
                     RollbackAfterHandler = true,
                 }
@@ -309,7 +309,7 @@ public sealed class SubscribeExecutorCallbackPublishTests : TestBase
         // given — the same path, committed: the control that keeps the rollback case honest
         await using var host = _BuildMessagingHost(services =>
             services.AddScoped<IInboxTransactionRunner>(sp => new FakeInboxTransactionRunner(
-                sp.GetRequiredService<IUnitOfWorkManager>()
+                sp.GetRequiredService<IUnitOfWorkFactory>()
             ))
         );
         var executor = _CreateExecutor(

@@ -72,7 +72,7 @@ public sealed class SetupTests : TestBase
         // then — the scoped unit-of-work manager is wired and the inbox transaction runner is registered.
         await using (var scope = provider.CreateAsyncScope())
         {
-            scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>().Should().NotBeNull();
+            scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>().Should().NotBeNull();
         }
 
         services

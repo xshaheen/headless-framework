@@ -60,7 +60,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             {
                 throw new InvalidOperationException(
                     "The active unit of work's transaction belongs to another database, so this Jobs write cannot "
-                        + "enlist. Use the same database, or TransactionEnlistment.Never for this call."
+                        + "enlist. Use the same database, or schedule through an injected scheduler for an autonomous write."
                 );
             }
             context.Database.SetDbConnection(connection, contextOwnsConnection: false);

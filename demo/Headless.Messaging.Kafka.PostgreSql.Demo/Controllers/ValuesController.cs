@@ -7,7 +7,7 @@ using Npgsql;
 namespace Demo.Controllers;
 
 [Route("api/[controller]")]
-public class ValuesController(IQueue producer, IUnitOfWorkManager unitOfWork) : Controller
+public class ValuesController(IQueue producer, IUnitOfWorkFactory unitOfWork) : Controller
 {
     private const string _MessageName = "sample.kafka.postgrsql";
 
@@ -54,10 +54,11 @@ public class ValuesController(IQueue producer, IUnitOfWorkManager unitOfWork) : 
         return Ok();
     }
 
-    // CAPABILITY 1 — raw ADO (Dapper) unit of work via IUnitOfWorkManager.RunAsync(connection, …).
+    // CAPABILITY 1 — raw ADO (Dapper) unit of work via IUnitOfWorkFactory.RunAsync(connection, …).
     // RunAsync owns begin and commit: it opens the connection's transaction, runs the block, then commits. The
-    // Enqueue enlists in that same transaction because it reads the ambient IUnitOfWorkManager.Current from this
-    // scope, and Dapper needs the live transaction object, exposed as an IRelationalUnitOfWorkResource on uow.Resource.
+    // enqueue goes through uow.Outbox so its row joins that same transaction (an IQueue enqueue is autonomous and
+    // would survive a rollback), and Dapper needs the live transaction object, exposed as an
+    // IRelationalUnitOfWorkResource on uow.Resource.
     [Route("~/coordinated/adonet")]
     public async Task<IActionResult> CoordinatedAdoNet()
     {
@@ -86,9 +87,9 @@ public class ValuesController(IQueue producer, IUnitOfWorkManager unitOfWork) : 
                     )
                 );
 
-                await producer.EnqueueAsync(
+                await uow.Outbox.EnqueueAsync(
                     new KafkaMessage(DateTime.UtcNow),
-                    new QueueOptions { MessageName = _MessageName, DeliveryMode = DeliveryMode.Durable },
+                    new OutboxOptions { MessageName = _MessageName },
                     token
                 );
             },
@@ -98,7 +99,7 @@ public class ValuesController(IQueue producer, IUnitOfWorkManager unitOfWork) : 
         return Ok($"Inserted {person} and enqueued atomically (raw ADO; unit-of-work-owned commit).");
     }
 
-    // CAPABILITY 2 — EF Core unit of work via IUnitOfWorkManager.RunAsync(db, …).
+    // CAPABILITY 2 — EF Core unit of work via IUnitOfWorkFactory.RunAsync(db, …).
     // RunAsync runs inside EF's execution strategy: begin (owned) → operation → CompleteAsync (commits, then
     // drains). SaveChanges and the enqueue commit together.
     [Route("~/coordinated/ef")]
@@ -112,14 +113,14 @@ public class ValuesController(IQueue producer, IUnitOfWorkManager unitOfWork) : 
 
         await unitOfWork.RunAsync(
             dbContext,
-            async (_, ct) =>
+            async (uow, ct) =>
             {
                 dbContext.Persons.Add(person);
                 await dbContext.SaveChangesAsync(ct);
 
-                await producer.EnqueueAsync(
+                await uow.Outbox.EnqueueAsync(
                     new KafkaMessage(DateTime.UtcNow),
-                    new QueueOptions { MessageName = _MessageName, DeliveryMode = DeliveryMode.Durable },
+                    new OutboxOptions { MessageName = _MessageName },
                     ct
                 );
             },
@@ -145,14 +146,14 @@ public class ValuesController(IQueue producer, IUnitOfWorkManager unitOfWork) : 
         {
             await unitOfWork.RunAsync(
                 dbContext,
-                async (_, ct) =>
+                async (uow, ct) =>
                 {
                     dbContext.Persons.Add(person);
                     await dbContext.SaveChangesAsync(ct);
 
-                    await producer.EnqueueAsync(
+                    await uow.Outbox.EnqueueAsync(
                         new KafkaMessage(DateTime.UtcNow),
-                        new QueueOptions { MessageName = _MessageName, DeliveryMode = DeliveryMode.Durable },
+                        new OutboxOptions { MessageName = _MessageName },
                         ct
                     );
 
@@ -182,19 +183,14 @@ public class ValuesController(IQueue producer, IUnitOfWorkManager unitOfWork) : 
 
         await unitOfWork.RunAsync(
             dbContext,
-            async (_, ct) =>
+            async (uow, ct) =>
             {
                 dbContext.Persons.Add(person);
                 await dbContext.SaveChangesAsync(ct);
 
-                await producer.EnqueueAsync(
+                await uow.Outbox.EnqueueAsync(
                     new KafkaMessage(DateTime.UtcNow),
-                    new QueueOptions
-                    {
-                        MessageName = _MessageName,
-                        Delay = TimeSpan.FromSeconds(delaySeconds),
-                        DeliveryMode = DeliveryMode.Durable,
-                    },
+                    new OutboxOptions { MessageName = _MessageName, Delay = TimeSpan.FromSeconds(delaySeconds) },
                     ct
                 );
             },

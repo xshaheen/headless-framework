@@ -110,7 +110,7 @@ public static class SetupMessaging
         MessagingBuilder.GetOrAddMiddlewareDescriptorRegistry(services);
         services.AddHeadlessGuidGenerator();
         services.TryAddSingleton(TimeProvider.System);
-        // Idempotent: registers the scoped IUnitOfWorkManager exactly once regardless of registration order
+        // Idempotent: registers the singleton IUnitOfWorkFactory exactly once regardless of registration order
         // with other consumer packages (Headless.EntityFramework, Headless.Jobs.Core).
         services.AddUnitOfWork();
         // Tenant context primitives shared across packages — the AsyncLocal accessor + AddOrReplaceFallbackSingleton

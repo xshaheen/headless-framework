@@ -174,45 +174,45 @@ See [docs/llms/unit-of-work.md](docs/llms/unit-of-work.md) for the full domain d
 ### Unit of work
 
 The owner-side handle (`IUnitOfWork`) for one physical transaction/coordination window, obtained
-from the **scoped** `IUnitOfWorkManager` (`IUnitOfWorkManager.Current`, a plain field — never an
-`AsyncLocal`, never ambient). Application code opens it explicitly, on the line it chooses
-(`unitOfWork.BeginAsync(...)`); nothing opens one on the developer's behalf. `CompleteAsync` commits
-the resource's transaction (owned mode, from `BeginAsync`) or observes a transaction the caller
-already committed (observed mode, from `Enlist`), then drains `OnCompleted` registrations. Dispose
-without `CompleteAsync` is an implicit rollback that drains `OnFailed` registrations instead.
-Nesting is join-by-default: beginning again on the same resource returns a child view whose
-completions transfer to the parent on complete and whose abandonment aborts the root; a
-resource-bearing begin under a resource-less root opens an independent nested unit.
+from the **singleton** `IUnitOfWorkFactory`. The handle is the unit's only identity: nothing ambient
+(no `AsyncLocal`) and nothing scoped (no `Current` slot) carries it, so code that must enlist is
+handed the unit — as an argument, through `db.UnitOfWork()` on the `DbContext` it was begun on, or
+through `ConsumeContext.UnitOfWork` in a transactional consumer. Application code opens it
+explicitly, on the line it chooses (`factory.BeginAsync(...)`); nothing opens one on the developer's
+behalf. `CompleteAsync` commits the resource's transaction (owned mode, from `BeginAsync`) or observes
+a transaction the caller already committed (observed mode, from `Enlist`), then drains `OnCompleted`
+registrations. Dispose without `CompleteAsync` is an implicit rollback that drains `OnFailed`
+registrations instead. Two begins are two independent units: there is no join, no child view, and
+no factory-level "already active" refusal; the one refusal is `BeginAsync(db)` on a context that
+already carries a live unit.
 
-### Unit-of-work manager
+### Unit-of-work factory
 
-The scoped `IUnitOfWorkManager` is the single entry point application code interacts with — one
-unit-of-work slot per DI scope. Resolving it (or a scoped facade over it, such as a Jobs manager)
-from the root provider is a captive-dependency error that scope validation reports; a singleton or
-hosted service that needs one creates its own scope. Messaging's `IBus`/`IQueue` are not such
-facades: they are autonomous singletons that never read the manager, so a singleton injects them
-directly and a publish that must be transactional goes through the [enlisted
-outbox](#enlisted-outbox) instead. On the manager's own disposal, any still-active
-unit of work is rolled back, its `OnFailed` callbacks run with `Reason = ScopeDisposed`, and a
-leak warning is logged — a stranded unit of work is never silent.
+The singleton `IUnitOfWorkFactory` is the single entry point application code interacts with. It
+keeps no record of the units it opens, so a controller, a consumer, and a hosted service inject the
+same object and call `BeginAsync` on it directly — no scope dance, no captive-dependency trap. The
+enlisting receivers hang off the unit, not off DI: `unit.Outbox` for Messaging, `unit.Jobs` /
+`unit.TimeJobs<T>()` / `unit.CronJobs<T>()` for Jobs. The injected `IBus`/`IQueue` and
+`IJobScheduler`/managers are the autonomous receivers — singletons that never enlist.
 
 ### Transaction enlistment
 
-The axis a **Jobs** write (a one-shot deadline, a keyed job, a chain node, a recurring definition)
-uses to state how eagerly it requires an active unit of work:
-`TransactionEnlistment { WhenAvailable, Required, Never }`, surfaced as `JobOptions.Enlistment` and
-`RecurringJobOptions.Enlistment`. Precedence is per call, then per function, then the host default;
-composition across those tiers is strictest-wins. The guarantee matrix:
+The guard a **Jobs** write (a one-shot deadline, a keyed job, a chain node, a recurring definition)
+uses to refuse the autonomous receiver: `TransactionEnlistment { Optional, Required }`, surfaced as
+`JobOptions.Enlistment` and `RecurringJobOptions.Enlistment`. Precedence is per call, then per
+function, then the host default; composition across those tiers is strictest-wins. Enlistment itself
+is chosen by the receiver — `unit.Jobs` always enlists, an injected scheduler never does — and the
+knob only says whether the autonomous receiver is acceptable. The guarantee matrix:
 
-| Enlistment | Active unit of work, joinable compatible resource | No unit of work, or one with no joinable resource | Unit of work with incompatible resource |
-|---|---|---|---|
-| `WhenAvailable` (default) | enlist in the transaction, dispatch/signal after commit | autonomous durable write, poller recovers it | throw |
-| `Required` | same | throw | throw |
-| `Never` | autonomous | autonomous | autonomous |
+| Receiver | `Optional` (default) | `Required` |
+|---|---|---|
+| `unit.Jobs` over a unit with a live, same-database relational resource | enlist in the transaction, dispatch/signal after commit | same |
+| `unit.Jobs` over a resource-less, dead, or other-database unit | throw | throw |
+| Injected `IJobScheduler` / managers | autonomous durable write, poller recovers it | throw |
 
-`Required` is checked at the call itself and throws before any effect when no active unit of work is
-compatible — there is no separate startup gate, because the scoped manager always exists
-(`AddUnitOfWork()` is idempotent and called by every consumer package's setup).
+Every refusal happens at the call itself, before any effect — there is no separate startup gate,
+because the factory always exists (`AddUnitOfWork()` is idempotent and called by every consumer
+package's setup).
 
 The enum is Jobs-only. Messaging once shared it, with the same matrix and the same precedence; it
 now expresses the same intent structurally, by which publisher is called — see [Enlisted
@@ -235,18 +235,17 @@ created atomically, disposed after the terminal outcome on commit and rollback a
 per-transaction buffers or the retry-prevention marker (`PreventRetry()` / `IsRetryPrevented`);
 application code must not use it as an arbitrary service-locator bag.
 
-Distinct from a **unit-of-work feature**: a service implementing the `IUnitOfWorkFeature` marker
-that `IUnitOfWork.GetFeature<TFeature>()` resolves from the scope owning the unit's manager. A
-feature is not unit-local — nothing is created or cached per unit, and every handle over a unit
-resolves the same instance — which is how a capability reaches a unit of work whose packages know
-nothing about it; the [enlisted outbox](#enlisted-outbox) is the one first-party case.
+Distinct from a **unit-of-work feature**: a singleton implementing the `IUnitOfWorkFeature` marker
+that `IUnitOfWork.GetFeature<TFeature>()` resolves from the host container the factory lives in. A
+feature is not unit-local — nothing is created or cached per unit — which is how a capability
+reaches a unit of work whose packages know nothing about it; the [enlisted
+outbox](#enlisted-outbox) and the Jobs receivers (`unit.Jobs`) are the first-party cases.
 
 ### Handle liveness
 
-A nested view forwards `State` to the unit it views, so a view that has already completed still
-reports `Active` while the unit stays open. Registrations answer for the view instead: `OnCompleted`,
-`OnFailed`, and `GetOrAdd` on a completed view throw, which is how an enlisted publish refuses a dead
-handle before any row is stored.
+Registrations answer for the handle: `OnCompleted`, `OnFailed`, and `GetOrAdd` on a unit that
+reached a terminal state throw, which is how an enlisted publish refuses a dead handle before any
+row is stored.
 
 ## Startup validation
 

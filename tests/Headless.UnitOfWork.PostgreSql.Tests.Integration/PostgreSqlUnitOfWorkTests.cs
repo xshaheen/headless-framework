@@ -18,7 +18,7 @@ namespace Tests;
 [Collection<PostgreSqlUnitOfWorkFixture>]
 public sealed class PostgreSqlUnitOfWorkTests(PostgreSqlUnitOfWorkFixture fixture) : TestBase
 {
-    private const string _ManagerCategory = "Headless.UnitOfWork.UnitOfWorkManager";
+    private const string _ManagerCategory = "Headless.UnitOfWork.UnitOfWorkFactory";
 
     [Fact]
     public async Task should_commit_the_row_when_an_owned_unit_completes()
@@ -27,7 +27,7 @@ public sealed class PostgreSqlUnitOfWorkTests(PostgreSqlUnitOfWorkFixture fixtur
         using var logs = new CapturingLoggerProvider();
         await using var provider = PostgreSqlUnitOfWorkFixture.BuildProvider(logs);
         await using var scope = provider.CreateAsyncScope();
-        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         var calls = 0;
 
@@ -62,7 +62,7 @@ public sealed class PostgreSqlUnitOfWorkTests(PostgreSqlUnitOfWorkFixture fixtur
         await fixture.ResetAsync(AbortToken);
         await using var provider = PostgreSqlUnitOfWorkFixture.BuildProvider();
         await using var scope = provider.CreateAsyncScope();
-        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         UnitOfWorkFailure? failure = null;
 
@@ -85,7 +85,6 @@ public sealed class PostgreSqlUnitOfWorkTests(PostgreSqlUnitOfWorkFixture fixtur
         (await fixture.CountProbeRowsAsync(AbortToken)).Should().Be(0);
         failure.Should().NotBeNull();
         failure!.Reason.Should().Be(UnitOfWorkFailureReason.Abandoned);
-        manager.Current.Should().BeNull();
     }
 
     [Fact]
@@ -94,7 +93,7 @@ public sealed class PostgreSqlUnitOfWorkTests(PostgreSqlUnitOfWorkFixture fixtur
         using var logs = new CapturingLoggerProvider();
         await using var provider = PostgreSqlUnitOfWorkFixture.BuildProvider(logs);
         await using var scope = provider.CreateAsyncScope();
-        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
         var calls = 0;
 
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
@@ -125,7 +124,7 @@ public sealed class PostgreSqlUnitOfWorkTests(PostgreSqlUnitOfWorkFixture fixtur
         using var logs = new CapturingLoggerProvider();
         await using var provider = PostgreSqlUnitOfWorkFixture.BuildProvider(logs);
         await using var scope = provider.CreateAsyncScope();
-        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
         var calls = 0;
         IUnitOfWork unit;
 
@@ -162,7 +161,7 @@ public sealed class PostgreSqlUnitOfWorkTests(PostgreSqlUnitOfWorkFixture fixtur
         using var logs = new CapturingLoggerProvider();
         await using var provider = PostgreSqlUnitOfWorkFixture.BuildProvider(logs);
         await using var scope = provider.CreateAsyncScope();
-        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
         UnitOfWorkFailure? failure = null;
 
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
@@ -194,7 +193,7 @@ public sealed class PostgreSqlUnitOfWorkTests(PostgreSqlUnitOfWorkFixture fixtur
         using var logs = new CapturingLoggerProvider();
         await using var provider = PostgreSqlUnitOfWorkFixture.BuildProvider(logs);
         await using var scope = provider.CreateAsyncScope();
-        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
 
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);

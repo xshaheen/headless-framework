@@ -17,15 +17,15 @@ namespace Headless.UnitOfWork;
 /// <remarks>
 /// SqlClient exposes no commit edge to observe, so observed mode is explicit: after committing the transaction
 /// the caller calls <see cref="IUnitOfWork.CompleteAsync" />, after rolling it back <see cref="IUnitOfWork.RollbackAsync" />.
-/// A unit disposed without either after its transaction completed is logged by the manager as a forgotten
+/// A unit disposed without either after its transaction completed is logged by the factory as a forgotten
 /// completion. There is no execution-strategy retry for raw ADO (an EF Core concept); a throwing operation rolls
 /// the unit back and discards the enlisted work. A closed connection is opened for the unit's duration and closed
 /// again afterwards; an already-open connection is left open.
 /// </remarks>
 [PublicAPI]
-public static class UnitOfWorkManagerSqlServerExtensions
+public static class UnitOfWorkFactorySqlServerExtensions
 {
-    extension(IUnitOfWorkManager manager)
+    extension(IUnitOfWorkFactory factory)
     {
         /// <summary>
         /// Begins an owned unit of work on <paramref name="connection" />: the transaction starts on this line and
@@ -41,10 +41,10 @@ public static class UnitOfWorkManagerSqlServerExtensions
             CancellationToken cancellationToken = default
         )
         {
-            Argument.IsNotNull(manager);
+            Argument.IsNotNull(factory);
             Argument.IsNotNull(connection);
 
-            return manager.BeginAsync(
+            return factory.BeginAsync(
                 ct => _BeginOwnedAsync(connection, isolation, ct),
                 options: null,
                 cancellationToken
@@ -60,11 +60,11 @@ public static class UnitOfWorkManagerSqlServerExtensions
         /// <returns>The enlisted unit of work.</returns>
         public IUnitOfWork Enlist(SqlConnection connection, SqlTransaction transaction)
         {
-            Argument.IsNotNull(manager);
+            Argument.IsNotNull(factory);
             Argument.IsNotNull(connection);
             Argument.IsNotNull(transaction);
 
-            return manager.Enlist(new SqlServerUnitOfWorkResource(connection, transaction, owned: false));
+            return factory.Enlist(new SqlServerUnitOfWorkResource(connection, transaction, owned: false));
         }
 
         /// <summary>
@@ -83,12 +83,12 @@ public static class UnitOfWorkManagerSqlServerExtensions
             CancellationToken cancellationToken = default
         )
         {
-            Argument.IsNotNull(manager);
+            Argument.IsNotNull(factory);
             Argument.IsNotNull(connection);
             Argument.IsNotNull(operation);
 
             return UnitOfWorkRunner.RunAsync(
-                manager,
+                factory,
                 ct => _BeginOwnedAsync(connection, isolation, ct),
                 async (unitOfWork, ct) =>
                 {
@@ -96,7 +96,7 @@ public static class UnitOfWorkManagerSqlServerExtensions
 
                     return true;
                 },
-                UnitOfWorkRunner.LoggerFor(manager),
+                UnitOfWorkRunner.LoggerFor(factory),
                 cancellationToken
             );
         }
@@ -118,15 +118,15 @@ public static class UnitOfWorkManagerSqlServerExtensions
             CancellationToken cancellationToken = default
         )
         {
-            Argument.IsNotNull(manager);
+            Argument.IsNotNull(factory);
             Argument.IsNotNull(connection);
             Argument.IsNotNull(operation);
 
             return UnitOfWorkRunner.RunAsync(
-                manager,
+                factory,
                 ct => _BeginOwnedAsync(connection, isolation, ct),
                 operation,
-                UnitOfWorkRunner.LoggerFor(manager),
+                UnitOfWorkRunner.LoggerFor(factory),
                 cancellationToken
             );
         }

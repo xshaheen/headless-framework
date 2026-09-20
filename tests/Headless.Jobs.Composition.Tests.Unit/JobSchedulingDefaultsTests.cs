@@ -125,7 +125,7 @@ public sealed class JobSchedulingDefaultsTests : TestBase
         {
             Retries = 0,
             Description = "invocation",
-            Enlistment = TransactionEnlistment.WhenAvailable,
+            Enlistment = TransactionEnlistment.Optional,
         };
         TimeJobEntity? ordinary = null;
         time.AddAsync(Arg.Any<TimeJobEntity>(), AbortToken).Returns(info => ordinary = info.Arg<TimeJobEntity>());
@@ -194,7 +194,7 @@ public sealed class JobSchedulingDefaultsTests : TestBase
         var (scheduler, time, _) = _CreateScheduler(new FakeTimeProvider(), policies);
         var scope = new JobKeyScope(_Typed.FunctionName, "tenant");
         var key = new JobKey("invoice");
-        await scheduler.CancelKeyedAsync(scope, key, 7, TransactionEnlistment.WhenAvailable, AbortToken);
+        await scheduler.CancelKeyedAsync(scope, key, 7, TransactionEnlistment.Optional, AbortToken);
         await time.Received(1).CancelKeyedAsync(scope, key, 7, TransactionEnlistment.Required, AbortToken);
     }
 
@@ -220,7 +220,7 @@ public sealed class JobSchedulingDefaultsTests : TestBase
                     job.Retries == 6
                     && job.OnNodeDeath == NodeDeathPolicy.Skip
                     && job.RetryIntervals!.SequenceEqual(new[] { 2, 5 })
-                    && job.Enlistment == TransactionEnlistment.WhenAvailable
+                    && job.Enlistment == TransactionEnlistment.Optional
                 ),
                 AbortToken
             );
@@ -246,7 +246,7 @@ public sealed class JobSchedulingDefaultsTests : TestBase
             );
         await scheduler.EnqueueAsync(
             new Request(),
-            new JobOptions { Enlistment = TransactionEnlistment.WhenAvailable },
+            new JobOptions { Enlistment = TransactionEnlistment.Optional },
             AbortToken
         );
         await time.Received(1)
@@ -269,7 +269,7 @@ public sealed class JobSchedulingDefaultsTests : TestBase
         var policies = new JobSchedulingPolicies(
             new JobOptions
             {
-                Enlistment = hostAtomic ? TransactionEnlistment.Required : TransactionEnlistment.WhenAvailable,
+                Enlistment = hostAtomic ? TransactionEnlistment.Required : TransactionEnlistment.Optional,
             },
             string.Equals(identity, "request", StringComparison.Ordinal) ? new() { [typeof(Request)] = required } : [],
             string.Equals(identity, "request", StringComparison.Ordinal)
@@ -307,7 +307,7 @@ public sealed class JobSchedulingDefaultsTests : TestBase
             {
                 [typeof(Request)] = new JobOptions
                 {
-                    Enlistment = functionAtomic ? TransactionEnlistment.Required : TransactionEnlistment.WhenAvailable,
+                    Enlistment = functionAtomic ? TransactionEnlistment.Required : TransactionEnlistment.Optional,
                 },
             },
             []
@@ -319,7 +319,7 @@ public sealed class JobSchedulingDefaultsTests : TestBase
             "0 * * * * *",
             new RecurringJobOptions
             {
-                Enlistment = functionAtomic ? TransactionEnlistment.WhenAvailable : TransactionEnlistment.Required,
+                Enlistment = functionAtomic ? TransactionEnlistment.Optional : TransactionEnlistment.Required,
             },
             AbortToken
         );

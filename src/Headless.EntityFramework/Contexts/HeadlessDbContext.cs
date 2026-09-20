@@ -34,7 +34,7 @@ public interface IHeadlessDbContext
 
     /// <summary>
     /// The scoped (request) service provider that resolved this context. Scoped collaborators of the context —
-    /// the <c>IUnitOfWorkManager</c> a <c>RunAsync(db, …)</c> block runs on, the tenant guard bypass — must come
+    /// the tenant guard bypass — must come
     /// from this scope; EF's <c>ApplicationServiceProvider</c> is the root provider and resolves a different one.
     /// </summary>
     IServiceProvider ServiceProvider { get; }

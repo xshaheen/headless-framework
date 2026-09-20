@@ -113,17 +113,17 @@ public interface IJobsCoordinationFixture
 
     /// <summary>
     /// Opens a fresh DI scope on <paramref name="services" />, begins an owned unit of work on a provider connection
-    /// through that scope's <c>IUnitOfWorkManager</c>, and runs <paramref name="operation" /> with the SAME scope's
-    /// <see cref="IServiceProvider" /> plus the live connection/transaction. Resolving a manager
-    /// (<c>ITimeJobManager&lt;&gt;</c>/<c>ICronJobManager&lt;&gt;</c>/<c>IJobScheduler</c>) from the returned scope
-    /// sees this unit as <c>IUnitOfWorkManager.Current</c>, so its Add path enlists in the SAME transaction the raw
-    /// SQL below runs in. The helper owns commit/rollback: an operation exception propagates and rolls the unit's
-    /// transaction back — the regression net (a stranded capture would take the direct path and leave a row after
-    /// rollback) relies on this.
+    /// through the host's <c>IUnitOfWorkFactory</c>, and runs <paramref name="operation" /> with the scope's
+    /// <see cref="IServiceProvider" />, that unit, and the live connection/transaction. Jobs writes that must
+    /// enlist go through the unit's receivers (<c>unit.Jobs</c> / <c>unit.TimeJobs&lt;&gt;()</c> /
+    /// <c>unit.CronJobs&lt;&gt;()</c>), which write in the SAME transaction the raw SQL below runs in; an injected
+    /// manager resolved from the scope writes autonomously. The helper owns commit/rollback: an operation exception
+    /// propagates and rolls the unit's transaction back — the regression net (an autonomous write would leave a row
+    /// after rollback) relies on this.
     /// </summary>
     Task RunCoordinatedTransactionAsync(
         IServiceProvider services,
-        Func<IServiceProvider, DbConnection, DbTransaction, CancellationToken, Task> operation,
+        Func<IServiceProvider, IUnitOfWork, DbConnection, DbTransaction, CancellationToken, Task> operation,
         CancellationToken cancellationToken
     );
 }
@@ -413,7 +413,7 @@ public static class JobsCoordinationFixtureExtensions
             });
         }
 
-        // AddUnitOfWork() is idempotent: this registers the scoped IUnitOfWorkManager the JobsManagerFacade
+        // AddUnitOfWork() is idempotent: this registers the scoped IUnitOfWorkFactory the JobsManagerFacade
         // resolves .Current from, and RunCoordinatedTransactionAsync begins the unit through the same manager type.
         fixture.ConfigureUnitOfWork(builder.Services);
 

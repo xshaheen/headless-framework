@@ -155,7 +155,7 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         var act = async () => await db.SaveChangesAsync(AbortToken);
 
         // then — fails loud with an actionable wiring error and writes no outbox row.
-        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*IUnitOfWorkManager.BeginAsync(db)*");
+        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*IUnitOfWorkFactory.BeginAsync(db)*");
         await transaction.RollbackAsync(AbortToken);
         (await _CountPublishedContainingAsync(marker)).Should().Be(0);
     }
@@ -171,10 +171,10 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         await using var provider = await _BuildProviderAsync();
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<BridgeTestDbContext>();
-        var unitOfWorkManager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+        var unitOfWorkFactory = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
 
         // when
-        await unitOfWorkManager.RunAsync(
+        await unitOfWorkFactory.RunAsync(
             db,
             async (_, ct) =>
             {
@@ -229,10 +229,10 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         await using var provider = await _BuildProviderAsync();
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<BridgeTestDbContext>();
-        var unitOfWorkManager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+        var unitOfWorkFactory = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
 
         await using var transaction = await db.Database.BeginTransactionAsync(AbortToken);
-        await using var unitOfWork = unitOfWorkManager.Enlist(db, transaction);
+        await using var unitOfWork = unitOfWorkFactory.Enlist(db, transaction);
 
         // when — publish enlists the row inside the transaction, then the consumer rolls back.
         await unitOfWork.Outbox.PublishAsync(new OrderShipped($"{marker}-1"), AbortToken);
@@ -256,10 +256,10 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         await using var provider = await _BuildProviderAsync();
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<BridgeTestDbContext>();
-        var unitOfWorkManager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+        var unitOfWorkFactory = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
 
         await using var transaction = await db.Database.BeginTransactionAsync(AbortToken);
-        await using var unitOfWork = unitOfWorkManager.Enlist(db, transaction);
+        await using var unitOfWork = unitOfWorkFactory.Enlist(db, transaction);
 
         await unitOfWork.Outbox.PublishAsync(new OrderShipped($"{marker}-1"), AbortToken);
 
@@ -288,9 +288,9 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         await using (var scope = provider.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<BridgeTestDbContext>();
-            var unitOfWorkManager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+            var unitOfWorkFactory = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
             await using var transaction = await db.Database.BeginTransactionAsync(AbortToken);
-            await using var unitOfWork = unitOfWorkManager.Enlist(db, transaction);
+            await using var unitOfWork = unitOfWorkFactory.Enlist(db, transaction);
             var order = new OrderEntity { Name = "two-saves" };
             db.Orders.Add(order);
             for (var i = 0; i < 2; i++)
@@ -651,10 +651,7 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
     private static void _AddFaultingDispatcher(IServiceCollection services, OutboxFault fault)
     {
         services.AddScoped<IHeadlessOutboxDispatcher>(provider => new FaultingDispatcher(
-            new OutboxIntegrationEventDispatcher(
-                provider.GetRequiredService<IUnitOfWorkManager>(),
-                new IntegrationEventPublishInvokerCache()
-            ),
+            new OutboxIntegrationEventDispatcher(new IntegrationEventPublishInvokerCache()),
             fault
         ));
     }
@@ -685,17 +682,18 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         : IHeadlessOutboxDispatcher
     {
         public async Task DispatchAsync(
+            IUnitOfWork unitOfWork,
             IReadOnlyList<EventContext<object>> integrationEvents,
             CancellationToken cancellationToken = default
         )
         {
-            await inner.DispatchAsync(integrationEvents, cancellationToken);
+            await inner.DispatchAsync(unitOfWork, integrationEvents, cancellationToken);
             _FailAfterWrite(integrationEvents);
         }
 
-        public void Dispatch(IReadOnlyList<EventContext<object>> integrationEvents)
+        public void Dispatch(IUnitOfWork unitOfWork, IReadOnlyList<EventContext<object>> integrationEvents)
         {
-            inner.Dispatch(integrationEvents);
+            inner.Dispatch(unitOfWork, integrationEvents);
             _FailAfterWrite(integrationEvents);
         }
 

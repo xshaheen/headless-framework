@@ -144,7 +144,7 @@ internal static class DeliveryDecisionResolver
 
                 throw new InvalidOperationException(
                     $"{subject} through the unit-of-work outbox requires an active unit of work, but none was supplied. "
-                        + "Begin one with IUnitOfWorkManager.BeginAsync before publishing, or publish through the autonomous bus."
+                        + "Begin one with IUnitOfWorkFactory.BeginAsync before publishing, or publish through the autonomous bus."
                 );
             }
         }

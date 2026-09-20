@@ -87,7 +87,7 @@ public sealed partial class OutboxBridgeIntegrationTests
         public int Writes { get; set; }
     }
 
-    private sealed class ScheduleLocalDeadline(IJobScheduler scheduler, CoordinatedRetryEvidence evidence)
+    private sealed class ScheduleLocalDeadline(BridgeTestDbContext db, CoordinatedRetryEvidence evidence)
         : IDomainEventHandler<OrderShipping>
     {
         public async ValueTask HandleAsync(
@@ -105,7 +105,11 @@ public sealed partial class OutboxBridgeIntegrationTests
                 return;
             }
 
-            await scheduler.ScheduleKeyedAsync(
+            // The save pipeline bound its unit to the context; that unit's receiver is the enlisted one.
+            var unitOfWork =
+                db.UnitOfWork()
+                ?? throw new InvalidOperationException("The save pipeline must have bound a unit to the context.");
+            await unitOfWork.Jobs.ScheduleKeyedAsync(
                 new JobKey(evidence.Key),
                 DeadlineRegistration.Descriptor,
                 evidence.Due,
