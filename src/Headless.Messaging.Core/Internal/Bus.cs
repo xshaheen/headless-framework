@@ -2,7 +2,6 @@
 
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Serialization;
-using Headless.UnitOfWork;
 
 namespace Headless.Messaging.Internal;
 
@@ -13,29 +12,16 @@ internal sealed class Bus : IBus
     ]);
 
     private readonly MessagePublisher _publisher;
-    private readonly IUnitOfWorkManager? _unitOfWorkManager;
 
     /// <summary>
-    /// The scoped DI-registered constructor: reads this scope's active unit of work at publish time only so a
-    /// publish against a unit the storage cannot join is refused rather than silently written standalone. This
-    /// surface never coordinates.
-    /// </summary>
-    internal Bus(MessagePublisher publisher, IUnitOfWorkManager unitOfWorkManager)
-    {
-        _publisher = publisher;
-        _unitOfWorkManager = unitOfWorkManager;
-    }
-
-    /// <summary>
-    /// Unit-less construction for framework-internal singletons (<c>HybridCache</c>, the distributed lock
-    /// primitives) that must publish without participating in any caller's unit of work. Every publish from
-    /// this instance sees no active unit; these callers always request <see cref="DeliveryMode.Direct"/>
-    /// explicitly, which bypasses coordination entirely.
+    /// The DI-registered constructor. This surface is autonomous: it never reads a caller's unit of work, so
+    /// it is a singleton that framework singletons can depend on, and a publish made while a unit is active
+    /// writes a standalone durable row. Callers that want the row inside their unit's transaction publish
+    /// through the unit-of-work outbox instead.
     /// </summary>
     internal Bus(MessagePublisher publisher)
     {
         _publisher = publisher;
-        _unitOfWorkManager = null;
     }
 
     internal Bus(
@@ -47,7 +33,6 @@ internal sealed class Bus : IBus
         MessagingTelemetry? telemetry = null
     )
     {
-        _unitOfWorkManager = null;
         _publisher = new MessagePublisher(
             serializer,
             _ => transport,
@@ -79,7 +64,7 @@ internal sealed class Bus : IBus
             MessageLane.Bus,
             contentObj,
             options,
-            _unitOfWorkManager?.Current,
+            unitOfWork: null,
             requireCoordination: false,
             cancellationToken
         );

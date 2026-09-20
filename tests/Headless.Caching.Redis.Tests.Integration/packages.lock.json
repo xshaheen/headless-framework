@@ -916,6 +916,7 @@
           "Headless.Messaging.Abstractions": "[1.0.0, )",
           "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
           "Headless.Messaging.Queue.Abstractions": "[1.0.0, )",
+          "Headless.Messaging.UnitOfWork": "[1.0.0, )",
           "Headless.MultiTenancy": "[1.0.0, )",
           "Headless.UnitOfWork": "[1.0.0, )",
           "Microsoft.Extensions.Options": "[10.0.12, )",
@@ -927,6 +928,14 @@
         "type": "Project",
         "dependencies": {
           "Headless.Messaging.Abstractions": "[1.0.0, )"
+        }
+      },
+      "headless.messaging.unitofwork": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
+          "Headless.Messaging.Queue.Abstractions": "[1.0.0, )",
+          "Headless.UnitOfWork.Abstractions": "[1.0.0, )"
         }
       },
       "headless.multitenancy": {

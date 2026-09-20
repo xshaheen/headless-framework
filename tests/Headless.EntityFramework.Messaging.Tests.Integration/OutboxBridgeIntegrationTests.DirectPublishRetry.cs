@@ -2,6 +2,7 @@
 
 using Headless.Domain;
 using Headless.Messaging;
+using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
@@ -72,8 +73,10 @@ public sealed partial class OutboxBridgeIntegrationTests
         public int Writes { get; set; }
     }
 
-    private sealed class PublishBeforeTransientFailure(IBus bus, DirectPublishRetryEvidence evidence)
-        : IDomainEventHandler<OrderShipping>
+    private sealed class PublishBeforeTransientFailure(
+        IUnitOfWorkManager unitOfWorkManager,
+        DirectPublishRetryEvidence evidence
+    ) : IDomainEventHandler<OrderShipping>
     {
         public async ValueTask HandleAsync(
             EventContext<OrderShipping> context,
@@ -83,11 +86,13 @@ public sealed partial class OutboxBridgeIntegrationTests
             evidence.Calls++;
             if (evidence.Calls == 1)
             {
-                await bus.PublishAsync(
-                    new OrderShipped(evidence.Key),
-                    new PublishOptions { DeliveryMode = DeliveryMode.Durable },
-                    cancellationToken
-                );
+                // Enlisted in the save's unit of work: the row joins that transaction, and the write forfeits
+                // execution-strategy replay for the rest of the unit — which is what this case pins.
+                var unitOfWork =
+                    unitOfWorkManager.Current
+                    ?? throw new InvalidOperationException("The save pipeline must have a unit of work current.");
+
+                await unitOfWork.Outbox.PublishAsync(new OrderShipped(evidence.Key), cancellationToken);
                 evidence.Writes++;
             }
             else if (evidence.FailNextOccurrence)

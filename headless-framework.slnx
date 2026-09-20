@@ -329,6 +329,7 @@
         <Project Path="src/Headless.Messaging.Storage.SqlServer.EntityFramework/Headless.Messaging.Storage.SqlServer.EntityFramework.csproj" />
         <Project Path="src/Headless.Messaging.Storage.SqlServer/Headless.Messaging.Storage.SqlServer.csproj" />
         <Project Path="src/Headless.Messaging.Testing/Headless.Messaging.Testing.csproj" />
+        <Project Path="src/Headless.Messaging.UnitOfWork/Headless.Messaging.UnitOfWork.csproj" />
     </Folder>
     <Folder Name="/Messaging/Demo/">
         <Project Path="demo/Headless.Messaging.Aws.InMemory.Demo/Headless.Messaging.Aws.InMemory.Demo.csproj" />

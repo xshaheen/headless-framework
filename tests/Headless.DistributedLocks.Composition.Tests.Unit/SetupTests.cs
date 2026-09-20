@@ -1,11 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using Headless.DistributedLocks;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Runtime;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
@@ -108,6 +110,57 @@ public sealed class SetupTests : TestBase
     }
 
     [Fact]
+    public async Task should_publish_the_release_signal_through_the_registered_bus()
+    {
+        // given
+        var bus = Substitute.For<IBus>();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(bus);
+        services.AddHeadlessDistributedLocks(setup => setup.UseInMemory());
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        var locks = provider.GetRequiredService<IDistributedLock>();
+        var resource = Faker.Random.AlphaNumeric(10);
+        var handle = await locks.TryAcquireAsync(resource, cancellationToken: AbortToken);
+        handle.Should().NotBeNull();
+
+        // when
+        await locks.ReleaseAsync(resource, handle!.LeaseId, AbortToken);
+
+        // then — the container's bus carries the signal, still autonomous and Direct.
+        await bus.Received(1)
+            .PublishAsync(
+                Arg.Is<DistributedLockReleased>(message =>
+                    message.Resource == resource && message.LeaseId == handle.LeaseId
+                ),
+                Arg.Is<PublishOptions?>(options => options!.DeliveryMode == DeliveryMode.Direct),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_log_the_absent_bus_and_still_release_without_messaging()
+    {
+        // given
+        using var logs = new BusAbsenceLoggerProvider();
+        var services = new ServiceCollection();
+        services.AddLogging(builder => builder.AddProvider(logs));
+        services.AddHeadlessDistributedLocks(setup => setup.UseInMemory());
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        var locks = provider.GetRequiredService<IDistributedLock>();
+        var resource = Faker.Random.AlphaNumeric(10);
+        var handle = await locks.TryAcquireAsync(resource, cancellationToken: AbortToken);
+        handle.Should().NotBeNull();
+
+        // when
+        var act = async () => await locks.ReleaseAsync(resource, handle!.LeaseId, AbortToken);
+
+        // then — waiters fall back to polling; the operator sees why, and nothing throws.
+        await act.Should().NotThrowAsync();
+        logs.EventNames.Should().Contain("BusAbsent");
+    }
+
+    [Fact]
     public void should_throw_when_no_provider_is_configured()
     {
         // given
@@ -155,6 +208,40 @@ public sealed class SetupTests : TestBase
 
         // then
         act.Should().Throw<InvalidOperationException>().WithMessage("*Multiple providers*");
+    }
+
+    /// <summary>Records only the event names the lock primitives log, which is all these tests assert on.</summary>
+    private sealed class BusAbsenceLoggerProvider : ILoggerProvider
+    {
+        private readonly ConcurrentBag<string> _eventNames = [];
+
+        public IReadOnlyCollection<string> EventNames => _eventNames;
+
+        public ILogger CreateLogger(string categoryName) => new EventNameLogger(_eventNames);
+
+        public void Dispose() { }
+
+        private sealed class EventNameLogger(ConcurrentBag<string> eventNames) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter
+            )
+            {
+                if (eventId.Name is { } name)
+                {
+                    eventNames.Add(name);
+                }
+            }
+        }
     }
 
     private static void _AssertInternalBusContribution(IServiceCollection services)

@@ -11,6 +11,7 @@
     <ProjectReference Include="..\Headless.Domain\Headless.Domain.csproj" />
     <ProjectReference Include="..\Headless.Messaging.Bus.Abstractions\Headless.Messaging.Bus.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Messaging.Abstractions\Headless.Messaging.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.Messaging.UnitOfWork\Headless.Messaging.UnitOfWork.csproj" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.EntityFramework.Messaging.Tests.Unit" />

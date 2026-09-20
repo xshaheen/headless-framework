@@ -1,6 +1,6 @@
 ---
 domain: Messaging
-packages: Messaging.Abstractions, Messaging.Bus.Abstractions, Messaging.Queue.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging.Dashboard.K8s, Messaging.Aws, Messaging.AzureServiceBus, Messaging.InMemory, Messaging.Storage.InMemory, Messaging.Kafka, Messaging.Nats, Messaging.Pulsar, Messaging.RabbitMq, Messaging.Redis, Messaging.Storage.PostgreSql, Messaging.Storage.PostgreSql.EntityFramework, Messaging.Storage.SqlServer, Messaging.Storage.SqlServer.EntityFramework, Messaging.Testing
+packages: Messaging.Abstractions, Messaging.Bus.Abstractions, Messaging.Queue.Abstractions, Messaging.UnitOfWork, Messaging.Core, Messaging.Dashboard, Messaging.Dashboard.K8s, Messaging.Aws, Messaging.AzureServiceBus, Messaging.InMemory, Messaging.Storage.InMemory, Messaging.Kafka, Messaging.Nats, Messaging.Pulsar, Messaging.RabbitMq, Messaging.Redis, Messaging.Storage.PostgreSql, Messaging.Storage.PostgreSql.EntityFramework, Messaging.Storage.SqlServer, Messaging.Storage.SqlServer.EntityFramework, Messaging.Testing
 ---
 
 # Messaging
@@ -117,7 +117,7 @@ services.AddHeadlessMessaging(setup =>
 - **Storage is mandatory**, so "no storage" is a configuration error raised by startup validation rather than a fourth matrix column.
 - **Telemetry**: `headless.messaging.delivery.requested` and `headless.messaging.delivery.resolved` now only ever emit `durable` or `direct` (never a third "coordinated" value, since that `DeliveryMode` member no longer exists). The `headless-delivery-requested` / `headless-delivery-resolved` headers carry the same names, and the requested `TransactionEnlistment` travels in the framework-reserved `headless-enlistment-requested` header (`WhenAvailable`, `Required`, or `Never`); the dashboard's message detail shows it as "Requested enlistment" and `RecordedMessage.RequestedEnlistment` exposes it to tests.
 - **Jobs equivalent**: Jobs' `TransactionEnlistment` (`JobOptions.Enlistment` / `RecurringJobOptions.Enlistment`) follows the identical guarantee matrix. See [Enlisted Enqueue](jobs.md#enlisted-enqueue-atomic-enqueue), which also covers recurring definitions.
-- **Framework-internal singletons publish autonomously**: `HybridCache`, `DistributedLock`, `DistributedReadWriteLock`, and `DistributedSemaphoreProvider` build their own unit-less `Bus` directly over the internal `MessagePublisher` from their DI factories, so their publishes are always `Direct`/autonomous regardless of any active unit of work in the calling scope. `IBus` and `IQueue` are otherwise scoped services (`TryAddScoped`) that read `IUnitOfWorkManager.Current` from the resolving scope; any other singleton or hosted service that needs `IBus`/`IQueue` must create its own scope (`IServiceScopeFactory.CreateScope()`) — resolving them from the root provider is a captive-dependency error caught by `ValidateScopes`.
+- **`IBus` and `IQueue` are autonomous singletons** (`TryAddSingleton`): they never read `IUnitOfWorkManager.Current`, so a publish made while a unit of work is active still writes a standalone durable row, and any singleton or hosted service can take them directly — no scope, and no captive-dependency error under `ValidateScopes`. The framework-internal singletons that publish through them (`HybridCache`, `DistributedLock`, `DistributedReadWriteLock`, `DistributedSemaphoreProvider`) resolve the registered service and keep requesting `Direct` explicitly.
 
 Two unit-of-work behaviors are documented, not defects. `IUnitOfWork.OnCompleted` registrations are savepoint-blind: a registration made inside a savepoint that is later rolled back still runs when the outer transaction commits, even though its row was discarded — publish after the last partial rollback. Under EF's execution strategy, `IUnitOfWorkManager.RunAsync(db, …)` (and the `ExecuteTransactionAsync` helper built on it) replays the whole operation, publishes included, for a failure before the commit starts; once the commit has started, or after `IUnitOfWork.PreventRetry()`, the fault surfaces without replay. See [Unit of Work](unit-of-work.md).
 
@@ -447,6 +447,60 @@ None in this package. Runtime wiring is provided by `Headless.Messaging.Core` pl
 ### Runtime behavior
 
 None. This package registers no services.
+
+## Headless.Messaging.UnitOfWork
+
+Declares the enlisted publish contract — `IUnitOfWorkOutbox`, the `UnitOfWorkOutbox` binding, and the `unit.Outbox` accessor — for code that publishes inside a transaction and cannot reference `Headless.Messaging.Core`.
+
+### API and behavior
+
+- `unit.Outbox` is an extension property on `IUnitOfWork`, in the `Headless.UnitOfWork` namespace, so holding the unit is enough to reach it. It returns a value binding of the unit's outbox capability to the handle it was read from; taking it allocates nothing to dispose.
+- `PublishAsync` sends on the bus lane and `EnqueueAsync` on the queue lane, taking `OutboxPublishOptions` and `OutboxQueueOptions`. Neither record carries a delivery mode: durable capture is the mechanism the publish enlists through, so the per-call mode, the per-type `WithDeliveryMode` policy, and the host default are all bypassed on this surface.
+- The durable row is written inside the unit's transaction. It becomes visible when the unit completes and is discarded when it rolls back — the difference from `IBus` and `IQueue`, whose rows are written standalone and survive the caller's rollback.
+- It refuses rather than degrades. When the storage cannot join the given unit the call throws before any storage or transport effect. Which units a storage can join is the storage's own answer: the in-memory storage joins a resource-less unit through its buffer, the relational storages join only a same-database relational resource.
+- Liveness is checked per publish against the handle the binding was taken from, not against the unit. A binding taken from a nested unit and used after that nested unit completed throws, even though the root is still open.
+- `unit.Outbox` throws an `InvalidOperationException` naming `AddHeadlessMessaging` when the host registered no messaging.
+- An enlisted publish forfeits EF Core execution-strategy replay for the rest of the unit: the durable row is written outside the change tracker, so re-running the unit after a transient failure would duplicate the message. The publish marks the unit accordingly.
+
+### Install
+
+```bash
+dotnet add package Headless.Messaging.UnitOfWork
+```
+
+The implementation lives in `Headless.Messaging.Core` and is registered by `AddHeadlessMessaging`. Reference this package directly only in a project that publishes enlisted messages without referencing Core.
+
+### Setup and use
+
+```csharp
+using Headless.Messaging;
+using Headless.UnitOfWork;
+
+public sealed class PlaceOrder(IUnitOfWorkManager unitOfWorkManager, OrderStore orders)
+{
+    public async Task HandleAsync(Order order, CancellationToken cancellationToken)
+    {
+        await using var unit = await unitOfWorkManager.BeginAsync(cancellationToken: cancellationToken);
+
+        await orders.InsertAsync(order, cancellationToken);
+        await unit.Outbox.PublishAsync(new OrderPlaced(order.Id), cancellationToken);
+
+        await unit.CompleteAsync(cancellationToken);
+    }
+}
+
+public sealed record OrderPlaced(Guid OrderId);
+```
+
+The message is stored with the order and dispatched after the commit. Disposing without `CompleteAsync`, or calling `RollbackAsync`, leaves no row.
+
+### Configuration
+
+None in this package. Runtime wiring comes from `Headless.Messaging.Core` plus a transport and a storage provider.
+
+### Runtime behavior
+
+None. This package registers no services; `AddHeadlessMessaging` registers the unit-of-work feature provider that backs the accessor.
 
 ## Headless.Messaging.Core
 

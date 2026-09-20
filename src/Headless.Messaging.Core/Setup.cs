@@ -241,17 +241,15 @@ public static class SetupMessaging
                 sp.GetServices<MessageRegistration>()
             );
         });
-        // Scoped: reads this scope's IUnitOfWorkManager.Current at publish time so a durable publish enlists
-        // in the caller's active unit of work. Framework-internal singletons (HybridCache, DistributedLocks)
-        // do not resolve these — they build a unit-less Bus/Queue directly over MessagePublisher.
-        services.TryAddScoped<IBus>(sp => new Bus(
-            sp.GetRequiredService<MessagePublisher>(),
-            sp.GetRequiredService<IUnitOfWorkManager>()
-        ));
-        services.TryAddScoped<IQueue>(sp => new Queue(
-            sp.GetRequiredService<MessagePublisher>(),
-            sp.GetRequiredService<IUnitOfWorkManager>()
-        ));
+        // Singleton: these facades are autonomous, so they hold no scope-bound state and framework singletons
+        // (HybridCache, the distributed lock primitives) can depend on them. Enlisting a publish in a caller's
+        // active unit of work is the unit-of-work outbox's job, reached from the unit itself.
+        services.TryAddSingleton<IBus>(sp => new Bus(sp.GetRequiredService<MessagePublisher>()));
+        services.TryAddSingleton<IQueue>(sp => new Queue(sp.GetRequiredService<MessagePublisher>()));
+
+        // The other half of that split: unit.Outbox resolves through this provider, so a publish reached from a
+        // unit of work always enlists in it and refuses when the storage cannot join.
+        services.AddUnitOfWorkFeature<UnitOfWorkOutboxFeatureProvider>();
 
         // Register options with values that were set during AddHeadlessMessaging configuration.
         // Don't re-register setupAction as it contains consumer registration logic that

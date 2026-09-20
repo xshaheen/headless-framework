@@ -73,32 +73,21 @@ public sealed class MessagePublisherDeliveryTests : TestBase
             });
 #pragma warning restore AsyncFixer04
         DateTimeOffset? scheduledAt = scheduled ? now.AddMinutes(5) : null;
-        var unitOfWorkManager = _ManagerFor(coordinated ? fakeUnitOfWork : null);
-        IBus bus = new Bus(harness.Publisher, unitOfWorkManager);
-        IQueue queue = new Queue(harness.Publisher, unitOfWorkManager);
-
-        var receipt =
-            lane == MessageLane.Bus
-                ? await bus.PublishAsync(
-                    new DeliveryMessage("receipt"),
-                    new PublishOptions
-                    {
-                        DeliveryMode = mode,
-                        MessageId = messageId,
-                        ScheduledAt = scheduledAt,
-                    },
-                    AbortToken
-                )
-                : await queue.EnqueueAsync(
-                    new DeliveryMessage("receipt"),
-                    new QueueOptions
-                    {
-                        DeliveryMode = mode,
-                        MessageId = messageId,
-                        ScheduledAt = scheduledAt,
-                    },
-                    AbortToken
-                );
+        // The publisher is the surface that carries a caller's unit of work; the registered facades are
+        // autonomous, so a coordinated publish is expressed here rather than through IBus / IQueue.
+        var receipt = await harness.Publisher.PublishAsync(
+            lane,
+            new DeliveryMessage("receipt"),
+            new PublishOptions
+            {
+                DeliveryMode = mode,
+                MessageId = messageId,
+                ScheduledAt = scheduledAt,
+            },
+            coordinated ? fakeUnitOfWork : null,
+            requireCoordination: false,
+            AbortToken
+        );
 
         receipt.MessageId.Should().NotBeNullOrEmpty();
         if (messageId is not null)
@@ -572,14 +561,6 @@ public sealed class MessagePublisherDeliveryTests : TestBase
             Consumers: [],
             DeliveryMode: deliveryMode
         );
-
-    private static IUnitOfWorkManager _ManagerFor(IUnitOfWork? unitOfWork)
-    {
-        var manager = Substitute.For<IUnitOfWorkManager>();
-        manager.Current.Returns(unitOfWork);
-
-        return manager;
-    }
 
     [Fact]
     public async Task should_reject_durable_delivery_through_incompatible_unit_of_work_before_any_side_effect()

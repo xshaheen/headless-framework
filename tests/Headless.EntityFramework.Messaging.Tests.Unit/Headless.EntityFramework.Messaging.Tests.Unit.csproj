@@ -9,6 +9,8 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.EntityFramework.Messaging\Headless.EntityFramework.Messaging.csproj" />
+    <!-- A live in-memory messaging host, so the dispatcher's atomicity is proven against real outbox rows. -->
+    <ProjectReference Include="..\..\src\Headless.Messaging.Testing\Headless.Messaging.Testing.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
   </ItemGroup>
 </Project>

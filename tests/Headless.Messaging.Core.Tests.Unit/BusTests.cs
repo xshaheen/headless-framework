@@ -735,9 +735,9 @@ public sealed class BusTests : TestBase
     }
 
     [Fact]
-    public void should_register_as_scoped_service()
+    public void should_register_as_singleton_service()
     {
-        // given — IBus is scoped so it reads this scope's IUnitOfWorkManager.Current at publish time.
+        // given — IBus is autonomous, so it holds no scope-bound state and framework singletons can take it.
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddHeadlessMessaging(setup =>
@@ -752,11 +752,11 @@ public sealed class BusTests : TestBase
         // then
         var descriptor = services.FirstOrDefault(d => d.ServiceType == typeof(IBus));
         descriptor.Should().NotBeNull();
-        descriptor!.Lifetime.Should().Be(ServiceLifetime.Scoped);
+        descriptor!.Lifetime.Should().Be(ServiceLifetime.Singleton);
     }
 
     [Fact]
-    public async Task should_resolve_bus_from_a_scope()
+    public async Task should_resolve_bus_from_the_root_provider()
     {
         // given
         var services = new ServiceCollection();
@@ -770,9 +770,8 @@ public sealed class BusTests : TestBase
         // when
         await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 
-        // then — IBus is scoped; resolve from a created scope, never the root provider.
-        using var scope = provider.CreateScope();
-        var publisher = scope.ServiceProvider.GetService<IBus>();
+        // then — the root resolves it; scope sharing is covered by PublisherFacadeLifetimeTests.
+        var publisher = provider.GetService<IBus>();
         publisher.Should().NotBeNull();
         publisher.Should().BeOfType<Bus>();
     }

@@ -37,11 +37,12 @@ public sealed class StandaloneOrderPlacedConsumer : IConsume<StandaloneOrderPlac
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 /// <summary>
-/// <see cref="MessagingTestHarness.RunInUnitOfWorkAsync(Func{IServiceProvider, Task})"/> opens a service scope with
-/// a resource-less unit of work active, so a test can exercise a transaction-coordinated publish: a completion
-/// stores and dispatches the captured rows and a rollback discards them. Coordination is independent of the
-/// consumer inbox tier, so a coordinated publish sits beside a durable consumer even on in-memory storage's
-/// ProcessLocal inbox.
+/// <see cref="MessagingTestHarness.RunInUnitOfWorkAsync(Func{IServiceProvider, IUnitOfWork, Task})"/> opens a
+/// service scope with a resource-less unit of work active and hands that unit to the delegate, so a test can
+/// exercise a transaction-coordinated publish through <c>unit.Outbox</c>: a completion stores and dispatches the
+/// captured rows and a rollback discards them. The same publish through <see cref="IBus"/> is autonomous and
+/// survives the rollback, which is what these cases fail on. Coordination is independent of the consumer inbox
+/// tier, so a coordinated publish sits beside a durable consumer even on in-memory storage's ProcessLocal inbox.
 /// </summary>
 public sealed class CoordinatedHarnessTests : TestBase
 {
@@ -83,8 +84,8 @@ public sealed class CoordinatedHarnessTests : TestBase
     {
         await using var harness = await _CreatePublishOnlyHarnessAsync();
 
-        await harness.RunInUnitOfWorkAsync(sp =>
-            sp.GetRequiredService<IBus>().PublishAsync(new CoordinatedOrderPlaced("C1"), cancellationToken: AbortToken)
+        await harness.RunInUnitOfWorkAsync(
+            (_, unit) => unit.Outbox.PublishAsync(new CoordinatedOrderPlaced("C1"), AbortToken)
         );
 
         var published = await harness.WaitForPublished<CoordinatedOrderPlaced>(TimeSpan.FromSeconds(5), AbortToken);
@@ -102,19 +103,20 @@ public sealed class CoordinatedHarnessTests : TestBase
         await using var harness = await _CreatePublishOnlyHarnessAsync();
 
         var act = () =>
-            harness.RunInUnitOfWorkAsync(async sp =>
-            {
-                await sp.GetRequiredService<IBus>()
-                    .PublishAsync(new CoordinatedOrderPlaced("C2"), cancellationToken: AbortToken);
-                throw new InvalidOperationException("boom");
-            });
+            harness.RunInUnitOfWorkAsync(
+                async (_, unit) =>
+                {
+                    await unit.Outbox.PublishAsync(new CoordinatedOrderPlaced("C2"), AbortToken);
+                    throw new InvalidOperationException("boom");
+                }
+            );
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("boom");
 
         // A later completed publish flows through the same single-threaded sender: had the rolled-back row been
         // handed to the dispatcher it would have been recorded before this one.
-        await harness.RunInUnitOfWorkAsync(sp =>
-            sp.GetRequiredService<IBus>().PublishAsync(new CoordinatedOrderPlaced("C3"), cancellationToken: AbortToken)
+        await harness.RunInUnitOfWorkAsync(
+            (_, unit) => unit.Outbox.PublishAsync(new CoordinatedOrderPlaced("C3"), AbortToken)
         );
         await harness.WaitForPublished<CoordinatedOrderPlaced>(
             m => string.Equals(m.Id, "C3", StringComparison.Ordinal),
@@ -148,12 +150,13 @@ public sealed class CoordinatedHarnessTests : TestBase
     {
         await using var harness = await _CreatePublishOnlyHarnessAsync();
 
-        var result = await harness.RunInUnitOfWorkAsync(async sp =>
-        {
-            await sp.GetRequiredService<IBus>()
-                .PublishAsync(new CoordinatedOrderPlaced("C4"), cancellationToken: AbortToken);
-            return 42;
-        });
+        var result = await harness.RunInUnitOfWorkAsync(
+            async (_, unit) =>
+            {
+                await unit.Outbox.PublishAsync(new CoordinatedOrderPlaced("C4"), AbortToken);
+                return 42;
+            }
+        );
 
         result.Should().Be(42);
         await harness.WaitForPublished<CoordinatedOrderPlaced>(TimeSpan.FromSeconds(5), AbortToken);
@@ -199,8 +202,8 @@ public sealed class CoordinatedHarnessTests : TestBase
             AbortToken
         );
 
-        await harness.RunInUnitOfWorkAsync(sp =>
-            sp.GetRequiredService<IBus>().PublishAsync(new CoordinatedOrderPlaced("C6"), cancellationToken: AbortToken)
+        await harness.RunInUnitOfWorkAsync(
+            (_, unit) => unit.Outbox.PublishAsync(new CoordinatedOrderPlaced("C6"), AbortToken)
         );
 
         var consumed = await harness.WaitForConsumed<CoordinatedOrderPlaced>(TimeSpan.FromSeconds(5), AbortToken);
@@ -212,18 +215,19 @@ public sealed class CoordinatedHarnessTests : TestBase
     {
         await using var harness = await _CreateConsumerHarnessAsync();
 
-        // A Durable publish inside an active unit of work is captured on it, so a rollback discards it.
+        // An enlisted publish inside an active unit of work is captured on it, so a rollback discards it.
         var act = () =>
-            harness.RunInUnitOfWorkAsync(async sp =>
-            {
-                await sp.GetRequiredService<IBus>()
-                    .PublishAsync(new StandaloneOrderPlaced("S1"), cancellationToken: AbortToken);
-                throw new InvalidOperationException("boom");
-            });
+            harness.RunInUnitOfWorkAsync(
+                async (_, unit) =>
+                {
+                    await unit.Outbox.PublishAsync(new StandaloneOrderPlaced("S1"), AbortToken);
+                    throw new InvalidOperationException("boom");
+                }
+            );
         await act.Should().ThrowAsync<InvalidOperationException>();
 
-        await harness.RunInUnitOfWorkAsync(sp =>
-            sp.GetRequiredService<IBus>().PublishAsync(new StandaloneOrderPlaced("S2"), cancellationToken: AbortToken)
+        await harness.RunInUnitOfWorkAsync(
+            (_, unit) => unit.Outbox.PublishAsync(new StandaloneOrderPlaced("S2"), AbortToken)
         );
         var consumed = await harness.WaitForConsumed<StandaloneOrderPlaced>(TimeSpan.FromSeconds(5), AbortToken);
 
@@ -245,15 +249,17 @@ public sealed class CoordinatedHarnessTests : TestBase
         var rollbackEx = new InvalidOperationException("scope-state disposal failed");
 
         var act = () =>
-            harness.RunInUnitOfWorkAsync(async services =>
-            {
-                var unitOfWork = services.GetRequiredService<IUnitOfWorkManager>().Current;
-                unitOfWork.Should().NotBeNull();
-                unitOfWork!.GetOrAdd(_ => new ThrowingDisposable(rollbackEx));
+            harness.RunInUnitOfWorkAsync(
+                async (services, unitOfWork) =>
+                {
+                    // The handed unit is the scope's current one: the delegate can reach it either way.
+                    services.GetRequiredService<IUnitOfWorkManager>().Current.Should().BeSameAs(unitOfWork);
+                    unitOfWork.GetOrAdd(_ => new ThrowingDisposable(rollbackEx));
 
-                await Task.Yield();
-                throw actionEx;
-            });
+                    await Task.Yield();
+                    throw actionEx;
+                }
+            );
 
         var ex = await act.Should().ThrowAsync<AggregateException>();
         ex.Which.InnerExceptions.Should().Contain(actionEx);
