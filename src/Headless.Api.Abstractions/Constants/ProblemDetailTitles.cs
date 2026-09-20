@@ -58,6 +58,9 @@ public static class HeadlessProblemDetailsConstants
 
         /// <summary>RFC 9110 §15.5.14 — 413 Content Too Large.</summary>
         public const string PayloadTooLarge = "https://tools.ietf.org/html/rfc9110#section-15.5.14";
+
+        /// <summary>RFC 9110 §15.6.4 — 503 Service Unavailable.</summary>
+        public const string ServiceUnavailable = "https://tools.ietf.org/html/rfc9110#section-15.6.4";
     }
 
     /// <summary>Pre-built <c>ErrorDescriptor</c> instances for framework-level error conditions.</summary>
@@ -125,6 +128,9 @@ public static class HeadlessProblemDetailsConstants
 
         /// <summary>Title for 413 Payload Too Large responses.</summary>
         public const string PayloadTooLarge = "payload-too-large";
+
+        /// <summary>Title for 503 Service Unavailable responses.</summary>
+        public const string ServiceUnavailable = "service-unavailable";
     }
 
     /// <summary>Default human-readable <c>detail</c> strings for <c>ProblemDetails</c> responses.</summary>
@@ -172,6 +178,9 @@ public static class HeadlessProblemDetailsConstants
 
         /// <summary>Detail for 413 responses when the request body exceeds the size limit.</summary>
         public const string PayloadTooLarge = "The request payload is too large to process.";
+
+        /// <summary>Detail for 503 responses when a required dependency is unreachable.</summary>
+        public const string ServiceUnavailable = "The service is temporarily unavailable - please try again later.";
 
         /// <summary>Detail for operations that required a tenant context that was not set.</summary>
         public const string TenantContextRequired = "An operation required an ambient tenant context but none was set.";

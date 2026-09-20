@@ -102,6 +102,7 @@ Defines the provider-agnostic interfaces for dynamic application settings manage
 - `SettingValueProviderNames` — constants `DefaultValue`, `Configuration`, `Global`, `Tenant`, `User` for targeting built-in providers
 - General extension members on `ISettingManager`: `IsTrueAsync`, `IsFalseAsync`, `GetAsync<T>` (deserializes JSON), `SetAsync<T>` (serializes to JSON)
 - Scoped extension members: `GetForTenantAsync` / `SetForTenantAsync` / `GetAllForTenantAsync` (and `*ForCurrentTenant*` variants), equivalent `*ForUser*` / `*ForCurrentUser*` set, `GetGlobalAsync` / `SetGlobalAsync` / `GetAllGlobalAsync`, `GetDefaultAsync` / `GetAllDefaultAsync`, `GetInConfigurationAsync` / `GetAllInConfigurationAsync`. The `GetAll*` helpers return `IReadOnlyList<SettingValue>`
+- `GetAllAsync(settingNames, providerName, providerKey, fallback)` and its `GetAllGlobalAsync(settingNames, fallback)` helper resolve a named set within one scope. Reach for these over `GetAllAsync(settingNames)` whenever the values are application-wide policy: the name-only overload walks the whole provider chain, so a Tenant, Account, or User value shadows the Global one, and a caller reading a limit or a quota gets the reader's own value instead of the platform's. They also stop a caller that needs a handful of settings from paying for every setting the application defines
 
 ### Install
 

@@ -216,6 +216,64 @@ public sealed class ProblemDetailsCreatorTests : TestBase
     }
 
     [Fact]
+    public void should_create_service_unavailable_with_503()
+    {
+        // given
+        var creator = _CreateCreator();
+
+        // when
+        var result = creator.ServiceUnavailable();
+
+        // then
+        result.Status.Should().Be(StatusCodes.Status503ServiceUnavailable);
+        result.Title.Should().Be(HeadlessProblemDetailsConstants.Titles.ServiceUnavailable);
+        result.Detail.Should().Be(HeadlessProblemDetailsConstants.Details.ServiceUnavailable);
+    }
+
+    [Fact]
+    public void should_omit_retry_after_from_service_unavailable_when_no_duration_is_known()
+    {
+        // given
+        var creator = _CreateCreator();
+
+        // when
+        var result = creator.ServiceUnavailable();
+
+        // then an absent key, not a zero, so a client cannot read a promise the server never made
+        result.Extensions.Should().NotContainKey("retryAfter");
+    }
+
+    [Fact]
+    public void should_include_retry_after_in_service_unavailable_when_supplied()
+    {
+        // given
+        var creator = _CreateCreator();
+        const int retryAfterSeconds = 30;
+
+        // when
+        var result = creator.ServiceUnavailable(retryAfterSeconds);
+
+        // then
+        result.Extensions.Should().ContainKey("retryAfter");
+        result.Extensions["retryAfter"].Should().Be(retryAfterSeconds);
+    }
+
+    [Fact]
+    public void should_stamp_error_descriptor_on_service_unavailable()
+    {
+        // given
+        var creator = _CreateCreator();
+        var error = new ErrorDescriptor("identity_protection_unavailable", "Identity protection is unavailable.");
+
+        // when
+        var result = creator.ServiceUnavailable(error: error);
+
+        // then
+        result.Extensions.Should().ContainKey("error");
+        result.Extensions["error"].Should().Be(error);
+    }
+
+    [Fact]
     public void should_create_unprocessable_entity_with_422()
     {
         // given
