@@ -98,6 +98,31 @@ public static class GlobalSettingManagerExtensions
             );
         }
 
+        /// <summary>Returns a named set of setting values from the <see cref="SettingValueProviderNames.Global"/> provider.</summary>
+        /// <param name="settingNames">The set of setting names to resolve.</param>
+        /// <param name="fallback">When <see langword="true"/>, falls back to subsequent providers for settings without a global value.</param>
+        /// <param name="cancellationToken">The abort token.</param>
+        /// <returns>A read-only list of <see cref="SettingValue"/> instances for the requested settings that resolved.</returns>
+        /// <remarks>
+        /// The scope is what makes this different from the name-only batch read, not just the cost. A
+        /// value that is application-wide policy must resolve at the global scope, or the signed-in
+        /// user's own value shadows it on the read path.
+        /// </remarks>
+        public Task<IReadOnlyList<SettingValue>> GetAllGlobalAsync(
+            HashSet<string> settingNames,
+            bool fallback = true,
+            CancellationToken cancellationToken = default
+        )
+        {
+            return settingManager.GetAllAsync(
+                settingNames,
+                SettingValueProviderNames.Global,
+                providerKey: null,
+                fallback,
+                cancellationToken
+            );
+        }
+
         /// <summary>Persists a string setting value at the global scope.</summary>
         /// <param name="name">The unique name of the setting to update.</param>
         /// <param name="value">The value to store, or <see langword="null"/> to clear it.</param>

@@ -171,6 +171,28 @@ internal sealed class ProblemDetailsCreator(
         return problemDetails;
     }
 
+    public ProblemDetails ServiceUnavailable(int? retryAfterSeconds = null, ErrorDescriptor? error = null)
+    {
+        var problemDetails = new ProblemDetails
+        {
+            Status = StatusCodes.Status503ServiceUnavailable,
+            Title = HeadlessProblemDetailsConstants.Titles.ServiceUnavailable,
+            Detail = HeadlessProblemDetailsConstants.Details.ServiceUnavailable,
+        };
+
+        // Only stamped when the caller knows a duration. An invented retryAfter would have clients
+        // synchronize their retries on a value the server never promised.
+        if (retryAfterSeconds.HasValue)
+        {
+            problemDetails.Extensions["retryAfter"] = retryAfterSeconds.Value;
+        }
+
+        _SetError(problemDetails, error);
+        _Normalize(problemDetails);
+
+        return problemDetails;
+    }
+
     public void Normalize(ProblemDetails problemDetails)
     {
         Argument.IsNotNull(problemDetails);

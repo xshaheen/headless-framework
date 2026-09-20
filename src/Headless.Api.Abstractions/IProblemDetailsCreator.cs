@@ -71,6 +71,27 @@ public interface IProblemDetailsCreator
     ProblemDetails TooManyRequests(int retryAfterSeconds, ErrorDescriptor? error = null);
 
     /// <summary>
+    /// Builds a normalized 503 <see cref="ProblemDetails"/> for a dependency the request cannot
+    /// proceed without.
+    /// </summary>
+    /// <param name="retryAfterSeconds">
+    /// Optional seconds the client should wait before retrying, written to
+    /// <c>Extensions["retryAfter"]</c> when supplied. Callers are responsible for setting the
+    /// matching <c>Retry-After</c> response header. Pass <see langword="null"/> when the outage has
+    /// no known duration.
+    /// </param>
+    /// <param name="error">
+    /// Optional <see cref="ErrorDescriptor"/> stamped into <c>Extensions["error"]</c>. Describe the
+    /// failed capability, never the provider or its connection details.
+    /// </param>
+    /// <remarks>
+    /// This is the response for a control that fails closed: a limiter whose counter store is
+    /// unreachable, or a guard that cannot reach the state it guards. Returning it says the request
+    /// was not processed, which is the opposite of the 200 a fail-open control would return.
+    /// </remarks>
+    ProblemDetails ServiceUnavailable(int? retryAfterSeconds = null, ErrorDescriptor? error = null);
+
+    /// <summary>
     /// Builds a normalized 422 <see cref="ProblemDetails"/> for validation failures (typically
     /// mapped from <c>FluentValidation.ValidationException</c>).
     /// </summary>

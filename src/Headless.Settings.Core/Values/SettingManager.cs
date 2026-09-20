@@ -124,6 +124,54 @@ public sealed class SettingManager(
 
         var settingDefinitions = await definitionManager.GetAllAsync(cancellationToken).ConfigureAwait(false);
 
+        return await _GetAllFromProviderAsync(
+                settingDefinitions,
+                providerName,
+                providerKey,
+                fallback,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
+    /// <exception cref="ArgumentNullException"><paramref name="settingNames"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="providerName"/> is <see langword="null"/>.</exception>
+    public async Task<IReadOnlyList<SettingValue>> GetAllAsync(
+        HashSet<string> settingNames,
+        string providerName,
+        string? providerKey = null,
+        bool fallback = true,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(settingNames);
+        Argument.IsNotNull(providerName);
+
+        var allDefinitions = await definitionManager.GetAllAsync(cancellationToken).ConfigureAwait(false);
+
+        // Narrowing to the requested names before the provider walk is the whole point: the caller pays
+        // for the settings it asked for rather than for every setting the application happens to define.
+        var settingDefinitions = allDefinitions.Where(x => settingNames.Contains(x.Name)).ToList();
+
+        return await _GetAllFromProviderAsync(
+                settingDefinitions,
+                providerName,
+                providerKey,
+                fallback,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    private async Task<IReadOnlyList<SettingValue>> _GetAllFromProviderAsync(
+        IReadOnlyList<SettingDefinition> settingDefinitions,
+        string providerName,
+        string? providerKey,
+        bool fallback,
+        CancellationToken cancellationToken
+    )
+    {
         var providers = valueProviderManager.Providers.SkipWhile(c =>
             !string.Equals(c.Name, providerName, StringComparison.Ordinal)
         );

@@ -72,6 +72,35 @@ public interface ISettingManager
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>Returns the values of a set of named settings from a specific provider.</summary>
+    /// <param name="settingNames">The set of setting names to resolve.</param>
+    /// <param name="providerName">The name of the provider to query.</param>
+    /// <param name="providerKey">
+    /// A provider-specific discriminator (e.g. a tenant ID or user ID). When <see langword="null"/>,
+    /// each provider applies its own default key resolution logic.
+    /// </param>
+    /// <param name="fallback">
+    /// When <see langword="true"/>, values not found in <paramref name="providerName"/> fall back
+    /// to subsequent providers.
+    /// </param>
+    /// <param name="cancellationToken">The abort token.</param>
+    /// <returns>A read-only list of <see cref="SettingValue"/> instances for the requested settings that resolved.</returns>
+    /// <remarks>
+    /// Prefer this over <see cref="GetAllAsync(HashSet{string}, CancellationToken)"/> when the values
+    /// belong to one scope rather than to the caller. The name-only overload walks the whole provider
+    /// chain, so a per-user or per-tenant value can shadow an application-wide one, which is wrong for
+    /// a value that is meant to be the same for everybody.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="settingNames"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="providerName"/> is <see langword="null"/>.</exception>
+    Task<IReadOnlyList<SettingValue>> GetAllAsync(
+        HashSet<string> settingNames,
+        string providerName,
+        string? providerKey = null,
+        bool fallback = true,
+        CancellationToken cancellationToken = default
+    );
+
     /// <summary>Persists a setting value through a specific provider.</summary>
     /// <param name="settingName">The unique name of the setting to update.</param>
     /// <param name="value">The new value to store, or <see langword="null"/> to clear it.</param>

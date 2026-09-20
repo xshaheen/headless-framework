@@ -179,6 +179,40 @@ public sealed class GlobalSettingManagerExtensionsTests : TestBase
         await _settingManager.Received(1).GetAllAsync(SettingValueProviderNames.Global, null, false, AbortToken);
     }
 
+    [Fact]
+    public async Task should_get_named_settings_from_global_provider()
+    {
+        // given
+        var names = new HashSet<string>(StringComparer.Ordinal) { "Setting1", "Setting2" };
+        List<SettingValue> expectedValues = [new("Setting1", "value1"), new("Setting2", "value2")];
+
+        _settingManager
+            .GetAllAsync(names, SettingValueProviderNames.Global, null, true, AbortToken)
+            .Returns(expectedValues);
+
+        // when
+        var result = await _settingManager.GetAllGlobalAsync(names, cancellationToken: AbortToken);
+
+        // then the global provider name is what keeps a per-user value from shadowing the answer
+        result.Should().BeEquivalentTo(expectedValues);
+        await _settingManager.Received(1).GetAllAsync(names, SettingValueProviderNames.Global, null, true, AbortToken);
+    }
+
+    [Fact]
+    public async Task should_pass_fallback_for_named_get_all_global()
+    {
+        // given
+        var names = new HashSet<string>(StringComparer.Ordinal) { "Setting1" };
+
+        _settingManager.GetAllAsync(names, SettingValueProviderNames.Global, null, false, AbortToken).Returns([]);
+
+        // when
+        await _settingManager.GetAllGlobalAsync(names, fallback: false, cancellationToken: AbortToken);
+
+        // then
+        await _settingManager.Received(1).GetAllAsync(names, SettingValueProviderNames.Global, null, false, AbortToken);
+    }
+
     #endregion
 
     #region SetGlobalAsync (string)

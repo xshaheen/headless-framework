@@ -428,6 +428,59 @@ public sealed class SettingManagerTests : TestBase
     }
 
     [Fact]
+    public async Task should_get_all_for_setting_names_within_a_provider()
+    {
+        // given three defined settings but only two asked for
+        const string providerName = "Provider1";
+        var requested = new HashSet<string>(StringComparer.Ordinal) { "Setting1", "Setting3" };
+        List<SettingDefinition> definitions =
+        [
+            new("Setting1", isInherited: true),
+            new("Setting2", isInherited: true),
+            new("Setting3", isInherited: true),
+        ];
+
+        var provider = new FakeSettingValueProvider { Name = providerName };
+        provider.SetValue("Setting1", "value1");
+        provider.SetValue("Setting2", "value2");
+        provider.SetValue("Setting3", "value3");
+
+        _definitionManager.GetAllAsync(AbortToken).Returns(definitions);
+        _valueProviderManager.Providers.Returns([provider]);
+
+        // when
+        var result = await _sut.GetAllAsync(requested, providerName, cancellationToken: AbortToken);
+
+        // then the unrequested setting is absent, which is the point: the caller pays for what it asked for
+        result.Should().HaveCount(2);
+        result.Should().Contain(sv => sv.Name == "Setting1" && sv.Value == "value1");
+        result.Should().Contain(sv => sv.Name == "Setting3" && sv.Value == "value3");
+        result.Should().NotContain(sv => sv.Name == "Setting2");
+    }
+
+    [Fact]
+    public async Task should_not_fall_past_the_named_provider_for_setting_names_without_fallback()
+    {
+        // given a value present only on a later provider in the chain
+        var requested = new HashSet<string>(StringComparer.Ordinal) { "Setting1" };
+        List<SettingDefinition> definitions = [new("Setting1", isInherited: true)];
+
+        var head = new FakeSettingValueProvider { Name = "Provider1" };
+        var next = new FakeSettingValueProvider { Name = "Provider2" };
+        next.SetValue("Setting1", "from-provider-2");
+
+        _definitionManager.GetAllAsync(AbortToken).Returns(definitions);
+        _valueProviderManager.Providers.Returns([head, next]);
+
+        // when
+        var result = await _sut.GetAllAsync(requested, "Provider1", fallback: false, cancellationToken: AbortToken);
+
+        // then scoping holds: a value owned by another provider must not leak into the answer, or an
+        // application-wide policy could be shadowed by a narrower scope
+        result.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task should_return_first_provider_value_for_inherited_setting_with_fallback()
     {
         // given — inherited setting exists in both the requested provider and a later fallback provider
