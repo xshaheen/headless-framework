@@ -117,7 +117,7 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob>
         JobKey key,
         long expectedGeneration,
         CancellationToken cancellationToken = default
-    ) => CancelKeyedAsync(scope, key, expectedGeneration, TransactionEnlistment.WhenAvailable, cancellationToken);
+    ) => CancelKeyedAsync(scope, key, expectedGeneration, TransactionEnlistment.Optional, cancellationToken);
 
     public Task<JobScheduleResult> CancelKeyedAsync(
         JobKeyScope scope,
@@ -188,7 +188,7 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob>
             OnNodeDeath = options?.OnNodeDeath ?? NodeDeathPolicy.Retry,
             TenantId = options?.TenantId,
             IsSystemJob = options?.IsSystemJob ?? false,
-            Enlistment = options?.Enlistment ?? TransactionEnlistment.WhenAvailable,
+            Enlistment = options?.Enlistment ?? TransactionEnlistment.Optional,
         };
         return _timeJobManager.ScheduleKeyedAsync(key, entity, expectedGeneration, cancellationToken);
     }

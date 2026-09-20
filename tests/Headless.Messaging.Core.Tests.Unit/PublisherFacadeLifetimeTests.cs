@@ -56,7 +56,7 @@ public sealed class PublisherFacadeLifetimeTests : TestBase
         var monitoring = provider.GetRequiredService<IDataStorage>().GetMonitoringApi();
         await using var scope = provider.CreateAsyncScope();
         await using var unitOfWork = await scope
-            .ServiceProvider.GetRequiredService<IUnitOfWorkManager>()
+            .ServiceProvider.GetRequiredService<IUnitOfWorkFactory>()
             .BeginAsync(cancellationToken: AbortToken);
 
         // when

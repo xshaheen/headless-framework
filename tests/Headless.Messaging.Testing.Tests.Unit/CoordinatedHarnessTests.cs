@@ -250,10 +250,10 @@ public sealed class CoordinatedHarnessTests : TestBase
 
         var act = () =>
             harness.RunInUnitOfWorkAsync(
-                async (services, unitOfWork) =>
+                async (_, unitOfWork) =>
                 {
-                    // The handed unit is the scope's current one: the delegate can reach it either way.
-                    services.GetRequiredService<IUnitOfWorkManager>().Current.Should().BeSameAs(unitOfWork);
+                    // The handed unit is the only way to reach it: nothing ambient carries it.
+                    unitOfWork.State.Should().Be(UnitOfWorkState.Active);
                     unitOfWork.GetOrAdd(_ => new ThrowingDisposable(rollbackEx));
 
                     await Task.Yield();

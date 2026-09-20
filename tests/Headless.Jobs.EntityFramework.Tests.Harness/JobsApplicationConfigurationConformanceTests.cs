@@ -63,9 +63,9 @@ public abstract class JobsApplicationConfigurationConformanceTests<TFixture>(TFi
 
             var sentinel = new InvalidOperationException("rollback application transaction");
             var scheduledId = Guid.Empty;
-            var unitOfWorkManager = services.GetRequiredService<IUnitOfWorkManager>();
+            var unitOfWorkFactory = services.GetRequiredService<IUnitOfWorkFactory>();
             var operation = async () =>
-                await unitOfWorkManager.RunAsync(
+                await unitOfWorkFactory.RunAsync(
                     context,
                     async (unit, ct) =>
                     {
@@ -74,7 +74,7 @@ public abstract class JobsApplicationConfigurationConformanceTests<TFixture>(TFi
                         // The enlisted surface: an IBus publish here would write a standalone row that survives
                         // the rollback this test forces.
                         await unit.Outbox.PublishAsync(new ApplicationMessage(request.Id), ct);
-                        scheduledId = await scheduler.ScheduleAsync(request, dueAt, ct);
+                        scheduledId = await unit.Jobs.ScheduleAsync(request, dueAt, ct);
                         if (!commit)
                         {
                             throw sentinel;

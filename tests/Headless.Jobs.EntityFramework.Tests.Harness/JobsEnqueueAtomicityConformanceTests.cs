@@ -71,9 +71,9 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
 
             await fixture.RunCoordinatedTransactionAsync(
                 host.Services,
-                async (scopedServices, connection, transaction, innerCt) =>
+                async (_, unitOfWork, connection, transaction, innerCt) =>
                 {
-                    var manager = scopedServices.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
+                    var manager = unitOfWork.TimeJobs<TimeJobEntity>();
                     await using var scope = host.Services.CreateAsyncScope();
                     var caller = scope.ServiceProvider.GetRequiredService<ObservableJobsDbContext>();
                     caller.Database.SetDbConnection(connection, contextOwnsConnection: false);
@@ -161,10 +161,9 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
 
             await fixture.RunCoordinatedTransactionAsync(
                 host.Services,
-                async (scopedServices, connection, transaction, innerCt) =>
+                async (_, unitOfWork, connection, transaction, innerCt) =>
                 {
-                    var manager = scopedServices.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
-                    var unitOfWork = _CurrentUnitOfWork(scopedServices);
+                    var manager = unitOfWork.TimeJobs<TimeJobEntity>();
                     await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, innerCt);
                     await unitOfWork.Outbox.PublishAsync(new CapstoneMessage(job.Id), innerCt);
                     await manager.AddAsync(job, innerCt);
@@ -195,10 +194,9 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
             var act = () =>
                 fixture.RunCoordinatedTransactionAsync(
                     host.Services,
-                    async (scopedServices, connection, transaction, innerCt) =>
+                    async (_, unitOfWork, connection, transaction, innerCt) =>
                     {
-                        var manager = scopedServices.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
-                        var unitOfWork = _CurrentUnitOfWork(scopedServices);
+                        var manager = unitOfWork.TimeJobs<TimeJobEntity>();
                         await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, innerCt);
                         // The enlisted surface: an IBus publish would write a standalone row that survives the
                         // rollback this test forces, which is exactly the non-atomic outcome it guards against.
@@ -240,10 +238,10 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
 
             await fixture.RunCoordinatedTransactionAsync(
                 host.Services,
-                async (scopedServices, connection, transaction, innerCt) =>
+                async (_, unitOfWork, connection, transaction, innerCt) =>
                 {
-                    var manager = scopedServices.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
-                    var scheduler = scopedServices.GetRequiredService<IJobScheduler>();
+                    var manager = unitOfWork.TimeJobs<TimeJobEntity>();
+                    var scheduler = unitOfWork.Jobs;
                     await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, innerCt);
                     (await manager.AddAsync(_TimeJob(), innerCt)).Should().NotBeNull();
                     scheduledId = await scheduler.EnqueueAsync(request, options, innerCt);
@@ -297,10 +295,10 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
             var act = () =>
                 fixture.RunCoordinatedTransactionAsync(
                     host.Services,
-                    async (scopedServices, connection, transaction, innerCt) =>
+                    async (_, unitOfWork, connection, transaction, innerCt) =>
                     {
-                        var manager = scopedServices.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
-                        var scheduler = scopedServices.GetRequiredService<IJobScheduler>();
+                        var manager = unitOfWork.TimeJobs<TimeJobEntity>();
+                        var scheduler = unitOfWork.Jobs;
                         await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, innerCt);
                         await manager.AddAsync(_TimeJob(), innerCt);
                         (
@@ -348,9 +346,9 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
         {
             await fixture.RunCoordinatedTransactionAsync(
                 host.Services,
-                async (scopedServices, _, _, innerCt) =>
+                async (_, unitOfWork, _, _, innerCt) =>
                 {
-                    var manager = scopedServices.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
+                    var manager = unitOfWork.TimeJobs<TimeJobEntity>();
                     (await manager.AddAsync(_TimeJob(), innerCt)).Should().NotBeNull();
                     (await manager.AddAsync(_TimeJob(), innerCt)).Should().NotBeNull();
                 },
@@ -375,9 +373,9 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
         {
             await fixture.RunCoordinatedTransactionAsync(
                 host.Services,
-                async (scopedServices, _, _, innerCt) =>
+                async (_, unitOfWork, _, _, innerCt) =>
                 {
-                    var manager = scopedServices.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
+                    var manager = unitOfWork.TimeJobs<TimeJobEntity>();
                     var jobs = new List<TimeJobEntity> { _TimeJob(), _TimeJob() };
                     (await manager.AddBatchAsync(jobs, innerCt)).Should().HaveCount(2);
                 },
@@ -405,9 +403,9 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
             var act = () =>
                 fixture.RunCoordinatedTransactionAsync(
                     host.Services,
-                    async (scopedServices, _, _, innerCt) =>
+                    async (_, unitOfWork, _, _, innerCt) =>
                     {
-                        var manager = scopedServices.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
+                        var manager = unitOfWork.TimeJobs<TimeJobEntity>();
                         var jobs = new List<TimeJobEntity> { _TimeJob(), _TimeJob() };
                         await manager.AddBatchAsync(jobs, innerCt);
 
@@ -457,14 +455,8 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
 
             await fixture.RunCoordinatedTransactionAsync(
                 host.Services,
-                async (scopedServices, _, _, innerCt) =>
-                    (
-                        await scopedServices
-                            .GetRequiredService<ICronJobManager<CronJobEntity>>()
-                            .AddAsync(_CronJob(), innerCt)
-                    )
-                        .Should()
-                        .NotBeNull(),
+                async (_, unitOfWork, _, _, innerCt) =>
+                    (await unitOfWork.CronJobs<CronJobEntity>().AddAsync(_CronJob(), innerCt)).Should().NotBeNull(),
                 ct
             );
 
@@ -489,9 +481,9 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
             var act = () =>
                 fixture.RunCoordinatedTransactionAsync(
                     host.Services,
-                    async (scopedServices, _, _, innerCt) =>
+                    async (_, unitOfWork, _, _, innerCt) =>
                     {
-                        var manager = scopedServices.GetRequiredService<ICronJobManager<CronJobEntity>>();
+                        var manager = unitOfWork.CronJobs<CronJobEntity>();
                         await manager.AddAsync(_CronJob(), innerCt);
 
                         throw sentinel;
@@ -522,9 +514,9 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
             var act = () =>
                 fixture.RunCoordinatedTransactionAsync(
                     host.Services,
-                    async (scopedServices, _, _, innerCt) =>
+                    async (_, unitOfWork, _, _, innerCt) =>
                     {
-                        var manager = scopedServices.GetRequiredService<ICronJobManager<CronJobEntity>>();
+                        var manager = unitOfWork.CronJobs<CronJobEntity>();
                         var crons = new List<CronJobEntity> { _CronJob(), _CronJob() };
                         await manager.AddBatchAsync(crons, innerCt);
 
@@ -562,12 +554,6 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
 
         return host;
     }
-
-    // The fixture's coordinated transaction is the scope's current unit of work; the enlisted publish needs the
-    // handle, not the ambient state the publisher no longer reads.
-    private static IUnitOfWork _CurrentUnitOfWork(IServiceProvider scopedServices) =>
-        scopedServices.GetRequiredService<IUnitOfWorkManager>().Current
-        ?? throw new InvalidOperationException("The coordinated transaction fixture must have a unit of work current.");
 
     private static TimeJobEntity _TimeJob()
     {

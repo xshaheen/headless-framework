@@ -537,8 +537,8 @@ Explicit, scoped unit of work: begin it on the line you choose, do business work
 
 | Package | Description |
 |---------|-------------|
-| [Headless.UnitOfWork.Abstractions](src/Headless.UnitOfWork.Abstractions/README.md) | Scoped unit-of-work contracts: `IUnitOfWorkManager`, `IUnitOfWork`, `IUnitOfWorkResource`, `IUnitOfWorkFeature`, `TransactionEnlistment` (zero dependencies) |
-| [Headless.UnitOfWork](src/Headless.UnitOfWork/README.md) | The scoped manager, engine, and `AddUnitOfWork()` registration |
+| [Headless.UnitOfWork.Abstractions](src/Headless.UnitOfWork.Abstractions/README.md) | Unit-of-work contracts: `IUnitOfWorkFactory`, `IUnitOfWork`, `IUnitOfWorkResource`, `IUnitOfWorkFeature`, `TransactionEnlistment` (zero dependencies) |
+| [Headless.UnitOfWork](src/Headless.UnitOfWork/README.md) | The singleton factory, engine, and `AddUnitOfWork()` registration |
 | [Headless.UnitOfWork.EntityFramework](src/Headless.UnitOfWork.EntityFramework/README.md) | EF Core provider: `BeginAsync(db)` / `Enlist(db, tx)` / `RunAsync(db, ...)` |
 | [Headless.UnitOfWork.PostgreSql](src/Headless.UnitOfWork.PostgreSql/README.md) | Raw-ADO `NpgsqlConnection` provider with the same shape |
 | [Headless.UnitOfWork.SqlServer](src/Headless.UnitOfWork.SqlServer/README.md) | Raw-ADO `SqlConnection` provider with the same shape |

@@ -18,7 +18,7 @@ namespace Tests;
 [Collection<SqlServerUnitOfWorkFixture>]
 public sealed class SqlServerUnitOfWorkTests(SqlServerUnitOfWorkFixture fixture) : TestBase
 {
-    private const string _ManagerCategory = "Headless.UnitOfWork.UnitOfWorkManager";
+    private const string _ManagerCategory = "Headless.UnitOfWork.UnitOfWorkFactory";
 
     [Fact]
     public async Task should_commit_the_row_when_an_owned_unit_completes()
@@ -27,7 +27,7 @@ public sealed class SqlServerUnitOfWorkTests(SqlServerUnitOfWorkFixture fixture)
         using var logs = new CapturingLoggerProvider();
         await using var provider = SqlServerUnitOfWorkFixture.BuildProvider(logs);
         await using var scope = provider.CreateAsyncScope();
-        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
         await using var connection = new SqlConnection(fixture.ConnectionString);
         var calls = 0;
 
@@ -62,7 +62,7 @@ public sealed class SqlServerUnitOfWorkTests(SqlServerUnitOfWorkFixture fixture)
         await fixture.ResetAsync(AbortToken);
         await using var provider = SqlServerUnitOfWorkFixture.BuildProvider();
         await using var scope = provider.CreateAsyncScope();
-        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
         await using var connection = new SqlConnection(fixture.ConnectionString);
         UnitOfWorkFailure? failure = null;
 
@@ -85,7 +85,6 @@ public sealed class SqlServerUnitOfWorkTests(SqlServerUnitOfWorkFixture fixture)
         (await fixture.CountProbeRowsAsync(AbortToken)).Should().Be(0);
         failure.Should().NotBeNull();
         failure!.Reason.Should().Be(UnitOfWorkFailureReason.Abandoned);
-        manager.Current.Should().BeNull();
     }
 
     [Fact]
@@ -94,7 +93,7 @@ public sealed class SqlServerUnitOfWorkTests(SqlServerUnitOfWorkFixture fixture)
         using var logs = new CapturingLoggerProvider();
         await using var provider = SqlServerUnitOfWorkFixture.BuildProvider(logs);
         await using var scope = provider.CreateAsyncScope();
-        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
         var calls = 0;
 
         await using var connection = new SqlConnection(fixture.ConnectionString);
@@ -125,7 +124,7 @@ public sealed class SqlServerUnitOfWorkTests(SqlServerUnitOfWorkFixture fixture)
         using var logs = new CapturingLoggerProvider();
         await using var provider = SqlServerUnitOfWorkFixture.BuildProvider(logs);
         await using var scope = provider.CreateAsyncScope();
-        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
         var calls = 0;
         IUnitOfWork unit;
 
@@ -162,7 +161,7 @@ public sealed class SqlServerUnitOfWorkTests(SqlServerUnitOfWorkFixture fixture)
         using var logs = new CapturingLoggerProvider();
         await using var provider = SqlServerUnitOfWorkFixture.BuildProvider(logs);
         await using var scope = provider.CreateAsyncScope();
-        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
         UnitOfWorkFailure? failure = null;
 
         await using var connection = new SqlConnection(fixture.ConnectionString);
@@ -194,7 +193,7 @@ public sealed class SqlServerUnitOfWorkTests(SqlServerUnitOfWorkFixture fixture)
         using var logs = new CapturingLoggerProvider();
         await using var provider = SqlServerUnitOfWorkFixture.BuildProvider(logs);
         await using var scope = provider.CreateAsyncScope();
-        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
 
         await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);

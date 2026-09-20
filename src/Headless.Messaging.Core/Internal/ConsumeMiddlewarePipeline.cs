@@ -7,6 +7,7 @@ using System.Runtime.CompilerServices;
 using FastExpressionCompiler;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Messages;
+using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -112,6 +113,7 @@ internal sealed class ConsumeMiddlewarePipeline(
             consumeHeaders,
             tenantId,
             descriptor.Lane,
+            context.UnitOfWork,
             cancellationToken
         );
         var previousConsumeContext = consumeContextAccessor?.Current;
@@ -365,12 +367,14 @@ internal sealed class ConsumeMiddlewarePipeline(
         MessageHeader headers,
         string? tenantId,
         MessageLane lane,
+        IUnitOfWork? unitOfWork,
         CancellationToken cancellationToken
     )
     {
         var factory = _compiledConsumeContextFactories.GetOrAdd(messageType, _CompileFactory);
         var context = (ConsumeContext)factory(messageInstance, mediumMessage, headers, tenantId, lane);
         context.SetCancellationToken(cancellationToken);
+        context.UnitOfWork = unitOfWork;
 
         return context;
     }

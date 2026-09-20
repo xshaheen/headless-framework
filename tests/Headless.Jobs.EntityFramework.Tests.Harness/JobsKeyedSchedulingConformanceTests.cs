@@ -257,11 +257,11 @@ public abstract partial class JobsKeyedSchedulingConformanceTests<TFixture>(TFix
 
         await fixture.RunCoordinatedTransactionAsync(
             host.Services,
-            async (scopedServices, connection, transaction, ct) =>
+            async (_, unitOfWork, connection, transaction, ct) =>
             {
-                // Resolve from the enlisted scope: the facade reads IUnitOfWorkManager.Current from the SAME
-                // scope's manager, and only that scope observes the unit begun by RunCoordinatedTransactionAsync.
-                var scopedManager = scopedServices.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
+                // The enlisted receiver over the unit RunCoordinatedTransactionAsync began: the write joins that
+                // transaction, so the preflight runs against the store the unit is bound to.
+                var scopedManager = unitOfWork.TimeJobs<TimeJobEntity>();
                 var keyed = JobsKeyedSchedulingScenarios.Candidate();
                 keyed.Function = ordinary.Function;
                 keyed.Enlistment = TransactionEnlistment.Required;
@@ -367,7 +367,7 @@ public abstract partial class JobsKeyedSchedulingConformanceTests<TFixture>(TFix
             var unrelated = JobsKeyedSchedulingScenarios.Candidate();
             await fixture.RunCoordinatedTransactionAsync(
                 host.Services,
-                async (_, connection, transaction, ct) =>
+                async (_, _, connection, transaction, ct) =>
                 {
                     var relational = new FixedRelationalResource(connection, transaction);
                     var write = async () =>

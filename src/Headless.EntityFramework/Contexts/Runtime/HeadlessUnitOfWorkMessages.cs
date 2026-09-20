@@ -14,6 +14,6 @@ internal static class HeadlessUnitOfWorkMessages
     /// </summary>
     public const string CallerOwnedTransactionWithoutUnitOfWork =
         "SaveChanges ran inside a caller-owned transaction that no unit of work owns, so integration events and jobs "
-        + "would dispatch non-atomically. Begin the unit of work on this context (IUnitOfWorkManager.BeginAsync(db)) "
+        + "would dispatch non-atomically. Begin the unit of work on this context (IUnitOfWorkFactory.BeginAsync(db)) "
         + "before beginning the transaction, or enlist the transaction with Enlist(db, transaction).";
 }

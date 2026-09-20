@@ -25,13 +25,13 @@ public sealed class SqlServerUnitOfWorkFixture
     {
         var provider = BuildProvider(logs);
         var scope = provider.CreateAsyncScope();
-        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
 
         return new UnitOfWorkResourceSession(provider, scope, manager);
     }
 
     public async ValueTask<UnitOfWorkResourceHandle> BeginOwnedAsync(
-        IUnitOfWorkManager manager,
+        IUnitOfWorkFactory manager,
         CancellationToken cancellationToken
     )
     {
@@ -57,7 +57,7 @@ public sealed class SqlServerUnitOfWorkFixture
     }
 
     public async Task<UnitOfWorkObservedHandle> EnlistObservedAsync(
-        IUnitOfWorkManager manager,
+        IUnitOfWorkFactory manager,
         CancellationToken cancellationToken
     )
     {
@@ -92,7 +92,7 @@ public sealed class SqlServerUnitOfWorkFixture
     {
         await using var provider = BuildProvider();
         await using var scope = provider.CreateAsyncScope();
-        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
         await using var connection = new SqlConnection(ConnectionString);
 
         await manager.RunAsync(

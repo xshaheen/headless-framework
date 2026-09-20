@@ -30,7 +30,7 @@ internal sealed class PostgreSqlUnitOfWorkResource(
     /// <summary>
     /// Npgsql keeps its completion flag internal and leaves <c>Connection</c> populated after commit, so the only
     /// public observable is the readiness guard on <see cref="NpgsqlTransaction.IsolationLevel" />, which throws
-    /// once the transaction has committed, rolled back, or been disposed. Evaluated lazily (the manager reads it
+    /// once the transaction has committed, rolled back, or been disposed. Evaluated lazily (the factory reads it
     /// only on an un-completed dispose), so the exception cost never lands on a healthy commit; a driver that stops
     /// throwing degrades to "no warning", never to a false one.
     /// </summary>

@@ -20,9 +20,9 @@ using Microsoft.Extensions.Options;
 namespace Headless.Jobs.Managers;
 
 // Singleton core: stateless with respect to unit-of-work coordination. It takes IUnitOfWork? as an explicit
-// argument on every Add/keyed-schedule path instead of resolving an ambient coordinator itself. The scoped
-// JobsManagerFacade resolves IUnitOfWorkManager.Current and passes it down; Update/Delete never touched coordination
-// and keep their original signatures.
+// argument on every Add/keyed-schedule path; the JobsManagerFacade in front of it passes the unit it was bound
+// with (null for the autonomous receiver). Update/Delete never touched coordination and keep their original
+// signatures.
 internal partial class JobsManager<TTimeJob, TCronJob>(
     IJobPersistenceProvider<TTimeJob, TCronJob> persistenceProvider,
     IJobsHostScheduler jobsHostScheduler,
@@ -80,7 +80,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         return _AddTimeJobAsync(entity, unitOfWork, cancellationToken);
     }
 
-    // Called only by JobsManagerFacade, which resolves IUnitOfWorkManager.Current and passes it here.
+    // Called only by JobsManagerFacade, which passes the unit it was bound with (null for the autonomous receiver).
     internal Task<TTimeJob> AddIdempotentTimeJobAsync(
         TTimeJob entity,
         string idempotencyKey,
@@ -916,7 +916,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
         var coordinated = _TryCaptureCoordinatedContext(
             unitOfWork,
-            JobAtomicity.IsRequired(entities) ? TransactionEnlistment.Required : TransactionEnlistment.WhenAvailable,
+            JobAtomicity.IsRequired(entities) ? TransactionEnlistment.Required : TransactionEnlistment.Optional,
             $"time-job batch ({entities.Count})",
             requireSavepoints: false
         );
@@ -1085,7 +1085,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             unitOfWork,
             entities.Exists(entity => entity.Enlistment == TransactionEnlistment.Required)
                 ? TransactionEnlistment.Required
-                : TransactionEnlistment.WhenAvailable,
+                : TransactionEnlistment.Optional,
             $"cron-job batch ({entities.Count})",
             requireSavepoints: false
         );

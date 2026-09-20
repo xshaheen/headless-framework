@@ -8,7 +8,7 @@ using NameGenerator.Generators;
 namespace Demo.Controllers;
 
 [Route("api/[controller]")]
-public class ValuesController(IBus producer, IUnitOfWorkManager unitOfWork) : Controller
+public class ValuesController(IBus producer, IUnitOfWorkFactory unitOfWork) : Controller
 {
     private const string _MessageName = "sample.rabbitmq.sqlserver";
 
@@ -55,10 +55,11 @@ public class ValuesController(IBus producer, IUnitOfWorkManager unitOfWork) : Co
         return Ok();
     }
 
-    // CAPABILITY 1 — raw ADO (Dapper) unit of work via IUnitOfWorkManager.RunAsync(connection, …).
+    // CAPABILITY 1 — raw ADO (Dapper) unit of work via IUnitOfWorkFactory.RunAsync(connection, …).
     // RunAsync owns begin and commit: it opens the connection's transaction, runs the block, then commits. The
-    // Publish enlists in that same transaction because it reads the ambient IUnitOfWorkManager.Current from this
-    // scope, and Dapper needs the live transaction object, exposed as an IRelationalUnitOfWorkResource on uow.Resource.
+    // publish goes through uow.Outbox so its row joins that same transaction (an IBus publish is autonomous and
+    // would survive a rollback), and Dapper needs the live transaction object, exposed as an
+    // IRelationalUnitOfWorkResource on uow.Resource.
     [Route("~/coordinated/adonet")]
     public async Task<IActionResult> CoordinatedAdoNet()
     {
@@ -83,11 +84,7 @@ public class ValuesController(IBus producer, IUnitOfWorkManager unitOfWork) : Co
                     )
                 );
 
-                await producer.PublishAsync(
-                    person,
-                    new PublishOptions { MessageName = _MessageName, DeliveryMode = DeliveryMode.Durable },
-                    token
-                );
+                await uow.Outbox.PublishAsync(person, new OutboxOptions { MessageName = _MessageName }, token);
             },
             cancellationToken: ct
         );
@@ -95,7 +92,7 @@ public class ValuesController(IBus producer, IUnitOfWorkManager unitOfWork) : Co
         return Ok($"Inserted {person} and published atomically (raw ADO; unit-of-work-owned commit).");
     }
 
-    // CAPABILITY 2 — EF Core unit of work via IUnitOfWorkManager.RunAsync(db, …).
+    // CAPABILITY 2 — EF Core unit of work via IUnitOfWorkFactory.RunAsync(db, …).
     // RunAsync runs inside EF's execution strategy (retry-safe): begin (owned) → operation → CompleteAsync
     // (commits, then drains). SaveChanges and the publish commit together; a retried attempt discards its buffer
     // and re-runs cleanly.
@@ -106,16 +103,12 @@ public class ValuesController(IBus producer, IUnitOfWorkManager unitOfWork) : Co
 
         await unitOfWork.RunAsync(
             dbContext,
-            async (_, ct) =>
+            async (uow, ct) =>
             {
                 dbContext.Persons.Add(person);
                 await dbContext.SaveChangesAsync(ct);
 
-                await producer.PublishAsync(
-                    person,
-                    new PublishOptions { MessageName = _MessageName, DeliveryMode = DeliveryMode.Durable },
-                    ct
-                );
+                await uow.Outbox.PublishAsync(person, new OutboxOptions { MessageName = _MessageName }, ct);
             },
             cancellationToken: HttpContext.RequestAborted
         );
@@ -135,16 +128,12 @@ public class ValuesController(IBus producer, IUnitOfWorkManager unitOfWork) : Co
         {
             await unitOfWork.RunAsync(
                 dbContext,
-                async (_, ct) =>
+                async (uow, ct) =>
                 {
                     dbContext.Persons.Add(person);
                     await dbContext.SaveChangesAsync(ct);
 
-                    await producer.PublishAsync(
-                        person,
-                        new PublishOptions { MessageName = _MessageName, DeliveryMode = DeliveryMode.Durable },
-                        ct
-                    );
+                    await uow.Outbox.PublishAsync(person, new OutboxOptions { MessageName = _MessageName }, ct);
 
                     throw new InvalidOperationException("Simulated failure after the buffered publish.");
                 },
@@ -168,19 +157,14 @@ public class ValuesController(IBus producer, IUnitOfWorkManager unitOfWork) : Co
 
         await unitOfWork.RunAsync(
             dbContext,
-            async (_, ct) =>
+            async (uow, ct) =>
             {
                 dbContext.Persons.Add(person);
                 await dbContext.SaveChangesAsync(ct);
 
-                await producer.PublishAsync(
+                await uow.Outbox.PublishAsync(
                     person,
-                    new PublishOptions
-                    {
-                        MessageName = _MessageName,
-                        Delay = TimeSpan.FromSeconds(delaySeconds),
-                        DeliveryMode = DeliveryMode.Durable,
-                    },
+                    new OutboxOptions { MessageName = _MessageName, Delay = TimeSpan.FromSeconds(delaySeconds) },
                     ct
                 );
             },

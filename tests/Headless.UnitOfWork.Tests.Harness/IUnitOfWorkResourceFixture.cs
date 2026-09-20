@@ -8,13 +8,13 @@ namespace Tests;
 
 /// <summary>
 /// Provider fixture for the resource-backed unit-of-work conformance scenarios: a real relational transaction
-/// (PostgreSQL, SQL Server) coordinated through <see cref="IUnitOfWorkManager" />, instead of the in-memory
+/// (PostgreSQL, SQL Server) coordinated through <see cref="IUnitOfWorkFactory" />, instead of the in-memory
 /// <see cref="FakeUnitOfWorkResource" />. Every scenario proves its outcome through <see cref="CountProbeRowsAsync" />
-/// on an independent connection — never through manager state alone.
+/// on an independent connection — never through factory state alone.
 /// </summary>
 public interface IUnitOfWorkResourceFixture
 {
-    /// <summary>Creates an isolated session: a fresh scoped manager, optionally capturing its log output.</summary>
+    /// <summary>Creates an isolated session: a fresh factory, optionally capturing its log output.</summary>
     UnitOfWorkResourceSession CreateSession(CapturingLoggerProvider? logs = null);
 
     /// <summary>
@@ -22,7 +22,7 @@ public interface IUnitOfWorkResourceFixture
     /// <see cref="IUnitOfWork.CompleteAsync" /> commits it.
     /// </summary>
     ValueTask<UnitOfWorkResourceHandle> BeginOwnedAsync(
-        IUnitOfWorkManager manager,
+        IUnitOfWorkFactory factory,
         CancellationToken cancellationToken
     );
 
@@ -31,7 +31,7 @@ public interface IUnitOfWorkResourceFixture
     /// through the returned handle, then calls <see cref="IUnitOfWork.CompleteAsync" /> or
     /// <see cref="IUnitOfWork.RollbackAsync" /> to settle the unit.
     /// </summary>
-    Task<UnitOfWorkObservedHandle> EnlistObservedAsync(IUnitOfWorkManager manager, CancellationToken cancellationToken);
+    Task<UnitOfWorkObservedHandle> EnlistObservedAsync(IUnitOfWorkFactory factory, CancellationToken cancellationToken);
 
     /// <summary>Inserts one probe row inside <paramref name="unitOfWork" />'s live transaction.</summary>
     Task InsertProbeRowAsync(IUnitOfWork unitOfWork, string name, CancellationToken cancellationToken);
@@ -47,11 +47,11 @@ public interface IUnitOfWorkResourceFixture
 public sealed class UnitOfWorkResourceSession(
     ServiceProvider provider,
     AsyncServiceScope scope,
-    IUnitOfWorkManager manager
+    IUnitOfWorkFactory factory
 ) : IAsyncDisposable
 {
-    /// <summary>The scoped manager this scenario drives.</summary>
-    public IUnitOfWorkManager Manager { get; } = manager;
+    /// <summary>The factory this scenario drives.</summary>
+    public IUnitOfWorkFactory Factory { get; } = factory;
 
     /// <summary>Disposes the DI scope (draining a still-active unit as a leak) and then the provider.</summary>
     public async ValueTask DisposeAsync()

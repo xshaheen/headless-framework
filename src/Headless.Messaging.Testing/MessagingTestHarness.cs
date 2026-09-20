@@ -543,8 +543,10 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         Argument.IsNotNull(action);
 
         await using var scope = ServiceProvider.CreateAsyncScope();
-        var unitOfWorkManager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
-        var unitOfWork = await unitOfWorkManager.BeginAsync().ConfigureAwait(false);
+        var unitOfWork = await ServiceProvider
+            .GetRequiredService<IUnitOfWorkFactory>()
+            .BeginAsync()
+            .ConfigureAwait(false);
 
         TResult result;
         try

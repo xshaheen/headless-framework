@@ -50,7 +50,7 @@ builder.Services.AddHeadlessMessaging(setup =>
 // Declares the two unit-of-work providers this demo enlists through: the Npgsql helpers
 // (BeginAsync(connection), Enlist(connection, transaction), RunAsync(connection, …)) for the raw-ADO capability,
 // and the EF Core helpers (RunAsync(db, …)) for the EF capability. Both are idempotent thin wrappers over the
-// scoped IUnitOfWorkManager that AddHeadlessMessaging already registers — no interceptor or hosted service needed;
+// scoped IUnitOfWorkFactory that AddHeadlessMessaging already registers — no interceptor or hosted service needed;
 // RunAsync/BeginAsync own the transaction's begin and commit directly.
 builder.Services.AddPostgreSqlUnitOfWork();
 builder.Services.AddEntityFrameworkUnitOfWork();

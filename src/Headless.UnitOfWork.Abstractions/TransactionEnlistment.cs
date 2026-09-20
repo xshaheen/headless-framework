@@ -3,35 +3,25 @@
 namespace Headless.UnitOfWork;
 
 /// <summary>
-/// How eagerly a participant (a published message, an enqueued job) requires an active unit of work.
-/// One shared knob for Messaging publishes and Jobs writes: whether the durable row must land inside
-/// the active unit of work, may, or never does.
+/// Whether a Jobs write may run through the autonomous receiver (an injected <c>IJobScheduler</c> or manager) or
+/// must run through the enlisted one (<c>unit.Jobs</c>), resolved per call &gt; per function &gt; host default,
+/// strictest wins.
 /// </summary>
 /// <remarks>
-/// Precedence for both Messaging and Jobs: per call &gt; per type/function &gt; host default. The guarantee
-/// matrix: with a joinable compatible resource, every value enlists in the transaction; with no unit of work
-/// (or a unit with no joinable resource), <see cref="WhenAvailable" /> writes autonomously while
-/// <see cref="Required" /> throws; with an incompatible resource, everything except <see cref="Never" />
-/// throws.
+/// Enlistment itself is decided by the receiver, never by this value: <c>unit.Jobs</c> always writes inside the
+/// unit's transaction and refuses when the unit carries no joinable relational resource, and an injected
+/// scheduler always writes autonomously. This knob only lets a function declare that the autonomous receiver is
+/// not acceptable for it, so a schedule that would otherwise land outside a transaction fails before any effect.
 /// </remarks>
 [PublicAPI]
 public enum TransactionEnlistment
 {
-    /// <summary>
-    /// Enlist when a joinable compatible unit of work is active; otherwise write autonomously (a durable
-    /// standalone row with its own dispatch). The default.
-    /// </summary>
-    WhenAvailable = 0,
+    /// <summary>Either receiver is acceptable: enlisted through <c>unit.Jobs</c>, autonomous otherwise. The default.</summary>
+    Optional = 0,
 
     /// <summary>
-    /// An active unit of work with a joinable compatible resource is mandatory; publishing or scheduling
-    /// without one throws before any effect.
+    /// Only the enlisted receiver is acceptable: scheduling through an injected scheduler or manager throws
+    /// before any effect.
     /// </summary>
     Required = 1,
-
-    /// <summary>
-    /// Never enlist: the write is autonomous even when a unit of work is active, and succeeds against an
-    /// incompatible resource.
-    /// </summary>
-    Never = 2,
 }

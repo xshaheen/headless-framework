@@ -12,6 +12,7 @@ using Headless.Messaging.Persistence;
 using Headless.Messaging.Runtime;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;
+using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -279,8 +280,7 @@ public abstract class TransactionalInboxScopeConformanceTests : TestBase
         }
     }
 
-    public sealed class InboxScopeConsumer(InboxScopeDbContext db, ExecutionState state, IBus bus, IQueue queue)
-        : IConsume<InboxScopeMessage>
+    public sealed class InboxScopeConsumer(InboxScopeDbContext db, ExecutionState state) : IConsume<InboxScopeMessage>
     {
         public async ValueTask ConsumeAsync(
             ConsumeContext<InboxScopeMessage> context,
@@ -297,17 +297,15 @@ public abstract class TransactionalInboxScopeConformanceTests : TestBase
                 await db.SaveChangesAsync(cancellationToken);
             }
 
+            // The runner enlisted this attempt in a unit and handed it over on the context; publishing through
+            // it is what makes the rows share the attempt's fate. An injected IBus/IQueue would write standalone
+            // rows that survive the fence rejection this test forces.
+            var unitOfWork =
+                context.UnitOfWork
+                ?? throw new InvalidOperationException("The transactional inbox tier must hand the consumer its unit.");
             var output = new InboxScopeOutput(context.Message.Id);
-            await bus.PublishAsync(
-                output,
-                new PublishOptions { DeliveryMode = DeliveryMode.Durable },
-                cancellationToken
-            );
-            await queue.EnqueueAsync(
-                output,
-                new QueueOptions { DeliveryMode = DeliveryMode.Durable },
-                cancellationToken
-            );
+            await unitOfWork.Outbox.PublishAsync(output, cancellationToken);
+            await unitOfWork.Outbox.EnqueueAsync(output, cancellationToken);
             if (state.BeforeHandlerReturns is { } beforeHandlerReturns)
             {
                 await beforeHandlerReturns(cancellationToken);

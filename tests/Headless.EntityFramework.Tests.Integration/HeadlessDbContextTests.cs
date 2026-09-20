@@ -235,14 +235,14 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
         // integration events under a caller-owned transaction require the unit that owns that transaction.
         await using var scope = fixture.ServiceProvider.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
-        var unitOfWorkManager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+        var unitOfWorkFactory = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
 
         var entity = new TestEntity { Name = "with-msgs", TenantId = "T1" };
         entity.EmitIntegrationEvent(new TestDistributedMessage("hello"));
         db.Tests.Add(entity);
 
         await using var tx = await db.Database.BeginTransactionAsync(AbortToken);
-        await using var unitOfWork = unitOfWorkManager.Enlist(db, tx);
+        await using var unitOfWork = unitOfWorkFactory.Enlist(db, tx);
 
         // when
         await db.SaveChangesAsync(AbortToken);
@@ -256,16 +256,16 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
         await unitOfWork.CompleteAsync(AbortToken);
     }
 
-    // IUnitOfWorkManager.RunAsync(db, …)
+    // IUnitOfWorkFactory.RunAsync(db, …)
 
     [Fact]
     public async Task should_commit_when_run_async_operation_succeeds()
     {
         await using var scope = fixture.ServiceProvider.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
-        var unitOfWorkManager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+        var unitOfWorkFactory = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
 
-        await unitOfWorkManager.RunAsync(
+        await unitOfWorkFactory.RunAsync(
             db,
             async (_, ct) =>
             {
@@ -283,10 +283,10 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
     {
         await using var scope = fixture.ServiceProvider.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
-        var unitOfWorkManager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+        var unitOfWorkFactory = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
 
         var act = async () =>
-            await unitOfWorkManager.RunAsync(
+            await unitOfWorkFactory.RunAsync(
                 db,
                 async (_, ct) =>
                 {
@@ -306,9 +306,9 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
     {
         await using var scope = fixture.ServiceProvider.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
-        var unitOfWorkManager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+        var unitOfWorkFactory = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
 
-        var result = await unitOfWorkManager.RunAsync(
+        var result = await unitOfWorkFactory.RunAsync(
             db,
             async (_, ct) =>
             {
@@ -327,14 +327,14 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
     {
         await using var scope = fixture.ServiceProvider.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
-        var unitOfWorkManager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+        var unitOfWorkFactory = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
         var drained = 0;
 
-        await unitOfWorkManager.RunAsync(
+        await unitOfWorkFactory.RunAsync(
             db,
             async (unitOfWork, ct) =>
             {
-                unitOfWork.Should().BeSameAs(unitOfWorkManager.Current, "the unit is current on the scope's manager");
+                unitOfWork.Should().BeSameAs(db.UnitOfWork(), "the unit is bound to the context for the block");
                 unitOfWork.Resource!.IsOwned.Should().BeTrue();
                 unitOfWork.OnCompleted(() =>
                 {
@@ -350,7 +350,7 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
         );
 
         drained.Should().Be(1);
-        unitOfWorkManager.Current.Should().BeNull();
+        db.UnitOfWork().Should().BeNull("the binding evicts the completed unit");
         (await db.Basics.CountAsync(AbortToken)).Should().Be(1);
     }
 
@@ -359,12 +359,12 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
     {
         await using var scope = fixture.ServiceProvider.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
-        var unitOfWorkManager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+        var unitOfWorkFactory = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
         var cancellationToken = new CancellationToken(canceled: true);
         var invoked = false;
 
         Func<Task> action = async () =>
-            await unitOfWorkManager.RunAsync(
+            await unitOfWorkFactory.RunAsync(
                 db,
                 (_, _) =>
                 {

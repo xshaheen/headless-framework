@@ -47,9 +47,13 @@ internal interface ITransactionalInboxStorage
 
 internal interface IInboxTransactionRunner
 {
+    /// <summary>
+    /// Runs <paramref name="handler" /> inside one inbox transaction, handing it the unit of work enlisted in that
+    /// transaction so the consumer's context and the callback publish can join it.
+    /// </summary>
     Task ExecuteAsync(
         MediumMessage message,
-        Func<CancellationToken, Task> handler,
+        Func<IUnitOfWork, CancellationToken, Task> handler,
         CancellationToken cancellationToken
     );
 }

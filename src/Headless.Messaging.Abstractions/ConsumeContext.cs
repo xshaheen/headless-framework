@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.UnitOfWork;
 
 namespace Headless.Messaging;
 
@@ -34,6 +35,18 @@ public record ConsumeContext
     /// Gets the cancellation token currently active for this consume operation.
     /// </summary>
     public CancellationToken CancellationToken { get; internal set; }
+
+    /// <summary>
+    /// Gets the unit of work the inbox transaction runner enlisted this attempt in, or <see langword="null" />
+    /// on the non-transactional tier, where the handler runs outside any transaction.
+    /// </summary>
+    /// <remarks>
+    /// On the transactional tier this is the unit the consumer's own enlisted writes join —
+    /// <c>context.UnitOfWork.Outbox.PublishAsync(…)</c> — and the unit a callback response is published
+    /// through, so a rolled-back attempt discards both. A consumer that also holds the inbox's
+    /// <c>DbContext</c> reaches the same unit through <c>db.UnitOfWork()</c>.
+    /// </remarks>
+    public IUnitOfWork? UnitOfWork { get; internal set; }
 
     internal object? Response { get; private set; }
 

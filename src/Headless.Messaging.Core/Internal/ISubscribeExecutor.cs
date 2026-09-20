@@ -253,7 +253,8 @@ internal sealed class SubscribeExecutor(
                 await transactionRunner
                     .ExecuteAsync(
                         message,
-                        ct => _InvokeConsumerMethodAsync(message, descriptor, attemptServices, ct),
+                        (unitOfWork, ct) =>
+                            _InvokeConsumerMethodAsync(message, descriptor, attemptServices, unitOfWork, ct),
                         cancellationToken
                     )
                     .ConfigureAwait(false);
@@ -262,7 +263,13 @@ internal sealed class SubscribeExecutor(
             }
             else
             {
-                await _InvokeConsumerMethodAsync(message, descriptor, services: null, cancellationToken)
+                await _InvokeConsumerMethodAsync(
+                        message,
+                        descriptor,
+                        services: null,
+                        unitOfWork: null,
+                        cancellationToken
+                    )
                     .ConfigureAwait(false);
                 await _SetSuccessfulState(message, executionState).ConfigureAwait(false);
             }
@@ -726,10 +733,11 @@ internal sealed class SubscribeExecutor(
         MediumMessage message,
         ConsumerExecutorDescriptor descriptor,
         IServiceProvider? services,
+        IUnitOfWork? unitOfWork,
         CancellationToken cancellationToken
     )
     {
-        var consumerContext = new ConsumerContext(descriptor, message);
+        var consumerContext = new ConsumerContext(descriptor, message, unitOfWork);
         var traceHandle = _TracingBefore(message.Origin, message.Lane, descriptor.MethodInfo, message.Retries);
         try
         {
@@ -757,18 +765,11 @@ internal sealed class SubscribeExecutor(
                 var callbackCausationId = message.Origin.Id;
                 var callbackSequence = message.Origin.GetCorrelationSequence() + 1;
 
-                if (services is not null)
+                if (unitOfWork is not null)
                 {
-                    // Transactional tier: publish through the attempt scope's current unit of work — the one the
-                    // inbox transaction runner enlisted — so the callback response joins the handler's transaction
-                    // and is discarded when it rolls back. The autonomous IBus would leave the response behind.
-                    var unitOfWork =
-                        services.GetRequiredService<IUnitOfWorkManager>().Current
-                        ?? throw new InvalidOperationException(
-                            "The transactional inbox tier ran the consumer without a current unit of work, so its "
-                                + "callback response cannot enlist in the handler's transaction."
-                        );
-
+                    // Transactional tier: publish through the unit the inbox transaction runner enlisted and handed
+                    // down, so the callback response joins the handler's transaction and is discarded when it
+                    // rolls back. The autonomous IBus would leave the response behind.
                     await unitOfWork
                         .Outbox.PublishAsync(
                             ret.Result,

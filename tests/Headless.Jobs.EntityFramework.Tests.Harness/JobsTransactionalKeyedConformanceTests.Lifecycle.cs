@@ -28,7 +28,7 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>
         {
             await fixture.RunCoordinatedTransactionAsync(
                 host.Services,
-                async (_, connection, transaction, ct) =>
+                async (_, _, connection, transaction, ct) =>
                 {
                     await using var different = fixture.CreateConnection();
                     var parsed = new DbConnectionStringBuilder { ConnectionString = different.ConnectionString };
@@ -58,18 +58,14 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>
                             )
                         )
                         {
-                            // "incompatible" is an ENTIRELY SEPARATE DI container, so there is no ambient state its
-                            // own scoped IUnitOfWorkManager could observe automatically (unlike the old AsyncLocal
-                            // coordinator, which crossed containers for free). Enlist the outer caller's
-                            // connection/transaction in observed mode so the preflight check inside AddAsync
-                            // actually runs (and rejects) instead of short-circuiting on "no active unit of work".
-                            await using var incompatibleScope = incompatible.Services.CreateAsyncScope();
-                            var incompatibleManager =
-                                incompatibleScope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
-                            incompatibleManager.Enlist(new FixedRelationalResource(connection, transaction));
-                            var manager = incompatibleScope.ServiceProvider.GetRequiredService<
-                                ITimeJobManager<TimeJobEntity>
-                            >();
+                            // "incompatible" is an ENTIRELY SEPARATE DI container: enlist the outer caller's
+                            // connection/transaction in observed mode through ITS factory and write through that
+                            // unit's receiver, so the preflight check inside AddAsync actually runs (and rejects)
+                            // against the incompatible host's job store.
+                            await using var incompatibleUnit = incompatible
+                                .Services.GetRequiredService<IUnitOfWorkFactory>()
+                                .Enlist(new FixedRelationalResource(connection, transaction));
+                            var manager = incompatibleUnit.TimeJobs<TimeJobEntity>();
                             var candidate = new TimeJobEntity
                             {
                                 Function = JobsCoordinationFixtureExtensions.CoordinatedFunctionName,
@@ -109,7 +105,7 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>
         {
             await fixture.RunCoordinatedTransactionAsync(
                 host.Services,
-                async (_, connection, transaction, ct) =>
+                async (_, _, connection, transaction, ct) =>
                 {
                     await using var configured = fixture.CreateConnection();
                     var observer = new BorrowedHandleObserver(connection, transaction);
@@ -124,22 +120,17 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>
                             )
                         )
                         {
-                            // "compatible" is an ENTIRELY SEPARATE DI container from the outer coordinated scope, so
-                            // there is no ambient state its own scoped IUnitOfWorkManager could observe automatically
-                            // (unlike the old AsyncLocal coordinator, which crossed containers for free). Enlist the
-                            // SAME connection/transaction the outer unit owns, in observed mode, so a manager resolved
-                            // from this scope sees it as the active unit.
-                            await using var compatibleScope = compatible.Services.CreateAsyncScope();
-                            var compatibleManager =
-                                compatibleScope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
-                            var compatibleUnit = compatibleManager.Enlist(
-                                new FixedRelationalResource(connection, transaction)
-                            );
+                            // "compatible" is an ENTIRELY SEPARATE DI container from the outer coordinated scope:
+                            // enlist the SAME connection/transaction the outer unit owns, in observed mode, through
+                            // ITS factory, and write through that unit's receivers.
+                            var compatibleUnit = compatible
+                                .Services.GetRequiredService<IUnitOfWorkFactory>()
+                                .Enlist(new FixedRelationalResource(connection, transaction));
                             if (keyed)
                             {
                                 (
                                     await _ScheduleAsync(
-                                        compatibleScope.ServiceProvider,
+                                        compatibleUnit.Jobs,
                                         new JobKey("configured-override"),
                                         "first",
                                         ct
@@ -150,9 +141,7 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>
                             }
                             else
                             {
-                                var manager = compatibleScope.ServiceProvider.GetRequiredService<
-                                    ITimeJobManager<TimeJobEntity>
-                                >();
+                                var manager = compatibleUnit.TimeJobs<TimeJobEntity>();
                                 await manager.AddAsync(
                                     new TimeJobEntity
                                     {
@@ -194,11 +183,11 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>
                 JobScheduleResult? deadline = null;
                 await fixture.RunCoordinatedTransactionAsync(
                     host.Services,
-                    async (scopedServices, connection, transaction, ct) =>
+                    async (_, unitOfWork, connection, transaction, ct) =>
                     {
                         await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, ct);
                         deadline = await _ScheduleAsync(
-                            scopedServices,
+                            unitOfWork.Jobs,
                             new JobKey("restart-failure"),
                             "first",
                             ct,
@@ -235,17 +224,17 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>
                 ((FastNodeClock)host.Services.GetRequiredService<TimeProvider>()).UtcNow = before.AddHours(1);
                 await fixture.RunCoordinatedTransactionAsync(
                     host.Services,
-                    async (scopedServices, _, _, ct) =>
+                    async (_, unitOfWork, _, _, ct) =>
                     {
                         future = await _ScheduleAsync(
-                            scopedServices,
+                            unitOfWork.Jobs,
                             new JobKey("store-future"),
                             "first",
                             ct,
                             due: before.AddMinutes(20)
                         );
                         eligible = await _ScheduleAsync(
-                            scopedServices,
+                            unitOfWork.Jobs,
                             new JobKey("store-due"),
                             "first",
                             ct,

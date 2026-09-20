@@ -30,7 +30,7 @@ public sealed class EfUnitOfWorkRunAsyncTests : TestBase
         var operationCalls = 0;
         var drains = 0;
 
-        await session.Manager.RunAsync(
+        await session.Factory.RunAsync(
             session.Db,
             async (unitOfWork, ct) =>
             {
@@ -81,7 +81,7 @@ public sealed class EfUnitOfWorkRunAsyncTests : TestBase
 
         try
         {
-            await session.Manager.RunAsync(
+            await session.Factory.RunAsync(
                 session.Db,
                 async (unitOfWork, ct) =>
                 {
@@ -115,7 +115,7 @@ public sealed class EfUnitOfWorkRunAsyncTests : TestBase
 
         try
         {
-            await session.Manager.RunAsync(
+            await session.Factory.RunAsync(
                 session.Db,
                 (unitOfWork, ct) =>
                 {
@@ -143,7 +143,7 @@ public sealed class EfUnitOfWorkRunAsyncTests : TestBase
         await using var host = await EfUnitOfWorkHost.CreateAsync();
         await using var session = host.CreateSession();
 
-        var count = await session.Manager.RunAsync(
+        var count = await session.Factory.RunAsync(
             session.Db,
             async (unitOfWork, ct) =>
             {
@@ -165,7 +165,7 @@ public sealed class EfUnitOfWorkRunAsyncTests : TestBase
         await using var host = await EfUnitOfWorkHost.CreateAsync();
         await using var session = host.CreateSession();
 
-        var count = await session.Manager.RunAsync(
+        var count = await session.Factory.RunAsync(
             session.Db,
             async (unitOfWork, ct) =>
             {

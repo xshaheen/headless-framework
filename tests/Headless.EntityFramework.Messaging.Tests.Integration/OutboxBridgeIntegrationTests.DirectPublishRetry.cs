@@ -78,10 +78,10 @@ public sealed partial class OutboxBridgeIntegrationTests
         );
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<BridgeTestDbContext>();
-        var unitOfWorkManager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+        var unitOfWorkFactory = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
         var order = new OrderEntity { Name = key };
 
-        await unitOfWorkManager.RunAsync(
+        await unitOfWorkFactory.RunAsync(
             db,
             async (unit, ct) =>
             {
@@ -112,10 +112,8 @@ public sealed partial class OutboxBridgeIntegrationTests
         public int Writes { get; set; }
     }
 
-    private sealed class PublishBeforeTransientFailure(
-        IUnitOfWorkManager unitOfWorkManager,
-        DirectPublishRetryEvidence evidence
-    ) : IDomainEventHandler<OrderShipping>
+    private sealed class PublishBeforeTransientFailure(BridgeTestDbContext db, DirectPublishRetryEvidence evidence)
+        : IDomainEventHandler<OrderShipping>
     {
         public async ValueTask HandleAsync(
             EventContext<OrderShipping> context,
@@ -128,8 +126,8 @@ public sealed partial class OutboxBridgeIntegrationTests
                 // Enlisted in the save's unit of work: the row joins that transaction, and the write forfeits
                 // execution-strategy replay for the rest of the unit — which is what this case pins.
                 var unitOfWork =
-                    unitOfWorkManager.Current
-                    ?? throw new InvalidOperationException("The save pipeline must have a unit of work current.");
+                    db.UnitOfWork()
+                    ?? throw new InvalidOperationException("The save pipeline must have bound a unit to the context.");
 
                 await unitOfWork.Outbox.PublishAsync(new OrderShipped(evidence.Key), cancellationToken);
                 evidence.Writes++;

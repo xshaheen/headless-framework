@@ -9,9 +9,9 @@ namespace Tests;
 #pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
 
 /// <summary>
-/// Provider-agnostic specification of the unit-of-work contract: one scoped manager, explicit begin /
-/// complete / rollback, completion and failure callbacks, scope-local state, the terminal-claim rules, and
-/// the nesting semantics. Every scenario is portable; provider-specific concerns (real transactions, EF
+/// Provider-agnostic specification of the unit-of-work contract: a singleton factory, explicit begin /
+/// complete / rollback, completion and failure callbacks, unit-local state, the terminal-claim rules, and
+/// independent units with nothing ambient. Every scenario is portable; provider-specific concerns (real transactions, EF
 /// execution strategies) live in the provider projects.
 /// </summary>
 public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : TestBase
@@ -320,7 +320,7 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
         var session = fixture.CreateSession();
         var resource = new StubRelationalUnitOfWorkResource();
 
-        await using var unitOfWork = await session.Manager.BeginAsync(
+        await using var unitOfWork = await session.Factory.BeginAsync(
             _ => ValueTask.FromResult<IUnitOfWorkResource>(resource),
             options: null,
             cancellationToken: AbortToken
@@ -330,48 +330,10 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
         unitOfWork.Resource.Should().BeAssignableTo<IRelationalUnitOfWorkResource>();
     }
 
-    // Manager-scope scenarios (replacing the ambient-specific ones).
+    // Factory scenarios: units are independent, nothing is ambient, and a begin never joins another.
 
     [Fact]
-    public virtual async Task should_set_current_after_begin_and_clear_it_after_dispose()
-    {
-        var session = fixture.CreateSession();
-        session.Manager.Current.Should().BeNull();
-
-        var unitOfWork = await session.BeginAsync(AbortToken);
-
-        session.Manager.Current.Should().BeSameAs(unitOfWork);
-
-        await unitOfWork.DisposeAsync();
-
-        session.Manager.Current.Should().BeNull();
-    }
-
-    [Fact]
-    public virtual async Task should_restore_current_after_inner_independent_unit_disposes()
-    {
-        var session = fixture.CreateSession();
-
-        await using var outer = await session.BeginAsync(AbortToken);
-        var inner = await session.Manager.BeginAsync(
-            _ => ValueTask.FromResult<IUnitOfWorkResource>(new StubRelationalUnitOfWorkResource()),
-            options: null,
-            cancellationToken: AbortToken
-        );
-
-        inner
-            .Should()
-            .NotBeSameAs(outer, "a resource-bearing begin under a resource-less root is an independent nested unit");
-        session.Manager.Current.Should().BeSameAs(inner, "Current returns the innermost");
-
-        await inner.DisposeAsync();
-
-        session.Manager.Current.Should().BeSameAs(outer);
-        outer.State.Should().Be(UnitOfWorkState.Active, "the inner unit's outcome is its own");
-    }
-
-    [Fact]
-    public virtual async Task should_not_promote_independent_nested_unit_work_to_the_root()
+    public virtual async Task should_open_independent_units_for_consecutive_begins()
     {
         var session = fixture.CreateSession();
         var outerCalls = 0;
@@ -386,13 +348,14 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
         });
 
         await using (
-            var inner = await session.Manager.BeginAsync(
+            var inner = await session.Factory.BeginAsync(
                 _ => ValueTask.FromResult<IUnitOfWorkResource>(new StubRelationalUnitOfWorkResource()),
                 options: null,
                 cancellationToken: AbortToken
             )
         )
         {
+            inner.Should().NotBeSameAs(outer, "every begin opens its own unit; there is nothing to join");
             inner.OnCompleted(() =>
             {
                 innerCalls++;
@@ -404,7 +367,8 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
         }
 
         innerCalls.Should().Be(1);
-        outerCalls.Should().Be(0);
+        outerCalls.Should().Be(0, "the inner unit's outcome is its own");
+        outer.State.Should().Be(UnitOfWorkState.Active);
 
         await outer.RollbackAsync();
 
@@ -413,206 +377,57 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
     }
 
     [Fact]
-    public virtual async Task should_return_a_child_handle_for_begin_on_the_same_resource()
+    public virtual async Task should_open_two_units_on_the_same_resource_without_joining()
     {
-        var session = fixture.CreateSession();
-        var resource = new FakeUnitOfWorkResource();
-
-        await using var root = await session.Manager.BeginAsync(
-            _ => ValueTask.FromResult<IUnitOfWorkResource>(resource),
-            options: null,
-            cancellationToken: AbortToken
-        );
-
-        await using var child = await session.Manager.BeginAsync(
-            _ => ValueTask.FromResult<IUnitOfWorkResource>(resource),
-            options: null,
-            cancellationToken: AbortToken
-        );
-
-        child.Should().NotBeSameAs(root);
-        session.Manager.Current.Should().BeSameAs(child);
-        root.State.Should().Be(UnitOfWorkState.Active);
-    }
-
-    [Fact]
-    public virtual async Task should_transfer_child_registrations_to_the_root_on_child_complete()
-    {
+        // Join-by-default went with the ambient slot: a callee that must share a unit is handed it. Two begins on
+        // one resource are therefore two units, each with its own registrations and its own completion.
         var session = fixture.CreateSession();
         var resource = new FakeUnitOfWorkResource();
         var order = new List<string>();
 
-        await using var root = await session.Manager.BeginAsync(
+        await using var first = await session.Factory.BeginAsync(
             _ => ValueTask.FromResult<IUnitOfWorkResource>(resource),
             options: null,
             cancellationToken: AbortToken
         );
-        root.OnCompleted(() =>
+        await using var second = await session.Factory.BeginAsync(
+            _ => ValueTask.FromResult<IUnitOfWorkResource>(resource),
+            options: null,
+            cancellationToken: AbortToken
+        );
+
+        second.Should().NotBeSameAs(first);
+        first.OnCompleted(() =>
         {
-            order.Add("root");
+            order.Add("first");
+
+            return ValueTask.CompletedTask;
+        });
+        second.OnCompleted(() =>
+        {
+            order.Add("second");
 
             return ValueTask.CompletedTask;
         });
 
-        await using (
-            var child = await session.Manager.BeginAsync(
-                _ => ValueTask.FromResult<IUnitOfWorkResource>(resource),
-                options: null,
-                cancellationToken: AbortToken
-            )
-        )
-        {
-            child.OnCompleted(() =>
-            {
-                order.Add("child");
+        await second.CompleteAsync(AbortToken);
 
-                return ValueTask.CompletedTask;
-            });
+        order.Should().Equal("second");
+        first.State.Should().Be(UnitOfWorkState.Active, "the other unit is untouched");
 
-            await child.CompleteAsync(AbortToken);
-        }
+        await first.CompleteAsync(AbortToken);
 
-        order.Should().BeEmpty("a child completion defers its registrations to the root");
-        session.Manager.Current.Should().BeSameAs(root);
-
-        await root.CompleteAsync(AbortToken);
-
-        order.Should().Equal("root", "child");
-        resource.CommitCalls.Should().Be(1, "the child did not commit; the root owns the transaction");
+        order.Should().Equal("second", "first");
     }
 
     [Fact]
-    public virtual async Task should_abort_the_root_when_a_child_is_abandoned()
+    public virtual async Task should_propagate_a_resource_begin_fault_and_stay_usable()
     {
         var session = fixture.CreateSession();
-        var resource = new FakeUnitOfWorkResource();
-
-        var root = await session.Manager.BeginAsync(
-            _ => ValueTask.FromResult<IUnitOfWorkResource>(resource),
-            options: null,
-            cancellationToken: AbortToken
-        );
-        var child = await session.Manager.BeginAsync(
-            _ => ValueTask.FromResult<IUnitOfWorkResource>(resource),
-            options: null,
-            cancellationToken: AbortToken
-        );
-        var childCompletedCalls = 0;
-        child.OnCompleted(() =>
-        {
-            childCompletedCalls++;
-
-            return ValueTask.CompletedTask;
-        });
-
-        await child.DisposeAsync();
-
-        childCompletedCalls.Should().Be(0, "an abandoned child's registrations are dropped, not transferred");
-        session.Manager.Current.Should().BeSameAs(root);
-        root.State.Should().Be(UnitOfWorkState.Failed);
-        root.Failure!.Reason.Should().Be(UnitOfWorkFailureReason.ChildAbandoned);
-
-        var act = () => root.CompleteAsync(AbortToken).AsTask();
-
-        await act.Should()
-            .ThrowAsync<InvalidOperationException>()
-            .WithMessage("*A nested unit of work was disposed without completing, so the root cannot complete*");
-    }
-
-    [Fact]
-    public virtual async Task should_refuse_root_complete_while_a_child_is_active()
-    {
-        var session = fixture.CreateSession();
-        var resource = new FakeUnitOfWorkResource();
-
-        await using var root = await session.Manager.BeginAsync(
-            _ => ValueTask.FromResult<IUnitOfWorkResource>(resource),
-            options: null,
-            cancellationToken: AbortToken
-        );
-        await using var child = await session.Manager.BeginAsync(
-            _ => ValueTask.FromResult<IUnitOfWorkResource>(resource),
-            options: null,
-            cancellationToken: AbortToken
-        );
-
-        var act = () => root.CompleteAsync(AbortToken).AsTask();
-
-        await act.Should()
-            .ThrowAsync<InvalidOperationException>()
-            .WithMessage("*A nested unit of work begun in this scope is still active*");
-
-        root.State.Should().Be(UnitOfWorkState.Active, "a refused complete claims no outcome");
-
-        await child.CompleteAsync(AbortToken);
-        await root.CompleteAsync(AbortToken);
-
-        root.State.Should().Be(UnitOfWorkState.Completed);
-    }
-
-    [Fact]
-    public virtual async Task should_treat_disposing_a_child_after_the_root_completed_as_a_no_op()
-    {
-        var session = fixture.CreateSession();
-        var resource = new FakeUnitOfWorkResource();
-
-        var root = await session.Manager.BeginAsync(
-            _ => ValueTask.FromResult<IUnitOfWorkResource>(resource),
-            options: null,
-            cancellationToken: AbortToken
-        );
-        var child = await session.Manager.BeginAsync(
-            _ => ValueTask.FromResult<IUnitOfWorkResource>(resource),
-            options: null,
-            cancellationToken: AbortToken
-        );
-
-        // Completing the root while the child is active throws; instead complete the root through the child's
-        // completion path, then dispose the already-terminal child.
-        await child.CompleteAsync(AbortToken);
-        await root.CompleteAsync(AbortToken);
-
-        var act = () => child.DisposeAsync().AsTask();
-
-        await act.Should().NotThrowAsync("the child already reached its terminal state");
-        session.Manager.Current.Should().BeNull();
-    }
-
-    [Fact]
-    public virtual async Task should_throw_when_a_second_resource_is_begun_under_a_resource_bearing_unit()
-    {
-        var session = fixture.CreateSession();
-        var first = new FakeUnitOfWorkResource();
-
-        await using var unitOfWork = await session.Manager.BeginAsync(
-            _ => ValueTask.FromResult<IUnitOfWorkResource>(first),
-            options: null,
-            cancellationToken: AbortToken
-        );
 
         var act = () =>
             session
-                .Manager.BeginAsync(
-                    _ => ValueTask.FromResult<IUnitOfWorkResource>(new FakeUnitOfWorkResource()),
-                    options: null,
-                    cancellationToken: AbortToken
-                )
-                .AsTask();
-
-        await act.Should()
-            .ThrowAsync<InvalidOperationException>()
-            .WithMessage("*already active on another resource*IServiceScopeFactory.CreateScope()*");
-    }
-
-    [Fact]
-    public virtual async Task should_release_the_slot_when_the_resource_begin_faults()
-    {
-        var session = fixture.CreateSession();
-        var fault = new InvalidOperationException("begin fault");
-
-        var act = () =>
-            session
-                .Manager.BeginAsync(
+                .Factory.BeginAsync(
                     static _ =>
                         ValueTask.FromException<IUnitOfWorkResource>(new InvalidOperationException("begin fault")),
                     options: null,
@@ -621,48 +436,23 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
                 .AsTask();
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("begin fault");
-        session.Manager.Current.Should().BeNull("a faulted begin releases the slot");
 
-        var second = await session.Manager.BeginAsync(
+        await using var second = await session.Factory.BeginAsync(
             static _ => ValueTask.FromResult<IUnitOfWorkResource>(new FakeUnitOfWorkResource()),
             options: null,
             cancellationToken: AbortToken
         );
 
-        second.State.Should().Be(UnitOfWorkState.Active, "the slot is reusable after a faulted begin");
+        second.State.Should().Be(UnitOfWorkState.Active, "a faulted begin leaves nothing behind");
     }
 
     [Fact]
-    public virtual async Task should_roll_back_and_warn_when_the_scope_disposes_with_an_active_unit()
-    {
-        var session = fixture.CreateSession();
-        var unitOfWork = await session.BeginAsync(AbortToken);
-        UnitOfWorkFailure? failure = null;
-
-        unitOfWork.OnFailed(f =>
-        {
-            failure = f;
-
-            return ValueTask.CompletedTask;
-        });
-
-        await session.DisposeAsync();
-
-        unitOfWork.State.Should().Be(UnitOfWorkState.Failed);
-        failure!.Reason.Should().Be(UnitOfWorkFailureReason.ScopeDisposed);
-
-        var warning = session.Logs.Should().ContainSingle(e => e.Level == LogLevel.Warning).Subject;
-        warning.Message.Should().Contain("still active when its service scope was disposed");
-        warning.Message.Should().Contain("Complete or dispose every unit of work before the scope ends.");
-    }
-
-    [Fact]
-    public virtual async Task should_commit_the_owned_resource_on_complete_and_not_on_child_complete()
+    public virtual async Task should_commit_the_owned_resource_on_complete()
     {
         var session = fixture.CreateSession();
         var resource = new FakeUnitOfWorkResource();
 
-        await using var unitOfWork = await session.Manager.BeginAsync(
+        await using var unitOfWork = await session.Factory.BeginAsync(
             _ => ValueTask.FromResult<IUnitOfWorkResource>(resource),
             options: null,
             cancellationToken: AbortToken
@@ -679,7 +469,7 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
     {
         var session = fixture.CreateSession();
         var resource = new FakeUnitOfWorkResource();
-        var unitOfWork = await session.Manager.BeginAsync(
+        var unitOfWork = await session.Factory.BeginAsync(
             _ => ValueTask.FromResult<IUnitOfWorkResource>(resource),
             options: null,
             cancellationToken: AbortToken
@@ -690,7 +480,7 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
         resource.RollbackCalls.Should().Be(1);
 
         var second = new FakeUnitOfWorkResource();
-        var secondUnit = await session.Manager.BeginAsync(
+        var secondUnit = await session.Factory.BeginAsync(
             _ => ValueTask.FromResult<IUnitOfWorkResource>(second),
             options: null,
             cancellationToken: AbortToken
@@ -707,7 +497,7 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
         var session = fixture.CreateSession();
         var resource = new FakeUnitOfWorkResource(isOwned: false);
 
-        await using var unitOfWork = await session.Manager.BeginAsync(
+        await using var unitOfWork = await session.Factory.BeginAsync(
             _ => ValueTask.FromResult<IUnitOfWorkResource>(resource),
             options: null,
             cancellationToken: AbortToken
@@ -724,7 +514,7 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
         var session = fixture.CreateSession();
         var resource = new FakeUnitOfWorkResource(isOwned: false) { TransactionCompleted = true };
 
-        var unitOfWork = await session.Manager.BeginAsync(
+        var unitOfWork = await session.Factory.BeginAsync(
             _ => ValueTask.FromResult<IUnitOfWorkResource>(resource),
             options: null,
             cancellationToken: AbortToken
@@ -743,7 +533,7 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
         var session = fixture.CreateSession();
         var resource = new FakeUnitOfWorkResource(isOwned: false) { TransactionCompleted = true };
 
-        var unitOfWork = await session.Manager.BeginAsync(
+        var unitOfWork = await session.Factory.BeginAsync(
             _ => ValueTask.FromResult<IUnitOfWorkResource>(resource),
             options: null,
             cancellationToken: AbortToken
@@ -761,7 +551,7 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
         var session = fixture.CreateSession();
         var resource = new FakeUnitOfWorkResource { CommitFault = new InvalidOperationException("commit fault") };
 
-        await using var unitOfWork = await session.Manager.BeginAsync(
+        await using var unitOfWork = await session.Factory.BeginAsync(
             _ => ValueTask.FromResult<IUnitOfWorkResource>(resource),
             options: null,
             cancellationToken: AbortToken
@@ -805,7 +595,7 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
             RollbackFault = new InvalidOperationException("rollback fault"),
         };
 
-        await using var unitOfWork = await session.Manager.BeginAsync(
+        await using var unitOfWork = await session.Factory.BeginAsync(
             _ => ValueTask.FromResult<IUnitOfWorkResource>(resource),
             options: null,
             cancellationToken: AbortToken

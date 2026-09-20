@@ -29,7 +29,7 @@ public sealed class UnitOfWorkOutboxTests : TestBase
         await using var host = _CreateHost();
         await using var scope = host.Provider.CreateAsyncScope();
         var unitOfWork = await scope
-            .ServiceProvider.GetRequiredService<IUnitOfWorkManager>()
+            .ServiceProvider.GetRequiredService<IUnitOfWorkFactory>()
             .BeginAsync(cancellationToken: AbortToken);
 
         // when
@@ -57,7 +57,7 @@ public sealed class UnitOfWorkOutboxTests : TestBase
         await using var host = _CreateHost();
         await using var scope = host.Provider.CreateAsyncScope();
         var unitOfWork = await scope
-            .ServiceProvider.GetRequiredService<IUnitOfWorkManager>()
+            .ServiceProvider.GetRequiredService<IUnitOfWorkFactory>()
             .BeginAsync(cancellationToken: AbortToken);
         var receipt = await unitOfWork.Outbox.PublishAsync(new Placed("committed"), AbortToken);
         host.Dispatcher.CommittedMessages.Should().BeEmpty("dispatch waits for the commit edge");
@@ -80,7 +80,7 @@ public sealed class UnitOfWorkOutboxTests : TestBase
         await using var host = _CreateHost();
         await using var scope = host.Provider.CreateAsyncScope();
         var resource = Substitute.For<IRelationalUnitOfWorkResource>();
-        var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>().Enlist(resource);
+        var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>().Enlist(resource);
 
         // when
         var act = () => unitOfWork.Outbox.PublishAsync(new Placed("unjoinable"), AbortToken);
@@ -101,7 +101,7 @@ public sealed class UnitOfWorkOutboxTests : TestBase
         await using var host = _CreateHost(removeCoordinationResolver: true);
         await using var scope = host.Provider.CreateAsyncScope();
         var unitOfWork = await scope
-            .ServiceProvider.GetRequiredService<IUnitOfWorkManager>()
+            .ServiceProvider.GetRequiredService<IUnitOfWorkFactory>()
             .BeginAsync(cancellationToken: AbortToken);
 
         // when
@@ -116,19 +116,17 @@ public sealed class UnitOfWorkOutboxTests : TestBase
     }
 
     [Fact]
-    public async Task should_throw_when_publishing_on_a_child_view_that_already_completed()
+    public async Task should_throw_when_publishing_on_a_unit_that_already_completed()
     {
-        // given — the child completed but the root stays active, so State still reads Active on that view
+        // given — a completed unit: nothing can enlist in it any more
         await using var host = _CreateHost();
-        await using var scope = host.Provider.CreateAsyncScope();
-        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
-        await using var root = await manager.BeginAsync(cancellationToken: AbortToken);
-        var child = await manager.BeginAsync(cancellationToken: AbortToken);
-        await child.CompleteAsync(AbortToken);
-        child.State.Should().Be(UnitOfWorkState.Active, "the view forwards the still-open root's state");
+        var factory = host.Provider.GetRequiredService<IUnitOfWorkFactory>();
+        var unitOfWork = await factory.BeginAsync(cancellationToken: AbortToken);
+        await unitOfWork.CompleteAsync(AbortToken);
+        unitOfWork.State.Should().Be(UnitOfWorkState.Completed);
 
         // when
-        var act = () => child.Outbox.PublishAsync(new Placed("dead-view"), AbortToken);
+        var act = () => unitOfWork.Outbox.PublishAsync(new Placed("dead-unit"), AbortToken);
 
         // then
         await act.Should().ThrowAsync<InvalidOperationException>();
@@ -136,16 +134,14 @@ public sealed class UnitOfWorkOutboxTests : TestBase
     }
 
     [Fact]
-    public async Task should_throw_when_a_binding_taken_before_a_child_completed_is_used_after_it()
+    public async Task should_throw_when_a_binding_taken_before_the_unit_completed_is_used_after_it()
     {
-        // given — the binding is taken while the child is live, then retained past its completion
+        // given — the binding is taken while the unit is live, then retained past its completion
         await using var host = _CreateHost();
-        await using var scope = host.Provider.CreateAsyncScope();
-        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
-        await using var root = await manager.BeginAsync(cancellationToken: AbortToken);
-        var child = await manager.BeginAsync(cancellationToken: AbortToken);
-        var outbox = child.Outbox;
-        await child.CompleteAsync(AbortToken);
+        var factory = host.Provider.GetRequiredService<IUnitOfWorkFactory>();
+        var unitOfWork = await factory.BeginAsync(cancellationToken: AbortToken);
+        var outbox = unitOfWork.Outbox;
+        await unitOfWork.CompleteAsync(AbortToken);
 
         // when
         var act = () => outbox.PublishAsync(new Placed("stale-binding"), AbortToken);
@@ -156,32 +152,49 @@ public sealed class UnitOfWorkOutboxTests : TestBase
     }
 
     [Fact]
-    public async Task should_enlist_a_child_view_publish_in_the_root_and_discard_it_when_the_root_rolls_back()
+    public async Task should_keep_two_units_outbox_work_independent()
     {
-        // given
+        // given — two units from one factory share nothing: each holds its own buffered rows
         await using var host = _CreateHost();
-        await using var scope = host.Provider.CreateAsyncScope();
-        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
-        var root = await manager.BeginAsync(cancellationToken: AbortToken);
-        var child = await manager.BeginAsync(cancellationToken: AbortToken);
+        var factory = host.Provider.GetRequiredService<IUnitOfWorkFactory>();
+        var first = await factory.BeginAsync(cancellationToken: AbortToken);
+        var second = await factory.BeginAsync(cancellationToken: AbortToken);
 
         // when
-        await child.Outbox.PublishAsync(new Placed("child"), AbortToken);
-        await child.CompleteAsync(AbortToken);
+        await first.Outbox.PublishAsync(new Placed("first"), AbortToken);
+        await second.Outbox.PublishAsync(new Placed("second"), AbortToken);
+        await second.RollbackAsync();
 
-        // then — the child's completion transfers the work; only the root's commit makes it durable
+        // then — the rolled-back unit's row is discarded; the other unit is untouched and still commits its own
         (await _CountPublishedAsync(host))
             .Should()
             .Be(0);
 
         // when
-        await root.RollbackAsync();
+        await first.CompleteAsync(AbortToken);
 
         // then
         (await _CountPublishedAsync(host))
             .Should()
-            .Be(0);
-        host.Dispatcher.CommittedMessages.Should().BeEmpty();
+            .Be(1);
+        host.Dispatcher.CommittedMessages.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task should_bind_the_outbox_once_per_unit()
+    {
+        // given — the binding is unit-local state: one instance for the unit's lifetime, none per read.
+        await using var host = _CreateHost();
+        await using var unitOfWork = await host
+            .Provider.GetRequiredService<IUnitOfWorkFactory>()
+            .BeginAsync(cancellationToken: AbortToken);
+
+        // when
+        var first = unitOfWork.Outbox;
+        var second = unitOfWork.Outbox;
+
+        // then
+        second.Should().BeSameAs(first);
     }
 
     [Fact]
@@ -191,7 +204,7 @@ public sealed class UnitOfWorkOutboxTests : TestBase
         await using var host = _CreateHost();
         await using var scope = host.Provider.CreateAsyncScope();
         var unitOfWork = await scope
-            .ServiceProvider.GetRequiredService<IUnitOfWorkManager>()
+            .ServiceProvider.GetRequiredService<IUnitOfWorkFactory>()
             .BeginAsync(cancellationToken: AbortToken);
 
         // when
@@ -216,7 +229,7 @@ public sealed class UnitOfWorkOutboxTests : TestBase
         await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         await using var scope = provider.CreateAsyncScope();
         await using var unitOfWork = await scope
-            .ServiceProvider.GetRequiredService<IUnitOfWorkManager>()
+            .ServiceProvider.GetRequiredService<IUnitOfWorkFactory>()
             .BeginAsync(cancellationToken: AbortToken);
 
         // when

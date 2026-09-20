@@ -76,7 +76,7 @@ public static class SetupSqlServerEntityFrameworkMessaging
                 services.AddScoped<IInboxTransactionRunner>(
                     serviceProvider => new SqlServerInboxTransactionRunner<TContext>(
                         serviceProvider.GetRequiredService<TContext>(),
-                        serviceProvider.GetRequiredService<IUnitOfWorkManager>(),
+                        serviceProvider.GetRequiredService<IUnitOfWorkFactory>(),
                         serviceProvider.GetRequiredService<IDeliveryCoordinationResolver>(),
                         serviceProvider.GetRequiredService<SqlServerDataStorage>(),
                         serviceProvider
@@ -119,7 +119,7 @@ public static class SetupSqlServerEntityFrameworkMessaging
 
     private sealed class SqlServerInboxTransactionRunner<TContext>(
         TContext context,
-        IUnitOfWorkManager unitOfWorkManager,
+        IUnitOfWorkFactory unitOfWorkFactory,
         IDeliveryCoordinationResolver coordinationResolver,
         SqlServerDataStorage storage,
         ILogger logger
@@ -128,11 +128,11 @@ public static class SetupSqlServerEntityFrameworkMessaging
     {
         public async Task ExecuteAsync(
             MediumMessage message,
-            Func<CancellationToken, Task> handler,
+            Func<IUnitOfWork, CancellationToken, Task> handler,
             CancellationToken cancellationToken
         )
         {
-            if (unitOfWorkManager.Current is not null || context.Database.CurrentTransaction is not null)
+            if (context.Database.CurrentTransaction is not null || context.UnitOfWork() is not null)
             {
                 throw new InvalidOperationException(
                     "Transactional inbox execution cannot enter an already-active or nested transaction boundary."
@@ -151,10 +151,9 @@ public static class SetupSqlServerEntityFrameworkMessaging
                                 .Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct)
                                 .ConfigureAwait(false);
                             var dbTransaction = transaction.GetDbTransaction();
-                            // Observed mode: the runner commits, the unit only makes the transaction visible to
-                            // everything invoked inside the handler (a consumer callback publish) through the
-                            // scope's Current.
-                            await using var unitOfWork = unitOfWorkManager.Enlist(context, transaction);
+                            // Observed mode: the runner commits; the unit is handed to the handler so the
+                            // consumer's context and a callback publish enlist in this transaction.
+                            await using var unitOfWork = unitOfWorkFactory.Enlist(context, transaction);
                             var coordination = coordinationResolver.Resolve(unitOfWork);
                             if (coordination.Status is not DeliveryCoordinationStatus.Compatible)
                             {
@@ -164,7 +163,7 @@ public static class SetupSqlServerEntityFrameworkMessaging
                             }
 
                             handlerEntered = true;
-                            await handler(ct).ConfigureAwait(false);
+                            await handler(unitOfWork, ct).ConfigureAwait(false);
                             await context.SaveChangesAsync(ct).ConfigureAwait(false);
                             var completed = await ((ITransactionalInboxStorage)storage)
                                 .CompleteReceivedInboxAsync(message, dbTransaction, ct)

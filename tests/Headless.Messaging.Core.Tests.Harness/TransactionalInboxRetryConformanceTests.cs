@@ -114,7 +114,7 @@ public abstract class TransactionalInboxRetryConformanceTests : TestBase
                     .ServiceProvider.GetRequiredService<IInboxTransactionRunner>()
                     .ExecuteAsync(
                         message,
-                        async ct =>
+                        async (_, ct) =>
                         {
                             handlerEntries++;
                             await db.Effects.AddAsync(new InboxRetryEffect { Id = id }, ct);
@@ -176,7 +176,7 @@ public abstract class TransactionalInboxRetryConformanceTests : TestBase
             var staleError = await Record.ExceptionAsync(() =>
                 staleScope
                     .ServiceProvider.GetRequiredService<IInboxTransactionRunner>()
-                    .ExecuteAsync(message, _ => Task.CompletedTask, AbortToken)
+                    .ExecuteAsync(message, (_, _) => Task.CompletedTask, AbortToken)
             );
             staleError.Should().BeOfType<StaleInboxAttemptException>();
         }
@@ -189,7 +189,7 @@ public abstract class TransactionalInboxRetryConformanceTests : TestBase
                 .ServiceProvider.GetRequiredService<IInboxTransactionRunner>()
                 .ExecuteAsync(
                     recovered,
-                    async ct =>
+                    async (_, ct) =>
                     {
                         handlerEntries++;
                         await db.Effects.AddAsync(new InboxRetryEffect { Id = id }, ct);
@@ -284,19 +284,18 @@ public abstract class TransactionalInboxRetryConformanceTests : TestBase
         await using (var attemptScope = provider.CreateAsyncScope())
         {
             var db = attemptScope.ServiceProvider.GetRequiredService<InboxRetryDbContext>();
-            var unitOfWorkManager = attemptScope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
             error = await Record.ExceptionAsync(() =>
                 attemptScope
                     .ServiceProvider.GetRequiredService<IInboxTransactionRunner>()
                     .ExecuteAsync(
                         message,
-                        async ct =>
+                        async (unitOfWork, ct) =>
                         {
                             handlerEntries++;
-                            unitOfWorkManager
-                                .Current.Should()
+                            unitOfWork
+                                .Should()
                                 .NotBeNull("the runner enlists its transaction for the handler's duration");
-                            unitOfWorkManager.Current!.OnCompleted(() =>
+                            unitOfWork.OnCompleted(() =>
                             {
                                 drainAttempts++;
                                 throw new InvalidOperationException("drain down");
