@@ -33,5 +33,27 @@ public static class SetupUnitOfWork
 
             return services;
         }
+
+        /// <summary>
+        /// Adds the scoped <see cref="IUnitOfWorkManager" /> and registers <typeparamref name="TProvider" /> as
+        /// the source of one unit-of-work capability, resolvable through
+        /// <see cref="IUnitOfWork.GetFeature{TFeature}" />.
+        /// </summary>
+        /// <remarks>
+        /// Idempotent per provider type, so a bridge package's setup can call this without coordinating with
+        /// the host. At most one provider may claim a given <see cref="IUnitOfWorkFeatureProvider.FeatureType" />;
+        /// a second one for the same feature fails when the scope's manager is created. The provider is scoped,
+        /// like the manager that reads it.
+        /// </remarks>
+        /// <typeparam name="TProvider">The provider implementation to register.</typeparam>
+        /// <returns>The same <see cref="IServiceCollection" /> for chaining.</returns>
+        public IServiceCollection AddUnitOfWorkFeature<TProvider>()
+            where TProvider : class, IUnitOfWorkFeatureProvider
+        {
+            services.AddUnitOfWork();
+            services.TryAddEnumerable(ServiceDescriptor.Scoped<IUnitOfWorkFeatureProvider, TProvider>());
+
+            return services;
+        }
     }
 }

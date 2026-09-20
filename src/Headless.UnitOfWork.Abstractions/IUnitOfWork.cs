@@ -22,7 +22,8 @@ namespace Headless.UnitOfWork;
 /// transaction reports its own rollback. A dispose after a terminal state is a no-op.
 /// </para>
 /// <para>
-/// Registrations (<see cref="OnCompleted" />, <see cref="OnFailed" />, <see cref="GetOrAdd{TState}" />) are
+/// Registrations (<see cref="OnCompleted" />, <see cref="OnFailed" />, <see cref="GetOrAdd{TState}" />,
+/// <see cref="GetFeature{TFeature}" />) are
 /// accepted only while the unit is <see cref="UnitOfWorkState.Active" />; after the terminal state they throw
 /// <see cref="InvalidOperationException" />. Every member throws <see cref="ObjectDisposedException" /> after
 /// the handle is disposed.
@@ -113,6 +114,39 @@ public interface IUnitOfWork : IDisposable, IAsyncDisposable
     /// <exception cref="InvalidOperationException">The unit is no longer active.</exception>
     TState GetOrAdd<TState, TArg>(TArg arg, Func<IUnitOfWork, TArg, TState> factory)
         where TState : class;
+
+    /// <summary>
+    /// Gets the capability of type <typeparamref name="TFeature" /> attached to this unit by a registered
+    /// <see cref="IUnitOfWorkFeatureProvider" />, or <see langword="null" /> when no provider claims that type.
+    /// </summary>
+    /// <remarks>
+    /// The capability is created once per unit, on first resolution, and cached on the unit itself: every
+    /// later resolution — through this handle or through a nested view over the same unit — returns that one
+    /// instance, and it is disposed with the unit when it implements <see cref="IAsyncDisposable" /> or
+    /// <see cref="IDisposable" />. Resolving is a registration: it is accepted only while <i>this</i> handle
+    /// can still carry work (see <see cref="ThrowIfUnusable" />).
+    /// </remarks>
+    /// <typeparam name="TFeature">The capability type, as declared by its provider.</typeparam>
+    /// <returns>The capability, or <see langword="null" /> when no provider is registered for it.</returns>
+    /// <exception cref="InvalidOperationException">This handle can no longer carry work.</exception>
+    /// <exception cref="ObjectDisposedException">This handle was disposed.</exception>
+    TFeature? GetFeature<TFeature>()
+        where TFeature : class;
+
+    /// <summary>
+    /// Throws when <i>this</i> handle can no longer carry work; returns silently when it can.
+    /// </summary>
+    /// <remarks>
+    /// Each handle answers for itself, which is what distinguishes this from <see cref="State" />: a nested
+    /// view reports the state of the unit it views, so a view that has already completed still reports
+    /// <see cref="UnitOfWorkState.Active" /> while the unit it completed into stays open. Call this — not a
+    /// <see cref="State" /> comparison — before attaching work to the handle a caller was given.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// This handle already completed, or the unit reached a terminal state.
+    /// </exception>
+    /// <exception cref="ObjectDisposedException">This handle was disposed.</exception>
+    void ThrowIfUnusable();
 
     /// <summary>
     /// Marks this unit as not safely replayable, so an owning execution strategy (for example EF Core's

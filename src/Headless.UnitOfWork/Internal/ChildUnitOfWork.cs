@@ -81,6 +81,34 @@ internal sealed class ChildUnitOfWork(Internal.UnitOfWork root, UnitOfWorkManage
         return root.GetOrAdd(this, arg, factory);
     }
 
+    public TFeature? GetFeature<TFeature>()
+        where TFeature : class
+    {
+        ThrowIfUnusable();
+
+        // The feature is cached on the root engine and handed the root view: this child can complete while the
+        // unit stays open, and the one cached instance must outlive it.
+        return manager.GetFeature<TFeature>(root);
+    }
+
+    /// <summary>
+    /// Answers for the view, not the unit: <see cref="State" /> forwards to the root, so a view that has
+    /// already completed still reports <see cref="UnitOfWorkState.Active" /> while the root is open.
+    /// </summary>
+    public void ThrowIfUnusable()
+    {
+        _ThrowIfDisposed();
+
+        if (Volatile.Read(ref _completedView) == 1)
+        {
+            throw new InvalidOperationException(
+                "This nested unit of work has already completed. Use the unit of work it was begun under, or begin a new one."
+            );
+        }
+
+        root.ThrowIfNotActive();
+    }
+
     public void PreventRetry() => root.PreventRetry();
 
     public async ValueTask CompleteAsync(CancellationToken cancellationToken = default)

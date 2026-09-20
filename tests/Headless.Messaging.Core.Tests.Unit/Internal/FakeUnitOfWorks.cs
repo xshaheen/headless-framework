@@ -89,6 +89,18 @@ internal sealed class FakeUnitOfWork : IUnitOfWork
         return created;
     }
 
+    /// <summary>No feature providers here: the messaging tests drive the unit directly, never a capability.</summary>
+    public TFeature? GetFeature<TFeature>()
+        where TFeature : class => null;
+
+    public void ThrowIfUnusable()
+    {
+        if (State is not UnitOfWorkState.Active)
+        {
+            throw new InvalidOperationException($"The unit of work is {State}.");
+        }
+    }
+
     public void PreventRetry() => IsRetryPrevented = true;
 
     public async ValueTask CompleteAsync(CancellationToken cancellationToken = default)
