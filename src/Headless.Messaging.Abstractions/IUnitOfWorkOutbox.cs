@@ -29,10 +29,14 @@ namespace Headless.Messaging;
 /// nested view, a terminal unit — before any storage effect.
 /// </para>
 /// <para>
-/// A publish written through this accessor forfeits execution-strategy replay for the rest of the unit: the
-/// durable row is written outside the change tracker, so a retrying strategy cannot re-run the unit without
-/// duplicating it. Integration events the save pipeline emits are exempt, because it re-publishes them on a
-/// replayed attempt; a unit that mixes both is no longer retriable, since the direct publish marks it.
+/// A publish written through this accessor ends execution-strategy replay only where a replay would not re-run
+/// it. Issued directly inside the caller's own <c>RunAsync(db, …)</c> block (an owned unit), the block's replay
+/// re-runs the publish, so the unit stays replayable. Issued into the <c>HeadlessDbContext</c> save pipeline's
+/// own save (an observed unit), which replays without re-running the domain-event handlers, the publish calls
+/// <see cref="IUnitOfWork.PreventRetry" /> before it writes; the integration events that pipeline emits are
+/// exempt because it re-publishes them on a replayed attempt. A handler publishing during the caller's own
+/// <c>SaveChangesAsync</c> ends replay as well: that save marks the unit once it clears the events a replayed
+/// block would need to re-dispatch.
 /// </para>
 /// </remarks>
 [PublicAPI]

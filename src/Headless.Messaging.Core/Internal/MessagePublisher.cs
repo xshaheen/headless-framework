@@ -152,7 +152,9 @@ internal sealed class MessagePublisher(
                         // pipeline enlisting its own save — and replays it without re-running the domain-event
                         // handlers that published, so a row written here would be lost with the rolled-back
                         // attempt: mark before attempting storage. The save pipeline's own integration events are
-                        // exempt because it re-publishes them on a replayed attempt.
+                        // exempt because it re-publishes them on a replayed attempt. The one owned-mode case a
+                        // replay cannot re-run — a handler publishing during the block's own SaveChanges, whose
+                        // success clears the events — is the pipeline's to mark, since only it sees that drain.
                         decision.Coordination.UnitOfWork.PreventRetry();
                     }
 

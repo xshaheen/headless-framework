@@ -458,6 +458,14 @@ internal sealed class HeadlessSaveChangesPipeline(
                     state.Context.ChangeTracker.AcceptAllChanges();
                 }
             }
+            else if (_DispatchedOccurrences(state.SaveContext))
+            {
+                // A caller-owned save is replayed by the caller's block, not by this pipeline, and the clear below
+                // leaves that replay nothing to dispatch: the handlers' and the integration bridge's enlisted rows
+                // roll back with the attempt while the emitters stay empty, so the replayed block would commit the
+                // aggregate without its messages. End replay while the rows are still atomic with the save.
+                unitOfWork?.PreventRetry();
+            }
 
             _CompleteSuccessfulSave(state.Context, state.SaveContext, auditSave, state.AcceptAllChangesOnSuccess);
 
@@ -551,6 +559,12 @@ internal sealed class HeadlessSaveChangesPipeline(
                 {
                     state.Context.ChangeTracker.AcceptAllChanges();
                 }
+            }
+            else if (_DispatchedOccurrences(state.SaveContext))
+            {
+                // Same rule as the async twin: the caller's block replays this save, and the clear below leaves
+                // it nothing to dispatch, so end replay while the enlisted rows are still atomic with the save.
+                unitOfWork?.PreventRetry();
             }
 
             _CompleteSuccessfulSave(state.Context, state.SaveContext, auditSave, state.AcceptAllChangesOnSuccess);
@@ -670,6 +684,15 @@ internal sealed class HeadlessSaveChangesPipeline(
     private static bool _HasAuditEntries(IReadOnlyList<AuditLogEntryData>? auditEntries)
     {
         return auditEntries is { Count: > 0 };
+    }
+
+    /// <summary>
+    /// Whether this save handed at least one occurrence to a handler or to the outbox bridge. On the success path
+    /// every pending domain occurrence has been dispatched, so the pending list stands in for the dispatched set.
+    /// </summary>
+    private static bool _DispatchedOccurrences(HeadlessSaveEntryContext saveContext)
+    {
+        return saveContext.PendingDomainEvents.Count > 0 || saveContext.IntegrationEventEmitters.Count > 0;
     }
 
     private void _CompleteSuccessfulSave(

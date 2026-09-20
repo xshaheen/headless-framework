@@ -90,7 +90,9 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
         // to be re-run. Replay re-runs the block that owns the unit: an owned unit (BeginAsync / RunAsync) is the
         // caller's block, which schedules again, so it stays replayable. An observed unit belongs to someone
         // else's commit edge — the EF save pipeline enlisting its own save — which replays without re-running the
-        // domain-event handler that scheduled, so that write must end replay before it lands.
+        // domain-event handler that scheduled, so that write must end replay before it lands. A handler scheduling
+        // during the caller's own SaveChanges is the save pipeline's case: it ends replay once that save clears
+        // the events a replayed block would need to re-dispatch.
         if (!context.Relational.IsOwned)
         {
             context.UnitOfWork.PreventRetry();

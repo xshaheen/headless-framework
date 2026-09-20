@@ -104,6 +104,58 @@ public sealed partial class OutboxBridgeIntegrationTests
         (await _CountOrdersAsync()).Should().Be(1);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task should_end_replay_of_a_run_async_block_whose_save_dispatched_a_handler_publish(bool synchronous)
+    {
+        // The owned-mode hole the direct-publish case above cannot see: the handler's row is written during the
+        // block's own SaveChanges, and that save clears the aggregate's events on success. Without the mark the
+        // second attempt re-inserts the aggregate with nothing left to dispatch and commits it without its message
+        // (orders 1, published 0, caller told success); the save must end replay instead, so the transient fault
+        // surfaces with everything rolled back.
+        var evidence = new DirectPublishRetryEvidence();
+        var attempts = 0;
+        await using var provider = await _BuildProviderAsync(
+            services =>
+            {
+                services.RemoveAll<IDomainEventHandler<OrderShipping>>();
+                services.AddSingleton(evidence);
+                services.AddScoped<IDomainEventHandler<OrderShipping>, PublishBeforeTransientFailure>();
+            },
+            options => options.ReplaceService<IExecutionStrategyFactory, RetryOnceStrategyFactory>()
+        );
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<BridgeTestDbContext>();
+        var unitOfWorkFactory = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
+        var order = new OrderEntity { Name = evidence.Key };
+        order.EmitShipping();
+
+        var run = async () =>
+            await unitOfWorkFactory.RunAsync(
+                db,
+                async (_, _) =>
+                {
+                    attempts++;
+                    db.Orders.Add(order);
+                    await _SaveAsync(db, synchronous);
+
+                    if (attempts == 1)
+                    {
+                        throw new TransientOutboxException();
+                    }
+                },
+                cancellationToken: AbortToken
+            );
+
+        await run.Should().ThrowAsync<TransientOutboxException>();
+
+        attempts.Should().Be(1, "a save that dispatched a handler publish must end replay of the owning block");
+        evidence.Writes.Should().Be(1);
+        (await _CountPublishedContainingAsync(evidence.Key)).Should().Be(0);
+        (await _CountOrdersAsync()).Should().Be(0);
+    }
+
     private sealed class DirectPublishRetryEvidence
     {
         public string Key { get; } = $"direct-publish-{Guid.NewGuid():N}";
