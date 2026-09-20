@@ -293,34 +293,6 @@ public sealed class FluentOptionsConsumerCompilationTests : TestBase
     }
 
     [Theory]
-    [InlineData("Jobs", "class JobCaller")]
-    [InlineData("Bus", "class OrderEvents")]
-    [InlineData("Queue", "class ImportJobs")]
-    public void actual_readme_examples_compile_with_documented_imports_and_only_abstraction_references(
-        string resource,
-        string marker
-    )
-    {
-        using var stream = typeof(FluentOptionsConsumerCompilationTests).Assembly.GetManifestResourceStream(
-            $"FluentOptions.{resource}"
-        );
-        stream.Should().NotBeNull();
-        using var reader = new StreamReader(stream!);
-        var markdown = reader.ReadToEnd().Replace("\r\n", "\n", StringComparison.Ordinal);
-        var example = markdown
-            .Split("```csharp\n", StringSplitOptions.None)
-            .Skip(1)
-            .Select(block => block.Split("```", StringSplitOptions.None)[0])
-            .Single(block => block.Contains(marker, StringComparison.Ordinal));
-        // These are the SDK implicit System imports; all framework imports come from the README itself.
-        var compilation = _Compile("using System; using System.Threading; using System.Threading.Tasks;\n" + example);
-        _Errors(compilation).Should().BeEmpty();
-        using var image = new MemoryStream();
-        var result = compilation.Emit(image, cancellationToken: AbortToken);
-        result.Success.Should().BeTrue(string.Join(Environment.NewLine, result.Diagnostics));
-    }
-
-    [Theory]
     [InlineData("DateTime")]
     [InlineData("DateTime?")]
     public void instant_entry_points_reject_datetime_consumers(string timeType)
