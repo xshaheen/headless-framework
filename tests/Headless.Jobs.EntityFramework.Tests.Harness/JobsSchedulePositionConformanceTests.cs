@@ -9,6 +9,7 @@ using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Models;
 using Headless.Testing.Tests;
+using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -972,10 +973,8 @@ public abstract class JobsSchedulePositionConformanceTests<TFixture>(TFixture fi
             var beforeInsert = await _StoreUtcNowAsync(ct);
             await fixture.RunCoordinatedTransactionAsync(
                 host.Services,
-                async (scopedServices, _, _, innerCt) =>
-                    await scopedServices
-                        .GetRequiredService<ICronJobManager<CronJobEntity>>()
-                        .AddAsync(definition, innerCt),
+                async (_, unitOfWork, _, _, innerCt) =>
+                    await unitOfWork.CronJobs<CronJobEntity>().AddAsync(definition, innerCt),
                 ct
             );
             var afterInsert = await _StoreUtcNowAsync(ct);
@@ -1017,9 +1016,9 @@ public abstract class JobsSchedulePositionConformanceTests<TFixture>(TFixture fi
 
             await fixture.RunCoordinatedTransactionAsync(
                 host.Services,
-                async (scopedServices, connection, transaction, innerCt) =>
+                async (_, unitOfWork, connection, transaction, innerCt) =>
                 {
-                    var manager = scopedServices.GetRequiredService<ICronJobManager<CronJobEntity>>();
+                    var manager = unitOfWork.CronJobs<CronJobEntity>();
 
                     // The value an EF-translated DateTime.UtcNow resolves to inside this transaction. On PostgreSQL it
                     // is pinned here for the transaction's whole life; reading it first is what makes the assertion

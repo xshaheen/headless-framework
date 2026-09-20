@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.UnitOfWork;
-
 namespace Headless.Messaging.Monitoring;
 
 /// <summary>
@@ -38,10 +36,11 @@ public class MessageView
     public DeliveryMode? ResolvedDeliveryMode { get; set; }
 
     /// <summary>
-    /// Gets or sets the transaction enlistment the caller requested (per call, per type, or the host default), or
-    /// <see langword="null"/> for legacy/unreadable metadata.
+    /// Gets or sets whether the row was written inside the caller's unit-of-work transaction, or
+    /// <see langword="null"/> when the row records no answer (legacy or unreadable metadata). A null here means
+    /// unknown, never "not coordinated".
     /// </summary>
-    public TransactionEnlistment? RequestedEnlistment { get; set; }
+    public bool? IsCoordinated { get; set; }
 
     /// <summary>Gets or sets the serialized message body, or <see langword="null"/> when the content was not projected.</summary>
     public string? Content { get; set; }

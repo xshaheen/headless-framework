@@ -25,7 +25,7 @@ public abstract class UnitOfWorkResourceConformanceTests<TFixture>(TFixture fixt
     {
         await fixture.ResetAsync(AbortToken);
         await using var session = fixture.CreateSession();
-        await using var handle = await fixture.BeginOwnedAsync(session.Manager, AbortToken);
+        await using var handle = await fixture.BeginOwnedAsync(session.Factory, AbortToken);
         var order = new List<int>();
 
         handle.UnitOfWork.OnCompleted(() =>
@@ -56,7 +56,7 @@ public abstract class UnitOfWorkResourceConformanceTests<TFixture>(TFixture fixt
         await using var session = fixture.CreateSession();
         UnitOfWorkFailure? failure = null;
 
-        await using (var handle = await fixture.BeginOwnedAsync(session.Manager, AbortToken))
+        await using (var handle = await fixture.BeginOwnedAsync(session.Factory, AbortToken))
         {
             handle.UnitOfWork.OnFailed(f =>
             {
@@ -79,7 +79,7 @@ public abstract class UnitOfWorkResourceConformanceTests<TFixture>(TFixture fixt
     {
         await fixture.ResetAsync(AbortToken);
         await using var session = fixture.CreateSession();
-        await using var handle = await fixture.BeginOwnedAsync(session.Manager, AbortToken);
+        await using var handle = await fixture.BeginOwnedAsync(session.Factory, AbortToken);
         UnitOfWorkFailure? failure = null;
         handle.UnitOfWork.OnFailed(f =>
         {
@@ -100,7 +100,7 @@ public abstract class UnitOfWorkResourceConformanceTests<TFixture>(TFixture fixt
     public virtual async Task should_be_idempotent_when_owned_unit_rollback_is_called_twice()
     {
         await using var session = fixture.CreateSession();
-        await using var handle = await fixture.BeginOwnedAsync(session.Manager, AbortToken);
+        await using var handle = await fixture.BeginOwnedAsync(session.Factory, AbortToken);
         var failedCalls = 0;
         handle.UnitOfWork.OnFailed(_ =>
         {
@@ -119,175 +119,39 @@ public abstract class UnitOfWorkResourceConformanceTests<TFixture>(TFixture fixt
     }
 
     [Fact]
-    public virtual async Task should_transfer_child_registrations_to_the_root_and_commit_once_when_child_of_the_same_resource_completes()
+    public virtual async Task should_keep_two_owned_units_independent_when_each_commits_its_own_row()
     {
+        // Two owned begins are two connections and two transactions: each commits its own row, and neither
+        // sees the other's registrations or outcome. Nothing joins because nothing is ambient.
         await fixture.ResetAsync(AbortToken);
         await using var session = fixture.CreateSession();
-        await using var root = await fixture.BeginOwnedAsync(session.Manager, AbortToken);
+        await using var first = await fixture.BeginOwnedAsync(session.Factory, AbortToken);
+        await using var second = await fixture.BeginOwnedAsync(session.Factory, AbortToken);
         var order = new List<string>();
-        root.UnitOfWork.OnCompleted(() =>
+        first.UnitOfWork.OnCompleted(() =>
         {
-            order.Add("root");
+            order.Add("first");
 
             return ValueTask.CompletedTask;
         });
-
-        var resource = root.UnitOfWork.Resource ?? throw new InvalidOperationException("The root exposed no resource.");
-
-        await using (
-            var child = await session.Manager.BeginAsync(
-                _ => ValueTask.FromResult(resource),
-                options: null,
-                cancellationToken: AbortToken
-            )
-        )
+        second.UnitOfWork.OnCompleted(() =>
         {
-            child.OnCompleted(() =>
-            {
-                order.Add("child");
-
-                return ValueTask.CompletedTask;
-            });
-
-            await fixture.InsertProbeRowAsync(child, "child-complete", AbortToken);
-            await child.CompleteAsync(AbortToken);
-        }
-
-        order.Should().BeEmpty("a child completion defers its registrations to the root");
-        session.Manager.Current.Should().BeSameAs(root.UnitOfWork);
-
-        await root.UnitOfWork.CompleteAsync(AbortToken);
-
-        order.Should().Equal("root", "child");
-        (await fixture.CountProbeRowsAsync(AbortToken))
-            .Should()
-            .Be(1, "the root's single commit persisted the child's row");
-    }
-
-    [Fact]
-    public virtual async Task should_abort_the_root_and_roll_back_the_probe_row_when_a_child_of_the_same_resource_is_abandoned()
-    {
-        await fixture.ResetAsync(AbortToken);
-        await using var session = fixture.CreateSession();
-        var root = await fixture.BeginOwnedAsync(session.Manager, AbortToken);
-        var resource = root.UnitOfWork.Resource ?? throw new InvalidOperationException("The root exposed no resource.");
-
-        await fixture.InsertProbeRowAsync(root.UnitOfWork, "root-row", AbortToken);
-
-        var child = await session.Manager.BeginAsync(
-            _ => ValueTask.FromResult(resource),
-            options: null,
-            cancellationToken: AbortToken
-        );
-        var childCompletedCalls = 0;
-        child.OnCompleted(() =>
-        {
-            childCompletedCalls++;
+            order.Add("second");
 
             return ValueTask.CompletedTask;
         });
-
-        await child.DisposeAsync();
-
-        childCompletedCalls.Should().Be(0, "an abandoned child's registrations are dropped, not transferred");
-        session.Manager.Current.Should().BeSameAs(root.UnitOfWork);
-        root.UnitOfWork.State.Should().Be(UnitOfWorkState.Failed);
-        root.UnitOfWork.Failure!.Reason.Should().Be(UnitOfWorkFailureReason.ChildAbandoned);
-        (await fixture.CountProbeRowsAsync(AbortToken))
-            .Should()
-            .Be(0, "the aborted root's real transaction must roll back the earlier row");
-
-        var act = () => root.UnitOfWork.CompleteAsync(AbortToken).AsTask();
-
-        await act.Should()
-            .ThrowAsync<InvalidOperationException>()
-            .WithMessage("*A nested unit of work was disposed without completing*");
-
-        await root.DisposeAsync(); // Releases the connection; the unit already reached its terminal state.
-    }
-
-    [Fact]
-    public virtual async Task should_refuse_root_complete_while_a_child_of_the_same_resource_is_active()
-    {
-        await using var session = fixture.CreateSession();
-        await using var root = await fixture.BeginOwnedAsync(session.Manager, AbortToken);
-        var resource = root.UnitOfWork.Resource ?? throw new InvalidOperationException("The root exposed no resource.");
-        await using var child = await session.Manager.BeginAsync(
-            _ => ValueTask.FromResult(resource),
-            options: null,
-            cancellationToken: AbortToken
-        );
-
-        var act = () => root.UnitOfWork.CompleteAsync(AbortToken).AsTask();
-
-        await act.Should()
-            .ThrowAsync<InvalidOperationException>()
-            .WithMessage("*A nested unit of work begun in this scope is still active*");
-
-        root.UnitOfWork.State.Should().Be(UnitOfWorkState.Active, "a refused complete claims no outcome");
-
-        await child.CompleteAsync(AbortToken);
-        await root.UnitOfWork.CompleteAsync(AbortToken);
-
-        root.UnitOfWork.State.Should().Be(UnitOfWorkState.Completed);
-    }
-
-    [Fact]
-    public virtual async Task should_throw_and_roll_back_the_rejected_transaction_when_a_second_resource_is_begun_under_an_active_owned_unit()
-    {
-        await fixture.ResetAsync(AbortToken);
-        await using var session = fixture.CreateSession();
-        await using var first = await fixture.BeginOwnedAsync(session.Manager, AbortToken);
 
         await fixture.InsertProbeRowAsync(first.UnitOfWork, "first-row", AbortToken);
+        await fixture.InsertProbeRowAsync(second.UnitOfWork, "second-row", AbortToken);
+        await second.UnitOfWork.CompleteAsync(AbortToken);
 
-        // A second owned begin opens its own connection and transaction before the manager rejects it: the
-        // rejection must roll that second (never-adopted) transaction back rather than leaking it.
-        var act = () => fixture.BeginOwnedAsync(session.Manager, AbortToken).AsTask();
+        order.Should().Equal("second");
+        first.UnitOfWork.State.Should().Be(UnitOfWorkState.Active);
 
-        await act.Should()
-            .ThrowAsync<InvalidOperationException>()
-            .WithMessage("*already active on another resource*IServiceScopeFactory.CreateScope()*");
+        await first.UnitOfWork.RollbackAsync();
 
-        session
-            .Manager.Current.Should()
-            .BeSameAs(first.UnitOfWork, "the rejected begin leaves the active unit untouched");
-
-        await first.UnitOfWork.CompleteAsync(AbortToken);
-
-        (await fixture.CountProbeRowsAsync(AbortToken))
-            .Should()
-            .Be(1, "only the first (accepted) unit's row is durable");
-    }
-
-    [Fact]
-    public virtual async Task should_roll_back_the_probe_row_and_warn_when_the_scope_disposes_with_an_active_owned_unit()
-    {
-        await fixture.ResetAsync(AbortToken);
-        using var logs = new CapturingLoggerProvider();
-        var session = fixture.CreateSession(logs);
-        var handle = await fixture.BeginOwnedAsync(session.Manager, AbortToken);
-        UnitOfWorkFailure? failure = null;
-        handle.UnitOfWork.OnFailed(f =>
-        {
-            failure = f;
-
-            return ValueTask.CompletedTask;
-        });
-
-        await fixture.InsertProbeRowAsync(handle.UnitOfWork, "scope-leak", AbortToken);
-
-        // Disposing the scope (never the unit itself) is the leak this scenario proves recovery from.
-        await session.DisposeAsync();
-
-        failure.Should().NotBeNull();
-        failure!.Reason.Should().Be(UnitOfWorkFailureReason.ScopeDisposed);
-        (await fixture.CountProbeRowsAsync(AbortToken)).Should().Be(0, "the leaked unit's transaction must roll back");
-
-        var warning = logs.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning).Subject;
-        warning.Message.Should().Contain("still active when its service scope was disposed");
-
-        await handle.DisposeAsync(); // Releases the connection; the unit already reached its terminal state.
+        order.Should().Equal(["second"], "the rolled-back unit never drains its completions");
+        (await fixture.CountProbeRowsAsync(AbortToken)).Should().Be(1, "only the completed unit's row is durable");
     }
 
     [Fact]
@@ -296,7 +160,7 @@ public abstract class UnitOfWorkResourceConformanceTests<TFixture>(TFixture fixt
         await fixture.ResetAsync(AbortToken);
         using var logs = new CapturingLoggerProvider();
         await using var session = fixture.CreateSession(logs);
-        await using var handle = await fixture.EnlistObservedAsync(session.Manager, AbortToken);
+        await using var handle = await fixture.EnlistObservedAsync(session.Factory, AbortToken);
         var calls = 0;
         handle.UnitOfWork.OnCompleted(() =>
         {
@@ -322,7 +186,7 @@ public abstract class UnitOfWorkResourceConformanceTests<TFixture>(TFixture fixt
         await using var session = fixture.CreateSession(logs);
         IUnitOfWork unit;
 
-        await using (var handle = await fixture.EnlistObservedAsync(session.Manager, AbortToken))
+        await using (var handle = await fixture.EnlistObservedAsync(session.Factory, AbortToken))
         {
             unit = handle.UnitOfWork;
             await fixture.InsertProbeRowAsync(handle.UnitOfWork, "observed-forgotten", AbortToken);
@@ -345,7 +209,7 @@ public abstract class UnitOfWorkResourceConformanceTests<TFixture>(TFixture fixt
         await fixture.ResetAsync(AbortToken);
         using var logs = new CapturingLoggerProvider();
         await using var session = fixture.CreateSession(logs);
-        await using var handle = await fixture.EnlistObservedAsync(session.Manager, AbortToken);
+        await using var handle = await fixture.EnlistObservedAsync(session.Factory, AbortToken);
         UnitOfWorkFailure? failure = null;
         handle.UnitOfWork.OnFailed(f =>
         {

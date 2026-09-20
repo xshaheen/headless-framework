@@ -8,39 +8,31 @@ using Headless.UnitOfWork;
 
 namespace Headless.Jobs.Managers;
 
-// Scoped facade over the singleton JobsManager core. It resolves IUnitOfWorkManager.Current at each call and
-// passes it down to the core's Add/keyed-schedule methods; Update/Delete never touched coordination and forward
-// straight through. Registered scoped as both ITimeJobManager<TTimeJob> and ICronJobManager<TCronJob> so each
-// resolution reads THIS scope's active unit of work, never a captive singleton reading ambient state.
+// Facade over the singleton JobsManager core that fixes the unit of work its Add/keyed-schedule writes enlist in:
+// null for the autonomous receiver registered in DI, the bound unit for the receivers behind unit.Jobs. The unit
+// is captured at construction, never read from ambient state. Update/Delete never touched coordination and
+// forward straight through.
 internal sealed class JobsManagerFacade<TTimeJob, TCronJob>(
     JobsManager<TTimeJob, TCronJob> core,
-    IUnitOfWorkManager unitOfWorkManager
+    IUnitOfWork? unitOfWork = null
 ) : ICronJobManager<TCronJob>, ITimeJobManager<TTimeJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {
     private readonly JobsManager<TTimeJob, TCronJob> _core = Argument.IsNotNull(core);
-    private readonly IUnitOfWorkManager _unitOfWorkManager = Argument.IsNotNull(unitOfWorkManager);
 
     Task<TCronJob> ICronJobManager<TCronJob>.AddAsync(TCronJob entity, CancellationToken cancellationToken) =>
-        _core.AddCronJobAsync(entity, _unitOfWorkManager.Current, cancellationToken);
+        _core.AddCronJobAsync(entity, unitOfWork, cancellationToken);
 
     Task<TTimeJob> ITimeJobManager<TTimeJob>.AddAsync(TTimeJob entity, CancellationToken cancellationToken) =>
-        _core.AddTimeJobAsync(entity, _unitOfWorkManager.Current, cancellationToken);
+        _core.AddTimeJobAsync(entity, unitOfWork, cancellationToken);
 
     Task<TTimeJob> ITimeJobManager<TTimeJob>.AddIdempotentAsync(
         TTimeJob entity,
         string idempotencyKey,
         TimeSpan idempotencyTtl,
         CancellationToken cancellationToken
-    ) =>
-        _core.AddIdempotentTimeJobAsync(
-            entity,
-            idempotencyKey,
-            idempotencyTtl,
-            _unitOfWorkManager.Current,
-            cancellationToken
-        );
+    ) => _core.AddIdempotentTimeJobAsync(entity, idempotencyKey, idempotencyTtl, unitOfWork, cancellationToken);
 
     Task<JobResult<TCronJob>> ICronJobManager<TCronJob>.UpdateAsync(
         TCronJob cronJob,
@@ -61,7 +53,7 @@ internal sealed class JobsManagerFacade<TTimeJob, TCronJob>(
     Task<List<TTimeJob>> ITimeJobManager<TTimeJob>.AddBatchAsync(
         List<TTimeJob> entities,
         CancellationToken cancellationToken
-    ) => _core.AddTimeJobsBatchAsync(entities, _unitOfWorkManager.Current, cancellationToken);
+    ) => _core.AddTimeJobsBatchAsync(entities, unitOfWork, cancellationToken);
 
     Task<JobResult<List<TTimeJob>>> ITimeJobManager<TTimeJob>.UpdateBatchAsync(
         List<TTimeJob> timeJobs,
@@ -76,7 +68,7 @@ internal sealed class JobsManagerFacade<TTimeJob, TCronJob>(
     Task<List<TCronJob>> ICronJobManager<TCronJob>.AddBatchAsync(
         List<TCronJob> entities,
         CancellationToken cancellationToken
-    ) => _core.AddCronJobsBatchAsync(entities, _unitOfWorkManager.Current, cancellationToken);
+    ) => _core.AddCronJobsBatchAsync(entities, unitOfWork, cancellationToken);
 
     Task<JobResult<List<TCronJob>>> ICronJobManager<TCronJob>.UpdateBatchAsync(
         List<TCronJob> cronJobs,
@@ -93,8 +85,7 @@ internal sealed class JobsManagerFacade<TTimeJob, TCronJob>(
         TTimeJob entity,
         long? expectedGeneration,
         CancellationToken cancellationToken
-    ) =>
-        _core.ScheduleKeyedTimeJobAsync(key, entity, expectedGeneration, _unitOfWorkManager.Current, cancellationToken);
+    ) => _core.ScheduleKeyedTimeJobAsync(key, entity, expectedGeneration, unitOfWork, cancellationToken);
 
     Task<JobScheduleResult> ITimeJobManager<TTimeJob>.CancelKeyedAsync(
         JobKeyScope scope,
@@ -106,8 +97,8 @@ internal sealed class JobsManagerFacade<TTimeJob, TCronJob>(
             scope,
             key,
             expectedGeneration,
-            TransactionEnlistment.WhenAvailable,
-            _unitOfWorkManager.Current,
+            TransactionEnlistment.Optional,
+            unitOfWork,
             cancellationToken
         );
 
@@ -117,13 +108,5 @@ internal sealed class JobsManagerFacade<TTimeJob, TCronJob>(
         long expectedGeneration,
         TransactionEnlistment enlistment,
         CancellationToken cancellationToken
-    ) =>
-        _core.CancelKeyedTimeJobAsync(
-            scope,
-            key,
-            expectedGeneration,
-            enlistment,
-            _unitOfWorkManager.Current,
-            cancellationToken
-        );
+    ) => _core.CancelKeyedTimeJobAsync(scope, key, expectedGeneration, enlistment, unitOfWork, cancellationToken);
 }

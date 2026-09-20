@@ -177,7 +177,7 @@ public sealed class InMemoryDataStorageCoordinationTests : TestBase
         var decision = DeliveryDecisionResolver.Resolve(
             MessageLane.Bus,
             DeliveryMode.Durable,
-            TransactionEnlistment.Required,
+            requireCoordination: true,
             delay,
             _Resolver(storage).Resolve(unitOfWork),
             TimeProvider.System.GetUtcNow()
@@ -190,23 +190,15 @@ public sealed class InMemoryDataStorageCoordinationTests : TestBase
 
     private static async Task<IUnitOfWork> _BeginUnitOfWorkAsync()
     {
-        var manager = _CreateUnitOfWorkManager();
-
-        return await manager.BeginAsync();
-    }
-
-    private static IUnitOfWorkManager _CreateUnitOfWorkManager()
-    {
         var services = new ServiceCollection();
         services.AddUnitOfWork();
+        // A resource-less unit holds nothing the container owns, so the provider's lifetime is irrelevant once
+        // the returned unit has been disposed.
+#pragma warning disable CA2000 // The provider's disposal is irrelevant, per the note above.
         var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
-
-        // A resource-less unit of work has no scope-bound resource to release, so a manager resolved from its
-        // own throwaway scope is sufficient for this test's lifetime — the scope's disposal is irrelevant once
-        // the returned unit of work has been disposed.
-#pragma warning disable CA2000 // The scope's disposal is irrelevant, per the note above.
-        return provider.CreateAsyncScope().ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
 #pragma warning restore CA2000
+
+        return await provider.GetRequiredService<IUnitOfWorkFactory>().BeginAsync();
     }
 
     private static IUnitOfWork _FakeRelationalUnitOfWork()

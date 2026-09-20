@@ -299,8 +299,8 @@ public sealed class PublishMiddlewarePipelineMigratedTests : TestBase
     {
         return DeliveryDecisionResolver.Resolve(
             MessageLane.Bus,
-            options?.DeliveryMode ?? DeliveryMode.Durable,
-            options?.Enlistment ?? TransactionEnlistment.WhenAvailable,
+            MessageOptionsDelivery.GetDeliveryMode(options) ?? DeliveryMode.Durable,
+            requireCoordination: false,
             options?.Delay,
             DeliveryCoordination.None,
             DateTimeOffset.UnixEpoch

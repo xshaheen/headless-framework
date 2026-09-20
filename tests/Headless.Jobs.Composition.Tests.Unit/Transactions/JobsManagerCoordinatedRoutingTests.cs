@@ -91,10 +91,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
 
         var schedule = () => sut.Time.AddAsync(candidate, AbortToken);
 
-        await schedule
-            .Should()
-            .ThrowAsync<InvalidOperationException>()
-            .WithMessage("*requires an active unit of work*");
+        await schedule.Should().ThrowAsync<InvalidOperationException>().WithMessage("*requires a unit of work*");
         middlewareCalls.Should().Be(0);
         await sut
             .Persistence.DidNotReceive()
@@ -296,15 +293,19 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
     }
 
     [Fact]
-    public async Task time_job_coordinator_without_relational_capability_takes_direct_path()
+    public async Task time_job_resource_less_unit_refuses_before_any_effect()
     {
-        // A messaging-only coordinated scope: coordination must not become infectious — fall back to direct insert.
+        // unit.Jobs on a unit that carries no relational resource (BeginAsync() with no db) cannot enlist, and
+        // silently falling back to an autonomous insert would break the promise the receiver makes — refuse
+        // before any effect and point at the injected scheduler for an autonomous write.
         var sut = _CreateSut(CoordinatorMode.NonRelational, withWriter: true);
 
-        var result = await sut.Time.AddAsync(_FutureTimeJob(), AbortToken);
+        var act = () => sut.Time.AddAsync(_FutureTimeJob(), AbortToken);
 
-        result.Should().NotBeNull();
-        await sut.Persistence.Received(1).AddTimeJobsAsync(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage(_RefusalFor(nonRelational: true));
+        await sut
+            .Persistence.DidNotReceive()
+            .AddTimeJobsAsync(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
         sut.Coordinator!.OnCommitCount.Should().Be(0);
         await sut
             .Writer.DidNotReceive()
@@ -527,6 +528,25 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
                 Arg.Any<CronSchedulePositionSeeder>(),
                 Arg.Any<CancellationToken>()
             );
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task time_job_coordinated_write_ends_replay_only_in_an_observed_mode_unit(bool observed)
+    {
+        // Replay re-runs the block that owns the unit. An owned unit (BeginAsync / RunAsync) is the caller's block,
+        // which schedules again, so the job write leaves it replayable. An observed unit is the EF save pipeline's
+        // own save, which replays without re-running the domain-event handler that scheduled; the row lives in a
+        // separate context that the retained tracker cannot restore, so that write must end replay.
+        var sut = _CreateSut(
+            observed ? CoordinatorMode.ObservedRelational : CoordinatorMode.LiveRelational,
+            withWriter: true
+        );
+
+        await sut.Time.AddAsync(_FutureTimeJob(), AbortToken);
+
+        sut.Coordinator!.IsRetryPrevented.Should().Be(observed);
     }
 
     [Fact]
@@ -1211,19 +1231,28 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
     }
 
     [Fact]
-    public void jobs_only_host_resolves_scoped_manager_with_no_active_unit_of_work()
+    public void jobs_only_host_resolves_the_autonomous_manager_as_a_singleton()
     {
-        // The facade is scoped, resolved from a scope, with the scope's IUnitOfWorkManager reporting no active
-        // unit — the direct-path condition — when the host never begins one.
+        // The injected manager is the autonomous receiver: a singleton bound to no unit of work, resolvable from
+        // the root and from any scope alike — the direct-path condition — even when the host never begins one.
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddHeadlessJobs(options => options.DisableBackgroundServices());
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         using var scope = provider.CreateScope();
 
-        scope.ServiceProvider.GetService<ITimeJobManager<TimeJobEntity>>().Should().NotBeNull();
-        scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>().Current.Should().BeNull();
+        var fromRoot = provider.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
+        scope.ServiceProvider.GetRequiredService<ITimeJobManager<TimeJobEntity>>().Should().BeSameAs(fromRoot);
+        services
+            .Single(d => d.ServiceType == typeof(IUnitOfWorkFactory))
+            .Lifetime.Should()
+            .Be(ServiceLifetime.Singleton);
     }
+
+    // The refusal the receiver raises for a write that must enlist: the autonomous facade names the Required knob,
+    // the enlisted one over a resource-less unit names the missing relational resource.
+    private static string _RefusalFor(bool nonRelational) =>
+        nonRelational ? "*requires the unit of work to carry a live relational resource*" : "*requires a unit of work*";
 
     private static TimeJobEntity _FutureTimeJob()
     {
@@ -1323,20 +1352,23 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
 
     private enum CoordinatorMode
     {
-        // No unit of work is begun in the scope: JobsManagerFacade resolves IUnitOfWorkManager.Current as null.
+        // The autonomous receiver: the facade is bound to no unit of work.
         None,
 
-        // A resource-less unit of work (IUnitOfWorkManager.BeginAsync() with no db): Resource is null, so it is
-        // treated exactly like "no unit of work" for the guarantee matrix — coordination must not be
-        // infectious to a scope that never opened a relational transaction.
+        // A resource-less unit of work (IUnitOfWorkFactory.BeginAsync() with no db) bound to the facade: Resource
+        // is null, so unit.Jobs has nothing to enlist in and refuses rather than writing autonomously.
         NonRelational,
 
         // An owned unit of work enlisting a live, open fake connection/transaction.
         LiveRelational,
 
         // An owned unit of work whose resource's connection reports Closed — the "incompatible/dead resource"
-        // case, which the guarantee matrix says throws regardless of TransactionEnlistment (except Never).
+        // case, which the guarantee matrix says throws regardless of TransactionEnlistment.
         DeadRelational,
+
+        // An observed-mode unit of work over a live transaction someone else commits — the shape the EF save
+        // pipeline enlists its own save in.
+        ObservedRelational,
     }
 
     private Sut _CreateSut(
@@ -1388,33 +1420,37 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         var dispatcher = Substitute.For<IJobsDispatcher>();
         dispatcher.IsEnabled.Returns(dispatcherEnabled);
 
-        // A real IUnitOfWorkManager opened through the production factory (AddUnitOfWork), wrapped only so a test
+        // A real IUnitOfWorkFactory opened through the production factory (AddUnitOfWork), wrapped only so a test
         // can observe how many OnCompleted callbacks the manager registered and whether each completed
         // synchronously — mirrors the pre-existing CommitScopeProbe shape one-for-one.
         var unitOfWorkServices = new ServiceCollection().AddUnitOfWork().BuildServiceProvider();
-        var unitOfWorkManager = unitOfWorkServices.GetRequiredService<IUnitOfWorkManager>();
+        var unitOfWorkFactory = unitOfWorkServices.GetRequiredService<IUnitOfWorkFactory>();
 
         UnitOfWorkProbe? coordinator = mode switch
         {
             CoordinatorMode.None => null,
             CoordinatorMode.NonRelational => new UnitOfWorkProbe(
                 unitOfWorkServices,
-                _AwaitSync(unitOfWorkManager.BeginAsync())
+                _AwaitSync(unitOfWorkFactory.BeginAsync())
             ),
             CoordinatorMode.LiveRelational => new UnitOfWorkProbe(
                 unitOfWorkServices,
                 _AwaitSync(
-                    unitOfWorkManager.BeginAsync(
+                    unitOfWorkFactory.BeginAsync(
                         _ => ValueTask.FromResult<IUnitOfWorkResource>(new FakeRelationalResource(_LiveTransaction())),
                         options: null,
                         cancellationToken: default
                     )
                 )
             ),
+            CoordinatorMode.ObservedRelational => new UnitOfWorkProbe(
+                unitOfWorkServices,
+                unitOfWorkFactory.Enlist(new FakeRelationalResource(_LiveTransaction(), isOwned: false))
+            ),
             CoordinatorMode.DeadRelational => new UnitOfWorkProbe(
                 unitOfWorkServices,
                 _AwaitSync(
-                    unitOfWorkManager.BeginAsync(
+                    unitOfWorkFactory.BeginAsync(
                         _ =>
                             ValueTask.FromResult<IUnitOfWorkResource>(new FakeRelationalResource(_ClosedTransaction())),
                         options: null,
@@ -1613,41 +1649,16 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         public required JobsPostCommitSignalService Signals { get; init; }
         public required CapturingLogger<JobsPostCommitSignalService> SignalsLogger { get; init; }
 
-        // The facade over the singleton core, wired with a fixed IUnitOfWorkManager stub reporting THIS
-        // test's coordinator as Current — the same shape JobsManagerFacade consumes in production, just without
-        // re-resolving per call (the tests below never change Current mid-flight, so a fixed value is equivalent).
+        // The facade over the singleton core, bound to THIS test's coordinator — the enlisted shape `unit.Jobs`
+        // builds in production — or to no unit at all, which is the injected autonomous receiver.
         public ITimeJobManager<TimeJobEntity> Time =>
-            new JobsManagerFacade<TimeJobEntity, CronJobEntity>(Manager, new FixedUnitOfWorkManager(Coordinator));
+            new JobsManagerFacade<TimeJobEntity, CronJobEntity>(Manager, Coordinator);
 
         public ICronJobManager<CronJobEntity> Cron =>
-            new JobsManagerFacade<TimeJobEntity, CronJobEntity>(Manager, new FixedUnitOfWorkManager(Coordinator));
+            new JobsManagerFacade<TimeJobEntity, CronJobEntity>(Manager, Coordinator);
 
         public ICoordinatedJobWriter<TimeJobEntity, CronJobEntity> Writer =>
             (ICoordinatedJobWriter<TimeJobEntity, CronJobEntity>)Persistence;
-    }
-
-    // A minimal IUnitOfWorkManager reporting a fixed Current — every other member is unused by JobsManagerFacade's
-    // Add/keyed-schedule paths, which only ever read .Current.
-    private sealed class FixedUnitOfWorkManager(IUnitOfWork? current) : IUnitOfWorkManager
-    {
-        public IUnitOfWork? Current { get; } = current;
-
-        public ValueTask<IUnitOfWork> BeginAsync(
-            UnitOfWorkOptions? options = null,
-            CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException("Not used by JobsManagerFacade.");
-
-        public ValueTask<IUnitOfWork> BeginAsync(
-            Func<CancellationToken, ValueTask<IUnitOfWorkResource>> beginResource,
-            UnitOfWorkOptions? options,
-            CancellationToken cancellationToken
-        ) => throw new NotSupportedException("Not used by JobsManagerFacade.");
-
-        public IUnitOfWork Enlist(IUnitOfWorkResource resource, UnitOfWorkOptions? options = null) =>
-            throw new NotSupportedException("Not used by JobsManagerFacade.");
-
-        public IDisposable Adopt(IUnitOfWork unitOfWork) =>
-            throw new NotSupportedException("Not used by JobsManagerFacade.");
     }
 
     private static DbTransaction _LiveTransaction()
@@ -1677,13 +1688,14 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         public override void Rollback() => throw new NotSupportedException();
     }
 
-    private sealed class FakeRelationalResource(DbTransaction transaction) : IRelationalUnitOfWorkResource
+    private sealed class FakeRelationalResource(DbTransaction transaction, bool isOwned = true)
+        : IRelationalUnitOfWorkResource
     {
         public DbConnection Connection => Transaction.Connection!;
 
         public DbTransaction Transaction { get; } = transaction;
 
-        public bool IsOwned => true;
+        public bool IsOwned => isOwned;
 
         public bool IsTransactionCompleted => false;
 
@@ -1692,7 +1704,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         public ValueTask RollbackAsync(CancellationToken cancellationToken) => ValueTask.CompletedTask;
     }
 
-    // A real IUnitOfWork opened through the production UnitOfWorkManager (AddUnitOfWork), wrapped only so a test can
+    // A real IUnitOfWork opened through the production UnitOfWorkFactory (AddUnitOfWork), wrapped only so a test can
     // observe how many OnCompleted callbacks the manager registered and whether each completed synchronously — the
     // wrapper never drives anything itself: CommitAsync/RollbackAsync forward to the real unit's own
     // CompleteAsync/RollbackAsync, exactly as a provider extension (BeginAsync/RunAsync) would drive them.
@@ -1737,6 +1749,9 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
 
         public TState GetOrAdd<TState, TArg>(TArg arg, Func<IUnitOfWork, TArg, TState> factory)
             where TState : class => inner.GetOrAdd(arg, factory);
+
+        public TFeature? GetFeature<TFeature>()
+            where TFeature : class, IUnitOfWorkFeature => inner.GetFeature<TFeature>();
 
         public void PreventRetry() => inner.PreventRetry();
 

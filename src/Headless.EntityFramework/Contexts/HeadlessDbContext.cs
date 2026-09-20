@@ -11,12 +11,11 @@ namespace Headless.EntityFramework;
 
 /// <summary>
 /// Capability seam shared by the Headless DbContext bases (<see cref="HeadlessDbContext"/> and the Identity
-/// context) so the runtime, save pipeline, factory, disposal infrastructure, and unit-of-work
-/// helpers operate against either base without a common class — the Identity context must derive from
-/// <c>IdentityDbContext</c>, so this interface is the only shared seam. Exposes the tenant/schema the runtime
-/// reads and the per-call service scope the factory hands in. Implemented explicitly by both bases, so it does
-/// not widen their public surface; it is public so capability-based extensions (e.g.
-/// <c>ExecuteTransactionAsync</c>) can target any Headless-managed context.
+/// context) so the runtime, save pipeline, factory, and disposal infrastructure operate against either base
+/// without a common class — the Identity context must derive from <c>IdentityDbContext</c>, so this interface
+/// is the only shared seam. Exposes the tenant/schema the runtime reads and the per-call service scope the
+/// factory hands in. Implemented explicitly by both bases, so it does not widen their public surface; it is
+/// public so capability-based extensions can target any Headless-managed context.
 /// </summary>
 [PublicAPI]
 public interface IHeadlessDbContext
@@ -34,8 +33,9 @@ public interface IHeadlessDbContext
     string? TenantId { get; }
 
     /// <summary>
-    /// The scoped (request) service provider that resolved this context — used by the unit-of-work helpers to
-    /// resolve the <c>IUnitOfWorkManager</c> of the scope that owns this context.
+    /// The scoped (request) service provider that resolved this context. Scoped collaborators of the context —
+    /// the tenant guard bypass — must come
+    /// from this scope; EF's <c>ApplicationServiceProvider</c> is the root provider and resolves a different one.
     /// </summary>
     IServiceProvider ServiceProvider { get; }
 }

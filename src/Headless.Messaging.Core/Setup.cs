@@ -110,7 +110,7 @@ public static class SetupMessaging
         MessagingBuilder.GetOrAddMiddlewareDescriptorRegistry(services);
         services.AddHeadlessGuidGenerator();
         services.TryAddSingleton(TimeProvider.System);
-        // Idempotent: registers the scoped IUnitOfWorkManager exactly once regardless of registration order
+        // Idempotent: registers the singleton IUnitOfWorkFactory exactly once regardless of registration order
         // with other consumer packages (Headless.EntityFramework, Headless.Jobs.Core).
         services.AddUnitOfWork();
         // Tenant context primitives shared across packages — the AsyncLocal accessor + AddOrReplaceFallbackSingleton
@@ -238,20 +238,20 @@ public static class SetupMessaging
                 sp.GetService<MessagingTelemetry>(),
                 options.TransportPublishTimeout,
                 sp.GetRequiredService<IOptions<MessagingOptions>>().Value.DefaultDeliveryMode,
-                sp.GetRequiredService<IOptions<MessagingOptions>>().Value.DefaultEnlistment,
                 sp.GetServices<MessageRegistration>()
             );
         });
-        // Scoped: reads this scope's IUnitOfWorkManager.Current at publish time so a durable publish enlists
-        // in the caller's active unit of work. Framework-internal singletons (HybridCache, DistributedLocks)
-        // do not resolve these — they build a unit-less Bus/Queue directly over MessagePublisher.
-        services.TryAddScoped<IBus>(sp => new Bus(
-            sp.GetRequiredService<MessagePublisher>(),
-            sp.GetRequiredService<IUnitOfWorkManager>()
-        ));
-        services.TryAddScoped<IQueue>(sp => new Queue(
-            sp.GetRequiredService<MessagePublisher>(),
-            sp.GetRequiredService<IUnitOfWorkManager>()
+        // Singleton: these facades are autonomous, so they hold no scope-bound state and framework singletons
+        // (HybridCache, the distributed lock primitives) can depend on them. Enlisting a publish in a caller's
+        // active unit of work is the unit-of-work outbox's job, reached from the unit itself.
+        services.TryAddSingleton<IBus>(sp => new Bus(sp.GetRequiredService<MessagePublisher>()));
+        services.TryAddSingleton<IQueue>(sp => new Queue(sp.GetRequiredService<MessagePublisher>()));
+
+        // The other half of that split: unit.Outbox resolves this feature from the unit's scope, so a publish
+        // reached from a unit of work always enlists in it and refuses when the storage cannot join. A singleton
+        // like the publisher it wraps; the unit it enlists in arrives as an argument on every call.
+        services.TryAddSingleton<IUnitOfWorkOutbox>(sp => new UnitOfWorkOutboxFeature(
+            sp.GetRequiredService<MessagePublisher>()
         ));
 
         // Register options with values that were set during AddHeadlessMessaging configuration.

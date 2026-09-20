@@ -54,7 +54,6 @@ public abstract class JobsApplicationConfigurationConformanceTests<TFixture>(TFi
             var services = scope.ServiceProvider;
             var context = services.GetRequiredService<ApplicationContext>();
             var scheduler = services.GetRequiredService<IJobScheduler>();
-            var bus = services.GetRequiredService<IBus>();
             var request = new CoordinatedFacadeRequest(Guid.NewGuid(), "application transaction");
             var dueAt = new DateTimeOffset(2035, 4, 5, 12, 30, 0, TimeSpan.FromHours(3));
 
@@ -64,16 +63,18 @@ public abstract class JobsApplicationConfigurationConformanceTests<TFixture>(TFi
 
             var sentinel = new InvalidOperationException("rollback application transaction");
             var scheduledId = Guid.Empty;
-            var unitOfWorkManager = services.GetRequiredService<IUnitOfWorkManager>();
+            var unitOfWorkFactory = services.GetRequiredService<IUnitOfWorkFactory>();
             var operation = async () =>
-                await unitOfWorkManager.RunAsync(
+                await unitOfWorkFactory.RunAsync(
                     context,
-                    async (_, ct) =>
+                    async (unit, ct) =>
                     {
                         context.Add(new ApplicationProbe { Id = request.Id });
                         await context.SaveChangesAsync(ct);
-                        await bus.PublishAsync(new ApplicationMessage(request.Id), ct);
-                        scheduledId = await scheduler.ScheduleAsync(request, dueAt, ct);
+                        // The enlisted surface: an IBus publish here would write a standalone row that survives
+                        // the rollback this test forces.
+                        await unit.Outbox.PublishAsync(new ApplicationMessage(request.Id), ct);
+                        scheduledId = await unit.Jobs.ScheduleAsync(request, dueAt, ct);
                         if (!commit)
                         {
                             throw sentinel;

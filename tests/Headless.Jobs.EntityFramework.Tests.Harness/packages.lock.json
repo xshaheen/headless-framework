@@ -633,9 +633,6 @@
       "headless.checks": {
         "type": "Project"
       },
-      "headless.commitcoordination.abstractions": {
-        "type": "Project"
-      },
       "headless.coordination.abstractions": {
         "type": "Project",
         "dependencies": {

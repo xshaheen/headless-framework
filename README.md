@@ -533,12 +533,12 @@ Cluster membership and liveness tracking. Know which nodes are alive across a di
 
 ### Unit of Work
 
-Explicit, scoped unit of work: begin it on the line you choose, do business work, and complete it. Outbox dispatch and durable jobs enlisted inside it drain atomically on commit and discard on rollback.
+Explicit, scoped unit of work: begin it on the line you choose, do business work, and complete it. Messages published through `unit.Outbox` and durable jobs scheduled inside it commit with the transaction, dispatch after it commits, and are discarded on rollback.
 
 | Package | Description |
 |---------|-------------|
-| [Headless.UnitOfWork.Abstractions](src/Headless.UnitOfWork.Abstractions/README.md) | Scoped unit-of-work contracts: `IUnitOfWorkManager`, `IUnitOfWork`, `IUnitOfWorkResource`, `TransactionEnlistment` (zero dependencies) |
-| [Headless.UnitOfWork](src/Headless.UnitOfWork/README.md) | The scoped manager, engine, and `AddUnitOfWork()` registration |
+| [Headless.UnitOfWork.Abstractions](src/Headless.UnitOfWork.Abstractions/README.md) | Unit-of-work contracts: `IUnitOfWorkFactory`, `IUnitOfWork`, `IUnitOfWorkResource`, `IUnitOfWorkFeature`, `TransactionEnlistment` (zero dependencies) |
+| [Headless.UnitOfWork](src/Headless.UnitOfWork/README.md) | The singleton factory, engine, and `AddUnitOfWork()` registration |
 | [Headless.UnitOfWork.EntityFramework](src/Headless.UnitOfWork.EntityFramework/README.md) | EF Core provider: `BeginAsync(db)` / `Enlist(db, tx)` / `RunAsync(db, ...)` |
 | [Headless.UnitOfWork.PostgreSql](src/Headless.UnitOfWork.PostgreSql/README.md) | Raw-ADO `NpgsqlConnection` provider with the same shape |
 | [Headless.UnitOfWork.SqlServer](src/Headless.UnitOfWork.SqlServer/README.md) | Raw-ADO `SqlConnection` provider with the same shape |

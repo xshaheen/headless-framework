@@ -2,7 +2,6 @@
 
 using Headless.Messaging;
 using Headless.Messaging.Internal;
-using Headless.UnitOfWork;
 
 namespace Tests.Internal;
 
@@ -15,14 +14,14 @@ public sealed class DeliveryMetadataTests
         {
             [Headers.RequestedDeliveryMode] = nameof(DeliveryMode.Durable),
             [Headers.ResolvedDeliveryMode] = nameof(DeliveryMode.Direct),
-            [Headers.RequestedEnlistment] = nameof(TransactionEnlistment.Required),
+            [Headers.DeliveryCoordinated] = "true",
         };
 
         var delivery = DeliveryMetadata.Read(headers);
 
         delivery.RequestedDeliveryMode.Should().Be(DeliveryMode.Durable);
         delivery.ResolvedDeliveryMode.Should().Be(DeliveryMode.Direct);
-        delivery.RequestedEnlistment.Should().Be(TransactionEnlistment.Required);
+        delivery.IsCoordinated.Should().BeTrue();
     }
 
     [Fact]
@@ -32,30 +31,67 @@ public sealed class DeliveryMetadataTests
         {
             [Headers.RequestedDeliveryMode] = "auto",
             [Headers.ResolvedDeliveryMode] = "customer-controlled-value",
-            [Headers.RequestedEnlistment] = "always",
+            [Headers.DeliveryCoordinated] = "always",
         };
 
         var delivery = DeliveryMetadata.Read(headers);
 
         delivery.RequestedDeliveryMode.Should().BeNull();
         delivery.ResolvedDeliveryMode.Should().BeNull();
-        delivery.RequestedEnlistment.Should().BeNull();
+        delivery.IsCoordinated.Should().BeNull();
     }
 
     [Fact]
-    public void should_leave_the_enlistment_unrecorded_for_legacy_stored_envelopes()
+    public void should_read_a_row_without_the_coordination_header_as_unknown_rather_than_not_coordinated()
     {
-        // Rows stamped before the enlistment header existed carry the delivery modes only.
+        // Rows stamped before the coordination header existed carry the delivery modes only. Reporting them as
+        // "not coordinated" asserts an answer the row never recorded, so the value must stay null.
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             [Headers.RequestedDeliveryMode] = nameof(DeliveryMode.Durable),
             [Headers.ResolvedDeliveryMode] = nameof(DeliveryMode.Durable),
         };
 
-        var delivery = DeliveryMetadata.ReadStoredHeaders(headers);
+        DeliveryMetadata.Read(headers).IsCoordinated.Should().BeNull();
 
-        delivery.ResolvedDeliveryMode.Should().Be(DeliveryMode.Durable);
-        delivery.RequestedEnlistment.Should().BeNull();
+        var stored = DeliveryMetadata.ReadStoredHeaders(headers);
+        stored.ResolvedDeliveryMode.Should().Be(DeliveryMode.Durable);
+        stored.IsCoordinated.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("true", true)]
+    [InlineData("false", false)]
+    public void should_project_the_stamped_coordination_literals(string headerValue, bool expected)
+    {
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [Headers.DeliveryCoordinated] = headerValue,
+        };
+
+        DeliveryMetadata.Read(headers).IsCoordinated.Should().Be(expected);
+    }
+
+    [Fact]
+    public void should_stamp_the_coordination_header_true_for_a_coordinated_decision()
+    {
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal);
+
+        DeliveryMetadata.Stamp(headers, _Decision(requireCoordination: true, coordinated: true));
+
+        headers[Headers.DeliveryCoordinated].Should().Be("true");
+        DeliveryMetadata.Read(headers).IsCoordinated.Should().BeTrue();
+    }
+
+    [Fact]
+    public void should_stamp_the_coordination_header_false_for_an_autonomous_decision()
+    {
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal);
+
+        DeliveryMetadata.Stamp(headers, _Decision(requireCoordination: false, coordinated: false));
+
+        headers[Headers.DeliveryCoordinated].Should().Be("false");
+        DeliveryMetadata.Read(headers).IsCoordinated.Should().BeFalse();
     }
 
     [Fact]
@@ -77,5 +113,23 @@ public sealed class DeliveryMetadataTests
         };
 
         DeliveryMetadata.ReadStoredHeaders(headers).Should().Be(default(DeliveryMetadataValues));
+    }
+
+    private static DeliveryDecision _Decision(bool requireCoordination, bool coordinated)
+    {
+        var coordination = coordinated
+#pragma warning disable CA2000 // The returned coordination carries the unit of work.
+            ? DeliveryCoordination.Compatible(FakeUnitOfWorks.CreateActive(), transaction: null)
+#pragma warning restore CA2000
+            : DeliveryCoordination.None;
+
+        return DeliveryDecisionResolver.Resolve(
+            MessageLane.Bus,
+            DeliveryMode.Durable,
+            requireCoordination,
+            delay: null,
+            coordination,
+            DateTimeOffset.UnixEpoch
+        );
     }
 }

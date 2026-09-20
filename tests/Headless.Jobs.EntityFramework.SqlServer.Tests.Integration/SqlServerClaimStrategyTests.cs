@@ -874,7 +874,7 @@ internal sealed class SqlServerNativeClaimsFixture(string connectionString) : IJ
 
     public Task RunCoordinatedTransactionAsync(
         IServiceProvider services,
-        Func<IServiceProvider, DbConnection, DbTransaction, CancellationToken, Task> operation,
+        Func<IServiceProvider, IUnitOfWork, DbConnection, DbTransaction, CancellationToken, Task> operation,
         CancellationToken cancellationToken
     )
     {

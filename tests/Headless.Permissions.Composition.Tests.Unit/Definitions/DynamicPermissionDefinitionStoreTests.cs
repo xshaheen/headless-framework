@@ -6,6 +6,7 @@ using Headless.DistributedLocks;
 using Headless.Messaging;
 using Headless.Permissions.Definitions;
 using Headless.Permissions.Entities;
+using Headless.Permissions.Events;
 using Headless.Permissions.Models;
 using Headless.Permissions.Repositories;
 using Headless.Testing.Tests;
@@ -17,8 +18,11 @@ namespace Tests.Definitions;
 public sealed class DynamicPermissionDefinitionStoreTests : TestBase
 {
     private readonly IPermissionDefinitionRecordRepository _repository;
+    private readonly IStaticPermissionDefinitionStore _staticStore;
+    private readonly IPermissionDefinitionSerializer _serializer;
     private readonly ICache _cache;
     private readonly IDistributedLock _distributedLockProvider;
+    private readonly IBus _bus;
     private readonly PermissionManagementOptions _options;
     private readonly FakeTimeProvider _timeProvider;
     private readonly DynamicPermissionDefinitionStore _sut;
@@ -26,11 +30,11 @@ public sealed class DynamicPermissionDefinitionStoreTests : TestBase
     public DynamicPermissionDefinitionStoreTests()
     {
         _repository = Substitute.For<IPermissionDefinitionRecordRepository>();
-        var staticStore = Substitute.For<IStaticPermissionDefinitionStore>();
-        var serializer = Substitute.For<IPermissionDefinitionSerializer>();
+        _staticStore = Substitute.For<IStaticPermissionDefinitionStore>();
+        _serializer = Substitute.For<IPermissionDefinitionSerializer>();
         _cache = Substitute.For<ICache>();
         _distributedLockProvider = Substitute.For<IDistributedLock>();
-        var messagePublisher = Substitute.For<IBus>();
+        _bus = Substitute.For<IBus>();
         var guidGenerator = Substitute.For<IGuidGenerator>();
         var application = Substitute.For<IApplicationInformationAccessor>();
         _options = new PermissionManagementOptions { IsDynamicPermissionStoreEnabled = true };
@@ -48,11 +52,11 @@ public sealed class DynamicPermissionDefinitionStoreTests : TestBase
 
         _sut = new DynamicPermissionDefinitionStore(
             _repository,
-            staticStore,
-            serializer,
+            _staticStore,
+            _serializer,
             _cache,
             _distributedLockProvider,
-            messagePublisher,
+            _bus,
             guidGenerator,
             application,
             optionsAccessor,
@@ -211,6 +215,48 @@ public sealed class DynamicPermissionDefinitionStoreTests : TestBase
 
         // then
         result.Should().BeEmpty();
+    }
+
+    #endregion
+
+    #region SaveAsync
+
+    [Fact]
+    public async Task should_publish_one_definitions_changed_message_when_permissions_are_added()
+    {
+        // given — nothing is stored yet, so every serialized permission is new
+        const string permissionName = "Dynamic.Added";
+        var lease = Substitute.For<IDistributedLease>();
+        _distributedLockProvider
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(lease);
+        _cache
+            .GetAsync<string>(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new CacheValue<string>(null, false));
+        _staticStore.GetGroupsAsync(Arg.Any<CancellationToken>()).Returns([]);
+        _serializer
+            .Serialize(Arg.Any<IReadOnlyCollection<PermissionGroupDefinition>>())
+            .Returns(
+                (
+                    [_CreateGroupRecord("TestGroup")],
+                    (IReadOnlyCollection<PermissionDefinitionRecord>)
+                        [_CreatePermissionRecord(permissionName, "TestGroup")]
+                )
+            );
+        _repository.GetGroupsListAsync(Arg.Any<CancellationToken>()).Returns([]);
+        _repository.GetPermissionsListAsync(Arg.Any<CancellationToken>()).Returns([]);
+
+        // when
+        await _sut.SaveAsync(AbortToken);
+
+        // then
+        await _bus.Received(1)
+            .PublishAsync(
+                Arg.Is<DynamicPermissionDefinitionsChanged>(message =>
+                    message.Permissions.Count == 1 && message.Permissions.Contains(permissionName)
+                ),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     #endregion

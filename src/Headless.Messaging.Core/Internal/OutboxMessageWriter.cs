@@ -37,6 +37,17 @@ internal sealed class OutboxMessageWriter(
                 var unitOfWork =
                     decision.Coordination.UnitOfWork
                     ?? throw new InvalidOperationException("Coordinated delivery is missing its unit of work.");
+
+                // Obtained before the store on purpose: this is the first registration on the caller's handle, so
+                // a handle that can no longer carry work — a completed nested view, a terminal unit — is refused
+                // here, before any storage effect. The buffer registers its drain only when the first row is
+                // added below, after the store, because a non-relational store enlists its own promotion callback
+                // inside StoreCoordinatedMessageAsync and callbacks drain in registration order.
+                var buffer = unitOfWork.GetOrAdd(
+                    dispatcher,
+                    static (_, committedDispatcher) => new MessageOutboxBuffer(committedDispatcher)
+                );
+
                 var mediumMessage = await _StoreCoordinatedMessageAsync(
                         publishRequest,
                         decision,
@@ -47,15 +58,7 @@ internal sealed class OutboxMessageWriter(
 
                 _TracingAfter(traceHandle, publishRequest.Message, publishRequest.Lane);
 
-                // Obtained after the store call on purpose: a non-relational store enlists its own completion
-                // buffer inside StoreCoordinatedMessageAsync, and callbacks drain in registration order, so the
-                // row is already visible when this buffer hands it to the dispatcher.
-                var bufferState = new MessageOutboxBufferState(dispatcher);
-                var buffer = unitOfWork.GetOrAdd(
-                    bufferState,
-                    static (unit, state) => new MessageOutboxBuffer(unit, state.Dispatcher)
-                );
-                buffer.Add(mediumMessage);
+                buffer.Add(unitOfWork, mediumMessage);
 
                 return mediumMessage.StorageId;
             }
@@ -97,8 +100,6 @@ internal sealed class OutboxMessageWriter(
             throw;
         }
     }
-
-    private readonly record struct MessageOutboxBufferState(IDispatcher Dispatcher);
 
     private ValueTask<MediumMessage> _StoreCoordinatedMessageAsync(
         PreparedPublishMessage publishRequest,

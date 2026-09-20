@@ -103,12 +103,14 @@ remains the request's origin metadata; the declared callback contract selects ty
 the concrete response type remains payload metadata.
 
 ### Delivery mode
-The delivery choices on publish/enqueue are `Durable` and `Direct`. Precedence is per call
-(`MessageOptions.DeliveryMode`), then per message type (`WithDeliveryMode(...)` on the lane
-registration), then the host `MessagingOptions.DefaultDeliveryMode`, which defaults to `Durable`.
-No mode sends directly by omission. Whether a durable publish enlists in the caller's active
-transaction is a separate axis, `TransactionEnlistment` (see [Unit of Work](#unit-of-work) below);
-`Direct` bypasses storage and enlistment entirely, even inside an active unit of work.
+The delivery choices on an autonomous publish/enqueue are `Durable` and `Direct`. Precedence is per
+call (`PublishOptions.DeliveryMode` / `QueueOptions.DeliveryMode`), then per message type
+(`WithDeliveryMode(...)` on the lane registration), then the host
+`MessagingOptions.DefaultDeliveryMode`, which defaults to `Durable`. No mode sends directly by
+omission. Whether the durable row lands inside the caller's transaction is not an option at all: it
+is decided by the receiver — `IBus`/`IQueue` never enlist, the [enlisted outbox](#enlisted-outbox)
+always does. The outbox records carry no mode, because durable capture is how that surface joins
+the transaction.
 
 Telemetry reports the requested and resolved mode as `durable` / `direct` only.
 Both verbs return `PublishReceipt`; durable delivery includes a `StorageId`, while direct delivery does not.
@@ -118,6 +120,17 @@ revocation through `IMessageRevoker` retains no audit record. The dashboard's au
 revoke performs the identical fenced delete but also writes a receipt and audit in the same
 transaction — the two paths delete the same row the same way; only the evidence differs.
 Use Jobs for keyed, replaceable, tenant-scoped, or transactional business deadlines.
+
+### Enlisted outbox
+The publish surface reached from a unit of work as `unit.Outbox` (contract in
+`Headless.Messaging.Abstractions`, implementation in `Headless.Messaging.Core`, resolved from the unit
+as a [unit-of-work feature](#unit-local-state)). Every publish through it writes its durable row inside
+that unit's transaction: the row becomes visible when the unit completes and is discarded when it
+rolls back. It refuses rather than degrades — when the configured storage cannot join the given unit
+the call throws before any storage or transport effect, instead of writing a standalone row. Its
+counterpart is the autonomous pair `IBus`/`IQueue`, whose rows survive the caller's rollback.
+Whether a stored row was written this way is recorded on the row as a nullable
+`IsCoordinated`/`headless-delivery-coordinated` fact, where absent means unrecorded, not "no".
 
 ### Operator ledger
 One generalized receipt-and-audit ledger, shared by the inbox operator surface and the
@@ -161,42 +174,50 @@ See [docs/llms/unit-of-work.md](docs/llms/unit-of-work.md) for the full domain d
 ### Unit of work
 
 The owner-side handle (`IUnitOfWork`) for one physical transaction/coordination window, obtained
-from the **scoped** `IUnitOfWorkManager` (`IUnitOfWorkManager.Current`, a plain field — never an
-`AsyncLocal`, never ambient). Application code opens it explicitly, on the line it chooses
-(`unitOfWork.BeginAsync(...)`); nothing opens one on the developer's behalf. `CompleteAsync` commits
-the resource's transaction (owned mode, from `BeginAsync`) or observes a transaction the caller
-already committed (observed mode, from `Enlist`), then drains `OnCompleted` registrations. Dispose
-without `CompleteAsync` is an implicit rollback that drains `OnFailed` registrations instead.
-Nesting is join-by-default: beginning again on the same resource returns a child view whose
-completions transfer to the parent on complete and whose abandonment aborts the root; a
-resource-bearing begin under a resource-less root opens an independent nested unit.
+from the **singleton** `IUnitOfWorkFactory`. The handle is the unit's only identity: nothing ambient
+(no `AsyncLocal`) and nothing scoped (no `Current` slot) carries it, so code that must enlist is
+handed the unit — as an argument, through `db.UnitOfWork()` on the `DbContext` it was begun on, or
+through `ConsumeContext.UnitOfWork` in a transactional consumer. Application code opens it
+explicitly, on the line it chooses (`factory.BeginAsync(...)`); nothing opens one on the developer's
+behalf. `CompleteAsync` commits the resource's transaction (owned mode, from `BeginAsync`) or observes
+a transaction the caller already committed (observed mode, from `Enlist`), then drains `OnCompleted`
+registrations. Dispose without `CompleteAsync` is an implicit rollback that drains `OnFailed`
+registrations instead. Two begins are two independent units: there is no join, no child view, and
+no factory-level "already active" refusal; the one refusal is `BeginAsync(db)` on a context that
+already carries a live unit.
 
-### Unit-of-work manager
+### Unit-of-work factory
 
-The scoped `IUnitOfWorkManager` is the single entry point application code interacts with — one
-unit-of-work slot per DI scope. Resolving it (or a scoped facade over it, such as `IBus`/`IQueue`)
-from the root provider is a captive-dependency error that scope validation reports; a singleton or
-hosted service that needs one creates its own scope. On the manager's own disposal, any still-active
-unit of work is rolled back, its `OnFailed` callbacks run with `Reason = ScopeDisposed`, and a
-leak warning is logged — a stranded unit of work is never silent.
+The singleton `IUnitOfWorkFactory` is the single entry point application code interacts with. It
+keeps no record of the units it opens, so a controller, a consumer, and a hosted service inject the
+same object and call `BeginAsync` on it directly — no scope dance, no captive-dependency trap. The
+enlisting receivers hang off the unit, not off DI: `unit.Outbox` for Messaging, `unit.Jobs` /
+`unit.TimeJobs<T>()` / `unit.CronJobs<T>()` for Jobs. The injected `IBus`/`IQueue` and
+`IJobScheduler`/managers are the autonomous receivers — singletons that never enlist.
 
 ### Transaction enlistment
 
-The axis a participant (a published message, an enqueued job) uses to state how eagerly it requires
-an active unit of work: `TransactionEnlistment { WhenAvailable, Required, Never }`. Precedence is
-per call, then per type/function, then the host default. The guarantee matrix:
+The guard a **Jobs** write (a one-shot deadline, a keyed job, a chain node, a recurring definition)
+uses to refuse the autonomous receiver: `TransactionEnlistment { Optional, Required }`, surfaced as
+`JobOptions.Enlistment` and `RecurringJobOptions.Enlistment`. Precedence is per call, then per
+function, then the host default; composition across those tiers is strictest-wins. Enlistment itself
+is chosen by the receiver — `unit.Jobs` always enlists, an injected scheduler never does — and the
+knob only says whether the autonomous receiver is acceptable. The guarantee matrix:
 
-| Enlistment | Active unit of work, joinable compatible resource | No unit of work, or one with no joinable resource | Unit of work with incompatible resource |
-|---|---|---|---|
-| `WhenAvailable` (default) | enlist in the transaction, dispatch/signal after commit | autonomous durable write, relay/poller recovers it | throw |
-| `Required` | same | throw | throw |
-| `Never` | autonomous | autonomous | autonomous |
+| Receiver | `Optional` (default) | `Required` |
+|---|---|---|
+| `unit.Jobs` over a unit with a live, same-database relational resource | enlist in the transaction, dispatch/signal after commit | same |
+| `unit.Jobs` over a resource-less, dead, or other-database unit | throw | throw |
+| Injected `IJobScheduler` / managers | autonomous durable write, poller recovers it | throw |
 
-`Required` is checked at the call itself and throws before any effect when no active unit of work is
-compatible — there is no separate startup gate, because the scoped manager always exists
-(`AddUnitOfWork()` is idempotent and called by every consumer package's setup). Messaging's
-`MessageOptions.Enlistment` and Jobs' `JobOptions.Enlistment` / `RecurringJobOptions.Enlistment` are
-the two consumer mappings of this matrix to an outcome.
+Every refusal happens at the call itself, before any effect — there is no separate startup gate,
+because the factory always exists (`AddUnitOfWork()` is idempotent and called by every consumer
+package's setup).
+
+The enum is Jobs-only. Messaging once shared it, with the same matrix and the same precedence; it
+now expresses the same intent structurally, by which publisher is called — see [Enlisted
+outbox](#enlisted-outbox) — so no Messaging option, per-type policy, or host default selects
+enlistment any more.
 
 ### Unit-of-work resource
 
@@ -211,8 +232,20 @@ caller commits it.
 
 Typed state owned by one unit of work through `GetOrAdd<TState>`: at most one instance per type,
 created atomically, disposed after the terminal outcome on commit and rollback alike. Used for
-per-transaction buffers or the retry-prevention marker (`PreventRetry()` / `IsRetryPrevented`); it
-must not be used as an arbitrary service-locator bag.
+per-transaction buffers or the retry-prevention marker (`PreventRetry()` / `IsRetryPrevented`);
+application code must not use it as an arbitrary service-locator bag.
+
+Distinct from a **unit-of-work feature**: a singleton implementing the `IUnitOfWorkFeature` marker
+that `IUnitOfWork.GetFeature<TFeature>()` resolves from the host container the factory lives in. A
+feature is not unit-local — nothing is created or cached per unit — which is how a capability
+reaches a unit of work whose packages know nothing about it; the [enlisted
+outbox](#enlisted-outbox) and the Jobs receivers (`unit.Jobs`) are the first-party cases.
+
+### Handle liveness
+
+Registrations answer for the handle: `OnCompleted`, `OnFailed`, and `GetOrAdd` on a unit that
+reached a terminal state throw, which is how an enlisted publish refuses a dead handle before any
+row is stored.
 
 ## Startup validation
 

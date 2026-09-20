@@ -125,6 +125,7 @@ public sealed class IsTransactionalPropagationTests : TestBase
             new TestMessage("hi"),
             options: null,
             unitOfWork,
+            requireCoordination: false,
             cancellationToken: AbortToken
         );
 
@@ -153,6 +154,7 @@ public sealed class IsTransactionalPropagationTests : TestBase
             new TestMessage("hi"),
             options: null,
             unitOfWork: null,
+            requireCoordination: false,
             cancellationToken: AbortToken
         );
 

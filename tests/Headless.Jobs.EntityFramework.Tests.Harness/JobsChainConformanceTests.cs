@@ -13,6 +13,7 @@ using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Internal;
 using Headless.Jobs.Models;
 using Headless.Testing.Tests;
+using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -484,9 +485,9 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
             var act = () =>
                 fixture.RunCoordinatedTransactionAsync(
                     host.Services,
-                    async (scopedServices, _, _, innerCt) =>
+                    async (_, unitOfWork, _, _, innerCt) =>
                     {
-                        var scheduler = scopedServices.GetRequiredService<IJobScheduler>();
+                        var scheduler = unitOfWork.Jobs;
                         (await scheduler.EnqueueAsync(chain, innerCt)).Should().NotBeEmpty();
 
                         // Abandon the scope after the whole tree is buffered: the transaction never commits.

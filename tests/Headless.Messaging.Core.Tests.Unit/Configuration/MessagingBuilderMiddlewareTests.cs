@@ -16,7 +16,7 @@ public sealed class MessagingBuilderMiddlewareTests : TestBase
         DeliveryDecisionResolver.Resolve(
             MessageLane.Bus,
             DeliveryMode.Direct,
-            TransactionEnlistment.WhenAvailable,
+            requireCoordination: false,
             delay: null,
             DeliveryCoordination.None,
             DateTimeOffset.UnixEpoch

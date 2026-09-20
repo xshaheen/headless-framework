@@ -83,14 +83,25 @@
           <v-table density="compact">
             <thead>
               <tr>
-                <th>Tenant</th><th>Message</th><th>Consumer</th><th>Lane</th><th>Outcome</th>
-                <th>Tier</th><th>Generation</th>
-                <th>Provenance</th><th>Hold</th><th>Expires</th><th>Recovery</th><th>Actions</th>
+                <th>Tenant</th>
+                <th>Message</th>
+                <th>Consumer</th>
+                <th>Lane</th>
+                <th>Outcome</th>
+                <th>Tier</th>
+                <th>Generation</th>
+                <th>Provenance</th>
+                <th>Hold</th>
+                <th>Expires</th>
+                <th>Recovery</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="inboxGenerations.length === 0">
-                <td colspan="12" class="text-center pa-4 text-medium-emphasis">No retained inbox generations</td>
+                <td colspan="12" class="text-center pa-4 text-medium-emphasis">
+                  No retained inbox generations
+                </td>
               </tr>
               <tr v-for="generation in inboxGenerations" :key="generation.incarnationId">
                 <td>{{ generation.tenantId ?? '—' }}</td>
@@ -102,7 +113,13 @@
                 <td>{{ generation.generation }}</td>
                 <td>{{ generation.replayParentIncarnationId ? 'Replay' : 'Original' }}</td>
                 <td>{{ generation.isHeld ? 'Held' : 'Released' }}</td>
-                <td>{{ generation.effectiveExpiresAt ? formatDateTime(generation.effectiveExpiresAt) : '—' }}</td>
+                <td>
+                  {{
+                    generation.effectiveExpiresAt
+                      ? formatDateTime(generation.effectiveExpiresAt)
+                      : '—'
+                  }}
+                </td>
                 <td>{{ generation.isOrphaned ? 'Orphaned' : 'Routable' }}</td>
                 <td class="text-no-wrap">
                   <v-btn
@@ -121,7 +138,9 @@
                     color="info"
                     :title="generation.isHeld ? 'Release hold' : 'Hold generation'"
                     :disabled="!isTerminalInboxGeneration(generation.status)"
-                    @click="confirmInboxOperation(generation.isHeld ? 'release' : 'hold', generation)"
+                    @click="
+                      confirmInboxOperation(generation.isHeld ? 'release' : 'hold', generation)
+                    "
                   />
                   <v-btn
                     icon="mdi-delete"
@@ -240,7 +259,6 @@ import TableSkeleton from '@/components/common/TableSkeleton.vue'
 import PaginationFooter from '@/components/common/PaginationFooter.vue'
 import MessageDetailDialog, {
   type DeliveryMode,
-  type TransactionEnlistment,
   type MessageDetail,
   type MessageLane,
 } from '@/components/MessageDetailDialog.vue'
@@ -257,7 +275,7 @@ interface ReceivedMessage {
   lane: MessageLane
   requestedDeliveryMode: DeliveryMode | null
   resolvedDeliveryMode: DeliveryMode | null
-  requestedEnlistment: TransactionEnlistment | null
+  isCoordinated: boolean | null
 }
 
 interface DashboardMeta {
@@ -413,8 +431,8 @@ async function loadMessages(page?: number, pageSize?: number) {
     messages.value = data.items || []
     inboxGenerations.value = inbox.items || []
     inboxTier.value =
-      meta.providerCapabilities.find((capability) => capability.role === 'Storage')?.inboxCapability ??
-      'Unavailable'
+      meta.providerCapabilities.find((capability) => capability.role === 'Storage')
+        ?.inboxCapability ?? 'Unavailable'
     pagination.totalCount.value = data.totals || 0
   } catch (error) {
     if (generation !== loadGeneration) return

@@ -10,9 +10,8 @@ namespace Headless.UnitOfWork.Internal;
 /// <summary>
 /// The in-process unit-of-work engine: registration lists, scope-local state, the atomic terminal claim, the
 /// ordered drains, fault aggregation, and deregistration handles. Ported from the former commit-coordination
-/// coordinator with two additions: the <c>OnFailed</c> drain (log-and-continue) and child views that register
-/// directly on the root engine so their registrations transfer with the root's completion. Internal: created
-/// only by <see cref="UnitOfWorkManager" />; the public contract is the <see cref="Headless.UnitOfWork.IUnitOfWork" />
+/// coordinator with one addition: the <c>OnFailed</c> drain (log-and-continue). Internal: created only by
+/// <see cref="UnitOfWorkFactory" />; the public contract is the <see cref="Headless.UnitOfWork.IUnitOfWork" />
 /// handle.
 /// </summary>
 /// <param name="resource">The resource this unit owns (or observes), if any.</param>
@@ -42,14 +41,14 @@ internal sealed partial class UnitOfWork(IUnitOfWorkResource? resource, ILogger?
     /// <summary>Marks the unit as not safely replayable by a retrying execution strategy; never resets.</summary>
     internal void PreventRetry() => Interlocked.Exchange(ref _retryPrevented, 1);
 
-    /// <summary>Registers a completion callback. Child views call this and track the returned handle.</summary>
+    /// <summary>Registers a completion callback.</summary>
     internal IDisposable OnCompleted(Func<ValueTask> work)
     {
         Argument.IsNotNull(work);
 
         lock (_gate)
         {
-            _ThrowIfNotActive();
+            ThrowIfNotActive();
 
             var registration = new CompletedRegistration(work);
             _completedCallbacks.Add(registration);
@@ -65,7 +64,7 @@ internal sealed partial class UnitOfWork(IUnitOfWorkResource? resource, ILogger?
 
         lock (_gate)
         {
-            _ThrowIfNotActive();
+            ThrowIfNotActive();
 
             var registration = new FailedRegistration(work);
             _failedCallbacks.Add(registration);
@@ -98,7 +97,7 @@ internal sealed partial class UnitOfWork(IUnitOfWorkResource? resource, ILogger?
         // double-create would register the callback twice and drain duplicate work.
         lock (_gate)
         {
-            _ThrowIfNotActive();
+            ThrowIfNotActive();
 
             var type = typeof(TState);
 
@@ -125,7 +124,7 @@ internal sealed partial class UnitOfWork(IUnitOfWorkResource? resource, ILogger?
 
     /// <summary>
     /// Synchronously claims a failure terminal state and captures the drain work: rollback, abandon, scope
-    /// dispose, commit fault, or a child abandon aborting the root.
+    /// dispose, or commit fault.
     /// </summary>
     internal bool TryClaimFailed(UnitOfWorkFailure failure, out UnitOfWorkTerminalClaim claim) =>
         _TryClaim(UnitOfWorkState.Failed, failure, out claim);
@@ -234,7 +233,8 @@ internal sealed partial class UnitOfWork(IUnitOfWorkResource? resource, ILogger?
         return true;
     }
 
-    private void _ThrowIfNotActive()
+    /// <summary>Throws unless the unit is still <see cref="UnitOfWorkState.Active" />.</summary>
+    internal void ThrowIfNotActive()
     {
         var state = State;
 

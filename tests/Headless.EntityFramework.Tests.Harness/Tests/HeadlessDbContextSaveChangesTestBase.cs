@@ -264,14 +264,14 @@ public abstract class HeadlessDbContextSaveChangesTestBase<TFixture, TContext> :
         // integration events under a caller-owned transaction require the unit that owns that transaction.
         await using var scope = Fixture.ServiceProvider.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<TContext>();
-        var unitOfWorkManager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+        var unitOfWorkFactory = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
 
         var entity = new HarnessTestEntity { Name = "with-msgs", TenantId = "T1" };
         entity.EmitIntegrationEvent(new HarnessDistributedMessage("hello"));
         db.TestEntities.Add(entity);
 
         await using var tx = await db.Database.BeginTransactionAsync(AbortToken);
-        await using var unitOfWork = unitOfWorkManager.Enlist(db, tx);
+        await using var unitOfWork = unitOfWorkFactory.Enlist(db, tx);
 
         // when
         await db.SaveChangesAsync(AbortToken);

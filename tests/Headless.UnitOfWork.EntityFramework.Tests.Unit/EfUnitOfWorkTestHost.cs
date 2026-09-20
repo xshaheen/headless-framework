@@ -91,14 +91,14 @@ internal sealed class EfUnitOfWorkHost(
 }
 
 /// <summary>
-/// One isolated service scope: the scope's scoped <see cref="IUnitOfWorkManager" /> with its captured log
+/// One isolated service scope: the scope's scoped <see cref="IUnitOfWorkFactory" /> with its captured log
 /// entries, and a <see cref="ProbeDbContext" /> sharing the host's connection. Disposing the session ends
 /// the scope (the service-scope edge). Log entries come from the host's capturing provider, so the internal
 /// manager type is never referenced.
 /// </summary>
 internal sealed class EfUnitOfWorkSession(AsyncServiceScope scope, CapturingLoggerProvider provider)
 {
-    public IUnitOfWorkManager Manager { get; } = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+    public IUnitOfWorkFactory Factory { get; } = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
 
     public ProbeDbContext Db { get; } = scope.ServiceProvider.GetRequiredService<ProbeDbContext>();
 

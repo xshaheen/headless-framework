@@ -4,7 +4,7 @@ Core contracts shared by the messaging runtime, transport providers, storage pro
 
 ## Why use this package
 
-Defines the stable message envelope, consume context, consumer contract, publisher contracts, and common options used by the intent-specific bus and queue packages.
+Defines the stable message envelope, consume context, consumer contract, publisher contracts, common options, and the `unit.Outbox` enlisted-publish contract used by the intent-specific bus and queue packages.
 
 ## Install
 

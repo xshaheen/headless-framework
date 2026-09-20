@@ -72,10 +72,7 @@ public sealed partial class OutboxBridgeIntegrationTests
                     new JobOptions { Enlistment = TransactionEnlistment.Required },
                     AbortToken
                 );
-        await schedule
-            .Should()
-            .ThrowAsync<InvalidOperationException>()
-            .WithMessage("*requires an active unit of work*");
+        await schedule.Should().ThrowAsync<InvalidOperationException>().WithMessage("*requires a unit of work*");
         (await _ReadDeadlineRowsAsync(provider, marker)).Should().BeEmpty();
         (await _ReadPublishedAsync(provider, marker)).Should().ContainSingle();
     }
@@ -134,7 +131,7 @@ public sealed partial class OutboxBridgeIntegrationTests
         // The second consumer receives the exact deserialized durable outbox envelope. Broker delivery is covered
         // by transport conformance; this test owns application, occurrence, consumer, and deadline composition.
         var stored = published.Single(row =>
-            string.Equals(row.Message.Headers[Headers.MessageName], "aaaorders.shipped", StringComparison.Ordinal)
+            string.Equals(row.Message.Headers[Headers.MessageName], "orders.shipped", StringComparison.Ordinal)
         );
 
         deadline.FailAfterWrite = true;
@@ -279,21 +276,25 @@ public sealed partial class OutboxBridgeIntegrationTests
 
     private sealed class DeadlineWriteFailureException : Exception;
 
-    private sealed class DeadlineConsumer(BridgeTestDbContext db, IJobScheduler scheduler, DeadlineEvidence evidence)
-        : IConsume<OrderShipped>
+    private sealed class DeadlineConsumer(
+        BridgeTestDbContext db,
+        IUnitOfWorkFactory unitOfWorkFactory,
+        DeadlineEvidence evidence
+    ) : IConsume<OrderShipped>
     {
         public async ValueTask ConsumeAsync(ConsumeContext<OrderShipped> context, CancellationToken cancellationToken)
         {
-            await db.ExecuteTransactionAsync(
-                async (caller, token) =>
+            await unitOfWorkFactory.RunAsync(
+                db,
+                async (unitOfWork, token) =>
                 {
-                    if (!await caller.DeadlineReceipts.AnyAsync(row => row.Id == context.MessageId, token))
+                    if (!await db.DeadlineReceipts.AnyAsync(row => row.Id == context.MessageId, token))
                     {
-                        caller.DeadlineReceipts.Add(new DeadlineReceipt { Id = context.MessageId });
-                        await caller.SaveChangesAsync(token);
+                        db.DeadlineReceipts.Add(new DeadlineReceipt { Id = context.MessageId });
+                        await db.SaveChangesAsync(token);
                     }
                     evidence.Results.Add(
-                        await scheduler.ScheduleKeyedAsync(
+                        await unitOfWork.Jobs.ScheduleKeyedAsync(
                             new JobKey(context.MessageId),
                             DeadlineRegistration.Descriptor,
                             evidence.Due,

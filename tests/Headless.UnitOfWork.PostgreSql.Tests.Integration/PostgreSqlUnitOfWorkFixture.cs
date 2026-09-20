@@ -34,13 +34,13 @@ public sealed class PostgreSqlUnitOfWorkFixture
     {
         var provider = BuildProvider(logs);
         var scope = provider.CreateAsyncScope();
-        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
 
         return new UnitOfWorkResourceSession(provider, scope, manager);
     }
 
     public async ValueTask<UnitOfWorkResourceHandle> BeginOwnedAsync(
-        IUnitOfWorkManager manager,
+        IUnitOfWorkFactory manager,
         CancellationToken cancellationToken
     )
     {
@@ -66,7 +66,7 @@ public sealed class PostgreSqlUnitOfWorkFixture
     }
 
     public async Task<UnitOfWorkObservedHandle> EnlistObservedAsync(
-        IUnitOfWorkManager manager,
+        IUnitOfWorkFactory manager,
         CancellationToken cancellationToken
     )
     {
@@ -101,7 +101,7 @@ public sealed class PostgreSqlUnitOfWorkFixture
     {
         await using var provider = BuildProvider();
         await using var scope = provider.CreateAsyncScope();
-        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
         await using var connection = new NpgsqlConnection(ConnectionString);
 
         await manager.RunAsync(

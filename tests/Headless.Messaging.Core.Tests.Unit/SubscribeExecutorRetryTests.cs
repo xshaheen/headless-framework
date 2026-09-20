@@ -11,6 +11,7 @@ using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Retry;
 using Headless.Testing.Tests;
+using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -186,10 +187,15 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         runner
             .ExecuteAsync(
                 Arg.Any<MediumMessage>(),
-                Arg.Any<Func<CancellationToken, Task>>(),
+                Arg.Any<Func<IUnitOfWork, CancellationToken, Task>>(),
                 Arg.Any<CancellationToken>()
             )
-            .Returns(call => call.ArgAt<Func<CancellationToken, Task>>(1)(call.ArgAt<CancellationToken>(2)));
+            .Returns(call =>
+                call.ArgAt<Func<IUnitOfWork, CancellationToken, Task>>(1)(
+                    Substitute.For<IUnitOfWork>(),
+                    call.ArgAt<CancellationToken>(2)
+                )
+            );
         IServiceProvider? runnerServices = null;
         await using var dispatchServices = new ServiceCollection()
             .AddScoped<IInboxTransactionRunner>(services =>
@@ -204,7 +210,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         result.Succeeded.Should().BeTrue();
         await runner
             .Received(1)
-            .ExecuteAsync(message, Arg.Any<Func<CancellationToken, Task>>(), Arg.Any<CancellationToken>());
+            .ExecuteAsync(message, Arg.Any<Func<IUnitOfWork, CancellationToken, Task>>(), Arg.Any<CancellationToken>());
         await invoker
             .Received(1)
             .InvokeInScopeAsync(
@@ -236,7 +242,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         runner
             .ExecuteAsync(
                 Arg.Any<MediumMessage>(),
-                Arg.Any<Func<CancellationToken, Task>>(),
+                Arg.Any<Func<IUnitOfWork, CancellationToken, Task>>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(_ => throw new StaleInboxAttemptException(message.StorageId));
@@ -248,7 +254,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         result.Succeeded.Should().BeFalse();
         await runner
             .Received(1)
-            .ExecuteAsync(message, Arg.Any<Func<CancellationToken, Task>>(), Arg.Any<CancellationToken>());
+            .ExecuteAsync(message, Arg.Any<Func<IUnitOfWork, CancellationToken, Task>>(), Arg.Any<CancellationToken>());
         await invoker.DidNotReceive().InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>());
     }
 

@@ -576,7 +576,7 @@ Unit of work صريح وscoped: تبدأه في السطر اللي تختاره
 
 | Package | الوصف |
 |---------|-------|
-| [Headless.UnitOfWork.Abstractions](src/Headless.UnitOfWork.Abstractions/README.md) | الـ contracts بتاعة الـ scoped unit of work: `IUnitOfWorkManager`، `IUnitOfWork`، `IUnitOfWorkResource`، `TransactionEnlistment` (من غير dependencies) |
+| [Headless.UnitOfWork.Abstractions](src/Headless.UnitOfWork.Abstractions/README.md) | الـ contracts بتاعة الـ scoped unit of work: `IUnitOfWorkManager`، `IUnitOfWork`، `IUnitOfWorkResource`، `IUnitOfWorkFeature`، `TransactionEnlistment` (من غير dependencies) |
 | [Headless.UnitOfWork](src/Headless.UnitOfWork/README.md) | الـ manager والـ engine وتسجيل `AddUnitOfWork()` |
 | [Headless.UnitOfWork.EntityFramework](src/Headless.UnitOfWork.EntityFramework/README.md) | Provider للـ EF Core: `BeginAsync(db)` / `Enlist(db, tx)` / `RunAsync(db, ...)` |
 | [Headless.UnitOfWork.PostgreSql](src/Headless.UnitOfWork.PostgreSql/README.md) | Provider لـ `NpgsqlConnection` بالـ ADO الخام، بنفس الشكل |

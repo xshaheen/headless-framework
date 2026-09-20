@@ -7,16 +7,13 @@ using Headless.UnitOfWork.Internal;
 namespace Headless.UnitOfWork;
 
 /// <summary>
-/// The public root/nested handle over the internal <see cref="Internal.UnitOfWork" /> engine. Owns the
-/// lifecycle verbs (<see cref="CompleteAsync" />, <see cref="RollbackAsync" />, dispose) and enforces the
-/// catalogued transition messages. Created only by <see cref="UnitOfWorkManager" />.
+/// The public handle over the internal <see cref="Internal.UnitOfWork" /> engine. Owns the lifecycle verbs
+/// (<see cref="CompleteAsync" />, <see cref="RollbackAsync" />, dispose) and enforces the catalogued transition
+/// messages. Created only by <see cref="UnitOfWorkFactory" />.
 /// </summary>
-internal sealed class UnitOfWorkHandle(Internal.UnitOfWork unit, UnitOfWorkManager manager) : IUnitOfWork
+internal sealed class UnitOfWorkHandle(Internal.UnitOfWork unit, UnitOfWorkFactory factory) : IUnitOfWork
 {
     private int _disposed;
-
-    /// <summary>The engine behind this handle; lets another scope's manager adopt it as a joinable frame.</summary>
-    internal Internal.UnitOfWork Engine => unit;
 
     public UnitOfWorkState State => unit.State;
 
@@ -56,21 +53,28 @@ internal sealed class UnitOfWorkHandle(Internal.UnitOfWork unit, UnitOfWorkManag
         return unit.GetOrAdd(this, arg, factory);
     }
 
+    public TFeature? GetFeature<TFeature>()
+        where TFeature : class, IUnitOfWorkFeature
+    {
+        _ThrowIfDisposed();
+
+        return factory.GetFeature<TFeature>();
+    }
+
     public void PreventRetry() => unit.PreventRetry();
 
     public async ValueTask CompleteAsync(CancellationToken cancellationToken = default)
     {
         _ThrowIfDisposed();
 
-        // The manager owns the slot bookkeeping (child checks, Current restore) around the claim and drain.
-        await manager.CompleteRootAsync(unit, cancellationToken).ConfigureAwait(false);
+        await factory.CompleteAsync(unit, cancellationToken).ConfigureAwait(false);
     }
 
     public ValueTask RollbackAsync()
     {
         _ThrowIfDisposed();
 
-        return manager.RollbackUnitAsync(unit);
+        return factory.RollbackAsync(unit);
     }
 
     public void Dispose()
@@ -80,7 +84,7 @@ internal sealed class UnitOfWorkHandle(Internal.UnitOfWork unit, UnitOfWorkManag
             return;
         }
 
-        manager.DisposeUnit(unit);
+        factory.Dispose(unit);
     }
 
     public ValueTask DisposeAsync() => _DisposeAsyncCore();
@@ -92,7 +96,7 @@ internal sealed class UnitOfWorkHandle(Internal.UnitOfWork unit, UnitOfWorkManag
             return;
         }
 
-        await manager.DisposeUnitAsync(unit).ConfigureAwait(false);
+        await factory.DisposeAsync(unit).ConfigureAwait(false);
     }
 
     private void _ThrowIfDisposed() => ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);

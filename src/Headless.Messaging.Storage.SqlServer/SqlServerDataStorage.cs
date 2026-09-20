@@ -77,12 +77,9 @@ internal sealed partial class SqlServerDataStorage(
 
     DeliveryCoordination IDeliveryCoordinationResolver.Resolve(IUnitOfWork unitOfWork)
     {
-        if (unitOfWork.Resource is null)
-        {
-            // No joinable resource behaves like no unit of work: the caller writes a standalone durable row.
-            return DeliveryCoordination.None;
-        }
-
+        // A unit with no resource is not the same as no unit: this storage writes the row into the unit's own
+        // relational transaction, so it has nothing to join and must say so rather than report "no unit" and
+        // let the caller's row be written standalone outside the transaction they opened.
         if (unitOfWork.Resource is not IRelationalUnitOfWorkResource relational)
         {
             return DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.MissingRelationalCapability);

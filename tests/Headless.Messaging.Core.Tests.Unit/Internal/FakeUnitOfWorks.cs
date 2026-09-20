@@ -89,6 +89,10 @@ internal sealed class FakeUnitOfWork : IUnitOfWork
         return created;
     }
 
+    /// <summary>No features here: the messaging tests drive the unit directly, never a feature.</summary>
+    public TFeature? GetFeature<TFeature>()
+        where TFeature : class, IUnitOfWorkFeature => null;
+
     public void PreventRetry() => IsRetryPrevented = true;
 
     public async ValueTask CompleteAsync(CancellationToken cancellationToken = default)

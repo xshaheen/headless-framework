@@ -8,6 +8,7 @@ using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Models;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;
+using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -92,9 +93,9 @@ public abstract class JobsTenancyConformanceTests<TFixture>(TFixture fixture) : 
 
             await fixture.RunCoordinatedTransactionAsync(
                 host.Services,
-                async (scopedServices, connection, transaction, innerCt) =>
+                async (_, unitOfWork, connection, transaction, innerCt) =>
                 {
-                    var manager = scopedServices.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
+                    var manager = unitOfWork.TimeJobs<TimeJobEntity>();
                     await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, innerCt);
                     (await manager.AddAsync(job, innerCt)).Should().NotBeNull();
                 },
@@ -124,9 +125,9 @@ public abstract class JobsTenancyConformanceTests<TFixture>(TFixture fixture) : 
 
             await fixture.RunCoordinatedTransactionAsync(
                 host.Services,
-                async (scopedServices, connection, transaction, innerCt) =>
+                async (_, unitOfWork, connection, transaction, innerCt) =>
                 {
-                    var manager = scopedServices.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
+                    var manager = unitOfWork.TimeJobs<TimeJobEntity>();
                     await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, innerCt);
                     (await manager.AddBatchAsync([first, second], innerCt)).Should().HaveCount(2);
                 },
@@ -158,9 +159,9 @@ public abstract class JobsTenancyConformanceTests<TFixture>(TFixture fixture) : 
 
             await fixture.RunCoordinatedTransactionAsync(
                 host.Services,
-                async (scopedServices, connection, transaction, innerCt) =>
+                async (_, unitOfWork, connection, transaction, innerCt) =>
                 {
-                    var scheduler = scopedServices.GetRequiredService<IJobScheduler>();
+                    var scheduler = unitOfWork.Jobs;
                     await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, innerCt);
                     scheduledId = await scheduler.EnqueueAsync(request, options, innerCt);
                     scheduledId.Should().NotBeEmpty();
@@ -198,9 +199,9 @@ public abstract class JobsTenancyConformanceTests<TFixture>(TFixture fixture) : 
             {
                 await fixture.RunCoordinatedTransactionAsync(
                     host.Services,
-                    async (scopedServices, connection, transaction, innerCt) =>
+                    async (_, unitOfWork, connection, transaction, innerCt) =>
                     {
-                        var manager = scopedServices.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
+                        var manager = unitOfWork.TimeJobs<TimeJobEntity>();
                         await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, innerCt);
                         (await manager.AddAsync(job, innerCt)).Should().NotBeNull();
                     },
@@ -315,9 +316,9 @@ public abstract class JobsTenancyConformanceTests<TFixture>(TFixture fixture) : 
             var act = () =>
                 fixture.RunCoordinatedTransactionAsync(
                     host.Services,
-                    async (scopedServices, connection, transaction, innerCt) =>
+                    async (_, unitOfWork, connection, transaction, innerCt) =>
                     {
-                        var manager = scopedServices.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
+                        var manager = unitOfWork.TimeJobs<TimeJobEntity>();
                         await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, innerCt);
                         await manager.AddAsync(job, innerCt);
 

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Testing.Tests;
+using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Tests.Entities;
@@ -9,11 +10,11 @@ using Tests.Fixture;
 namespace Tests;
 
 /// <summary>
-/// Proves the scope-free <c>ExecuteTransactionAsync</c> binds to and runs on a <c>HeadlessIdentityDbContext</c> —
-/// which implements <c>IHeadlessDbContext</c> but derives from <c>IdentityDbContext</c>, not
-/// <c>HeadlessDbContext</c>. Guards the generalized <c>where TContext : DbContext, IHeadlessDbContext</c>
-/// receiver against a regression back to the concrete <c>HeadlessDbContext</c> (which would silently exclude the
-/// Identity context at compile time).
+/// Proves a unit of work binds to and commits on a <c>HeadlessIdentityDbContext</c> — which implements
+/// <c>IHeadlessDbContext</c> but derives from <c>IdentityDbContext</c>, not <c>HeadlessDbContext</c>. The
+/// Identity context reaches the unit-of-work machinery only through that seam, so this guards the
+/// <c>IHeadlessDbContext</c>-based wiring in the save pipeline against a regression to the concrete
+/// <c>HeadlessDbContext</c> (which would silently exclude the Identity context).
 /// </summary>
 [Collection<IdentityTestFixture>]
 public sealed class HeadlessIdentityDbContextTransactionTests : TestBase
@@ -30,21 +31,26 @@ public sealed class HeadlessIdentityDbContextTransactionTests : TestBase
     }
 
     [Fact]
-    public async Task scope_free_unit_of_work_commits_on_identity_context()
+    public async Task unit_of_work_commits_on_identity_context()
     {
         // given
         await using var scope = _fixture.ServiceProvider.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<TestIdentityDbContext>();
+        var unitOfWorkFactory = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
         var entity = new HarnessTestEntity { Name = "unit-of-work", TenantId = "T1" };
 
-        // when — the scope-free helper begins a unit of work on the Identity context (self-sourcing the scoped
-        // manager), runs the operation, and completes. This compiles only because the receiver targets
-        // `IHeadlessDbContext`, not the concrete `HeadlessDbContext`.
-        await db.ExecuteTransactionAsync(
-            async (context, ct) =>
+        // when — RunAsync begins a unit of work on the Identity context, runs the operation, and completes.
+        // The inner save resolves the unit through the `IHeadlessDbContext` seam, not the concrete
+        // `HeadlessDbContext`, which is what this test pins.
+        await unitOfWorkFactory.RunAsync(
+            db,
+            async (unitOfWork, ct) =>
             {
-                context.TestEntities.Add(entity);
-                await context.SaveChangesAsync(ct);
+                unitOfWork.Resource!.IsOwned.Should().BeTrue("RunAsync owns the transaction it began");
+                db.Database.CurrentTransaction.Should().NotBeNull("the unit's transaction is the context's own");
+
+                db.TestEntities.Add(entity);
+                await db.SaveChangesAsync(ct);
             },
             cancellationToken: AbortToken
         );

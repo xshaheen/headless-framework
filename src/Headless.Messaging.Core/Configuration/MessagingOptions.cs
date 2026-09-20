@@ -279,20 +279,10 @@ public sealed class MessagingOptions
 
     /// <summary>
     /// Gets or sets the delivery mode inherited by publications without a per-call override. Defaults to
-    /// <see cref="DeliveryMode.Durable"/>: every default publish is stored before dispatch, inside the active
-    /// unit of work's transaction when one is available and <see cref="DefaultEnlistment"/> allows it, and
-    /// standalone otherwise. Select <see cref="DeliveryMode.Direct"/> to make fire-and-forget the host default.
+    /// <see cref="DeliveryMode.Durable"/>: every default publish is stored before dispatch and the relay
+    /// dispatches it. Select <see cref="DeliveryMode.Direct"/> to make fire-and-forget the host default.
     /// </summary>
     public DeliveryMode DefaultDeliveryMode { get; set; } = DeliveryMode.Durable;
-
-    /// <summary>
-    /// Gets or sets the transaction-enlistment requirement inherited by publications without a per-call or
-    /// per-type override. Defaults to <see cref="TransactionEnlistment.WhenAvailable"/>: durable delivery
-    /// enlists in the active unit of work when one is available and writes standalone otherwise. Select
-    /// <see cref="TransactionEnlistment.Required"/> to reject any durable publish made without an active unit
-    /// of work.
-    /// </summary>
-    public TransactionEnlistment DefaultEnlistment { get; set; } = TransactionEnlistment.WhenAvailable;
 
     /// <summary>
     /// Gets or sets an optional bound on the received body bytes persisted in a poison-on-arrival
@@ -378,7 +368,6 @@ public sealed class MessagingOptions
         target.DeadNodeReconcileInterval = DeadNodeReconcileInterval;
         target.RequiredInboxCapability = RequiredInboxCapability;
         target.DefaultDeliveryMode = DefaultDeliveryMode;
-        target.DefaultEnlistment = DefaultEnlistment;
         target.MaxPoisonEnvelopeBytes = MaxPoisonEnvelopeBytes;
         _CopyJsonSerializerOptions(JsonSerializerOptions, target.JsonSerializerOptions);
         RetryPolicy.CopyTo(target.RetryPolicy);
@@ -630,7 +619,6 @@ internal sealed class MessagingOptionsValidator : AbstractValidator<MessagingOpt
             .GreaterThan(TimeSpan.Zero)
             .WithMessage("DeadNodeReconcileInterval must be greater than zero.");
         RuleFor(x => x.DefaultDeliveryMode).IsInEnum();
-        RuleFor(x => x.DefaultEnlistment).IsInEnum();
         RuleFor(x => x.RequiredInboxCapability)
             .IsInEnum()
             .WithMessage("RequiredInboxCapability must be a defined inbox capability tier.");

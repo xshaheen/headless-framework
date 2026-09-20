@@ -101,8 +101,8 @@ public sealed class MessagingBuilderTests
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         using var scope = provider.CreateScope();
 
-        // then — AddUnitOfWork() is idempotent, so exactly one IUnitOfWorkManager registration exists.
-        scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>().Should().NotBeNull();
+        // then — AddUnitOfWork() is idempotent, so exactly one IUnitOfWorkFactory registration exists.
+        scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>().Should().NotBeNull();
     }
 
     [Fact]

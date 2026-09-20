@@ -15,11 +15,8 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>
     public virtual Task required_recurring_definition_rejects_scheduling_outside_a_transaction() =>
         _WithHostAsync(async host =>
         {
-            var schedule = () => _ScheduleRecurringAsync(host.Services, AbortToken);
-            await schedule
-                .Should()
-                .ThrowAsync<InvalidOperationException>()
-                .WithMessage("*requires an active unit of work*");
+            var schedule = () => _ScheduleRecurringAsync(host.Services.GetRequiredService<IJobScheduler>(), AbortToken);
+            await schedule.Should().ThrowAsync<InvalidOperationException>().WithMessage("*requires a unit of work*");
             (await fixture.CountCronJobsAsync(AbortToken)).Should().Be(0);
         });
 
@@ -30,10 +27,10 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>
             var operation = () =>
                 fixture.RunCoordinatedTransactionAsync(
                     host.Services,
-                    async (scopedServices, connection, transaction, ct) =>
+                    async (_, unitOfWork, connection, transaction, ct) =>
                     {
                         await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, ct);
-                        definitionId = await _ScheduleRecurringAsync(scopedServices, ct);
+                        definitionId = await _ScheduleRecurringAsync(unitOfWork.Jobs, ct);
                         // The definition row must not have escaped the caller's transaction: subsequent caller SQL
                         // still runs on the same live transaction.
                         await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, ct);
@@ -64,7 +61,7 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>
             persisted.Should().NotBeNull();
             persisted!.Expression.Should().Be(_RecurringExpression);
             // The requirement is call intent, never a materialized definition attribute.
-            persisted.Enlistment.Should().Be(TransactionEnlistment.WhenAvailable);
+            persisted.Enlistment.Should().Be(TransactionEnlistment.Optional);
         });
 
     public virtual Task recurring_atomic_flag_is_not_mapped_to_a_column() =>
@@ -78,9 +75,8 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>
                 .BeNull();
         });
 
-    private static Task<Guid> _ScheduleRecurringAsync(IServiceProvider services, CancellationToken cancellationToken)
+    private static Task<Guid> _ScheduleRecurringAsync(IJobScheduler scheduler, CancellationToken cancellationToken)
     {
-        var scheduler = services.GetRequiredService<IJobScheduler>();
         return scheduler.ScheduleRecurringAsync(
             new CoordinatedFacadeRequest(Guid.Empty, "recurring"),
             _RecurringExpression,

@@ -17,19 +17,19 @@ public static class SetupUnitOfWork
     extension(IServiceCollection services)
     {
         /// <summary>
-        /// Adds the scoped <see cref="IUnitOfWorkManager" />.
+        /// Adds the singleton <see cref="IUnitOfWorkFactory" />.
         /// </summary>
         /// <remarks>
-        /// Idempotent: repeated calls register the manager at most once. Consumer packages
+        /// Idempotent: repeated calls register the factory at most once. Consumer packages
         /// (<c>Headless.EntityFramework</c>, <c>Headless.Messaging.Core</c>, <c>Headless.Jobs.Core</c>) call
         /// this internally, so exactly one registration exists regardless of which setup the host invokes
-        /// first. The manager is scoped: resolve it (or a scoped facade over it) from a scope, never from the
-        /// root provider.
+        /// first. The factory holds no per-scope state, so any service — a singleton or hosted service included —
+        /// may take it directly.
         /// </remarks>
         /// <returns>The same <see cref="IServiceCollection" /> for chaining.</returns>
         public IServiceCollection AddUnitOfWork()
         {
-            services.TryAddScoped<IUnitOfWorkManager, UnitOfWorkManager>();
+            services.TryAddSingleton<IUnitOfWorkFactory, UnitOfWorkFactory>();
 
             return services;
         }

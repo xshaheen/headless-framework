@@ -26,7 +26,7 @@ public sealed class EfUnitOfWorkObservedModeTests : TestBase
 
         await using (var transaction = await session.Db.Database.BeginTransactionAsync(AbortToken))
         {
-            await using var unitOfWork = session.Manager.Enlist(session.Db, transaction);
+            await using var unitOfWork = session.Factory.Enlist(session.Db, transaction);
 
             unitOfWork.Resource.Should().BeAssignableTo<IRelationalUnitOfWorkResource>();
             unitOfWork.Resource!.IsOwned.Should().BeFalse("observed mode never owns the transaction");
@@ -56,7 +56,7 @@ public sealed class EfUnitOfWorkObservedModeTests : TestBase
 
         await using (var transaction = await session.Db.Database.BeginTransactionAsync(AbortToken))
         {
-            var unitOfWork = session.Manager.Enlist(session.Db, transaction);
+            var unitOfWork = session.Factory.Enlist(session.Db, transaction);
 
             await session.Db.Probes.AddAsync(new ProbeRow { Name = "discarded" }, AbortToken);
             await session.Db.SaveChangesAsync(AbortToken);
@@ -77,7 +77,7 @@ public sealed class EfUnitOfWorkObservedModeTests : TestBase
 
         await using (var transaction = await session.Db.Database.BeginTransactionAsync(AbortToken))
         {
-            var unitOfWork = session.Manager.Enlist(session.Db, transaction);
+            var unitOfWork = session.Factory.Enlist(session.Db, transaction);
 
             await session.Db.Probes.AddAsync(new ProbeRow { Name = "committed" }, AbortToken);
             await session.Db.SaveChangesAsync(AbortToken);
@@ -99,13 +99,13 @@ public sealed class EfUnitOfWorkObservedModeTests : TestBase
         await using var session = host.CreateSession();
 
         await using var transaction = await session.Db.Database.BeginTransactionAsync(AbortToken);
-        var unitOfWork = session.Manager.Enlist(session.Db, transaction);
+        var unitOfWork = session.Factory.Enlist(session.Db, transaction);
 
-        DbContextUnitOfWork.Find(session.Db).Should().BeSameAs(unitOfWork, "Enlist records the binding");
+        session.Db.UnitOfWork().Should().BeSameAs(unitOfWork, "Enlist records the binding");
 
         await unitOfWork.RollbackAsync();
         await unitOfWork.DisposeAsync();
 
-        DbContextUnitOfWork.Find(session.Db).Should().BeNull("a terminal unit is evicted from the binding");
+        session.Db.UnitOfWork().Should().BeNull("a terminal unit is evicted from the binding");
     }
 }

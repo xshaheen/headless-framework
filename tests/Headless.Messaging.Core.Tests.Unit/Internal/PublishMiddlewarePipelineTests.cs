@@ -335,7 +335,7 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
         DeliveryDecisionResolver.Resolve(
             MessageLane.Bus,
             DeliveryMode.Direct,
-            TransactionEnlistment.WhenAvailable,
+            requireCoordination: false,
             delay: null,
             DeliveryCoordination.None,
             DateTimeOffset.UnixEpoch

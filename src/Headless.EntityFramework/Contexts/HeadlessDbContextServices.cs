@@ -32,8 +32,9 @@ public sealed class HeadlessDbContextServices(
     internal bool IsTenantWriteGuardEnabled => tenantWriteGuardOptions.Value.IsEnabled;
 
     // The scoped (request) service provider that resolved this bag — the SAME scope the save pipeline captures.
-    // Surfaced so the unit-of-work helpers (ExecuteTransactionAsync) resolve the IUnitOfWorkManager of the scope
-    // that owns this context (EF's CoreOptionsExtension.ApplicationServiceProvider is the ROOT provider and must
-    // not be used here).
+    // Held so the runtime (ITenantWriteGuardBypass on every Added transition) and anything reaching the context
+    // through IHeadlessDbContext resolve scoped services from the scope that owns this context: EF's
+    // CoreOptionsExtension.ApplicationServiceProvider is the ROOT provider and would hand back a different
+    // instance, or throw for a scoped registration.
     internal IServiceProvider ServiceProvider { get; } = serviceProvider;
 }

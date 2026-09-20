@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Headless.UnitOfWork.Internal;
 
 /// <summary>
-/// The one body behind every raw-ADO <c>RunAsync</c> helper: begin an owned unit of work through the manager's
+/// The one body behind every raw-ADO <c>RunAsync</c> helper: begin an owned unit of work through the factory's
 /// provider primitive, run the operation, then complete it (commit, then drain). The providers supply only how
 /// their resource begins.
 /// </summary>
@@ -21,23 +21,23 @@ namespace Headless.UnitOfWork.Internal;
 internal static partial class UnitOfWorkRunner
 {
     /// <summary>
-    /// The manager's logger keeps runner faults in the unit-of-work category; a foreign manager implementation
+    /// The factory's logger keeps runner faults in the unit-of-work category; a foreign factory implementation
     /// has no logger to share, so the runner stays silent rather than guessing a category.
     /// </summary>
-    public static ILogger LoggerFor(IUnitOfWorkManager manager)
+    public static ILogger LoggerFor(IUnitOfWorkFactory factory)
     {
-        return manager is UnitOfWorkManager owned ? owned.Logger : NullLogger.Instance;
+        return factory is UnitOfWorkFactory owned ? owned.Logger : NullLogger.Instance;
     }
 
     public static async Task<TResult> RunAsync<TResult>(
-        IUnitOfWorkManager manager,
+        IUnitOfWorkFactory factory,
         Func<CancellationToken, ValueTask<IUnitOfWorkResource>> beginResource,
         Func<IUnitOfWork, CancellationToken, Task<TResult>> operation,
         ILogger logger,
         CancellationToken cancellationToken
     )
     {
-        var unitOfWork = await manager
+        var unitOfWork = await factory
             .BeginAsync(beginResource, options: null, cancellationToken)
             .ConfigureAwait(false);
 
@@ -51,7 +51,7 @@ internal static partial class UnitOfWorkRunner
             }
             catch
             {
-                // The explicit rollback discards the enlisted work now and keeps the manager's forgotten-completion
+                // The explicit rollback discards the enlisted work now and keeps the factory's forgotten-completion
                 // warning for hand-rolled enlistments only. Scope-local state is still disposed on rollback, and a
                 // fault from that disposal must never replace the caller's real failure.
                 try

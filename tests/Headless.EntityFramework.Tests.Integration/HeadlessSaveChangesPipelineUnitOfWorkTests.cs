@@ -18,7 +18,7 @@ namespace Tests;
 /// <summary>
 /// Proves the save pipeline's unit-of-work contract against PostgreSQL: a pipeline-owned save enlists
 /// its own transaction and drains after the commit; a save inside a caller-owned transaction requires the unit
-/// that owns it; a unit bound to a factory-created context is adopted into that context's scope for the save;
+/// that owns it; a unit bound to a factory-created context reaches the participants through the context binding;
 /// and a participant that prevents retry routes the fault out of the execution strategy's replay.
 /// </summary>
 [Collection<HeadlessDbContextTestFixture>]
@@ -34,7 +34,6 @@ public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContext
         var evidence = provider.GetRequiredService<PipelineEvidence>();
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<PipelineTestDbContext>();
-        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
         db.Probes.Add(_ProbeWithEvents("owned"));
 
         // when
@@ -43,16 +42,16 @@ public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContext
         // then — the handler and the outbox dispatcher saw the same observed unit over the pipeline's transaction,
         // the after-commit registration drained once, and the unit ended with the save.
         evidence.HandlerCalls.Should().Be(1);
-        evidence.HandlerCurrent.Should().NotBeNull();
-        var unitOfWork = evidence.HandlerCurrent!;
+        evidence.HandlerUnit.Should().NotBeNull();
+        var unitOfWork = evidence.HandlerUnit!;
         unitOfWork.Resource.Should().NotBeNull();
         unitOfWork.Resource!.IsOwned.Should().BeFalse("the pipeline commits; the unit only observes");
         evidence.HandlerTransaction.Should().BeSameAs(evidence.ContextTransaction);
-        evidence.OutboxCurrent.Should().BeSameAs(unitOfWork);
+        evidence.OutboxUnit.Should().BeSameAs(unitOfWork);
         evidence.Completed.Should().Be(1);
         evidence.Failed.Should().BeEmpty();
         unitOfWork.State.Should().Be(UnitOfWorkState.Completed);
-        manager.Current.Should().BeNull("the pipeline's unit ends with the save");
+        db.UnitOfWork().Should().BeNull("the pipeline's unit ends with the save");
         (await _CountProbesAsync(provider)).Should().Be(1);
     }
 
@@ -67,7 +66,6 @@ public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContext
         evidence.OutboxFault = static () => new InvalidOperationException("outbox down");
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<PipelineTestDbContext>();
-        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
         db.Probes.Add(_ProbeWithEvents("faulted"));
 
         // when
@@ -77,7 +75,7 @@ public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContext
         (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("outbox down");
         evidence.Completed.Should().Be(0);
         evidence.Failed.Should().Equal(UnitOfWorkFailureReason.RolledBack);
-        manager.Current.Should().BeNull();
+        db.UnitOfWork().Should().BeNull();
         (await _CountProbesAsync(provider)).Should().Be(0);
     }
 
@@ -93,9 +91,9 @@ public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContext
         var evidence = provider.GetRequiredService<PipelineEvidence>();
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<PipelineTestDbContext>();
-        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+        var factory = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
 
-        await using (var unitOfWork = await manager.BeginAsync(db, cancellationToken: AbortToken))
+        await using (var unitOfWork = await factory.BeginAsync(db, cancellationToken: AbortToken))
         {
             db.Probes.Add(_ProbeWithEvents("caller-owned"));
 
@@ -103,8 +101,8 @@ public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContext
             await _SaveAsync(db, sync, AbortToken);
 
             // then — handler and outbox dispatcher saw that unit; nothing drained before the developer decides.
-            evidence.HandlerCurrent.Should().BeSameAs(unitOfWork);
-            evidence.OutboxCurrent.Should().BeSameAs(unitOfWork);
+            evidence.HandlerUnit.Should().BeSameAs(unitOfWork);
+            evidence.OutboxUnit.Should().BeSameAs(unitOfWork);
             evidence.Completed.Should().Be(0, "nothing drains before CompleteAsync");
             (await _CountProbesAsync(provider)).Should().Be(0, "not committed yet");
 
@@ -127,7 +125,7 @@ public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContext
             (await _CountProbesAsync(provider)).Should().Be(0, "dispose without CompleteAsync rolls back");
         }
 
-        manager.Current.Should().BeNull();
+        db.UnitOfWork().Should().BeNull("a terminal unit is evicted from the context binding");
     }
 
     [Theory]
@@ -147,7 +145,7 @@ public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContext
         var act = async () => await _SaveAsync(db, sync, AbortToken);
 
         // then — fails with the remedy before the domain-event drain and before the outbox dispatch.
-        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*IUnitOfWorkManager.BeginAsync(db)*");
+        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*IUnitOfWorkFactory.BeginAsync(db)*");
         evidence.HandlerCalls.Should().Be(0, "the guard runs before any domain-event dispatch");
         evidence.OutboxCalls.Should().Be(0, "the guard runs before any outbox dispatch");
         await transaction.RollbackAsync(AbortToken);
@@ -159,14 +157,14 @@ public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContext
     [InlineData(false)]
     public async Task should_throw_when_the_scope_holds_only_a_resource_less_unit_of_work(bool sync)
     {
-        // given — a resource-less root coordinates nothing transactional: a caller-owned transaction with
-        // integration events under it would write the outbox autonomously, so it is refused the same way.
+        // given — a resource-less unit coordinates nothing transactional and is not bound to the context: a
+        // caller-owned transaction with integration events is refused the same way as with no unit at all.
         await using var provider = await _BuildProviderAsync();
         var evidence = provider.GetRequiredService<PipelineEvidence>();
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<PipelineTestDbContext>();
-        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
-        await using var root = await manager.BeginAsync(cancellationToken: AbortToken);
+        var factory = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
+        await using var root = await factory.BeginAsync(cancellationToken: AbortToken);
         await using var transaction = await db.Database.BeginTransactionAsync(AbortToken);
         db.Probes.Add(_ProbeWithEvents("resource-less"));
 
@@ -174,7 +172,7 @@ public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContext
         var act = async () => await _SaveAsync(db, sync, AbortToken);
 
         // then — refused without side effects; the root itself is untouched and still completes.
-        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*IUnitOfWorkManager.BeginAsync(db)*");
+        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*IUnitOfWorkFactory.BeginAsync(db)*");
         evidence.HandlerCalls.Should().Be(0);
         evidence.OutboxCalls.Should().Be(0);
         root.State.Should().Be(UnitOfWorkState.Active);
@@ -205,7 +203,7 @@ public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContext
 
         // then
         evidence.HandlerCalls.Should().Be(1);
-        evidence.HandlerCurrent.Should().BeNull("no unit of work is involved in a plain save");
+        evidence.HandlerUnit.Should().BeNull("no unit of work is involved in a plain save");
         evidence.OutboxCalls.Should().Be(0);
         (await _CountProbesAsync(provider)).Should().Be(1);
     }
@@ -262,31 +260,26 @@ public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContext
     [InlineData(true, false)]
     [InlineData(false, true)]
     [InlineData(false, false)]
-    public async Task should_adopt_the_unit_bound_to_a_factory_created_context_for_the_save(bool sync, bool complete)
+    public async Task should_reach_the_unit_bound_to_a_factory_created_context_during_the_save(bool sync, bool complete)
     {
-        // given — the request scope's manager begins the unit on a context that owns its own (factory) scope; the
-        // handler resolved in the factory scope must still see that unit as Current.
+        // given — the unit is begun on a context that owns its own (factory) scope; a handler resolved in that
+        // scope reaches the unit through the context binding, since nothing ambient carries it.
         await using var provider = await _BuildProviderAsync();
         var evidence = provider.GetRequiredService<PipelineEvidence>();
-        var factory = provider.GetRequiredService<IDbContextFactory<PipelineTestDbContext>>();
-        await using var requestScope = provider.CreateAsyncScope();
-        var requestManager = requestScope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
-        await using var db = await factory.CreateDbContextAsync(AbortToken);
-        var factoryManager = (
-            (IHeadlessDbContextScopeOwner)db
-        ).OwnedScope!.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+        var contextFactory = provider.GetRequiredService<IDbContextFactory<PipelineTestDbContext>>();
+        var factory = provider.GetRequiredService<IUnitOfWorkFactory>();
+        await using var db = await contextFactory.CreateDbContextAsync(AbortToken);
 
-        await using var unitOfWork = await requestManager.BeginAsync(db, cancellationToken: AbortToken);
+        await using var unitOfWork = await factory.BeginAsync(db, cancellationToken: AbortToken);
         db.Probes.Add(_ProbeWithEvents("factory"));
 
         // when
         await _SaveAsync(db, sync, AbortToken);
 
-        // then — adopted for the save only; the request scope still owns the unit.
-        evidence.HandlerCurrent.Should().BeSameAs(unitOfWork, "the factory scope's manager adopted the unit");
-        evidence.OutboxCurrent.Should().BeSameAs(unitOfWork);
-        factoryManager.Current.Should().BeNull("adoption is scoped to the save");
-        requestManager.Current.Should().BeSameAs(unitOfWork);
+        // then — the handler and the dispatcher saw the caller's unit; it stays the caller's to finish.
+        evidence.HandlerUnit.Should().BeSameAs(unitOfWork, "the handler reads the unit bound to its context");
+        evidence.OutboxUnit.Should().BeSameAs(unitOfWork);
+        db.UnitOfWork().Should().BeSameAs(unitOfWork);
 
         if (complete)
         {
@@ -324,13 +317,13 @@ public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContext
             }
         };
         await using var scope = provider.CreateAsyncScope();
-        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+        var factory = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
         await using var db = viaFactory
             ? await provider
                 .GetRequiredService<IDbContextFactory<PipelineTestDbContext>>()
                 .CreateDbContextAsync(AbortToken)
             : scope.ServiceProvider.GetRequiredService<PipelineTestDbContext>();
-        var unitOfWork = viaFactory ? await manager.BeginAsync(db, cancellationToken: AbortToken) : null;
+        var unitOfWork = viaFactory ? await factory.BeginAsync(db, cancellationToken: AbortToken) : null;
         db.Probes.Add(_ProbeWithEvents("outer"));
 
         // when
@@ -453,9 +446,9 @@ public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContext
 
         public List<UnitOfWorkFailureReason> Failed { get; } = [];
 
-        public IUnitOfWork? HandlerCurrent { get; set; }
+        public IUnitOfWork? HandlerUnit { get; set; }
 
-        public IUnitOfWork? OutboxCurrent { get; set; }
+        public IUnitOfWork? OutboxUnit { get; set; }
 
         public DbTransaction? HandlerTransaction { get; set; }
 
@@ -467,14 +460,11 @@ public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContext
     }
 
     /// <summary>
-    /// Registers after-commit and failure callbacks on whatever unit is current in the handler's scope — the
-    /// shape a real participant (outbox writer, job writer) has.
+    /// Registers after-commit and failure callbacks on the unit bound to the handler's context — the shape a real
+    /// participant (outbox writer, job writer) has.
     /// </summary>
-    private sealed class ProbeSavedHandler(
-        IUnitOfWorkManager manager,
-        PipelineTestDbContext db,
-        PipelineEvidence evidence
-    ) : IDomainEventHandler<ProbeSaved>
+    private sealed class ProbeSavedHandler(PipelineTestDbContext db, PipelineEvidence evidence)
+        : IDomainEventHandler<ProbeSaved>
     {
         public async ValueTask HandleAsync(
             EventContext<ProbeSaved> context,
@@ -482,8 +472,8 @@ public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContext
         )
         {
             evidence.HandlerCalls++;
-            var current = manager.Current;
-            evidence.HandlerCurrent = current;
+            var current = db.UnitOfWork();
+            evidence.HandlerUnit = current;
             evidence.HandlerTransaction = (current?.Resource as IRelationalUnitOfWorkResource)?.Transaction;
             evidence.ContextTransaction = db.Database.CurrentTransaction?.GetDbTransaction();
 
@@ -505,23 +495,23 @@ public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContext
         }
     }
 
-    private sealed class EvidenceOutboxDispatcher(IUnitOfWorkManager manager, PipelineEvidence evidence)
-        : IHeadlessOutboxDispatcher
+    private sealed class EvidenceOutboxDispatcher(PipelineEvidence evidence) : IHeadlessOutboxDispatcher
     {
         public Task DispatchAsync(
+            IUnitOfWork unitOfWork,
             IReadOnlyList<EventContext<object>> integrationEvents,
             CancellationToken cancellationToken = default
         )
         {
             evidence.OutboxCalls++;
-            evidence.OutboxCurrent = manager.Current;
+            evidence.OutboxUnit = unitOfWork;
 
             return evidence.OutboxFault is { } fault ? Task.FromException(fault()) : Task.CompletedTask;
         }
 
-        public void Dispatch(IReadOnlyList<EventContext<object>> integrationEvents)
+        public void Dispatch(IUnitOfWork unitOfWork, IReadOnlyList<EventContext<object>> integrationEvents)
         {
-            DispatchAsync(integrationEvents, CancellationToken.None).GetAwaiter().GetResult();
+            DispatchAsync(unitOfWork, integrationEvents, CancellationToken.None).GetAwaiter().GetResult();
         }
     }
 

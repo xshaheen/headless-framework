@@ -83,7 +83,7 @@ no discovery `using Headless.<Feature>;`. Mark the foreign namespace with the sa
 
 Holder class names in a foreign namespace must be `Headless`-prefixed and unique across every sibling package
 that shares that namespace — `HeadlessHttpContextExtensions`, or `Headless.EntityFramework`'s
-`HeadlessDbContextTransactionExtensions` in `Microsoft.EntityFrameworkCore`. Pick a name no sibling package
+`HeadlessMigrateDbContextExtensions` in `Microsoft.EntityFrameworkCore`. Pick a name no sibling package
 could also plausibly pick. Never use a bare BCL-collision name such as `ServiceCollectionExtensions` or
 `CollectionExtensions`; those produce CS0433 for consumers.
 

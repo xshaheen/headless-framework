@@ -8,6 +8,11 @@ namespace Headless.Messaging;
 /// </summary>
 /// <remarks>
 /// <para>
+/// Accepted by <see cref="IBus"/>, which publishes autonomously and never joins the caller's transaction, so
+/// <see cref="DeliveryMode"/> is a free choice here. <see cref="OutboxOptions"/> is the counterpart for
+/// an enlisted publish and carries no mode.
+/// </para>
+/// <para>
 /// This type is a record so publish-side middleware can mutate a single property via a <c>with</c>
 /// expression (for example, <c>options with { TenantId = "acme" }</c>) without manually copying
 /// every other property. Equality is value-based across all scalar properties; <see cref="Headers"/>
@@ -21,4 +26,12 @@ namespace Headless.Messaging;
 /// </para>
 /// </remarks>
 [PublicAPI]
-public sealed record PublishOptions : MessageOptions;
+public sealed record PublishOptions : MessageOptions
+{
+    /// <summary>
+    /// Gets the per-call delivery override. Null inherits the per-type registration, then the host default,
+    /// which is <see cref="DeliveryMode.Durable"/> unless <c>MessagingOptions.DefaultDeliveryMode</c> selects
+    /// another mode.
+    /// </summary>
+    public DeliveryMode? DeliveryMode { get; init; }
+}

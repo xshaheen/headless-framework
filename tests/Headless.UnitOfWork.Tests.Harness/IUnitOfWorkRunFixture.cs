@@ -6,7 +6,7 @@ namespace Tests;
 
 /// <summary>
 /// Provider fixture for the <c>RunAsync</c> conformance scenarios. Each leaf wraps its provider's
-/// <c>IUnitOfWorkManager.RunAsync(resource, …)</c> helper and a durable probe table created at fixture
+/// <c>IUnitOfWorkFactory.RunAsync(resource, …)</c> helper and a durable probe table created at fixture
 /// initialization — never inside the unit's transaction (transactional DDL would vanish on rollback, and SQL
 /// Server temp tables are invisible to the verifying connection).
 /// </summary>

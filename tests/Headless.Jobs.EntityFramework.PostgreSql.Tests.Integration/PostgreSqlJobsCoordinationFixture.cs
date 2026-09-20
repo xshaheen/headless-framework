@@ -109,17 +109,17 @@ public sealed class PostgreSqlJobsCoordinationFixture
 
     public async Task RunCoordinatedTransactionAsync(
         IServiceProvider services,
-        Func<IServiceProvider, DbConnection, DbTransaction, CancellationToken, Task> operation,
+        Func<IServiceProvider, IUnitOfWork, DbConnection, DbTransaction, CancellationToken, Task> operation,
         CancellationToken cancellationToken
     )
     {
-        // A fresh scope so the manager begun below is the SAME scope's IUnitOfWorkManager a resolved
-        // ITimeJobManager<>/ICronJobManager<>/IJobScheduler facade reads .Current from.
+        // A fresh scope for the scoped services the operation may resolve; the unit itself comes from the
+        // singleton factory and is handed to the operation, which enlists through its receivers.
         await using var scope = services.CreateAsyncScope();
-        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+        var factory = services.GetRequiredService<IUnitOfWorkFactory>();
         await using var connection = new NpgsqlConnection(ConnectionString);
 
-        await manager.RunAsync(
+        await factory.RunAsync(
             connection,
             async (unitOfWork, ct) =>
             {
@@ -127,7 +127,7 @@ public sealed class PostgreSqlJobsCoordinationFixture
                     unitOfWork.Resource as IRelationalUnitOfWorkResource
                     ?? throw new InvalidOperationException("The begun unit of work exposed no relational resource.");
 
-                await operation(scope.ServiceProvider, resource.Connection, resource.Transaction, ct);
+                await operation(scope.ServiceProvider, unitOfWork, resource.Connection, resource.Transaction, ct);
             },
             cancellationToken: cancellationToken
         );

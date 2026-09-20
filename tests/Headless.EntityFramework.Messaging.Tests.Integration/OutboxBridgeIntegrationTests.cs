@@ -155,7 +155,7 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         var act = async () => await db.SaveChangesAsync(AbortToken);
 
         // then — fails loud with an actionable wiring error and writes no outbox row.
-        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*IUnitOfWorkManager.BeginAsync(db)*");
+        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*IUnitOfWorkFactory.BeginAsync(db)*");
         await transaction.RollbackAsync(AbortToken);
         (await _CountPublishedContainingAsync(marker)).Should().Be(0);
     }
@@ -163,23 +163,25 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
     [Fact]
     public async Task should_dispatch_the_event_atomically_when_coordinated_transaction_wrapping_a_save()
     {
-        // given — the welded ExecuteTransactionAsync helper begins the unit of work on the context (owned mode).
-        // The inner SaveChanges runs WITHIN that transaction (current-transaction branch) and emits an integration
-        // event. This pins that the caller-owned guard recognizes the unit that owns the transaction and PASSES —
-        // the event enlists on that unit and drains atomically on commit.
+        // given — RunAsync begins the unit of work on the context (owned mode). The inner SaveChanges runs WITHIN
+        // that transaction (current-transaction branch) and emits an integration event. This pins that the
+        // caller-owned guard recognizes the unit that owns the transaction and PASSES — the event enlists on that
+        // unit and drains atomically on commit.
         const string marker = "evt-coordinated-nested";
         await using var provider = await _BuildProviderAsync();
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<BridgeTestDbContext>();
+        var unitOfWorkFactory = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
 
         // when
-        await db.ExecuteTransactionAsync(
-            async (ctx, ct) =>
+        await unitOfWorkFactory.RunAsync(
+            db,
+            async (_, ct) =>
             {
                 var order = new OrderEntity { Name = "coordinated-nested" };
                 order.EmitIntegrationEvent(new OrderShipped($"{marker}-1"));
-                ctx.Orders.Add(order);
-                await ctx.SaveChangesAsync(ct);
+                db.Orders.Add(order);
+                await db.SaveChangesAsync(ct);
             },
             cancellationToken: AbortToken
         );
@@ -219,26 +221,21 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
     [Fact]
     public async Task should_discard_the_outbox_row_when_enlisted_publish_rolled_back()
     {
-        // given — observed mode: the consumer enlists its own transaction with Enlist(db, tx), so the outbox writer
-        // stores the row INSIDE the transaction (not on an autonomous connection). This is the decisive proof that
-        // the write enlisted: if it had fallen back to an autonomous write, the row would SURVIVE the rollback. It
-        // must instead be discarded with the transaction.
+        // given — observed mode: the consumer enlists its own transaction with Enlist(db, tx) and publishes
+        // through that unit's outbox, so the writer stores the row INSIDE the transaction (not on an autonomous
+        // connection). This is the decisive proof that the write enlisted: the autonomous IBus would leave the
+        // row behind after the rollback. It must instead be discarded with the transaction.
         const string marker = "evt-enlist-rollback";
         await using var provider = await _BuildProviderAsync();
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<BridgeTestDbContext>();
-        var bus = scope.ServiceProvider.GetRequiredService<IBus>();
-        var unitOfWorkManager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+        var unitOfWorkFactory = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
 
         await using var transaction = await db.Database.BeginTransactionAsync(AbortToken);
-        await using var unitOfWork = unitOfWorkManager.Enlist(db, transaction);
+        await using var unitOfWork = unitOfWorkFactory.Enlist(db, transaction);
 
         // when — publish enlists the row inside the transaction, then the consumer rolls back.
-        await bus.PublishAsync(
-            new OrderShipped($"{marker}-1"),
-            new PublishOptions { DeliveryMode = DeliveryMode.Durable },
-            AbortToken
-        );
+        await unitOfWork.Outbox.PublishAsync(new OrderShipped($"{marker}-1"), AbortToken);
 
         await transaction.RollbackAsync(AbortToken);
         await unitOfWork.RollbackAsync();
@@ -252,24 +249,19 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
     [Fact]
     public async Task should_persist_the_outbox_row_atomically_when_enlisted_publish_committed()
     {
-        // given — same observed-mode enlistment, but commit. Proves the in-tx write path (not the autonomous
-        // fallback): the row is only visible after commit and survives. Paired with the rollback test, this pins
+        // given — same observed-mode enlistment, but commit. Proves the in-tx write path (not an autonomous
+        // one): the row is only visible after commit and survives. Paired with the rollback test, this pins
         // atomic enlistment.
         const string marker = "evt-enlist-commit";
         await using var provider = await _BuildProviderAsync();
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<BridgeTestDbContext>();
-        var bus = scope.ServiceProvider.GetRequiredService<IBus>();
-        var unitOfWorkManager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+        var unitOfWorkFactory = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
 
         await using var transaction = await db.Database.BeginTransactionAsync(AbortToken);
-        await using var unitOfWork = unitOfWorkManager.Enlist(db, transaction);
+        await using var unitOfWork = unitOfWorkFactory.Enlist(db, transaction);
 
-        await bus.PublishAsync(
-            new OrderShipped($"{marker}-1"),
-            new PublishOptions { DeliveryMode = DeliveryMode.Durable },
-            AbortToken
-        );
+        await unitOfWork.Outbox.PublishAsync(new OrderShipped($"{marker}-1"), AbortToken);
 
         // when — commit the enlisting transaction, then complete the unit so after-commit work drains.
         await transaction.CommitAsync(AbortToken);
@@ -296,9 +288,9 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         await using (var scope = provider.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<BridgeTestDbContext>();
-            var unitOfWorkManager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+            var unitOfWorkFactory = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
             await using var transaction = await db.Database.BeginTransactionAsync(AbortToken);
-            await using var unitOfWork = unitOfWorkManager.Enlist(db, transaction);
+            await using var unitOfWork = unitOfWorkFactory.Enlist(db, transaction);
             var order = new OrderEntity { Name = "two-saves" };
             db.Orders.Add(order);
             for (var i = 0; i < 2; i++)
@@ -659,11 +651,7 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
     private static void _AddFaultingDispatcher(IServiceCollection services, OutboxFault fault)
     {
         services.AddScoped<IHeadlessOutboxDispatcher>(provider => new FaultingDispatcher(
-            new OutboxIntegrationEventDispatcher(
-                provider.GetRequiredService<IBus>(),
-                provider.GetRequiredService<IUnitOfWorkManager>(),
-                new IntegrationEventPublishInvokerCache()
-            ),
+            new OutboxIntegrationEventDispatcher(new IntegrationEventPublishInvokerCache()),
             fault
         ));
     }
@@ -694,17 +682,18 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         : IHeadlessOutboxDispatcher
     {
         public async Task DispatchAsync(
+            IUnitOfWork unitOfWork,
             IReadOnlyList<EventContext<object>> integrationEvents,
             CancellationToken cancellationToken = default
         )
         {
-            await inner.DispatchAsync(integrationEvents, cancellationToken);
+            await inner.DispatchAsync(unitOfWork, integrationEvents, cancellationToken);
             _FailAfterWrite(integrationEvents);
         }
 
-        public void Dispatch(IReadOnlyList<EventContext<object>> integrationEvents)
+        public void Dispatch(IUnitOfWork unitOfWork, IReadOnlyList<EventContext<object>> integrationEvents)
         {
-            inner.Dispatch(integrationEvents);
+            inner.Dispatch(unitOfWork, integrationEvents);
             _FailAfterWrite(integrationEvents);
         }
 

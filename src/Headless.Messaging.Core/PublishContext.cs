@@ -2,7 +2,6 @@
 
 using Headless.Checks;
 using Headless.Messaging.Internal;
-using Headless.UnitOfWork;
 
 namespace Headless.Messaging;
 
@@ -74,7 +73,8 @@ public abstract class PublishContext
 
     /// <summary>
     /// Gets the current publish options for this operation.
-    /// Cast to <see cref="PublishOptions"/> for bus operations or <see cref="QueueOptions"/> for queue operations.
+    /// Autonomous bus and queue operations use <see cref="PublishOptions"/> and <see cref="QueueOptions"/>;
+    /// enlisted operations use <see cref="OutboxOptions"/> on both lanes.
     /// </summary>
     public MessageOptions? Options => OptionsCore;
 
@@ -116,7 +116,10 @@ public abstract class PublishContext
     public void WithOptions(MessageOptions? options)
     {
         ThrowIfCompleted();
-        if (DeliveryFrozen && (options?.DeliveryMode ?? RequestedDeliveryMode) != RequestedDeliveryMode)
+        if (
+            DeliveryFrozen
+            && (MessageOptionsDelivery.GetDeliveryMode(options) ?? RequestedDeliveryMode) != RequestedDeliveryMode
+        )
         {
             throw new InvalidOperationException("Publish middleware cannot change the resolved delivery mode.");
         }
@@ -192,17 +195,21 @@ public sealed class PublishContext<TMessage> : PublishContext, ICompletablePubli
     /// which mirrors every real host because storage is mandatory at startup; pass <see langword="false"/> to
     /// exercise the rejection a durable request receives on a misconfigured host.
     /// </param>
-    /// <param name="defaultEnlistment">The host transaction-enlistment requirement inherited when the options do not specify one.</param>
+    /// <param name="requireCoordination">
+    /// Whether the receiving surface guarantees the durable row is written inside the active unit of work. The
+    /// outbox surface passes <see langword="true"/>; the autonomous bus and queue pass <see langword="false"/>.
+    /// When <see langword="true"/> the delivery mode is <see cref="DeliveryMode.Durable"/> by construction and
+    /// both <paramref name="defaultDeliveryMode"/> and any per-call mode on <paramref name="options"/> are ignored.
+    /// </param>
     /// <param name="cancellationToken">The token forwarded to middleware.</param>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// The lane, effective delivery mode, or effective enlistment is undefined, or the delay is nonpositive or
-    /// overflows the timestamp range.
+    /// The lane or effective delivery mode is undefined, or the delay is nonpositive or overflows the timestamp
+    /// range.
     /// </exception>
     /// <exception cref="ArgumentException">Both a relative delay and an absolute schedule are specified.</exception>
     /// <exception cref="InvalidOperationException">
-    /// Direct delivery specifies a relative or absolute schedule or <see cref="TransactionEnlistment.Required"/>,
-    /// or <see cref="TransactionEnlistment.Required"/> is requested while <paramref name="isTransactional"/> is
-    /// <see langword="false"/>.
+    /// Direct delivery specifies a relative or absolute schedule or requires coordination, or coordination is
+    /// required while <paramref name="isTransactional"/> is <see langword="false"/>.
     /// </exception>
     /// <exception cref="MessagingConfigurationException">
     /// Durable delivery is requested while <paramref name="isStorageSupported"/> is <see langword="false"/>.
@@ -215,7 +222,7 @@ public sealed class PublishContext<TMessage> : PublishContext, ICompletablePubli
         DateTimeOffset now,
         bool isTransactional = false,
         bool isStorageSupported = true,
-        TransactionEnlistment defaultEnlistment = TransactionEnlistment.WhenAvailable,
+        bool requireCoordination = false,
         CancellationToken cancellationToken = default
     )
         : base(
@@ -226,8 +233,11 @@ public sealed class PublishContext<TMessage> : PublishContext, ICompletablePubli
             options,
             DeliveryDecisionResolver.Resolve(
                 lane,
-                options?.DeliveryMode ?? defaultDeliveryMode,
-                options?.Enlistment ?? defaultEnlistment,
+                // Mirrors MessagePublisher: an enlisted publish is durable by construction and resolves no mode.
+                requireCoordination
+                    ? DeliveryMode.Durable
+                    : MessageOptionsDelivery.GetDeliveryMode(options) ?? defaultDeliveryMode,
+                requireCoordination,
                 options?.Delay,
                 isTransactional ? DeliveryCoordinationStatus.Compatible : DeliveryCoordinationStatus.None,
                 now.ToUniversalTime(),
@@ -281,7 +291,8 @@ public sealed class PublishContext<TMessage> : PublishContext, ICompletablePubli
 
     /// <summary>
     /// Gets or sets the current publish options before the inner publisher runs.
-    /// Cast to <see cref="PublishOptions"/> for bus operations or <see cref="QueueOptions"/> for queue operations.
+    /// Autonomous bus and queue operations use <see cref="PublishOptions"/> and <see cref="QueueOptions"/>;
+    /// enlisted operations use <see cref="OutboxOptions"/> on both lanes.
     /// </summary>
     public new MessageOptions? Options
     {

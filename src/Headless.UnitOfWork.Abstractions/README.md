@@ -1,10 +1,10 @@
 # Headless.UnitOfWork.Abstractions
 
-Provider-neutral contracts for explicit units of work and transaction enlistment.
+Provider-neutral contracts for explicit units of work.
 
 ## Why use this package
 
-Defines the public unit-of-work contracts without provider dependencies: the scoped manager entry point, the unit handle, the resource seams, and the shared `TransactionEnlistment` knob.
+Defines the public unit-of-work contracts without provider dependencies: the scoped manager entry point, the unit handle, the resource seams, the `IUnitOfWorkFeature` marker bridge packages expose capabilities through, and the `TransactionEnlistment` knob Jobs schedules with.
 
 ## Install
 

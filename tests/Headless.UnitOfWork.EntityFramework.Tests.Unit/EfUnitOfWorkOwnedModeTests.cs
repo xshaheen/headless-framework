@@ -22,7 +22,7 @@ public sealed class EfUnitOfWorkOwnedModeTests : TestBase
         await using var session = host.CreateSession();
 
         var drained = 0;
-        await using (var unitOfWork = await session.Manager.BeginAsync(session.Db, cancellationToken: AbortToken))
+        await using (var unitOfWork = await session.Factory.BeginAsync(session.Db, cancellationToken: AbortToken))
         {
             unitOfWork.Resource.Should().BeAssignableTo<IRelationalUnitOfWorkResource>();
             unitOfWork.State.Should().Be(UnitOfWorkState.Active);
@@ -50,7 +50,7 @@ public sealed class EfUnitOfWorkOwnedModeTests : TestBase
         await using var host = await EfUnitOfWorkHost.CreateAsync();
         await using var session = host.CreateSession();
 
-        var unitOfWork = await session.Manager.BeginAsync(session.Db, cancellationToken: AbortToken);
+        var unitOfWork = await session.Factory.BeginAsync(session.Db, cancellationToken: AbortToken);
         await session.Db.Probes.AddAsync(new ProbeRow { Name = "rolled-back" }, AbortToken);
         await session.Db.SaveChangesAsync(AbortToken);
 
@@ -65,7 +65,7 @@ public sealed class EfUnitOfWorkOwnedModeTests : TestBase
         await using var host = await EfUnitOfWorkHost.CreateAsync();
         await using var session = host.CreateSession();
 
-        await using var unitOfWork = await session.Manager.BeginAsync(session.Db, cancellationToken: AbortToken);
+        await using var unitOfWork = await session.Factory.BeginAsync(session.Db, cancellationToken: AbortToken);
         await session.Db.Probes.AddAsync(new ProbeRow { Name = "discarded" }, AbortToken);
         await session.Db.SaveChangesAsync(AbortToken);
         UnitOfWorkFailure? failure = null;
@@ -92,12 +92,12 @@ public sealed class EfUnitOfWorkOwnedModeTests : TestBase
 
         await using var transaction = await session.Db.Database.BeginTransactionAsync(AbortToken);
 
-        var act = () => session.Manager.BeginAsync(session.Db, cancellationToken: AbortToken).AsTask();
+        var act = () => session.Factory.BeginAsync(session.Db, cancellationToken: AbortToken).AsTask();
 
         (await act.Should().ThrowAsync<InvalidOperationException>())
             .Which.Message.Should()
             .Contain("The DbContext already has an active transaction.")
-            .And.Contain("call IUnitOfWorkManager.Enlist(db, transaction)");
+            .And.Contain("call IUnitOfWorkFactory.Enlist(db, transaction)");
     }
 
     [Fact]
@@ -108,12 +108,12 @@ public sealed class EfUnitOfWorkOwnedModeTests : TestBase
         );
         await using var session = host.CreateSession();
 
-        var act = () => session.Manager.BeginAsync(session.Db, cancellationToken: AbortToken).AsTask();
+        var act = () => session.Factory.BeginAsync(session.Db, cancellationToken: AbortToken).AsTask();
 
         (await act.Should().ThrowAsync<InvalidOperationException>())
             .Which.Message.Should()
             .Contain("does not support user-initiated transactions")
-            .And.Contain("Use IUnitOfWorkManager.RunAsync(db");
+            .And.Contain("Use IUnitOfWorkFactory.RunAsync(db");
     }
 
     [Fact]
@@ -122,56 +122,48 @@ public sealed class EfUnitOfWorkOwnedModeTests : TestBase
         await using var host = await EfUnitOfWorkHost.CreateAsync();
         await using var session = host.CreateSession();
 
-        var unitOfWork = await session.Manager.BeginAsync(session.Db, cancellationToken: AbortToken);
+        var unitOfWork = await session.Factory.BeginAsync(session.Db, cancellationToken: AbortToken);
 
-        DbContextUnitOfWork.Find(session.Db).Should().BeSameAs(unitOfWork, "BeginAsync(db) records the binding");
+        session.Db.UnitOfWork().Should().BeSameAs(unitOfWork, "BeginAsync(db) records the binding");
 
         await unitOfWork.CompleteAsync(AbortToken);
         await unitOfWork.DisposeAsync();
 
-        DbContextUnitOfWork.Find(session.Db).Should().BeNull("a terminal unit is evicted from the binding");
+        session.Db.UnitOfWork().Should().BeNull("a terminal unit is evicted from the binding");
     }
 
     [Fact]
-    public async Task should_return_a_child_when_begin_runs_again_on_the_same_context()
+    public async Task should_refuse_a_second_begin_on_a_context_that_already_carries_a_live_unit()
+    {
+        // No ambient unit means nothing to join: the callee is handed the unit (db.UnitOfWork()) instead of
+        // opening a second one, and a second transaction on the same context is never the answer.
+        await using var host = await EfUnitOfWorkHost.CreateAsync();
+        await using var session = host.CreateSession();
+
+        await using var first = await session.Factory.BeginAsync(session.Db, cancellationToken: AbortToken);
+
+        var act = () => session.Factory.BeginAsync(session.Db, cancellationToken: AbortToken).AsTask();
+
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*already carries an active unit of work*db.UnitOfWork()*");
+        first.State.Should().Be(UnitOfWorkState.Active, "the refused begin leaves the live unit untouched");
+        session.Db.UnitOfWork().Should().BeSameAs(first);
+    }
+
+    [Fact]
+    public async Task should_allow_a_new_begin_once_the_bound_unit_reached_a_terminal_state()
     {
         await using var host = await EfUnitOfWorkHost.CreateAsync();
         await using var session = host.CreateSession();
 
-        await using var root = await session.Manager.BeginAsync(session.Db, cancellationToken: AbortToken);
-        await using var child = await session.Manager.BeginAsync(session.Db, cancellationToken: AbortToken);
+        var first = await session.Factory.BeginAsync(session.Db, cancellationToken: AbortToken);
+        await first.RollbackAsync();
+        await first.DisposeAsync();
 
-        child.Should().NotBeSameAs(root, "a second begin on the same resource joins as a child");
-        session.Manager.Current.Should().BeSameAs(child, "Current is the innermost unit");
-        root.State.Should().Be(UnitOfWorkState.Active);
-        session
-            .Db.Database.CurrentTransaction.Should()
-            .NotBeNull("the root's transaction stays open while the root unit is active");
-        child.Resource.Should().BeSameAs(root.Resource, "the child joined the root's resource — no second transaction");
-    }
+        await using var second = await session.Factory.BeginAsync(session.Db, cancellationToken: AbortToken);
 
-    [Fact]
-    public async Task should_keep_the_root_bound_to_the_context_across_a_nested_child()
-    {
-        // The save pipeline resolves the unit through the context binding; a joined begin must not rebind the
-        // context to its child view, or the next save after the child completes would adopt a stale handle.
-        await using var host = await EfUnitOfWorkHost.CreateAsync();
-        await using var session = host.CreateSession();
-
-        await using var root = await session.Manager.BeginAsync(session.Db, cancellationToken: AbortToken);
-        var child = await session.Manager.BeginAsync(session.Db, cancellationToken: AbortToken);
-
-        DbContextUnitOfWork.Find(session.Db).Should().BeSameAs(root, "a joined begin never rebinds the context");
-
-        using (session.Manager.Adopt(root))
-        {
-            session.Manager.Current.Should().BeSameAs(child, "adopting the bound root under its child is re-entrant");
-        }
-
-        await child.CompleteAsync(AbortToken);
-        await child.DisposeAsync();
-
-        DbContextUnitOfWork.Find(session.Db).Should().BeSameAs(root);
-        session.Manager.Current.Should().BeSameAs(root);
+        second.Should().NotBeSameAs(first);
+        session.Db.UnitOfWork().Should().BeSameAs(second, "the binding follows the live unit");
     }
 }

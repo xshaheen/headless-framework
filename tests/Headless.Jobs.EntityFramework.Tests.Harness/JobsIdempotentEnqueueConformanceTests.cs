@@ -8,6 +8,7 @@ using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Models;
 using Headless.Testing.Tests;
+using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -210,12 +211,12 @@ public abstract class JobsIdempotentEnqueueConformanceTests<TFixture>(TFixture f
             var act = () =>
                 fixture.RunCoordinatedTransactionAsync(
                     host.Services,
-                    async (services, connection, transaction, innerCt) =>
+                    async (_, unitOfWork, connection, transaction, innerCt) =>
                     {
                         await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, innerCt);
                         // The scheduler is scoped: only the one resolved from the unit's own scope sees it as
                         // Current and enlists; the host-root scheduler would take the direct path.
-                        var enlistedScheduler = services.GetRequiredService<IJobScheduler>();
+                        var enlistedScheduler = unitOfWork.Jobs;
                         (
                             await enlistedScheduler.EnqueueAsync(
                                 new CoordinatedFacadeRequest(Guid.NewGuid(), "rolled-back"),

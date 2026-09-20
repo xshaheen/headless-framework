@@ -2,6 +2,7 @@
 
 using Headless.Domain;
 using Headless.EntityFramework;
+using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests.Fixtures;
@@ -51,6 +52,7 @@ public sealed class RecordingHeadlessMessageDispatcher : IDomainEventDispatcher,
     }
 
     public Task DispatchAsync(
+        IUnitOfWork unitOfWork,
         IReadOnlyList<EventContext<object>> integrationEvents,
         CancellationToken cancellationToken = default
     )
@@ -59,7 +61,7 @@ public sealed class RecordingHeadlessMessageDispatcher : IDomainEventDispatcher,
         return Task.CompletedTask;
     }
 
-    public void Dispatch(IReadOnlyList<EventContext<object>> integrationEvents)
+    public void Dispatch(IUnitOfWork unitOfWork, IReadOnlyList<EventContext<object>> integrationEvents)
     {
         _RecordDistributed(integrationEvents);
     }

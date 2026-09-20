@@ -243,8 +243,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .OrderBy(x => x.ExecutionTime)
             .Select(x => new { x.ExecutionTime, StoreUtcNow = DateTime.UtcNow });
 
-        // Through the context's execution strategy, matching HeadlessSaveChangesPipeline and
-        // HeadlessDbContextTransactionExtensions: a SQL Server deadlock victim (1205) on this read is transient, and
+        // Through the context's execution strategy, matching HeadlessSaveChangesPipeline and the unit-of-work
+        // RunAsync block: a SQL Server deadlock victim (1205) on this read is transient, and
         // without a strategy it propagates straight into the scheduler loop. This deliberately honours whatever the
         // consumer configured (EnableRetryOnFailure and friends) rather than inventing an always-on retry here — under
         // the default non-retrying strategy it is a pass-through, which is the right trade for a read whose failure

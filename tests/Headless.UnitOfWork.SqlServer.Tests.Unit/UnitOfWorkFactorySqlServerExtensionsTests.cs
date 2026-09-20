@@ -7,7 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
-public sealed class UnitOfWorkManagerSqlServerExtensionsTests : TestBase
+public sealed class UnitOfWorkFactorySqlServerExtensionsTests : TestBase
 {
     [Fact]
     public void should_register_the_scoped_manager_once_and_idempotently()
@@ -17,21 +17,24 @@ public sealed class UnitOfWorkManagerSqlServerExtensionsTests : TestBase
         services.AddSqlServerUnitOfWork();
         services.AddSqlServerUnitOfWork();
 
-        services.Count(d => d.ServiceType == typeof(IUnitOfWorkManager)).Should().Be(1);
-        services.Single(d => d.ServiceType == typeof(IUnitOfWorkManager)).Lifetime.Should().Be(ServiceLifetime.Scoped);
+        services.Count(d => d.ServiceType == typeof(IUnitOfWorkFactory)).Should().Be(1);
+        services
+            .Single(d => d.ServiceType == typeof(IUnitOfWorkFactory))
+            .Lifetime.Should()
+            .Be(ServiceLifetime.Singleton);
     }
 
     [Fact]
-    public void should_refuse_root_resolution_when_scopes_are_validated()
+    public void should_resolve_from_the_root_and_from_a_scope_as_one_instance()
     {
         using var provider = new ServiceCollection()
             .AddSqlServerUnitOfWork()
             .BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        using var scope = provider.CreateScope();
 
-        var act = () => provider.GetRequiredService<IUnitOfWorkManager>();
+        var fromRoot = provider.GetRequiredService<IUnitOfWorkFactory>();
 
-        act.Should()
-            .Throw<InvalidOperationException>("a scoped manager resolved from the root is a captive dependency");
+        scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>().Should().BeSameAs(fromRoot);
     }
 
     [Fact]
@@ -39,7 +42,7 @@ public sealed class UnitOfWorkManagerSqlServerExtensionsTests : TestBase
     {
         await using var provider = new ServiceCollection().AddSqlServerUnitOfWork().BuildServiceProvider();
         using var scope = provider.CreateScope();
-        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+        var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
         await using var connection = new SqlConnection(
             "Server=localhost;Database=unused;Integrated Security=false;User Id=x;Password=y;TrustServerCertificate=true"
         );
@@ -66,6 +69,5 @@ public sealed class UnitOfWorkManagerSqlServerExtensionsTests : TestBase
         beginNull.ParamName.Should().Be("connection");
         enlistNull.ParamName.Should().Be("transaction");
         runNull.ParamName.Should().Be("operation");
-        manager.Current.Should().BeNull("a rejected call must not claim the scope's slot");
     }
 }

@@ -44,16 +44,16 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
             var operation = () =>
                 fixture.RunCoordinatedTransactionAsync(
                     host.Services,
-                    async (scopedServices, connection, transaction, ct) =>
+                    async (_, unitOfWork, connection, transaction, ct) =>
                     {
-                        var scheduler = scopedServices.GetRequiredService<IJobScheduler>();
+                        var scheduler = unitOfWork.Jobs;
                         await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, ct);
-                        var created = await _ScheduleAsync(scopedServices, key, "first", ct, policy: originalPolicy);
+                        var created = await _ScheduleAsync(unitOfWork.Jobs, key, "first", ct, policy: originalPolicy);
                         originalId = created.RunId;
                         created.Disposition.Should().Be(JobScheduleDisposition.Created);
                         created.IsProvisional.Should().BeTrue();
                         var existing = await _ScheduleAsync(
-                            scopedServices,
+                            unitOfWork.Jobs,
                             key,
                             "first",
                             ct,
@@ -62,11 +62,11 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
                         existing.Disposition.Should().Be(JobScheduleDisposition.Existing);
                         existing.RunId.Should().Be(created.RunId);
                         existing.IsProvisional.Should().BeTrue();
-                        (await _ScheduleAsync(scopedServices, key, "different", ct))
+                        (await _ScheduleAsync(unitOfWork.Jobs, key, "different", ct))
                             .Disposition.Should()
                             .Be(JobScheduleDisposition.Conflict);
                         var replaced = await _ScheduleAsync(
-                            scopedServices,
+                            unitOfWork.Jobs,
                             key,
                             "first",
                             ct,
@@ -113,7 +113,7 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
             if (commit)
             {
                 var observed = await _ScheduleAsync(
-                    host.Services,
+                    host.Services.GetRequiredService<IJobScheduler>(),
                     key,
                     "first",
                     AbortToken,
@@ -135,21 +135,20 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
     public virtual Task disposing_uncommitted_scope_discards_business_and_keyed_rows() =>
         _WithHostAsync(async host =>
         {
-            await using var scope = host.Services.CreateAsyncScope();
-            var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+            var factory = host.Services.GetRequiredService<IUnitOfWorkFactory>();
 
             await using (var context = await _ContextAsync(host))
             await using (var transaction = await context.Database.BeginTransactionAsync(AbortToken))
             // Observed mode; disposing without CompleteAsync/RollbackAsync is treated as rolled back — mirrors the
             // pre-existing observed-unit-disposed-without-completion regression net.
-            await using (manager.Enlist(context, transaction))
+            await using (var unit = factory.Enlist(context, transaction))
             {
                 await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(
                     context.Database.GetDbConnection(),
                     transaction.GetDbTransaction(),
                     AbortToken
                 );
-                (await _ScheduleAsync(scope.ServiceProvider, new JobKey("dispose"), "first", AbortToken))
+                (await _ScheduleAsync(unit.Jobs, new JobKey("dispose"), "first", AbortToken))
                     .IsProvisional.Should()
                     .BeTrue();
             }
@@ -177,7 +176,7 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
                     OnNodeDeath = NodeDeathPolicy.MarkFailed,
                 };
                 var first = await _ScheduleAsync(
-                    host.Services,
+                    host.Services.GetRequiredService<IJobScheduler>(),
                     key,
                     "first",
                     AbortToken,
@@ -188,13 +187,13 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
                 var before = await store.GetTimeJobByIdAsync(first.RunId!.Value, AbortToken);
                 await fixture.RunCoordinatedTransactionAsync(
                     host.Services,
-                    async (scopedServices, connection, transaction, ct) =>
+                    async (_, unitOfWork, connection, transaction, ct) =>
                     {
                         fault.FailNextKeyedSave = true;
                         var replace = () =>
-                            _ScheduleAsync(scopedServices, key, "first", ct, generation: 1, policy: replacementPolicy);
+                            _ScheduleAsync(unitOfWork.Jobs, key, "first", ct, generation: 1, policy: replacementPolicy);
                         await replace.Should().ThrowAsync<InjectedFailureException>();
-                        (await _ScheduleAsync(scopedServices, key, "first", ct, policy: replacementPolicy))
+                        (await _ScheduleAsync(unitOfWork.Jobs, key, "first", ct, policy: replacementPolicy))
                             .RunId.Should()
                             .Be(first.RunId);
                         // The failed insert must not leave generation 1 historical inside a still-usable caller transaction.
@@ -223,14 +222,13 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
             async host =>
             {
                 var calls = 0;
-                await using var scope = host.Services.CreateAsyncScope();
-                var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+                var factory = host.Services.GetRequiredService<IUnitOfWorkFactory>();
                 await using var context = await _ContextAsync(host);
                 fault.Enabled = true;
                 var operation = async () =>
-                    await manager.RunAsync(
+                    await factory.RunAsync(
                         context,
-                        async (_, ct) =>
+                        async (unit, ct) =>
                         {
                             calls++;
                             await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(
@@ -238,7 +236,7 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
                                 context.Database.CurrentTransaction!.GetDbTransaction(),
                                 ct
                             );
-                            await _ScheduleAsync(scope.ServiceProvider, new JobKey("commit-fault"), "first", ct);
+                            await _ScheduleAsync(unit.Jobs, new JobKey("commit-fault"), "first", ct);
                         },
                         cancellationToken: AbortToken
                     );
@@ -251,7 +249,7 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
                 {
                     (
                         await _ScheduleAsync(
-                            host.Services,
+                            host.Services.GetRequiredService<IJobScheduler>(),
                             new JobKey("commit-fault"),
                             "first",
                             AbortToken,
@@ -275,21 +273,20 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
             var contexts = new HashSet<DbContextId>();
             await strategy.ExecuteAsync(async () =>
             {
-                await using var scope = host.Services.CreateAsyncScope();
-                var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+                var factory = host.Services.GetRequiredService<IUnitOfWorkFactory>();
                 await using var context = await _ContextAsync(host);
                 contexts.Add(context.ContextId);
                 // Owned mode, driven manually (not RunAsync): the retry loop above is this test's OWN strategy, unrelated
                 // to context's configured one, so RunAsync's built-in retry (which reads context's real strategy) would
                 // not retry InjectedFailureException — a fresh unit per attempt is asserted by the disposal below.
-                await using var unit = await manager.BeginAsync(context, cancellationToken: AbortToken);
+                await using var unit = await factory.BeginAsync(context, cancellationToken: AbortToken);
                 attempts++;
                 await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(
                     context.Database.GetDbConnection(),
                     context.Database.CurrentTransaction!.GetDbTransaction(),
                     AbortToken
                 );
-                await _ScheduleAsync(scope.ServiceProvider, new JobKey("known-retry"), "first", AbortToken);
+                await _ScheduleAsync(unit.Jobs, new JobKey("known-retry"), "first", AbortToken);
                 if (attempts == 1)
                 {
                     throw new InjectedFailureException();
@@ -301,7 +298,7 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
             (await fixture.CountTimeJobsAsync(AbortToken)).Should().Be(1);
             (await fixture.CountProbeRowsAsync(AbortToken)).Should().Be(1);
             var observed = await _ScheduleAsync(
-                host.Services,
+                host.Services.GetRequiredService<IJobScheduler>(),
                 new JobKey("known-retry"),
                 "first",
                 AbortToken,
@@ -321,10 +318,10 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
                 var operation = () =>
                     fixture.RunCoordinatedTransactionAsync(
                         host.Services,
-                        async (scopedServices, connection, transaction, ct) =>
+                        async (_, unitOfWork, connection, transaction, ct) =>
                         {
                             await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, ct);
-                            await _ScheduleAsync(scopedServices, new JobKey("before-write"), "first", ct);
+                            await _ScheduleAsync(unitOfWork.Jobs, new JobKey("before-write"), "first", ct);
                         },
                         AbortToken
                     );
@@ -345,17 +342,23 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
             async host =>
             {
                 var key = new JobKey("rollback-required");
-                var first = await _ScheduleAsync(host.Services, key, "first", AbortToken, required: false);
+                var first = await _ScheduleAsync(
+                    host.Services.GetRequiredService<IJobScheduler>(),
+                    key,
+                    "first",
+                    AbortToken,
+                    required: false
+                );
                 var operation = () =>
                     fixture.RunCoordinatedTransactionAsync(
                         host.Services,
-                        async (scopedServices, connection, transaction, ct) =>
+                        async (_, unitOfWork, connection, transaction, ct) =>
                         {
                             await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, ct);
                             insertFailure.FailNextKeyedSave = true;
                             rollbackFailure.FailRestoration = true;
                             // Propagate the rollback-required failure to the owner; only its outer rollback restores this unit.
-                            await _ScheduleAsync(scopedServices, key, "next", ct, generation: 1);
+                            await _ScheduleAsync(unitOfWork.Jobs, key, "next", ct, generation: 1);
                         },
                         AbortToken
                     );
@@ -426,11 +429,10 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
     private Task<JobsDbContext> _ContextAsync(IHost host) =>
         host.Services.GetRequiredService<IDbContextFactory<JobsDbContext>>().CreateDbContextAsync(AbortToken);
 
-    // Accepts the resolving IServiceProvider directly (not IHost) so a call inside a coordinated block can pass the
-    // SAME scope RunCoordinatedTransactionAsync began the unit of work on, letting the resolved IJobScheduler facade
-    // see it as IUnitOfWorkManager.Current — callers outside a coordinated block pass host.Services.
+    // Takes the receiver directly: a coordinated block passes its unit's `unit.Jobs` so the write enlists in that
+    // transaction; a caller outside one passes the host's injected (autonomous) scheduler.
     private static Task<JobScheduleResult> _ScheduleAsync(
-        IServiceProvider services,
+        IJobScheduler scheduler,
         JobKey key,
         string payload,
         CancellationToken ct,
@@ -440,11 +442,10 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
         JobOptions? policy = null
     )
     {
-        var scheduler = services.GetRequiredService<IJobScheduler>();
         var request = new CoordinatedFacadeRequest(Guid.Empty, payload);
         var options = (policy ?? new JobOptions()) with
         {
-            Enlistment = required ? TransactionEnlistment.Required : TransactionEnlistment.WhenAvailable,
+            Enlistment = required ? TransactionEnlistment.Required : TransactionEnlistment.Optional,
         };
         return generation is { } observed
             ? scheduler.ReplaceKeyedAsync(key, observed, request, due ?? _Due, options, ct)

@@ -26,13 +26,10 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
         bool RequireSavepoints
     );
 
-    // Routing decision (the guarantee matrix shared with Messaging):
-    //  - TransactionEnlistment.Never             → always the direct path; the resource is never inspected, even
-    //    when it exists or is incompatible (Never "succeeds against an incompatible resource").
-    //  - no unit of work (or no joinable relational resource) → "no unit of work" behavior: WhenAvailable falls
-    //    back to the direct path, Required throws the "requires an active unit of work" message.
-    //  - a joinable relational resource → validated for compatibility; incompatible/dead resources throw for both
-    //    WhenAvailable and Required: a joinable resource that is incompatible throws for both.
+    // Routing decision. The receiver decides enlistment: the autonomous facade passes no unit and takes the
+    // direct path unless the function is TransactionEnlistment.Required, which refuses it before any effect;
+    // the bound facade behind unit.Jobs passes its unit and must enlist — a unit with no joinable relational
+    // resource, or an incompatible or dead one, throws rather than degrading to a standalone row.
     private CoordinatedJobContext? _TryCaptureCoordinatedContext(
         IUnitOfWork? unitOfWork,
         TransactionEnlistment enlistment,
@@ -40,15 +37,20 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
         bool requireSavepoints
     )
     {
-        if (enlistment == TransactionEnlistment.Never)
+        if (unitOfWork is null)
         {
+            _RejectAutonomousReceiver(enlistment, function);
             return null;
         }
 
         if (unitOfWork is not { State: UnitOfWorkState.Active, Resource: IRelationalUnitOfWorkResource relational })
         {
-            _RejectMissingUnitOfWork(enlistment, function);
-            return null;
+            throw new InvalidOperationException(
+                $"Scheduling '{function}' through unit.Jobs requires the unit of work to carry a live relational "
+                    + "resource for the job store, but this one has none. Begin the unit of work on the job store's "
+                    + "database (BeginAsync(db) or RunAsync(db, …)), or schedule through an injected scheduler for an "
+                    + "autonomous write."
+            );
         }
 
         // Resolve the writer here — still synchronous, before the caller's first await — so a relational unit of
@@ -59,22 +61,20 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
         return new CoordinatedJobContext(unitOfWork, captured, writer, requireSavepoints);
     }
 
-    private static void _RejectMissingUnitOfWork(TransactionEnlistment enlistment, string function)
+    private static void _RejectAutonomousReceiver(TransactionEnlistment enlistment, string function)
     {
         if (enlistment == TransactionEnlistment.Required)
         {
             throw new InvalidOperationException(
-                $"Scheduling '{function}' requires an active unit of work (TransactionEnlistment.Required) but none "
-                    + "is active in this scope. Begin one with IUnitOfWorkManager.BeginAsync, or register the "
-                    + "function with TransactionEnlistment.WhenAvailable."
+                $"Scheduling '{function}' requires a unit of work (TransactionEnlistment.Required), so it cannot run "
+                    + "through an injected scheduler or manager. Schedule it through unit.Jobs on the unit of work "
+                    + "the write must join, or register the function with TransactionEnlistment.Optional."
             );
         }
     }
 
-    // The drift re-read that used to compare captured-vs-ambient coordinator identity becomes a plain
-    // State == Active re-validation — a scoped IUnitOfWorkManager can only ever hold the one unit it began, so there
-    // is no second coordinator identity to drift to; the only failure mode left is the unit having completed under
-    // the caller (a nested completion, or the caller racing CompleteAsync from elsewhere in the same scope).
+    // A plain State == Active re-validation before the write: there is no ambient coordinator to drift from; the
+    // only failure mode left is the unit having completed under the caller (racing CompleteAsync elsewhere).
     private static void _PrepareCoordinatedWrite(CoordinatedJobContext context)
     {
         if (context.UnitOfWork.State != UnitOfWorkState.Active)
@@ -85,8 +85,16 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
         }
         context.Relational.Validate();
         context.Writer.ValidateContext(context.Relational, context.RequireSavepoints);
-        // Jobs writes use a separate context; an owned business save cannot recreate them after rollback.
-        context.UnitOfWork.PreventRetry();
+
+        // Jobs writes use a separate context, so a replay cannot restore them from the retained tracker; they have
+        // to be re-run. Replay re-runs the block that owns the unit: an owned unit (BeginAsync / RunAsync) is the
+        // caller's block, which schedules again, so it stays replayable. An observed unit belongs to someone
+        // else's commit edge — the EF save pipeline enlisting its own save — which replays without re-running the
+        // domain-event handler that scheduled, so that write must end replay before it lands.
+        if (!context.Relational.IsOwned)
+        {
+            context.UnitOfWork.PreventRetry();
+        }
     }
 
     // Defensive snapshot mirroring the pre-existing capture: re-validates connection/transaction identity and
@@ -120,7 +128,7 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
                 throw new InvalidOperationException(
                     "The active unit of work's transaction belongs to another database or is no longer live "
                         + "(closed, completed, or changed), so the Jobs write cannot enlist. Use the same database, "
-                        + "or TransactionEnlistment.Never for this call."
+                        + "or schedule through an injected scheduler for an autonomous write."
                 );
             }
         }

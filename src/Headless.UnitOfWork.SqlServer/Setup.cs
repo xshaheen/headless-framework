@@ -14,11 +14,11 @@ public static class SetupSqlServerUnitOfWork
     extension(IServiceCollection services)
     {
         /// <summary>
-        /// Adds the scoped unit-of-work manager the SqlClient helpers (<c>BeginAsync(connection)</c>,
+        /// Adds the singleton unit-of-work factory the SqlClient helpers (<c>BeginAsync(connection)</c>,
         /// <c>Enlist(connection, transaction)</c>, <c>RunAsync(connection, …)</c>) run on.
         /// </summary>
         /// <remarks>
-        /// The provider needs no service of its own beyond the core manager, so this registers
+        /// The provider needs no service of its own beyond the core factory, so this registers
         /// <see cref="SetupUnitOfWork.AddUnitOfWork" /> only; it exists so hosts declare the provider they enlist
         /// through. Idempotent.
         /// </remarks>

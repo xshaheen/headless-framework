@@ -6,7 +6,6 @@ import { formatDateTime, timeAgo } from '@/utilities/dateTimeParser'
 
 export type MessageLane = 'Bus' | 'Queue'
 export type DeliveryMode = 'Durable' | 'Direct'
-export type TransactionEnlistment = 'WhenAvailable' | 'Required' | 'Never'
 
 export interface MessageDetail {
   storageId: string
@@ -19,7 +18,7 @@ export interface MessageDetail {
   lane: MessageLane
   requestedDeliveryMode: DeliveryMode | null
   resolvedDeliveryMode: DeliveryMode | null
-  requestedEnlistment: TransactionEnlistment | null
+  isCoordinated: boolean | null
   group?: string
   exceptionInfo?: string
 }
@@ -114,6 +113,16 @@ const copied = ref(false)
 const activeTab = ref<'content' | 'exception'>('content')
 
 const hasExceptionInfo = computed(() => !!props.message?.exceptionInfo?.trim())
+
+// Three states, not two: a row stored before the coordination header existed carries no answer, and reading
+// that as 'No' would claim it was written outside a transaction when nothing about it was ever recorded.
+const coordinationLabel = computed(() => {
+  const value = props.message?.isCoordinated
+  if (value === null || value === undefined) {
+    return 'Not recorded'
+  }
+  return value ? 'Yes' : 'No'
+})
 
 watch(
   () => props.message,
@@ -297,8 +306,8 @@ async function copyContent() {
             <span class="meta-value">{{ message.resolvedDeliveryMode ?? 'Not recorded' }}</span>
           </div>
           <div class="meta-item">
-            <span class="meta-label">Requested enlistment</span>
-            <span class="meta-value">{{ message.requestedEnlistment ?? 'Not recorded' }}</span>
+            <span class="meta-label">Transaction coordinated</span>
+            <span class="meta-value">{{ coordinationLabel }}</span>
           </div>
         </div>
       </div>

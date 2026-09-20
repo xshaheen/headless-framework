@@ -4,8 +4,8 @@ namespace Headless.UnitOfWork;
 
 /// <summary>
 /// Owner-side handle for one unit of work, returned by
-/// <see cref="IUnitOfWorkManager.BeginAsync(UnitOfWorkOptions?, CancellationToken)" /> and
-/// <see cref="IUnitOfWorkManager.Enlist(IUnitOfWorkResource, UnitOfWorkOptions?)" />. Dispose without
+/// <see cref="IUnitOfWorkFactory.BeginAsync(UnitOfWorkOptions?, CancellationToken)" /> and
+/// <see cref="IUnitOfWorkFactory.Enlist(IUnitOfWorkResource, UnitOfWorkOptions?)" />. Dispose without
 /// <see cref="CompleteAsync" /> is an implicit rollback.
 /// </summary>
 /// <remarks>
@@ -24,8 +24,8 @@ namespace Headless.UnitOfWork;
 /// <para>
 /// Registrations (<see cref="OnCompleted" />, <see cref="OnFailed" />, <see cref="GetOrAdd{TState}" />) are
 /// accepted only while the unit is <see cref="UnitOfWorkState.Active" />; after the terminal state they throw
-/// <see cref="InvalidOperationException" />. Every member throws <see cref="ObjectDisposedException" /> after
-/// the handle is disposed.
+/// <see cref="InvalidOperationException" />. Every member throws <see cref="ObjectDisposedException" />
+/// after the handle is disposed.
 /// </para>
 /// </remarks>
 [PublicAPI]
@@ -66,8 +66,7 @@ public interface IUnitOfWork : IDisposable, IAsyncDisposable
 
     /// <summary>
     /// Registers a callback to run after the unit fails: an explicit rollback, an abandon (dispose without
-    /// complete), a commit fault, a child abandon aborting the root, or the scope disposing with the unit still
-    /// active.
+    /// complete), or a commit fault.
     /// </summary>
     /// <remarks>
     /// The justified use case is releasing a non-transactional resource reserved in anticipation of commit. The
@@ -115,6 +114,21 @@ public interface IUnitOfWork : IDisposable, IAsyncDisposable
         where TState : class;
 
     /// <summary>
+    /// Gets the <see cref="IUnitOfWorkFeature" /> service of type <typeparamref name="TFeature" /> registered in
+    /// the host container, or <see langword="null" /> when the host registered none.
+    /// </summary>
+    /// <remarks>
+    /// A lookup, not a registration: the feature is an ordinary singleton service, nothing is created or cached
+    /// per unit, and every handle resolves the same instance. The feature receives the handle it is used with as
+    /// an argument per call, so it is the call — not this lookup — that answers for the handle's liveness.
+    /// </remarks>
+    /// <typeparam name="TFeature">The feature's service type; it opts in through <see cref="IUnitOfWorkFeature" />.</typeparam>
+    /// <returns>The feature, or <see langword="null" /> when none is registered.</returns>
+    /// <exception cref="ObjectDisposedException">This handle was disposed.</exception>
+    TFeature? GetFeature<TFeature>()
+        where TFeature : class, IUnitOfWorkFeature;
+
+    /// <summary>
     /// Marks this unit as not safely replayable, so an owning execution strategy (for example EF Core's
     /// retrying strategy) must not re-run it after a transient failure.
     /// </summary>
@@ -133,13 +147,12 @@ public interface IUnitOfWork : IDisposable, IAsyncDisposable
     /// There is no cancellation on the drain: once the outcome is durable the drain runs to completion —
     /// cancelling it would abandon committed work. A callback fault propagates after the drain but leaves the
     /// unit <see cref="UnitOfWorkState.Completed" />. A commit fault transitions the unit to
-    /// <see cref="UnitOfWorkState.Failed" /> before the exception propagates. A root refuses to complete while
-    /// a child is active, and after a child was abandoned.
+    /// <see cref="UnitOfWorkState.Failed" /> before the exception propagates.
     /// </remarks>
     /// <param name="cancellationToken">Propagates the caller's cancellation to the resource commit.</param>
     /// <returns>A task that completes when the drain (if any) has finished.</returns>
     /// <exception cref="InvalidOperationException">
-    /// The unit already completed, already failed, a child unit is still active, or a child was abandoned.
+    /// The unit already completed or already failed.
     /// </exception>
     ValueTask CompleteAsync(CancellationToken cancellationToken = default);
 

@@ -17,19 +17,28 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
 
     private sealed record PaymentCaptured(string UniqueId);
 
-    // A resource-bearing unit of work current in the scope models the save pipeline having enlisted its
-    // transaction (or the caller's BeginAsync(db) unit being active).
-    private static IUnitOfWorkManager _ManagerWith(IUnitOfWork? current)
-    {
-        var manager = Substitute.For<IUnitOfWorkManager>();
-        manager.Current.Returns(current);
-        return manager;
-    }
-
-    private static IUnitOfWork _ResourceBearingUnitOfWork()
+    // A resource-bearing unit models the save pipeline having enlisted its transaction (or the caller's
+    // BeginAsync(db) unit) and handed it to the dispatcher.
+    private static IUnitOfWork _ResourceBearingUnitOfWork(IUnitOfWorkOutbox? outbox = null)
     {
         var unitOfWork = Substitute.For<IUnitOfWork>();
         unitOfWork.Resource.Returns(Substitute.For<IUnitOfWorkResource>());
+        unitOfWork.GetFeature<IUnitOfWorkOutbox>().Returns(outbox ?? new RecordingOutbox());
+        // unit.Outbox keeps its binding as unit-local state through GetOrAdd; the substitute must honour the
+        // create-once contract or the accessor hands back null.
+        var state = new Dictionary<Type, object>();
+        unitOfWork
+            .GetOrAdd(Arg.Any<IUnitOfWork>(), Arg.Any<Func<IUnitOfWork, IUnitOfWork, UnitOfWorkOutbox>>())
+            .Returns(call =>
+            {
+                if (!state.TryGetValue(typeof(UnitOfWorkOutbox), out var existing))
+                {
+                    existing = call.ArgAt<Func<IUnitOfWork, IUnitOfWork, UnitOfWorkOutbox>>(1)(unitOfWork, unitOfWork);
+                    state[typeof(UnitOfWorkOutbox)] = existing;
+                }
+
+                return (UnitOfWorkOutbox)existing;
+            });
         return unitOfWork;
     }
 
@@ -40,37 +49,53 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
         return unitOfWork;
     }
 
-    private sealed class RecordingBus : IBus
+    private sealed class RecordingOutbox : IUnitOfWorkOutbox
     {
         public List<(
             Type GenericType,
             object? Payload,
-            DeliveryMode DeliveryMode,
-            PublishOptions? Options
+            OutboxOptions? Options,
+            IUnitOfWork UnitOfWork
         )> Published { get; } = [];
 
-        public Task<PublishReceipt> PublishAsync<T>(T? contentObj, CancellationToken cancellationToken = default) =>
-            PublishAsync(contentObj, options: null, cancellationToken);
-
         public Task<PublishReceipt> PublishAsync<T>(
+            IUnitOfWork unitOfWork,
             T? contentObj,
-            PublishOptions? options,
+            OutboxOptions? options,
             CancellationToken cancellationToken = default
         )
         {
-            Published.Add((typeof(T), contentObj, options?.DeliveryMode ?? DeliveryMode.Durable, options));
+            Published.Add((typeof(T), contentObj, options, unitOfWork));
             return Task.FromResult(new PublishReceipt(options?.MessageId ?? Guid.NewGuid().ToString(), Guid.NewGuid()));
+        }
+
+        public Task<PublishReceipt> EnqueueAsync<T>(
+            IUnitOfWork unitOfWork,
+            T? contentObj,
+            OutboxOptions? options,
+            CancellationToken cancellationToken = default
+        )
+        {
+            throw new NotSupportedException("Integration events take the bus lane.");
         }
     }
 
-    private sealed class ThrowingBus : IBus
+    private sealed class ThrowingOutbox : IUnitOfWorkOutbox
     {
-        public Task<PublishReceipt> PublishAsync<T>(T? contentObj, CancellationToken cancellationToken = default) =>
-            PublishAsync(contentObj, options: null, cancellationToken);
-
         public Task<PublishReceipt> PublishAsync<T>(
+            IUnitOfWork unitOfWork,
             T? contentObj,
-            PublishOptions? options,
+            OutboxOptions? options,
+            CancellationToken cancellationToken = default
+        )
+        {
+            throw new InvalidOperationException("Publish failed");
+        }
+
+        public Task<PublishReceipt> EnqueueAsync<T>(
+            IUnitOfWork unitOfWork,
+            T? contentObj,
+            OutboxOptions? options,
             CancellationToken cancellationToken = default
         )
         {
@@ -85,21 +110,22 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
     [Fact]
     public async Task should_publish_runtime_typed_event_through_its_concrete_generic_overload_when_invoker()
     {
-        // given — the event is held as object; the invoker must route to PublishAsync<OrderPlaced>,
+        // given — the event is held as object; the invoker must route to the outbox's PublishAsync<OrderPlaced>,
         // not PublishAsync<object>, recovering the concrete type from the runtime instance.
         var cache = new IntegrationEventPublishInvokerCache();
-        var bus = new RecordingBus();
+        var outbox = new RecordingOutbox();
+        var unitOfWork = _ResourceBearingUnitOfWork(outbox);
         object integrationEvent = new OrderPlaced("order-1");
 
         // when
         var invoke = cache.GetPublishInvoker(integrationEvent.GetType());
-        await invoke(bus, integrationEvent, new PublishOptions { DeliveryMode = DeliveryMode.Durable }, AbortToken);
+        await invoke(unitOfWork.Outbox, integrationEvent, new OutboxOptions(), AbortToken);
 
-        // then
-        bus.Published.Should().ContainSingle();
-        bus.Published[0].GenericType.Should().Be<OrderPlaced>();
-        bus.Published[0].Payload.Should().BeSameAs(integrationEvent);
-        bus.Published[0].DeliveryMode.Should().Be(DeliveryMode.Durable);
+        // then — the concrete generic overload ran, and the binding carried the publishing handle with it
+        outbox.Published.Should().ContainSingle();
+        outbox.Published[0].GenericType.Should().Be<OrderPlaced>();
+        outbox.Published[0].Payload.Should().BeSameAs(integrationEvent);
+        outbox.Published[0].UnitOfWork.Should().BeSameAs(unitOfWork);
     }
 
     [Fact]
@@ -121,16 +147,17 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
     {
         // given
         var cache = new IntegrationEventPublishInvokerCache();
-        var bus = new RecordingBus();
+        var outbox = new RecordingOutbox();
+        var binding = _ResourceBearingUnitOfWork(outbox).Outbox;
         object first = new OrderPlaced("order");
         object second = new PaymentCaptured("payment");
 
         // when
-        await cache.GetPublishInvoker(first.GetType())(bus, first, new PublishOptions(), AbortToken);
-        await cache.GetPublishInvoker(second.GetType())(bus, second, new PublishOptions(), AbortToken);
+        await cache.GetPublishInvoker(first.GetType())(binding, first, new OutboxOptions(), AbortToken);
+        await cache.GetPublishInvoker(second.GetType())(binding, second, new OutboxOptions(), AbortToken);
 
         // then
-        bus.Published.Select(x => x.GenericType).Should().Equal(typeof(OrderPlaced), typeof(PaymentCaptured));
+        outbox.Published.Select(x => x.GenericType).Should().Equal(typeof(OrderPlaced), typeof(PaymentCaptured));
     }
 
     #endregion
@@ -141,32 +168,27 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
     public async Task should_be_noop_for_empty_event_list_when_dispatch_async()
     {
         // given — an empty list must short-circuit without publishing anything, and without consulting the
-        // unit of work (no manager set up: Current is null).
-        var bus = new RecordingBus();
-        var dispatcher = new OutboxIntegrationEventDispatcher(
-            bus,
-            _ManagerWith(current: null),
-            new IntegrationEventPublishInvokerCache()
-        );
+        // unit's resource: a resource-less unit would otherwise be refused.
+        var outbox = new RecordingOutbox();
+        var unitOfWork = _ResourceLessUnitOfWork();
+        var dispatcher = new OutboxIntegrationEventDispatcher(new IntegrationEventPublishInvokerCache());
+
         // when
-        await dispatcher.DispatchAsync([], AbortToken);
+        await dispatcher.DispatchAsync(unitOfWork, [], AbortToken);
 
         // then
-        bus.Published.Should().BeEmpty();
+        outbox.Published.Should().BeEmpty();
     }
 
     [Fact]
-    public async Task should_publish_all_events_through_outbox_bus_when_dispatch_async()
+    public async Task should_publish_all_events_through_the_given_units_outbox_when_dispatch_async()
     {
-        // given — the pipeline enlisted its transaction, so a resource-bearing unit is current and the outbox
-        // writer places rows inside it. The dispatcher only fans the events out to the bus; it does not touch the
-        // transaction.
-        var bus = new RecordingBus();
-        var dispatcher = new OutboxIntegrationEventDispatcher(
-            bus,
-            _ManagerWith(_ResourceBearingUnitOfWork()),
-            new IntegrationEventPublishInvokerCache()
-        );
+        // given — the pipeline enlisted its transaction and handed over a resource-bearing unit whose outbox
+        // places the rows inside that unit's transaction. The dispatcher only fans the events out to that
+        // outbox; it does not touch the transaction.
+        var outbox = new RecordingOutbox();
+        var unitOfWork = _ResourceBearingUnitOfWork(outbox);
+        var dispatcher = new OutboxIntegrationEventDispatcher(new IntegrationEventPublishInvokerCache());
         IReadOnlyList<EventContext<object>> events =
         [
             new(new OrderPlaced("order-1"), "occurrence-1", "root-1", "parent-1", "tenant-1"),
@@ -174,22 +196,24 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
         ];
 
         // when
-        await dispatcher.DispatchAsync(events, AbortToken);
+        await dispatcher.DispatchAsync(unitOfWork, events, AbortToken);
 
         // then
-        bus.Published.Should().HaveCount(2);
-        bus.Published[0].GenericType.Should().Be<OrderPlaced>();
-        bus.Published[1].GenericType.Should().Be<PaymentCaptured>();
+        outbox.Published.Should().HaveCount(2);
+        outbox.Published[0].GenericType.Should().Be<OrderPlaced>();
+        outbox.Published[1].GenericType.Should().Be<PaymentCaptured>();
         for (var i = 0; i < events.Count; i++)
         {
-            bus.Published[i].Payload.Should().BeSameAs(events[i].Payload);
+            outbox.Published[i].Payload.Should().BeSameAs(events[i].Payload);
+            // Every publish enlists in the unit the pipeline handed over.
+            outbox.Published[i].UnitOfWork.Should().BeSameAs(unitOfWork);
             // Compare the public publish contract; record equality also includes internal transaction replay state.
-            bus.Published[i]
+            outbox
+                .Published[i]
                 .Options.Should()
                 .BeEquivalentTo(
-                    new PublishOptions
+                    new OutboxOptions
                     {
-                        DeliveryMode = DeliveryMode.Durable,
                         MessageId = events[i].EventId,
                         CorrelationId = events[i].CorrelationId,
                         CausationId = events[i].CausationId,
@@ -204,16 +228,12 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
     public async Task should_propagate_publish_failure_when_dispatch_async()
     {
         // given
-        var bus = new ThrowingBus();
-        var dispatcher = new OutboxIntegrationEventDispatcher(
-            bus,
-            _ManagerWith(_ResourceBearingUnitOfWork()),
-            new IntegrationEventPublishInvokerCache()
-        );
+        var unitOfWork = _ResourceBearingUnitOfWork(new ThrowingOutbox());
+        var dispatcher = new OutboxIntegrationEventDispatcher(new IntegrationEventPublishInvokerCache());
         IReadOnlyList<EventContext<object>> events = [EventContext.Capture<object>(new OrderPlaced("order-1"))];
 
         // when
-        var act = async () => await dispatcher.DispatchAsync(events, AbortToken);
+        var act = async () => await dispatcher.DispatchAsync(unitOfWork, events, AbortToken);
 
         // then
         (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("Publish failed");
@@ -224,64 +244,51 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
     {
         // given — a pre-cancelled token with a non-empty event list. The per-event loop trips
         // ThrowIfCancellationRequested on the first iteration, so nothing is published.
-        var bus = new RecordingBus();
-        var dispatcher = new OutboxIntegrationEventDispatcher(
-            bus,
-            _ManagerWith(_ResourceBearingUnitOfWork()),
-            new IntegrationEventPublishInvokerCache()
-        );
+        var outbox = new RecordingOutbox();
+        var unitOfWork = _ResourceBearingUnitOfWork(outbox);
+        var dispatcher = new OutboxIntegrationEventDispatcher(new IntegrationEventPublishInvokerCache());
         IReadOnlyList<EventContext<object>> events = [EventContext.Capture<object>(new OrderPlaced("order-1"))];
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
         // when
-        var act = async () => await dispatcher.DispatchAsync(events, cts.Token);
+        var act = async () => await dispatcher.DispatchAsync(unitOfWork, events, cts.Token);
 
         // then
         await act.Should().ThrowAsync<OperationCanceledException>();
-        bus.Published.Should().BeEmpty();
+        outbox.Published.Should().BeEmpty();
     }
 
     [Fact]
     public void should_forward_to_dispatch_async_and_publish_all_events_when_dispatch_sync()
     {
         // given
-        var bus = new RecordingBus();
-        var dispatcher = new OutboxIntegrationEventDispatcher(
-            bus,
-            _ManagerWith(_ResourceBearingUnitOfWork()),
-            new IntegrationEventPublishInvokerCache()
-        );
+        var outbox = new RecordingOutbox();
+        var unitOfWork = _ResourceBearingUnitOfWork(outbox);
+        var dispatcher = new OutboxIntegrationEventDispatcher(new IntegrationEventPublishInvokerCache());
         IReadOnlyList<EventContext<object>> events = [EventContext.Capture<object>(new OrderPlaced("order-1"))];
 
         // when
-        dispatcher.Dispatch(events);
+        dispatcher.Dispatch(unitOfWork, events);
 
         // then
-        bus.Published.Should().ContainSingle();
-        bus.Published[0].GenericType.Should().Be<OrderPlaced>();
+        outbox.Published.Should().ContainSingle();
+        outbox.Published[0].GenericType.Should().Be<OrderPlaced>();
     }
 
     [Fact]
-    public async Task should_fail_loud_when_dispatch_async_without_a_unit_of_work()
+    public async Task should_reject_a_null_unit_of_work_when_dispatch_async()
     {
-        // given — integration events emitted while saving inside a caller-managed transaction that no unit of
-        // work owns: dispatching would be non-atomic. The dispatcher must fail loud, naming the remedy, instead
-        // of shipping a message a caller rollback can no longer recall.
-        var bus = new RecordingBus();
-        var dispatcher = new OutboxIntegrationEventDispatcher(
-            bus,
-            _ManagerWith(current: null),
-            new IntegrationEventPublishInvokerCache()
-        );
+        // given — the unit is a required argument now that nothing ambient can stand in for it; the save
+        // pipeline refuses a caller-managed transaction without a unit before it ever reaches the dispatcher.
+        var dispatcher = new OutboxIntegrationEventDispatcher(new IntegrationEventPublishInvokerCache());
         IReadOnlyList<EventContext<object>> events = [EventContext.Capture<object>(new OrderPlaced("order-1"))];
 
         // when
-        var act = async () => await dispatcher.DispatchAsync(events, AbortToken);
+        var act = async () => await dispatcher.DispatchAsync(null!, events, AbortToken);
 
-        // then — fails loud and publishes nothing
-        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*IUnitOfWorkManager.BeginAsync(db)*");
-        bus.Published.Should().BeEmpty();
+        // then
+        await act.Should().ThrowAsync<ArgumentNullException>();
     }
 
     [Fact]
@@ -289,20 +296,15 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
     {
         // given — a resource-less unit (BeginAsync() with no db) coordinates nothing transactional, so an outbox
         // write under it would still be autonomous; the guard is on the resource, not on the unit's presence.
-        var bus = new RecordingBus();
-        var dispatcher = new OutboxIntegrationEventDispatcher(
-            bus,
-            _ManagerWith(_ResourceLessUnitOfWork()),
-            new IntegrationEventPublishInvokerCache()
-        );
+        var unitOfWork = _ResourceLessUnitOfWork();
+        var dispatcher = new OutboxIntegrationEventDispatcher(new IntegrationEventPublishInvokerCache());
         IReadOnlyList<EventContext<object>> events = [EventContext.Capture<object>(new OrderPlaced("order-1"))];
 
         // when
-        var act = async () => await dispatcher.DispatchAsync(events, AbortToken);
+        var act = async () => await dispatcher.DispatchAsync(unitOfWork, events, AbortToken);
 
         // then
-        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*IUnitOfWorkManager.BeginAsync(db)*");
-        bus.Published.Should().BeEmpty();
+        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*IUnitOfWorkFactory.BeginAsync(db)*");
     }
 
     #endregion
@@ -352,7 +354,6 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
         // no separate registration is needed, and resolving the dispatcher from a scope works under validation.
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSingleton(Substitute.For<IBus>());
         services.AddHeadlessDbContextServices().AddIntegrationEventOutbox();
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 
@@ -362,7 +363,10 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
 
         // then
         dispatcher.Should().BeOfType<OutboxIntegrationEventDispatcher>();
-        services.Single(d => d.ServiceType == typeof(IUnitOfWorkManager)).Lifetime.Should().Be(ServiceLifetime.Scoped);
+        services
+            .Single(d => d.ServiceType == typeof(IUnitOfWorkFactory))
+            .Lifetime.Should()
+            .Be(ServiceLifetime.Singleton);
     }
 
     #endregion

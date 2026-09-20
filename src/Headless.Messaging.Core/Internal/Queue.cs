@@ -2,7 +2,6 @@
 
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Serialization;
-using Headless.UnitOfWork;
 
 namespace Headless.Messaging.Internal;
 
@@ -13,26 +12,16 @@ internal sealed class Queue : IQueue
     ]);
 
     private readonly MessagePublisher _publisher;
-    private readonly IUnitOfWorkManager? _unitOfWorkManager;
 
     /// <summary>
-    /// The scoped DI-registered constructor: reads this scope's active unit of work at publish time so a
-    /// durable enqueue enlists in it when <see cref="TransactionEnlistment"/> allows.
-    /// </summary>
-    internal Queue(MessagePublisher publisher, IUnitOfWorkManager unitOfWorkManager)
-    {
-        _publisher = publisher;
-        _unitOfWorkManager = unitOfWorkManager;
-    }
-
-    /// <summary>
-    /// Unit-less construction for framework-internal singletons that must publish without participating in
-    /// any caller's unit of work.
+    /// The DI-registered constructor. This surface is autonomous: it never reads a caller's unit of work, so
+    /// it is a singleton that framework singletons can depend on, and an enqueue made while a unit is active
+    /// writes a standalone durable row. Callers that want the row inside their unit's transaction enqueue
+    /// through the unit-of-work outbox instead.
     /// </summary>
     internal Queue(MessagePublisher publisher)
     {
         _publisher = publisher;
-        _unitOfWorkManager = null;
     }
 
     internal Queue(
@@ -44,7 +33,6 @@ internal sealed class Queue : IQueue
         MessagingTelemetry? telemetry = null
     )
     {
-        _unitOfWorkManager = null;
         _publisher = new MessagePublisher(
             serializer,
             _ => transport,
@@ -76,7 +64,8 @@ internal sealed class Queue : IQueue
             MessageLane.Queue,
             contentObj,
             options,
-            _unitOfWorkManager?.Current,
+            unitOfWork: null,
+            requireCoordination: false,
             cancellationToken
         );
     }

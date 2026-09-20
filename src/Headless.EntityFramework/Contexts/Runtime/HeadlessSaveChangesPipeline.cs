@@ -75,13 +75,13 @@ public interface IHeadlessSaveChangesPipeline
 /// entities before message-collection sees the final state.
 /// </para>
 /// <para>
-/// Unit of work: the unit bound to the context by <c>IUnitOfWorkManager.BeginAsync(db)</c> /
-/// <c>Enlist(db, tx)</c> is consulted first and the scope's manager second. A bound unit owned by another
-/// scope's manager (a context created through <c>IDbContextFactory&lt;T&gt;</c> owns its own scope) is adopted
-/// into this scope for the save's duration, so domain-event handlers and the outbox dispatcher resolved here
-/// see the same <c>Current</c>. A save inside a caller-owned transaction that carries integration events
-/// requires a unit that owns that transaction; otherwise it fails before any dispatch rather than writing
-/// outbox rows non-atomically.
+/// Unit of work: the unit bound to the context by <c>IUnitOfWorkFactory.BeginAsync(db)</c> /
+/// <c>Enlist(db, tx)</c> / <c>RunAsync(db, …)</c> is the one a caller-owned save enlists in; a pipeline-owned
+/// save enlists its own transaction and binds that unit to the context for the save's duration. The unit
+/// travels explicitly: the outbox dispatcher receives it as an argument, and a domain-event handler reads it
+/// from the context it was handed (<c>db.UnitOfWork()</c>). A save inside a caller-owned transaction that
+/// carries integration events requires a unit that owns that transaction; otherwise it fails before any
+/// dispatch rather than writing outbox rows non-atomically.
 /// </para>
 /// <para>
 /// Cancellation: <c>transaction.CommitAsync</c> has no implicit timeout beyond the supplied
@@ -100,7 +100,7 @@ internal sealed class HeadlessSaveChangesPipeline(
     IServiceProvider serviceProvider,
     HeadlessDbContextOptions options,
     IHeadlessAuditPersistence auditPersistence,
-    IUnitOfWorkManager unitOfWorkManager,
+    IUnitOfWorkFactory unitOfWorkFactory,
     IDomainEventDispatcher? domainEventDispatcher = null,
     IHeadlessOutboxDispatcher? outboxDispatcher = null,
     ILogger<HeadlessSaveChangesPipeline>? logger = null
@@ -129,11 +129,6 @@ internal sealed class HeadlessSaveChangesPipeline(
         CancellationToken cancellationToken = default
     )
     {
-        // A unit bound to this context by another scope's manager becomes this scope's Current for the whole
-        // save, so everything resolved here (handlers, the outbox dispatcher) coordinates on it. Re-entrant
-        // when the slot already holds it; a different active unit in the slot is a programming error.
-        using var adoption = _AdoptBoundUnitOfWork(context);
-
         // Materialize once — the framework processors don't add new ChangeTracker entries during
         // _ProcessEntries, so a single snapshot is correct for the audit capture too.
         var trackedEntries = _SnapshotEntries(context);
@@ -176,8 +171,6 @@ internal sealed class HeadlessSaveChangesPipeline(
     public int SaveChanges(DbContext context, Func<bool, int> baseSaveChanges, bool acceptAllChangesOnSuccess)
     {
 #pragma warning disable MA0045 // Sync SaveChanges intentionally wraps EF sync APIs.
-        using var adoption = _AdoptBoundUnitOfWork(context);
-
         var trackedEntries = _SnapshotEntries(context);
         var saveContext = _ProcessEntries(context, trackedEntries);
         var auditEntries = auditPersistence.CaptureEntries(trackedEntries);
@@ -226,13 +219,6 @@ internal sealed class HeadlessSaveChangesPipeline(
         return [.. context.ChangeTracker.Entries()];
     }
 
-    private IDisposable? _AdoptBoundUnitOfWork(DbContext context)
-    {
-        var bound = DbContextUnitOfWork.Find(context);
-
-        return bound is null ? null : unitOfWorkManager.Adopt(bound);
-    }
-
     // The save's own exception is the caller's outcome; a fault while rolling the unit back (its failure drain
     // disposing scope-local state) is logged so it can never replace the failure that caused the rollback.
     private async ValueTask _RollBackQuietlyAsync(IUnitOfWork unitOfWork)
@@ -250,7 +236,7 @@ internal sealed class HeadlessSaveChangesPipeline(
     // Integration events are the writes that must land inside the caller's transaction (outbox rows); a save
     // without them under a caller-owned transaction is ordinary EF usage and needs no unit of work. Handlers can
     // still add integration events during the drain — the outbox dispatcher repeats this check at dispatch time.
-    private void _EnsureUnitOfWorkOwnsCallerTransaction(DbContext context, HeadlessSaveEntryContext saveContext)
+    private static void _EnsureUnitOfWorkOwnsCallerTransaction(DbContext context, HeadlessSaveEntryContext saveContext)
     {
         if (saveContext.IntegrationEventEmitters.Count == 0)
         {
@@ -261,7 +247,7 @@ internal sealed class HeadlessSaveChangesPipeline(
         var currentTransaction = context.Database.CurrentTransaction!.GetDbTransaction();
 
         if (
-            unitOfWorkManager.Current?.Resource is IRelationalUnitOfWorkResource resource
+            context.UnitOfWork()?.Resource is IRelationalUnitOfWorkResource resource
             && ReferenceEquals(resource.Transaction, currentTransaction)
         )
         {
@@ -292,14 +278,19 @@ internal sealed class HeadlessSaveChangesPipeline(
     {
         // CurrentTransaction was just verified non-null above; null-forgiving here documents that.
         var currentTransaction = state.Context.Database.CurrentTransaction!;
-        return _SaveWithinTransactionAsync(state, currentTransaction, commitTransaction: false);
+        return _SaveWithinTransactionAsync(
+            state,
+            currentTransaction,
+            state.Context.UnitOfWork(),
+            commitTransaction: false
+        );
     }
 
     private int _ExecuteWithinCurrentTransaction(SaveState state)
     {
         // CurrentTransaction was just verified non-null above; null-forgiving here documents that.
         var currentTransaction = state.Context.Database.CurrentTransaction!;
-        return _SaveWithinTransaction(state, currentTransaction, commitTransaction: false);
+        return _SaveWithinTransaction(state, currentTransaction, state.Context.UnitOfWork(), commitTransaction: false);
     }
 
     private async Task<int> _ExecuteWithNewTransactionAsync(AsyncSaveState state)
@@ -313,14 +304,14 @@ internal sealed class HeadlessSaveChangesPipeline(
                 .ConfigureAwait(false);
 
             // Observed mode: the pipeline commits, the unit only makes the transaction visible to everything
-            // invoked inside the save (outbox writer, job writer, handlers) through the scope's Current and
-            // drains their after-commit registrations once the commit is durable.
-            await using var unitOfWork = unitOfWorkManager.Enlist(state.Context, transaction);
+            // invoked inside the save — the outbox dispatcher receives it, handlers read it from the context —
+            // and drains their after-commit registrations once the commit is durable.
+            await using var unitOfWork = unitOfWorkFactory.Enlist(state.Context, transaction);
             int saved;
 
             try
             {
-                saved = await _SaveWithinTransactionAsync(state, transaction, commitTransaction: true)
+                saved = await _SaveWithinTransactionAsync(state, transaction, unitOfWork, commitTransaction: true)
                     .ConfigureAwait(false);
             }
             catch (Exception) when (!state.SaveContext.CommitStarted)
@@ -355,12 +346,12 @@ internal sealed class HeadlessSaveChangesPipeline(
 #pragma warning disable MA0045, AsyncFixer04 // Sync intentionally; _RunBlocking blocks on each unit-of-work verb before the using block ends.
             // Sync twin of _ExecuteWithNewTransactionAsync — same open-then-enlist-then-complete shape.
             using var transaction = state.Context.Database.BeginTransaction(IsolationLevel.ReadCommitted);
-            using var unitOfWork = unitOfWorkManager.Enlist(state.Context, transaction);
+            using var unitOfWork = unitOfWorkFactory.Enlist(state.Context, transaction);
             int saved;
 
             try
             {
-                saved = _SaveWithinTransaction(state, transaction, commitTransaction: true);
+                saved = _SaveWithinTransaction(state, transaction, unitOfWork, commitTransaction: true);
             }
             catch (Exception) when (!state.SaveContext.CommitStarted)
             {
@@ -390,6 +381,7 @@ internal sealed class HeadlessSaveChangesPipeline(
     private async Task<int> _SaveWithinTransactionAsync(
         AsyncSaveState state,
         IDbContextTransaction transaction,
+        IUnitOfWork? unitOfWork,
         bool commitTransaction
     )
     {
@@ -446,7 +438,15 @@ internal sealed class HeadlessSaveChangesPipeline(
                     .DistinctBy(static occurrence => occurrence.EventId, StringComparer.Ordinal)
                     .ToArray();
 
-                await dispatcher.DispatchAsync(integrationEvents, state.CancellationToken).ConfigureAwait(false);
+                // Handlers can add integration events during the drain, so a caller-owned save that started with
+                // none is re-checked here: with no unit owning the transaction the events would ship non-atomically.
+                var owner =
+                    unitOfWork
+                    ?? throw new InvalidOperationException(
+                        HeadlessUnitOfWorkMessages.CallerOwnedTransactionWithoutUnitOfWork
+                    );
+
+                await dispatcher.DispatchAsync(owner, integrationEvents, state.CancellationToken).ConfigureAwait(false);
             }
 
             if (commitTransaction)
@@ -484,7 +484,12 @@ internal sealed class HeadlessSaveChangesPipeline(
     // Intentional sync/async twin of _SaveWithinTransactionAsync above: identical save policy (completed-drain
     // domain-event loop, integration flatten+dispatch, audit capture, missing-dispatcher guards). The two
     // are kept in lockstep by hand rather than extracted — any change here must be mirrored in the async twin.
-    private int _SaveWithinTransaction(SaveState state, IDbContextTransaction transaction, bool commitTransaction)
+    private int _SaveWithinTransaction(
+        SaveState state,
+        IDbContextTransaction transaction,
+        IUnitOfWork? unitOfWork,
+        bool commitTransaction
+    )
     {
 #pragma warning disable MA0045 // Sync intentionally.
         if (commitTransaction)
@@ -529,7 +534,13 @@ internal sealed class HeadlessSaveChangesPipeline(
                     .DistinctBy(static occurrence => occurrence.EventId, StringComparer.Ordinal)
                     .ToArray();
 
-                dispatcher.Dispatch(integrationEvents);
+                var owner =
+                    unitOfWork
+                    ?? throw new InvalidOperationException(
+                        HeadlessUnitOfWorkMessages.CallerOwnedTransactionWithoutUnitOfWork
+                    );
+
+                dispatcher.Dispatch(owner, integrationEvents);
             }
 
             if (commitTransaction)

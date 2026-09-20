@@ -55,7 +55,7 @@ public sealed class DropSignalRelayRecoveryTests : TestBase
         var decision = DeliveryDecisionResolver.Resolve(
             MessageLane.Bus,
             DeliveryMode.Durable,
-            TransactionEnlistment.WhenAvailable,
+            requireCoordination: false,
             delay: null,
             DeliveryCoordination.Compatible(unitOfWork, transaction),
             TimeProvider.System.GetUtcNow()

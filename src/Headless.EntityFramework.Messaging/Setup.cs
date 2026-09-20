@@ -11,8 +11,8 @@ public static class SetupEntityFrameworkMessaging
 {
     /// <summary>
     /// Registers the outbox-backed <see cref="IHeadlessOutboxDispatcher"/> so integration events emitted by
-    /// entities during EF saves are written to the messaging outbox within the save's unit of work (see
-    /// <see cref="IBus"/> and <see cref="DeliveryMode.Durable"/>) and dispatched to the broker after commit. Chain after
+    /// entities during EF saves are written to the messaging outbox within the save's unit of work (through that
+    /// unit's <see cref="UnitOfWorkOutbox"/>) and dispatched to the broker after commit. Chain after
     /// <c>AddHeadlessDbContextServices(...)</c>, alongside <c>AddDomainEvents()</c>.
     /// </summary>
     /// <remarks>

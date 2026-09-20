@@ -4,7 +4,7 @@ Scoped unit-of-work manager and engine for explicit transactional boundaries.
 
 ## Why use this package
 
-Implements the scoped `UnitOfWorkManager` (one unit-of-work slot per service scope, no `AsyncLocal`), the in-process unit engine with the atomic terminal claim, and `AddUnitOfWork()`.
+Implements the singleton `UnitOfWorkFactory` (independent units, nothing ambient or scoped, no `AsyncLocal`), the in-process unit engine with the atomic terminal claim, and `AddUnitOfWork()`.
 
 ## Install
 

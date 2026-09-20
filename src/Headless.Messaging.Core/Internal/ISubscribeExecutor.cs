@@ -13,6 +13,7 @@ using Headless.Messaging.MultiTenancy;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Retry;
 using Headless.Messaging.Runtime;
+using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -252,7 +253,8 @@ internal sealed class SubscribeExecutor(
                 await transactionRunner
                     .ExecuteAsync(
                         message,
-                        ct => _InvokeConsumerMethodAsync(message, descriptor, attemptServices, ct),
+                        (unitOfWork, ct) =>
+                            _InvokeConsumerMethodAsync(message, descriptor, attemptServices, unitOfWork, ct),
                         cancellationToken
                     )
                     .ConfigureAwait(false);
@@ -261,7 +263,13 @@ internal sealed class SubscribeExecutor(
             }
             else
             {
-                await _InvokeConsumerMethodAsync(message, descriptor, services: null, cancellationToken)
+                await _InvokeConsumerMethodAsync(
+                        message,
+                        descriptor,
+                        services: null,
+                        unitOfWork: null,
+                        cancellationToken
+                    )
                     .ConfigureAwait(false);
                 await _SetSuccessfulState(message, executionState).ConfigureAwait(false);
             }
@@ -725,10 +733,11 @@ internal sealed class SubscribeExecutor(
         MediumMessage message,
         ConsumerExecutorDescriptor descriptor,
         IServiceProvider? services,
+        IUnitOfWork? unitOfWork,
         CancellationToken cancellationToken
     )
     {
-        var consumerContext = new ConsumerContext(descriptor, message);
+        var consumerContext = new ConsumerContext(descriptor, message, unitOfWork);
         var traceHandle = _TracingBefore(message.Origin, message.Lane, descriptor.MethodInfo, message.Retries);
         try
         {
@@ -748,33 +757,34 @@ internal sealed class SubscribeExecutor(
                     ret.CallbackHeader[Headers.TraceParent] = traceParent;
                 }
 
-                var callbackOptions = new PublishOptions
-                {
-                    DeliveryMode = DeliveryMode.Durable,
-                    MessageName = ret.CallbackName,
-                    Headers = ret.CallbackHeader,
-                    MessageType = ret.ResultType,
-                    CorrelationId =
-                        message.Origin.Headers.TryGetValue(Headers.CorrelationId, out var correlationId)
-                        && !string.IsNullOrWhiteSpace(correlationId)
-                            ? correlationId
-                            : message.Origin.Id,
-                    CausationId = message.Origin.Id,
-                    CorrelationSequence = message.Origin.GetCorrelationSequence() + 1,
-                    // Chain the next hop: the published response carries this callback name so its
-                    // consumer can react and publish a further response.
-                    CallbackName = ret.ResponseCallbackName,
-                };
+                var callbackCorrelationId =
+                    message.Origin.Headers.TryGetValue(Headers.CorrelationId, out var correlationId)
+                    && !string.IsNullOrWhiteSpace(correlationId)
+                        ? correlationId
+                        : message.Origin.Id;
+                var callbackCausationId = message.Origin.Id;
+                var callbackSequence = message.Origin.GetCorrelationSequence() + 1;
 
-                if (services is not null)
+                if (unitOfWork is not null)
                 {
-                    // Transactional tier: publish through the attempt scope's IBus so the callback response
-                    // enlists in the same unit of work as the handler and rolls back with it.
-                    await services
-                        .GetRequiredService<IBus>()
-                        .PublishAsync(
+                    // Transactional tier: publish through the unit the inbox transaction runner enlisted and handed
+                    // down, so the callback response joins the handler's transaction and is discarded when it
+                    // rolls back. The autonomous IBus would leave the response behind.
+                    await unitOfWork
+                        .Outbox.PublishAsync(
                             ret.Result,
-                            callbackOptions,
+                            new OutboxOptions
+                            {
+                                MessageName = ret.CallbackName,
+                                Headers = ret.CallbackHeader,
+                                MessageType = ret.ResultType,
+                                CorrelationId = callbackCorrelationId,
+                                CausationId = callbackCausationId,
+                                CorrelationSequence = callbackSequence,
+                                // Chain the next hop: the published response carries this callback name so its
+                                // consumer can react and publish a further response.
+                                CallbackName = ret.ResponseCallbackName,
+                            },
                             // callback response write must not be interrupted by shutdown — mirrors _SetSuccessfulState
                             CancellationToken.None
                         )
@@ -782,12 +792,25 @@ internal sealed class SubscribeExecutor(
                 }
                 else
                 {
-                    // Non-transactional tier: no unit of work is bound here, so a fresh scope keeps the
-                    // callback response an autonomous durable write, independent of the caller's dispatch scope.
-                    await using var callbackScope = provider.CreateAsyncScope();
-                    await callbackScope
-                        .ServiceProvider.GetRequiredService<IBus>()
-                        .PublishAsync(ret.Result, callbackOptions, CancellationToken.None)
+                    // Non-transactional tier: no unit of work is bound here, and the bus publishes autonomously,
+                    // so the callback response is a standalone durable write that outlives the dispatch scope.
+                    await provider
+                        .GetRequiredService<IBus>()
+                        .PublishAsync(
+                            ret.Result,
+                            new PublishOptions
+                            {
+                                DeliveryMode = DeliveryMode.Durable,
+                                MessageName = ret.CallbackName,
+                                Headers = ret.CallbackHeader,
+                                MessageType = ret.ResultType,
+                                CorrelationId = callbackCorrelationId,
+                                CausationId = callbackCausationId,
+                                CorrelationSequence = callbackSequence,
+                                CallbackName = ret.ResponseCallbackName,
+                            },
+                            CancellationToken.None
+                        )
                         .ConfigureAwait(false);
                 }
             }
