@@ -256,19 +256,21 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
         await unitOfWork.CompleteAsync(AbortToken);
     }
 
-    // ExecuteTransactionAsync
+    // IUnitOfWorkManager.RunAsync(db, …)
 
     [Fact]
-    public async Task should_commit_when_execute_transaction_async_operation_succeeds()
+    public async Task should_commit_when_run_async_operation_succeeds()
     {
         await using var scope = fixture.ServiceProvider.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
+        var unitOfWorkManager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
 
-        await db.ExecuteTransactionAsync(
-            async (ctx, ct) =>
+        await unitOfWorkManager.RunAsync(
+            db,
+            async (_, ct) =>
             {
-                await ctx.Set<BasicEntity>().AddAsync(new BasicEntity { Name = "in-tx" }, ct);
-                await ctx.SaveChangesAsync(ct);
+                await db.Set<BasicEntity>().AddAsync(new BasicEntity { Name = "in-tx" }, ct);
+                await db.SaveChangesAsync(ct);
             },
             cancellationToken: AbortToken
         );
@@ -277,17 +279,19 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
     }
 
     [Fact]
-    public async Task should_rollback_when_execute_transaction_async_operation_throws()
+    public async Task should_rollback_when_run_async_operation_throws()
     {
         await using var scope = fixture.ServiceProvider.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
+        var unitOfWorkManager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
 
         var act = async () =>
-            await db.ExecuteTransactionAsync(
-                async (ctx, ct) =>
+            await unitOfWorkManager.RunAsync(
+                db,
+                async (_, ct) =>
                 {
-                    await ctx.Set<BasicEntity>().AddAsync(new BasicEntity { Name = "rolled" }, ct);
-                    await ctx.SaveChangesAsync(ct);
+                    await db.Set<BasicEntity>().AddAsync(new BasicEntity { Name = "rolled" }, ct);
+                    await db.SaveChangesAsync(ct);
                     throw new InvalidOperationException("simulated failure");
                 },
                 cancellationToken: AbortToken
@@ -298,16 +302,18 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
     }
 
     [Fact]
-    public async Task should_return_operation_result_when_execute_transaction_async()
+    public async Task should_return_operation_result_when_run_async()
     {
         await using var scope = fixture.ServiceProvider.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
+        var unitOfWorkManager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
 
-        var result = await db.ExecuteTransactionAsync(
-            static async (context, ct) =>
+        var result = await unitOfWorkManager.RunAsync(
+            db,
+            async (_, ct) =>
             {
-                await context.Set<BasicEntity>().AddAsync(new BasicEntity { Name = "result" }, ct);
-                return await context.SaveChangesAsync(ct);
+                await db.Set<BasicEntity>().AddAsync(new BasicEntity { Name = "result" }, ct);
+                return await db.SaveChangesAsync(ct);
             },
             cancellationToken: AbortToken
         );
@@ -317,27 +323,27 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
     }
 
     [Fact]
-    public async Task should_run_the_operation_inside_a_unit_of_work_when_execute_transaction_async()
+    public async Task should_run_the_operation_inside_a_unit_of_work_when_run_async()
     {
         await using var scope = fixture.ServiceProvider.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
         var unitOfWorkManager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
         var drained = 0;
 
-        await db.ExecuteTransactionAsync(
-            async (context, ct) =>
+        await unitOfWorkManager.RunAsync(
+            db,
+            async (unitOfWork, ct) =>
             {
-                var unitOfWork = unitOfWorkManager.Current;
-                unitOfWork.Should().NotBeNull("the helper begins the unit of work on the context's own scope");
-                unitOfWork!.Resource!.IsOwned.Should().BeTrue();
+                unitOfWork.Should().BeSameAs(unitOfWorkManager.Current, "the unit is current on the scope's manager");
+                unitOfWork.Resource!.IsOwned.Should().BeTrue();
                 unitOfWork.OnCompleted(() =>
                 {
                     drained++;
                     return ValueTask.CompletedTask;
                 });
 
-                await context.Set<BasicEntity>().AddAsync(new BasicEntity { Name = "in-uow" }, ct);
-                await context.SaveChangesAsync(ct);
+                await db.Set<BasicEntity>().AddAsync(new BasicEntity { Name = "in-uow" }, ct);
+                await db.SaveChangesAsync(ct);
                 drained.Should().Be(0, "nothing drains before the commit");
             },
             cancellationToken: AbortToken
@@ -353,11 +359,13 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
     {
         await using var scope = fixture.ServiceProvider.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
+        var unitOfWorkManager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
         var cancellationToken = new CancellationToken(canceled: true);
         var invoked = false;
 
         Func<Task> action = async () =>
-            await db.ExecuteTransactionAsync(
+            await unitOfWorkManager.RunAsync(
+                db,
                 (_, _) =>
                 {
                     invoked = true;

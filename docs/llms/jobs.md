@@ -63,7 +63,7 @@ Mark job methods with `[JobFunction("name")]` (or `[JobFunction("name", cronExpr
 - Keyed duplicates retain the first successful create's execution policy, including when a later call supplies explicit overrides. Use generation-fenced replacement to change policy while pending and unclaimed.
 - Do NOT install a Jobs-specific cache package. Jobs cron-expression caching reuses the host's `ICache` (`Headless.Caching.InMemory`, `.Redis`, or `.Hybrid`). Without a registered `ICache`, cron expressions are read directly from the database.
 - Required transactional deadlines: set `JobOptions.Enlistment = TransactionEnlistment.Required` for one-shot jobs or `RecurringJobOptions.Enlistment = TransactionEnlistment.Required` for recurring definitions. Missing/incompatible relational capability rejects before middleware; Messaging delay is not a substitute. Keyed results are provisional until outer commit, and required keyed cancellation uses the `CancelKeyedAsync` overload that takes an explicit `TransactionEnlistment`.
-- Atomic enqueue: begin a unit of work on the application context (`await using var uow = await unitOfWork.BeginAsync(db, ct)`, or the welded `db.ExecuteTransactionAsync(async (db, ct) => { ...; await jobs.AddAsync(request, ct); }, ct)` from `Headless.EntityFramework`) so domain writes and the job row commit as one transaction. `IJobScheduler` and the managers are scoped services that read `IUnitOfWorkManager.Current` at each call — no provider or service argument to pass. The facade persists through the same managers and inherits their deferred post-commit side effects. `UsePostgreSql<TContext>` / `UseSqlServer<TContext>` wire the EF Core unit-of-work provider automatically; no separate registration call is needed. Cluster membership (`Headless.Coordination`) and transactional enlistment (the unit of work) remain different subsystems. The enlisted path throws on any failure; wrap in `try/catch`.
+- Atomic enqueue: begin a unit of work on the application context (`await using var uow = await unitOfWorkManager.BeginAsync(db, ct)`, or `unitOfWorkManager.RunAsync(db, async (unit, ct) => { ...; await jobs.AddAsync(request, ct); }, cancellationToken: ct)` from `Headless.UnitOfWork.EntityFramework`) so domain writes and the job row commit as one transaction. `IJobScheduler` and the managers are scoped services that read `IUnitOfWorkManager.Current` at each call — no provider or service argument to pass. The facade persists through the same managers and inherits their deferred post-commit side effects. `UsePostgreSql<TContext>` / `UseSqlServer<TContext>` wire the EF Core unit-of-work provider automatically; no separate registration call is needed. Cluster membership (`Headless.Coordination`) and transactional enlistment (the unit of work) remain different subsystems. The enlisted path throws on any failure; wrap in `try/catch`.
 - Use `[JobsConstructor]` (`JobsConstructorAttribute`) on the constructor the source generator should use when a class has multiple constructors.
 - Use `IJobScheduler` for routine immediate, delayed, and recurring scheduling. Typed overloads resolve generated metadata from `typeof(TArgs)`; requestless overloads require a generated `JobFunctionDescriptor` from the generated `AppJobs` catalog.
 - `JobOptions` / `RecurringJobOptions` support description, durable retry count/intervals, and node-death policy; recurring options additionally accept nullable IANA `TimeZoneId`. Execution time and cron expression are method arguments. Do not add priority to scheduling options; priority remains immutable `[JobFunction]` / descriptor metadata.
@@ -184,26 +184,27 @@ The guarantee, by `TransactionEnlistment` and unit-of-work state, is the Jobs co
 
 An active unit of work with no joinable relational resource — for example a resource-less unit opened for a messaging-only operation — is not infectious: `WhenAvailable` inserts directly instead of failing, while `Required` rejects it. A relational resource that is present but already completed, or that belongs to another database, throws for `WhenAvailable` and `Required` alike, because the caller began a unit of work expecting atomicity and a silent fallback would reintroduce the divergence this feature prevents. `Never` never inspects the resource, so it always succeeds, even against an incompatible one.
 
-Two unit-of-work behaviors are documented, not defects. `OnCompleted` callbacks are savepoint-blind: the post-commit signal registered for a job row written inside a savepoint that is later rolled back still runs when the outer transaction commits; for Jobs this is harmless, because the worker re-reads due rows from the store and finds nothing. Under EF's execution strategy, `IUnitOfWorkManager.RunAsync(db, …)` (and the welded `db.ExecuteTransactionAsync(...)` helper) replays the whole operation, job writes included, for a failure before the commit starts; a coordinated Jobs write calls `IUnitOfWork.PreventRetry()` before writing (its row lives in a separate, untracked context), so once it has run the failure surfaces without replay instead of risking a duplicate insert. See [Unit of Work](unit-of-work.md#orientation).
+Two unit-of-work behaviors are documented, not defects. `OnCompleted` callbacks are savepoint-blind: the post-commit signal registered for a job row written inside a savepoint that is later rolled back still runs when the outer transaction commits; for Jobs this is harmless, because the worker re-reads due rows from the store and finds nothing. Under EF's execution strategy, `IUnitOfWorkManager.RunAsync(db, …)` replays the whole operation, job writes included, for a failure before the commit starts; a coordinated Jobs write calls `IUnitOfWork.PreventRetry()` before writing (its row lives in a separate, untracked context), so once it has run the failure surfaces without replay instead of risking a duplicate insert. See [Unit of Work](unit-of-work.md#orientation).
 
 `ITimeJobManager.AddAsync` / `AddBatchAsync` and `ICronJobManager.AddAsync` / `AddBatchAsync` are scoped services that read `IUnitOfWorkManager.Current` at each call — no provider or service argument to pass, and nothing needs to be established synchronously before an await (the unit of work is a plain scoped field, not an ambient flow). When a compatible unit of work is active, the write lands inside its transaction and defers dispatch, scheduler restart, and notifications to `IUnitOfWork.OnCompleted`. The commit callback itself is synchronous and non-blocking: it invalidates the cron-expressions cache (cron definitions only, bounded) and enqueues one signal per write — time jobs committed, cron jobs committed, or schedule changed for keyed operations — to the `JobsPostCommitSignalService` hosted worker, which runs the side effects off the commit path.
 
 ```csharp
 // Capture a stable absolute deadline before any retry of the business operation.
 var reminderDueAt = timeProvider.GetUtcNow().AddHours(24);
-await db.ExecuteTransactionAsync(
-    async (ctx, ct) =>
+await unitOfWorkManager.RunAsync(
+    db,
+    async (unit, ct) =>
     {
-        ctx.Set<Order>().Add(order);
-        await ctx.SaveChangesAsync(ct);
+        db.Set<Order>().Add(order);
+        await db.SaveChangesAsync(ct);
         await bus.PublishAsync(new OrderPlaced(order.Id), ct);
         await jobScheduler.ScheduleAsync(new OrderReminderRequest(order.Id), reminderDueAt, ct);
     },
     cancellationToken: cancellationToken
 );
 // Application row, durable message, and job row commit or roll back together.
-// db.ExecuteTransactionAsync (Headless.EntityFramework) self-sources the scope's IUnitOfWorkManager
-// and delegates to IUnitOfWorkManager.RunAsync(db, ...); use that directly for a plain DbContext.
+// IUnitOfWorkManager.RunAsync(db, ...) (Headless.UnitOfWork.EntityFramework) is the only way to open the
+// transaction; the same call works for a HeadlessDbContext and a plain DbContext.
 ```
 
 **Footguns:**
@@ -1542,7 +1543,7 @@ This convenience API targets the standard `TimeJobEntity` / `CronJobEntity` stor
 
 Cluster identity is explicit. This call selects one PostgreSQL coordination provider with its default storage options, including coordination-table initialization at startup. Do not also register `AddHeadlessCoordination`: duplicate provider configuration fails. For a separately configured coordination store, custom provider options/data source/authentication callbacks, custom Jobs entities, dedicated Jobs context, schema/pool settings, or a custom model customizer, use the existing `UseEntityFramework(ef => ...)` path and configure those integrations explicitly. The optional `modelConfiguration: ConfigurationType.IgnoreModelCustomizer` argument retains an application-owned model customizer; the application must then add the Jobs mappings itself.
 
-Inside `db.ExecuteTransactionAsync(operation, cancellationToken: ct)` (or `await using var uow = await unitOfWork.BeginAsync(db, ct)`), application writes, same-database durable Messaging publishes, and job schedules share the transaction. Configure Messaging transport/storage separately. `TransactionEnlistment.Required` rejects scheduling outside a compatible unit of work; it does not begin one. External message delivery and job execution happen after durable acceptance and remain at-least-once.
+Inside `unitOfWorkManager.RunAsync(db, operation, cancellationToken: ct)` (or `await using var uow = await unitOfWorkManager.BeginAsync(db, ct)`), application writes, same-database durable Messaging publishes, and job schedules share the transaction. Configure Messaging transport/storage separately. `TransactionEnlistment.Required` rejects scheduling outside a compatible unit of work; it does not begin one. External message delivery and job execution happen after durable acceptance and remain at-least-once.
 
 `UsePostgreSqlClaims()` has no provider-specific options. Configure the `DbContext`, schema, and pool size through the existing Jobs EF builder. Register exactly one native claim provider. Omitting this call keeps the portable EF optimistic-CAS fallback.
 
@@ -1606,7 +1607,7 @@ This convenience API targets the standard `TimeJobEntity` / `CronJobEntity` stor
 
 Cluster identity is explicit. This call selects one SQL Server coordination provider with its default storage options, including coordination-table initialization at startup. Do not also register `AddHeadlessCoordination`: duplicate provider configuration fails. For a separately configured coordination store, custom provider options/data source/authentication callbacks, custom Jobs entities, dedicated Jobs context, schema/pool settings, or a custom model customizer, use the existing `UseEntityFramework(ef => ...)` path and configure those integrations explicitly. The optional `modelConfiguration: ConfigurationType.IgnoreModelCustomizer` argument retains an application-owned model customizer; the application must then add the Jobs mappings itself.
 
-Inside `db.ExecuteTransactionAsync(operation, cancellationToken: ct)` (or `await using var uow = await unitOfWork.BeginAsync(db, ct)`), application writes, same-database durable Messaging publishes, and job schedules share the transaction. Configure Messaging transport/storage separately. `TransactionEnlistment.Required` rejects scheduling outside a compatible unit of work; it does not begin one. External message delivery and job execution happen after durable acceptance and remain at-least-once.
+Inside `unitOfWorkManager.RunAsync(db, operation, cancellationToken: ct)` (or `await using var uow = await unitOfWorkManager.BeginAsync(db, ct)`), application writes, same-database durable Messaging publishes, and job schedules share the transaction. Configure Messaging transport/storage separately. `TransactionEnlistment.Required` rejects scheduling outside a compatible unit of work; it does not begin one. External message delivery and job execution happen after durable acceptance and remain at-least-once.
 
 `UseSqlServerClaims()` has no provider-specific options. Configure the `DbContext`, schema, and pool size through the existing Jobs EF builder. Register exactly one native claim provider. Omitting this call keeps the portable EF optimistic-CAS fallback. The strategy detects `READ_COMMITTED_SNAPSHOT` and adjusts its locking hints.
 

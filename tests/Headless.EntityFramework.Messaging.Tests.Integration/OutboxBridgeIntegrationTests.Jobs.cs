@@ -279,18 +279,23 @@ public sealed partial class OutboxBridgeIntegrationTests
 
     private sealed class DeadlineWriteFailureException : Exception;
 
-    private sealed class DeadlineConsumer(BridgeTestDbContext db, IJobScheduler scheduler, DeadlineEvidence evidence)
-        : IConsume<OrderShipped>
+    private sealed class DeadlineConsumer(
+        BridgeTestDbContext db,
+        IUnitOfWorkManager unitOfWorkManager,
+        IJobScheduler scheduler,
+        DeadlineEvidence evidence
+    ) : IConsume<OrderShipped>
     {
         public async ValueTask ConsumeAsync(ConsumeContext<OrderShipped> context, CancellationToken cancellationToken)
         {
-            await db.ExecuteTransactionAsync(
-                async (caller, token) =>
+            await unitOfWorkManager.RunAsync(
+                db,
+                async (_, token) =>
                 {
-                    if (!await caller.DeadlineReceipts.AnyAsync(row => row.Id == context.MessageId, token))
+                    if (!await db.DeadlineReceipts.AnyAsync(row => row.Id == context.MessageId, token))
                     {
-                        caller.DeadlineReceipts.Add(new DeadlineReceipt { Id = context.MessageId });
-                        await caller.SaveChangesAsync(token);
+                        db.DeadlineReceipts.Add(new DeadlineReceipt { Id = context.MessageId });
+                        await db.SaveChangesAsync(token);
                     }
                     evidence.Results.Add(
                         await scheduler.ScheduleKeyedAsync(

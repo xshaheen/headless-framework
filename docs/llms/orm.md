@@ -12,7 +12,7 @@ packages: EntityFramework.Core, EntityFramework, EntityFramework.Messaging, Couc
 Choose by storage model:
 
 - `Headless.EntityFramework.Core` — provider-neutral EF Core primitives. Use it from storage feature packages that need shared converters, primitive mappings, or query helpers without taking a dependency on `HeadlessDbContext` or its application-level save pipeline.
-- `Headless.EntityFramework` — relational databases via EF Core. Provides `HeadlessDbContext` with conventions for audit fields, EF model-driven audit-log capture, soft-delete, multi-tenancy filters, DDD event dispatch (domain + integration), and transaction-aware save behavior. References `Headless.UnitOfWork.EntityFramework` directly, so `IUnitOfWorkManager.BeginAsync(db)` / `Enlist(db, transaction)` / `RunAsync(db, …)` and the `ExecuteTransactionAsync(...)` convenience are always available — there is no separate opt-in adapter. See [Unit of Work](unit-of-work.md) for the underlying contract. The default choice for any relational store (PostgreSQL, SQL Server, SQLite).
+- `Headless.EntityFramework` — relational databases via EF Core. Provides `HeadlessDbContext` with conventions for audit fields, EF model-driven audit-log capture, soft-delete, multi-tenancy filters, DDD event dispatch (domain + integration), and transaction-aware save behavior. References `Headless.UnitOfWork.EntityFramework` directly, so `IUnitOfWorkManager.BeginAsync(db)` / `Enlist(db, transaction)` / `RunAsync(db, …)` are always available — there is no separate opt-in adapter. See [Unit of Work](unit-of-work.md) for the underlying contract. The default choice for any relational store (PostgreSQL, SQL Server, SQLite).
 - `Headless.EntityFramework.Messaging` — add-on bridge. Supplies the real `IHeadlessOutboxDispatcher` so integration events emitted by EF entities are written to the messaging outbox atomically with the business data. Add it when entities emit integration payloads. It is not an alternative provider — it is always used alongside `Headless.EntityFramework`.
 - `Headless.Couchbase` — document database via Couchbase. Provides `CouchbaseBucketContext`, `IBucketContextProvider`, `ICouchbaseClustersProvider`, `DocumentSetExtensions`, and `ICouchbaseManager`. Adds no relational conventions — no EF, no global filters, no auditing pipeline.
 
@@ -39,7 +39,7 @@ Use these packages for ORM-level persistence primitives. For raw SQL connection 
 - Enable tenant validation and Added-transition stamping with `builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites()))`. SQL tenant concurrency predicates remain active without the guard.
 - Create a fresh `DbContext` for each tenant scope. `TenantId` reads the active ambient tenant dynamically, but query filters cannot sanitize entities already tracked by `FindAsync`.
 - **`IgnoreMultiTenancyFilter()` is read-side only.** It does not relax write protection under `GuardTenantWrites()`. When the same code path writes, also wrap the save in `ITenantWriteGuardBypass.BeginBypass()` — the two bypasses are independent.
-- Use `ExecuteTransactionAsync(...)` (from `HeadlessDbContextTransactionExtensions`, on any `IHeadlessDbContext` — `HeadlessDbContext` or `HeadlessIdentityDbContext`) for multi-step EF operations that must be atomic under retry execution strategies (e.g. SQL Server `EnableRetryOnFailure`). It begins a unit of work on the context inside the execution strategy, runs the operation, and completes the unit after commit, so publishes and job writes made inside it enlist and drain atomically — there is no separate "plain, no unit-of-work" overload. It self-sources the scope's `IUnitOfWorkManager` from `context.ServiceProvider`; there is no `services:` parameter. For a plain `DbContext`, `SqlConnection`, or `NpgsqlConnection` that cannot self-source its scope, call `IUnitOfWorkManager.RunAsync(db, …)` / `RunAsync(connection, …)` directly (see [Unit of Work](unit-of-work.md)).
+- Use `IUnitOfWorkManager.RunAsync(db, (unit, ct) => …)` for multi-step EF operations that must be atomic under retry execution strategies (e.g. SQL Server `EnableRetryOnFailure`). It begins a unit of work on the context inside the execution strategy, runs the operation, and completes the unit after commit, so publishes and job writes made inside it enlist and drain atomically. The manager is the only receiver that opens a transaction — a context carries no transaction helper of its own, and there is no "plain, no unit-of-work" overload. Inject `IUnitOfWorkManager` (scoped) at the call site; it works the same for a `HeadlessDbContext`, a `HeadlessIdentityDbContext`, and a plain `DbContext`, and `RunAsync(connection, …)` covers `SqlConnection` / `NpgsqlConnection` (see [Unit of Work](unit-of-work.md)).
 - `AddHeadlessDbContextServices(...)` returns `IHeadlessDbContextBuilder`; chain `.AddDomainEvents()` and `.AddIntegrationEventOutbox()` off it to opt in to each event tier. `.AddDomainEvents()` lives in `Headless.EntityFramework`; `.AddIntegrationEventOutbox()` lives in `Headless.EntityFramework.Messaging` and is parameterless.
 - **There is no startup validation for event tiers.** A runtime guard throws `InvalidOperationException` at save time, only when an entity actually emits an event for a tier that is not registered. The guard message names the exact registration to add.
 - Customize the save pipeline through `options.AddSaveEntryProcessor<TProcessor>(ServiceLifetime)` on `HeadlessDbContextOptions`; use `options.RemoveSaveEntryProcessor<TProcessor>()` to opt out of a built-in processor. Replace `IHeadlessSaveChangesPipeline` only when you need full orchestration control.
@@ -129,7 +129,7 @@ Change Data Capture (e.g. Debezium) is an advanced alternative that bypasses thi
 | **Global filters** | `IMultiTenant`, `IDeleteAudit`, `ISuspendAudit` — automatic | None; consumers implement their own query predicates |
 | **Auditing** | Automatic via `ICreateAudit`, `IUpdateAudit`, `IDeleteAudit`, `ISuspendAudit` | None |
 | **Events** | Domain events (in-process) + integration events (outbox) | None |
-| **Transactions** | EF Core execution strategy + `ExecuteTransactionAsync` (`HeadlessDbContextTransactionExtensions`, always unit-of-work-aware) | Couchbase Transactions via `ExecuteTransactionAsync(Func<AttemptContext, Task<bool>>)` |
+| **Transactions** | EF Core execution strategy + `IUnitOfWorkManager.RunAsync(db, …)` (always unit-of-work-aware) | Couchbase Transactions via `ExecuteTransactionAsync(Func<AttemptContext, Task<bool>>)` |
 | **DI** | `AddHeadlessDbContext<TDbContext>(...)` | `AddHeadlessCouchbase()` for the framework providers; the consumer supplies `ICouchbaseClusterOptionsProvider` + `ICouchbaseTransactionConfigProvider` |
 
 `Headless.EntityFramework.Messaging` is an add-on to `Headless.EntityFramework`, not a competing provider. It does not appear in the table above.
@@ -209,8 +209,7 @@ Entity Framework Core integration with framework conventions and save pipeline o
 - Two-tier event dispatch collected inside `SaveChanges`: domain events via `IDomainEventDispatcher` before commit (`.AddDomainEvents()`), integration events via `IHeadlessOutboxDispatcher` in-transaction before commit (`.AddIntegrationEventOutbox()`, from `Headless.EntityFramework.Messaging`)
 - `IHeadlessDbContextBuilder` returned by `AddHeadlessDbContextServices(...)` for chaining event tiers
 - Runtime guard that fails the save with a remediation message when an entity emits events but the matching tier is not registered
-- Resilient, unit-of-work-aware transaction helper: `ExecuteTransactionAsync(...)` — begins a unit of work on the context inside the EF execution strategy, runs the operation, and completes the unit after commit, so outbox rows and job writes made inside enlist and drain atomically
-- References `Headless.UnitOfWork.EntityFramework` directly, so `IUnitOfWorkManager.BeginAsync(db)` / `Enlist(db, transaction)` / `RunAsync(db, …)` are available on any scope without a separate adapter package
+- References `Headless.UnitOfWork.EntityFramework` directly, so `IUnitOfWorkManager.BeginAsync(db)` / `Enlist(db, transaction)` / `RunAsync(db, …)` are available on any scope without a separate adapter package. `RunAsync(db, …)` is the resilient, unit-of-work-aware transaction entry point: it begins a unit of work on the context inside the EF execution strategy, runs the operation, and completes the unit after commit, so outbox rows and job writes made inside enlist and drain atomically
 - Transitively exposes the provider-neutral converters, model helpers, pagination, ordering, data-grid, date aggregation, and lookup APIs from `Headless.EntityFramework.Core`
 - `IDbContextFactory<TDbContext>` auto-registered as singleton via `HeadlessDbContextFactory<TDbContext>`
 
@@ -219,7 +218,7 @@ Entity Framework Core integration with framework conventions and save pipeline o
 - **Not poolable by design.** `HeadlessDbContext` holds a private `HeadlessDbContextRuntime` that captures the request-scoped outbox dispatcher (`IHeadlessOutboxDispatcher`) and audit persistence (`IHeadlessAuditPersistence`). Pooling reuses a prior request's unit of work — a captive-dependency correctness bug. The two-argument constructor also violates EF's single-`DbContextOptions` pooling contract. For read-heavy hot paths that don't need the write pipeline, use a plain `DbContext` with `AddDbContextPool` alongside the write-side `HeadlessDbContext`.
 - **Client-side Guid generation is intentional.** The key is available before `SaveChanges`, so it can be used for foreign keys, outbox rows, and domain events in the same unit of work. The `Version7` (time-ordered) and `SqlServer` comb strategies ensure monotonic insertion order per provider, limiting index fragmentation.
 - **Unit-of-work support ships in the core package; there is no opt-in adapter.** `HeadlessDbContext` / `HeadlessIdentityDbContext` saves automatically coordinate with whatever unit of work is active on the context (bound by `BeginAsync(db)` / `Enlist(db, transaction)`) or on the scope. With no transaction on the context the pipeline opens one, enlists it in observed mode, saves, commits, and completes the unit; with a caller-owned transaction that carries integration events, a unit bound to that transaction is required or the save throws before any dispatch (see [Unit of Work](unit-of-work.md)). A context created through `IDbContextFactory<TDbContext>` owns its own DI scope; the pipeline adopts a unit bound to such a context into the calling scope for the save's duration so domain-event handlers and the outbox dispatcher resolved there see the same `Current`.
-- **Unknown commit outcomes are not replayed.** Both owned `SaveChanges` and `ExecuteTransactionAsync` retry eligible failures before commit starts. Once commit begins, or after `IUnitOfWork.PreventRetry()`, an exception is surfaced without replay because the database may already have committed; reconcile using durable application idempotency before repeating the operation.
+- **Unknown commit outcomes are not replayed.** Both owned `SaveChanges` and `IUnitOfWorkManager.RunAsync(db, …)` retry eligible failures before commit starts. Once commit begins, or after `IUnitOfWork.PreventRetry()`, an exception is surfaced without replay because the database may already have committed; reconcile using durable application idempotency before repeating the operation.
 - **Completed local drains survive persistence retry.** The pipeline retains captured occurrence IDs and skips a completed local drain on subsequent persistence retries. Handler failures have no per-handler checkpoint and can repeat handler entry. Local handlers must remain replay-safe and keep external effects out of the transaction. The transactional outbox can commit atomically with application state; delivery and external effects remain at-least-once and require idempotency.
 - **Enlisted write retry boundary.** A Jobs write enlisted in the active unit of work calls `IUnitOfWork.PreventRetry()`, which prevents automatic retries of a pipeline-owned save because the job's separate context is not retained in the business change tracker. A later failure propagates unchanged; recover with a fresh context and aggregate graph after a known rollback, or reconcile an unknown commit first. Outbox-only saves retain their existing retry behavior.
 - **Finite nested drain and exact batches.** Before business save, ordered drain passes recollect newly populated buffers and newly tracked emitters. Each tracked entity runs lifecycle synthesis once per save. A hard limit of 1,024 Domain occurrences per save, including lifecycle occurrences, rejects recursive emission before business persistence. Final audit capture includes handler mutations and newly tracked entities. Successful save clears only captured batches; occurrences appended after the drain remain pending.
@@ -270,23 +269,27 @@ If an entity emits domain events but `.AddDomainEvents()` was not called, or emi
 #### Resilient Transactions
 
 ```csharp
+// unitOfWork is the scoped IUnitOfWorkManager; dbContext is captured from the enclosing scope.
+
 // No-return form
-await dbContext.ExecuteTransactionAsync(
-    async (ctx, ct) =>
+await unitOfWork.RunAsync(
+    dbContext,
+    async (unit, ct) =>
     {
-        ctx.Products.Add(new Product { Name = "Widget" });
-        await ctx.SaveChangesAsync(ct);
+        dbContext.Products.Add(new Product { Name = "Widget" });
+        await dbContext.SaveChangesAsync(ct);
     },
     cancellationToken: ct
 );
 
 // Return-value form
-var productId = await dbContext.ExecuteTransactionAsync(
-    async (ctx, ct) =>
+var productId = await unitOfWork.RunAsync(
+    dbContext,
+    async (unit, ct) =>
     {
         var product = new Product { Name = "Widget" };
-        ctx.Products.Add(product);
-        await ctx.SaveChangesAsync(ct);
+        dbContext.Products.Add(product);
+        await dbContext.SaveChangesAsync(ct);
         return product.Id;
     },
     cancellationToken: ct
@@ -294,7 +297,7 @@ var productId = await dbContext.ExecuteTransactionAsync(
 
 ```
 
-`ExecuteTransactionAsync` always begins a unit of work on the context inside the execution strategy, so a publish or job write made inside the operation (through the scoped `IBus` / job managers) enlists in the same transaction and dispatches after commit — see [Unit of Work](unit-of-work.md).
+`RunAsync(db, …)` always begins a unit of work on the context inside the execution strategy and hands it to the operation as `unit`. Work enlisted on that unit — outbox rows, job writes, `OnCompleted` registrations — commits with the entity batch and drains after the commit. See [Unit of Work](unit-of-work.md).
 
 ### Configuration
 

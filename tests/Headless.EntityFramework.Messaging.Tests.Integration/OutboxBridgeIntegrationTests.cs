@@ -163,23 +163,25 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
     [Fact]
     public async Task should_dispatch_the_event_atomically_when_coordinated_transaction_wrapping_a_save()
     {
-        // given — the welded ExecuteTransactionAsync helper begins the unit of work on the context (owned mode).
-        // The inner SaveChanges runs WITHIN that transaction (current-transaction branch) and emits an integration
-        // event. This pins that the caller-owned guard recognizes the unit that owns the transaction and PASSES —
-        // the event enlists on that unit and drains atomically on commit.
+        // given — RunAsync begins the unit of work on the context (owned mode). The inner SaveChanges runs WITHIN
+        // that transaction (current-transaction branch) and emits an integration event. This pins that the
+        // caller-owned guard recognizes the unit that owns the transaction and PASSES — the event enlists on that
+        // unit and drains atomically on commit.
         const string marker = "evt-coordinated-nested";
         await using var provider = await _BuildProviderAsync();
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<BridgeTestDbContext>();
+        var unitOfWorkManager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
 
         // when
-        await db.ExecuteTransactionAsync(
-            async (ctx, ct) =>
+        await unitOfWorkManager.RunAsync(
+            db,
+            async (_, ct) =>
             {
                 var order = new OrderEntity { Name = "coordinated-nested" };
                 order.EmitIntegrationEvent(new OrderShipped($"{marker}-1"));
-                ctx.Orders.Add(order);
-                await ctx.SaveChangesAsync(ct);
+                db.Orders.Add(order);
+                await db.SaveChangesAsync(ct);
             },
             cancellationToken: AbortToken
         );

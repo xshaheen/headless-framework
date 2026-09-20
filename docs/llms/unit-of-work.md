@@ -25,14 +25,14 @@ Messaging (`IBus`/`IQueue`) and Jobs (`ITimeJobManager<>`/`ICronJobManager<>`/`I
 ## Agent Rules
 
 - Resolve `IUnitOfWorkManager` (or a scoped facade over it — `IBus`, `IQueue`, a job manager) from a DI scope, never from the root provider. A scope models one operation; a singleton or hosted service that needs one of these creates its own scope (`IServiceScopeFactory.CreateScope()`). A host with `ValidateScopes` enabled turns a captive resolution into a startup-time error — the correct signal, not a bug to work around.
-- Open the unit of work explicitly, on the line you choose. Nothing in this framework opens one on your behalf — no mediator behavior, no endpoint filter, no consumer-runtime wrapper. If a handler needs one, call `unitOfWork.BeginAsync(...)` (or `db.ExecuteTransactionAsync(...)` from `Headless.EntityFramework` for a `HeadlessDbContext`) yourself.
+- Open the unit of work explicitly, on the line you choose. Nothing in this framework opens one on your behalf — no mediator behavior, no endpoint filter, no consumer-runtime wrapper. If a handler needs one, call `unitOfWorkManager.BeginAsync(...)` or `unitOfWorkManager.RunAsync(...)` yourself.
 - There is no capture-before-first-await rule. Unlike the ambient design this replaced (see [Core Concepts § Why scoped, not ambient](#why-scoped-not-ambient)), `Current` is a plain field on a scoped object — begin it wherever is convenient in an `async` method; everything resolved from the same scope sees it.
 - One resource per scope. Beginning again on the *same* resource while a unit is active joins it (returns a child handle); a *different* resource while a resource-bearing unit is active throws. Run unrelated transactional work in its own scope, not nested calls on the same manager.
 - `Enlist(...)` is the advanced seam, not the default. Reach for `BeginAsync(...)` first — it begins the transaction and owns the commit. Use `Enlist` only when something else already owns the commit edge and you need the drain to piggyback on it (this is how the Headless save pipeline and the messaging inbox runners use it internally; most application code never calls it).
 - `OnCompleted` callbacks are a fast path, never the durability mechanism. They are process-local, run once, receive no cancellation token, and are lost on a crash before they run. Durable delivery is the row committed in the transaction plus the consumer's own recovery sweep (the messaging relay, the jobs poller); a callback only dispatches that row sooner. Never make correctness depend on one running.
 - Use `OnFailed` only to release a non-transactional resource reserved in anticipation of commit (a lock, a reservation) — not as a substitute for a proper rollback-safe design. Its faults are logged, never propagated.
-- Do not resolve `IServiceProvider` and thread it through a "coordinated transaction" helper — that pattern is gone. Every entry point (`BeginAsync`, `Enlist`, `RunAsync`, and `HeadlessDbContextTransactionExtensions.ExecuteTransactionAsync`) self-sources the scope's manager; none of them take a `services:` parameter.
-- Under a retrying EF execution strategy, `BeginAsync(db)` throws by design — a user-initiated transaction cannot survive a strategy replay. Use `unitOfWorkManager.RunAsync(db, ...)` (or, for a `HeadlessDbContext`, `db.ExecuteTransactionAsync(...)`), which runs begin → operation → complete *inside* the strategy and only lets a failure replay before the commit has started.
+- The manager is the only receiver that opens a unit of work. `BeginAsync`, `Enlist`, and `RunAsync` are extension members on `IUnitOfWorkManager`; no context, connection, or helper type carries a second spelling, and none of them take a `services:` parameter. Do not resolve `IServiceProvider` and thread it through a "coordinated transaction" helper — that pattern is gone.
+- Under a retrying EF execution strategy, `BeginAsync(db)` throws by design — a user-initiated transaction cannot survive a strategy replay. Use `unitOfWorkManager.RunAsync(db, ...)`, which runs begin → operation → complete *inside* the strategy and only lets a failure replay before the commit has started.
 - Banned: reading `TransactionEnlistment` on a call and manually branching on whether a transaction is present. The framework's guarantee matrix (below) already encodes every combination and throws with a message naming the fix; hand-rolled branching duplicates and can drift from it.
 
 ## Core Concepts
@@ -284,18 +284,7 @@ await unitOfWorkManager.RunAsync(
 );
 ```
 
-For any `IHeadlessDbContext` (a `HeadlessDbContext` or `HeadlessIdentityDbContext`, in `Headless.EntityFramework`), the same shape is available without resolving the manager yourself:
-
-```csharp
-using Microsoft.EntityFrameworkCore;
-
-await db.ExecuteTransactionAsync(async (context, ct) =>
-{
-    context.Orders.Add(order);
-    await context.SaveChangesAsync(ct);
-    await bus.PublishAsync(new OrderPlaced(order.Id), ct);
-}, cancellationToken: ct);
-```
+The same two shapes apply to a `HeadlessDbContext` and a `HeadlessIdentityDbContext` (in `Headless.EntityFramework`) and to a plain `DbContext` alike: the receiver is always the scoped `IUnitOfWorkManager`, never the context.
 
 ### Configuration
 
