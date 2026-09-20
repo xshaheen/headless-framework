@@ -30,17 +30,6 @@
       ReferenceOutputAssembly="false"
     />
   </ItemGroup>
-  <ItemGroup>
-    <EmbeddedResource Include="..\..\src\Headless.Jobs.Abstractions\README.md" LogicalName="FluentOptions.Jobs" />
-    <EmbeddedResource
-      Include="..\..\src\Headless.Messaging.Bus.Abstractions\README.md"
-      LogicalName="FluentOptions.Bus"
-    />
-    <EmbeddedResource
-      Include="..\..\src\Headless.Messaging.Queue.Abstractions\README.md"
-      LogicalName="FluentOptions.Queue"
-    />
-  </ItemGroup>
   <Target Name="CopyJobsDiscoveryFixture" AfterTargets="Build">
     <Copy
       SourceFiles="..\..\test-assets\Headless.Jobs.DiscoveryFixture\bin\$(Configuration)\net10.0\Headless.Jobs.DiscoveryFixture.dll"
