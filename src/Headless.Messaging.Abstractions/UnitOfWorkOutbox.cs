@@ -9,9 +9,9 @@ namespace Headless.Messaging;
 /// through it writes the durable row inside that unit's transaction, so a rollback discards the message.
 /// </summary>
 /// <remarks>
-/// A small binding created on each read of <c>unit.Outbox</c>; it owns nothing to dispose. Read it at the call
-/// site rather than storing it: the handle's liveness is checked when a publish runs, not when the binding is
-/// taken, so a retained binding whose nested view has since completed throws on its next publish.
+/// One binding per unit, created on the first read of <c>unit.Outbox</c> and kept as unit-local state; it owns
+/// nothing to dispose. The handle's liveness is checked when a publish runs, so a binding retained past the
+/// unit's completion throws on its next publish.
 /// </remarks>
 [PublicAPI]
 public sealed class UnitOfWorkOutbox

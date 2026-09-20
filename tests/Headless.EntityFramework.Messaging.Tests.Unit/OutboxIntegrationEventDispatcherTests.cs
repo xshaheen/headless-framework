@@ -24,6 +24,21 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
         var unitOfWork = Substitute.For<IUnitOfWork>();
         unitOfWork.Resource.Returns(Substitute.For<IUnitOfWorkResource>());
         unitOfWork.GetFeature<IUnitOfWorkOutbox>().Returns(outbox ?? new RecordingOutbox());
+        // unit.Outbox keeps its binding as unit-local state through GetOrAdd; the substitute must honour the
+        // create-once contract or the accessor hands back null.
+        var state = new Dictionary<Type, object>();
+        unitOfWork
+            .GetOrAdd(Arg.Any<IUnitOfWork>(), Arg.Any<Func<IUnitOfWork, IUnitOfWork, UnitOfWorkOutbox>>())
+            .Returns(call =>
+            {
+                if (!state.TryGetValue(typeof(UnitOfWorkOutbox), out var existing))
+                {
+                    existing = call.ArgAt<Func<IUnitOfWork, IUnitOfWork, UnitOfWorkOutbox>>(1)(unitOfWork, unitOfWork);
+                    state[typeof(UnitOfWorkOutbox)] = existing;
+                }
+
+                return (UnitOfWorkOutbox)existing;
+            });
         return unitOfWork;
     }
 

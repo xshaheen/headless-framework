@@ -181,6 +181,23 @@ public sealed class UnitOfWorkOutboxTests : TestBase
     }
 
     [Fact]
+    public async Task should_bind_the_outbox_once_per_unit()
+    {
+        // given — the binding is unit-local state: one instance for the unit's lifetime, none per read.
+        await using var host = _CreateHost();
+        await using var unitOfWork = await host
+            .Provider.GetRequiredService<IUnitOfWorkFactory>()
+            .BeginAsync(cancellationToken: AbortToken);
+
+        // when
+        var first = unitOfWork.Outbox;
+        var second = unitOfWork.Outbox;
+
+        // then
+        second.Should().BeSameAs(first);
+    }
+
+    [Fact]
     public async Task should_route_each_verb_to_its_own_lane()
     {
         // given

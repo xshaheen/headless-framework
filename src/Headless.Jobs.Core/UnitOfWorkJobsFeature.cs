@@ -11,8 +11,8 @@ namespace Headless.Jobs;
 
 /// <summary>
 /// The enlisted scheduling surface behind <c>unit.Jobs</c>: binds the singleton core to the caller's unit through
-/// facades that pass it into every coordinated write. A singleton that holds no unit of its own; the bound
-/// receivers are cheap wrappers created per accessor read.
+/// a facade that passes it into every coordinated write. A singleton that holds no unit of its own; the bound
+/// receivers are created once per unit and kept as unit-local state, so repeated reads allocate nothing.
 /// </summary>
 internal sealed class UnitOfWorkJobsFeature<TTimeJob, TCronJob>(
     JobsManager<TTimeJob, TCronJob> core,
@@ -31,9 +31,17 @@ internal sealed class UnitOfWorkJobsFeature<TTimeJob, TCronJob>(
     {
         Argument.IsNotNull(unitOfWork);
 
-        var facade = new JobsManagerFacade<TTimeJob, TCronJob>(core, unitOfWork);
+        // Resolve the facade outside the scheduler's factory so the two GetOrAdd calls never nest.
+        var facade = _Facade(unitOfWork);
 
-        return new JobScheduler<TTimeJob, TCronJob>(
+        return unitOfWork.GetOrAdd(
+            (Feature: this, Facade: facade),
+            static (_, state) => state.Feature._CreateScheduler(state.Facade)
+        );
+    }
+
+    private JobScheduler<TTimeJob, TCronJob> _CreateScheduler(JobsManagerFacade<TTimeJob, TCronJob> facade) =>
+        new(
             facade,
             facade,
             functionRegistry,
@@ -44,14 +52,13 @@ internal sealed class UnitOfWorkJobsFeature<TTimeJob, TCronJob>(
             policies,
             schedulerOptions
         );
-    }
 
     public ITimeJobManager<TRequested> BindTimeJobs<TRequested>(IUnitOfWork unitOfWork)
         where TRequested : TimeJobEntity<TRequested>, new()
     {
         Argument.IsNotNull(unitOfWork);
 
-        return new JobsManagerFacade<TTimeJob, TCronJob>(core, unitOfWork) as ITimeJobManager<TRequested>
+        return _Facade(unitOfWork) as ITimeJobManager<TRequested>
             ?? throw new InvalidOperationException(
                 $"The Jobs host is registered with time-job entity '{typeof(TTimeJob).Name}', not '{typeof(TRequested).Name}'."
             );
@@ -62,9 +69,14 @@ internal sealed class UnitOfWorkJobsFeature<TTimeJob, TCronJob>(
     {
         Argument.IsNotNull(unitOfWork);
 
-        return new JobsManagerFacade<TTimeJob, TCronJob>(core, unitOfWork) as ICronJobManager<TRequested>
+        return _Facade(unitOfWork) as ICronJobManager<TRequested>
             ?? throw new InvalidOperationException(
                 $"The Jobs host is registered with cron-job entity '{typeof(TCronJob).Name}', not '{typeof(TRequested).Name}'."
             );
     }
+
+    // One facade per unit serves all three receivers: it implements both manager interfaces and the scheduler
+    // wraps it.
+    private JobsManagerFacade<TTimeJob, TCronJob> _Facade(IUnitOfWork unitOfWork) =>
+        unitOfWork.GetOrAdd(core, static (unit, core) => new JobsManagerFacade<TTimeJob, TCronJob>(core, unit));
 }

@@ -33,6 +33,32 @@ public sealed class UnitOfWorkJobsAccessorTests : TestBase
         scheduler.Should().NotBeSameAs(provider.GetRequiredService<IJobScheduler>());
         timeJobs.Should().NotBeSameAs(provider.GetRequiredService<ITimeJobManager<TimeJobEntity>>());
         cronJobs.Should().NotBeSameAs(provider.GetRequiredService<ICronJobManager<CronJobEntity>>());
+
+        // and — bound once per unit: repeated reads hand back the same receivers, and one facade backs all three.
+        unitOfWork.Jobs.Should().BeSameAs(scheduler);
+        unitOfWork.TimeJobs<TimeJobEntity>().Should().BeSameAs(timeJobs);
+        unitOfWork.CronJobs<CronJobEntity>().Should().BeSameAs(cronJobs);
+        timeJobs.Should().BeSameAs(cronJobs);
+    }
+
+    [Fact]
+    public async Task should_refuse_the_accessor_on_a_unit_that_already_completed()
+    {
+        // given — the receivers live as unit-local state, which a terminal unit no longer accepts.
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessJobs(options => options.DisableBackgroundServices());
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        var unitOfWork = await provider
+            .GetRequiredService<IUnitOfWorkFactory>()
+            .BeginAsync(cancellationToken: AbortToken);
+        await unitOfWork.CompleteAsync(AbortToken);
+
+        // when
+        var act = () => unitOfWork.Jobs;
+
+        // then
+        act.Should().Throw<InvalidOperationException>().WithMessage("*Completed*");
     }
 
     [Fact]
