@@ -43,6 +43,37 @@ public sealed class UnitOfWorkFeatureTests : TestBase
     }
 
     [Fact]
+    public async Task should_keep_the_roots_feature_usable_after_an_adopting_scope_is_disposed()
+    {
+        await using var provider = _BuildProvider(services => services.AddScoped<ScopedProbeFeature>());
+        using var owningScope = provider.CreateScope();
+        var owner = owningScope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+        await using var root = await owner.BeginAsync(cancellationToken: AbortToken);
+        ScopedProbeFeature adoptedFeature;
+
+        using (var adoptingScope = provider.CreateScope())
+        {
+            var adopter = adoptingScope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+            using var adoption = adopter.Adopt(root);
+            await using var child = await adopter.BeginAsync(cancellationToken: AbortToken);
+            adoptedFeature = child.GetFeature<ScopedProbeFeature>()!;
+            adoptedFeature.Touch();
+            await child.CompleteAsync(AbortToken);
+        }
+
+        adoptedFeature.IsDisposed.Should().BeTrue();
+        root.State.Should().Be(UnitOfWorkState.Active);
+
+        // Resolve from the root only after the shorter-lived scope ends: a root-level cache must not retain
+        // the adopting scope's disposed service merely because the child performed the first lookup.
+        var rootFeature = root.GetFeature<ScopedProbeFeature>()!;
+        rootFeature.Should().BeSameAs(owningScope.ServiceProvider.GetRequiredService<ScopedProbeFeature>());
+        var useFeature = rootFeature.Touch;
+        useFeature.Should().NotThrow();
+        await root.CompleteAsync(AbortToken);
+    }
+
+    [Fact]
     public async Task should_return_null_when_no_feature_of_that_type_is_registered()
     {
         await using var provider = _BuildProvider(static _ => { });
@@ -119,3 +150,12 @@ public sealed class UnitOfWorkFeatureTests : TestBase
 
 /// <summary>A feature a bridge package would register; the marker is what lets a unit hand it out.</summary>
 internal sealed class ProbeFeature : IUnitOfWorkFeature;
+
+internal sealed class ScopedProbeFeature : IUnitOfWorkFeature, IDisposable
+{
+    public bool IsDisposed { get; private set; }
+
+    public void Touch() => ObjectDisposedException.ThrowIf(IsDisposed, this);
+
+    public void Dispose() => IsDisposed = true;
+}

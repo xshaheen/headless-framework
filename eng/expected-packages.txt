@@ -106,6 +106,7 @@ Headless.Messaging.Storage.PostgreSql.EntityFramework
 Headless.Messaging.Storage.SqlServer
 Headless.Messaging.Storage.SqlServer.EntityFramework
 Headless.Messaging.Testing
+Headless.Messaging.UnitOfWork
 Headless.MultiTenancy
 Headless.MultiTenancy.Abstractions
 Headless.MultiTenancy.Storage.EntityFramework
