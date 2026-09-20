@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data.Common;
 using Headless.Testing.Testcontainers;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
@@ -78,6 +79,25 @@ public sealed class PostgreSqlUnitOfWorkFixture
         var unitOfWork = manager.Enlist(connection, transaction);
 
         return new UnitOfWorkObservedHandle(unitOfWork, connection, transaction);
+    }
+
+    public ValueTask<IUnitOfWork> BeginOwnedOnAsync(
+        IUnitOfWorkFactory factory,
+        DbConnection connection,
+        CancellationToken cancellationToken
+    )
+    {
+        return factory.BeginAsync((NpgsqlConnection)connection, cancellationToken: cancellationToken);
+    }
+
+    public Task RunOnAsync(
+        IUnitOfWorkFactory factory,
+        DbConnection connection,
+        Func<IUnitOfWork, CancellationToken, Task> operation,
+        CancellationToken cancellationToken
+    )
+    {
+        return factory.RunAsync((NpgsqlConnection)connection, operation, cancellationToken: cancellationToken);
     }
 
     public Task InsertProbeRowAsync(IUnitOfWork unitOfWork, string name, CancellationToken cancellationToken)

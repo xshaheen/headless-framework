@@ -26,8 +26,10 @@ public static class DbContextUnitOfWork
         /// </summary>
         /// <remarks>
         /// This is the unit to enlist in from inside a save — <c>db.UnitOfWork()?.Outbox.PublishAsync(…)</c> in
-        /// a domain-event handler — and the unit a callee should be handed rather than beginning a second one on
-        /// the same context.
+        /// a domain-event handler — and the unit a callee is handed, or joins through <c>RunAsync(db, …)</c>,
+        /// rather than beginning a second one on the same context. The same unit is bound to the connection
+        /// beneath the context (<c>db.Database.GetDbConnection().UnitOfWork()</c>), so a raw-ADO helper given
+        /// that connection reaches it too.
         /// </remarks>
         /// <returns>The active bound unit, or <see langword="null" />.</returns>
         /// <exception cref="ArgumentNullException">The context is <see langword="null" />.</exception>

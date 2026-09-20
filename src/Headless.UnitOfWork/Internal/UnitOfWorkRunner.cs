@@ -6,13 +6,14 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Headless.UnitOfWork.Internal;
 
 /// <summary>
-/// The one body behind every raw-ADO <c>RunAsync</c> helper: begin an owned unit of work through the factory's
-/// provider primitive, run the operation, then complete it (commit, then drain). The providers supply only how
-/// their resource begins.
+/// The one body behind every raw-ADO <c>RunAsync</c> helper: join the unit already bound to the connection when
+/// there is one, otherwise begin an owned unit of work through the provider's begin, run the operation, then
+/// complete it (commit, then drain). The providers supply only the binding lookup and how their unit begins.
 /// </summary>
 /// <remarks>
-/// An operation fault rolls the unit back and propagates the ORIGINAL exception; a rollback fault is logged and
-/// never replaces it. A commit fault propagates as-is (the unit is already <see cref="UnitOfWorkState.Failed" />).
+/// A joined block runs inside the owner's unit and neither commits nor rolls back: a fault propagates to the
+/// owner's block, which is what unwinds the unit. An owned operation fault rolls the unit back and propagates
+/// the ORIGINAL exception; a rollback fault is logged and never replaces it. A commit fault propagates as-is (the unit is already <see cref="UnitOfWorkState.Failed" />).
 /// A drain fault after a durable commit — <see cref="IUnitOfWork.CompleteAsync" /> throwing while the unit is
 /// already <see cref="UnitOfWorkState.Completed" /> — is logged and the operation's result is returned: surfacing
 /// it would invite a retry that double-applies a committed transaction, and the enlisted durable rows are
@@ -30,16 +31,19 @@ internal static partial class UnitOfWorkRunner
     }
 
     public static async Task<TResult> RunAsync<TResult>(
-        IUnitOfWorkFactory factory,
-        Func<CancellationToken, ValueTask<IUnitOfWorkResource>> beginResource,
+        IUnitOfWork? joined,
+        Func<CancellationToken, ValueTask<IUnitOfWork>> begin,
         Func<IUnitOfWork, CancellationToken, Task<TResult>> operation,
         ILogger logger,
         CancellationToken cancellationToken
     )
     {
-        var unitOfWork = await factory
-            .BeginAsync(beginResource, options: null, cancellationToken)
-            .ConfigureAwait(false);
+        if (joined is not null)
+        {
+            return await operation(joined, cancellationToken).ConfigureAwait(false);
+        }
+
+        var unitOfWork = await begin(cancellationToken).ConfigureAwait(false);
 
         await using (unitOfWork.ConfigureAwait(false))
         {

@@ -5,11 +5,11 @@ packages: UnitOfWork.Abstractions, UnitOfWork, UnitOfWork.EntityFramework, UnitO
 
 # Unit of Work
 
-> An explicitly-begun unit of work, opened from a singleton factory and handed to the code that needs it, that lets Messaging and Jobs enlist durable writes in the caller's transaction and defer dispatch until it commits — with no `AsyncLocal`, no scoped slot, no capture-before-await rule, and nothing ambient to discover.
+> An explicitly-begun unit of work, opened from a singleton factory and reached by the code that needs it through the handle or the object it was begun on, that lets Messaging and Jobs enlist durable writes in the caller's transaction and defer dispatch until it commits — with no `AsyncLocal`, no scoped slot, no capture-before-await rule, and nothing ambient to discover.
 
 ## Orientation
 
-An application developer opens a unit of work on the line they choose, does business work, publishes messages and schedules jobs **through the unit**, and completes it; everything enlisted inside is atomic with the transaction and dispatches after commit. The entry point is `IUnitOfWorkFactory`, a **singleton**: it holds no per-scope state, so a controller, a consumer, a hosted service, and a background job all inject the same object and call `BeginAsync(...)` on it. There is no `Current`. The unit a caller opened is the `IUnitOfWork` handle it holds, and code that needs that unit is handed it — as an argument, through the `DbContext` it was begun on, or through the context Messaging gives a consumer.
+An application developer opens a unit of work on the line they choose, does business work, publishes messages and schedules jobs **through the unit**, and completes it; everything enlisted inside is atomic with the transaction and dispatches after commit. The entry point is `IUnitOfWorkFactory`, a **singleton**: it holds no per-scope state, so a controller, a consumer, a hosted service, and a background job all inject the same object and call `BeginAsync(...)` on it. There is no `Current`. The unit a caller opened is the `IUnitOfWork` handle it holds, and code that needs that unit reaches it one of three ways: it is handed the handle; it reads it from the object the unit was begun on (`db.UnitOfWork()`, `connection.UnitOfWork()`, `ConsumeContext.UnitOfWork`); or it wraps its own work in `RunAsync(db, …)` / `RunAsync(connection, …)` on that same object, which **joins** the live unit instead of opening a second one. That last path is transaction propagation without an ambient: a service that self-wraps in `RunAsync` composes under any caller that already opened the transaction on the same context or connection.
 
 `IUnitOfWorkFactory.BeginAsync(...)` opens a resource-less coordination window; provider packages add resource-bearing overloads — `BeginAsync(db, ...)` for EF Core, `BeginAsync(connection, ...)` for raw ADO — that begin the transaction on that line (**owned mode**) and return the handle. `IUnitOfWork.CompleteAsync` commits the resource, then drains registered post-commit work in order; disposing without completing is an implicit rollback. `Enlist(resource, transaction)` is the advanced seam for code that already owns its commit edge (the Headless save pipeline, the messaging inbox runners) — **observed mode** — where the caller commits the transaction itself and `CompleteAsync` only drains.
 
@@ -31,9 +31,9 @@ See [Choosing a Provider](#choosing-a-provider) for the package-selection table.
 
 - Inject `IUnitOfWorkFactory` anywhere — it is a singleton with no scope-bound state, so a hosted service or a framework singleton depends on it directly and needs no `IServiceScopeFactory` dance. The same is true of `IBus`, `IQueue`, `IJobScheduler`, and the Jobs managers: all singletons, all autonomous.
 - To enlist a write, call it on the handle you hold: `unit.Outbox.PublishAsync(...)`, `unit.Jobs.ScheduleAsync(...)`, `unit.TimeJobs<T>().AddAsync(...)`. The injected publishers and schedulers never enlist, whatever scope they came from. The accessors are free to read at each call site — each binds once per unit and is kept as unit-local state — and refuse a unit that already reached a terminal state; a binding retained past that point throws on its next use, before anything is stored.
-- Hand the unit to the code that needs it. Nothing ambient carries it, so a callee that must enlist takes the `IUnitOfWork` as a parameter, reads it from the `DbContext` it was begun on (`db.UnitOfWork()`), or — in a transactional consumer — reads `context.UnitOfWork`. Do not begin a second unit inside a callee to "get one"; on a context that already carries a live unit, `BeginAsync(db)` throws and names this rule.
+- Reach the unit through the handle or the object it was begun on. Nothing ambient carries it, so a callee that must enlist takes the `IUnitOfWork` as a parameter, reads it from the `DbContext` or `DbConnection` it was begun on (`db.UnitOfWork()`, `connection.UnitOfWork()`), reads `context.UnitOfWork` in a transactional consumer, or wraps its own work in `RunAsync(db, …)` / `RunAsync(connection, …)` on that object — which joins the live unit. Do not `BeginAsync` a second unit inside a callee to "get one": on a context or connection that already carries a live unit, `BeginAsync` and `Enlist` throw and name the join.
 - Open the unit of work explicitly, on the line you choose. Nothing in this framework opens one on your behalf — no mediator behavior, no endpoint filter, no consumer-runtime wrapper. If a handler needs one, call `factory.BeginAsync(...)` or `factory.RunAsync(...)` yourself.
-- Two begins are two units. The factory has no slot: consecutive or concurrent `BeginAsync` calls each open an independent unit with its own resource, drain, and outcome, and neither knows about the other. There is no join, no child view, and no "already active" refusal at the factory. Do not rely on a nested begin to enlist in an outer unit — it will not.
+- Two begins are two units. The factory has no slot: consecutive or concurrent `BeginAsync` calls on *different* resources each open an independent unit with its own resource, drain, and outcome, and neither knows about the other. The join is keyed on the resource, never on the factory or a scope: `RunAsync` on a bound `DbContext`/`DbConnection` joins, `BeginAsync` on one is refused, and a begin on any other object is simply a new unit. There are no child views — a joined block receives the owner's own handle.
 - `Enlist(...)` is the advanced seam, not the default. Reach for `BeginAsync(...)` first — it begins the transaction and owns the commit. Use `Enlist` only when something else already owns the commit edge and you need the drain to piggyback on it (this is how the Headless save pipeline and the messaging inbox runners use it internally; most application code never calls it).
 - `OnCompleted` callbacks are a fast path, never the durability mechanism. They are process-local, run once, receive no cancellation token, and are lost on a crash before they run. Durable delivery is the row committed in the transaction plus the consumer's own recovery sweep (the messaging relay, the jobs poller); a callback only dispatches that row sooner. Never make correctness depend on one running.
 - Use `OnFailed` only to release a non-transactional resource reserved in anticipation of commit (a lock, a reservation) — not as a substitute for a proper rollback-safe design. Its faults are logged, never propagated.
@@ -53,7 +53,7 @@ See [Choosing a Provider](#choosing-a-provider) for the package-selection table.
 
 Two designs preceded this one. The first pushed a scope onto an `AsyncLocal` stack; because `AsyncLocal` mutations made inside an `async` callee do not flow back to the caller, an `async` enlist helper set the ambient scope correctly inside itself while the caller read it back as `null`, silently turning a transactional outbox write into a non-atomic one while the happy-path test stayed green (`docs/solutions/logic-errors/asynclocal-ambient-scope-stranded-across-await.md`). The second kept a `Current` field on a scoped manager, which fixed that bug but brought its own costs: every enlisting receiver had to be scoped too (so a singleton could never hold one), a factory-created `DbContext` owning its own scope needed an adoption dance to make its unit visible, and "begin while one is active" needed join-by-default nesting with child views, transfer-on-complete, and abandon-aborts-root rules — a lot of machinery whose only job was to guess which unit a caller meant.
 
-The handle design removes the guess. The unit a caller means is the one it holds. Code that is not handed the handle cannot enlist, which is the correct outcome: an enlisted write that reaches a unit nobody passed it is exactly the silent-coupling bug the earlier designs kept producing.
+The handle design removes the guess. The unit a caller means is the one it holds, or the one bound to the resource it holds — and that binding is explicit, keyed on an object both layers demonstrably share, not on a scope or an execution context. Propagation survives as `RunAsync` joining the resource's live unit; what is gone is the machinery that inferred a unit from where the code happened to be running.
 
 ### Owned vs observed mode
 
@@ -64,15 +64,25 @@ Owned vs observed is a flag on the enlisted `IUnitOfWorkResource`, never a secon
 
 There is one commit verb regardless of mode: `IUnitOfWork.CompleteAsync`. There is no third, interceptor-driven mode — the Headless save pipeline and the messaging inbox runners already know their own commit outcome and use observed mode to tell the unit about it.
 
-### Independent units, no nesting
+### Independent units, and the join keyed on the resource
 
-Every `BeginAsync` opens a new, independent unit. Two units from one factory share nothing: each has its own resource, its own registrations, its own outcome, and each drains only its own `OnCompleted` work. Beginning again while another unit is open is neither joined nor refused — it is simply a second unit, which is what a caller who begins twice asked for. The only refusal is provider-level and about a *resource*, not the factory: `BeginAsync(db)` on a `DbContext` that already carries a live unit throws, because two units cannot own one context's transaction and the caller almost certainly meant to pass the existing unit along.
+Every `BeginAsync` opens a new, independent unit. Two units from one factory share nothing: each has its own resource, its own registrations, its own outcome, and each drains only its own `OnCompleted` work. Beginning on a *different* resource while another unit is open is neither joined nor refused — it is simply a second unit, which is what a caller who begins twice asked for.
 
-The consequence for callees is the rule above: a callee that must enlist is handed the unit. The three hand-over paths are an explicit `IUnitOfWork` parameter, the `DbContext` binding (`db.UnitOfWork()`), and `ConsumeContext<T>.UnitOfWork` for a transactional consumer.
+Propagation — a callee running inside the caller's transaction — is keyed on the resource both hold, never on the factory or a scope. The rules, identical for a `DbContext` and a `DbConnection`:
 
-### The `DbContext` binding
+| Call on an object that already carries a live unit | Result |
+|---|---|
+| `RunAsync(db, …)` / `RunAsync(connection, …)` | **Joins.** The block receives the owner's handle, runs inside the owner's transaction (and, for EF, outside any execution strategy of its own), and neither commits nor rolls back. A fault propagates to the owner's block, which is what unwinds the unit. |
+| `BeginAsync(db)` / `BeginAsync(connection)` | **Refused**, naming the join and the accessor. An owning handle over someone else's transaction has no honest semantics. |
+| `Enlist(db, tx)` / `Enlist(connection, tx)` | **Refused**, same message. |
 
-`Headless.UnitOfWork.EntityFramework`'s `BeginAsync(db)`, `Enlist(db, tx)`, and `RunAsync(db, …)` record a binding from the `DbContext` instance to the unit (a `ConditionalWeakTable`, cleared once the unit reaches a terminal state) and expose it as `db.UnitOfWork()`, which returns the bound unit while it is `Active` and `null` otherwise. This is how code that was handed only the context reaches the unit that owns its transaction: the Headless save pipeline reads it to decide whether a caller-owned transaction has a unit; a domain-event handler resolved during that save reads it to enlist an outbox publish (`db.UnitOfWork()?.Outbox.PublishAsync(…)`); a repository given a context can read it the same way. A context created through `IDbContextFactory<T>` needs no special treatment — the binding is on the context object, not on any scope.
+This is the `REQUIRED`-style propagation an ambient design gives for free, without the ambient: a service that wraps its own writes in `RunAsync` composes under any caller that opened the transaction on the same context or connection, and a callee that would rather hold the handle reads it from the object instead. There are no child views — a joined block sees the owner's own `IUnitOfWork`, so `State`, registrations, and `unit.Outbox` / `unit.Jobs` all mean exactly what they mean for the owner.
+
+### The `DbContext` and `DbConnection` bindings
+
+`Headless.UnitOfWork.EntityFramework`'s `BeginAsync(db)`, `Enlist(db, tx)`, and `RunAsync(db, …)` record a binding from the `DbContext` instance to the unit (a `ConditionalWeakTable`, evicted once the unit reaches a terminal state) and expose it as `db.UnitOfWork()`. The raw-ADO providers do the same for the `DbConnection` (`connection.UnitOfWork()`, in `Headless.UnitOfWork`), and the EF provider *also* binds the connection beneath its context, so a raw-ADO helper handed `db.Database.GetDbConnection()` — a Dapper repository, a bulk insert — joins the EF unit through `RunAsync(connection, …)` or reads it through `connection.UnitOfWork()`. The reverse (EF beginning on a context whose connection an ADO unit already owns) is refused like any other second begin.
+
+These bindings are how code that was handed only the resource reaches the unit that owns its transaction: the Headless save pipeline reads `db.UnitOfWork()` to decide whether a caller-owned transaction has a unit; a domain-event handler resolved during that save reads it to enlist an outbox publish (`db.UnitOfWork()?.Outbox.PublishAsync(…)`); a repository given a context or connection reads it the same way. A context created through `IDbContextFactory<T>` needs no special treatment — the binding is on the object, not on any scope.
 
 ### The failure hook and rollback
 
@@ -118,7 +128,8 @@ Every illegal transition throws with a message naming the remedy — never a bar
 
 | Condition | Message |
 |---|---|
-| `BeginAsync(db)` / `Enlist(db, tx)` on a context that already carries a live unit | `This DbContext already carries an active unit of work. Pass that unit to the code that needs it (read it with db.UnitOfWork()) instead of beginning a second one on the same context.` |
+| `BeginAsync(db)` / `Enlist(db, tx)` on a context that already carries a live unit | `This DbContext already carries an active unit of work. Run the block with RunAsync(db, …) to join it, or pass that unit to the code that needs it (read it with db.UnitOfWork()), instead of beginning a second one on the same context.` |
+| `BeginAsync(connection)` / `Enlist(connection, tx)` on a connection that already carries a live unit (the ADO providers, and EF for the connection beneath its context) | `This connection already carries an active unit of work. Run the block with RunAsync(connection, …) to join it, or pass that unit to the code that needs it (read it with connection.UnitOfWork()), instead of beginning a second one on the same connection.` |
 | `BeginAsync(db)` with an existing transaction on the context | `The DbContext already has an active transaction. Begin the unit of work before beginning the transaction, or call IUnitOfWorkFactory.Enlist(db, transaction) for a transaction you commit yourself.` |
 | `BeginAsync(db)` under a retrying execution strategy | EF's own text, plus: `Use IUnitOfWorkFactory.RunAsync(db, …) to run the unit of work as a retriable block.` |
 | `CompleteAsync` after `Completed` | `The unit of work has already completed. Begin a new unit of work for further work.` |
@@ -210,6 +221,7 @@ Implements the singleton `UnitOfWorkFactory`, the in-process unit engine with th
 ### API and behavior
 
 - `AddUnitOfWork()`: idempotent `TryAddSingleton<IUnitOfWorkFactory, UnitOfWorkFactory>`; every consumer setup (`AddHeadlessMessaging`, `AddHeadlessJobs`, `AddHeadlessDbContextServices`, the three UnitOfWork provider setups) calls it, so exactly one registration exists regardless of which setup a host invokes first.
+- `connection.UnitOfWork()` (`DbConnectionUnitOfWork`, an extension on `DbConnection`): the unit bound to a connection by any provider's `BeginAsync`/`Enlist`/`RunAsync` — including the connection beneath an EF context — while it is `Active`, or `null`.
 - Independent units: every `BeginAsync` returns a new unit; the factory holds no slot, so consecutive and concurrent begins never interact and a faulted resource begin propagates as-is with nothing to release.
 - `OnFailed` drain (log-and-continue) on rollback, abandon, and commit fault; `RollbackAsync` idempotent; a commit fault transitions to `Failed` before the exception propagates.
 - An observed unit disposed un-completed after its transaction finished logs the forgotten-completion warning.
@@ -253,15 +265,15 @@ Gives a plain EF Core `DbContext` the three unit-of-work entry points it needs �
 
 ### API and behavior
 
-- `IUnitOfWorkFactory.BeginAsync(db, isolation = ReadCommitted, ct)` — owned mode: rejects a context that already carries a live unit (naming `db.UnitOfWork()`), a context that already has a transaction (naming `Enlist`), and a retrying execution strategy (naming `RunAsync`); begins the transaction eagerly and records the `DbContext → IUnitOfWork` binding. `CompleteAsync` commits, then drains.
+- `IUnitOfWorkFactory.BeginAsync(db, isolation = ReadCommitted, ct)` — owned mode: rejects a context (or its connection) that already carries a live unit (naming the `RunAsync` join and `db.UnitOfWork()`), a context that already has a transaction (naming `Enlist`), and a retrying execution strategy (naming `RunAsync`); begins the transaction eagerly and records the `DbContext → IUnitOfWork` binding plus the same binding on the connection beneath the context. `CompleteAsync` commits, then drains.
 - `IUnitOfWorkFactory.Enlist(db, transaction)` — observed mode for a transaction the caller commits: the unit's verbs are no-ops on the transaction; `CompleteAsync` drains without committing; `RollbackAsync` reports the caller's rollback and suppresses the forgotten-completion warning. Records the same binding, and refuses a context that already carries a live unit.
-- `IUnitOfWorkFactory.RunAsync(db, operation, isolation, ct)` (and the `TResult` overload) — begin → block → complete inside `db.Database.CreateExecutionStrategy()`. The block receives the unit. A retriable failure before commit replays with a fresh transaction and a fresh unit; once commit has started, or after `PreventRetry()`, the fault is captured and rethrown **outside** the strategy so EF cannot replay a possibly-committed block. A drain fault after a durable commit (an `OnCompleted` callback throwing once the unit is `Completed`) is logged and the block's result is returned — the same policy as the Npgsql/SqlClient `RunAsync` — because surfacing it would invite a retry that double-applies a committed block.
+- `IUnitOfWorkFactory.RunAsync(db, operation, isolation, ct)` (and the `TResult` overload) — on a context that already carries a live unit, **joins** it: the block receives the owner's handle, runs inline outside any execution strategy of its own, and leaves commit and rollback to the owner. Otherwise begin → block → complete inside `db.Database.CreateExecutionStrategy()`. The block receives the unit. A retriable failure before commit replays with a fresh transaction and a fresh unit; once commit has started, or after `PreventRetry()`, the fault is captured and rethrown **outside** the strategy so EF cannot replay a possibly-committed block. A drain fault after a durable commit (an `OnCompleted` callback throwing once the unit is `Completed`) is logged and the block's result is returned — the same policy as the Npgsql/SqlClient `RunAsync` — because surfacing it would invite a retry that double-applies a committed block.
 - `db.UnitOfWork()` (`DbContextUnitOfWork`, an extension on `DbContext`) — the unit bound to this context while it is `Active`, or `null`. The Headless save pipeline (in `Headless.EntityFramework`) reads it to find the unit that owns a caller-owned transaction; a domain-event handler or repository handed only the context reads it to enlist.
 - `AddEntityFrameworkUnitOfWork()` — idempotent; delegates to `AddUnitOfWork()` and registers nothing else.
 
 ### Design constraints
 
-**One live unit per context.** A second `BeginAsync(db)` or `Enlist(db, tx)` while a unit is bound and active throws rather than joining: two units cannot own one context's transaction, and the caller almost always meant to pass the existing unit down. Once the bound unit reaches a terminal state the binding is evicted and a new begin is accepted.
+**One live unit per context; `RunAsync` is the join.** A second `BeginAsync(db)` or `Enlist(db, tx)` while a unit is bound and active throws rather than joining: two units cannot own one context's transaction. `RunAsync(db, …)` on that context joins instead, which is the shape a self-wrapping service uses. Once the bound unit reaches a terminal state the binding is evicted and a new begin is accepted.
 
 **The retrying-strategy split is deliberate.** `BeginAsync(db)` throws EF's own retrying-strategy message plus the `RunAsync` remedy because a user-initiated transaction cannot survive a strategy retry. `RunAsync` runs the begin *inside* the strategy, so retries replay the whole block with a fresh unit each attempt; the abandoned attempt's unit is unwound (rolled back) before the replay begins, or the replayed begin would meet a still-open transaction on the same context. The replay filter is: `CompleteAsync` started, or `IsRetryPrevented`, ⇒ rethrow outside the strategy. Reconcile an ambiguous post-commit fault with a client-generated key or another durable idempotency key before retrying the business operation.
 
@@ -308,6 +320,17 @@ if (db.UnitOfWork() is { } bound)
 {
     await bound.Outbox.PublishAsync(new OrderPlaced(order.Id), ct);
 }
+
+// Or wrap your own work in RunAsync as if you owned the transaction: under a caller that already began on
+// this context, the block joins that unit (receives the same handle, commits nothing itself); with no caller
+// unit, it begins and commits its own. Either way the service composes.
+public Task ReserveStockAsync(OrderId id, CancellationToken ct) =>
+    factory.RunAsync(db, async (unit, ct) =>
+    {
+        db.Reservations.Add(new Reservation(id));
+        await db.SaveChangesAsync(ct);
+        await unit.Jobs.ScheduleAsync(new ReleaseReservation(id), dueAt, ct);
+    }, cancellationToken: ct);
 ```
 
 The same shapes apply to a `HeadlessDbContext` and a `HeadlessIdentityDbContext` (in `Headless.EntityFramework`) and to a plain `DbContext` alike: the receiver is always the singleton `IUnitOfWorkFactory`, never the context.
@@ -330,9 +353,9 @@ Runs raw-ADO `NpgsqlConnection` work as a unit of work, so outbox rows and job r
 
 ### API and behavior
 
-- `IUnitOfWorkFactory.BeginAsync(connection, isolation, ct)` — owned mode: begins the transaction on that line (opening the connection when it is closed); `CompleteAsync` commits and drains, `RollbackAsync` or a dispose without completing rolls back.
-- `IUnitOfWorkFactory.Enlist(connection, transaction)` — observed mode for a transaction you commit yourself; call `CompleteAsync` after your commit or `RollbackAsync` after your rollback.
-- `IUnitOfWorkFactory.RunAsync(connection, operation, isolation, ct)` — begin → operation → complete in one call; the operation receives the unit; a throwing operation rolls back and rethrows its own exception.
+- `IUnitOfWorkFactory.BeginAsync(connection, isolation, ct)` — owned mode: begins the transaction on that line (opening the connection when it is closed) and binds the unit to the connection (`connection.UnitOfWork()`); `CompleteAsync` commits and drains, `RollbackAsync` or a dispose without completing rolls back. Refused on a connection that already carries a live unit.
+- `IUnitOfWorkFactory.Enlist(connection, transaction)` — observed mode for a transaction you commit yourself; call `CompleteAsync` after your commit or `RollbackAsync` after your rollback. Binds and refuses like `BeginAsync`.
+- `IUnitOfWorkFactory.RunAsync(connection, operation, isolation, ct)` — on a connection that already carries a live unit (begun by this provider or by EF over the same connection), **joins** it: the operation receives the owner's handle and commit stays with the owner. Otherwise begin → operation → complete in one call; a throwing operation rolls back and rethrows its own exception.
 - `AddPostgreSqlUnitOfWork()` — registers the singleton factory (idempotent; there are no provider options).
 
 ### Design constraints
@@ -391,9 +414,9 @@ Runs raw-ADO `SqlConnection` work as a unit of work, so outbox rows and job rows
 
 ### API and behavior
 
-- `IUnitOfWorkFactory.BeginAsync(connection, isolation, ct)` — owned mode: begins the transaction on that line (opening the connection when it is closed); `CompleteAsync` commits and drains, `RollbackAsync` or a dispose without completing rolls back.
-- `IUnitOfWorkFactory.Enlist(connection, transaction)` — observed mode for a transaction you commit yourself; call `CompleteAsync` after your commit or `RollbackAsync` after your rollback.
-- `IUnitOfWorkFactory.RunAsync(connection, operation, isolation, ct)` — begin → operation → complete in one call; the operation receives the unit; a throwing operation rolls back and rethrows its own exception.
+- `IUnitOfWorkFactory.BeginAsync(connection, isolation, ct)` — owned mode: begins the transaction on that line (opening the connection when it is closed) and binds the unit to the connection (`connection.UnitOfWork()`); `CompleteAsync` commits and drains, `RollbackAsync` or a dispose without completing rolls back. Refused on a connection that already carries a live unit.
+- `IUnitOfWorkFactory.Enlist(connection, transaction)` — observed mode for a transaction you commit yourself; call `CompleteAsync` after your commit or `RollbackAsync` after your rollback. Binds and refuses like `BeginAsync`.
+- `IUnitOfWorkFactory.RunAsync(connection, operation, isolation, ct)` — on a connection that already carries a live unit (begun by this provider or by EF over the same connection), **joins** it: the operation receives the owner's handle and commit stays with the owner. Otherwise begin → operation → complete in one call; a throwing operation rolls back and rethrows its own exception.
 - `AddSqlServerUnitOfWork()` — registers the singleton factory (idempotent; there are no provider options).
 
 ### Design constraints
