@@ -33,6 +33,21 @@ public interface IUnitOfWorkResourceFixture
     /// </summary>
     Task<UnitOfWorkObservedHandle> EnlistObservedAsync(IUnitOfWorkFactory factory, CancellationToken cancellationToken);
 
+    /// <summary>The provider's <c>BeginAsync(connection)</c> on a connection the test already holds.</summary>
+    ValueTask<IUnitOfWork> BeginOwnedOnAsync(
+        IUnitOfWorkFactory factory,
+        DbConnection connection,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>The provider's <c>RunAsync(connection, …)</c> on a connection the test already holds.</summary>
+    Task RunOnAsync(
+        IUnitOfWorkFactory factory,
+        DbConnection connection,
+        Func<IUnitOfWork, CancellationToken, Task> operation,
+        CancellationToken cancellationToken
+    );
+
     /// <summary>Inserts one probe row inside <paramref name="unitOfWork" />'s live transaction.</summary>
     Task InsertProbeRowAsync(IUnitOfWork unitOfWork, string name, CancellationToken cancellationToken);
 
@@ -70,10 +85,13 @@ public sealed class UnitOfWorkResourceHandle(IUnitOfWork unitOfWork, DbConnectio
     /// <summary>The begun unit; the scenario completes or rolls it back explicitly.</summary>
     public IUnitOfWork UnitOfWork { get; } = unitOfWork;
 
+    /// <summary>The connection the unit was begun on; the join and refusal scenarios run a second call on it.</summary>
+    public DbConnection Connection { get; } = connection;
+
     public async ValueTask DisposeAsync()
     {
         await UnitOfWork.DisposeAsync().ConfigureAwait(false);
-        await connection.DisposeAsync().ConfigureAwait(false);
+        await Connection.DisposeAsync().ConfigureAwait(false);
     }
 }
 

@@ -182,15 +182,19 @@ explicitly, on the line it chooses (`factory.BeginAsync(...)`); nothing opens on
 behalf. `CompleteAsync` commits the resource's transaction (owned mode, from `BeginAsync`) or observes
 a transaction the caller already committed (observed mode, from `Enlist`), then drains `OnCompleted`
 registrations. Dispose without `CompleteAsync` is an implicit rollback that drains `OnFailed`
-registrations instead. Two begins are two independent units: there is no join, no child view, and
-no factory-level "already active" refusal; the one refusal is `BeginAsync(db)` on a context that
-already carries a live unit.
+registrations instead. Two begins on different resources are two independent units; propagation is
+keyed on the resource both layers hold, never on the factory or a scope: `RunAsync(db, …)` /
+`RunAsync(connection, …)` on an object that already carries a live unit **joins** it (the block
+receives the owner's handle and commits nothing), while `BeginAsync` / `Enlist` on it are refused.
+There are no child views.
 
 ### Unit-of-work factory
 
 The singleton `IUnitOfWorkFactory` is the single entry point application code interacts with. It
 keeps no record of the units it opens, so a controller, a consumer, and a hosted service inject the
 same object and call `BeginAsync` on it directly — no scope dance, no captive-dependency trap. The
+unit is reached through the handle or the object it was begun on (`db.UnitOfWork()`,
+`connection.UnitOfWork()`, `ConsumeContext.UnitOfWork`), and `RunAsync` on that object joins it. The
 enlisting receivers hang off the unit, not off DI: `unit.Outbox` for Messaging, `unit.Jobs` /
 `unit.TimeJobs<T>()` / `unit.CronJobs<T>()` for Jobs. The injected `IBus`/`IQueue` and
 `IJobScheduler`/managers are the autonomous receivers — singletons that never enlist.

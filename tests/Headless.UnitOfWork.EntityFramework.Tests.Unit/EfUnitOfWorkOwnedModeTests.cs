@@ -135,8 +135,8 @@ public sealed class EfUnitOfWorkOwnedModeTests : TestBase
     [Fact]
     public async Task should_refuse_a_second_begin_on_a_context_that_already_carries_a_live_unit()
     {
-        // No ambient unit means nothing to join: the callee is handed the unit (db.UnitOfWork()) instead of
-        // opening a second one, and a second transaction on the same context is never the answer.
+        // An owning begin over someone else's transaction has no honest semantics: the callee joins through
+        // RunAsync(db, …) or is handed the unit (db.UnitOfWork()) instead of opening a second one.
         await using var host = await EfUnitOfWorkHost.CreateAsync();
         await using var session = host.CreateSession();
 

@@ -20,19 +20,20 @@ namespace Headless.UnitOfWork;
 /// remedy.
 /// </summary>
 /// <remarks>
-/// Begin and enlist bind the unit to the context, which is how the save pipeline, a domain-event handler, and
-/// anything else holding the context reach the unit that owns its transaction (<see cref="DbContextUnitOfWork.UnitOfWork" />).
-/// The binding hides terminal units automatically. A context that already carries a live unit refuses a second
-/// begin: there is no ambient unit to join, so the callee is handed the unit instead.
+/// Begin, enlist, and run bind the unit to the context — and to the connection beneath it — which is how the
+/// save pipeline, a domain-event handler, a raw-ADO helper, and anything else holding the context reach the
+/// unit that owns its transaction (<see cref="DbContextUnitOfWork.UnitOfWork" />). The binding hides terminal
+/// units automatically. <c>RunAsync(db, …)</c> on a context that already carries a live unit joins it: the
+/// block runs inside the owner's unit, outside any execution strategy of its own, and neither commits nor rolls
+/// back, so a service that wraps its own work in <c>RunAsync</c> composes under a caller that already opened
+/// the transaction. A second <c>BeginAsync</c> or <c>Enlist</c> on a bound context is refused instead, because
+/// an owning handle over someone else's transaction has no honest semantics.
 /// </remarks>
 [PublicAPI]
 public static class UnitOfWorkFactoryEntityFrameworkExtensions
 {
     private const string _ExistingTransactionMessage =
         "The DbContext already has an active transaction. Begin the unit of work before beginning the transaction, or call IUnitOfWorkFactory.Enlist(db, transaction) for a transaction you commit yourself.";
-
-    private const string _AlreadyBoundMessage =
-        "This DbContext already carries an active unit of work. Pass that unit to the code that needs it (read it with db.UnitOfWork()) instead of beginning a second one on the same context.";
 
     extension(IUnitOfWorkFactory factory)
     {
@@ -45,9 +46,9 @@ public static class UnitOfWorkFactoryEntityFrameworkExtensions
         /// <param name="cancellationToken">Propagates the caller's cancellation to the transaction begin.</param>
         /// <returns>The begun unit of work; the caller completes or disposes it.</returns>
         /// <exception cref="InvalidOperationException">
-        /// The context already carries an active unit of work (pass it instead), already has an active
-        /// transaction (use <c>Enlist</c> instead), or the configured execution strategy retries (use
-        /// <c>RunAsync</c> instead).
+        /// The context or its connection already carries an active unit of work (join it with <c>RunAsync</c>
+        /// or pass it along), the context already has an active transaction (use <c>Enlist</c> instead), or the
+        /// configured execution strategy retries (use <c>RunAsync</c> instead).
         /// </exception>
         public ValueTask<IUnitOfWork> BeginAsync(
             DbContext db,
@@ -71,10 +72,7 @@ public static class UnitOfWorkFactoryEntityFrameworkExtensions
             Argument.IsNotNull(db);
             Argument.IsNotNull(transaction);
 
-            if (DbContextUnitOfWorkBinding.TryGet(db, out _))
-            {
-                throw new InvalidOperationException(_AlreadyBoundMessage);
-            }
+            DbContextUnitOfWorkBinding.ThrowIfBound(db);
 
             var unit = factory.Enlist(new EfUnitOfWorkResource(db, transaction, owned: false));
 
@@ -89,7 +87,9 @@ public static class UnitOfWorkFactoryEntityFrameworkExtensions
         /// starts replays the whole block with a fresh transaction and a fresh unit; once the commit has
         /// started, or after <see cref="IUnitOfWork.PreventRetry" />, the fault is surfaced outside the
         /// strategy so EF cannot replay a possibly-committed block. A drain fault after a durable commit is
-        /// logged, never surfaced (the same policy as the Npgsql and SqlClient <c>RunAsync</c>).
+        /// logged, never surfaced (the same policy as the Npgsql and SqlClient <c>RunAsync</c>). When the
+        /// context already carries a live unit, the block joins it instead: it receives that unit, runs outside
+        /// any execution strategy of its own, and commit or rollback stay with the owner.
         /// </summary>
         /// <param name="db">The context to operate on.</param>
         /// <param name="operation">The block receiving the unit and the caller's cancellation token.</param>
@@ -155,12 +155,9 @@ public static class UnitOfWorkFactoryEntityFrameworkExtensions
             .BeginAsync(
                 async ct =>
                 {
-                    // A context already carrying a live unit is refused, not joined: with no ambient unit there
-                    // is nothing to join, and a second transaction on the same context is never the answer.
-                    if (DbContextUnitOfWorkBinding.TryGet(db, out _))
-                    {
-                        throw new InvalidOperationException(_AlreadyBoundMessage);
-                    }
+                    // An owning begin on a context (or connection) that already carries a live unit is refused:
+                    // RunAsync is the join, and a second transaction on the same context is never the answer.
+                    DbContextUnitOfWorkBinding.ThrowIfBound(db);
 
                     if (db.Database.CurrentTransaction is not null)
                     {
@@ -204,6 +201,13 @@ public static class UnitOfWorkFactoryEntityFrameworkExtensions
     )
     {
         Argument.IsNotNull(db);
+
+        // A joined block belongs to the owner's unit and the owner's execution strategy: it runs inline, and a
+        // fault propagates to the owner's block, which is what unwinds the unit.
+        if (DbContextUnitOfWorkBinding.TryGet(db, out var joined))
+        {
+            return await operation(joined, cancellationToken).ConfigureAwait(false);
+        }
 
         var logger = UnitOfWorkRunner.LoggerFor(factory);
         var state = (Factory: factory, Operation: operation, Isolation: isolation, Context: db, Logger: logger);
