@@ -5,6 +5,7 @@
     <OutputType>Exe</OutputType>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="xunit.v3.mtp-v2" />
@@ -12,6 +13,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.UnitOfWork.Abstractions\Headless.UnitOfWork.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Headless.UnitOfWork\Headless.UnitOfWork.csproj" />
+    <ProjectReference Include="..\..\src\Headless.UnitOfWork.EntityFramework\Headless.UnitOfWork.EntityFramework.csproj" />
     <ProjectReference Include="..\..\src\Headless.UnitOfWork.SqlServer\Headless.UnitOfWork.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing.Testcontainers\Headless.Testing.Testcontainers.csproj" />
     <ProjectReference Include="..\Headless.UnitOfWork.Tests.Harness\Headless.UnitOfWork.Tests.Harness.csproj" />

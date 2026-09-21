@@ -19,9 +19,14 @@ namespace Headless.UnitOfWork;
 /// The root provider, which <see cref="IUnitOfWork.GetFeature{TFeature}" /> resolves features from;
 /// <see langword="null" /> outside DI, where no feature resolves.
 /// </param>
+/// <param name="featureLifetimes">
+/// The registration lifetimes <c>AddUnitOfWork()</c> captured, which refuse a non-singleton feature before it
+/// resolves; <see langword="null" /> for a factory constructed by hand, which then trusts the provider.
+/// </param>
 internal sealed partial class UnitOfWorkFactory(
     ILogger<UnitOfWorkFactory>? logger = null,
-    IServiceProvider? services = null
+    IServiceProvider? services = null,
+    UnitOfWorkFeatureLifetimes? featureLifetimes = null
 ) : IUnitOfWorkFactory
 {
     /// <summary>The factory's logger, shared with the provider runners so post-commit drain faults land in one category.</summary>
@@ -34,7 +39,7 @@ internal sealed partial class UnitOfWorkFactory(
     )
     {
 #pragma warning disable CA2000 // The handle is the value being handed out; the caller completes or disposes it.
-        return ValueTask.FromResult(_Open(resource: null));
+        return ValueTask.FromResult<IUnitOfWork>(_Open(resource: null));
 #pragma warning restore CA2000
     }
 
@@ -60,17 +65,29 @@ internal sealed partial class UnitOfWorkFactory(
         return _Open(resource);
     }
 
-    private IUnitOfWork _Open(IUnitOfWorkResource? resource) =>
-        new UnitOfWorkHandle(new Internal.UnitOfWork(resource, Logger), this);
+    private UnitOfWorkHandle _Open(IUnitOfWorkResource? resource) =>
+        new(new Internal.UnitOfWork(resource, Logger), this);
 
     /// <summary>
     /// Resolves the feature <typeparamref name="TFeature" /> from the host's root provider. A plain service
     /// lookup: nothing is created or cached per unit, so every handle sees the same instance, and a factory
-    /// constructed outside DI resolves nothing. A feature is therefore a singleton by contract; a scoped
-    /// registration fails here under scope validation instead of silently resolving from the root.
+    /// constructed outside DI resolves nothing. A feature is therefore a singleton by contract, and a scoped or
+    /// transient registration is refused here from its recorded lifetime — before the lookup, and whether or
+    /// not the host validates scopes — instead of silently resolving from the root.
     /// </summary>
+    /// <exception cref="InvalidOperationException">The feature is registered as scoped or transient.</exception>
     internal TFeature? GetFeature<TFeature>()
-        where TFeature : class, IUnitOfWorkFeature => services?.GetService(typeof(TFeature)) as TFeature;
+        where TFeature : class, IUnitOfWorkFeature
+    {
+        if (services is null)
+        {
+            return null;
+        }
+
+        featureLifetimes?.ThrowIfNotSingleton(typeof(TFeature));
+
+        return services.GetService(typeof(TFeature)) as TFeature;
+    }
 
     /// <summary>Completes a unit: claim, commit (owned), drain.</summary>
     internal async ValueTask CompleteAsync(Internal.UnitOfWork unit, CancellationToken cancellationToken)

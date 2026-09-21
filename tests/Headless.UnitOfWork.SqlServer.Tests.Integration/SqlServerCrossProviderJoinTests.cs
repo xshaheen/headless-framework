@@ -3,9 +3,9 @@
 using System.Data.Common;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Npgsql;
 
 namespace Tests;
 
@@ -13,23 +13,23 @@ namespace Tests;
 
 /// <summary>
 /// The mixed-stack join: EF Core owns the unit of work, and a raw-ADO helper handed the context's connection —
-/// a Dapper repository, a bulk insert — wraps its own work in the Npgsql <c>RunAsync(connection, …)</c> and
+/// a Dapper repository, a bulk insert — wraps its own work in the SqlClient <c>RunAsync(connection, …)</c> and
 /// joins that unit through the connection binding. The reverse (an EF begin or <c>RunAsync(db, …)</c> over a
 /// connection an ADO unit already owns) is refused rather than joined: an owning begin over someone else's
 /// transaction has no honest semantics, and an EF block cannot run inside a transaction the context never opened.
 /// </summary>
-[Collection<PostgreSqlUnitOfWorkFixture>]
-public sealed class PostgreSqlCrossProviderJoinTests(PostgreSqlUnitOfWorkFixture fixture) : TestBase
+[Collection<SqlServerUnitOfWorkFixture>]
+public sealed class SqlServerCrossProviderJoinTests(SqlServerUnitOfWorkFixture fixture) : TestBase
 {
     [Fact]
-    public async Task should_join_an_ef_owned_unit_from_the_npgsql_run_async_on_the_contexts_connection()
+    public async Task should_join_an_ef_owned_unit_from_the_sqlclient_run_async_on_the_contexts_connection()
     {
         await fixture.ResetAsync(AbortToken);
         await using var provider = _BuildProvider();
         await using var scope = provider.CreateAsyncScope();
         var factory = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
         var db = scope.ServiceProvider.GetRequiredService<ProbeDbContext>();
-        var connection = (NpgsqlConnection)db.Database.GetDbConnection();
+        var connection = (SqlConnection)db.Database.GetDbConnection();
         IUnitOfWork? joined = null;
 
         await using (var owner = await factory.BeginAsync(db, cancellationToken: AbortToken))
@@ -41,9 +41,9 @@ public sealed class PostgreSqlCrossProviderJoinTests(PostgreSqlUnitOfWorkFixture
                 {
                     joined = unit;
                     var relational = (IRelationalUnitOfWorkResource)unit.Resource!;
-                    await PostgreSqlUnitOfWorkFixture.InsertProbeRowAsync(
+                    await SqlServerUnitOfWorkFixture.InsertProbeRowAsync(
                         connection,
-                        (NpgsqlTransaction)relational.Transaction,
+                        (SqlTransaction)relational.Transaction,
                         "dapper-row",
                         ct
                     );
@@ -52,8 +52,9 @@ public sealed class PostgreSqlCrossProviderJoinTests(PostgreSqlUnitOfWorkFixture
             );
 
             joined.Should().BeSameAs(owner);
-            owner.State.Should().Be(UnitOfWorkState.Active);
-            (await fixture.CountProbeRowsAsync(AbortToken)).Should().Be(0, "the ADO block commits nothing on its own");
+            // No mid-transaction count: the owner's uncommitted row would block an independent SQL Server reader
+            // until timeout. The state assertion is what proves the ADO block committed nothing on its own.
+            owner.State.Should().Be(UnitOfWorkState.Active, "the ADO block commits nothing on its own");
 
             await owner.CompleteAsync(AbortToken);
         }
@@ -70,7 +71,7 @@ public sealed class PostgreSqlCrossProviderJoinTests(PostgreSqlUnitOfWorkFixture
         await using var scope = provider.CreateAsyncScope();
         var factory = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
         var db = scope.ServiceProvider.GetRequiredService<ProbeDbContext>();
-        var connection = (NpgsqlConnection)db.Database.GetDbConnection();
+        var connection = (SqlConnection)db.Database.GetDbConnection();
 
         await using var adoOwner = await factory.BeginAsync(connection, cancellationToken: AbortToken);
 
@@ -93,7 +94,7 @@ public sealed class PostgreSqlCrossProviderJoinTests(PostgreSqlUnitOfWorkFixture
         await using var scope = provider.CreateAsyncScope();
         var factory = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
         var db = scope.ServiceProvider.GetRequiredService<ProbeDbContext>();
-        var connection = (NpgsqlConnection)db.Database.GetDbConnection();
+        var connection = (SqlConnection)db.Database.GetDbConnection();
         var ran = false;
 
         await using var adoOwner = await factory.BeginAsync(connection, cancellationToken: AbortToken);
@@ -123,9 +124,9 @@ public sealed class PostgreSqlCrossProviderJoinTests(PostgreSqlUnitOfWorkFixture
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddPostgreSqlUnitOfWork();
+        services.AddSqlServerUnitOfWork();
         services.AddEntityFrameworkUnitOfWork();
-        services.AddDbContext<ProbeDbContext>(options => options.UseNpgsql(fixture.ConnectionString));
+        services.AddDbContext<ProbeDbContext>(options => options.UseSqlServer(fixture.ConnectionString));
 
         return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
     }
@@ -139,7 +140,7 @@ public sealed class PostgreSqlCrossProviderJoinTests(PostgreSqlUnitOfWorkFixture
         {
             modelBuilder.Entity<ProbeRow>(entity =>
             {
-                entity.ToTable("probe_rows");
+                entity.ToTable("probe_rows", "dbo");
                 entity.HasKey(row => row.Id);
                 entity.Property(row => row.Id).HasColumnName("id");
                 entity.Property(row => row.Name).HasColumnName("name");

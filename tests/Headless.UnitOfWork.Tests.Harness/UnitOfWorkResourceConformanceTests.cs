@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data.Common;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.Logging;
@@ -233,6 +234,58 @@ public abstract class UnitOfWorkResourceConformanceTests<TFixture>(TFixture fixt
         );
         owner.UnitOfWork.State.Should().Be(UnitOfWorkState.Active, "a refused begin must not disturb the owner");
         owner.Connection.UnitOfWork().Should().BeSameAs(owner.UnitOfWork);
+    }
+
+    [Fact]
+    public virtual async Task should_refuse_a_second_enlist_on_a_connection_that_already_carries_a_live_unit()
+    {
+        // Observing the owner's own transaction from a second unit is the same misuse as a second begin: two
+        // units over one transaction. The enlist is refused before it registers anything.
+        await fixture.ResetAsync(AbortToken);
+        await using var session = fixture.CreateSession();
+        await using var owner = await fixture.BeginOwnedAsync(session.Factory, AbortToken);
+        var transaction = ((IRelationalUnitOfWorkResource)owner.UnitOfWork.Resource!).Transaction;
+
+        var act = () => fixture.EnlistOn(session.Factory, owner.Connection, transaction);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*already carries an active unit of work*RunAsync(connection*connection.UnitOfWork()*");
+        owner.UnitOfWork.State.Should().Be(UnitOfWorkState.Active, "a refused enlist must not disturb the owner");
+        owner.Connection.UnitOfWork().Should().BeSameAs(owner.UnitOfWork);
+    }
+
+    [Fact]
+    public virtual async Task should_evict_an_owned_unit_whose_transaction_ended_without_it()
+    {
+        // The transaction under an owned unit can end without the unit knowing (disposed by hand here). The
+        // stale binding must not hand that unit to a later RunAsync, which would run its writes outside any
+        // transaction and report success: the binding abandons the unit, and the next begin starts fresh.
+        await fixture.ResetAsync(AbortToken);
+        await using var session = fixture.CreateSession();
+        await using var stale = await fixture.BeginOwnedAsync(session.Factory, AbortToken);
+
+        await ((IRelationalUnitOfWorkResource)stale.UnitOfWork.Resource!).Transaction.DisposeAsync();
+
+        stale.Connection.UnitOfWork().Should().BeNull("an owned unit whose transaction ended is evicted");
+        stale.UnitOfWork.State.Should().Be(UnitOfWorkState.Failed, "the eviction abandons the unit");
+
+        IUnitOfWork? fresh = null;
+        await fixture.RunOnAsync(
+            session.Factory,
+            stale.Connection,
+            async (unit, ct) =>
+            {
+                fresh = unit;
+                await fixture.InsertProbeRowAsync(unit, "fresh", ct);
+            },
+            AbortToken
+        );
+
+        fresh.Should().NotBeSameAs(stale.UnitOfWork, "RunAsync begins a new unit instead of joining the stale one");
+        (await fixture.CountProbeRowsAsync(AbortToken))
+            .Should()
+            .Be(1, "the fresh unit's own commit made the row durable");
     }
 
     [Fact]

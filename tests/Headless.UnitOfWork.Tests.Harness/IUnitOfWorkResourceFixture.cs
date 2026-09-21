@@ -40,6 +40,9 @@ public interface IUnitOfWorkResourceFixture
         CancellationToken cancellationToken
     );
 
+    /// <summary>The provider's <c>Enlist(connection, transaction)</c> on a connection and transaction the test already holds.</summary>
+    IUnitOfWork EnlistOn(IUnitOfWorkFactory factory, DbConnection connection, DbTransaction transaction);
+
     /// <summary>The provider's <c>RunAsync(connection, …)</c> on a connection the test already holds.</summary>
     Task RunOnAsync(
         IUnitOfWorkFactory factory,

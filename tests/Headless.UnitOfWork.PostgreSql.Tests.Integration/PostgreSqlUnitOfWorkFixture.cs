@@ -41,7 +41,7 @@ public sealed class PostgreSqlUnitOfWorkFixture
     }
 
     public async ValueTask<UnitOfWorkResourceHandle> BeginOwnedAsync(
-        IUnitOfWorkFactory manager,
+        IUnitOfWorkFactory factory,
         CancellationToken cancellationToken
     )
     {
@@ -51,14 +51,14 @@ public sealed class PostgreSqlUnitOfWorkFixture
 
         try
         {
-            var unitOfWork = await manager.BeginAsync(connection, cancellationToken: cancellationToken);
+            var unitOfWork = await factory.BeginAsync(connection, cancellationToken: cancellationToken);
 
             return new UnitOfWorkResourceHandle(unitOfWork, connection);
         }
         catch
         {
             // A rejected begin (a second resource under an active unit) never returns a handle to release the
-            // connection; the manager already rolled the transaction back, but the ADO object must still be
+            // connection; the factory already rolled the transaction back, but the ADO object must still be
             // disposed here.
             await connection.DisposeAsync();
 
@@ -67,7 +67,7 @@ public sealed class PostgreSqlUnitOfWorkFixture
     }
 
     public async Task<UnitOfWorkObservedHandle> EnlistObservedAsync(
-        IUnitOfWorkFactory manager,
+        IUnitOfWorkFactory factory,
         CancellationToken cancellationToken
     )
     {
@@ -76,7 +76,7 @@ public sealed class PostgreSqlUnitOfWorkFixture
 #pragma warning restore CA2000
         await connection.OpenAsync(cancellationToken);
         var transaction = await connection.BeginTransactionAsync(cancellationToken);
-        var unitOfWork = manager.Enlist(connection, transaction);
+        var unitOfWork = factory.Enlist(connection, transaction);
 
         return new UnitOfWorkObservedHandle(unitOfWork, connection, transaction);
     }
@@ -88,6 +88,11 @@ public sealed class PostgreSqlUnitOfWorkFixture
     )
     {
         return factory.BeginAsync((NpgsqlConnection)connection, cancellationToken: cancellationToken);
+    }
+
+    public IUnitOfWork EnlistOn(IUnitOfWorkFactory factory, DbConnection connection, DbTransaction transaction)
+    {
+        return factory.Enlist((NpgsqlConnection)connection, (NpgsqlTransaction)transaction);
     }
 
     public Task RunOnAsync(

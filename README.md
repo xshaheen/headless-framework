@@ -533,7 +533,7 @@ Cluster membership and liveness tracking. Know which nodes are alive across a di
 
 ### Unit of Work
 
-Explicit, scoped unit of work: begin it on the line you choose, do business work, and complete it. Messages published through `unit.Outbox` and durable jobs scheduled inside it commit with the transaction, dispatch after it commits, and are discarded on rollback.
+Explicit unit of work: begin it on the line you choose from a singleton factory, do business work, and complete it. Messages published through `unit.Outbox` and durable jobs scheduled inside it commit with the transaction, dispatch after it commits, and are discarded on rollback.
 
 | Package | Description |
 |---------|-------------|

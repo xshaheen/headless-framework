@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
+using System.Data.Common;
 using Headless.Checks;
 using Headless.UnitOfWork.Internal;
 using Npgsql;
@@ -22,7 +23,7 @@ namespace Headless.UnitOfWork;
 /// the unit back and discards the enlisted work. A closed connection is opened for the unit's duration and closed
 /// again afterwards; an already-open connection is left open.
 /// <para>
-/// Begin and enlist bind the unit to the connection (<see cref="DbConnectionUnitOfWork.UnitOfWork" />), and
+/// Begin and enlist bind the unit to the connection (<see cref="HeadlessDbConnectionUnitOfWorkExtensions.UnitOfWork" />), and
 /// <c>RunAsync(connection, …)</c> on a connection that already carries a live unit joins it: the block runs
 /// inside the owner's unit and neither commits nor rolls back, so a service that wraps its own work in
 /// <c>RunAsync</c> composes under a caller that already opened the transaction. A second <c>BeginAsync</c> or
@@ -54,7 +55,12 @@ public static class UnitOfWorkFactoryPostgreSqlExtensions
             Argument.IsNotNull(factory);
             Argument.IsNotNull(connection);
 
-            return _BeginBoundAsync(factory, connection, isolation, cancellationToken);
+            return BoundConnectionUnitOfWork.BeginAsync(
+                factory,
+                connection,
+                ct => _BeginOwnedAsync(connection, isolation, ct),
+                cancellationToken
+            );
         }
 
         /// <summary>
@@ -71,12 +77,11 @@ public static class UnitOfWorkFactoryPostgreSqlExtensions
             Argument.IsNotNull(connection);
             Argument.IsNotNull(transaction);
 
-            DbConnectionUnitOfWorkBinding.ThrowIfBound(connection);
-
-            var unit = factory.Enlist(new PostgreSqlUnitOfWorkResource(connection, transaction, owned: false));
-            DbConnectionUnitOfWorkBinding.Bind(connection, unit);
-
-            return unit;
+            return BoundConnectionUnitOfWork.Enlist(
+                factory,
+                connection,
+                new PostgreSqlUnitOfWorkResource(connection, transaction, owned: false)
+            );
         }
 
         /// <summary>
@@ -84,12 +89,16 @@ public static class UnitOfWorkFactoryPostgreSqlExtensions
         /// begin → operation → <c>CompleteAsync</c>. A throwing operation rolls the unit back and rethrows; a
         /// drain fault after a durable commit is logged, never surfaced. When the connection already carries a
         /// live unit, the block joins it instead: it receives that unit, and commit or rollback stay with its
-        /// owner.
+        /// owner; a block that ends the unit itself is refused once it returns.
         /// </summary>
         /// <param name="connection">The connection to operate on; opened when closed.</param>
         /// <param name="operation">The block receiving the unit and the caller's cancellation token.</param>
-        /// <param name="isolation">Transaction isolation level. Defaults to <see cref="IsolationLevel.ReadCommitted" />.</param>
+        /// <param name="isolation">
+        /// Transaction isolation level for a unit this call begins. Defaults to <see cref="IsolationLevel.ReadCommitted" />.
+        /// Ignored when the call joins an already-bound unit: the block runs at the owner's isolation level.
+        /// </param>
         /// <param name="cancellationToken">Cancellation token forwarded to begin, the operation, and commit.</param>
+        /// <exception cref="InvalidOperationException">A joined block completed, rolled back, or disposed the owner's unit.</exception>
         public Task RunAsync(
             NpgsqlConnection connection,
             Func<IUnitOfWork, CancellationToken, Task> operation,
@@ -103,7 +112,13 @@ public static class UnitOfWorkFactoryPostgreSqlExtensions
 
             return UnitOfWorkRunner.RunAsync(
                 connection.UnitOfWork(),
-                ct => _BeginBoundAsync(factory, connection, isolation, ct),
+                ct =>
+                    BoundConnectionUnitOfWork.BeginAsync(
+                        factory,
+                        connection,
+                        beginCt => _BeginOwnedAsync(connection, isolation, beginCt),
+                        ct
+                    ),
                 async (unitOfWork, ct) =>
                 {
                     await operation(unitOfWork, ct).ConfigureAwait(false);
@@ -122,9 +137,13 @@ public static class UnitOfWorkFactoryPostgreSqlExtensions
         /// <typeparam name="TResult">Type of the value returned by <paramref name="operation" />.</typeparam>
         /// <param name="connection">The connection to operate on; opened when closed.</param>
         /// <param name="operation">The block receiving the unit and the caller's cancellation token, returning a result.</param>
-        /// <param name="isolation">Transaction isolation level. Defaults to <see cref="IsolationLevel.ReadCommitted" />.</param>
+        /// <param name="isolation">
+        /// Transaction isolation level for a unit this call begins. Defaults to <see cref="IsolationLevel.ReadCommitted" />.
+        /// Ignored when the call joins an already-bound unit: the block runs at the owner's isolation level.
+        /// </param>
         /// <param name="cancellationToken">Cancellation token forwarded to begin, the operation, and commit.</param>
         /// <returns>The result produced by <paramref name="operation" />.</returns>
+        /// <exception cref="InvalidOperationException">A joined block completed, rolled back, or disposed the owner's unit.</exception>
         public Task<TResult> RunAsync<TResult>(
             NpgsqlConnection connection,
             Func<IUnitOfWork, CancellationToken, Task<TResult>> operation,
@@ -138,38 +157,18 @@ public static class UnitOfWorkFactoryPostgreSqlExtensions
 
             return UnitOfWorkRunner.RunAsync(
                 connection.UnitOfWork(),
-                ct => _BeginBoundAsync(factory, connection, isolation, ct),
+                ct =>
+                    BoundConnectionUnitOfWork.BeginAsync(
+                        factory,
+                        connection,
+                        beginCt => _BeginOwnedAsync(connection, isolation, beginCt),
+                        ct
+                    ),
                 operation,
                 UnitOfWorkRunner.LoggerFor(factory),
                 cancellationToken
             );
         }
-    }
-
-    // The refusal runs inside the factory's begin so it precedes any connection or transaction effect.
-    private static async ValueTask<IUnitOfWork> _BeginBoundAsync(
-        IUnitOfWorkFactory factory,
-        NpgsqlConnection connection,
-        IsolationLevel isolation,
-        CancellationToken cancellationToken
-    )
-    {
-        var unit = await factory
-            .BeginAsync(
-                ct =>
-                {
-                    DbConnectionUnitOfWorkBinding.ThrowIfBound(connection);
-
-                    return _BeginOwnedAsync(connection, isolation, ct);
-                },
-                options: null,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        DbConnectionUnitOfWorkBinding.Bind(connection, unit);
-
-        return unit;
     }
 
     private static async ValueTask<IUnitOfWorkResource> _BeginOwnedAsync(

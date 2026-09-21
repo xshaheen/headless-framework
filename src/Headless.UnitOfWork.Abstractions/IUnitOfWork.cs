@@ -125,6 +125,10 @@ public interface IUnitOfWork : IDisposable, IAsyncDisposable
     /// <typeparam name="TFeature">The feature's service type; it opts in through <see cref="IUnitOfWorkFeature" />.</typeparam>
     /// <returns>The feature, or <see langword="null" /> when none is registered.</returns>
     /// <exception cref="ObjectDisposedException">This handle was disposed.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// The feature is registered as scoped or transient; a feature resolves from the root provider and must be a
+    /// singleton.
+    /// </exception>
     TFeature? GetFeature<TFeature>()
         where TFeature : class, IUnitOfWorkFeature;
 
